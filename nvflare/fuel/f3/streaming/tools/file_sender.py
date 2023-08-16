@@ -16,7 +16,7 @@ import sys
 import threading
 import time
 
-from nvflare.fuel.f3.cellnet.cell import Cell, CellAgent
+from nvflare.fuel.f3.cellnet.core_cell import CellAgent, CoreCell
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stream_cell import StreamCell
 from nvflare.fuel.f3.streaming.tools.utils import RX_CELL, TEST_CHANNEL, TEST_TOPIC, TX_CELL, setup_log
@@ -26,7 +26,7 @@ class FileSender:
     """Utility to send a file to another cell"""
 
     def __init__(self, url: str):
-        core_cell = Cell(TX_CELL, url, secure=False, credentials={})
+        core_cell = CoreCell(TX_CELL, url, secure=False, credentials={})
         self.stream_cell = StreamCell(core_cell)
         core_cell.set_cell_connected_cb(self.cell_connected)
         core_cell.start()

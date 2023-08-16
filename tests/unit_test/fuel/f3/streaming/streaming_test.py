@@ -15,7 +15,7 @@ import threading
 
 import pytest
 
-from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stream_cell import StreamCell
 from nvflare.fuel.f3.streaming.stream_types import StreamFuture
@@ -43,7 +43,7 @@ class TestStreamCell:
     @pytest.fixture
     def server_cell(self, port, state):
         listening_url = f"tcp://localhost:{port}"
-        cell = Cell(RX_CELL, listening_url, secure=False, credentials={})
+        cell = CoreCell(RX_CELL, listening_url, secure=False, credentials={})
         stream_cell = StreamCell(cell)
         stream_cell.register_blob_cb(TEST_CHANNEL, TEST_TOPIC, self.blob_cb, state=state)
         cell.start()
@@ -53,7 +53,7 @@ class TestStreamCell:
     @pytest.fixture
     def client_cell(self, port, state):
         connect_url = f"tcp://localhost:{port}"
-        cell = Cell(TX_CELL, connect_url, secure=False, credentials={})
+        cell = CoreCell(TX_CELL, connect_url, secure=False, credentials={})
         stream_cell = StreamCell(cell)
         cell.start()
 

@@ -24,7 +24,7 @@ from abc import ABC, abstractmethod
 from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 from nvflare.fuel.common.exit_codes import PROCESS_EXIT_REASON, ProcessExitCode
-from nvflare.fuel.f3.cellnet.cell import FQCN
+from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.utils import fobs
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey, new_cell_message
