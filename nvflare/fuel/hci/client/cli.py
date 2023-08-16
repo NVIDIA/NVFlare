@@ -86,6 +86,7 @@ class AdminClient(cmd.Cmd, EventHandler):
         debug: bool = False,
         username: str = "",
         handlers=None,
+        cli_history_dir: str = os.path.join(os.path.expanduser("~"), ".nvflare"),
         cli_history_size: int = 1000,
     ):
         super().__init__()
@@ -107,6 +108,9 @@ class AdminClient(cmd.Cmd, EventHandler):
 
         if not isinstance(credential_type, CredentialType):
             raise TypeError("invalid credential_type {}".format(credential_type))
+
+        if not cli_history_dir:
+            raise Exception("missing cli_history_dir")
 
         modules = [_BuiltInCmdModule()]
         if cmd_modules:
@@ -141,10 +145,9 @@ class AdminClient(cmd.Cmd, EventHandler):
             event_handlers=event_handlers,
         )
 
-        nvflare_dir = os.path.join(os.path.expanduser("~"), ".nvflare")
-        if not os.path.isdir(nvflare_dir):
-            os.mkdir(nvflare_dir)
-        self.cli_history_file = os.path.join(nvflare_dir, ".admin_cli_history")
+        if not os.path.isdir(cli_history_dir):
+            os.mkdir(cli_history_dir)
+        self.cli_history_file = os.path.join(cli_history_dir, ".admin_cli_history")
 
         if readline:
             readline.set_history_length(cli_history_size)

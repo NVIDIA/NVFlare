@@ -107,6 +107,7 @@ def main():
         service_finder=service_finder,
         username=admin_config.get("username", ""),
         handlers=conf.handlers,
+        cli_history_dir=args.workspace,
         cli_history_size=args.cli_history_size,
     )
 
