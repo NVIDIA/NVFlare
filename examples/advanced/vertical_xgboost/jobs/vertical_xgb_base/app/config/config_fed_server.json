@@ -7,12 +7,6 @@
   "task_result_filters": [],
   "workflows": [
     {
-      "id": "controller",
-      "name": "DhPSIController",
-      "args": {
-      }
-    },
-    {
       "id": "xgb_controller",
       "path": "nvflare.app_opt.xgboost.histogram_based.controller.XGBFedController",
       "args": {

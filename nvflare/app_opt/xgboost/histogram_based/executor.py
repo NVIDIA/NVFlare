@@ -265,7 +265,7 @@ class FedXGBHistogramExecutor(Executor):
             with xgb.collective.CommunicatorContext(**communicator_env):
                 # Load the data. Dmatrix must be created with column split mode in CommunicatorContext for vertical FL
                 if not self.train_data or not self.val_data:
-                    self.train_data, self.val_data = self.data_loader.load_data(self.client_id, self.app_dir)
+                    self.train_data, self.val_data = self.data_loader.load_data(self.client_id)
 
                 bst = self.xgb_train(params)
 

@@ -26,7 +26,7 @@ def data_split_args_parser():
     parser.add_argument("--site_num", type=int, help="Total number of sites")
     parser.add_argument("--site_name_prefix", type=str, default="site-", help="Site name prefix")
     parser.add_argument("--cols_total", type=int, help="Total number of columns")
-    parser.add_argument("--rows_overlap_size", type=int, help="Size of the data overlap between sites")
+    parser.add_argument("--rows_overlap", type=int, help="Size of the data overlap between sites")
     parser.add_argument("--rows_total", type=int, help="Total number of instances")
     parser.add_argument("--out_path", type=str, default="~/dataset", help="Output path for the data split json file")
     return parser
@@ -50,13 +50,11 @@ def main():
     args = parser.parse_args()
     print(f"site_num: {args.site_num}")
     print(f"rows_total: {args.rows_total}")
-    print(f"rows_overlap_size: {args.rows_overlap_size}")
+    print(f"rows_overlap: {args.rows_overlap}")
     print(f"cols_total: {args.cols_total}")
 
     site_col_size = split_num_proportion(args.cols_total, args.site_num)
-    site_row_size = split_num_proportion(args.rows_total - args.rows_overlap_size, args.site_num)
-    print(f"column splits: {site_col_size}")
-    print(f"non-overlap row splits: {site_row_size}")
+    site_row_size = split_num_proportion(args.rows_total - args.rows_overlap, args.site_num)
 
     df = pd.read_csv(args.data_path, header=None)
     df["uid"] = df.index.to_series().map(lambda x: "uid_" + str(x))
@@ -77,15 +75,16 @@ def main():
             [
                 df.iloc[row_start:row_end, np.r_[col_start:col_end, args.cols_total]],
                 df.iloc[
-                    args.rows_total - args.rows_overlap_size : args.rows_total,
+                    args.rows_total - args.rows_overlap : args.rows_total,
                     np.r_[col_start:col_end, args.cols_total],
                 ],
             ]
         )
+        df_split = df_split.sample(frac=1)
         print(
-            f"site-{site+1} split rows ({row_start}:{row_end}),({args.rows_total - args.rows_overlap_size}:{args.rows_total})"
+            f"site-{site+1} split rows [{row_start}:{row_end}],[{args.rows_total - args.rows_overlap}:{args.rows_total}]"
         )
-        print(f"site-{site+1} split cols ({col_start}:{col_end})")
+        print(f"site-{site+1} split cols [{col_start}:{col_end}]")
 
         data_path = os.path.join(args.out_path, f"{args.site_name_prefix}{site + 1}")
         if not os.path.exists(data_path):

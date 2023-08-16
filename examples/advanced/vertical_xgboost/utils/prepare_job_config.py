@@ -25,11 +25,12 @@ CONFIG_FOLDER_NAME = "config"
 
 
 def job_config_args_parser():
-    parser = argparse.ArgumentParser(description="generate train configs for HIGGS dataset")
+    parser = argparse.ArgumentParser(description="Generate job configs for PSI and Vertical XGBoost")
+    parser.add_argument("--job_name", type=str, default="vertical_xgb", help="job name")
     parser.add_argument(
         "--data_root",
         type=str,
-        default="/tmp/nvflare/vertical_xgboost/data",
+        default="/tmp/nvflare/vertical_xgb_data",
         help="Path to dataset files for each site",
     )
     parser.add_argument("--site_num", type=int, default=5, help="Total number of sites")
@@ -53,15 +54,11 @@ def _write_json(data, filename):
 
 
 def _get_job_name(args) -> str:
-    return "vertical_xgboost_" + str(args.site_num)
+    return args.job_name + "_" + str(args.site_num)
 
 
-def _get_data_split_name(args, site_name: str) -> str:
-    return os.path.join(args.data_root, f"{site_name}", "higgs.data.csv")
-
-
-def _get_src_job_dir(name):
-    return pathlib.Path(JOB_CONFIGS_ROOT) / "vertical_xgboost_base"
+def _get_src_job_dir(args):
+    return pathlib.Path(JOB_CONFIGS_ROOT) / (args.job_name + "_base")
 
 
 def _gen_deploy_map(num_sites: int, site_name_prefix: str) -> dict:
@@ -79,10 +76,18 @@ def _update_meta(meta: dict, args):
 
 
 def _update_client_config(config: dict, args, site_name: str):
-    data_split_name = _get_data_split_name(args, site_name)
-    config["components"][0]["args"]["data_split_path"] = data_split_name
-    config["components"][0]["args"]["label_owner"] = f"{args.site_name_prefix}{args.label_owner}"
-    config["components"][2]["args"]["data_split_path"] = data_split_name
+    if args.job_name == "vertical_xgb_psi":
+        config["components"][1]["args"]["data_split_path"] = config["components"][1]["args"]["data_split_path"].replace(
+            "{site-x}", site_name
+        )
+    elif args.job_name == "vertical_xgb":
+        config["components"][0]["args"]["data_split_path"] = config["components"][0]["args"]["data_split_path"].replace(
+            "{site-x}", site_name
+        )
+        config["components"][0]["args"]["psi_path"] = config["components"][0]["args"]["psi_path"].replace(
+            "{site-x}", site_name
+        )
+        config["components"][0]["args"]["label_owner"] = f"{args.site_name_prefix}{args.label_owner}"
 
 
 def _copy_custom_files(src_job_path, src_app_name, dst_job_path, dst_app_name):
@@ -128,7 +133,7 @@ def main():
     parser = job_config_args_parser()
     args = parser.parse_args()
     job_name = _get_job_name(args)
-    src_job_path = _get_src_job_dir(job_name)
+    src_job_path = _get_src_job_dir(args)
 
     # create a new job
     dst_job_path = pathlib.Path(JOB_CONFIGS_ROOT) / job_name

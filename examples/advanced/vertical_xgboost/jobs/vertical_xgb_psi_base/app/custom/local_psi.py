@@ -21,19 +21,18 @@ from nvflare.app_common.psi.psi_spec import PSI
 
 
 class LocalPSI(PSI):
-    def __init__(self, psi_writer_id: str, data_split_path: str):
+    def __init__(self, psi_writer_id: str, data_split_path: str, id_col: str):
         super().__init__(psi_writer_id)
         self.data_split_path = data_split_path
+        self.id_col = id_col
         self.data = {}
 
     def load_items(self) -> List[str]:
-        site = self.fl_ctx.get_identity_name()
-
         if os.path.isfile(self.data_split_path):
             df = pd.read_csv(self.data_split_path, header=0)
         else:
             raise RuntimeError(f"invalid data path {self.data_split_path}")
 
         # Note: the PSI algorithm requires the items are unique
-        items = list(df["uid"])
+        items = list(df[self.id_col])
         return items

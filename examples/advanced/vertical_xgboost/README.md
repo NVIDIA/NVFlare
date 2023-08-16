@@ -9,6 +9,11 @@ python3 -m pip install -r requirements.txt
 
 > **_NOTE:_** If the vertical federated learning plugin is not available in the XGBoost PyPI release yet, reinstall XGBoost from a [wheel](https://xgboost.readthedocs.io/en/stable/install.html#nightly-build) with a recent commit.
 
+Generate the job configurations:
+```
+./prepare_job_config.sh
+```
+
 ## Preparing HIGGS Data
 In this example we showcase a binary classification task based on the [HIGGS dataset](https://archive.ics.uci.edu/dataset/280/higgs), which contains 11 million instances, each with 28 features and 1 class label.
 
@@ -22,16 +27,20 @@ In order to achieve this, we split the HIGGS dataset both horizontally and verti
 
 <img src="./figs/vertical_fl.png" alt="vertical fl diagram" width="500"/>
 
-Run the following commands to prepare the data splits and job configurations:
+Run the following command to prepare the data splits:
 ```
 ./prepare_data.sh
-./prepare_job_config.sh
 ```
 
 ### Private Set Intersection (PSI)
-Since not every site will have the same set of data samples, we can use PSI to compare encrypted versions of the sites' datasets in order to jointly compute the intersection based on common IDs. In this example, the HIGGS dataset does not contain unique identifiers so we add a temporary `uid_{idx}` to each instance and give each site a portion of the HIGGS dataset (rows) that includes a common overlap. Afterwards the identifiers are dropped since they are only used for matching, and training is then done on the intersected data. To learn more about our PSI protocol implementation, see our [psi example](../psi/README.md).
+Since not every site will have the same set of data samples (rows), we can use PSI to compare encrypted versions of the sites' datasets in order to jointly compute the intersection based on common IDs. In this example, the HIGGS dataset does not contain unique identifiers so we add a temporary `uid_{idx}` to each instance and give each site a portion of the HIGGS dataset that includes a common overlap. Afterwards the identifiers are dropped since they are only used for matching, and training is then done on the intersected data. To learn more about our PSI protocol implementation, see our [psi example](../psi/README.md).
 
 > **_NOTE:_** The uid can be a composition of multiple variabes with a transformation, however in this example we use indices for simplicity. PSI can also be used for computing the intersection of overlapping features, but here we give each site unique features.
+
+Run the psi job to calculate the dataset intersection of the clients at `psi/intersection.txt` inside the psi workspace:
+```
+nvflare simulator ./jobs/vertical_xgb_psi_2 -w /tmp/nvflare/vertical_xgb_psi -n 2 -t 2
+```
 
 ## Vertical XGBoost Federated Learning Plugin with FLARE
 
@@ -41,22 +50,24 @@ For integrating with FLARE, we can use the predefined `XGBFedController` to run 
 
 Next, we can use `FedXGBHistogramExecutor` and set XGBoost training parameters in `config_fed_client.json`, or define new training logic by overwriting the `xgb_train()` method.
 
-Lastly, we must subclass `XGBDataLoader` and implement the `load_data()` method. For vertical federated learning, it is important when creating the `xgb.Dmatrix` to set `data_split_mode=1` for column mode, and to specify the presence of a label column `?format=csv&label_column=0` for the csv file.
+Lastly, we must subclass `XGBDataLoader` and implement the `load_data()` method. For vertical federated learning, it is important when creating the `xgb.Dmatrix` to set `data_split_mode=1` for column mode, and to specify the presence of a label column `?format=csv&label_column=0` for the csv file. To support PSI, the dataloader can also read in the dataset based on the calculated intersection, and split the data into training and validation.
 
-> **_NOTE:_** For secure mode, make sure to provide the required certificates for the federated communicator. As of now, GPUs are not yet supported by vertical federated XGBoost.
+> **_NOTE:_** For secure mode, make sure to provide the required certificates for the federated communicator. Also as of now, GPUs are not yet supported by vertical federated XGBoost.
 
 ## Run the Example
-Run a job using the simulator (feel free to modify the number of clients and other arguments in `prepare_data.sh` and `prepare_job_config.sh` and run beforehand as desired):
+Run the vertical xgboost job:
 ```
-nvflare simulator ./jobs/vertical_xgboost_2 -w /tmp/nvflare/workspaces/vertical_xgboost -n 2 -t 2
+nvflare simulator ./jobs/vertical_xgb_2 -w /tmp/nvflare/vertical_xgb -n 2 -t 2
 ```
 
 The model will be saved to `test.model.json`.
 
+(Feel free to modify arguments such as number of clients and dataset sizes in `prepare_data.sh` and `prepare_job_config.sh` as desired, and rerun the psi and vertical xgboost jobs)
+
 ## Results
 Model accuracy can be visualized in tensorboard:
 ```
-tensorboard --logdir /tmp/nvflare/vertical_xgboost
+tensorboard --logdir /tmp/nvflare/vertical_xgb
 ```
 
 An example training (pink) and validation (orange) AUC graph from running vertical XGBoost on HIGGS.

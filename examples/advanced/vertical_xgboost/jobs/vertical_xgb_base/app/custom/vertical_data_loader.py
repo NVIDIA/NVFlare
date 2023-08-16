@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import os
-from typing import Optional
 
 import pandas as pd
 import xgboost as xgb
@@ -24,6 +23,7 @@ from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
 def _get_data_intersection(df, intersection_path, id_col):
     with open(intersection_path) as intersection_file:
         intersection = intersection_file.read().splitlines()
+    intersection.sort()
 
     # Note: the order of the intersection must be maintained
     intersection_df = df[df[id_col].isin(intersection)].copy()
@@ -46,38 +46,40 @@ def _split_train_val(df, train_proportion):
 
 
 class VerticalDataLoader(XGBDataLoader):
-    def __init__(self, data_split_path, label_owner, train_proportion):
+    def __init__(self, data_split_path, psi_path, id_col, label_owner, train_proportion):
         """Reads intersection of dataset and returns train and validation XGB data matrices with column split mode.
 
         Args:
             data_split_path: path to data split file
+            psi_path: path to intersection file
+            id_col: column id used for psi
             label_owner: client id that owns the label
             train_proportion: proportion of intersected data to use for training
         """
         self.data_split_path = data_split_path
+        self.psi_path = psi_path
+        self.id_col = id_col
         self.label_owner = label_owner
         self.train_proportion = train_proportion
 
-    def load_data(self, client_id: str, app_dir: Optional[str] = None):
-        if not app_dir:
-            raise ValueError(("app_dir is required to locate psi intersection"))
-        psi_dir = os.path.join(os.path.dirname(os.path.abspath(app_dir)), client_id, "psi")
+    def load_data(self, client_id: str):
+        train_path = os.path.join(os.path.dirname(self.data_split_path), "train.csv")
+        valid_path = os.path.join(os.path.dirname(self.data_split_path), "valid.csv")
 
-        df = pd.read_csv(self.data_split_path)
-        intersection_df = _get_data_intersection(df, os.path.join(psi_dir, "intersection.txt"), "uid")
-        train_df, valid_df = _split_train_val(intersection_df, self.train_proportion)
+        if not (os.path.exists(train_path) and os.path.exists(valid_path)):
+            df = pd.read_csv(self.data_split_path)
+            intersection_df = _get_data_intersection(df, self.psi_path, self.id_col)
+            train_df, valid_df = _split_train_val(intersection_df, self.train_proportion)
 
-        train_path = os.path.join(psi_dir, "train.csv")
-        valid_path = os.path.join(psi_dir, "valid.csv")
-        train_df.to_csv(path_or_buf=train_path, header=False, index=False)
-        valid_df.to_csv(path_or_buf=valid_path, header=False, index=False)
+            train_df.to_csv(path_or_buf=train_path, header=False, index=False)
+            valid_df.to_csv(path_or_buf=valid_path, header=False, index=False)
 
         if client_id == self.label_owner:
             label = "&label_column=0"
         else:
             label = ""
 
-        # for vertical XGBoost, setting data_split_mode to 1 for column mode
+        # for Vertical XGBoost, read from csv with label_column and set data_split_mode to 1 for column mode
         dtrain = xgb.DMatrix(train_path + f"?format=csv{label}", data_split_mode=1)
         dvalid = xgb.DMatrix(valid_path + f"?format=csv{label}", data_split_mode=1)
 

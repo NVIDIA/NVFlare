@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import json
-from typing import Optional
 
 import pandas as pd
 import xgboost as xgb
@@ -42,7 +41,7 @@ class HIGGSDataLoader(XGBDataLoader):
         """
         self.data_split_filename = data_split_filename
 
-    def load_data(self, client_id: str, app_dir: Optional[str] = None):
+    def load_data(self, client_id: str):
         with open(self.data_split_filename, "r") as file:
             data_split = json.load(file)
 
