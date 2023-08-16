@@ -138,8 +138,8 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             ids.append(t.id)
         return ids
 
-    def authorize_and_build_component(self, config_dict, config_ctx, node):
-        t = super().authorize_and_build_component(config_dict, config_ctx, node)
+    def build_component(self, config_dict):
+        t = super().build_component(config_dict)
         if isinstance(t, FLComponent):
             self.handlers.append(t)
         return t
