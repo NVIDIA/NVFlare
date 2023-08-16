@@ -73,7 +73,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         if not isinstance(engine, ServerEngineSpec):
             raise RuntimeError(f"engine inside fl_ctx should be of type ServerEngineSpec, but got {type(engine)}.")
 
-        result = engine.check_client_resources(job, resource_reqs)
+        result = engine.check_client_resources(job, resource_reqs, fl_ctx)
         self.log_debug(fl_ctx, f"check client resources result: {result}")
 
         return result

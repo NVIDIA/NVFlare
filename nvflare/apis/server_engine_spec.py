@@ -159,12 +159,15 @@ class ServerEngineSpec(EngineSpec, ABC):
         pass
 
     @abstractmethod
-    def check_client_resources(self, job: Job, resource_reqs: Dict[str, dict]) -> Dict[str, Tuple[bool, Optional[str]]]:
+    def check_client_resources(
+        self, job: Job, resource_reqs: Dict[str, dict], fl_ctx: FLContext
+    ) -> Dict[str, Tuple[bool, Optional[str]]]:
         """Sends the check_client_resources requests to the clients.
 
         Args:
             job: job object
             resource_reqs: A dict of {client_name: resource requirements dict}
+            fl_ctx: FLContext
 
         Returns:
             A dict of {client_name: client_check_result}.

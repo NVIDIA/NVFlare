@@ -81,6 +81,7 @@ class RequestHeader(object):
     SUBMITTER_ORG = ConnProps.SUBMITTER_ORG
     SUBMITTER_ROLE = ConnProps.SUBMITTER_ROLE
     REQUIRE_AUTHZ = "require_authz"
+    CUSTOM_PROPS = "custom_props"
 
 
 class SysCommandTopic(object):

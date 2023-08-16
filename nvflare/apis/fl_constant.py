@@ -141,6 +141,7 @@ class FLContextKey(object):
     CURRENT_JOB_ID = ReservedKey.CURRENT_JOB_ID
     JOB_RUN_NUMBER = ReservedKey.JOB_RUN_NUMBER
     JOB_DEPLOY_DETAIL = ReservedKey.JOB_DEPLOY_DETAIL
+    CUSTOM_PROPS = ReservedKey.CUSTOM_PROPS
     JOB_SCOPE_NAME = "__job_scope_name__"
     EFFECTIVE_JOB_SCOPE_NAME = "__effective_job_scope_name__"
     SCOPE_PROPERTIES = "__scope_props__"

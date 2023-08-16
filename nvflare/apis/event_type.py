@@ -60,6 +60,8 @@ class EventType(object):
     # event types for job scheduling - server side
     BEFORE_CHECK_CLIENT_RESOURCES = "_before_check_client_resources"
     AFTER_CHECK_CLIENT_RESOURCES = "_after_check_client_resources"
+    DEPLOY_JOB_TO_SERVER = "_deploy_job_to_server"
+    DEPLOY_JOB_TO_CLIENT = "_deploy_job_to_client"
 
     # event types for job scheduling - client side
     BEFORE_CHECK_RESOURCE_MANAGER = "_before_check_resource_manager"

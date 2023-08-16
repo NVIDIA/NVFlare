@@ -17,6 +17,7 @@ from typing import List, Tuple
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_exception import NotAuthorized
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import InternalCommands
 from nvflare.fuel.hci.server.constants import ConnProps
@@ -64,6 +65,15 @@ class SiteSecurityFilter(CommandFilter):
                 fl_ctx.remove_prop(FLContextKey.AUTHORIZATION_RESULT)
                 fl_ctx.remove_prop(FLContextKey.AUTHORIZATION_REASON)
                 filter_succeed = False
+            else:
+                exceptions = fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
+                if exceptions and isinstance(exceptions, dict):
+                    for handler_name, ex in exceptions.items():
+                        if isinstance(ex, NotAuthorized):
+                            logger.error(f"NotAuthorized to execute. Reason: {ex}")
+                            fl_ctx.remove_prop(FLContextKey.AUTHORIZATION_RESULT)
+                            fl_ctx.remove_prop(FLContextKey.AUTHORIZATION_REASON)
+                            filter_succeed = False
         return filter_succeed, reasons
 
     def _set_security_data(self, conn: Connection, fl_ctx: FLContext):

@@ -144,6 +144,9 @@ class FedAdminAgent(object):
                                 org=req.get_header(RequestHeader.SUBMITTER_ORG, ""),
                                 role=req.get_header(RequestHeader.SUBMITTER_ROLE, ""),
                             )
+                            custom_data = req.get_header(RequestHeader.CUSTOM_PROPS)
+                            if custom_data:
+                                fl_ctx.set_prop(FLContextKey.CUSTOM_PROPS, custom_data)
 
                             authz_ctx = AuthzContext(user=user, submitter=submitter, right=cmd)
                             authorized, err = AuthorizationService.authorize(authz_ctx)
