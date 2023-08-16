@@ -11,7 +11,7 @@ client dataset.
 The server's global model is also distributed to each client for evaluation on the client's local dataset for global
 model evaluation.
 
-The `hello-numpy-cross-val example <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-numpy-cross-val>`_ is a simple
+The `hello-numpy-cross-val example <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-numpy-cross-val>`_ is a simple
 example that implements the :class:`cross site model evaluation workflow<nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval>`.
 
 .. note::
@@ -25,5 +25,5 @@ example that implements the :class:`cross site model evaluation workflow<nvflare
 
 Example with Cross Site Model Evaluation / Federated Evaluation Workflow
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-See the `Hello Numpy Cross-Site Validation <https://github.com/NVIDIA/NVFlare/tree/dev/examples/hello-numpy-cross-val>`_ for an example application with
+See the `Hello Numpy Cross-Site Validation <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-numpy-cross-val>`_ for an example application with
 the cross site model evaulation / federated evaluation workflow.
