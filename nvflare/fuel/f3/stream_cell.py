@@ -14,7 +14,7 @@
 import os
 from typing import Callable
 
-from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.blob_streamer import BlobStreamer
 from nvflare.fuel.f3.streaming.byte_receiver import ByteReceiver
@@ -25,7 +25,7 @@ from nvflare.fuel.f3.streaming.stream_types import ObjectIterator, ObjectStreamF
 
 
 class StreamCell:
-    def __init__(self, cell: Cell):
+    def __init__(self, cell: CoreCell):
         self.cell = cell
         self.byte_streamer = ByteStreamer(cell)
         self.byte_receiver = ByteReceiver(cell)

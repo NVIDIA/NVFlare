@@ -17,7 +17,7 @@ import os
 import shutil
 import tempfile
 
-from nvflare.fuel.f3.cellnet.new_cell import NewCell as Cell
+from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.dict_utils import augment
 from nvflare.fuel.utils.network_utils import get_open_ports
@@ -28,8 +28,6 @@ from nvflare.security.logging import secure_format_exception
 
 from .base_client_deployer import BaseClientDeployer
 from .server_deployer import ServerDeployer
-
-# from nvflare.fuel.f3.cellnet.cell import Cell
 
 
 class SimulatorDeployer(ServerDeployer):
