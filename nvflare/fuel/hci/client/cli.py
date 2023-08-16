@@ -19,6 +19,7 @@ import os
 import signal
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import List, Optional
 
 try:
@@ -86,7 +87,7 @@ class AdminClient(cmd.Cmd, EventHandler):
         debug: bool = False,
         username: str = "",
         handlers=None,
-        cli_history_dir: str = os.path.join(os.path.expanduser("~"), ".nvflare"),
+        cli_history_dir: str = str(Path.home() / ".nvflare"),
         cli_history_size: int = 1000,
     ):
         super().__init__()
