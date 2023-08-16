@@ -82,7 +82,7 @@ It is worth noting that PSI is used as a pre-processing step in the split learni
 
 Split Learning
 --------------
-Split Learning can allow the training of deep neural networks on vertically separated data. With this release, we include an [example](https://github.com/NVIDIA/NVFlare/blob/dev/examples/advanced/vertical_federated_learning/cifar10-splitnn/README.md) 
+Split Learning can allow the training of deep neural networks on vertically separated data. With this release, we include an [example](https://github.com/NVIDIA/NVFlare/blob/main/examples/advanced/vertical_federated_learning/cifar10-splitnn/README.md)
 on how to run [split learning](https://arxiv.org/abs/1810.06060) using the CIFAR-10 dataset assuming one client holds the images and the other client holds the labels to compute losses and accuracy metrics.
 
 Activations and corresponding gradients are being exchanged between the clients using FLARE's new communication API.
