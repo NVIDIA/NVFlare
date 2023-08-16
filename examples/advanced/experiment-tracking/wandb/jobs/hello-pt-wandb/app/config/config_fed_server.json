@@ -46,7 +46,7 @@
       "args": {
           "mode": "online",
           "kwargs" :  {
-            "project": "hello-pt-experiment3",
+            "project": "hello-pt-experiment",
             "name": "hello-pt",
             "notes": "Federated Experiment tracking with W&B \n Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) to train an image classifier using federated averaging ([FedAvg]([FedAvg](https://arxiv.org/abs/1602.05629))) and [PyTorch](https://pytorch.org/) as the deep learning training framework. This example also highlights the Flare streaming capability from the clients to the server and deliver to MLFLow.\\n\\n> **_NOTE:_** \\n This example uses the *[CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset and will load its data within the trainer code.\n",
             "tags": ["baseline", "paper1"],
@@ -54,10 +54,7 @@
             "config": {
               "architecture": "CNN",
               "dataset_id": "CIFAR10",
-              "momentum": 0.9,
-              "optimizer": "SGD",
-              "learning_rate": 0.01,
-              "epochs": 5
+              "optimizer": "SGD"
             }
           }
       }

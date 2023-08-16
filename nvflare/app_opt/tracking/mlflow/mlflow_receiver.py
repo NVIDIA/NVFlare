@@ -50,24 +50,24 @@ class MLflowReceiver(AnalyticsReceiver):
 
         Args:
             tracking_uri (Optional[str], optional): MLflow tracking server URI. When this is not specified, the metrics will be written to the local file system.
-                                If the tracking URI is specified, the MLflow tracking server must started before running the job. Defaults to None.
+                If the tracking URI is specified, the MLflow tracking server must started before running the job. Defaults to None.
             kwargs (Optional[dict], optional): keyword arguments:
-               "experiment_name" (str): Specifies the experiment name. If not specified, the default name of "FLARE FL Experiment" will be used.
-               "run_name" (str): Specifies the run name
-               "experiment_tags" (dict): Tags used when creating the MLflow experiment.
-                                  "mlflow.note.content" is a special MLflow tag. When provided, it displays as experiment
-                                  description field on the MLflow UI. You can use Markdown syntax for the description.
-               "run_tags" (str): Tags used when creating the MLflow run. "mlflow.note.content" is a special MLflow tag.
-                                  When provided, it displays as run description field on the MLflow UI.
-                                  You can use Markdown syntax for the description.
+                "experiment_name" (str): Specifies the experiment name. If not specified, the default name of "FLARE FL Experiment" will be used.
+                "run_name" (str): Specifies the run name
+                "experiment_tags" (dict): Tags used when creating the MLflow experiment.
+                "mlflow.note.content" is a special MLflow tag. When provided, it displays as experiment
+                description field on the MLflow UI. You can use Markdown syntax for the description.
+                "run_tags" (str): Tags used when creating the MLflow run. "mlflow.note.content" is a special MLflow tag.
+                When provided, it displays as run description field on the MLflow UI.
+                You can use Markdown syntax for the description.
             artifact_location (Optional[str], optional): Relative location of artifacts. Currently only text is supported at the moment.
             events (_type_, optional): The event the receiver is listening to. By default, it listens to "fed.analytix_log_stats".
             buffer_flush_time (int, optional): The time in seconds between deliveries of event data to the MLflow tracking server. The
-                                       data is buffered and then delivered to the MLflow tracking server in batches, and
-                                       the buffer_flush_time controls the frequency of the sending. By default, the buffer
-                                       flushes every second. You can reduce the time to a fraction of a second if you prefer
-                                       less delay. Keep in mind that reducing the buffer_flush_time will potentially cause high
-                                       traffic to the MLflow tracking server, which in some cases can actually cause more latency.
+                data is buffered and then delivered to the MLflow tracking server in batches, and
+                the buffer_flush_time controls the frequency of the sending. By default, the buffer
+                flushes every second. You can reduce the time to a fraction of a second if you prefer
+                less delay. Keep in mind that reducing the buffer_flush_time will potentially cause high
+                traffic to the MLflow tracking server, which in some cases can actually cause more latency.
         """
         if events is None:
             events = ["fed." + ANALYTIC_EVENT_TYPE]

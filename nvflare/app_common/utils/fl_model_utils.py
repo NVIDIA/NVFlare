@@ -63,9 +63,11 @@ class FLModelUtils:
         if fl_model.params is None and fl_model.metrics is None:
             raise ValueError("FLModel without params and metrics is NOT supported.")
         elif fl_model.params is not None:
+            if fl_model.params_type is None:
+                raise ValueError(f"Invalid ParamsType: ({fl_model.params_type}).")
             data_kind = params_type_to_data_kind.get(fl_model.params_type)
             if data_kind is None:
-                raise ValueError(f"Invalid ModelType: ({fl_model.params_type}).")
+                raise ValueError(f"Invalid ParamsType: ({fl_model.params_type}).")
             if params_converter is not None:
                 fl_model.params = params_converter.convert(fl_model.params)
 
@@ -77,19 +79,17 @@ class FLModelUtils:
         else:
             dxo = DXO(DataKind.METRICS, data=fl_model.metrics, meta={})
 
+        meta = fl_model.meta if fl_model.meta is not None else {}
+        dxo.meta.update(meta)
+
         shareable = dxo.to_shareable()
         if fl_model.current_round is not None:
             shareable.set_header(AppConstants.CURRENT_ROUND, fl_model.current_round)
+        if fl_model.total_rounds is not None:
+            shareable.set_header(AppConstants.NUM_ROUNDS, fl_model.total_rounds)
 
-        meta = fl_model.meta if fl_model.meta is not None else {}
-        meta[MetaKey.CURRENT_ROUND] = fl_model.current_round
-        meta[MetaKey.TOTAL_ROUNDS] = fl_model.total_rounds
-
-        dxo.meta.update(meta)
         if MetaKey.VALIDATE_TYPE in meta:
             shareable.set_header(AppConstants.VALIDATE_TYPE, meta[MetaKey.VALIDATE_TYPE])
-        if MetaKey.TOTAL_ROUNDS in meta:
-            shareable.set_header(AppConstants.NUM_ROUNDS, meta[MetaKey.TOTAL_ROUNDS])
         return shareable
 
     @staticmethod
@@ -104,36 +104,42 @@ class FLModelUtils:
         In the future, we should be using the to_dxo, from_dxo directly.
         And all the components should be changed to accept the standard DXO.
         """
-        kwargs = {}
         dxo = from_shareable(shareable)
+        metrics = None
+        params_type = None
+        params = None
 
         if dxo.data_kind == DataKind.METRICS:
-            kwargs[FLModelConst.METRICS] = dxo.data
+            metrics = dxo.data
         else:
             params_type = data_kind_to_params_type.get(dxo.data_kind)
             if params_type is None:
                 raise ValueError(f"Invalid shareable with dxo that has data kind: {dxo.data_kind}")
-            kwargs[FLModelConst.PARAMS_TYPE] = ParamsType(params_type)
+            params_type = ParamsType(params_type)
             if params_converter:
                 dxo.data = params_converter.convert(dxo.data)
-            kwargs[FLModelConst.PARAMS] = dxo.data
+            params = dxo.data
 
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
         total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS, None)
         validate_type = shareable.get_header(AppConstants.VALIDATE_TYPE, None)
 
-        kwargs[FLModelConst.CURRENT_ROUND] = current_round
-        kwargs[FLModelConst.META] = dxo.meta
+        meta = dict(dxo.meta)
         if validate_type is not None:
-            kwargs[FLModelConst.META][MetaKey.VALIDATE_TYPE] = validate_type
-        if total_rounds is not None:
-            kwargs[FLModelConst.TOTAL_ROUNDS] = total_rounds
+            meta[MetaKey.VALIDATE_TYPE] = validate_type
 
         if fl_ctx is not None:
-            kwargs[FLModelConst.META][MetaKey.JOB_ID] = fl_ctx.get_job_id()
-            kwargs[FLModelConst.META][MetaKey.SITE_NAME] = fl_ctx.get_identity_name()
+            meta[MetaKey.JOB_ID] = fl_ctx.get_job_id()
+            meta[MetaKey.SITE_NAME] = fl_ctx.get_identity_name()
 
-        result = FLModel(**kwargs)
+        result = FLModel(
+            params_type=params_type,
+            params=params,
+            metrics=metrics,
+            current_round=current_round,
+            total_rounds=total_rounds,
+            meta=meta,
+        )
         return result
 
     @staticmethod
@@ -156,12 +162,23 @@ class FLModelUtils:
         if not isinstance(dxo.data, dict):
             raise ValueError(f"Invalid dxo with data of type: {type(dxo.data)}")
 
-        kwargs = {}
-        for attr in MODEL_ATTRS:
-            value = dxo.data.get(attr, None)
-            if value is not None:
-                kwargs[attr] = value
-        return FLModel(**kwargs)
+        params = dxo.data.get(FLModelConst.PARAMS, None)
+        params_type = dxo.data.get(FLModelConst.PARAMS_TYPE, None)
+        metrics = dxo.data.get(FLModelConst.METRICS, None)
+        optimizer_params = dxo.data.get(FLModelConst.OPTIMIZER_PARAMS, None)
+        current_round = dxo.data.get(FLModelConst.CURRENT_ROUND, None)
+        total_rounds = dxo.data.get(FLModelConst.TOTAL_ROUNDS, None)
+        meta = dxo.data.get(FLModelConst.META, None)
+
+        return FLModel(
+            params=params,
+            params_type=params_type,
+            metrics=metrics,
+            optimizer_params=optimizer_params,
+            current_round=current_round,
+            total_rounds=total_rounds,
+            meta=meta,
+        )
 
     @staticmethod
     def get_meta_prop(model: FLModel, key: str, default=None):

@@ -15,6 +15,7 @@
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 from typing import Optional
 
 from nvflare.apis.event_type import EventType
@@ -23,7 +24,7 @@ from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.app_common.abstract.launcher import Launcher
+from nvflare.app_common.abstract.launcher import Launcher, LauncherCompleteStatus
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils, ParamsConverter
 from nvflare.client.config import ClientConfig, ConfigKey, from_file
 from nvflare.client.constants import CONFIG_EXCHANGE
@@ -77,6 +78,8 @@ class LauncherExecutor(Executor):
         self._launcher_id = launcher_id
         self.launch_timeout = launch_timeout
         self.launcher: Optional[Launcher] = None
+        self._launcher_finish = Event()
+        self._launcher_finish_status = None
         self._thread_pool_executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix=self.__class__.__name__)
 
         self.pipe_handler: Optional[PipeHandler] = None
@@ -140,16 +143,24 @@ class LauncherExecutor(Executor):
         try:
             launch_success = future.result(timeout=self.launch_timeout)
         except TimeoutError:
-            self.log_error(fl_ctx, f"launch task: {task_name} takes too long")
+            self.log_error(fl_ctx, f"launch task: {task_name} exceeds {self.launch_timeout} seconds")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
         if not launch_success:
             self.log_error(fl_ctx, f"launch task: {task_name} failed")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
+        future = self._wait_in_new_thread(task_name, fl_ctx, self._task_wait_time)
         result = self._exchange(task_name, shareable, fl_ctx, abort_signal)
-        if self.launcher:
-            self._wait_launcher(task_name, fl_ctx, self._task_wait_time)
+        try:
+            completion_status = future.result(timeout=self._task_wait_time)
+            if completion_status != LauncherCompleteStatus.SUCCESS:
+                self.log_error(fl_ctx, "launcher execution failed")
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+        except TimeoutError:
+            self.log_error(fl_ctx, f"wait task: {task_name} exceeds {self._task_wait_time} seconds")
+            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+        self._clear()
 
         return result
 
@@ -204,13 +215,21 @@ class LauncherExecutor(Executor):
         except Exception as e:
             self.log_exception(fl_ctx, f"launcher stop exception: {secure_format_exception(e)}")
 
-    def _wait_launcher(self, task_name: str, fl_ctx: FLContext, timeout: Optional[float]) -> None:
+    def _wait_launcher(self, task_name: str, fl_ctx: FLContext, timeout: Optional[float]) -> LauncherCompleteStatus:
+        return_status = LauncherCompleteStatus.FAILED
         try:
             if self.launcher:
-                self.launcher.wait_task(task_name=task_name, fl_ctx=fl_ctx, timeout=timeout)
+                return_status = self.launcher.wait_task(task_name=task_name, fl_ctx=fl_ctx, timeout=timeout)
         except Exception as e:
             self.log_exception(fl_ctx, f"launcher wait exception: {secure_format_exception(e)}")
             self._stop_launcher(task_name=task_name, fl_ctx=fl_ctx)
+        self._launcher_finish.set()
+        self._launcher_finish_status = return_status
+        return return_status
+
+    def _wait_in_new_thread(self, task_name: str, fl_ctx: FLContext, timeout: Optional[float]):
+        future = self._thread_pool_executor.submit(self._wait_launcher, task_name, fl_ctx, timeout)
+        return future
 
     def _exchange(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if self.pipe_handler is None:
@@ -228,6 +247,7 @@ class LauncherExecutor(Executor):
         start = time.time()
         while True:
             if abort_signal.triggered:
+                self.log_error(fl_ctx, f"task '{task_name}' is aborted.")
                 self.pipe_handler.notify_abort(task_name)
                 self._stop_launcher(task_name, fl_ctx)
                 return make_reply(ReturnCode.TASK_ABORTED)
@@ -238,14 +258,17 @@ class LauncherExecutor(Executor):
                     self.log_error(fl_ctx, f"task '{task_name}' timeout after {self._task_wait_time} secs")
                     self.pipe_handler.notify_abort(task_name)
                     self._stop_launcher(task_name, fl_ctx)
+                    self._log_result(fl_ctx)
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
             elif reply.topic == Topic.ABORT:
                 self.log_error(fl_ctx, f"the other end ask to abort task '{task_name}'")
                 self._stop_launcher(task_name, fl_ctx)
+                self._log_result(fl_ctx)
                 return make_reply(ReturnCode.TASK_ABORTED)
             elif reply.topic in [Topic.END, Topic.PEER_GONE]:
                 self.log_error(fl_ctx, f"received {reply.topic} while waiting for result for {task_name}")
                 self._stop_launcher(task_name, fl_ctx)
+                self._log_result(fl_ctx)
                 return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
             elif reply.msg_type != Message.REPLY:
                 self.log_warning(
@@ -263,13 +286,27 @@ class LauncherExecutor(Executor):
                 if reply.data.metrics is not None:
                     self._result_metrics = reply.data
 
-                if self._check_exchange_exit():
-                    break
+            if self._check_exchange_exit():
+                break
+
+            if self._launcher_finish.is_set():
+                self.log_error(
+                    fl_ctx,
+                    f"Launcher already exited before exchange ended. Exit status is: '{self._launcher_finish_status}'",
+                )
+                self._log_result(fl_ctx)
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
             time.sleep(self._result_poll_interval)
         result_fl_model = self._create_result_fl_model()
-        self._clear()
         return FLModelUtils.to_shareable(result_fl_model, self._to_nvflare_converter)
+
+    def _log_result(self, fl_ctx):
+        if self._training and self._result_fl_model is None:
+            self.log_error(fl_ctx, "missing result FLModel with training flag True.")
+
+        if self._global_evaluation and self._result_metrics is None:
+            self.log_error(fl_ctx, "missing result metrics with global_evaluation flag True.")
 
     def _check_exchange_exit(self):
         if self._training and self._result_fl_model is None:
@@ -293,3 +330,5 @@ class LauncherExecutor(Executor):
     def _clear(self):
         self._result_fl_model = None
         self._result_metrics = None
+        self._launcher_finish_status = None
+        self._launcher_finish.clear()

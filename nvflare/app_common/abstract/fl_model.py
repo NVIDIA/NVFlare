@@ -32,7 +32,6 @@ class FLModelConst:
     CURRENT_ROUND = "current_round"
     TOTAL_ROUNDS = "total_rounds"
     META = "meta"
-    AGGREGATION = "aggregation"
 
 
 class MetaKey(FLMetaKey):

@@ -35,8 +35,11 @@ from nvflare.security.logging import secure_format_exception
 
 
 def main():
-    if sys.version_info < (3, 7):
-        raise RuntimeError("Please use Python 3.7 or above.")
+    if sys.version_info >= (3, 11):
+        raise RuntimeError("Python versions 3.11 and above are not yet supported. Please use Python 3.8, 3.9 or 3.10.")
+    if sys.version_info < (3, 8):
+        raise RuntimeError("Python versions 3.7 and below are not supported. Please use Python 3.8, 3.9 or 3.10")
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
     parser.add_argument(
@@ -107,7 +110,7 @@ def main():
         )
 
         # initialize Privacy Service
-        privacy_manager = create_privacy_manager(workspace, names_only=True)
+        privacy_manager = create_privacy_manager(workspace, names_only=True, is_server=True)
         PrivacyService.initialize(privacy_manager)
 
         admin_server = None

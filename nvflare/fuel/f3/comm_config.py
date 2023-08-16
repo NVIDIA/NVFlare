@@ -33,6 +33,7 @@ class VarName:
     SUBNET_HEARTBEAT_INTERVAL = "subnet_heartbeat_interval"
     SUBNET_TROUBLE_THRESHOLD = "subnet_trouble_threshold"
     COMM_DRIVER_PATH = "comm_driver_path"
+    HEARTBEAT_INTERVAL = "heartbeat_interval"
 
 
 class CommConfigurator:
@@ -67,3 +68,6 @@ class CommConfigurator:
 
     def get_comm_driver_path(self, default):
         return ConfigService.get_str_var(VarName.COMM_DRIVER_PATH, self.config, default=default)
+
+    def get_heartbeat_interval(self, default):
+        return ConfigService.get_int_var(VarName.HEARTBEAT_INTERVAL, self.config, default)

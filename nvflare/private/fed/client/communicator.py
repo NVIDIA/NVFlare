@@ -25,9 +25,8 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
-from nvflare.fuel.f3.cellnet.cell import FQCN, Cell
+from nvflare.fuel.f3.cellnet.core_cell import FQCN, CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
-from nvflare.fuel.utils import fobs
 from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, SpecialTaskName, new_cell_message
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
 from nvflare.security.logging import secure_format_exception
@@ -62,7 +61,7 @@ class Communicator:
         secure_train=False,
         client_state_processors: Optional[List[Filter]] = None,
         compression=None,
-        cell: Cell = None,
+        cell: CoreCell = None,
         client_register_interval=2,
         timeout=5.0,
     ):
@@ -175,7 +174,7 @@ class Communicator:
                 CellMessageHeaderKeys.SSID: ssid,
                 CellMessageHeaderKeys.PROJECT_NAME: project_name,
             },
-            fobs.dumps(shareable),
+            shareable,
         )
         job_id = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
 
@@ -193,7 +192,7 @@ class Communicator:
 
         if return_code == ReturnCode.OK:
             size = len(task.payload)
-            task.payload = fobs.loads(task.payload)
+            task.payload = task.payload
             task_name = task.payload.get_header(ServerCommandKey.TASK_NAME)
             fl_ctx.set_prop(FLContextKey.SSID, ssid, sticky=False)
             if task_name not in [SpecialTaskName.END_RUN, SpecialTaskName.TRY_AGAIN]:
@@ -250,7 +249,7 @@ class Communicator:
                 CellMessageHeaderKeys.SSID: ssid,
                 CellMessageHeaderKeys.PROJECT_NAME: project_name,
             },
-            fobs.dumps(shareable),
+            shareable,
         )
         job_id = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
 

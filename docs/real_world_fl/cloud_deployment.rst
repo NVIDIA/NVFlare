@@ -126,7 +126,7 @@ With the FL server's startup kit, run the same ``start.sh`` to start a server no
 
 You can accept all default values by pressing ENTER.
 
-.. code-block:: shell
+.. code-block:: none
 
     This script requires az (Azure CLI), sshpass and jq.  Now checking if they are installed.
     Checking if az exists. => found

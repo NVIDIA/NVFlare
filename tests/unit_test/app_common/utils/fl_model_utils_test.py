@@ -37,11 +37,10 @@ FL_MODEL_TEST_CASES = [
 class TestFLModelUtils:
     @pytest.mark.parametrize("weights,num_rounds,current_round", TEST_CASES)
     def test_from_shareable(self, weights, num_rounds, current_round):
-        dxo = DXO(data_kind=DataKind.WEIGHTS, data=weights)
+        dxo = DXO(data_kind=DataKind.WEIGHTS, data=weights, meta={AppConstants.VALIDATE_TYPE: "before_train_validate"})
         shareable = dxo.to_shareable()
         shareable.set_header(AppConstants.NUM_ROUNDS, num_rounds)
         shareable.set_header(AppConstants.CURRENT_ROUND, current_round)
-        shareable.set_header(AppConstants.VALIDATE_TYPE, "before_train_validate")
         fl_model = FLModelUtils.from_shareable(shareable=shareable)
 
         assert fl_model.params == dxo.data
@@ -63,14 +62,12 @@ class TestFLModelUtils:
 
     @pytest.mark.parametrize("weights,num_rounds,current_round", TEST_CASES)
     def test_from_to_shareable(self, weights, num_rounds, current_round):
-        dxo = DXO(data_kind=DataKind.WEIGHTS, data=weights)
+        dxo = DXO(data_kind=DataKind.WEIGHTS, data=weights, meta={AppConstants.VALIDATE_TYPE: "before_train_validate"})
         shareable = dxo.to_shareable()
         shareable.set_header(AppConstants.NUM_ROUNDS, num_rounds)
         shareable.set_header(AppConstants.CURRENT_ROUND, current_round)
-        shareable.set_header(AppConstants.VALIDATE_TYPE, "before_train_validate")
         fl_model = FLModelUtils.from_shareable(shareable=shareable)
         result_shareable = FLModelUtils.to_shareable(fl_model)
-        result_dxo = from_shareable(result_shareable)
         assert shareable == result_shareable
 
     @pytest.mark.parametrize("weights,num_rounds,current_round", TEST_CASES)

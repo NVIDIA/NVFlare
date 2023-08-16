@@ -14,6 +14,21 @@
 import nvflare.fuel.utils.fobs as fobs
 from nvflare.fuel.f3.cellnet.defs import Encoding, MessageHeaderKey
 from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
+
+cell_mapping = {
+    "O": MessageHeaderKey.ORIGIN,
+    "D": MessageHeaderKey.DESTINATION,
+    "F": MessageHeaderKey.FROM_CELL,
+    "T": MessageHeaderKey.TO_CELL,
+}
+
+msg_mapping = {
+    "CH": MessageHeaderKey.CHANNEL,
+    "TP": MessageHeaderKey.TOPIC,
+    "SCH": StreamHeaderKey.CHANNEL,
+    "STP": StreamHeaderKey.TOPIC,
+}
 
 
 def make_reply(rc: str, error: str = "", body=None) -> Message:
@@ -23,18 +38,33 @@ def make_reply(rc: str, error: str = "", body=None) -> Message:
     return Message(headers, payload=body)
 
 
+def shorten_string(string):
+    if len(string) > 8:
+        ss = ":" + string[-7:]
+    else:
+        ss = string
+    return ss
+
+
+def shorten_fqcn(fqcn):
+    parts = fqcn.split(".")
+    s_fqcn = ".".join([shorten_string(p) for p in parts])
+    return s_fqcn
+
+
+def get_msg_header_value(m, k):
+    return m.get_header(k, "?")
+
+
 def format_log_message(fqcn: str, message: Message, log: str) -> str:
-    parts = [
-        "[ME=" + fqcn,
-        "O=" + message.get_header(MessageHeaderKey.ORIGIN, "?"),
-        "D=" + message.get_header(MessageHeaderKey.DESTINATION, "?"),
-        "F=" + message.get_header(MessageHeaderKey.FROM_CELL, "?"),
-        "T=" + message.get_header(MessageHeaderKey.TO_CELL, "?"),
-        "CH=" + message.get_header(MessageHeaderKey.CHANNEL, "?"),
-        "TP=" + message.get_header(MessageHeaderKey.TOPIC, "?") + "]",
-        log,
-    ]
-    return " ".join(parts)
+    context = [f"[ME={shorten_fqcn(fqcn)}"]
+    for k, v in cell_mapping.items():
+        string = f"{k}=" + shorten_fqcn(get_msg_header_value(message, v))
+        context.append(string)
+    for k, v in msg_mapping.items():
+        string = f"{k}=" + get_msg_header_value(message, v)
+        context.append(string)
+    return " ".join(context) + f"] {log}"
 
 
 def encode_payload(message: Message):

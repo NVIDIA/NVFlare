@@ -56,6 +56,7 @@ class ClientJsonConfigurator(FedJsonConfigurator):
             base_pkgs=base_pkgs,
             module_names=module_names,
             exclude_libs=exclude_libs,
+            is_server=False,
         )
 
         if kv_list:
@@ -102,8 +103,8 @@ class ClientJsonConfigurator(FedJsonConfigurator):
             self.current_exe.executor = self.authorize_and_build_component(element, config_ctx, node)
             return
 
-    def authorize_and_build_component(self, config_dict, config_ctx, node):
-        t = super().authorize_and_build_component(config_dict, config_ctx, node)
+    def build_component(self, config_dict):
+        t = super().build_component(config_dict)
         if isinstance(t, FLComponent):
             self.handlers.append(t)
         return t

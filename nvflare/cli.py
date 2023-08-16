@@ -15,14 +15,24 @@
 import argparse
 import os
 import sys
+import traceback
 
 from nvflare.cli_exception import CLIException
+from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.dashboard.cli import define_dashboard_parser, handle_dashboard
 from nvflare.fuel.hci.tools.authz_preview import define_authz_preview_parser, run_command
-from nvflare.lighter.poc_commands import def_poc_parser, handle_poc_cmd
 from nvflare.lighter.provision import define_provision_parser, handle_provision
 from nvflare.private.fed.app.simulator.simulator import define_simulator_parser, run_simulator
+from nvflare.tool.job.job_cli import def_job_cli_parser, handle_job_cli_cmd
+from nvflare.tool.poc.poc_commands import def_poc_parser, handle_poc_cmd
 from nvflare.tool.preflight_check import check_packages, define_preflight_check_parser
+from nvflare.utils.cli_utils import (
+    create_job_template_config,
+    create_poc_workspace_config,
+    create_startup_kit_config,
+    get_hidden_config,
+    save_config,
+)
 
 CMD_POC = "poc"
 CMD_PROVISION = "provision"
@@ -30,13 +40,15 @@ CMD_PREFLIGHT_CHECK = "preflight_check"
 CMD_SIMULATOR = "simulator"
 CMD_DASHBOARD = "dashboard"
 CMD_AUTHZ_PREVIEW = "authz_preview"
+CMD_JOB = "job"
+CMD_CONFIG = "config"
 
 
 def check_python_version():
     if sys.version_info >= (3, 11):
-        raise RuntimeError("Python versions 3.11 and above are not yet supported. Please use Python 3.8 or 3.7.")
-    if sys.version_info < (3, 7):
-        raise RuntimeError("Python versions 3.6 and below are not supported. Please use Python 3.8 or 3.7.")
+        raise RuntimeError("Python versions 3.11 and above are not yet supported. Please use Python 3.8, 3.9 or 3.10.")
+    if sys.version_info < (3, 8):
+        raise RuntimeError("Python versions 3.6 and below are not supported. Please use Python 3.8, 3.9 or 3.10")
 
 
 def def_provision_parser(sub_cmd):
@@ -85,6 +97,32 @@ def handle_authz_preview(args):
     run_command(args)
 
 
+def def_config_parser(sub_cmd):
+    cmd = "config"
+    config_parser = sub_cmd.add_parser(cmd)
+    config_parser.add_argument(
+        "-d", "--startup_kit_dir", type=str, nargs="?", default=None, help="startup kit location"
+    )
+    config_parser.add_argument(
+        "-pw", "--poc_workspace_dir", type=str, nargs="?", default=None, help="POC workspace location"
+    )
+    config_parser.add_argument(
+        "-jt", "--job_template_dir", type=str, nargs="?", default=None, help="job template location"
+    )
+    config_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
+    return {cmd: config_parser}
+
+
+def handle_config_cmd(args):
+    config_file_path, nvflare_config = get_hidden_config()
+
+    nvflare_config = create_startup_kit_config(nvflare_config, args.startup_kit_dir)
+    nvflare_config = create_poc_workspace_config(nvflare_config, args.poc_workspace_dir)
+    nvflare_config = create_job_template_config(nvflare_config, args.job_template_dir)
+
+    save_config(nvflare_config, config_file_path)
+
+
 def parse_args(prog_name: str):
     _parser = argparse.ArgumentParser(description=prog_name)
     _parser.add_argument("--version", "-V", action="store_true", help="print nvflare version")
@@ -96,6 +134,17 @@ def parse_args(prog_name: str):
     sub_cmd_parsers.update(def_simulator_parser(sub_cmd))
     sub_cmd_parsers.update(def_dashboard_parser(sub_cmd))
     sub_cmd_parsers.update(def_authz_preview_parser(sub_cmd))
+    sub_cmd_parsers.update(def_job_cli_parser(sub_cmd))
+    sub_cmd_parsers.update(def_config_parser(sub_cmd))
+
+    args, argv = _parser.parse_known_args(None, None)
+    cmd = args.__dict__.get("sub_command")
+    sub_cmd_parser = sub_cmd_parsers.get(cmd)
+    if argv:
+        msg = f"{prog_name} {cmd}: unrecognized arguments: {''.join(argv)}\n"
+        print(f"\nerror: {msg}")
+        sub_cmd_parser.print_help()
+        _parser.exit(2, "\n")
 
     return _parser, _parser.parse_args(), sub_cmd_parsers
 
@@ -107,6 +156,8 @@ handlers = {
     CMD_SIMULATOR: handle_simulator_cmd,
     CMD_DASHBOARD: handle_dashboard,
     CMD_AUTHZ_PREVIEW: handle_authz_preview,
+    CMD_JOB: handle_job_cli_cmd,
+    CMD_CONFIG: handle_config_cmd,
 }
 
 
@@ -114,6 +165,7 @@ def run(prog_name):
     cwd = os.getcwd()
     sys.path.append(cwd)
     prog_parser, prog_args, sub_cmd_parsers = parse_args(prog_name)
+
     sub_cmd = None
     try:
         sub_cmd = prog_args.sub_command
@@ -124,12 +176,19 @@ def run(prog_name):
         else:
             prog_parser.print_help()
 
+    except CLIUnknownCmdException as e:
+        print(e)
+        print_help(prog_parser, sub_cmd, sub_cmd_parsers)
+        sys.exit(1)
     except CLIException as e:
         print(e)
         sys.exit(1)
     except Exception as e:
-        print(f"unable to handle command: {sub_cmd} due to: {e}, please check syntax ")
-        print_help(prog_parser, sub_cmd, sub_cmd_parsers)
+        print(f"\nUnable to handle command: {sub_cmd} due to: {e} \n")
+        if prog_args.debug:
+            print(traceback.format_exc())
+        else:
+            print_help(prog_parser, sub_cmd, sub_cmd_parsers)
 
 
 def print_help(prog_parser, sub_cmd, sub_cmd_parsers):

@@ -15,14 +15,19 @@
 from typing import List, Union
 
 from nvflare.apis.filter import Filter, FilterChainType, FilterContextKey, FilterSource
+from nvflare.apis.fl_constant import FilterKey
+from nvflare.private.fed_json_config import FilterChain
 
 
 class Scope(object):
+    TASK_DATA_FILTERS_NAME = "task_data_filters"
+    TASK_RESULT_FILTERS_NAME = "task_result_filters"
+
     def __init__(self):
         self.name = ""
         self.props = {}
-        self.task_data_filters = []
-        self.task_result_filters = []
+        self.task_data_filters = {FilterKey.IN: [], FilterKey.OUT: []}
+        self.task_result_filters = {FilterKey.IN: [], FilterKey.OUT: []}
 
     def set_name(self, name: str):
         if not isinstance(name, str):
@@ -34,19 +39,31 @@ class Scope(object):
             raise TypeError(f"scope properties must be dict but got {type(props)}")
         self.props = props
 
-    def add_task_data_filter(self, f: Filter):
+    def add_task_data_filter(self, f: Filter, direction):
+        if not FilterChain.validate_direction(direction):
+            raise TypeError("Filter chain direction {} is not supported.".format(direction))
         if not isinstance(f, Filter):
             raise TypeError(f"task data filter must be Filter but got {type(f)}")
         f.set_prop(FilterContextKey.CHAIN_TYPE, FilterChainType.TASK_DATA_CHAIN)
         f.set_prop(FilterContextKey.SOURCE, FilterSource.SITE)
-        self.task_data_filters.append(f)
+        if direction == FilterKey.INOUT:
+            self.task_data_filters[FilterKey.IN].append(f)
+            self.task_data_filters[FilterKey.OUT].append(f)
+        else:
+            self.task_data_filters.get(direction).append(f)
 
-    def add_task_result_filter(self, f: Filter):
+    def add_task_result_filter(self, f: Filter, direction):
+        if not FilterChain.validate_direction(direction):
+            raise TypeError("Filter chain direction {} is not supported.".format(direction))
         if not isinstance(f, Filter):
             raise TypeError(f"task result filter must be Filter but got {type(f)}")
         f.set_prop(FilterContextKey.CHAIN_TYPE, FilterChainType.TASK_RESULT_CHAIN)
         f.set_prop(FilterContextKey.SOURCE, FilterSource.SITE)
-        self.task_result_filters.append(f)
+        if direction == FilterKey.INOUT:
+            self.task_result_filters[FilterKey.IN].append(f)
+            self.task_result_filters[FilterKey.OUT].append(f)
+        else:
+            self.task_result_filters.get(direction).append(f)
 
 
 class PrivacyManager(object):

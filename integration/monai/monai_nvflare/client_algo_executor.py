@@ -47,6 +47,7 @@ class ClientAlgoExecutor(Executor):
     def __init__(
         self,
         client_algo_id,
+        stats_sender_id=None,
         train_task=AppConstants.TASK_TRAIN,
         submit_model_task=AppConstants.TASK_SUBMIT_MODEL,
         validate_task=AppConstants.TASK_VALIDATION,
@@ -56,12 +57,14 @@ class ClientAlgoExecutor(Executor):
 
         Args:
             client_algo_id (str): id pointing to the client_algo object
+            stats_sender_id (str, optional): id pointing to the LogWriterForMetricsExchanger object
             train_task (str, optional): label to dispatch train task. Defaults to AppConstants.TASK_TRAIN.
             submit_model_task (str, optional): label to dispatch submit model task. Defaults to AppConstants.TASK_SUBMIT_MODEL.
             validate_task (str, optional): label to dispatch validation task. Defaults to AppConstants.TASK_VALIDATION.
         """
         super().__init__()
         self.client_algo_id = client_algo_id
+        self.stats_sender_id = stats_sender_id
         self.client_algo = None
         self.train_task = train_task
         self.submit_model_task = submit_model_task
@@ -88,6 +91,7 @@ class ClientAlgoExecutor(Executor):
         try:
             self.client_id = fl_ctx.get_identity_name()
             engine = fl_ctx.get_engine()
+            stats_sender = engine.get_component(self.stats_sender_id) if self.stats_sender_id else None
             self.client_algo = engine.get_component(self.client_algo_id)
             if not isinstance(self.client_algo, ClientAlgo):
                 raise TypeError(f"client_algo must be client_algo type. Got: {type(self.client_algo)}")
@@ -95,6 +99,7 @@ class ClientAlgoExecutor(Executor):
                 extra={
                     ExtraItems.CLIENT_NAME: fl_ctx.get_identity_name(),
                     ExtraItems.APP_ROOT: fl_ctx.get_prop(FLContextKey.APP_ROOT),
+                    ExtraItems.STATS_SENDER: stats_sender,
                 }
             )
         except Exception as e:

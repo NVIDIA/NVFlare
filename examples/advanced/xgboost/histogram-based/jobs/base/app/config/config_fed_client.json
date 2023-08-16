@@ -11,8 +11,8 @@
         "args": {
           "data_loader_id": "dataloader",
           "num_rounds": 100,
-          "early_stopping_round": 2,
-          "xgboost_params": {
+          "early_stopping_rounds": 2,
+          "xgb_params": {
             "max_depth": 8,
             "eta": 0.1,
             "objective": "binary:logistic",
