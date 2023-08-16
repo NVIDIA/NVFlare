@@ -106,10 +106,10 @@ class ServerRunner(FLComponent):
                 with self.engine.new_context() as fl_ctx:
                     self.log_info(fl_ctx, "starting workflow {} ({}) ...".format(wf.id, type(wf.responder)))
 
+                    fl_ctx.set_prop(FLContextKey.WORKFLOW, wf.id, sticky=True)
                     wf.responder.initialize_run(fl_ctx)
 
                     self.log_info(fl_ctx, "Workflow {} ({}) started".format(wf.id, type(wf.responder)))
-                    fl_ctx.set_prop(FLContextKey.WORKFLOW, wf.id, sticky=True)
                     self.log_debug(fl_ctx, "firing event EventType.START_WORKFLOW")
                     self.fire_event(EventType.START_WORKFLOW, fl_ctx)
 
