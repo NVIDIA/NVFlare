@@ -27,7 +27,7 @@ NVFLARE 2.2.1 changes the way authorization is implemented to federated authoriz
 
 This decentralized authorization has an added benefit: since each organization takes care of its own authorization, there will be no need to update the policy of any other participants (FL Server or Clients) when a new orgs or clients are added.
 
-See `Federated Policies (Github) <https://github.com/NVIDIA/NVFlare/blob/dev/examples/federated-policies/README.rst>`_ for a working example with federated site policies for authorization.
+See `Federated Policies (Github) <https://github.com/NVIDIA/NVFlare/blob/main/examples/advanced/federated-policies/README.rst>`_ for a working example with federated site policies for authorization.
 
 Simplified Authorization Policy Configuration
 ==============================================

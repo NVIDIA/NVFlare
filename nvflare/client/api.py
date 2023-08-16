@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-import json
 import os
 from typing import Dict, Union
 
@@ -22,8 +20,8 @@ from nvflare.app_common.model_exchange.file_pipe_model_exchanger import FilePipe
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.import_utils import optional_import
 
-from .config import ClientConfig
-from .constants import ModelExchangeFormat
+from .config import ClientConfig, from_file
+from .constants import CONFIG_EXCHANGE, ModelExchangeFormat
 from .model_cache import Cache
 from .utils import DIFF_FUNCS
 
@@ -34,7 +32,7 @@ PROCESS_CACHE: Dict[int, Cache] = {}
 #   - get_job_id()
 
 
-def init(config: Union[str, Dict] = "config/config_exchange.json"):
+def init(config: Union[str, Dict] = f"config/{CONFIG_EXCHANGE}"):
     """Initializes NVFlare Client API environment.
 
     Args:
@@ -45,17 +43,12 @@ def init(config: Union[str, Dict] = "config/config_exchange.json"):
         raise RuntimeError("Can't call init twice.")
 
     if isinstance(config, str):
-        if not os.path.exists(config):
-            raise RuntimeError(f"Missing config file {config}.")
-
-        with open(config, "r") as f:
-            config_dict = json.load(f)
+        client_config = from_file(config_file=config)
     elif isinstance(config, dict):
-        config_dict = config
+        client_config = ClientConfig(config=config)
     else:
         raise ValueError("config should be either a string or dictionary.")
 
-    client_config = ClientConfig(config=config_dict)
     if client_config.get_exchange_format() == ModelExchangeFormat.PYTORCH:
         tensor_decomposer, ok = optional_import(module="nvflare.app_opt.pt.decomposers", name="TensorDecomposer")
         if ok:
@@ -81,7 +74,7 @@ def receive() -> FLModel:
     return cache.input_model
 
 
-def send(fl_model: FLModel) -> None:
+def send(fl_model: FLModel, clear=True) -> None:
     """Sends the model to NVFlare side."""
     pid = os.getpid()
     if pid not in PROCESS_CACHE:
@@ -89,6 +82,16 @@ def send(fl_model: FLModel) -> None:
 
     cache = PROCESS_CACHE[pid]
     cache.send(model=fl_model)
+    if clear:
+        cache.model_exchanger.finalize(close_pipe=False)
+        PROCESS_CACHE.pop(pid)
+
+
+def clear():
+    pid = os.getpid()
+    if pid not in PROCESS_CACHE:
+        raise RuntimeError("needs to call init method first")
+    cache = PROCESS_CACHE[pid]
     cache.model_exchanger.finalize(close_pipe=False)
     PROCESS_CACHE.pop(pid)
 
@@ -115,3 +118,11 @@ def params_diff(original: Dict, new: Dict) -> Dict:
     if diff_func is None:
         raise RuntimeError("no default params diff function")
     return diff_func(original, new)
+
+
+def get_config() -> Dict:
+    pid = os.getpid()
+    if pid not in PROCESS_CACHE:
+        raise RuntimeError("needs to call init method first")
+    cache = PROCESS_CACHE[pid]
+    return cache.config.config

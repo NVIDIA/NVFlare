@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import collections
-import json
 import logging
 from io import BytesIO
 from typing import Optional, Set, Tuple
@@ -22,6 +21,7 @@ from zipfile import ZipFile
 from nvflare.apis.fl_constant import JobConstants
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, JobMetaKey
 from nvflare.apis.job_meta_validator_spec import JobMetaValidatorSpec
+from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.security.logging import secure_format_exception
 
@@ -61,20 +61,24 @@ class JobMetaValidator(JobMetaValidatorSpec):
 
     @staticmethod
     def _validate_meta(job_name: str, zf: ZipFile) -> Optional[dict]:
-        meta_file = f"{job_name}/{JobConstants.META_FILE}"
-        logger.debug(f"validate file {meta_file} exists for job {job_name}")
-        meta = None
+        base_meta_file = f"{job_name}/{JobConstants.META}"
+        logger.debug(f"validate file {base_meta_file}.[json|conf|yml] exists for job {job_name}")
 
-        if meta_file in zf.namelist():
-            meta_data = zf.read(meta_file)
-            meta = json.loads(meta_data)
+        meta = None
+        for ext, fmt in ConfigFormat.config_ext_formats().items():
+            meta_file = f"{base_meta_file}{ext}"
+            if meta_file in zf.namelist():
+                config_loader = ConfigFactory.get_config_loader(fmt)
+                meta_data = zf.read(meta_file)
+                meta = config_loader.load_config_from_str(meta_data.decode()).to_dict()
+                break
         return meta
 
     @staticmethod
     def _validate_deploy_map(job_name: str, meta: dict) -> list:
 
         if not meta:
-            raise ValueError(f"{JobConstants.META_FILE} is empty for job {job_name}")
+            raise ValueError(f"{JobConstants.META}.[json|conf|yml] is empty for job {job_name}")
 
         deploy_map = meta.get(JobMetaKey.DEPLOY_MAP.value)
         if not deploy_map:

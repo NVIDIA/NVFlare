@@ -12,7 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 from typing import Dict
+
+from nvflare.fuel.utils.config_factory import ConfigFactory
 
 from .constants import ModelExchangeFormat
 
@@ -21,6 +24,8 @@ class ConfigKey:
     EXCHANGE_PATH = "exchange_path"
     EXCHANGE_FORMAT = "exchange_format"
     TRANSFER_TYPE = "transfer_type"
+    GLOBAL_EVAL = "global_eval"
+    TRAINING = "training"
 
 
 class ClientConfig:
@@ -35,12 +40,9 @@ class ClientConfig:
     """
 
     def __init__(self, config: Dict):
-        for required_key in (ConfigKey.EXCHANGE_PATH, ConfigKey.EXCHANGE_FORMAT):
-            if required_key not in config:
-                raise RuntimeError(f"Missing required_key: {required_key} in config.")
-
-        config[ConfigKey.EXCHANGE_FORMAT] = ModelExchangeFormat(config[ConfigKey.EXCHANGE_FORMAT])
         self.config = config
+        if ConfigKey.EXCHANGE_FORMAT in self.config:
+            self.config[ConfigKey.EXCHANGE_FORMAT] = ModelExchangeFormat(self.config[ConfigKey.EXCHANGE_FORMAT])
 
     def get_config(self):
         return self.config
@@ -52,4 +54,16 @@ class ClientConfig:
         return self.config[ConfigKey.EXCHANGE_FORMAT]
 
     def get_transfer_type(self):
-        return self.config[ConfigKey.TRANSFER_TYPE]
+        return self.config.get(ConfigKey.TRANSFER_TYPE, "FULL")
+
+    def to_json(self, config_file: str):
+        with open(config_file, "w") as f:
+            json.dump(self.config, f)
+
+
+def from_file(config_file: str):
+    config = ConfigFactory.load_config(config_file)
+    if config is None:
+        raise RuntimeError(f"Load config file {config} failed.")
+
+    return ClientConfig(config=config.to_dict())

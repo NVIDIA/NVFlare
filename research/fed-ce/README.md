@@ -15,7 +15,7 @@ Accepted to [CVPR2023](https://cvpr2023.thecvf.com/).
 ## Multi-source Prostate Segmentation
 This example uses 2D (axial slices) segmentation of the prostate in T2-weighted MRIs based on multiple datasets.
 
-Please refer to [Prostate Example](https://github.com/NVIDIA/NVFlare/tree/dev/examples/advanced/prostate) for details of data preparation and task specs. In the following, we assume the data has been prepared in the same way to `${PWD}/data_preparation`. The dataset is saved to `${PWD}/data_preparation/dataset_2D`, and datalists are saved to `${PWD}/data_preparation/datalist_2D`.
+Please refer to [Prostate Example](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/prostate) for details of data preparation and task specs. In the following, we assume the data has been prepared in the same way to `${PWD}/data_preparation`. The dataset is saved to `${PWD}/data_preparation/dataset_2D`, and datalists are saved to `${PWD}/data_preparation/datalist_2D`.
 
 ## Setup
 
