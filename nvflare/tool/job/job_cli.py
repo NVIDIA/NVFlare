@@ -45,7 +45,7 @@ from nvflare.tool.job.job_client_const import (
     JOB_INFO_DESC_KEY,
     JOB_INFO_KEYS,
     JOB_TEMPLATE,
-    JOB_TEMPLATE_CONF,
+    JOB_TEMPLATE_CONF, JOB_CONFIG_COMP_NAME,
 )
 from nvflare.utils.cli_utils import (
     find_job_template_location,
@@ -141,7 +141,7 @@ def remove_extra_file(config_dir):
 
 
 def show_variables(cmd_args):
-    indices: Dict[str, (Dict, Dict)] = build_config_file_indices(cmd_args.job_folder)
+    indices = build_config_file_indices(cmd_args.job_folder)
     variable_values = extract_value_from_index(indices_configs=indices)
     display_template_variables(cmd_args.job_folder, variable_values)
 
@@ -158,32 +158,42 @@ def check_template_exists(target_template_name, template_index_conf):
         )
 
 
-def display_template_variables(job_folder, variable_values: Dict[str, Dict]):
+def display_template_variables(job_folder, variable_values):
     print("\nThe following are the variables you can change in the template\n")
-    print("-" * 100)
-    job_folder_header = fix_length_format(f"job folder: {job_folder}", 100)
-    print(" " * 100)
-    print(" " * 3, job_folder_header)
-    print(" " * 100)
-    print("-" * 100)
-    file_name_fix_length = 35
-    var_name_fix_length = 25
-    var_value_fix_length = 25
+    total_length = 135
+    left_margin = 1
+    print("-" * total_length)
+    job_folder_header = fix_length_format(f"job folder: {job_folder}", total_length)
+    print(" " * total_length)
+    print(" " * left_margin, job_folder_header)
+    print(" " * total_length)
+    print("-" * total_length)
+    file_name_fix_length = 30
+    var_name_fix_length = 30
+    var_value_fix_length = 35
+    var_comp_fix_length = 35
     file_name = fix_length_format(JOB_CONFIG_FILE_NAME, file_name_fix_length)
     var_name = fix_length_format(JOB_CONFIG_VAR_NAME, var_name_fix_length)
     var_value = fix_length_format(JOB_CONFIG_VAR_VALUE, var_value_fix_length)
-    print(" " * 3, file_name, var_name, var_value)
-    print("-" * 100)
+    var_comp = fix_length_format(JOB_CONFIG_COMP_NAME, var_comp_fix_length)
+    print(" " * left_margin, file_name, var_name, var_value, var_comp)
+    print("-" * total_length)
     for file in sorted(variable_values.keys()):
         indices = variable_values.get(file)
         file_name = os.path.basename(file)
         file_name = fix_length_format(file_name, file_name_fix_length)
-        for index in sorted(indices.keys()):
+        key_indices = indices
+
+        for index in sorted(key_indices.keys()):
+            key_index = key_indices[index]
             var_name = fix_length_format(index, var_name_fix_length)
-            var_value = indices[index]
-            print(" " * 3, file_name, var_name, var_value)
+            var_value = fix_length_format(str(key_index.value), var_value_fix_length)
+            var_comp = " " if key_index.component_name is None else key_index.component_name
+            var_comp = fix_length_format(var_comp, var_comp_fix_length)
+            print(" " * left_margin, file_name, var_name, var_value, var_comp)
+
         print("")
-    print("-" * 100)
+    print("-" * total_length)
 
 
 def list_templates(cmd_args):
@@ -419,7 +429,7 @@ def prepare_job_config(cmd_args, tmp_job_dir: Optional[str] = None):
     merged_conf = merge_configs_from_cli(cmd_args)
     if tmp_job_dir is None:
         tmp_job_dir = cmd_args.job_folder
-    save_merged_configs(merged_conf, tmp_job_dir)
+    # save_merged_configs(merged_conf, tmp_job_dir)
     variable_values = extract_value_from_index(merged_conf)
 
     return variable_values
@@ -445,7 +455,7 @@ def _update_client_app_config_script(job_folder, app_config: str) -> Tuple[Confi
 
 
 def save_merged_configs(merged_conf, tmp_job_dir):
-    for file, (file_indices, file_configs) in merged_conf.items():
+    for file, (excluded_key_List, key_indices) in merged_conf.items():
         config_dir = pathlib.Path(tmp_job_dir) / "app" / "config"
         base_filename = os.path.basename(file)
         if base_filename.startswith("meta."):
@@ -466,12 +476,14 @@ def prepare_model_exchange_config(job_folder: str, force: bool):
 
 def prepare_meta_config(cmd_args):
     job_folder = cmd_args.job_folder
+    job_folder = job_folder[:-1] if job_folder.endswith("/") else job_folder
+
     app_name = os.path.basename(job_folder)
     dst_path = os.path.join(job_folder, "meta.conf")
 
     # Use existing meta.conf if user already defined it.
     folder_name_key = JobMetaKey.JOB_FOLDER_NAME.value
-    if not os.path.isfile(dst_path):
+    if not os.path.isfile(dst_path) or cmd_args.force:
         dst_config = load_src_config_template("meta.conf")
         dst_config.put("name", app_name)
     else:
@@ -483,6 +495,7 @@ def prepare_meta_config(cmd_args):
 
 def load_src_config_template(config_file_name: str):
     file_dir = os.path.dirname(__file__)
+    # todo: change to alternative format ?
     config_template = CF.parse_file(os.path.join(file_dir, f"config/{config_file_name}"))
     return config_template
 

@@ -20,7 +20,7 @@ from nvflare.tool.job.config.configer import extract_value_from_dict_by_index, e
 
 class TestConfigIndex:
     def test_dict_indexer(self):
-        key_paths = build_dict_reverse_order_index(config_dict={})
+        key_paths = build_dict_reverse_order_index(config={})
         assert len(key_paths) == 0
 
         config_dict = dict(
@@ -59,7 +59,7 @@ class TestConfigIndex:
             "s[1]": ["x.s[1]"],
         }
 
-        key_paths = build_dict_reverse_order_index(config_dict=config_dict)
+        key_paths = build_dict_reverse_order_index(config=config_dict)
         for key in key_paths:
             print(key, key_paths[key])
 
@@ -102,5 +102,6 @@ class TestConfigIndex:
         conf = CF.parse_string(config_str)
         index_conf = CF.from_dict({"data_path": ["components[0].args.data_path"]})
         result = {}
-        extract_value_from_dict_by_index(conf, index_conf, result)
+        exclude_key_list = []
+        result = extract_value_from_dict_by_index(exclude_key_list, key_indices={})
         assert result == {"data_path": "data.csv"}

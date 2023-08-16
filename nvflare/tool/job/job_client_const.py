@@ -34,6 +34,7 @@ CONFIG_FED_CLIENT_CONF = "config_fed_client.conf"
 JOB_CONFIG_FILE_NAME = "file_name"
 JOB_CONFIG_VAR_NAME = "var_name"
 JOB_CONFIG_VAR_VALUE = "value"
+JOB_CONFIG_COMP_NAME = "component"
 JOB_TEMPLATE_NAME = "name"
 
 CONFIG_CONF = "config.conf"
