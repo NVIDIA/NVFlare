@@ -777,7 +777,7 @@ class ServerEngine(ServerEngineInternalSpec):
         for site_name, result in resource_check_results.items():
             is_resource_enough, token = result
             if is_resource_enough and token:
-                resource_requirements = resource_reqs[site_name]
+                resource_requirements = resource_reqs.get(site_name, {})
                 request = Message(topic=TrainingTopic.CANCEL_RESOURCE, body=fobs.dumps(resource_requirements))
                 request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
                 client = self.get_client_from_name(site_name)

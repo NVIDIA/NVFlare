@@ -197,7 +197,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
             return (
                 SCHEDULE_RESULT_NO_RESOURCE,
                 None,
-                f"not enough sites have enough resources (ok sites {num_sites_ok} < min sites {job.min_sites}",
+                f"not enough sites have enough resources (ok sites {num_sites_ok} < min sites {job.min_sites})",
             )
 
         if required_sites_not_enough_resource:
