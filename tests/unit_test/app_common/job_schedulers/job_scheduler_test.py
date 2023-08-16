@@ -124,7 +124,7 @@ class MockServerEngine(ServerEngineSpec):
         pass
 
     def check_client_resources(
-            self, job: Job, resource_reqs: Dict[str, dict], fl_ctx: FLContext
+        self, job: Job, resource_reqs: Dict[str, dict], fl_ctx: FLContext
     ) -> Dict[str, Tuple[bool, Optional[str]]]:
         result = {}
         with self.new_context() as fl_ctx:
