@@ -154,7 +154,7 @@ class FedAdminAgent(object):
 
                             site_security_filter = SiteSecurityFilter()
                             self._set_security_data(self.app_ctx, req)
-                            ok, messages = site_security_filter.authorization_check(self.app_ctx, cmd)
+                            ok, messages = site_security_filter.authorization_check(self.app_ctx, cmd, fl_ctx)
                             if not ok:
                                 reply = error_reply(messages)
 

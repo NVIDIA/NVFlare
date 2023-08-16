@@ -16,6 +16,7 @@ from typing import List, Tuple
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_context import FLContext
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import InternalCommands
 from nvflare.fuel.hci.server.constants import ConnProps
@@ -40,41 +41,40 @@ class SiteSecurityFilter(CommandFilter):
         engine = conn.app_ctx
         command = args[0]
 
-        self._set_security_data(conn, engine)
-        filter_succeed, messages = self.authorization_check(engine, command)
+        with engine.new_context() as fl_ctx:
+            self._set_security_data(conn, fl_ctx)
+            filter_succeed, messages = self.authorization_check(engine, command, fl_ctx)
 
         if filter_succeed:
             return True, ""
         else:
             return False, messages
 
-    def authorization_check(self, engine, command):
+    def authorization_check(self, engine, command, fl_ctx: FLContext):
         filter_succeed = True
         reasons = ""
         if not InternalCommands.contains_commmand(command):
-            with engine.new_context() as fl_ctx:
-                fl_ctx.set_prop(FLContextKey.COMMAND_NAME, command, sticky=False)
-                engine.fire_event(EventType.AUTHORIZE_COMMAND_CHECK, fl_ctx)
+            fl_ctx.set_prop(FLContextKey.COMMAND_NAME, command, sticky=False)
+            engine.fire_event(EventType.AUTHORIZE_COMMAND_CHECK, fl_ctx)
 
-                authorization_result = fl_ctx.get_prop(FLContextKey.AUTHORIZATION_RESULT, True)
-                if not authorization_result:
-                    reasons = fl_ctx.get_prop(FLContextKey.AUTHORIZATION_REASON, "")
-                    logger.error(f"Authorization failed. Reason: {reasons}")
-                    fl_ctx.remove_prop(FLContextKey.AUTHORIZATION_RESULT)
-                    fl_ctx.remove_prop(FLContextKey.AUTHORIZATION_REASON)
-                    filter_succeed = False
+            authorization_result = fl_ctx.get_prop(FLContextKey.AUTHORIZATION_RESULT, True)
+            if not authorization_result:
+                reasons = fl_ctx.get_prop(FLContextKey.AUTHORIZATION_REASON, "")
+                logger.error(f"Authorization failed. Reason: {reasons}")
+                fl_ctx.remove_prop(FLContextKey.AUTHORIZATION_RESULT)
+                fl_ctx.remove_prop(FLContextKey.AUTHORIZATION_REASON)
+                filter_succeed = False
         return filter_succeed, reasons
 
-    def _set_security_data(self, conn: Connection, engine):
-        with engine.new_context() as fl_ctx:
-            security_items = fl_ctx.get_prop(FLContextKey.SECURITY_ITEMS, {})
+    def _set_security_data(self, conn: Connection, fl_ctx: FLContext):
+        security_items = fl_ctx.get_prop(FLContextKey.SECURITY_ITEMS, {})
 
-            security_items[FLContextKey.USER_NAME] = conn.get_prop(ConnProps.USER_NAME, "")
-            security_items[FLContextKey.USER_ORG] = conn.get_prop(ConnProps.USER_ORG, "")
-            security_items[FLContextKey.USER_ROLE] = conn.get_prop(ConnProps.USER_ROLE, "")
+        security_items[FLContextKey.USER_NAME] = conn.get_prop(ConnProps.USER_NAME, "")
+        security_items[FLContextKey.USER_ORG] = conn.get_prop(ConnProps.USER_ORG, "")
+        security_items[FLContextKey.USER_ROLE] = conn.get_prop(ConnProps.USER_ROLE, "")
 
-            security_items[FLContextKey.SUBMITTER_NAME] = conn.get_prop(ConnProps.SUBMITTER_NAME, "")
-            security_items[FLContextKey.SUBMITTER_ORG] = conn.get_prop(ConnProps.SUBMITTER_ORG, "")
-            security_items[FLContextKey.SUBMITTER_ROLE] = conn.get_prop(ConnProps.SUBMITTER_ROLE, "")
+        security_items[FLContextKey.SUBMITTER_NAME] = conn.get_prop(ConnProps.SUBMITTER_NAME, "")
+        security_items[FLContextKey.SUBMITTER_ORG] = conn.get_prop(ConnProps.SUBMITTER_ORG, "")
+        security_items[FLContextKey.SUBMITTER_ROLE] = conn.get_prop(ConnProps.SUBMITTER_ROLE, "")
 
-            fl_ctx.set_prop(FLContextKey.SECURITY_ITEMS, security_items, private=True, sticky=True)
+        fl_ctx.set_prop(FLContextKey.SECURITY_ITEMS, security_items, private=True, sticky=True)
