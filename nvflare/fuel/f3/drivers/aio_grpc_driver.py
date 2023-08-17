@@ -39,7 +39,7 @@ from .net_utils import MAX_FRAME_SIZE, get_address, get_tcp_urls, ssl_required
 GRPC_DEFAULT_OPTIONS = [
     ("grpc.max_send_message_length", MAX_FRAME_SIZE),
     ("grpc.max_receive_message_length", MAX_FRAME_SIZE),
-    ("grpc.keepalive_time_ms", 120000),
+    ("grpc.keepalive_time_ms", 300000),
     ("grpc.http2.max_pings_without_data", 0),
 ]
 
@@ -257,7 +257,7 @@ class AioGrpcDriver(BaseDriver):
 
     @staticmethod
     def capabilities() -> Dict[str, Any]:
-        return {DriverCap.HEARTBEAT.value: True, DriverCap.SUPPORT_SSL.value: True}
+        return {DriverCap.HEARTBEAT.value: False, DriverCap.SUPPORT_SSL.value: True}
 
     async def _start_server(self, connector: ConnectorInfo, aio_ctx: AioContext, conn_ctx: _ConnCtx):
         self.connector = connector
