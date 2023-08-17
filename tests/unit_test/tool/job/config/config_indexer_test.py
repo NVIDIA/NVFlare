@@ -14,14 +14,14 @@
 
 from pyhocon import ConfigFactory as CF
 
-from nvflare.tool.job.config.config_indexer import build_dict_reverse_order_index
+from nvflare.tool.job.config.config_indexer import KeyIndex, build_dict_reverse_order_index
 from nvflare.tool.job.config.configer import extract_string_with_index, extract_value_from_dict_by_index
 
 
 class TestConfigIndex:
     def test_dict_indexer(self):
-        key_paths = build_dict_reverse_order_index(config={})
-        assert len(key_paths) == 0
+        key_indices = build_dict_reverse_order_index(config=CF.from_dict({}))
+        assert len(key_indices) == 0
 
         config_dict = dict(
             x=dict(
@@ -29,48 +29,128 @@ class TestConfigIndex:
                 x2=dict(x21=3, x22=4, x23=dict(x31=3, x32=4)),
                 y=dict(y1=dict(y11=2), y2=dict(y21=1)),
                 z=[
-                    dict(id=2, x1=dict(x11=2), x2=dict(x21=3, x22=4)),
-                    dict(id=3, y1=dict(y11=2), y2=dict(y21=1)),
-                    dict(id=4, z1=dict(z11=2), z2=dict(z21=1)),
+                    dict(id=2),
+                    dict(id=3),
+                    dict(id=4),
                     100,
                 ],
                 s=[
-                    dict(id=2, s1=dict(s11=2, s12=[1, dict(a=2)])),
+                    dict(id=2),
                     100,
                 ],
             )
         )
 
-        expected_key_paths = {
-            "x31": ["x.x2.x23.x31"],
-            "x32": ["x.x2.x23.x32"],
-            "x22": ["x.x2.x22", "x.z[0].x2.x22"],
-            "x21": ["x.x2.x21", "x.z[0].x2.x21"],
-            "x11": ["x.x1.x11", "x.z[0].x1.x11"],
-            "y21": ["x.y.y2.y21", "x.z[1].y2.y21"],
-            "y11": ["x.y.y1.y11", "x.z[1].y1.y11"],
-            "z21": ["x.z[2].z2.z21"],
-            "z11": ["x.z[2].z1.z11"],
-            "z[3]": ["x.z[3]"],
-            "id": ["x.z[0].id", "x.z[1].id", "x.z[2].id", "x.s[0].id"],
-            "a": ["x.s[0].s1.s12[1].a"],
-            "s12[0]": ["x.s[0].s1.s12[0]"],
-            "s11": ["x.s[0].s1.s11"],
-            "s[1]": ["x.s[1]"],
+        config = CF.from_dict(config_dict)
+        root_key = KeyIndex(key="", value=config, parent_key=None)
+        x_key = KeyIndex(key="x", value=config.get("x"), parent_key=None)
+        root_key.children = [x_key]
+
+        x1_key = KeyIndex(key="x1", value=config.get("x").get("x1"), parent_key=x_key)
+        x2_key = KeyIndex(key="x2", value=config.get("x").get("x2"), parent_key=x_key)
+        y_key = KeyIndex(key="y", value=config.get("x").get("y"), parent_key=x_key)
+        z_key = KeyIndex(key="z", value=config.get("x").get("z"), parent_key=x_key)
+        s_key = KeyIndex(key="s", value=config.get("x").get("s"), parent_key=x_key)
+
+        x_key.children = [x1_key, x2_key, y_key, z_key, s_key]
+
+        x11_key = KeyIndex(key="x11", value=2, parent_key=x1_key)
+        x1_key.children = [x11_key]
+
+        x21_key = KeyIndex(key="x21", value=3, parent_key=x2_key)
+        x22_key = KeyIndex(key="x22", value=4, parent_key=x2_key)
+        x23_key = KeyIndex(key="x23", value=config.get("x").get("x2").get("x23"), parent_key=x2_key)
+        x2_key.children = [x21_key, x22_key, x23_key]
+
+        x31_key = KeyIndex(key="x31", value=3, parent_key=x23_key)
+        x32_key = KeyIndex(key="x32", value=4, parent_key=x23_key)
+        x23_key.children = [x31_key, x32_key]
+
+        y1_key = KeyIndex(key="y1", value=config.get("x").get("y").get("y1"), parent_key=y_key)
+        y2_key = KeyIndex(key="y2", value=config.get("x").get("y").get("y2"), parent_key=y_key)
+        y_key.children = [y1_key, y2_key]
+
+        y11_key = KeyIndex(key="y11", value=2, parent_key=y1_key)
+        y21_key = KeyIndex(key="y21", value=1, parent_key=y2_key)
+        y1_key.children = [y11_key]
+        y2_key.children = [y21_key]
+
+        z0_key = KeyIndex(key="z[0]", value=config.get("x").get("z")[0], parent_key=z_key, index=0)
+        z1_key = KeyIndex(key="z[1]", value=config.get("x").get("z")[1], parent_key=z_key, index=1)
+        z2_key = KeyIndex(key="z[2]", value=config.get("x").get("z")[2], parent_key=z_key, index=2)
+        z3_key = KeyIndex(key="z[3]", value=100, parent_key=z_key, index=3)
+        z_key.children = [z0_key, z1_key, z2_key, z3_key]
+
+        s0_key = KeyIndex(key="s[0]", value=config.get("x").get("s")[0], parent_key=s_key, index=0)
+        s1_key = KeyIndex(key="s[1]", value=100, parent_key=s_key, index=1)
+        s_key.children = [s0_key, s1_key]
+
+        id_keys = [
+            KeyIndex(key="id", value=2, parent_key=z0_key),
+            KeyIndex(key="id", value=3, parent_key=z1_key),
+            KeyIndex(key="id", value=4, parent_key=z2_key),
+            KeyIndex(key="id", value=2, parent_key=s0_key),
+        ]
+        z0_key.children = [id_keys[0]]
+        z1_key.children = [id_keys[1]]
+        z2_key.children = [id_keys[2]]
+        s0_key.children = [id_keys[3]]
+
+        expected_keys = {
+            "x31": x31_key,
+            "x32": x32_key,
+            "x22": x22_key,
+            "x21": x21_key,
+            "x11": x11_key,
+            "y21": y21_key,
+            "y11": y11_key,
+            "z[3]": z3_key,
+            "id": id_keys,
+            "s[1]": s1_key,
         }
 
-        key_paths = build_dict_reverse_order_index(config=config_dict)
-        for key in key_paths:
-            print(key, key_paths[key])
+        key_indices = build_dict_reverse_order_index(config=CF.from_dict(config_dict))
 
-        diff1 = set(key_paths.keys()) - set(expected_key_paths.keys())
-        diff2 = set(expected_key_paths.keys()) - set(key_paths.keys())
+        print("\n\n")
+        for key in key_indices:
+            e = expected_keys[key]
+            b_list = key_indices[key]
+            if len(b_list) == 1:
+                b = b_list[0]
+                a = e
+                assert key == a.key
+                assert key == b.key
+                assert a.key == b.key and a.value == b.value
+                assert a.index == b.index
+                if b.component_name is None or b.component_name.strip() == "":
+                    assert a.component_name is None or a.component_name.strip() == ""
+                else:
+                    assert a.component_name == b.component_name
+
+                assert a.parent_key.key == b.parent_key.key
+                assert a.parent_key.value == b.parent_key.value
+                assert a.parent_key.index == b.parent_key.index
+                assert a.children == b.children
+            else:
+                xs = zip(e, b_list)
+                for a, b in xs:
+                    assert a.key == b.key and a.value == b.value
+                    assert a.index == b.index
+                    if b.component_name is None or b.component_name.strip() == "":
+                        assert a.component_name is None or a.component_name.strip() == ""
+                    else:
+                        assert a.component_name == b.component_name
+
+                    assert a.parent_key.key == b.parent_key.key
+                    assert a.parent_key.value == b.parent_key.value
+                    assert a.parent_key.index == b.parent_key.index
+                    assert a.children == b.children
+
+        diff1 = set(key_indices.keys()) - set(expected_keys.keys())
+        diff2 = set(expected_keys.keys()) - set(key_indices.keys())
 
         assert len(diff2) == 0
         assert len(diff1) == 0
-
-        for key in expected_key_paths:
-            assert key_paths[key] == expected_key_paths[key]
 
     def test_extract_string_with_index(self):
         input_string = "components[0].args.data_path"
@@ -79,29 +159,30 @@ class TestConfigIndex:
 
     def test_extract_file_from_dict_by_index(self):
         config_str = """
-                {
-                    "components": [
-                        {
-                          "id": "df_stats_generator",
-                          "path": "df_statistics.DFStatistics",
-                          "args": {
-                            "data_path": "data.csv"
-                          }
-                        },
-                        {
-                          "id": "min_max_cleanser",
-                          "path": "nvflare.app_common.statistics.min_max_cleanser.AddNoiseToMinMax",
-                          "args": {
-                            "min_noise_level": 0.1,
-                            "max_noise_level": 0.3
-                          }
-                        }
-                    ]
-                }
-                """
+                    {
+                        "components": [
+                            {
+                              "id": "df_stats_generator",
+                              "path": "df_statistics.DFStatistics",
+                              "args": {
+                                "data_path": "data.csv"
+                              }
+                            },
+                            {
+                              "id": "min_max_cleanser",
+                              "path": "nvflare.app_common.statistics.min_max_cleanser.AddNoiseToMinMax",
+                              "args": {
+                                "min_noise_level": 0.1,
+                                "max_noise_level": 0.3
+                              }
+                            }
+                        ]
+                    }
+                    """
         conf = CF.parse_string(config_str)
-        index_conf = CF.from_dict({"data_path": ["components[0].args.data_path"]})
+        key_indices = build_dict_reverse_order_index(config=conf)
         result = {}
         exclude_key_list = []
-        result = extract_value_from_dict_by_index(exclude_key_list, key_indices={})
-        assert result == {"data_path": "data.csv"}
+        result = extract_value_from_dict_by_index(exclude_key_list, key_indices)
+        key_index = result["data_path"]
+        assert key_index.value == "data.csv"

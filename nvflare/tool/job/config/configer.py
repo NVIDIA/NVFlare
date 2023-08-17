@@ -90,41 +90,44 @@ def extract_value_from_index(indices_configs: Dict[str, Tuple]) -> Dict[str, Dic
 
 def extract_value_from_dict_by_index(excluded_key_list, key_indices):
     temp_results = {}
-    for key, key_index in key_indices.items():
-        value = key_index.value
-        if key == "path":
-            last_dot_index = value.rindex(".")
-            class_path = value[:last_dot_index]
-            class_name = value[last_dot_index + 1 :]
-            module, import_flag = optional_import(module=class_path, name=class_name)
-            if import_flag:
-                params = inspect.signature(module.__init__).parameters
-                for v in params.values():
-                    if (
-                        v.name != "self"
-                        and v.default is not None
-                        and v.name not in excluded_key_list
-                        and v.default not in excluded_key_list
-                    ):
-                        if isinstance(v.default, str):
-                            if len(v.default) > 0:
+    for key, key_index_list in key_indices.items():
+        for key_index in key_index_list:
+            value = key_index.value
+            if key == "path":
+                last_dot_index = value.rindex(".")
+                class_path = value[:last_dot_index]
+                class_name = value[last_dot_index + 1 :]
+                module, import_flag = optional_import(module=class_path, name=class_name)
+                if import_flag:
+                    params = inspect.signature(module.__init__).parameters
+                    for v in params.values():
+                        if (
+                            v.name != "self"
+                            and v.default is not None
+                            and v.name not in excluded_key_list
+                            and v.default not in excluded_key_list
+                        ):
+                            if isinstance(v.default, str):
+                                if len(v.default) > 0:
+                                    temp_results[v.name] = KeyIndex(
+                                        key=v.name,
+                                        value=v.default,
+                                        parent_key=key_index.parent_key,
+                                        component_name=key_index.component_name,
+                                    )
+                            else:
                                 temp_results[v.name] = KeyIndex(
                                     key=v.name,
                                     value=v.default,
                                     parent_key=key_index.parent_key,
                                     component_name=key_index.component_name,
                                 )
-                        else:
-                            temp_results[v.name] = KeyIndex(
-                                key=v.name,
-                                value=v.default,
-                                parent_key=key_index.parent_key,
-                                component_name=key_index.component_name,
-                            )
 
-    for key, key_index in key_indices.items():
-        if key not in excluded_key_list and key_index.value not in excluded_key_list:
-            temp_results[key] = key_index
+    for key, key_index_list in key_indices.items():
+        for key_index in key_index_list:
+            if key not in excluded_key_list and key_index.value not in excluded_key_list:
+                # note: duplicate key names will only have last value used.
+                temp_results[key] = key_index
 
     return temp_results
 
@@ -204,11 +207,12 @@ def merge_configs(indices_configs: Dict[str, tuple], cli_file_configs: Dict[str,
                 for key, cli_value in cli_configs.items():
                     if key not in key_indices:
                         raise ValueError(f"Invalid config key: '{key}' for file '{file}'")
-                    key_index = key_indices.get(key)
-                    value_type = type(key_index.value)
-                    key_index.value = value_type(cli_value)
-                    root_parent_index = get_root_parent_index(key_index)
-                    set_config_value(key_index, root_index=root_parent_index, config=config)
+                    indices = key_indices.get(key)
+                    for key_index in indices:
+                        value_type = type(key_index.value)
+                        key_index.value = value_type(cli_value)
+                        root_parent_index = get_root_parent_index(key_index)
+                        set_config_value(key_index, root_index=root_parent_index, config=config)
         merged[basename] = (config, excluded_key_list, key_indices)
 
     return merged

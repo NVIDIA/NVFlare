@@ -107,7 +107,9 @@ def build_list_reverse_order_index(
                     key_indices=key_indices,
                 )
             else:
-                key_indices[elmt_key] = key_index
+                indices = key_indices.get(elmt_key, [])
+                indices.append(key_index)
+                key_indices[elmt_key] = indices
                 if key == "name":
                     key_index.component_name = value
         elif isinstance(value, ConfigTree):
@@ -121,7 +123,10 @@ def build_list_reverse_order_index(
                 key_index.component_name = class_name
             elif key == "name":
                 key_index.component_name = value
-            key_indices[elmt_key] = key_index
+
+            indices = key_indices.get(elmt_key, [])
+            indices.append(key_index)
+            key_indices[elmt_key] = indices
         else:
             raise RuntimeError(f"Unhandled data type: {type(value)}")
     return key_indices
@@ -168,7 +173,9 @@ def build_dict_reverse_order_index(
                     key_indices=key_indices,
                 )
             else:
-                key_indices[key] = key_index
+                indices = key_indices.get(key, [])
+                indices.append(key_index)
+                key_indices[key] = indices
 
         elif isinstance(value, ConfigTree):
             key_indices = build_dict_reverse_order_index(
@@ -185,7 +192,10 @@ def build_dict_reverse_order_index(
             elif key == "name":
                 key_index.component_name = value
                 parent_key.component_name = key_index.component_name if parent_key.index else None
-            key_indices[key] = key_index
+
+            indices = key_indices.get(key, [])
+            indices.append(key_index)
+            key_indices[key] = indices
         else:
             raise RuntimeError(f"Unhandled data type: {type(value)}")
 
@@ -209,9 +219,10 @@ def update_index_comp_name(key_index: KeyIndex):
 
 def populate_key_component_names(key_indices: Dict):
     results = {}
-    for key, key_index in key_indices.items():
-        if key_index:
-            key_index = update_index_comp_name(key_index)
-            key_index.component_name = " " if key_index.component_name is None else key_index.component_name
-        results[key] = key_index
+    for key, key_index_list in key_indices.items():
+        for key_index in key_index_list:
+            if key_index:
+                key_index = update_index_comp_name(key_index)
+                key_index.component_name = " " if key_index.component_name is None else key_index.component_name
+            results[key] = key_index
     return results
