@@ -16,7 +16,7 @@ import pathlib
 import shutil
 from distutils.dir_util import copy_tree
 from tempfile import mkdtemp
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree
@@ -25,14 +25,11 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.fuel.flare_api.flare_api import new_secure_session
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
-from nvflare.tool.job.config.configer import (
-    build_config_file_indices,
-    extract_value_from_index,
-    merge_configs_from_cli,
-)
+from nvflare.tool.job.config.configer import build_config_file_indices, extract_value_from_index, merge_configs_from_cli
 from nvflare.tool.job.job_client_const import (
     CONFIG_CONF,
     CONFIG_FILE_BASE_NAME_WO_EXTS,
+    JOB_CONFIG_COMP_NAME,
     JOB_CONFIG_FILE_NAME,
     JOB_CONFIG_VAR_NAME,
     JOB_CONFIG_VAR_VALUE,
@@ -45,7 +42,7 @@ from nvflare.tool.job.job_client_const import (
     JOB_INFO_DESC_KEY,
     JOB_INFO_KEYS,
     JOB_TEMPLATE,
-    JOB_TEMPLATE_CONF, JOB_CONFIG_COMP_NAME,
+    JOB_TEMPLATE_CONF,
 )
 from nvflare.utils.cli_utils import (
     find_job_template_location,
@@ -429,7 +426,7 @@ def prepare_job_config(cmd_args, tmp_job_dir: Optional[str] = None):
     merged_conf = merge_configs_from_cli(cmd_args)
     if tmp_job_dir is None:
         tmp_job_dir = cmd_args.job_folder
-    # save_merged_configs(merged_conf, tmp_job_dir)
+    save_merged_configs(merged_conf, tmp_job_dir)
     variable_values = extract_value_from_index(merged_conf)
 
     return variable_values
@@ -455,22 +452,22 @@ def _update_client_app_config_script(job_folder, app_config: str) -> Tuple[Confi
 
 
 def save_merged_configs(merged_conf, tmp_job_dir):
-    for file, (excluded_key_List, key_indices) in merged_conf.items():
+    for file, (config, excluded_key_List, key_indices) in merged_conf.items():
         config_dir = pathlib.Path(tmp_job_dir) / "app" / "config"
         base_filename = os.path.basename(file)
         if base_filename.startswith("meta."):
             config_dir = tmp_job_dir
         base_filename = os.path.splitext(base_filename)[0]
-        dst_path = os.path.join(config_dir, f"{base_filename}.json")
-        save_config(file_configs, dst_path)
+        dst_path = os.path.join(config_dir, f"{base_filename}.xxx")
+        save_config(config, dst_path)
 
 
 def prepare_model_exchange_config(job_folder: str, force: bool):
-    dst_path = dst_config_path(job_folder, "config_exchange.conf")
+    dst_path = dst_config_path(job_folder, "config_exchange.xxx")
     if os.path.isfile(dst_path) and not force:
         return
 
-    dst_config = load_src_config_template("config_exchange.conf")
+    dst_config = load_src_config_template("config_exchange.xxx")
     save_config(dst_config, dst_path)
 
 

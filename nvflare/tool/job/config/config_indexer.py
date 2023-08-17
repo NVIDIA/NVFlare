@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import dataclasses
-from typing import Dict, List, Optional, Tuple, Union, Any
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree
@@ -26,6 +26,7 @@ class KeyIndex:
     key: str
     value: Union[None, Any, ConfigTree] = None
     parent_key: Optional["KeyIndex"] = None
+    children: List["KeyIndex"] = None
     index: Optional[int] = None
     component_name: Optional[str] = None
 
@@ -54,7 +55,7 @@ def build_reverse_order_index(config_file_path: str) -> Tuple:
         ]
     )
     key_indices = build_dict_reverse_order_index(config, excluded_keys=[])
-    return config_file_path, excluded_list, key_indices
+    return config_file_path, config, excluded_list, key_indices
 
 
 def load_pyhocon_conf(config_file_path) -> Tuple[ConfigTree, str]:
@@ -74,12 +75,13 @@ def load_pyhocon_conf(config_file_path) -> Tuple[ConfigTree, str]:
     return config, config_file_path
 
 
-def build_list_reverse_order_index(config_list: List,
-                                   key: str,
-                                   excluded_keys: Optional[List[str]] = None,
-                                   root_index: Optional[KeyIndex] = None,
-                                   key_indices: Optional[Dict] = None
-                                   ) -> Dict:
+def build_list_reverse_order_index(
+    config_list: List,
+    key: str,
+    excluded_keys: Optional[List[str]],
+    root_index: Optional[KeyIndex],
+    key_indices: Optional[Dict],
+) -> Dict:
     """
     Recursively build a reverse order index for a list.
     """
@@ -87,36 +89,39 @@ def build_list_reverse_order_index(config_list: List,
         excluded_keys = []
     if key_indices is None:
         key_indices = {}
+    if root_index and root_index.children is None:
+        root_index.children = []
 
     for index, value in enumerate(config_list):
-        key_index = KeyIndex(key=key, value=value, parent_key=root_index, index=index)
+        elmt_key = f"{key}[{index}]"
+        key_index = KeyIndex(key=elmt_key, value=value, parent_key=root_index, index=index)
+        root_index.children.append(key_index)
 
         if isinstance(value, list):
             if len(value) > 0:
                 key_indices = build_list_reverse_order_index(
                     config_list=value,
-                    key=f"{key}[{index}]",
+                    key=elmt_key,
                     excluded_keys=excluded_keys,
                     root_index=key_index,
-                    key_indices=key_indices
+                    key_indices=key_indices,
                 )
             else:
-                key_indices[key] = key_index
+                key_indices[elmt_key] = key_index
                 if key == "name":
                     key_index.component_name = value
         elif isinstance(value, ConfigTree):
-            key_indices = build_dict_reverse_order_index(config=value,
-                                                         excluded_keys=excluded_keys,
-                                                         root_index=key_index,
-                                                         key_indices=key_indices)
+            key_indices = build_dict_reverse_order_index(
+                config=value, excluded_keys=excluded_keys, root_index=key_index, key_indices=key_indices
+            )
         elif is_primitive(value):
             if key == "path":
                 last_dot_index = value.rindex(".")
-                class_name = value[last_dot_index + 1:]
+                class_name = value[last_dot_index + 1 :]
                 key_index.component_name = class_name
             elif key == "name":
                 key_index.component_name = value
-            key_indices[key] = key_index
+            key_indices[elmt_key] = key_index
         else:
             raise RuntimeError(f"Unhandled data type: {type(value)}")
     return key_indices
@@ -130,16 +135,19 @@ def has_no_primitives_in_list(values: List):
     return any(not is_primitive(x) for x in values)
 
 
-def build_dict_reverse_order_index(config: ConfigTree,
-                                   excluded_keys: List[str] = None,
-                                   root_index: Optional[KeyIndex] = None,
-                                   key_indices: Optional[Dict] = None
-                                   ) -> Dict:
+def build_dict_reverse_order_index(
+    config: ConfigTree,
+    excluded_keys: List[str] = None,
+    root_index: Optional[KeyIndex] = None,
+    key_indices: Optional[Dict] = None,
+) -> Dict:
     key_indices = {} if key_indices is None else key_indices
     if excluded_keys is None:
         excluded_keys = []
 
     root_index = KeyIndex(key="", value=None, parent_key=None, index=None) if root_index is None else root_index
+    if root_index.children is None:
+        root_index.children = []
 
     for key, value in config.items():
         if key in excluded_keys:
@@ -148,29 +156,29 @@ def build_dict_reverse_order_index(config: ConfigTree,
             continue
 
         key_index = KeyIndex(key=key, value=value, parent_key=root_index, index=None)
+        root_index.children.append(key_index)
+
         if isinstance(value, list):
             if len(value) > 0 and has_no_primitives_in_list(value):
-                key_indices = \
-                    build_list_reverse_order_index(config_list=value,
-                                                   key=key,
-                                                   excluded_keys=excluded_keys,
-                                                   root_index=key_index,
-                                                   key_indices=key_indices
-                                                   )
+                key_indices = build_list_reverse_order_index(
+                    config_list=value,
+                    key=key,
+                    excluded_keys=excluded_keys,
+                    root_index=key_index,
+                    key_indices=key_indices,
+                )
             else:
                 key_indices[key] = key_index
 
         elif isinstance(value, ConfigTree):
             key_indices = build_dict_reverse_order_index(
-                config=value,
-                excluded_keys=excluded_keys,
-                root_index=key_index,
-                key_indices=key_indices)
+                config=value, excluded_keys=excluded_keys, root_index=key_index, key_indices=key_indices
+            )
         elif is_primitive(value):
             parent_key = key_index.parent_key
             if key == "path":
                 last_dot_index = value.rindex(".")
-                class_name = value[last_dot_index + 1:]
+                class_name = value[last_dot_index + 1 :]
                 key_index.component_name = class_name
                 parent_key.component_name = key_index.component_name if parent_key.index is not None else None
 
@@ -182,8 +190,6 @@ def build_dict_reverse_order_index(config: ConfigTree,
             raise RuntimeError(f"Unhandled data type: {type(value)}")
 
     populate_key_component_names(key_indices)
-    for key, key_index in key_indices.items():
-        print(f"{key=}", f"{key_index.value=}", f"comp_name={key_index.component_name}", f"index={key_index.index}")
     return key_indices
 
 

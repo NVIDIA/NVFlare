@@ -14,15 +14,13 @@
 import inspect
 import os
 import shutil
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree
 
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.import_utils import optional_import
-from nvflare.fuel_opt.utils.pyhocon_loader import PyhoconConfig
-from nvflare.tool.job.config.config_indexer import build_reverse_order_index, KeyIndex
+from nvflare.tool.job.config.config_indexer import KeyIndex, build_reverse_order_index
 
 
 def merge_configs_from_cli(cmd_args) -> Dict[str, tuple]:
@@ -34,7 +32,6 @@ def merge_configs_from_cli(cmd_args) -> Dict[str, tuple]:
 
 def copy_app_config_file(cli_config_dict, cmd_args):
     config_dir = os.path.join(cmd_args.job_folder, "app/config")
-    target_dir = config_dir
     for cli_config_file in cli_config_dict:
         base_config_filename = os.path.basename(cli_config_file)
         if base_config_filename.startswith("meta."):
@@ -67,8 +64,8 @@ def extract_string_with_index(input_string):
     closing_bracket_index = input_string.find("]")
     if opening_bracket_index > 0 and closing_bracket_index > 0:
         string_before = input_string[:opening_bracket_index]
-        index = int(input_string[opening_bracket_index + 1: closing_bracket_index])
-        string_after = input_string[closing_bracket_index + 1:].strip(". ")
+        index = int(input_string[opening_bracket_index + 1 : closing_bracket_index])
+        string_after = input_string[closing_bracket_index + 1 :].strip(". ")
         if string_after:
             r = (string_before.strip("."), index, extract_string_with_index(string_after.strip(".")))
             if r:
@@ -85,7 +82,7 @@ def extract_string_with_index(input_string):
 
 def extract_value_from_index(indices_configs: Dict[str, Tuple]) -> Dict[str, Dict[str, Any]]:
     result = {}
-    for file, (excluded_key_list, key_indices) in indices_configs.items():
+    for file, (config, excluded_key_list, key_indices) in indices_configs.items():
         result[file] = extract_value_from_dict_by_index(excluded_key_list, key_indices)
 
     return result
@@ -98,28 +95,32 @@ def extract_value_from_dict_by_index(excluded_key_list, key_indices):
         if key == "path":
             last_dot_index = value.rindex(".")
             class_path = value[:last_dot_index]
-            class_name = value[last_dot_index + 1:]
+            class_name = value[last_dot_index + 1 :]
             module, import_flag = optional_import(module=class_path, name=class_name)
             if import_flag:
                 params = inspect.signature(module.__init__).parameters
                 for v in params.values():
-                    if v.name != "self" and \
-                            v.default is not None and \
-                            v.name not in excluded_key_list and \
-                            v.default not in excluded_key_list:
+                    if (
+                        v.name != "self"
+                        and v.default is not None
+                        and v.name not in excluded_key_list
+                        and v.default not in excluded_key_list
+                    ):
                         if isinstance(v.default, str):
                             if len(v.default) > 0:
-                                temp_results[v.name] = \
-                                    KeyIndex(key=v.name,
-                                             value=v.default,
-                                             parent_key=key_index.parent_key,
-                                             component_name=key_index.component_name)
+                                temp_results[v.name] = KeyIndex(
+                                    key=v.name,
+                                    value=v.default,
+                                    parent_key=key_index.parent_key,
+                                    component_name=key_index.component_name,
+                                )
                         else:
-                            temp_results[v.name] = \
-                                KeyIndex(key=v.name,
-                                         value=v.default,
-                                         parent_key=key_index.parent_key,
-                                         component_name=key_index.component_name)
+                            temp_results[v.name] = KeyIndex(
+                                key=v.name,
+                                value=v.default,
+                                parent_key=key_index.parent_key,
+                                component_name=key_index.component_name,
+                            )
 
     for key, key_index in key_indices.items():
         if key not in excluded_key_list and key_index.value not in excluded_key_list:
@@ -188,36 +189,79 @@ def merge_configs(indices_configs: Dict[str, tuple], cli_file_configs: Dict[str,
         cli_file_configs (Dict[str, Dict]): A dictionary containing CLI configurations.
 
     Returns:
-        Dict[str, CF]: A dictionary containing merged configurations.
+        Dict[str, tuple]: A dictionary containing merged configurations.
     """
     merged = {}
-    for file, (excluded_key_list, key_indices) in indices_configs.items():
-        # TODO: actually merged
+    for file, (config, excluded_key_list, key_indices) in indices_configs.items():
         basename = os.path.basename(file)
-        # conf = CF.from_dict(configs_dict)
-        # if len(indices_dict) > 0:
-        #     # CLI could be use absolute path as well, try that first, not found, then use base name
-        #     cli_configs = cli_file_configs.get(file, None)
-        #     if not cli_configs:
-        #         cli_configs = cli_file_configs.get(basename, None)
-        #
-        #     if cli_configs:
-        #         for key, value in cli_configs.items():
-        #             if key not in indices_dict:
-        #                 raise ValueError(f"Invalid config key: '{key}' for file '{basename}'")
-        #
-        #             key_path_list = indices_dict[key]
-        #             for key_path in key_path_list:
-        #                 # results = extract_string_with_index(key_path)
-        #                 tokens = extract_string_with_index(key_path)
-        #                 if isinstance(tokens, List) and tokens:
-        #                     replace_value_from_list_index(conf, tokens[0], value)
-        #                 else:
-        #                     conf.put(key_path, value)
-        # todo: do merge
-        merged[basename] = (excluded_key_list, key_indices)
+        if len(key_indices) > 0:
+            # CLI could be use absolute path as well, try that first, not found, then use base name
+            cli_configs = cli_file_configs.get(file, None)
+            if not cli_configs:
+                cli_configs = cli_file_configs.get(basename, None)
+
+            if cli_configs:
+                for key, cli_value in cli_configs.items():
+                    if key not in key_indices:
+                        raise ValueError(f"Invalid config key: '{key}' for file '{file}'")
+                    key_index = key_indices.get(key)
+                    value_type = type(key_index.value)
+                    key_index.value = value_type(cli_value)
+                    root_parent_index = get_root_parent_index(key_index)
+                    set_config_value(key_index, root_index=root_parent_index, config=config)
+        merged[basename] = (config, excluded_key_list, key_indices)
 
     return merged
+
+
+def set_config_value(target_index: KeyIndex, root_index: KeyIndex, config: ConfigTree):
+    t = root_index
+    conf = config
+    key = target_index.key
+    found = False
+    while not found and t is not None and t.key != key:
+        if t.children is None:
+            break
+
+        if t.index is not None and isinstance(t.index, int):
+            conf = conf[t.index]
+            for child in t.children:
+                target_conf = conf
+                if not found:
+                    found = set_config_value(target_index, child, target_conf)
+        else:
+            config_values = conf.get(t.key)
+            conf = config_values
+            if not isinstance(config_values, List):
+                for conf_key, _ in conf.items():
+                    if conf_key == key:
+                        conf.put(conf_key, target_index.value)
+                        found = True
+                        break
+
+            if not found:
+                if t.children is None:
+                    break
+                if len(t.children) == 1:
+                    t = t.children[0]
+                else:
+                    for child in t.children:
+                        target_conf = conf
+                        found = set_config_value(target_index, child, target_conf)
+    return found
+
+
+def get_root_parent_index(key_index: KeyIndex) -> Optional[KeyIndex]:
+    if key_index is None or key_index.parent_key is None:
+        return key_index
+
+    if key_index.parent_key is not None:
+        if key_index.parent_key.parent_key is None or key_index.parent_key.parent_key.key == "":
+            return key_index.parent_key
+        else:
+            return get_root_parent_index(key_index.parent_key)
+
+    return None
 
 
 def get_cli_config(cmd_args: Any) -> Dict[str, Dict[str, str]]:
@@ -280,16 +324,16 @@ def build_config_file_indices(config_dir: str) -> Dict[str, Tuple]:
             name_wo_ext = tokens[0]
             ext = tokens[1]
             if (
-                    ext in config_extensions
-                    and not f.startswith("._")
-                    and name_wo_ext in included
-                    and name_wo_ext not in excluded
+                ext in config_extensions
+                and not f.startswith("._")
+                and name_wo_ext in included
+                and name_wo_ext not in excluded
             ):
                 config_files.append(f)
         for f in config_files:
             f = str(os.path.abspath(os.path.join(root, f)))
             if os.path.isfile(f):
-                real_path, excluded_key_list, key_indices = build_reverse_order_index(str(f))
-                config_file_index[real_path] = (excluded_key_list, key_indices)
+                real_path, config, excluded_key_list, key_indices = build_reverse_order_index(str(f))
+                config_file_index[real_path] = (config, excluded_key_list, key_indices)
 
     return config_file_index

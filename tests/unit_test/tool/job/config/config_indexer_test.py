@@ -15,7 +15,7 @@
 from pyhocon import ConfigFactory as CF
 
 from nvflare.tool.job.config.config_indexer import build_dict_reverse_order_index
-from nvflare.tool.job.config.configer import extract_value_from_dict_by_index, extract_string_with_index
+from nvflare.tool.job.config.configer import extract_string_with_index, extract_value_from_dict_by_index
 
 
 class TestConfigIndex:
