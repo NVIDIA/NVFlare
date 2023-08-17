@@ -53,7 +53,7 @@ def build_reverse_order_index(config_file_path: str) -> Tuple:
             "task_result_filters",
             "exchange_path",
             "job_folder_name",
-            "json_encoder_path"
+            "json_encoder_path",
         ]
     )
     key_indices = build_dict_reverse_order_index(config, excluded_keys=[])
@@ -81,11 +81,11 @@ def load_pyhocon_conf(config_file_path) -> Tuple[ConfigTree, str]:
 
 
 def build_list_reverse_order_index(
-        config_list: List,
-        key: str,
-        excluded_keys: Optional[List[str]],
-        root_index: Optional[KeyIndex],
-        key_indices: Optional[Dict],
+    config_list: List,
+    key: str,
+    excluded_keys: Optional[List[str]],
+    root_index: Optional[KeyIndex],
+    key_indices: Optional[Dict],
 ) -> Dict:
     """
     Recursively build a reverse order index for a list.
@@ -119,7 +119,7 @@ def build_list_reverse_order_index(
         elif is_primitive(value):
             if key == "path":
                 last_dot_index = value.rindex(".")
-                class_name = value[last_dot_index + 1:]
+                class_name = value[last_dot_index + 1 :]
                 key_index.component_name = class_name
             elif key == "name":
                 key_index.component_name = value
@@ -139,10 +139,10 @@ def has_none_primitives_in_list(values: List):
 
 
 def build_dict_reverse_order_index(
-        config: ConfigTree,
-        excluded_keys: List[str] = None,
-        root_index: Optional[KeyIndex] = None,
-        key_indices: Optional[Dict] = None,
+    config: ConfigTree,
+    excluded_keys: List[str] = None,
+    root_index: Optional[KeyIndex] = None,
+    key_indices: Optional[Dict] = None,
 ) -> Dict:
     key_indices = {} if key_indices is None else key_indices
     if excluded_keys is None:
@@ -177,7 +177,7 @@ def build_dict_reverse_order_index(
             parent_key = key_index.parent_key
             if key == "path":
                 last_dot_index = value.rindex(".")
-                class_name = value[last_dot_index + 1:]
+                class_name = value[last_dot_index + 1 :]
                 key_index.component_name = class_name
                 parent_key.component_name = key_index.component_name if parent_key.index is not None else None
             elif key == "name":
@@ -206,7 +206,7 @@ def add_class_defaults_to_key(excluded_keys, key_index, key_indices, results):
     value = key_index.value
     last_dot_index = value.rindex(".")
     class_path = value[:last_dot_index]
-    class_name = value[last_dot_index + 1:]
+    class_name = value[last_dot_index + 1 :]
 
     module, import_flag = optional_import(module=class_path, name=class_name)
     if import_flag:
@@ -216,10 +216,10 @@ def add_class_defaults_to_key(excluded_keys, key_index, key_indices, results):
             args_config = parent_key.value.get("args", None)
         for v in params.values():
             if (
-                    v.name != "self"
-                    and v.default is not None
-                    and v.name not in excluded_keys
-                    and v.default not in excluded_keys
+                v.name != "self"
+                and v.default is not None
+                and v.name not in excluded_keys
+                and v.default not in excluded_keys
             ):
                 name_key = None
                 arg_key = KeyIndex(
