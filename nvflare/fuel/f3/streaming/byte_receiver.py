@@ -16,7 +16,7 @@ import threading
 from collections import deque
 from typing import Callable, Dict
 
-from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.registry import Callback, Registry
 from nvflare.fuel.f3.connection import BytesAlike
@@ -69,7 +69,7 @@ class RxTask:
 class RxStream(Stream):
     """A stream that's used to read streams from the buffer"""
 
-    def __init__(self, cell: Cell, task: RxTask):
+    def __init__(self, cell: CoreCell, task: RxTask):
         super().__init__(task.size, task.headers)
         self.cell = cell
         self.task = task
@@ -127,7 +127,7 @@ class RxStream(Stream):
 
 
 class ByteReceiver:
-    def __init__(self, cell: Cell):
+    def __init__(self, cell: CoreCell):
         self.cell = cell
         self.cell.register_request_cb(channel=STREAM_CHANNEL, topic=STREAM_DATA_TOPIC, cb=self._data_handler)
         self.registry = Registry()

@@ -14,7 +14,7 @@
 import logging
 import time
 
-from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.stream_cell import StreamCell
 from nvflare.fuel.f3.streaming.stream_types import StreamFuture
 from nvflare.fuel.f3.streaming.tools.utils import BUF_SIZE, RX_CELL, TEST_CHANNEL, TEST_TOPIC, make_buffer, setup_log
@@ -24,7 +24,7 @@ class Receiver:
     """Test BLOB receiving"""
 
     def __init__(self, listening_url: str):
-        cell = Cell(RX_CELL, listening_url, secure=False, credentials={})
+        cell = CoreCell(RX_CELL, listening_url, secure=False, credentials={})
         cell.start()
         self.stream_cell = StreamCell(cell)
         self.stream_cell.register_blob_cb(TEST_CHANNEL, TEST_TOPIC, self.blob_cb)
