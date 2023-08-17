@@ -234,15 +234,18 @@ class FLComponent(StatePersistable):
         # apply scope filters first
         scope_object = fl_ctx.get_prop(FLContextKey.SCOPE_OBJECT)
         filter_list = []
-        if scope_object:
-            if scope_object.task_data_filters:
-                filter_list.extend(scope_object.task_data_filters)
+        if scope_object and scope_object.task_data_filters:
+            filter_list.extend(scope_object.task_data_filters)
         if task_filter_list:
             filter_list.extend(task_filter_list)
+        filter_error, task_data = self._apply_filters(filter_list, filter_error, task_data, fl_ctx)
+        return filter_error, task_data
+
+    def _apply_filters(self, filter_list, filter_error, filter_data, fl_ctx):
         if filter_list:
             for f in filter_list:
                 try:
-                    task_data = f.process(task_data, fl_ctx)
+                    filter_data = f.process(filter_data, fl_ctx)
                 except Exception as e:
                     self.log_exception(
                         fl_ctx,
@@ -251,7 +254,7 @@ class FLComponent(StatePersistable):
                     )
                     filter_error = True
                     break
-        return filter_error, task_data
+        return filter_error, filter_data
 
     def apply_result_filters(self, task_filter_list, result, fl_ctx):
         filter_error = False
@@ -261,15 +264,5 @@ class FLComponent(StatePersistable):
             filter_list.extend(scope_object.task_result_filters)
         if task_filter_list:
             filter_list.extend(task_filter_list)
-        if filter_list:
-            for f in filter_list:
-                try:
-                    result = f.process(result, fl_ctx)
-                except Exception as e:
-                    self.log_exception(
-                        fl_ctx,
-                        "Error processing in task result filter {}: {}".format(type(f), secure_format_exception(e)),
-                    )
-                    filter_error = True
-                    break
+        filter_error, result = self._apply_filters(filter_list, filter_error, result, fl_ctx)
         return filter_error, result
