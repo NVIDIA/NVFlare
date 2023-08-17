@@ -19,7 +19,7 @@ import sys
 import threading
 import time
 
-from nvflare.fuel.f3.cellnet.cell import Cell, CellAgent, Message, MessageHeaderKey, MessageType
+from nvflare.fuel.f3.cellnet.core_cell import CellAgent, CoreCell, Message, MessageHeaderKey, MessageType
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.mpm import MainProcessMonitor
@@ -62,7 +62,7 @@ class CellRunner:
         self.clients = net_config.get_clients()
         self.create_internal_listener = self.children and len(self.children) > 0
 
-        self.cell = Cell(
+        self.cell = CoreCell(
             fqcn=my_fqcn,
             root_url=self.root_url,
             secure=False,

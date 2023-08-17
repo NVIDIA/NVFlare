@@ -33,10 +33,10 @@ from nvflare.fuel.common.multi_process_executor_constants import (
     CommunicationMetaData,
     MultiProcessCommandNames,
 )
-from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
-from nvflare.fuel.f3.cellnet.cell import MessageHeaderKey
-from nvflare.fuel.f3.cellnet.cell import ReturnCode as F3ReturnCode
-from nvflare.fuel.f3.cellnet.cell import make_reply as F3make_reply
+from nvflare.fuel.f3.cellnet.core_cell import Message as CellMessage
+from nvflare.fuel.f3.cellnet.core_cell import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.core_cell import ReturnCode as F3ReturnCode
+from nvflare.fuel.f3.cellnet.core_cell import make_reply as F3make_reply
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.class_utils import ModuleScanner
 from nvflare.fuel.utils.component_builder import ComponentBuilder
