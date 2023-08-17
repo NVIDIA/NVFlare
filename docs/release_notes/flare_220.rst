@@ -122,17 +122,17 @@ Stop using Pickle in favor of using FOBS to serialize/deserialize data between C
 ------------------------------------------------------------------------------------------------
 Prior to NVFLARE 2.1.4, NVFLARE used python's `pickle <https://docs.python.org/3/library/pickle.html>`_ to transfer data between the FL clients and server.
 NVFLARE now uses the FLARE Object Serializer (FOBS). You might experience failures if your code is still using Pickle. 
-To migrate the code or if you experience errors due to this, please refer to `Flare Object Serializer (FOBS) <https://github.com/NVIDIA/NVFlare/blob/dev/nvflare/fuel/utils/fobs/README.rst>`_.
+To migrate the code or if you experience errors due to this, please refer to `Flare Object Serializer (FOBS) <https://github.com/NVIDIA/NVFlare/blob/main/nvflare/fuel/utils/fobs/README.rst>`_.
 
 Another type of failure is due to data types that are not supported by FOBS. By default FOBS supports some data types, if the data type (Custom Class or Class from 3rd parties)
 is not part of supported FOBS data type, then you need to follow the instructions at
-`Flare Object Serializer (FOBS) <https://github.com/NVIDIA/NVFlare/blob/dev/nvflare/fuel/utils/fobs/README.rst>`_.
+`Flare Object Serializer (FOBS) <https://github.com/NVIDIA/NVFlare/blob/main/nvflare/fuel/utils/fobs/README.rst>`_.
 
 Essentially, to address this type of issue, you need to do the following steps:
   - Create a FobDecomposer class for the targeted data type
   - Register the newly created FobDecomposer before the data type is transmitted between client and server.
 
-The following examples are directly copied from `Flare Object Serializer (FOBS) <https://github.com/NVIDIA/NVFlare/blob/dev/nvflare/fuel/utils/fobs/README.rst>`_.
+The following examples are directly copied from `Flare Object Serializer (FOBS) <https://github.com/NVIDIA/NVFlare/blob/main/nvflare/fuel/utils/fobs/README.rst>`_.
 
 .. code-block:: python
 

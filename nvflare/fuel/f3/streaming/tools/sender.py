@@ -14,7 +14,7 @@
 import logging
 import time
 
-from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stream_cell import StreamCell
 from nvflare.fuel.f3.streaming.stream_types import StreamFuture
@@ -33,7 +33,7 @@ class Sender:
     """Test BLOB sending"""
 
     def __init__(self, url: str):
-        core_cell = Cell(TX_CELL, url, secure=False, credentials={})
+        core_cell = CoreCell(TX_CELL, url, secure=False, credentials={})
         self.stream_cell = StreamCell(core_cell)
         core_cell.start()
 
