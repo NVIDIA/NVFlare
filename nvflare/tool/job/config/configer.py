@@ -96,57 +96,6 @@ def filter_config_name_and_values(excluded_key_list, key_indices):
     return temp_results
 
 
-def extract_value_from_list_index(conf, input_str):
-    target_conf = conf
-
-    if isinstance(input_str, Tuple):
-        before, index, after = input_str
-        before_configs = target_conf.get_list(before)
-        after_config = before_configs[index]
-        if after:
-            if isinstance(after, List):
-                return extract_value_from_list_index(after_config, after[0])
-            else:
-                if isinstance(after_config, ConfigTree):
-                    return after_config.get(after)
-                else:
-                    return after_config
-        else:
-            return after_config
-    else:
-        return conf.get(input_str)
-
-
-def replace_value_from_list_index(conf, input_str, new_value):
-    if isinstance(input_str, Tuple):
-        before, index, after = input_str
-        before_configs = conf.get_list(before)
-        after_config = before_configs[index]
-        if after:
-            if isinstance(after, List):
-                replace_value_from_list_index(after_config, after[0], new_value)
-            else:
-                if isinstance(after_config, ConfigTree):
-                    old_value_type = type(after_config.get(after))
-                    after_config.put(after, old_value_type(new_value))
-                else:
-                    # this kind of like this: a = [1, 2], a[0] -> 1, a[1] = 2
-                    # unlike be able to specify this in CLI.
-                    raise ValueError(
-                        f"unable to substitute value {new_value} for {input_str}," f" suggest direct edit config file"
-                    )
-        else:
-            # this kind of like this: a = [1, 2], a[0] -> 1, a[1] = 2
-            # unlike be able to specify this in CLI.
-            raise ValueError(
-                f"unable to substitute value {new_value} for {input_str}," f" suggest direct edit config file"
-            )
-
-    else:
-        old_value_type = type(conf.get(input_str))
-        conf.put(input_str, old_value_type(new_value))
-
-
 def merge_configs(indices_configs: Dict[str, tuple], cli_file_configs: Dict[str, Dict]) -> Dict[str, tuple]:
     """
     Merge configurations from indices_configs and cli_file_configs.

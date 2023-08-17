@@ -53,10 +53,13 @@ def build_reverse_order_index(config_file_path: str) -> Tuple:
             "task_result_filters",
             "exchange_path",
             "job_folder_name",
+            "json_encoder_path"
         ]
     )
-
     key_indices = build_dict_reverse_order_index(config, excluded_keys=[])
+    key_indices = add_default_values(excluded_list, key_indices)
+    populate_key_component_names(key_indices)
+
     return config_file_path, config, excluded_list, key_indices
 
 
@@ -78,11 +81,11 @@ def load_pyhocon_conf(config_file_path) -> Tuple[ConfigTree, str]:
 
 
 def build_list_reverse_order_index(
-    config_list: List,
-    key: str,
-    excluded_keys: Optional[List[str]],
-    root_index: Optional[KeyIndex],
-    key_indices: Optional[Dict],
+        config_list: List,
+        key: str,
+        excluded_keys: Optional[List[str]],
+        root_index: Optional[KeyIndex],
+        key_indices: Optional[Dict],
 ) -> Dict:
     """
     Recursively build a reverse order index for a list.
@@ -106,9 +109,7 @@ def build_list_reverse_order_index(
                     key_indices=key_indices,
                 )
             else:
-                indices = key_indices.get(elmt_key, [])
-                indices.append(key_index)
-                key_indices[elmt_key] = indices
+                add_to_indices(elmt_key, key_index, key_indices)
                 if key == "name":
                     key_index.component_name = value
         elif isinstance(value, ConfigTree):
@@ -118,14 +119,12 @@ def build_list_reverse_order_index(
         elif is_primitive(value):
             if key == "path":
                 last_dot_index = value.rindex(".")
-                class_name = value[last_dot_index + 1 :]
+                class_name = value[last_dot_index + 1:]
                 key_index.component_name = class_name
             elif key == "name":
                 key_index.component_name = value
 
-            indices = key_indices.get(elmt_key, [])
-            indices.append(key_index)
-            key_indices[elmt_key] = indices
+            add_to_indices(elmt_key, key_index, key_indices)
         else:
             raise RuntimeError(f"Unhandled data type: {type(value)}")
     return key_indices
@@ -140,10 +139,10 @@ def has_none_primitives_in_list(values: List):
 
 
 def build_dict_reverse_order_index(
-    config: ConfigTree,
-    excluded_keys: List[str] = None,
-    root_index: Optional[KeyIndex] = None,
-    key_indices: Optional[Dict] = None,
+        config: ConfigTree,
+        excluded_keys: List[str] = None,
+        root_index: Optional[KeyIndex] = None,
+        key_indices: Optional[Dict] = None,
 ) -> Dict:
     key_indices = {} if key_indices is None else key_indices
     if excluded_keys is None:
@@ -167,9 +166,7 @@ def build_dict_reverse_order_index(
                     key_indices=key_indices,
                 )
             else:
-                indices = key_indices.get(key, [])
-                indices.append(key_index)
-                key_indices[key] = indices
+                add_to_indices(key, key_index, key_indices)
 
         elif isinstance(value, ConfigTree):
             key_indices = build_dict_reverse_order_index(
@@ -179,26 +176,26 @@ def build_dict_reverse_order_index(
         elif is_primitive(value):
             parent_key = key_index.parent_key
             if key == "path":
-                # add_class_defaults_to_key(excluded_keys, key_index, key_indices)
                 last_dot_index = value.rindex(".")
-                class_name = value[last_dot_index + 1 :]
+                class_name = value[last_dot_index + 1:]
                 key_index.component_name = class_name
                 parent_key.component_name = key_index.component_name if parent_key.index is not None else None
             elif key == "name":
                 key_index.component_name = value
                 parent_key.component_name = key_index.component_name if parent_key.index else None
 
-            indices = key_indices.get(key, [])
-            indices.append(key_index)
-            key_indices[key] = indices
+            add_to_indices(key, key_index, key_indices)
 
         else:
             raise RuntimeError(f"Unhandled data type: {type(value)}")
-
-    key_indices = add_default_values(excluded_keys, key_indices)
-    populate_key_component_names(key_indices)
-
     return key_indices
+
+
+def add_to_indices(key, key_index, key_indices):
+    indices = key_indices.get(key, [])
+    if key_index not in indices:
+        indices.append(key_index)
+    key_indices[key] = indices
 
 
 def add_class_defaults_to_key(excluded_keys, key_index, key_indices, results):
@@ -209,7 +206,7 @@ def add_class_defaults_to_key(excluded_keys, key_index, key_indices, results):
     value = key_index.value
     last_dot_index = value.rindex(".")
     class_path = value[:last_dot_index]
-    class_name = value[last_dot_index + 1 :]
+    class_name = value[last_dot_index + 1:]
 
     module, import_flag = optional_import(module=class_path, name=class_name)
     if import_flag:
@@ -219,10 +216,10 @@ def add_class_defaults_to_key(excluded_keys, key_index, key_indices, results):
             args_config = parent_key.value.get("args", None)
         for v in params.values():
             if (
-                v.name != "self"
-                and v.default is not None
-                and v.name not in excluded_keys
-                and v.default not in excluded_keys
+                    v.name != "self"
+                    and v.default is not None
+                    and v.name not in excluded_keys
+                    and v.default not in excluded_keys
             ):
                 name_key = None
                 arg_key = KeyIndex(
@@ -236,7 +233,7 @@ def add_class_defaults_to_key(excluded_keys, key_index, key_indices, results):
                             parent_key=arg_key,
                             component_name=key_index.component_name,
                         )
-                else:
+                elif type(v.default) != type:
                     name_key = KeyIndex(
                         key=v.name,
                         value=v.default,
@@ -245,6 +242,7 @@ def add_class_defaults_to_key(excluded_keys, key_index, key_indices, results):
                     )
 
                 if name_key:
+
                     name_indices: List[KeyIndex] = key_indices.get(v.name, [])
                     has_one = any(
                         k.parent_key is not None
@@ -273,6 +271,7 @@ def update_index_comp_name(key_index: KeyIndex):
 
 def add_default_values(excluded_keys, key_indices: Dict):
     results = key_indices.copy()
+
     for key, key_index_list in key_indices.items():
         for key_index in key_index_list:
             if key_index:
