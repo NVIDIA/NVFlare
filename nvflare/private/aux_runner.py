@@ -21,8 +21,8 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
-from nvflare.fuel.f3.cellnet.cell import Message, MessageHeaderKey
-from nvflare.fuel.f3.cellnet.cell import ReturnCode as CellReturnCode
+from nvflare.fuel.f3.cellnet.core_cell import Message, MessageHeaderKey
+from nvflare.fuel.f3.cellnet.core_cell import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.private.defs import CellChannel
 from nvflare.security.logging import secure_format_traceback

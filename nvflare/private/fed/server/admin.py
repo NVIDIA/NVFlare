@@ -18,11 +18,9 @@ from typing import List, Optional
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.shareable import ReservedHeaderKey
-
-# from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.cellnet.net_manager import NetManager
-from nvflare.fuel.f3.cellnet.new_cell import NewCell as Cell
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule

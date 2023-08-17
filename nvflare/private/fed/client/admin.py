@@ -17,9 +17,8 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey
 
-# from nvflare.fuel.f3.cellnet.cell import Cell
-from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
-from nvflare.fuel.f3.cellnet.new_cell import NewCell as Cell
+from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.core_cell import Message as CellMessage
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person

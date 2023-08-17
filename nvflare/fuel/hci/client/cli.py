@@ -19,7 +19,13 @@ import os
 import signal
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import List, Optional
+
+try:
+    import readline
+except ImportError:
+    readline = None
 
 from nvflare.fuel.hci.cmd_arg_utils import join_args, split_to_args
 from nvflare.fuel.hci.proto import CredentialType, ProtoKey
@@ -63,6 +69,7 @@ class AdminClient(cmd.Cmd, EventHandler):
         cmd_modules: command modules to load and register
         service_finder: used to obtain the primary service provider to set the host and port of the active server
         debug: whether to print debug messages. False by default.
+        cli_history_size: the maximum number of commands to save in the cli history file. Defaults to 1000.
     """
 
     def __init__(
@@ -80,6 +87,8 @@ class AdminClient(cmd.Cmd, EventHandler):
         debug: bool = False,
         username: str = "",
         handlers=None,
+        cli_history_dir: str = str(Path.home() / ".nvflare"),
+        cli_history_size: int = 1000,
     ):
         super().__init__()
         self.intro = "Type help or ? to list commands.\n"
@@ -100,6 +109,9 @@ class AdminClient(cmd.Cmd, EventHandler):
 
         if not isinstance(credential_type, CredentialType):
             raise TypeError("invalid credential_type {}".format(credential_type))
+
+        if not cli_history_dir:
+            raise Exception("missing cli_history_dir")
 
         modules = [_BuiltInCmdModule()]
         if cmd_modules:
@@ -133,6 +145,14 @@ class AdminClient(cmd.Cmd, EventHandler):
             session_status_check_interval=1800,  # check server for session status every 30 minutes
             event_handlers=event_handlers,
         )
+
+        if not os.path.isdir(cli_history_dir):
+            os.mkdir(cli_history_dir)
+        self.cli_history_file = os.path.join(cli_history_dir, ".admin_cli_history")
+
+        if readline:
+            readline.set_history_length(cli_history_size)
+
         # signal.signal(signal.SIGUSR1, partial(self.session_signal_handler))
         signal.signal(signal.SIGUSR1, self.session_signal_handler)
 
@@ -369,6 +389,15 @@ class AdminClient(cmd.Cmd, EventHandler):
             # exit the client
             self.write_string(self.api.shutdown_msg)
             return True
+
+    def preloop(self):
+        if readline and os.path.exists(self.cli_history_file):
+            readline.read_history_file(self.cli_history_file)
+
+    def postcmd(self, stop, line):
+        if readline:
+            readline.write_history_file(self.cli_history_file)
+        return stop
 
     def cmdloop(self, intro=None):
         """Repeatedly issue a prompt, accept input, parse an initial prefix

@@ -106,8 +106,9 @@ def main():
         debug=args.with_debug,
         service_finder=service_finder,
         username=admin_config.get("username", ""),
-        handlers=conf.handlers
-        # cli_history_size=args.cli_history_size,
+        handlers=conf.handlers,
+        cli_history_dir=args.workspace,
+        cli_history_size=args.cli_history_size,
     )
 
     client.run()

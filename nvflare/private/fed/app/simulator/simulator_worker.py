@@ -24,8 +24,8 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
 from nvflare.fuel.common.multi_process_executor_constants import CommunicationMetaData
+from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
-from nvflare.fuel.f3.cellnet.new_cell import NewCell as Cell
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
@@ -40,9 +40,6 @@ from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
 from nvflare.security.logging import secure_format_exception
 from nvflare.security.security import EmptyAuthorizer
-
-# from nvflare.fuel.f3.cellnet.cell import Cell
-
 
 CELL_CONNECT_CHECK_TIMEOUT = 10.0
 FETCH_TASK_RUN_RETRY = 3

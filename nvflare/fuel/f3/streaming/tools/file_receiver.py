@@ -16,7 +16,7 @@ import os
 import sys
 import time
 
-from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.stream_cell import StreamCell
 from nvflare.fuel.f3.streaming.stream_types import StreamFuture
 from nvflare.fuel.f3.streaming.stream_utils import stream_thread_pool
@@ -27,7 +27,7 @@ class FileReceiver:
     """Utility to receive files sent from another cell"""
 
     def __init__(self, listening_url: str, out_folder: str):
-        self.cell = Cell(RX_CELL, listening_url, secure=False, credentials={})
+        self.cell = CoreCell(RX_CELL, listening_url, secure=False, credentials={})
         self.stream_cell = StreamCell(self.cell)
         self.stream_cell.register_file_cb(TEST_CHANNEL, TEST_TOPIC, self.file_cb)
         self.cell.start()
