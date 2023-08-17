@@ -218,7 +218,9 @@ def update_job_template_dir(job_template_dir: str):
 def display_available_templates(template_index_conf):
     print("\nThe following job templates are available: \n")
     template_registry = template_index_conf.get("templates")
-    print("-" * 120)
+    total_length = 120
+    left_margin = 1
+    print("-" * total_length)
     name_fix_length = 15
     description_fix_length = 60
     controller_type_fix_length = 20
@@ -227,8 +229,8 @@ def display_available_templates(template_index_conf):
     description = fix_length_format(JOB_INFO_DESC, description_fix_length)
     client_category = fix_length_format(JOB_INFO_CLIENT_TYPE, client_category_fix_length)
     controller_type = fix_length_format(JOB_INFO_CONTROLLER_TYPE, controller_type_fix_length)
-    print(" " * 2, name, description, controller_type, client_category)
-    print("-" * 120)
+    print(" " * left_margin, name, description, controller_type, client_category)
+    print("-" * total_length)
     for file_path in sorted(template_registry.keys()):
         name = os.path.basename(file_path)
         template_info = template_registry.get(file_path, None)
@@ -238,8 +240,8 @@ def display_available_templates(template_index_conf):
         description = fix_length_format(template_info.get(JOB_INFO_DESC_KEY), description_fix_length)
         client_category = fix_length_format(template_info.get(JOB_INFO_CLIENT_TYPE_KEY), client_category_fix_length)
         controller_type = fix_length_format(template_info.get(JOB_INFO_CONTROLLER_TYPE_KEY), controller_type_fix_length)
-        print(" " * 2, name, description, controller_type, client_category)
-    print("-" * 120)
+        print(" " * left_margin, name, description, controller_type, client_category)
+    print("-" * total_length)
 
 
 def fix_length_format(name: str, name_fix_length: int):
