@@ -25,7 +25,12 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.fuel.flare_api.flare_api import new_secure_session
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
-from nvflare.tool.job.config.configer import build_config_file_indices, extract_value_from_index, merge_configs_from_cli
+from nvflare.tool.job.config.configer import (
+    build_config_file_indices,
+    filter_indices,
+    get_root_index,
+    merge_configs_from_cli,
+)
 from nvflare.tool.job.job_client_const import (
     CONFIG_CONF,
     CONFIG_FILE_BASE_NAME_WO_EXTS,
@@ -139,7 +144,7 @@ def remove_extra_file(config_dir):
 
 def show_variables(cmd_args):
     indices = build_config_file_indices(cmd_args.job_folder)
-    variable_values = extract_value_from_index(indices_configs=indices)
+    variable_values = filter_indices(indices_configs=indices)
     display_template_variables(cmd_args.job_folder, variable_values)
 
 
@@ -427,7 +432,7 @@ def prepare_job_config(cmd_args, tmp_job_dir: Optional[str] = None):
     if tmp_job_dir is None:
         tmp_job_dir = cmd_args.job_folder
     save_merged_configs(merged_conf, tmp_job_dir)
-    variable_values = extract_value_from_index(merged_conf)
+    variable_values = filter_indices(merged_conf)
 
     return variable_values
 
@@ -459,7 +464,9 @@ def save_merged_configs(merged_conf, tmp_job_dir):
             config_dir = tmp_job_dir
         base_filename = os.path.splitext(base_filename)[0]
         dst_path = os.path.join(config_dir, f"{base_filename}.xxx")
-        save_config(config, dst_path)
+        # save_config(config, dst_path)
+        root_index = get_root_index(next(iter(key_indices.values()))[0])
+        save_config(root_index.value, dst_path)
 
 
 def prepare_model_exchange_config(job_folder: str, force: bool):

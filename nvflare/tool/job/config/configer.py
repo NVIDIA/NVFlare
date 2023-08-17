@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import inspect
 import os
 import shutil
 from typing import Any, Dict, List, Optional, Tuple
@@ -19,7 +18,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from pyhocon import ConfigTree
 
 from nvflare.fuel.utils.config import ConfigFormat
-from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.tool.job.config.config_indexer import KeyIndex, build_reverse_order_index
 
 
@@ -80,53 +78,19 @@ def extract_string_with_index(input_string):
     return result
 
 
-def extract_value_from_index(indices_configs: Dict[str, Tuple]) -> Dict[str, Dict[str, Any]]:
+def filter_indices(indices_configs: Dict[str, Tuple]) -> Dict[str, Dict[str, Any]]:
     result = {}
     for file, (config, excluded_key_list, key_indices) in indices_configs.items():
-        result[file] = extract_value_from_dict_by_index(excluded_key_list, key_indices)
+        result[file] = filter_config_name_and_values(excluded_key_list, key_indices)
 
     return result
 
 
-def extract_value_from_dict_by_index(excluded_key_list, key_indices):
+def filter_config_name_and_values(excluded_key_list, key_indices):
     temp_results = {}
     for key, key_index_list in key_indices.items():
         for key_index in key_index_list:
-            value = key_index.value
-            if key == "path":
-                last_dot_index = value.rindex(".")
-                class_path = value[:last_dot_index]
-                class_name = value[last_dot_index + 1 :]
-                module, import_flag = optional_import(module=class_path, name=class_name)
-                if import_flag:
-                    params = inspect.signature(module.__init__).parameters
-                    for v in params.values():
-                        if (
-                            v.name != "self"
-                            and v.default is not None
-                            and v.name not in excluded_key_list
-                            and v.default not in excluded_key_list
-                        ):
-                            if isinstance(v.default, str):
-                                if len(v.default) > 0:
-                                    temp_results[v.name] = KeyIndex(
-                                        key=v.name,
-                                        value=v.default,
-                                        parent_key=key_index.parent_key,
-                                        component_name=key_index.component_name,
-                                    )
-                            else:
-                                temp_results[v.name] = KeyIndex(
-                                    key=v.name,
-                                    value=v.default,
-                                    parent_key=key_index.parent_key,
-                                    component_name=key_index.component_name,
-                                )
-
-    for key, key_index_list in key_indices.items():
-        for key_index in key_index_list:
             if key not in excluded_key_list and key_index.value not in excluded_key_list:
-                # note: duplicate key names will only have last value used.
                 temp_results[key] = key_index
 
     return temp_results
@@ -210,52 +174,18 @@ def merge_configs(indices_configs: Dict[str, tuple], cli_file_configs: Dict[str,
                     indices = key_indices.get(key)
                     for key_index in indices:
                         value_type = type(key_index.value)
-                        key_index.value = value_type(cli_value)
-                        root_parent_index = get_root_parent_index(key_index)
-                        set_config_value(key_index, root_index=root_parent_index, config=config)
+                        new_value = value_type(cli_value) if key_index.value is not None else cli_value
+                        key_index.value = new_value
+                        parent_key = key_index.parent_key
+                        if parent_key and isinstance(parent_key.value, ConfigTree):
+                            parent_key.value.put(key_index.key, new_value)
+
         merged[basename] = (config, excluded_key_list, key_indices)
 
     return merged
 
 
-def set_config_value(target_index: KeyIndex, root_index: KeyIndex, config: ConfigTree):
-    t = root_index
-    conf = config
-    key = target_index.key
-    found = False
-    while not found and t is not None and t.key != key:
-        if t.children is None:
-            break
-
-        if t.index is not None and isinstance(t.index, int):
-            conf = conf[t.index]
-            for child in t.children:
-                target_conf = conf
-                if not found:
-                    found = set_config_value(target_index, child, target_conf)
-        else:
-            config_values = conf.get(t.key)
-            conf = config_values
-            if not isinstance(config_values, List):
-                for conf_key, _ in conf.items():
-                    if conf_key == key:
-                        conf.put(conf_key, target_index.value)
-                        found = True
-                        break
-
-            if not found:
-                if t.children is None:
-                    break
-                if len(t.children) == 1:
-                    t = t.children[0]
-                else:
-                    for child in t.children:
-                        target_conf = conf
-                        found = set_config_value(target_index, child, target_conf)
-    return found
-
-
-def get_root_parent_index(key_index: KeyIndex) -> Optional[KeyIndex]:
+def get_root_index(key_index: KeyIndex) -> Optional[KeyIndex]:
     if key_index is None or key_index.parent_key is None:
         return key_index
 
@@ -263,7 +193,7 @@ def get_root_parent_index(key_index: KeyIndex) -> Optional[KeyIndex]:
         if key_index.parent_key.parent_key is None or key_index.parent_key.parent_key.key == "":
             return key_index.parent_key
         else:
-            return get_root_parent_index(key_index.parent_key)
+            return get_root_index(key_index.parent_key)
 
     return None
 

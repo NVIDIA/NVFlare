@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 from pyhocon import ConfigFactory as CF
 
 from nvflare.tool.job.config.config_indexer import KeyIndex, build_dict_reverse_order_index
-from nvflare.tool.job.config.configer import extract_string_with_index, extract_value_from_dict_by_index
+from nvflare.tool.job.config.configer import extract_string_with_index, filter_config_name_and_values
 
 
 class TestConfigIndex:
@@ -44,7 +44,6 @@ class TestConfigIndex:
         config = CF.from_dict(config_dict)
         root_key = KeyIndex(key="", value=config, parent_key=None)
         x_key = KeyIndex(key="x", value=config.get("x"), parent_key=None)
-        root_key.children = [x_key]
 
         x1_key = KeyIndex(key="x1", value=config.get("x").get("x1"), parent_key=x_key)
         x2_key = KeyIndex(key="x2", value=config.get("x").get("x2"), parent_key=x_key)
@@ -52,38 +51,28 @@ class TestConfigIndex:
         z_key = KeyIndex(key="z", value=config.get("x").get("z"), parent_key=x_key)
         s_key = KeyIndex(key="s", value=config.get("x").get("s"), parent_key=x_key)
 
-        x_key.children = [x1_key, x2_key, y_key, z_key, s_key]
-
         x11_key = KeyIndex(key="x11", value=2, parent_key=x1_key)
-        x1_key.children = [x11_key]
 
         x21_key = KeyIndex(key="x21", value=3, parent_key=x2_key)
         x22_key = KeyIndex(key="x22", value=4, parent_key=x2_key)
         x23_key = KeyIndex(key="x23", value=config.get("x").get("x2").get("x23"), parent_key=x2_key)
-        x2_key.children = [x21_key, x22_key, x23_key]
 
         x31_key = KeyIndex(key="x31", value=3, parent_key=x23_key)
         x32_key = KeyIndex(key="x32", value=4, parent_key=x23_key)
-        x23_key.children = [x31_key, x32_key]
 
         y1_key = KeyIndex(key="y1", value=config.get("x").get("y").get("y1"), parent_key=y_key)
         y2_key = KeyIndex(key="y2", value=config.get("x").get("y").get("y2"), parent_key=y_key)
-        y_key.children = [y1_key, y2_key]
 
         y11_key = KeyIndex(key="y11", value=2, parent_key=y1_key)
         y21_key = KeyIndex(key="y21", value=1, parent_key=y2_key)
-        y1_key.children = [y11_key]
-        y2_key.children = [y21_key]
 
         z0_key = KeyIndex(key="z[0]", value=config.get("x").get("z")[0], parent_key=z_key, index=0)
         z1_key = KeyIndex(key="z[1]", value=config.get("x").get("z")[1], parent_key=z_key, index=1)
         z2_key = KeyIndex(key="z[2]", value=config.get("x").get("z")[2], parent_key=z_key, index=2)
         z3_key = KeyIndex(key="z[3]", value=100, parent_key=z_key, index=3)
-        z_key.children = [z0_key, z1_key, z2_key, z3_key]
 
         s0_key = KeyIndex(key="s[0]", value=config.get("x").get("s")[0], parent_key=s_key, index=0)
         s1_key = KeyIndex(key="s[1]", value=100, parent_key=s_key, index=1)
-        s_key.children = [s0_key, s1_key]
 
         id_keys = [
             KeyIndex(key="id", value=2, parent_key=z0_key),
@@ -91,10 +80,6 @@ class TestConfigIndex:
             KeyIndex(key="id", value=4, parent_key=z2_key),
             KeyIndex(key="id", value=2, parent_key=s0_key),
         ]
-        z0_key.children = [id_keys[0]]
-        z1_key.children = [id_keys[1]]
-        z2_key.children = [id_keys[2]]
-        s0_key.children = [id_keys[3]]
 
         expected_keys = {
             "x31": x31_key,
@@ -130,7 +115,6 @@ class TestConfigIndex:
                 assert a.parent_key.key == b.parent_key.key
                 assert a.parent_key.value == b.parent_key.value
                 assert a.parent_key.index == b.parent_key.index
-                assert a.children == b.children
             else:
                 xs = zip(e, b_list)
                 for a, b in xs:
@@ -144,7 +128,6 @@ class TestConfigIndex:
                     assert a.parent_key.key == b.parent_key.key
                     assert a.parent_key.value == b.parent_key.value
                     assert a.parent_key.index == b.parent_key.index
-                    assert a.children == b.children
 
         diff1 = set(key_indices.keys()) - set(expected_keys.keys())
         diff2 = set(expected_keys.keys()) - set(key_indices.keys())
@@ -183,6 +166,6 @@ class TestConfigIndex:
         key_indices = build_dict_reverse_order_index(config=conf)
         result = {}
         exclude_key_list = []
-        result = extract_value_from_dict_by_index(exclude_key_list, key_indices)
+        result = filter_config_name_and_values(exclude_key_list, key_indices)
         key_index = result["data_path"]
         assert key_index.value == "data.csv"
