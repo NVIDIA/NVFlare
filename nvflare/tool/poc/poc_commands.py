@@ -13,6 +13,7 @@
 # limitations under the License.
 import json
 import os
+import pathlib
 import random
 import shutil
 import socket
@@ -34,6 +35,12 @@ from nvflare.tool.api_utils import shutdown_system
 
 DEFAULT_WORKSPACE = "/tmp/nvflare/poc"
 DEFAULT_PROJECT_NAME = "example_project"
+
+CMD_PREPARE_POC = "prepare"
+CMD_PREPARE_EXAMPLES = "prepare-examples"
+CMD_START_POC = "start"
+CMD_STOP_POC = "stop"
+CMD_CLEAN_POC = "clean"
 
 
 def client_gpu_assignments(clients: List[str], gpu_ids: List[int]) -> Dict[str, List[int]]:
@@ -125,7 +132,12 @@ def is_dir_empty(path: str):
     return len(targe_dir) == 0
 
 
-def prepare_examples(example_dir: str, workspace: str, config_packages: Optional[Tuple] = None):
+def prepare_examples(cmd_args):
+    poc_workspace = get_poc_workspace()
+    _prepare_examples(cmd_args.examples, poc_workspace)
+
+
+def _prepare_examples(example_dir: str, workspace: str, config_packages: Optional[Tuple] = None):
     _, service_config = config_packages if config_packages else setup_service_config(workspace)
     if example_dir is None or example_dir == "":
         raise CLIException("example_dir is required")
@@ -363,7 +375,40 @@ def prepare_clients(clients, number_of_clients):
     return clients
 
 
-def prepare_poc(
+def save_startup_kit_dir_config(workspace):
+    dst = get_hidden_nvflare_config_path()
+    prod_dir = get_prod_dir(workspace)
+    conf = f"""
+    startup_kit {{
+        path = {prod_dir}
+    }}
+
+    poc_workspace {{
+        path = {workspace}
+    }}
+    """
+    with open(dst, "w") as file:
+        file.write(conf)
+
+
+def prepare_poc(cmd_args):
+    poc_workspace = get_poc_workspace()
+    project_conf_path = ""
+    if cmd_args.project_input:
+        project_conf_path = cmd_args.project_input
+
+    _prepare_poc(
+        cmd_args.clients,
+        cmd_args.number_of_clients,
+        poc_workspace,
+        cmd_args.docker_image,
+        cmd_args.he,
+        project_conf_path,
+        cmd_args.examples,
+    )
+
+
+def _prepare_poc(
     clients: List[str],
     number_of_clients: int,
     workspace: str,
@@ -378,6 +423,8 @@ def prepare_poc(
         print(f"prepare poc at {workspace} for {number_of_clients} clients")
     else:
         print(f"prepare poc at {workspace} with {project_conf_path}")
+
+    save_startup_kit_dir_config(workspace)
 
     if os.path.exists(workspace):
         answer = input(
@@ -409,6 +456,31 @@ def prepare_poc(
         return True
 
 
+def get_home_dir():
+    from pathlib import Path
+
+    return Path.home()
+
+
+def get_hidden_nvflare_config_path() -> str:
+    """
+    Get the path for the hidden nvflare configuration file.
+
+    Returns:
+        str: The path to the hidden nvflare configuration file.
+    """
+    home_dir = get_home_dir()
+    hidden_nvflare_dir = pathlib.Path(home_dir) / ".nvflare"
+
+    try:
+        hidden_nvflare_dir.mkdir(exist_ok=True)
+    except OSError as e:
+        raise RuntimeError(f"Error creating the hidden nvflare directory: {e}")
+
+    hidden_nvflare_config_file = hidden_nvflare_dir / "config.conf"
+    return str(hidden_nvflare_config_file)
+
+
 def prepare_poc_provision(
     clients: List[str],
     number_of_clients: int,
@@ -424,12 +496,11 @@ def prepare_poc_provision(
     server_name = service_config[SC.FLARE_SERVER]
     # update storage
     if workspace != DEFAULT_WORKSPACE:
-        update_storage_locations(
-            local_dir=f"{workspace}/example_project/prod_00/{server_name}/local", workspace=workspace
-        )
+        prod_dir = get_prod_dir(workspace)
+        update_storage_locations(local_dir=f"{prod_dir}/{server_name}/local", workspace=workspace)
     examples_dir = get_examples_dir(examples_dir)
     if examples_dir is not None:
-        prepare_examples(examples_dir, workspace, None)
+        _prepare_examples(examples_dir, workspace, None)
 
 
 def get_examples_dir(examples_dir):
@@ -500,7 +571,40 @@ def get_gpu_ids(user_input_gpu_ids, host_gpu_ids) -> List[int]:
     return gpu_ids
 
 
-def start_poc(poc_workspace: str, gpu_ids: List[int], excluded=None, services_list=None):
+def start_poc(cmd_args):
+    poc_workspace = get_poc_workspace()
+
+    services_list = get_service_list(cmd_args)
+    excluded = get_excluded(cmd_args)
+    gpu_ids = get_gpis(cmd_args)
+
+    _start_poc(poc_workspace, gpu_ids, excluded, services_list)
+
+
+def get_gpis(cmd_args):
+    if cmd_args.gpu is not None and isinstance(cmd_args.gpu, list) and len(cmd_args.gpu) > 0:
+        gpu_ids = get_gpu_ids(cmd_args.gpu, get_local_host_gpu_ids())
+    else:
+        gpu_ids = []
+    return gpu_ids
+
+
+def get_excluded(cmd_args):
+    excluded = None
+    if cmd_args.exclude != "":
+        excluded = [cmd_args.exclude]
+    return excluded
+
+
+def get_service_list(cmd_args):
+    if cmd_args.service != "all":
+        services_list = [cmd_args.service]
+    else:
+        services_list = []
+    return services_list
+
+
+def _start_poc(poc_workspace: str, gpu_ids: List[int], excluded=None, services_list=None):
     project_config, service_config = setup_service_config(poc_workspace)
     if services_list is None:
         services_list = []
@@ -535,7 +639,14 @@ def setup_service_config(poc_workspace) -> Tuple:
         raise CLIException(f"{project_file} is missing, make sure you have first run 'nvflare poc --prepare'")
 
 
-def stop_poc(poc_workspace: str, excluded=None, services_list=None):
+def stop_poc(cmd_args):
+    poc_workspace = get_poc_workspace()
+    excluded = get_excluded(cmd_args)
+    services_list = get_service_list(cmd_args)
+    _stop_poc(poc_workspace, excluded, services_list)
+
+
+def _stop_poc(poc_workspace: str, excluded=None, services_list=None):
     project_config, service_config = setup_service_config(poc_workspace)
 
     if services_list is None:
@@ -663,7 +774,12 @@ def _run_poc(
             async_process(service_name, cmd_path, gpu_assignments[service_name], service_config)
 
 
-def clean_poc(poc_workspace: str):
+def clean_poc(cmd_args):
+    poc_workspace = get_poc_workspace()
+    _clean_poc(poc_workspace)
+
+
+def _clean_poc(poc_workspace: str):
     import shutil
 
     if os.path.isdir(poc_workspace):
@@ -678,13 +794,35 @@ def clean_poc(poc_workspace: str):
         raise CLIException(f"{poc_workspace} is not valid poc directory")
 
 
+poc_sub_cmd_handlers = {
+    CMD_PREPARE_POC: prepare_poc,
+    CMD_PREPARE_EXAMPLES: prepare_examples,
+    CMD_START_POC: start_poc,
+    CMD_STOP_POC: stop_poc,
+    CMD_CLEAN_POC: clean_poc,
+}
+
+
 def def_poc_parser(sub_cmd):
     cmd = "poc"
-    poc_parser = sub_cmd.add_parser(cmd)
-    poc_parser.add_argument(
+    parser = sub_cmd.add_parser(cmd)
+    poc_parser = parser.add_subparsers(title=cmd, dest="poc_sub_cmd", help="poc subcommand")
+    define_prepare_parser(poc_parser)
+    define_prepare_example_parser(poc_parser)
+    define_start_parser(poc_parser)
+    define_stop_parser(poc_parser)
+    define_clean_parser(poc_parser)
+
+    return {cmd: parser}
+
+
+def define_prepare_parser(poc_parser):
+    prepare_parser = poc_parser.add_parser(CMD_PREPARE_POC, help="prepare poc")
+
+    prepare_parser.add_argument(
         "-n", "--number_of_clients", type=int, nargs="?", default=2, help="number of sites or clients, default to 2"
     )
-    poc_parser.add_argument(
+    prepare_parser.add_argument(
         "-c",
         "--clients",
         nargs="*",  # 0 or more values expected => creates a list
@@ -692,31 +830,77 @@ def def_poc_parser(sub_cmd):
         default=[],  # default if nothing is provided
         help="Space separated client names. If specified, number_of_clients argument will be ignored.",
     )
-    poc_parser.add_argument(
-        "-p",
-        "--service",
-        type=str,
-        nargs="?",
-        default="all",
-        help="participant, Default to all participants, only used for start/stop poc commands when specified",
-    )
-    poc_parser.add_argument(
+    prepare_parser.add_argument(
         "-e",
         "--examples",
         type=str,
         nargs="?",
         default=None,
-        help="examples directory, only used in '--prepare' or '--prepare-example' command",
+        help="examples directory",
     )
-    poc_parser.add_argument(
+    prepare_parser.add_argument(
+        "-he",
+        "--he",
+        action="store_true",
+        help="enable homomorphic encryption. ",
+    )
+
+    prepare_parser.add_argument(
+        "-i",
+        "--project_input",
+        type=str,
+        nargs="?",
+        default="",
+        help="project.yaml file path, If specified, "
+        + "'number_of_clients','clients' and 'docker' specific options will be ignored.",
+    )
+    prepare_parser.add_argument(
+        "-d",
+        "--docker_image",
+        nargs="?",
+        default=None,
+        const="nvflare/nvflare",
+        help="generate docker.sh based on the docker_image, used in '--prepare' command. and generate docker.sh "
+        + " 'start/stop' commands will start with docker.sh ",
+    )
+
+    prepare_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
+
+
+def define_prepare_example_parser(poc_parser):
+    prepare_example_parser = poc_parser.add_parser(CMD_PREPARE_EXAMPLES, help="prepare examples")
+    prepare_example_parser.add_argument(
+        "-e", "--examples", type=str, nargs="?", default=None, help="examples directory"
+    )
+    prepare_example_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
+
+
+def define_clean_parser(poc_parser):
+    clean_parser = poc_parser.add_parser(CMD_CLEAN_POC, help="clean up poc workspace")
+    clean_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
+
+
+def define_start_parser(poc_parser):
+    start_parser = poc_parser.add_parser(CMD_START_POC, help="start services in poc mode")
+
+    start_parser.add_argument(
+        "-p",
+        "--service",
+        type=str,
+        nargs="?",
+        default="all",
+        help="participant, Default to all participants",
+    )
+
+    start_parser.add_argument(
         "-ex",
         "--exclude",
         type=str,
         nargs="?",
         default="",
-        help="exclude service directory during --start or --stop, default to " ", i.e. nothing to exclude",
+        help="exclude service directory during 'start', default to " ", i.e. nothing to exclude",
     )
-    poc_parser.add_argument(
+    start_parser.add_argument(
         "-gpu",
         "--gpu",
         type=int,
@@ -724,63 +908,29 @@ def def_poc_parser(sub_cmd):
         default=None,
         help="gpu device ids will be used as CUDA_VISIBLE_DEVICES. used for poc start command",
     )
-    poc_parser.add_argument(
-        "-he",
-        "--he",
-        action="store_true",
-        help="enable homomorphic encryption. Use with '--prepare' command ",
-    )
+    start_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
 
-    poc_parser.add_argument(
-        "-i",
-        "--project_input",
+
+def define_stop_parser(poc_parser):
+    stop_parser = poc_parser.add_parser(CMD_STOP_POC, help="stop services in poc mode")
+
+    stop_parser.add_argument(
+        "-p",
+        "--service",
+        type=str,
+        nargs="?",
+        default="all",
+        help="participant, Default to all participants",
+    )
+    stop_parser.add_argument(
+        "-ex",
+        "--exclude",
         type=str,
         nargs="?",
         default="",
-        help="project.yaml file path, it should be used with '--prepare' command. If specified, "
-        + "'number_of_clients','clients' and 'docker' specific options will be ignored.",
+        help="exclude service directory during 'stop', default to " ", i.e. nothing to exclude",
     )
-    poc_parser.add_argument(
-        "-d",
-        "--docker_image",
-        nargs="?",
-        default=None,
-        const="nvflare/nvflare",
-        help="generate docker.sh based on the docker_image, used in '--prepare' command. and generate docker.sh "
-        + " '--start/stop' commands will start with docker.sh ",
-    )
-    poc_parser.add_argument(
-        "--prepare",
-        dest="prepare_poc",
-        action="store_const",
-        const=prepare_poc,
-        help="prepare poc workspace and provision",
-    )
-
-    poc_parser.add_argument(
-        "--prepare-examples",
-        dest="prepare_examples",
-        action="store_const",
-        const=prepare_examples,
-        help="create an symbolic link to the examples directory, requires nvflare_example directory with '-e'",
-    )
-
-    poc_parser.add_argument("--start", dest="start_poc", action="store_const", const=start_poc, help="start local")
-    poc_parser.add_argument("--stop", dest="stop_poc", action="store_const", const=stop_poc, help="stop local")
-    poc_parser.add_argument(
-        "--clean", dest="clean_poc", action="store_const", const=clean_poc, help="clean up local workspace"
-    )
-    return {cmd: poc_parser}
-
-
-def is_poc(cmd_args) -> bool:
-    return (
-        hasattr(cmd_args, "start_poc")
-        or hasattr(cmd_args, "prepare_poc")
-        or hasattr(cmd_args, "stop_poc")
-        or hasattr(cmd_args, "clean_poc")
-        or hasattr(cmd_args, "prepare_examples")
-    )
+    stop_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
 
 
 def get_local_host_gpu_ids():
@@ -791,6 +941,11 @@ def get_local_host_gpu_ids():
 
 
 def handle_poc_cmd(cmd_args):
+    poc_cmd_handler = poc_sub_cmd_handlers.get(cmd_args.poc_sub_cmd, None)
+    poc_cmd_handler(cmd_args)
+
+
+def _handle_poc_cmd(cmd_args):
     if cmd_args.service != "all":
         services_list = [cmd_args.service]
     else:
@@ -812,12 +967,12 @@ def handle_poc_cmd(cmd_args):
             gpu_ids = get_gpu_ids(cmd_args.gpu, get_local_host_gpu_ids())
         else:
             gpu_ids = []
-        start_poc(poc_workspace, gpu_ids, excluded, services_list)
+        _start_poc(poc_workspace, gpu_ids, excluded, services_list)
     elif cmd_args.prepare_poc:
         project_conf_path = ""
         if cmd_args.project_input:
             project_conf_path = cmd_args.project_input
-        prepare_poc(
+        _prepare_poc(
             cmd_args.clients,
             cmd_args.number_of_clients,
             poc_workspace,
@@ -827,17 +982,28 @@ def handle_poc_cmd(cmd_args):
             cmd_args.examples,
         )
     elif cmd_args.prepare_examples:
-        prepare_examples(cmd_args.examples, poc_workspace)
+        _prepare_examples(cmd_args.examples, poc_workspace)
     elif cmd_args.stop_poc:
-        stop_poc(poc_workspace, excluded, services_list)
+        _stop_poc(poc_workspace, excluded, services_list)
     elif cmd_args.clean_poc:
-        clean_poc(poc_workspace)
+        _clean_poc(poc_workspace)
     else:
         raise Exception(f"unable to handle poc command:{cmd_args}")
 
 
 def get_poc_workspace():
+
     poc_workspace = os.getenv("NVFLARE_POC_WORKSPACE")
+
+    if not poc_workspace:
+        src_path = get_hidden_nvflare_config_path()
+        if os.path.isfile(src_path):
+            from pyhocon import ConfigFactory as CF
+
+            config = CF.parse_file(src_path)
+            poc_workspace = config.get("poc_workspace.path", None)
+
     if poc_workspace is None or len(poc_workspace.strip()) == 0:
         poc_workspace = DEFAULT_WORKSPACE
+
     return poc_workspace
