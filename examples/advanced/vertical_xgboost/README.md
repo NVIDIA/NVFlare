@@ -1,18 +1,13 @@
 # Vertical Federated XGBoost
 This example shows how to use vertical federated learning with [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on tabular data.
-Here we use the optimized gradient boosting library [XGBoost](https://github.com/dmlc/xgboost) and leverage its federated learning plugin.
+Here we use the optimized gradient boosting library [XGBoost](https://github.com/dmlc/xgboost) and leverage its federated learning support.
 
 Before starting please make sure you set up a [virtual environment](../../../README.md#set-up-a-virtual-environment) and install the additional requirements:
 ```
 python3 -m pip install -r requirements.txt
 ```
 
-> **_NOTE:_** If the vertical federated learning plugin is not available in the XGBoost PyPI release yet, reinstall XGBoost from a [wheel](https://xgboost.readthedocs.io/en/stable/install.html#nightly-build) with a recent commit.
-
-Generate the job configurations:
-```
-./prepare_job_config.sh
-```
+> **_NOTE:_** If vertical federated learning support is not available in the XGBoost PyPI release yet, reinstall XGBoost from a [wheel](https://xgboost.readthedocs.io/en/stable/install.html#nightly-build) with a recent commit.
 
 ## Preparing HIGGS Data
 In this example we showcase a binary classification task based on the [HIGGS dataset](https://archive.ics.uci.edu/dataset/280/higgs), which contains 11 million instances, each with 28 features and 1 class label.
@@ -39,12 +34,12 @@ Since not every site will have the same set of data samples (rows), we can use P
 
 Run the psi job to calculate the dataset intersection of the clients at `psi/intersection.txt` inside the psi workspace:
 ```
-nvflare simulator ./jobs/vertical_xgb_psi_2 -w /tmp/nvflare/vertical_xgb_psi -n 2 -t 2
+nvflare simulator ./jobs/vertical_xgb_psi -w /tmp/nvflare/vertical_xgb_psi -n 2 -t 2
 ```
 
-## Vertical XGBoost Federated Learning Plugin with FLARE
+## Vertical XGBoost Federated Learning with FLARE
 
-This Vertical XGBoost example leverages the recently added [vertical federated learning support](https://github.com/dmlc/xgboost/issues/8424) in the XGBoost open-source library. The plugin allows for the distributed XGBoost algorithm to operate in a federated manner on vertically split data.
+This Vertical XGBoost example leverages the recently added [vertical federated learning support](https://github.com/dmlc/xgboost/issues/8424) in the XGBoost open-source library. This allows for the distributed XGBoost algorithm to operate in a federated manner on vertically split data.
 
 For integrating with FLARE, we can use the predefined `XGBFedController` to run the federated server and control the workflow.
 
@@ -57,12 +52,12 @@ Lastly, we must subclass `XGBDataLoader` and implement the `load_data()` method.
 ## Run the Example
 Run the vertical xgboost job:
 ```
-nvflare simulator ./jobs/vertical_xgb_2 -w /tmp/nvflare/vertical_xgb -n 2 -t 2
+nvflare simulator ./jobs/vertical_xgb -w /tmp/nvflare/vertical_xgb -n 2 -t 2
 ```
 
 The model will be saved to `test.model.json`.
 
-(Feel free to modify arguments such as number of clients and dataset sizes in `prepare_data.sh` and `prepare_job_config.sh` as desired, and rerun the psi and vertical xgboost jobs)
+(Feel free to modify the scripts and jobs as desired to change arguments such as number of clients, dataset sizes, training params, etc.)
 
 ## Results
 Model accuracy can be visualized in tensorboard:

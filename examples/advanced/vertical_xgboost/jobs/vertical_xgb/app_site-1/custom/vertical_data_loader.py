@@ -63,8 +63,9 @@ class VerticalDataLoader(XGBDataLoader):
         self.train_proportion = train_proportion
 
     def load_data(self, client_id: str):
-        train_path = os.path.join(os.path.dirname(self.data_split_path), "train.csv")
-        valid_path = os.path.join(os.path.dirname(self.data_split_path), "valid.csv")
+        data_split_dir = os.path.dirname(self.data_split_path)
+        train_path = os.path.join(data_split_dir, "train.csv")
+        valid_path = os.path.join(data_split_dir, "valid.csv")
 
         if not (os.path.exists(train_path) and os.path.exists(valid_path)):
             df = pd.read_csv(self.data_split_path)

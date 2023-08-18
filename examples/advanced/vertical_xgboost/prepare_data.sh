@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 DATASET_PATH="$HOME/dataset/HIGGS.csv"
 OUTPUT_PATH="/tmp/nvflare/vertical_xgb_data"
+OUTPUT_FILE="higgs.data.csv"
 
 if [ ! -f "${DATASET_PATH}" ]
 then
@@ -12,11 +13,11 @@ echo "Generating HIGGS data splits, reading from ${DATASET_PATH}"
 python3 utils/prepare_data.py \
 --data_path "${DATASET_PATH}" \
 --site_num 2 \
---cols_total 29 \
---rows_overlap 100000 \
---rows_total 200000 \
---out_path "${OUTPUT_PATH}"
+--rows_total_percentage 0.02 \
+--rows_overlap_percentage 0.25 \
+--out_path "${OUTPUT_PATH}" \
+--out_file "${OUTPUT_FILE}"
 
-# Notes: HIGGS has 11000000 preshuffled instances; using subset to reduce PSI time for example
+# Note: HIGGS has 11000000 preshuffled instances; using rows_total_percentage to reduce PSI time for example
 
 echo "Data splits are generated in ${OUTPUT_PATH}"

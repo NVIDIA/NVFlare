@@ -23,12 +23,21 @@ import pandas as pd
 def data_split_args_parser():
     parser = argparse.ArgumentParser(description="Generate data split for dataset")
     parser.add_argument("--data_path", type=str, help="Path to data file")
-    parser.add_argument("--site_num", type=int, help="Total number of sites")
-    parser.add_argument("--site_name_prefix", type=str, default="site-", help="Site name prefix")
-    parser.add_argument("--cols_total", type=int, help="Total number of columns")
-    parser.add_argument("--rows_overlap", type=int, help="Size of the data overlap between sites")
-    parser.add_argument("--rows_total", type=int, help="Total number of instances")
-    parser.add_argument("--out_path", type=str, default="~/dataset", help="Output path for the data split json file")
+    parser.add_argument("--site_num", type=int, default=2, help="Total number of sites")
+    parser.add_argument(
+        "--rows_total_percentage",
+        type=float,
+        default=1.0,
+        help="Percentage of dataset_rows_total to use for rows_total",
+    )
+    parser.add_argument(
+        "--rows_overlap_percentage",
+        type=float,
+        default=0.5,
+        help="Percentage of rows_total to use for rows_overlap between sites",
+    )
+    parser.add_argument("--out_path", type=str, default="~/dataset", help="Output path for the data split file")
+    parser.add_argument("--out_file", type=str, default="data.csv", help="Output file name for the data split file")
     return parser
 
 
@@ -48,23 +57,29 @@ def split_num_proportion(n, site_num):
 def main():
     parser = data_split_args_parser()
     args = parser.parse_args()
-    print(f"site_num: {args.site_num}")
-    print(f"rows_total: {args.rows_total}")
-    print(f"rows_overlap: {args.rows_overlap}")
-    print(f"cols_total: {args.cols_total}")
-
-    site_col_size = split_num_proportion(args.cols_total, args.site_num)
-    site_row_size = split_num_proportion(args.rows_total - args.rows_overlap, args.site_num)
 
     df = pd.read_csv(args.data_path, header=None)
+
+    dataset_rows_total, cols_total = df.shape[0], df.shape[1]
+    rows_total = int(dataset_rows_total * args.rows_total_percentage)
+    rows_overlap = int(rows_total * args.rows_overlap_percentage)
+
+    print(f"site_num: {args.site_num}")
+    print(
+        f"dataset_num_rows: {dataset_rows_total}, rows_total_percentage: {args.rows_total_percentage}, rows_total: {rows_total}"
+    )
+    print(f"rows_overlap_percentage: {args.rows_overlap_percentage}, rows_overlap: {rows_overlap}")
+    print(f"cols_total: {cols_total}")
+
     df["uid"] = df.index.to_series().map(lambda x: "uid_" + str(x))
+
+    site_col_size = split_num_proportion(cols_total, args.site_num)
+    site_row_size = split_num_proportion(rows_total - rows_overlap, args.site_num)
 
     if os.path.exists(args.out_path):
         shutil.rmtree(args.out_path)
 
     for site in range(args.site_num):
-        site_id = args.site_name_prefix + str(site + 1)
-
         col_start = sum(site_col_size[:site])
         col_end = sum(site_col_size[: site + 1])
 
@@ -73,24 +88,22 @@ def main():
 
         df_split = pd.concat(
             [
-                df.iloc[row_start:row_end, np.r_[col_start:col_end, args.cols_total]],
+                df.iloc[row_start:row_end, np.r_[col_start:col_end, cols_total]],
                 df.iloc[
-                    args.rows_total - args.rows_overlap : args.rows_total,
-                    np.r_[col_start:col_end, args.cols_total],
+                    rows_total - rows_overlap : rows_total,
+                    np.r_[col_start:col_end, cols_total],
                 ],
             ]
         )
         df_split = df_split.sample(frac=1)
-        print(
-            f"site-{site+1} split rows [{row_start}:{row_end}],[{args.rows_total - args.rows_overlap}:{args.rows_total}]"
-        )
+        print(f"site-{site+1} split rows [{row_start}:{row_end}],[{rows_total - rows_overlap}:{rows_total}]")
         print(f"site-{site+1} split cols [{col_start}:{col_end}]")
 
-        data_path = os.path.join(args.out_path, f"{args.site_name_prefix}{site + 1}")
+        data_path = os.path.join(args.out_path, f"site-{site + 1}")
         if not os.path.exists(data_path):
             os.makedirs(data_path, exist_ok=True)
 
-        df_split.to_csv(path_or_buf=os.path.join(data_path, "higgs.data.csv"), index=False)
+        df_split.to_csv(path_or_buf=os.path.join(data_path, args.out_file), index=False)
 
 
 if __name__ == "__main__":
