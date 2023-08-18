@@ -1,6 +1,6 @@
 {
     "format_version": 2,
-    "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits/cifar10_fedavg_alpha1.0_5da3ca5a-eb2c-4cf3-82ff-67477ba487a6",
+    "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits",
     "AGGREGATION_EPOCHS": 4,
     "executors": [
         {
@@ -27,32 +27,7 @@
             "args": {
                 "train_idx_root": "{TRAIN_SPLIT_ROOT}",
                 "aggregation_epochs": "{AGGREGATION_EPOCHS}",
-                "lr": 0.01,
-                "analytic_sender_id": "log_writer"
-            }
-        },
-        {
-            "id": "log_writer",
-            "path": "nvflare.app_opt.tracking.tb.tb_writer_metrics_exchanger.TBWriterForMetricsExchanger",
-            "args": {
-                "metrics_exchanger_id": "metric_exchanger"
-            }
-        },
-        {
-            "id": "metric_retriever",
-            "path": "nvflare.app_common.metric_exchange.metric_retriever.MetricRetriever",
-            "args": {
-                "metric_exchanger_id": "metric_exchanger"
-            }
-        },
-        {
-            "id": "event_to_fed",
-            "name": "ConvertToFedEvent",
-            "args": {
-                "events_to_convert": [
-                    "analytix_log_stats"
-                ],
-                "fed_event_prefix": "fed."
+                "lr": 0.01
             }
         }
     ]

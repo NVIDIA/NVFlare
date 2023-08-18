@@ -2,7 +2,7 @@
     "format_version": 2,
     "min_clients": 8,
     "num_rounds": 50,
-    "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits/cifar10_fedavg_alpha1.0_5da3ca5a-eb2c-4cf3-82ff-67477ba487a6",
+    "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits",
     "alpha": 1.0,
     "server": {
         "heart_beat_timeout": 600
@@ -55,15 +55,6 @@
             "id": "json_generator",
             "name": "ValidationJsonGenerator",
             "args": {}
-        },
-        {
-            "id": "tb_analytics_receiver",
-            "name": "TBAnalyticsReceiver",
-            "args": {
-                "events": [
-                    "fed.analytix_log_stats"
-                ]
-            }
         }
     ],
     "workflows": [
