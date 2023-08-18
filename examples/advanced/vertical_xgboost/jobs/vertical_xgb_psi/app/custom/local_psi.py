@@ -28,10 +28,12 @@ class LocalPSI(PSI):
         self.data = {}
 
     def load_items(self) -> List[str]:
-        if os.path.isfile(self.data_split_path):
-            df = pd.read_csv(self.data_split_path, header=0)
+        client_id = self.fl_ctx.get_identity_name()
+        client_data_split_path = self.data_split_path.replace("site-x", client_id)
+        if os.path.isfile(client_data_split_path):
+            df = pd.read_csv(client_data_split_path, header=0)
         else:
-            raise RuntimeError(f"invalid data path {self.data_split_path}")
+            raise RuntimeError(f"invalid data path {client_data_split_path}")
 
         # Note: the PSI algorithm requires the items are unique
         items = list(df[self.id_col])

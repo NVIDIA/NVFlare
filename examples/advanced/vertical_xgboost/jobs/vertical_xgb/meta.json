@@ -1,16 +1,10 @@
 {
-    "name": "vertical_xgb_2",
+    "name": "vertical_xgb",
     "resource_spec": {},
     "deploy_map": {
-        "app_server": [
-            "server"
-        ],
-        "app_site-1": [
-            "site-1"
-        ],
-        "app_site-2": [
-            "site-2"
-        ]
+      "app": [
+        "@ALL"
+      ]
     },
     "min_clients": 2
-}
+  }
