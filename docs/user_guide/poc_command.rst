@@ -16,34 +16,20 @@ Syntax and Usage
 
   nvflare poc -h
   
-  usage: nvflare poc [-h] [-n [NUMBER_OF_CLIENTS]] [-c [CLIENTS ...]] [-p [SERVICE]] [-e [EXAMPLES]]
-                     [-ex [EXCLUDE]] [-gpu [GPU ...]] [-he] [-i [PROJECT_INPUT]] [-d [DOCKER_IMAGE]]
-                     [--prepare] [--prepare-examples] [--start] [--stop] [--clean]
+  usage: nvflare poc [-h]  {prepare,prepare-examples,start,stop,clean} ...
+  
+  options:
+  -h, --help            show this help message and exit
+  
+  poc:
+   {prepare,prepare-examples,start,stop,clean}
+                        poc subcommand
+    prepare             prepare poc
+    prepare-examples    prepare examples
+    start               start services in poc mode
+    stop                stop services in poc mode
+    clean               clean up poc workspace
 
-  optional arguments:
-    -h, --help            show this help message and exit
-    -n [NUMBER_OF_CLIENTS], --number_of_clients [NUMBER_OF_CLIENTS]
-                          number of sites or clients, default to 2
-    -c [CLIENTS ...], --clients [CLIENTS ...]
-                          Space separated client names. If specified, number_of_clients argument will be ignored.
-    -p [SERVICE], --service [SERVICE]
-                          participant, Default to all participants, only used for start/stop poc commands when specified
-    -e [EXAMPLES], --examples [EXAMPLES]
-                          examples directory, only used in '--prepare' or '--prepare-example' command
-    -ex [EXCLUDE], --exclude [EXCLUDE]
-                          exclude service directory during --start or --stop, default to , i.e. nothing to exclude
-    -gpu [GPU [GPU ...]], --gpu [GPU [GPU ...]]
-                          gpu device ids will be used as CUDA_VISIBLE_DEVICES. used for poc start command
-    -he, --he             enable homomorphic encryption. Use with '--prepare' command
-    -i [PROJECT_INPUT], --project_input [PROJECT_INPUT]
-                          project.yaml file path, it should be used with '--prepare' command. If specified, 'number_of_clients','clients' and 'docker' specific options will be ignored.
-    -d [DOCKER_IMAGE], --docker_image [DOCKER_IMAGE]
-                          generate docker.sh based on the docker_image, used in '--prepare' command. and generate docker.sh '--start/stop' commands will start with docker.sh
-    --prepare             prepare poc workspace and provision
-    --prepare-examples    create an symbolic link to the examples directory, requires nvflare_example directory with '-e'
-    --start               start local
-    --stop                stop local
-    --clean               clean up poc workspace
 
 .. note::
 
@@ -55,7 +41,7 @@ Set Up POC Workspace
 
 .. code-block::
 
-  nvflare poc --prepare
+  nvflare poc prepare
   prepare poc at /tmp/nvflare/poc for 2 clients
   This will delete poc folder in current directory and create a new one. Is it OK to proceed? (y/N) y
   provision at /tmp/nvflare/poc for 2 clients with /tmp/nvflare/poc/project.yml
@@ -87,7 +73,7 @@ Now running the following command:
 
 .. code-block::
 
-    nvflare poc --prepare
+    nvflare poc prepare
 
 will generate the POC startup startup kits in the workspace "/tmp/nvfalre/poc2".
 
@@ -103,7 +89,7 @@ Running the following command:
 
 .. code-block::
 
-  nvflare poc --start
+  nvflare poc start
 
 will start ALL clients (site-1, site-2) and server as well as FLARE Console (aka Admin Client) located in the default workspace="/tmp/nvflare/poc".
 
@@ -173,15 +159,15 @@ will start ALL clients (site-1, site-2) and server as well as FLARE Console (aka
 
 .. note::
 
-    If you run ``nvflare poc --start`` before prepare, you will get the following error:
+    If you run ``nvflare poc start`` before prepare, you will get the following error:
 
         .. code-block:: shell
 
-           /tmp/nvflare/poc/project.yml is missing, make sure you have first run 'nvflare poc --prepare'
+           /tmp/nvflare/poc/project.yml is missing, make sure you have first run 'nvflare poc prepare'
 
 .. note::
 
-    If you run ``nvflare poc --start`` after having already started the server or any of the clients, you will get errors like:
+    If you run ``nvflare poc start`` after having already started the server or any of the clients, you will get errors like:
 
         .. code-block::
 
@@ -195,14 +181,14 @@ will start ALL clients (site-1, site-2) and server as well as FLARE Console (aka
 
 .. note::
 
-    If you prefer to have the FLARE Console on a different terminal, you can start everything else with: ``nvflare poc --start -ex admin``.
+    If you prefer to have the FLARE Console on a different terminal, you can start everything else with: ``nvflare poc start -ex admin``.
 
 Start the server only
 ----------------------
 
 .. code-block::
 
-    nvflare poc --start -p server
+    nvflare poc start -p server
 
 An example of successful output for starting a server:
 
@@ -227,7 +213,7 @@ Start the FLARE Console (previously called the Admin Client)
 
 .. code-block::
 
-    nvflare poc --start -p admin@nvidia.com
+    nvflare poc start -p admin@nvidia.com
 
 Start Clients with GPU Assignment
 ----------------------------------
@@ -266,13 +252,13 @@ To stop packages, issue the command:
 
 .. code-block::
 
-    nvflare poc --stop
+    nvflare poc stop
 
 Similarly, you can stop a specific package, for example:
 
 .. code-block::
 
-    nvflare poc --stop -p server
+    nvflare poc stop -p server
 
 Note that you may need to exit the FLARE Console yourself.
 
@@ -283,4 +269,4 @@ There is a command to clean up the POC workspace added in version 2.2 that will 
 
 .. code-block::
 
-    nvflare poc --clean
+    nvflare poc clean
