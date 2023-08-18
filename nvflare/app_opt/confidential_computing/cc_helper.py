@@ -65,7 +65,6 @@ class CCHelper(object):
         self.attestation = attestation
         self.token = None
         self.logger = logging.getLogger(self.__class__.__name__)
-        # self.logger.info(f"Current working directory {os.getcwd()}")
         for v in verifiers:
             assert isinstance(v, dict)
             url = None
@@ -95,7 +94,6 @@ class CCHelper(object):
                 raise ValueError("Url is not specified for verifier")
             if appraisal_policy_file is None:
                 raise ValueError("Appraisal policy file is not specified for verifier")
-            print(os.getcwd())
             if not os.path.exists(appraisal_policy_file):
                 raise ValueError(f"Appraisal policy file '{appraisal_policy_file}' does not exist")
             appraisal_policy = open(appraisal_policy_file, "rt").read().rstrip()

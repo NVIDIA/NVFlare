@@ -11,12 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import sys
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_exception import UnsafeComponentError
 
 from .cc_helper import CCHelper
 
@@ -102,10 +102,10 @@ class CCManager(FLComponent):
                 err = self._prepare_for_attestation(fl_ctx)
             except:
                 self.log_exception(fl_ctx, "exception in attestation preparation")
-                err = "exception occurred"
+                err = "exception in attestation preparation"
             if err:
                 self.log_critical(fl_ctx, err, fire_event=False)
-                sys.exit(-1)
+                raise UnsafeComponentError(err)
         elif event_type == EventType.BEFORE_CLIENT_REGISTER:
             # On client side
             self._prepare_token_for_login(fl_ctx)
