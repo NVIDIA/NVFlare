@@ -103,9 +103,10 @@ class CCManager(FLComponent):
             except:
                 self.log_exception(fl_ctx, "exception in attestation preparation")
                 err = "exception in attestation preparation"
-            if err:
-                self.log_critical(fl_ctx, err, fire_event=False)
-                raise UnsafeComponentError(err)
+            finally:
+                if err:
+                    self.log_critical(fl_ctx, err, fire_event=False)
+                    raise UnsafeComponentError(err)
         elif event_type == EventType.BEFORE_CLIENT_REGISTER:
             # On client side
             self._prepare_token_for_login(fl_ctx)
@@ -121,8 +122,9 @@ class CCManager(FLComponent):
                 except:
                     self.log_exception(fl_ctx, "exception in validating participants")
                     err = "Participants unable to meet client CC requirements"
-                if err:
-                    self._not_authorize_job(err, fl_ctx)
+                finally:
+                    if err:
+                        self._not_authorize_job(err, fl_ctx)
         elif event_type == EventType.BEFORE_CHECK_CLIENT_RESOURCES:
             # Server side
             try:
@@ -130,8 +132,9 @@ class CCManager(FLComponent):
             except:
                 self.log_exception(fl_ctx, "exception in validating clients")
                 err = "Clients unable to meet server CC requirements"
-            if err:
-                self._block_job(err, fl_ctx)
+            finally:
+                if err:
+                    self._block_job(err, fl_ctx)
         elif event_type == EventType.AFTER_CHECK_CLIENT_RESOURCES:
             # Server side
             fl_ctx.remove_prop(PEER_CTX_CC_TOKEN)
@@ -232,3 +235,4 @@ class CCManager(FLComponent):
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID, "")
         self.log_error(fl_ctx, f"Job {job_id} is blocked: {reason}")
         fl_ctx.set_prop(key=FLContextKey.JOB_BLOCK_REASON, value=reason)
+        fl_ctx.set_prop(key=FLContextKey.AUTHORIZATION_RESULT, value=False)

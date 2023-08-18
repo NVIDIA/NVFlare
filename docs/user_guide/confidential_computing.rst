@@ -1,8 +1,8 @@
 .. _confidential_computing:
 
-######################
-Confidential Computing
-######################
+#######################################################
+Confidential Computing: Attestation Service Integration
+#######################################################
 
 Data used in NVFlare are encrypted during transmission between participants, which covers the communication between the NVFlare server, clients and admin.  This security measure ensures
 data in transit is well protected.  Users can also utilize existing infrastructure, such as storage encryption, to protect data at rest.  With confidential computing, NVFlare can protect data in use
