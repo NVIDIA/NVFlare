@@ -31,6 +31,30 @@ Syntax and Usage
     clean               clean up poc workspace
 
 
+You can see the details for each subcommand with the ``-h`` option:
+
+.. code-block::
+
+  nvflare poc prepare -h
+  
+  usage: nvflare poc prepare [-h] [-n [NUMBER_OF_CLIENTS]] [-c [CLIENTS ...]] [-e [EXAMPLES]] [-he] [-i [PROJECT_INPUT]] [-d [DOCKER_IMAGE]] [-debug]
+
+  options:
+  -h, --help            show this help message and exit
+  -n [NUMBER_OF_CLIENTS], --number_of_clients [NUMBER_OF_CLIENTS]
+                        number of sites or clients, default to 2
+  -c [CLIENTS ...], --clients [CLIENTS ...]
+                        Space separated client names. If specified, number_of_clients argument will be ignored.
+  -e [EXAMPLES], --examples [EXAMPLES]
+                        examples directory
+  -he, --he             enable homomorphic encryption.
+  -i [PROJECT_INPUT], --project_input [PROJECT_INPUT]
+                        project.yaml file path, If specified, 'number_of_clients','clients' and 'docker' specific options will be ignored.
+  -d [DOCKER_IMAGE], --docker_image [DOCKER_IMAGE]
+                        generate docker.sh based on the docker_image, used in '--prepare' command. and generate docker.sh 'start/stop' commands will start with docker.sh
+  -debug, --debug       debug is on
+
+
 .. note::
 
     After you clone the NVFlare GitHub repository, you may optionally define an ``NVFLARE_HOME`` environment variable to point to the local NVFlare directory so a symbolic link is created to point the transfer directory to the examples in the code base. For example, if the the NVFlare GitHub repository is cloned under ~/projects, then you should set ``NVFLARE_HOME=~/projects/NVFlare``. If the NVFLARE_HOME environment variable is not set, you will need to manually copy the examples to the transfer directory.
