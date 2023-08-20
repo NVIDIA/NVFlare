@@ -511,8 +511,7 @@ def prepare_meta_config(cmd_args):
 
 def load_src_config_template(config_file_name: str):
     file_dir = os.path.dirname(__file__)
-    print("\n file_dir", file_dir)
-    # todo: change to alternative format ?
+    # src config here is always pyhocon
     config_template = CF.parse_file(os.path.join(file_dir, f"config/{config_file_name}"))
     return config_template
 
