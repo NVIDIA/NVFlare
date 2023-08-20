@@ -200,7 +200,6 @@ def save_config(dst_config, dst_path, keep_origin_format: bool = True):
     with open(dst_config_path, "w") as outfile:
         outfile.write(f"{config_str}\n")
 
-    print("require_clean_up =", require_clean_up, dst_path)
     if require_clean_up:
         if os.path.exists(dst_path):
             os.remove(dst_path)
