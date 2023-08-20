@@ -484,7 +484,7 @@ def prepare_meta_config(cmd_args):
     meta_files = ["meta.json", "meta.conf", "meta.yml"]
     dst_path = None
     for mf in meta_files:
-        meta_path = os.path.join(job_folder,  mf)
+        meta_path = os.path.join(job_folder, mf)
         if os.path.isfile(meta_path):
             dst_path = meta_path
             break

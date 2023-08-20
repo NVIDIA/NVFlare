@@ -168,6 +168,7 @@ def hocon_to_string(target_fmt: ConfigFormat, dst_config: ConfigTree):
         return HOCONConverter.to_hocon(dst_config)
     elif target_fmt == ConfigFormat.OMEGACONF:
         from nvflare.fuel_opt.utils.omegaconf_loader import OmegaConfLoader
+
         loader = OmegaConfLoader()
         dst_dict_config = PyhoconConfig(dst_config).to_dict()
         omega_conf = loader.load_config_from_dict(dst_dict_config)
