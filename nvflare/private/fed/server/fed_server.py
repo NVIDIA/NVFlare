@@ -594,7 +594,7 @@ class FederatedServer(BaseServer):
                 shareable = Shareable()
                 shareable.set_header(ServerCommandKey.FL_CLIENT, client.name)
                 fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
-                request = new_cell_message({}, fobs.dumps(shareable))
+                request = new_cell_message({}, shareable)
                 self.cell.fire_and_forget(
                     targets=fqcn,
                     channel=CellChannel.SERVER_COMMAND,
@@ -777,7 +777,7 @@ class FederatedServer(BaseServer):
                 target_fqcns = []
                 for job_id in keys:
                     target_fqcns.append(FQCN.join([FQCN.ROOT_SERVER, job_id]))
-                cell_msg = new_cell_message(headers={}, payload=fobs.dumps(self.server_state))
+                cell_msg = new_cell_message(headers={}, payload=self.server_state)
                 self.cell.broadcast_request(
                     channel=CellChannel.SERVER_COMMAND,
                     topic=ServerCommandNames.SERVER_STATE,
