@@ -18,7 +18,7 @@ By default, we assume the dataset is downloaded, uncompressed, and stored in `~/
 
 ### Vertical Data Splits
 In vertical federated learning, sites share overlapping data samples (rows), but contain different features (columns).
-In order to achieve this, we split the HIGGS dataset both horizontally and vertically. As a result, each site has an overlapping subset of the rows and a  subset of the 29 columns.
+In order to achieve this, we split the HIGGS dataset both horizontally and vertically. As a result, each site has an overlapping subset of the rows and a  subset of the 29 columns. Since the first column of HIGGS is the class label, we give site-1 the label column for simplicity's sake.
 
 <img src="./figs/vertical_fl.png" alt="vertical fl diagram" width="500"/>
 
