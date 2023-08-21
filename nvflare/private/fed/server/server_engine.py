@@ -610,7 +610,7 @@ class ServerEngine(ServerEngineInternalSpec):
             )
             rc = return_data.get_header(MessageHeaderKey.RETURN_CODE, CellMsgReturnCode.OK)
             if rc == CellMsgReturnCode.OK:
-                result = fobs.loads(return_data.payload)
+                result = return_data.payload
             else:
                 result = None
         return result
