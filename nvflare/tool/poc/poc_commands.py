@@ -817,7 +817,9 @@ def def_poc_parser(sub_cmd):
 
 
 def define_prepare_parser(poc_parser):
-    prepare_parser = poc_parser.add_parser(CMD_PREPARE_POC, help="prepare poc environment by provisioning local project")
+    prepare_parser = poc_parser.add_parser(
+        CMD_PREPARE_POC, help="prepare poc environment by provisioning local project"
+    )
 
     prepare_parser.add_argument(
         "-n", "--number_of_clients", type=int, nargs="?", default=2, help="number of sites or clients, default to 2"
