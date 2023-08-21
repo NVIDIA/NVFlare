@@ -589,7 +589,7 @@ class ServerEngine(ServerEngineInternalSpec):
     ):
         with self.lock:
             fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
-            request = new_cell_message({}, fobs.dumps(command_data))
+            request = new_cell_message({}, command_data)
             if timeout <= 0.0:
                 self.server.cell.fire_and_forget(
                     targets=fqcn,

@@ -175,7 +175,7 @@ class Communicator:
                 CellMessageHeaderKeys.SSID: ssid,
                 CellMessageHeaderKeys.PROJECT_NAME: project_name,
             },
-            fobs.dumps(shareable),
+            shareable,
         )
         job_id = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
 
@@ -250,7 +250,7 @@ class Communicator:
                 CellMessageHeaderKeys.SSID: ssid,
                 CellMessageHeaderKeys.PROJECT_NAME: project_name,
             },
-            fobs.dumps(shareable),
+            shareable,
         )
         job_id = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
 
