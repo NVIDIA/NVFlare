@@ -32,3 +32,4 @@ which are explained in more detail in their own sections linked below.
    user_guide/docker_compose
    user_guide/helm_chart
    user_guide/logging_configuration
+   user_guide/confidential_computing
