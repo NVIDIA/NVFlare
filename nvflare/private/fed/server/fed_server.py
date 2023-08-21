@@ -346,7 +346,7 @@ class FederatedServer(BaseServer):
     def _listen_command(self, request: Message) -> Message:
         job_id = request.get_header(CellMessageHeaderKeys.JOB_ID)
         command = request.get_header(MessageHeaderKey.TOPIC)
-        data = fobs.loads(request.payload)
+        data = request.payload
 
         if command == ServerCommandNames.GET_CLIENTS:
             if job_id in self.engine.run_processes:
@@ -355,7 +355,7 @@ class FederatedServer(BaseServer):
             else:
                 return_data = {ServerCommandKey.CLIENTS: None, ServerCommandKey.JOB_ID: job_id}
 
-            return make_cellnet_reply(F3ReturnCode.OK, "", fobs.dumps(return_data))
+            return make_cellnet_reply(F3ReturnCode.OK, "", return_data)
         elif command == ServerCommandNames.UPDATE_RUN_STATUS:
             execution_error = data.get("execution_error")
             with self.lock:

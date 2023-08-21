@@ -551,7 +551,7 @@ class ServerEngine(ServerEngineInternalSpec):
         return self.client_manager.clients
 
     def _retrieve_clients_data(self, job_id):
-        request = new_cell_message({CellMessageHeaderKeys.JOB_ID: job_id}, fobs.dumps({}))
+        request = new_cell_message({CellMessageHeaderKeys.JOB_ID: job_id}, {})
         return_data = self.server.cell.send_request(
             target=FQCN.ROOT_SERVER,
             channel=CellChannel.SERVER_PARENT_LISTENER,
@@ -565,7 +565,7 @@ class ServerEngine(ServerEngineInternalSpec):
             self.logger.debug(f"cannot retrieve clients from parent: {rc}")
             return None
 
-        data = fobs.loads(return_data.payload)
+        data = return_data.payload
         clients = data.get(ServerCommandKey.CLIENTS, None)
         if clients is None:
             self.logger.error(f"parent failed to return clients info for job {job_id}")
@@ -576,7 +576,7 @@ class ServerEngine(ServerEngineInternalSpec):
             execution_error = fl_ctx.get_prop(FLContextKey.FATAL_SYSTEM_ERROR, False)
             data = {"execution_error": execution_error}
             job_id = fl_ctx.get_job_id()
-            request = new_cell_message({CellMessageHeaderKeys.JOB_ID: job_id}, fobs.dumps(data))
+            request = new_cell_message({CellMessageHeaderKeys.JOB_ID: job_id}, data)
             return_data = self.server.cell.fire_and_forget(
                 targets=FQCN.ROOT_SERVER,
                 channel=CellChannel.SERVER_PARENT_LISTENER,
