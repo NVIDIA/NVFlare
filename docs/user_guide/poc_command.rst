@@ -12,95 +12,145 @@ The POC command allows users to try out the features of NVFlare in a proof of co
 Syntax and Usage
 =================
 
-.. code-block::
+The POC command has been reorgaznied in version 2.4 to have the subcommands ``prepare``, ``start``, ``stop``, and ``clean`` (``prepare-examples``
+should happen in prepare now).
+
+.. code-block:: none
 
   nvflare poc -h
   
   usage: nvflare poc [-h]  {prepare,prepare-examples,start,stop,clean} ...
   
   options:
-  -h, --help            show this help message and exit
+    -h, --help            show this help message and exit
   
   poc:
    {prepare,prepare-examples,start,stop,clean}
                         poc subcommand
-    prepare             prepare poc
+    prepare             prepare poc environment by provisioning local project
     prepare-examples    prepare examples
     start               start services in poc mode
     stop                stop services in poc mode
     clean               clean up poc workspace
 
 
-You can see the details for each subcommand with the ``-h`` option:
+The detailed options for ``nvflare poc prepare``:
 
-.. code-block::
+.. code-block:: none
 
   nvflare poc prepare -h
   
   usage: nvflare poc prepare [-h] [-n [NUMBER_OF_CLIENTS]] [-c [CLIENTS ...]] [-e [EXAMPLES]] [-he] [-i [PROJECT_INPUT]] [-d [DOCKER_IMAGE]] [-debug]
 
   options:
-  -h, --help            show this help message and exit
-  -n [NUMBER_OF_CLIENTS], --number_of_clients [NUMBER_OF_CLIENTS]
-                        number of sites or clients, default to 2
-  -c [CLIENTS ...], --clients [CLIENTS ...]
-                        Space separated client names. If specified, number_of_clients argument will be ignored.
-  -e [EXAMPLES], --examples [EXAMPLES]
-                        examples directory
-  -he, --he             enable homomorphic encryption.
-  -i [PROJECT_INPUT], --project_input [PROJECT_INPUT]
-                        project.yaml file path, If specified, 'number_of_clients','clients' and 'docker' specific options will be ignored.
-  -d [DOCKER_IMAGE], --docker_image [DOCKER_IMAGE]
-                        generate docker.sh based on the docker_image, used in '--prepare' command. and generate docker.sh 'start/stop' commands will start with docker.sh
-  -debug, --debug       debug is on
+    -h, --help            show this help message and exit
+    -n [NUMBER_OF_CLIENTS], --number_of_clients [NUMBER_OF_CLIENTS]
+                          number of sites or clients, default to 2
+    -c [CLIENTS ...], --clients [CLIENTS ...]
+                          Space separated client names. If specified, number_of_clients argument will be ignored.
+    -e [EXAMPLES], --examples [EXAMPLES]
+                          examples directory
+    -he, --he             enable homomorphic encryption.
+    -i [PROJECT_INPUT], --project_input [PROJECT_INPUT]
+                          project.yaml file path, If specified, 'number_of_clients','clients' and 'docker' specific options will be ignored.
+    -d [DOCKER_IMAGE], --docker_image [DOCKER_IMAGE]
+                          generate docker.sh based on the docker_image, used in '--prepare' command. and generate docker.sh 'start/stop' commands will start with docker.sh
+    -debug, --debug       debug is on
 
 
 .. note::
 
-    After you clone the NVFlare GitHub repository, you may optionally define an ``NVFLARE_HOME`` environment variable to point to the local NVFlare directory so a symbolic link is created to point the transfer directory to the examples in the code base. For example, if the the NVFlare GitHub repository is cloned under ~/projects, then you should set ``NVFLARE_HOME=~/projects/NVFlare``. If the NVFLARE_HOME environment variable is not set, you will need to manually copy the examples to the transfer directory.
+    The "-e" option is new in version 2.4 for linking to the examples in the code base. Previously, you could
+    optionally define an ``NVFLARE_HOME`` environment variable to point to a local NVFlare directory to create a symbolic
+    link to point the transfer directory to the examples in the code base. For example, if the the NVFlare GitHub
+    repository is cloned under ~/projects, then you could set ``NVFLARE_HOME=~/projects/NVFlare``. If the NVFLARE_HOME
+    environment variable was not set, you could manually copy the examples to the transfer directory.
 
+    Now, the "-e" option takes precedence over the ``NVFLARE_HOME`` environment variable, but the ``NVFLARE_HOME`` environment
+    variable can still be used.
+
+
+The detailed options for ``nvflare poc start``:
+
+.. code-block:: none
+
+  nvflare poc start -h
+
+  usage: nvflare poc start [-h] [-p [SERVICE]] [-ex [EXCLUDE]] [-gpu [GPU ...]] [-debug]
+
+  options:
+    -h, --help            show this help message and exit
+    -p [SERVICE], --service [SERVICE]
+                          participant, Default to all participants
+    -ex [EXCLUDE], --exclude [EXCLUDE]
+                          exclude service directory during 'start', default to , i.e. nothing to exclude
+    -gpu [GPU ...], --gpu [GPU ...]
+                          gpu device ids will be used as CUDA_VISIBLE_DEVICES. used for poc start command
+    -debug, --debug       debug is on
+
+
+The detailed options for ``nvflare poc stop``:
+
+.. code-block:: none
+
+  usage: nvflare poc stop [-h] [-p [SERVICE]] [-ex [EXCLUDE]] [-debug]
+
+  options:
+    -h, --help            show this help message and exit
+    -p [SERVICE], --service [SERVICE]
+                          participant, Default to all participants
+    -ex [EXCLUDE], --exclude [EXCLUDE]
+                          exclude service directory during 'stop', default to , i.e. nothing to exclude
+    -debug, --debug       debug is on
+
+
+The detailed options for ``nvflare poc clean``:
+
+.. code-block:: none
+
+  usage: nvflare poc clean [-h] [-debug]
+
+  options:
+    -h, --help       show this help message and exit
+    -debug, --debug  debug is on
+
+.. _poc_workspace:
 
 Set Up POC Workspace
 ====================
 
-.. code-block::
+Running the following command will generate the POC startup startup kits in the default workspace of "/tmp/nvflare/poc":
 
-  nvflare poc prepare
-  prepare poc at /tmp/nvflare/poc for 2 clients
-  This will delete poc folder in current directory and create a new one. Is it OK to proceed? (y/N) y
-  provision at /tmp/nvflare/poc for 2 clients with /tmp/nvflare/poc/project.yml
-  Generated results can be found under /tmp/nvflare/poc/example_project/prod_00.
-
-This is similar to the old command:
-
-.. code-block::
-
-  poc -n 2
-
-except that the workspace is defaulted to "/tmp/nvflare/poc", and the default of 2 clients does not need to be specified.
-
-.. note::
-
-    Examples were automatically linked from /path_to_NVFlare/NVFlare/examples to /tmp/nvflare/poc/admin/transfer in the output above.
-    The transfer directory was set up as a symlink to examples using the NVFLARE_HOME environment variable.
-
-
-Replace the Default POC Workspace
----------------------------------
-You can change the default POC workspace to any location. All you need to do is to set environment variable NVFLARE_POC_WORKSPACE::
-
-    NVFLARE_POC_WORKSPACE="/tmp/nvflare/poc2"
-
-In this example, the default workspace is set to the location "/tmp/nvfalre/poc2".
-
-Now running the following command:
-
-.. code-block::
+.. code-block:: none
 
     nvflare poc prepare
 
-will generate the POC startup startup kits in the workspace "/tmp/nvfalre/poc2".
+Starting in version 2.4, a ``config.conf`` file located at the hidden directory of ``.nvflare/config.conf`` in
+the home directory obtained from ``Path.home()`` is used to store the location of the POC workspace:
 
+.. code-block:: none
+
+    startup_kit {
+        path = /tmp/nvflare/poc/example_project/prod_00
+    }
+    
+    poc_workspace {
+        path = /tmp/nvflare/poc
+    }
+
+This ``config.conf`` file will be created automatically when ``nvflare poc prepare`` is first run.
+
+Replace the Default POC Workspace
+---------------------------------
+
+You can change the default POC workspace to any location. You can set the environment variable NVFLARE_POC_WORKSPACE::
+
+    NVFLARE_POC_WORKSPACE="/tmp/nvflare/poc2"
+
+In this example, the default workspace is set to the location "/tmp/nvflare/poc2".
+
+You can also create the ``config.conf`` file at ``.nvflare/config.conf`` in the home directory and set the value of poc_workspace
+before running ``nvflare poc prepare`` to set the POC workspace, but the NVFLARE_POC_WORKSPACE environment variable will take precedence if set.
 
 Start Package(s)
 ================
@@ -111,7 +161,7 @@ Start ALL Packages
 ------------------
 Running the following command:
 
-.. code-block::
+.. code-block:: none
 
   nvflare poc start
 
@@ -185,7 +235,7 @@ will start ALL clients (site-1, site-2) and server as well as FLARE Console (aka
 
     If you run ``nvflare poc start`` before prepare, you will get the following error:
 
-        .. code-block:: shell
+        .. code-block:: none
 
            /tmp/nvflare/poc/project.yml is missing, make sure you have first run 'nvflare poc prepare'
 
@@ -193,12 +243,12 @@ will start ALL clients (site-1, site-2) and server as well as FLARE Console (aka
 
     If you run ``nvflare poc start`` after having already started the server or any of the clients, you will get errors like:
 
-        .. code-block::
+        .. code-block:: none
 
             There seems to be one instance, pid=12458, running.
             If you are sure it's not the case, please kill process 12458 and then remove daemon_pid.fl in /tmp/nvflare/poc/server/startup/..
 
-        .. code-block::
+        .. code-block:: none
 
             There seems to be one instance, pid=12468, running.
             If you are sure it's not the case, please kill process 12468.
@@ -235,7 +285,7 @@ An example of successful output for starting a server:
 Start the FLARE Console (previously called the Admin Client)
 -------------------------------------------------------------
 
-.. code-block::
+.. code-block:: none
 
     nvflare poc start -p admin@nvidia.com
 
@@ -246,7 +296,7 @@ The user can provide the GPU device IDs in a certain order, for example:
 
 .. code-block::
 
-    nvflare poc -gpu 1 0 0 2 --start
+    nvflare poc start -gpu 1 0 0 2
 
 The system will try to match the clients with the given GPU devices in order. In this example, the matches will be site-1 with GPU_id = 1,
 site-2 with GPU_id = 0, site-3 with GPU_id = 0 and site-4 with GPU_id = 2.
