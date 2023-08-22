@@ -21,7 +21,7 @@ import xgboost as xgb
 
 class XGBDataLoader(ABC):
     @abstractmethod
-    def load_data(self, client_id) -> Tuple[xgb.core.DMatrix, xgb.core.DMatrix]:
+    def load_data(self, client_id: str) -> Tuple[xgb.core.DMatrix, xgb.core.DMatrix]:
         """Loads data for xgboost.
 
         Returns:
