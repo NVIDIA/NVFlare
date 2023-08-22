@@ -152,6 +152,26 @@ In this example, the default workspace is set to the location "/tmp/nvflare/poc2
 You can also create the ``config.conf`` file at ``.nvflare/config.conf`` in the home directory and set the value of poc_workspace
 before running ``nvflare poc prepare`` to set the POC workspace, but the NVFLARE_POC_WORKSPACE environment variable will take precedence if set.
 
+The following command can be used to set the POC workspace:
+
+.. code-block:: none
+
+    nvflare config -pw <poc_workspace>
+
+The startup kit directory can be set with the following command:
+
+.. code-block:: none
+
+    nvflare config -d <startup_dir>
+
+or
+
+.. code-block:: none
+
+    nvflare config --startup_kit_dir <startup_dir>
+
+Note that you will need to run ``nvflare poc prepare`` again after setting the location.
+
 Start Package(s)
 ================
 Once the startup kits are generated with the prepare command, they are ready to be started. If you prepared the POC startup kits using default workspace,
