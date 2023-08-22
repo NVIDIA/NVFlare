@@ -43,7 +43,7 @@ class IntimeModelSelector(Widget):
                 DXO meta properties (defaults to MetaKey.INITIAL_METRICS).
             key_metric: if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
                 Defaults to "val_accuracy".
-            negate_key_metric: Whether to invert the key metric. Should be used if key metric is a loss. Default to `False`.
+            negate_key_metric: Whether to invert the key metric. Should be used if key metric is a loss. Defaults to `False`.
         """
         super().__init__()
 
