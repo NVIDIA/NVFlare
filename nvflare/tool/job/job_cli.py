@@ -108,8 +108,8 @@ def get_template_info_config(template_dir):
 
 def create_job(cmd_args):
     prepare_job_folder(cmd_args)
-    job_template_location = find_job_template_location()
-    template_index_conf = build_job_template_indices(job_template_location)
+    job_template_dir = find_job_template_location()
+    template_index_conf = build_job_template_indices(job_template_dir)
     job_folder = cmd_args.job_folder
     config_dir = get_config_dir(job_folder)
 
@@ -124,8 +124,6 @@ def create_job(cmd_args):
 
     target_template_name = cmd_args.template
     check_template_exists(target_template_name, template_index_conf)
-
-    job_template_dir = find_job_template_location()
     src = os.path.join(job_template_dir, target_template_name)
     copy_tree(src=src, dst=config_dir)
     prepare_meta_config(cmd_args)
@@ -464,19 +462,17 @@ def save_merged_configs(merged_conf, tmp_job_dir):
         base_filename = os.path.basename(file)
         if base_filename.startswith("meta."):
             config_dir = tmp_job_dir
-        base_filename = os.path.splitext(base_filename)[0]
-        dst_path = os.path.join(config_dir, f"{base_filename}.xxx")
-        # save_config(config, dst_path)
+        dst_path = os.path.join(config_dir, base_filename)
         root_index = get_root_index(next(iter(key_indices.values()))[0])
         save_config(root_index.value, dst_path)
 
 
 def prepare_model_exchange_config(job_folder: str, force: bool):
-    dst_path = dst_config_path(job_folder, "config_exchange.xxx")
+    dst_path = dst_config_path(job_folder, "config_exchange.conf")
     if os.path.isfile(dst_path) and not force:
         return
 
-    dst_config = load_src_config_template("config_exchange.xxx")
+    dst_config = load_src_config_template("config_exchange.conf")
     save_config(dst_config, dst_path)
 
 
@@ -485,23 +481,37 @@ def prepare_meta_config(cmd_args):
     job_folder = job_folder[:-1] if job_folder.endswith("/") else job_folder
 
     app_name = os.path.basename(job_folder)
-    dst_path = os.path.join(job_folder, "meta.conf")
+    meta_files = ["meta.json", "meta.conf", "meta.yml"]
+    dst_path = None
+    for mf in meta_files:
+        meta_path = os.path.join(job_folder, mf)
+        if os.path.isfile(meta_path):
+            dst_path = meta_path
+            break
 
     # Use existing meta.conf if user already defined it.
     folder_name_key = JobMetaKey.JOB_FOLDER_NAME.value
-    if not os.path.isfile(dst_path) or cmd_args.force:
+    if not dst_path:
         dst_config = load_src_config_template("meta.conf")
         dst_config.put("name", app_name)
+        dst_path = os.path.join(job_folder, "meta.conf")
     else:
         dst_config = CF.from_dict(ConfigFactory.load_config(dst_path).to_dict())
 
     dst_config.put(folder_name_key, os.path.basename(job_folder))
     save_config(dst_config, dst_path)
 
+    # clean up
+    config_dir = get_config_dir(job_folder)
+    for mf in meta_files:
+        meta_path = os.path.join(config_dir, mf)
+        if os.path.isfile(meta_path):
+            os.remove(meta_path)
+
 
 def load_src_config_template(config_file_name: str):
     file_dir = os.path.dirname(__file__)
-    # todo: change to alternative format ?
+    # src config here is always pyhocon
     config_template = CF.parse_file(os.path.join(file_dir, f"config/{config_file_name}"))
     return config_template
 
@@ -551,6 +561,9 @@ def prepare_job_folder(cmd_args):
             os.makedirs(job_folder)
         elif not os.path.isdir(job_folder):
             raise ValueError(f"job_folder '{job_folder}' exits but not directory")
+        elif cmd_args.force:
+            shutil.rmtree(job_folder)
+            os.makedirs(job_folder)
 
     app_dir = os.path.join(job_folder, "app")
     app_config_dir = os.path.join(app_dir, "config")

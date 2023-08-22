@@ -20,6 +20,7 @@ from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree, HOCONConverter
 
 from nvflare.fuel.utils.config import ConfigFormat
+from nvflare.fuel_opt.utils.pyhocon_loader import PyhoconConfig
 
 
 def get_home_dir() -> Path:
@@ -94,6 +95,28 @@ def create_startup_kit_config(nvflare_config: ConfigTree, startup_kit_dir: Optio
     return conf.with_fallback(nvflare_config)
 
 
+def create_poc_workspace(nvflare_config: ConfigTree, poc_workspace_dir: Optional[str] = None) -> ConfigTree:
+    """
+    Args:
+        poc_workspace_dir: specified poc_workspace_dir
+        nvflare_config (ConfigTree): The existing nvflare configuration.
+
+    Returns:
+        ConfigTree: The merged configuration tree.
+    """
+    if poc_workspace_dir is None:
+        return nvflare_config
+
+    conf_str = f"""
+        poc_workspace {{
+            path = {poc_workspace_dir}
+        }}
+    """
+    conf: ConfigTree = CF.parse_string(conf_str)
+
+    return conf.with_fallback(nvflare_config)
+
+
 def check_dir(dir_path: str):
     if not dir_path or not os.path.isdir(dir_path):
         raise ValueError(f"directory {dir_path} doesn't exists")
@@ -160,26 +183,56 @@ def is_dir_empty(path: str):
     return len(targe_dir) == 0
 
 
-def save_config(dst_config, dst_path, to_json=False):
-    fmt = ConfigFormat.JSON if to_json else ConfigFormat.PYHOCON
-    ext = ConfigFormat.extensions(fmt)[0]
-    if dst_path.endswith(ext):
-        dst_config_path = dst_path
-    else:
-        filename = f"{os.path.basename(dst_path).split('.')[0]}{ext}"
-        dst_config_path = os.path.join(os.path.dirname(dst_path), filename)
+def hocon_to_string(target_fmt: ConfigFormat, dst_config: ConfigTree):
+    if target_fmt == ConfigFormat.JSON:
+        return HOCONConverter.to_json(dst_config)
+    elif target_fmt == ConfigFormat.PYHOCON:
+        return HOCONConverter.to_hocon(dst_config)
+    elif target_fmt == ConfigFormat.OMEGACONF:
+        from nvflare.fuel_opt.utils.omegaconf_loader import OmegaConfLoader
 
-    config_str = HOCONConverter.to_json(dst_config) if to_json else HOCONConverter.to_hocon(dst_config)
+        loader = OmegaConfLoader()
+        dst_dict_config = PyhoconConfig(dst_config).to_dict()
+        omega_conf = loader.load_config_from_dict(dst_dict_config)
+        return omega_conf.to_str()
+
+
+def save_config(dst_config, dst_path, keep_origin_format: bool = True):
+    if dst_path is None or dst_path.rindex(".") == -1:
+        raise ValueError(f"configuration file path '{dst_path}' can't be None or has no extension")
+
+    require_clean_up = False
+    if keep_origin_format:
+        original_ext = os.path.basename(dst_path).split(".")[1]
+        fmt = ConfigFormat.config_ext_formats().get(f".{original_ext}", None)
+        if fmt is None:
+            raise ValueError(f"invalid file extension {dst_path}, no corresponding configuration format")
+        dst_config_path = dst_path
+
+    else:
+        fmt = ConfigFormat.PYHOCON
+        ext = ConfigFormat.extensions(fmt)[0]
+        if dst_path.endswith(ext):
+            dst_config_path = dst_path
+        else:
+            filename = f"{os.path.basename(dst_path).split('.')[0]}{ext}"
+            dst_config_path = os.path.join(os.path.dirname(dst_path), filename)
+            require_clean_up = True
+
+    config_str = hocon_to_string(fmt, dst_config)
     with open(dst_config_path, "w") as outfile:
         outfile.write(f"{config_str}\n")
 
+    if require_clean_up:
+        if os.path.exists(dst_path):
+            os.remove(dst_path)
 
-def save_startup_kit_config(startup_kit_dir: Optional[str] = None):
+
+def get_hidden_config():
     hidden_nvflare_config_file = get_hidden_nvflare_config_path(str(create_hidden_nvflare_dir()))
     conf = load_hidden_config()
     nvflare_config = CF.parse_string("{}") if not conf else conf
-    nvflare_config = create_startup_kit_config(nvflare_config, startup_kit_dir)
-    save_config(nvflare_config, hidden_nvflare_config_file, to_json=False)
+    return hidden_nvflare_config_file, nvflare_config
 
 
 def find_in_list(arr: List, item) -> bool:

@@ -25,7 +25,7 @@ from nvflare.private.fed.app.simulator.simulator import define_simulator_parser,
 from nvflare.tool.job.job_cli import def_job_cli_parser, handle_job_cli_cmd
 from nvflare.tool.poc.poc_commands import def_poc_parser, handle_poc_cmd
 from nvflare.tool.preflight_check import check_packages, define_preflight_check_parser
-from nvflare.utils.cli_utils import save_startup_kit_config
+from nvflare.utils.cli_utils import create_poc_workspace, create_startup_kit_config, get_hidden_config, save_config
 
 CMD_POC = "poc"
 CMD_PROVISION = "provision"
@@ -96,6 +96,9 @@ def def_config_parser(sub_cmd):
     config_parser.add_argument(
         "-d", "--startup_kit_dir", type=str, nargs="?", default=None, help="startup kit location"
     )
+    config_parser.add_argument(
+        "-pw", "--poc_workspace_dir", type=str, nargs="?", default=None, help="POC Workspace location"
+    )
     config_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     return {cmd: config_parser}
 
@@ -103,7 +106,12 @@ def def_config_parser(sub_cmd):
 def handle_config_cmd(args):
     if not args.startup_kit_dir or not os.path.isdir(args.startup_kit_dir):
         raise ValueError(f"invalid startup kit location '{args.startup_kit_dir}'")
-    save_startup_kit_config(args.startup_kit_dir)
+    config_file_path, nvflare_config = get_hidden_config()
+
+    nvflare_config = create_startup_kit_config(nvflare_config, args.startup_kit_dir)
+    nvflare_config = create_poc_workspace(nvflare_config, args.poc_workspace_dir)
+
+    save_config(nvflare_config, config_file_path)
 
 
 def parse_args(prog_name: str):
