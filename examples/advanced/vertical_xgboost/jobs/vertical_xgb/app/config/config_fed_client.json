@@ -1,0 +1,44 @@
+{
+  "format_version": 2,
+  "executors": [
+    {
+      "tasks": [
+        "train"
+      ],
+      "executor": {
+        "id": "xgb_hist_executor",
+        "name": "FedXGBHistogramExecutor",
+        "args": {
+          "num_rounds": 100,
+          "early_stopping_rounds": 2,
+          "xgb_params": {
+            "validate_parameters": true,
+            "eta": 0.1,
+            "gamma": 1.0,
+            "max_depth": 8,
+            "min_child_weight": 100,
+            "tree_method": "approx",
+            "grow_policy": "depthwise",
+            "eval_metric": "auc"
+          },
+          "data_loader_id": "dataloader"
+        }
+      }
+    }
+  ],
+  "task_result_filters": [],
+  "task_data_filters": [],
+  "components": [
+    {
+      "id": "dataloader",
+      "path": "vertical_data_loader.VerticalDataLoader",
+      "args": {
+        "data_split_path": "/tmp/nvflare/vertical_xgb_data/site-x/higgs.data.csv",
+        "psi_path": "/tmp/nvflare/vertical_xgb_psi/simulate_job/site-x/psi/intersection.txt",
+        "id_col": "uid",
+        "label_owner": "site-1",
+        "train_proportion": 0.8
+      }
+    }
+  ]
+}
