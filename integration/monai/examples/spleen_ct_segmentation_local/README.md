@@ -111,7 +111,7 @@ In the following experiments, we will be using 2 clients. Press y and enter when
 
 ### 4.1 (Optional) Crate POC workspace
 ```
-nvflare poc --prepare -n 2
+nvflare poc prepare -n 2
 ```
 By default, POC will create startup kits at `/tmp/nvflare/poc`.
 
@@ -127,7 +127,7 @@ By default, POC will create startup kits at `/tmp/nvflare/poc`.
 
 Then, start the FL system with all provisioned clients by running
 ```
-nvflare poc --start
+nvflare poc start
 ```
 
 ## 5. Run experiments

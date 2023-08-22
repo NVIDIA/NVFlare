@@ -147,7 +147,7 @@ def _prepare_examples(example_dir: str, workspace: str, config_packages: Optiona
 
     prod_dir = get_prod_dir(workspace)
     if not os.path.exists(prod_dir):
-        raise CLIException("please use nvflare poc --prepare to create workspace first")
+        raise CLIException("please use nvflare poc prepare to create workspace first")
 
     console_dir = os.path.join(prod_dir, f"{service_config[SC.FLARE_PROJ_ADMIN]}")
     startup_dir = os.path.join(console_dir, SC.STARTUP)
@@ -551,7 +551,7 @@ def is_poc_ready(poc_workspace: str, service_config):
 
 def validate_poc_workspace(poc_workspace: str, service_config):
     if not is_poc_ready(poc_workspace, service_config):
-        raise CLIException(f"workspace {poc_workspace} is not ready, please use poc --prepare to prepare poc workspace")
+        raise CLIException(f"workspace {poc_workspace} is not ready, please use poc prepare to prepare poc workspace")
 
 
 def validate_gpu_ids(gpu_ids: list, host_gpu_ids: list):
@@ -636,7 +636,7 @@ def setup_service_config(poc_workspace) -> Tuple:
         service_config = get_service_config(project_config) if project_config else None
         return project_config, service_config
     else:
-        raise CLIException(f"{project_file} is missing, make sure you have first run 'nvflare poc --prepare'")
+        raise CLIException(f"{project_file} is missing, make sure you have first run 'nvflare poc prepare'")
 
 
 def stop_poc(cmd_args):
@@ -817,7 +817,9 @@ def def_poc_parser(sub_cmd):
 
 
 def define_prepare_parser(poc_parser):
-    prepare_parser = poc_parser.add_parser(CMD_PREPARE_POC, help="prepare poc")
+    prepare_parser = poc_parser.add_parser(
+        CMD_PREPARE_POC, help="prepare poc environment by provisioning local project"
+    )
 
     prepare_parser.add_argument(
         "-n", "--number_of_clients", type=int, nargs="?", default=2, help="number of sites or clients, default to 2"
@@ -957,8 +959,8 @@ def _handle_poc_cmd(cmd_args):
 
     if cmd_args.gpu is not None and cmd_args.prepare_poc:
         raise CLIException(
-            "-gpu should not be used for 'nvflare poc --prepare' command,"
-            " it is intended to use in 'nvflare poc --start' command "
+            "-gpu should not be used for 'nvflare poc prepare' command,"
+            " it is intended to use in 'nvflare poc start' command "
         )
 
     poc_workspace = get_poc_workspace()
