@@ -134,8 +134,8 @@ def _update_client_config(config: dict, args, lr_scale, site_name: str):
         config["executors"][0]["executor"]["args"]["num_client_bagging"] = num_client_bagging
     else:
         config["components"][0]["args"]["data_split_filename"] = data_split_name
-        config["executors"][0]["executor"]["args"]["xgboost_params"]["nthread"] = args.nthread
-        config["executors"][0]["executor"]["args"]["xgboost_params"]["tree_method"] = args.tree_method
+        config["executors"][0]["executor"]["args"]["xgb_params"]["nthread"] = args.nthread
+        config["executors"][0]["executor"]["args"]["xgb_params"]["tree_method"] = args.tree_method
 
 
 def _update_server_config(config: dict, args):
