@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+
 import numpy as np
 
 from nvflare.apis.dxo import DataKind, MetaKey, from_shareable
@@ -21,7 +23,11 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.fuel.utils.import_utils import optional_import
+from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.widget import Widget
+
+tb, tb_flag = optional_import(module="torch.utils.tensorboard")
 
 
 class IntimeModelSelector(Widget):
@@ -31,6 +37,8 @@ class IntimeModelSelector(Widget):
         aggregation_weights=None,
         validation_metric_name=MetaKey.INITIAL_METRICS,
         key_metric: str = "val_accuracy",
+        negate_key_metric: bool = False,
+        tb_summary=False,
     ):
         """Handler to determine if the model is globally best.
 
@@ -41,6 +49,9 @@ class IntimeModelSelector(Widget):
                 DXO meta properties (defaults to MetaKey.INITIAL_METRICS).
             key_metric: if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
                 Defaults to "val_accuracy".
+            negate_key_metric: Whether to invert the key metric. Should be used if key metric is a loss. Default to `False`.
+            tb_summary (bool, optional): whether to print val_metric using TensorBoard or not (defaults to False).
+                Requires `torch.utils.tensorboard` to be installed.
         """
         super().__init__()
 
@@ -49,6 +60,9 @@ class IntimeModelSelector(Widget):
         self.validation_metric_name = validation_metric_name
         self.aggregation_weights = aggregation_weights or {}
         self.key_metric = key_metric
+        self.negate_key_metric = negate_key_metric
+        self.tb_summary = tb_summary and tb_flag
+        self._writers = {}
 
         self.logger.info(f"model selection weights control: {aggregation_weights}")
         self._reset_stats()
@@ -77,7 +91,7 @@ class IntimeModelSelector(Widget):
             dxo = from_shareable(shareable)
         except Exception as e:
             self.log_exception(
-                fl_ctx, "shareable data is not a valid DXO. " "Received Exception: {secure_format_exception(e)}"
+                fl_ctx, f"shareable data is not a valid DXO. Received Exception: {secure_format_exception(e)}"
             )
 
         if dxo.data_kind not in (DataKind.WEIGHT_DIFF, DataKind.WEIGHTS, DataKind.COLLECTION):
@@ -109,8 +123,25 @@ class IntimeModelSelector(Widget):
             self.log_warning(fl_ctx, f"validation metric not existing in {client_name}")
             return False
 
+        if self.weigh_by_local_iter:
+            n_iter = dxo.get_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND, 1.0)
+        else:
+            n_iter = 1.0
+
+        if self.tb_summary:
+            if client_name not in self._writers:
+                app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)
+                self._writers[client_name] = tb.SummaryWriter(os.path.join(app_root, client_name))
+                self.log_info(fl_ctx, f"Attempting to write TensorBoard events for {client_name} to {self.app_root}")
+
         # select key metric if dictionary of metrics is provided
         if isinstance(validation_metric, dict):
+            if self.tb_summary:
+                for _metric, _value in validation_metric.items():
+                    self._writers[client_name].add_scalar(
+                        f"{_metric}_{client_name}", _value, int(current_round * n_iter)
+                    )
+
             if self.key_metric in validation_metric:
                 validation_metric = validation_metric[self.key_metric]
             else:
@@ -119,13 +150,14 @@ class IntimeModelSelector(Widget):
                     f"validation metric `{self.key_metric}` not in metrics from {client_name}: {list(validation_metric.keys())}",
                 )
                 return False
+        elif isinstance(validation_metric, float):
+            if self.tb_summary:
+                self._writers[client_name].add_scalar(self.key_metric, validation_metric, int(current_round * n_iter))
+
+        if self.negate_key_metric:
+            validation_metric = -1.0 * validation_metric
 
         self.log_info(fl_ctx, f"validation metric {validation_metric} from client {client_name}")
-
-        if self.weigh_by_local_iter:
-            n_iter = dxo.get_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND, 1.0)
-        else:
-            n_iter = 1.0
 
         aggregation_weights = self.aggregation_weights.get(client_name, 1.0)
         self.log_debug(fl_ctx, f"aggregation weight: {aggregation_weights}")
