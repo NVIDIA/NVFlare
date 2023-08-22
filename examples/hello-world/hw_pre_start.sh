@@ -13,15 +13,15 @@ NVFLARE_POC_WORKSPACE="/tmp/nvflare/poc"
 export NVFLARE_POC_WORKSPACE
 
 # prepare POC for 2 clients
-echo "y" | nvflare poc --prepare -n 2
+echo "y" | nvflare poc prepare -n 2
 
 if [ ! -L "${NVFLARE_POC_WORKSPACE}/admin/transfer" ]; then
-     echo "'nvflare poc --prepare' did not generate symlink '${NVFLARE_POC_WORKSPACE}/admin/transfer'"
+     echo "'nvflare poc prepare' did not generate symlink '${NVFLARE_POC_WORKSPACE}/admin/transfer'"
      exit 1
 fi
 
 # start POC FL server and FL clients
-nvflare poc --start -ex admin
+nvflare poc start -ex admin
 
 # Check if the FL system is ready until 2 clients are active
 python <<END

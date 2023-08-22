@@ -90,7 +90,7 @@ Activations and corresponding gradients are being exchanged between the clients 
 New Example for NLP
 ===================
 The new `NLP-NER Example <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/nlp-ner/README.md>`_ illustrates both `BERT <https://github.com/google-research/bert>`_ and
-`GPT-2 <https://github.com/openai/gpt-2>`_ models from `Hugging Face <https://huggingface.co/>`_ (`BERT-base-uncased <https://huggingface.co/bert-base-uncased>`_, `GPT-2 <https://huggingface.co/gpt2>`_)
+`GPT-2 <https://github.com/openai/gpt-2>`__ models from `Hugging Face <https://huggingface.co/>`_ (`BERT-base-uncased <https://huggingface.co/bert-base-uncased>`_, `GPT-2 <https://huggingface.co/gpt2>`__)
 on a Named Entity Recognition (NER) task using the `NCBI disease dataset <https://pubmed.ncbi.nlm.nih.gov/24393765/>`_.
 
 Research Areas
