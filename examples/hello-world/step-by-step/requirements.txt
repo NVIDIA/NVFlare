@@ -1,0 +1,4 @@
+nvflare>=2.3.2
+torch
+torchvision
+tensorboard
