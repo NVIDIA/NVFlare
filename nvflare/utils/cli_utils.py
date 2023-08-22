@@ -95,6 +95,28 @@ def create_startup_kit_config(nvflare_config: ConfigTree, startup_kit_dir: Optio
     return conf.with_fallback(nvflare_config)
 
 
+def create_poc_workspace(nvflare_config: ConfigTree, poc_workspace_dir: Optional[str] = None) -> ConfigTree:
+    """
+    Args:
+        poc_workspace_dir: specified poc_workspace_dir
+        nvflare_config (ConfigTree): The existing nvflare configuration.
+
+    Returns:
+        ConfigTree: The merged configuration tree.
+    """
+    if poc_workspace_dir is None:
+        return nvflare_config
+
+    conf_str = f"""
+        poc_workspace {{
+            path = {poc_workspace_dir}
+        }}
+    """
+    conf: ConfigTree = CF.parse_string(conf_str)
+
+    return conf.with_fallback(nvflare_config)
+
+
 def check_dir(dir_path: str):
     if not dir_path or not os.path.isdir(dir_path):
         raise ValueError(f"directory {dir_path} doesn't exists")
@@ -206,12 +228,11 @@ def save_config(dst_config, dst_path, keep_origin_format: bool = True):
             os.remove(dst_path)
 
 
-def save_startup_kit_config(startup_kit_dir: Optional[str] = None):
+def get_hidden_config():
     hidden_nvflare_config_file = get_hidden_nvflare_config_path(str(create_hidden_nvflare_dir()))
     conf = load_hidden_config()
     nvflare_config = CF.parse_string("{}") if not conf else conf
-    nvflare_config = create_startup_kit_config(nvflare_config, startup_kit_dir)
-    save_config(nvflare_config, hidden_nvflare_config_file)
+    return hidden_nvflare_config_file, nvflare_config
 
 
 def find_in_list(arr: List, item) -> bool:
