@@ -15,7 +15,7 @@
 import logging
 
 from nvflare.apis.utils.fl_context_utils import generate_log_message
-from nvflare.security.logging import secure_format_exception, secure_format_traceback
+from nvflare.security.logging import secure_format_traceback
 
 from .analytix import AnalyticsData, AnalyticsDataType
 from .event_type import EventType
@@ -228,41 +228,3 @@ class FLComponent(StatePersistable):
         dxo = event_data.to_dxo()
         fl_ctx.set_prop(key=FLContextKey.EVENT_DATA, value=dxo.to_shareable(), private=True, sticky=False)
         self.fire_event(event_type=event_type, fl_ctx=fl_ctx)
-
-    def apply_data_filters(self, task_filter_list, task_data, fl_ctx):
-        filter_error = False
-        # apply scope filters first
-        scope_object = fl_ctx.get_prop(FLContextKey.SCOPE_OBJECT)
-        filter_list = []
-        if scope_object and scope_object.task_data_filters:
-            filter_list.extend(scope_object.task_data_filters)
-        if task_filter_list:
-            filter_list.extend(task_filter_list)
-        filter_error, task_data = self._apply_filters(filter_list, filter_error, task_data, fl_ctx)
-        return filter_error, task_data
-
-    def _apply_filters(self, filter_list, filter_error, filter_data, fl_ctx):
-        if filter_list:
-            for f in filter_list:
-                try:
-                    filter_data = f.process(filter_data, fl_ctx)
-                except Exception as e:
-                    self.log_exception(
-                        fl_ctx,
-                        "processing error in task data filter {}: {}; "
-                        "asked client to try again later".format(type(f), secure_format_exception(e)),
-                    )
-                    filter_error = True
-                    break
-        return filter_error, filter_data
-
-    def apply_result_filters(self, task_filter_list, result, fl_ctx):
-        filter_error = False
-        filter_list = []
-        scope_object = fl_ctx.get_prop(FLContextKey.SCOPE_OBJECT)
-        if scope_object and scope_object.task_result_filters:
-            filter_list.extend(scope_object.task_result_filters)
-        if task_filter_list:
-            filter_list.extend(task_filter_list)
-        filter_error, result = self._apply_filters(filter_list, filter_error, result, fl_ctx)
-        return filter_error, result

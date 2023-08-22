@@ -24,6 +24,7 @@ from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
+from nvflare.apis.utils.task_utils import apply_data_filters, apply_result_filters
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
@@ -268,7 +269,7 @@ class ServerRunner(FLComponent):
             self.fire_event(EventType.BEFORE_TASK_DATA_FILTER, fl_ctx)
 
             task_filter_list = self.config.task_data_filters.get(task_name)
-            filter_error, task_data = self.apply_data_filters(task_filter_list, task_data, fl_ctx)
+            filter_error, task_data = apply_data_filters(task_filter_list, task_data, self.logger, fl_ctx)
 
             if filter_error:
                 with self.wf_lock:
@@ -427,7 +428,7 @@ class ServerRunner(FLComponent):
                 self.fire_event(EventType.BEFORE_TASK_RESULT_FILTER, fl_ctx)
 
                 task_filter_list = self.config.task_result_filters.get(task_name)
-                filter_error, result = self.apply_result_filters(task_filter_list, result, fl_ctx)
+                filter_error, result = apply_result_filters(task_filter_list, result, self.logger, fl_ctx)
 
                 if filter_error:
                     result = make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
