@@ -25,6 +25,7 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.private.fed.client.client_engine_executor_spec import ClientEngineExecutorSpec, TaskAssignment
+from nvflare.private.fed_json_config import FilterChain
 from nvflare.private.privacy_manager import Scope
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
@@ -213,7 +214,7 @@ class ClientRunner(FLComponent):
             if scope_object.task_data_filters:
                 filter_list.extend(scope_object.task_data_filters)
 
-        task_filter_list = self.task_data_filters.get(task.name)
+        task_filter_list = self.task_data_filters.get(task.name + FilterChain.DELIMITER + FilterChain.IN)
         if task_filter_list:
             filter_list.extend(task_filter_list)
 
@@ -332,7 +333,7 @@ class ClientRunner(FLComponent):
         if scope_object and scope_object.task_result_filters:
             filter_list.extend(scope_object.task_result_filters)
 
-        task_filter_list = self.task_result_filters.get(task.name)
+        task_filter_list = self.task_result_filters.get(task.name + FilterChain.DELIMITER + FilterChain.OUT)
         if task_filter_list:
             filter_list.extend(task_filter_list)
 

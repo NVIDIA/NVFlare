@@ -62,6 +62,7 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             base_pkgs=base_pkgs,
             module_names=module_names,
             exclude_libs=exclude_libs,
+            is_server=True,
         )
 
         if kv_list:

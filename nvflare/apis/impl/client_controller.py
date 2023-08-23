@@ -22,6 +22,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.task_utils import apply_data_filters, apply_result_filters
+from nvflare.private.fed_json_config import FilterChain
 from nvflare.security.logging import secure_format_exception
 
 
@@ -79,7 +80,7 @@ class ClientController(FLComponent, ControllerSpec):
         self.fire_event(EventType.BEFORE_TASK_DATA_FILTER, fl_ctx)
 
         # # first apply privacy-defined filters
-        task_filter_list = self.task_data_filters.get(task.name)
+        task_filter_list = self.task_data_filters.get(task.name + FilterChain.DELIMITER + FilterChain.OUT)
         filter_error, task.data = apply_data_filters(task_filter_list, request, self.logger, fl_ctx)
 
         if filter_error:
@@ -108,7 +109,7 @@ class ClientController(FLComponent, ControllerSpec):
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_RESULT_FILTER")
         self.fire_event(EventType.BEFORE_TASK_RESULT_FILTER, fl_ctx)
 
-        task_filter_list = self.task_result_filters.get(task.name)
+        task_filter_list = self.task_result_filters.get(task.name + FilterChain.DELIMITER + FilterChain.IN)
         for target, reply in replies.items():
             # get the client task for the target
             for client_task in task.client_tasks:

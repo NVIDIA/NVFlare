@@ -26,6 +26,7 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.apis.utils.task_utils import apply_data_filters, apply_result_filters
 from nvflare.private.defs import SpecialTaskName, TaskConstant
+from nvflare.private.fed_json_config import FilterChain
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
@@ -268,7 +269,7 @@ class ServerRunner(FLComponent):
             self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_DATA_FILTER")
             self.fire_event(EventType.BEFORE_TASK_DATA_FILTER, fl_ctx)
 
-            task_filter_list = self.config.task_data_filters.get(task_name)
+            task_filter_list = self.config.task_data_filters.get(task_name + FilterChain.DELIMITER + FilterChain.OUT)
             filter_error, task_data = apply_data_filters(task_filter_list, task_data, self.logger, fl_ctx)
 
             if filter_error:
@@ -427,7 +428,9 @@ class ServerRunner(FLComponent):
                 self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_RESULT_FILTER")
                 self.fire_event(EventType.BEFORE_TASK_RESULT_FILTER, fl_ctx)
 
-                task_filter_list = self.config.task_result_filters.get(task_name)
+                task_filter_list = self.config.task_result_filters.get(
+                    task_name + FilterChain.DELIMITER + FilterChain.IN
+                )
                 filter_error, result = apply_result_filters(task_filter_list, result, self.logger, fl_ctx)
 
                 if filter_error:
