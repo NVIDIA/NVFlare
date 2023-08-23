@@ -249,12 +249,12 @@ def prepare_builders(project_dict: OrderedDict) -> List:
 
 
 def local_provision(
-    clients: List[str],
-    number_of_clients: int,
-    workspace: str,
-    docker_image: str,
-    use_he: bool = False,
-    project_conf_path: str = "",
+        clients: List[str],
+        number_of_clients: int,
+        workspace: str,
+        docker_image: str,
+        use_he: bool = False,
+        project_conf_path: str = "",
 ) -> Tuple:
     user_provided_project_config = False
     if project_conf_path:
@@ -403,19 +403,18 @@ def prepare_poc(cmd_args):
         poc_workspace,
         cmd_args.docker_image,
         cmd_args.he,
-        project_conf_path,
-        cmd_args.examples,
+        project_conf_path
     )
 
 
 def _prepare_poc(
-    clients: List[str],
-    number_of_clients: int,
-    workspace: str,
-    docker_image: str = None,
-    use_he: bool = False,
-    project_conf_path: str = "",
-    examples_dir: Optional[str] = None,
+        clients: List[str],
+        number_of_clients: int,
+        workspace: str,
+        docker_image: str = None,
+        use_he: bool = False,
+        project_conf_path: str = "",
+        examples_dir: Optional[str] = None,
 ) -> bool:
     if clients:
         number_of_clients = len(clients)
@@ -482,13 +481,13 @@ def get_hidden_nvflare_config_path() -> str:
 
 
 def prepare_poc_provision(
-    clients: List[str],
-    number_of_clients: int,
-    workspace: str,
-    docker_image: str,
-    use_he: bool = False,
-    project_conf_path: str = "",
-    examples_dir: Optional[str] = None,
+        clients: List[str],
+        number_of_clients: int,
+        workspace: str,
+        docker_image: str,
+        use_he: bool = False,
+        project_conf_path: str = "",
+        examples_dir: Optional[str] = None,
 ):
     os.makedirs(workspace, exist_ok=True)
     os.makedirs(os.path.join(workspace, "data"), exist_ok=True)
@@ -506,9 +505,8 @@ def prepare_poc_provision(
 def get_examples_dir(examples_dir):
     if examples_dir:
         return examples_dir
-
     nvflare_home = get_nvflare_home()
-    default_examples_dir = os.path.join(nvflare_home, "examples") if nvflare_home else None
+    default_examples_dir = os.path.join(nvflare_home, SC.EXAMPLES) if nvflare_home else None
     return default_examples_dir
 
 
@@ -677,7 +675,7 @@ def _get_clients(service_commands: list, service_config) -> List[str]:
         service_dir_name
         for service_dir_name, _ in service_commands
         if service_dir_name != service_config[SC.FLARE_PROJ_ADMIN]
-        and service_dir_name != service_config[SC.FLARE_SERVER]
+           and service_dir_name != service_config[SC.FLARE_SERVER]
     ]
     return clients
 
@@ -698,9 +696,9 @@ def _build_commands(cmd_type: str, poc_workspace: str, service_config, excluded:
 
     def is_fl_service_dir(p_dir_name: str) -> bool:
         fl_service = (
-            p_dir_name == service_config[SC.FLARE_PROJ_ADMIN]
-            or p_dir_name == service_config[SC.FLARE_SERVER]
-            or p_dir_name in service_config[SC.FLARE_CLIENTS]
+                p_dir_name == service_config[SC.FLARE_PROJ_ADMIN]
+                or p_dir_name == service_config[SC.FLARE_SERVER]
+                or p_dir_name in service_config[SC.FLARE_CLIENTS]
         )
         return fl_service
 
@@ -755,7 +753,7 @@ def sync_process(service_name, cmd_path):
 
 
 def _run_poc(
-    cmd_type: str, poc_workspace: str, gpu_ids: List[int], service_config: Dict, excluded: list, services_list=None
+        cmd_type: str, poc_workspace: str, gpu_ids: List[int], service_config: Dict, excluded: list, services_list=None
 ):
     if services_list is None:
         services_list = []
@@ -806,6 +804,8 @@ poc_sub_cmd_handlers = {
 def def_poc_parser(sub_cmd):
     cmd = "poc"
     parser = sub_cmd.add_parser(cmd)
+    add_legacy_options(parser)
+
     poc_parser = parser.add_subparsers(title=cmd, dest="poc_sub_cmd", help="poc subcommand")
     define_prepare_parser(poc_parser)
     define_prepare_example_parser(poc_parser)
@@ -816,10 +816,41 @@ def def_poc_parser(sub_cmd):
     return {cmd: parser}
 
 
-def define_prepare_parser(poc_parser):
-    prepare_parser = poc_parser.add_parser(
-        CMD_PREPARE_POC, help="prepare poc environment by provisioning local project"
+def add_legacy_options(parser):
+    parser.add_argument(
+        "--prepare",
+        dest="old_prepare_poc",
+        action="store_const",
+        const=old_prepare_poc,
+        help="deprecated, suggest use 'nvflare poc prepare'",
     )
+    parser.add_argument("--start", dest="old_start_poc", action="store_const", const=old_start_poc, help="deprecated, suggest use 'nvflare poc start'")
+    parser.add_argument("--stop", dest="old_stop_poc", action="store_const", const=old_stop_poc, help="deprecated, suggest use 'nvflare poc stop'")
+    parser.add_argument(
+        "--clean", dest="old_clean_poc", action="store_const", const=old_clean_poc, help="deprecated, suggest use 'nvflare poc clean'"
+    )
+
+
+def old_start_poc():
+    print(f"'nvflare poc --{CMD_START_POC}' is deprecated, please use 'nvflare poc {CMD_START_POC}' ")
+
+
+def old_stop_poc():
+    print(f"'nvflare poc --{CMD_STOP_POC}' is deprecated, please use 'nvflare poc {CMD_STOP_POC}' ")
+
+
+def old_clean_poc():
+    print(f"'nvflare poc --{CMD_CLEAN_POC}' is deprecated, please use 'nvflare poc {CMD_CLEAN_POC}' ")
+
+
+def old_prepare_poc():
+    print(f"'nvflare poc --{CMD_PREPARE_POC}' is deprecated, please use 'nvflare poc {CMD_PREPARE_POC}' ")
+
+
+def define_prepare_parser(poc_parser, cmd: Optional[str] = None, help_str: Optional[str] = None):
+    cmd = CMD_PREPARE_POC if cmd is None else cmd
+    help_str = "prepare poc environment by provisioning local project" if help_str is None else help_str
+    prepare_parser = poc_parser.add_parser(cmd, help=help_str)
 
     prepare_parser.add_argument(
         "-n", "--number_of_clients", type=int, nargs="?", default=2, help="number of sites or clients, default to 2"
@@ -831,14 +862,6 @@ def define_prepare_parser(poc_parser):
         type=str,
         default=[],  # default if nothing is provided
         help="Space separated client names. If specified, number_of_clients argument will be ignored.",
-    )
-    prepare_parser.add_argument(
-        "-e",
-        "--examples",
-        type=str,
-        nargs="?",
-        default=None,
-        help="examples directory",
     )
     prepare_parser.add_argument(
         "-he",
@@ -854,7 +877,7 @@ def define_prepare_parser(poc_parser):
         nargs="?",
         default="",
         help="project.yaml file path, If specified, "
-        + "'number_of_clients','clients' and 'docker' specific options will be ignored.",
+             + "'number_of_clients','clients' and 'docker' specific options will be ignored.",
     )
     prepare_parser.add_argument(
         "-d",
@@ -863,7 +886,7 @@ def define_prepare_parser(poc_parser):
         default=None,
         const="nvflare/nvflare",
         help="generate docker.sh based on the docker_image, used in '--prepare' command. and generate docker.sh "
-        + " 'start/stop' commands will start with docker.sh ",
+             + " 'start/stop' commands will start with docker.sh ",
     )
 
     prepare_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
@@ -943,8 +966,19 @@ def get_local_host_gpu_ids():
 
 
 def handle_poc_cmd(cmd_args):
-    poc_cmd_handler = poc_sub_cmd_handlers.get(cmd_args.poc_sub_cmd, None)
-    poc_cmd_handler(cmd_args)
+    if cmd_args.poc_sub_cmd:
+        poc_cmd_handler = poc_sub_cmd_handlers.get(cmd_args.poc_sub_cmd, None)
+        poc_cmd_handler(cmd_args)
+    elif cmd_args.old_start_poc:
+        old_start_poc()
+    elif cmd_args.old_stop_poc:
+        old_stop_poc()
+    elif cmd_args.old_clean_poc:
+        old_clean_poc()
+    elif cmd_args.old_prepare_poc:
+        old_prepare_poc()
+    else:
+        raise ValueError("unknown command")
 
 
 def _handle_poc_cmd(cmd_args):
@@ -994,7 +1028,6 @@ def _handle_poc_cmd(cmd_args):
 
 
 def get_poc_workspace():
-
     poc_workspace = os.getenv("NVFLARE_POC_WORKSPACE")
 
     if not poc_workspace:
