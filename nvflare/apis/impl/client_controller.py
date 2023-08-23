@@ -22,6 +22,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.task_utils import apply_data_filters, apply_result_filters
+from nvflare.private.fed.utils.fed_utils import get_target_names
 from nvflare.private.fed_json_config import FilterChain
 from nvflare.security.logging import secure_format_exception
 
@@ -87,6 +88,11 @@ class ClientController(FLComponent, ControllerSpec):
             replies = self._make_error_reply(ReturnCode.TASK_DATA_FILTER_ERROR, targets)
             return replies
 
+        target_names = get_target_names(targets)
+        _, invalid_names = engine.validate_targets(target_names)
+        if invalid_names:
+            raise ValueError(f"invalid target(s): {invalid_names}")
+
         # set up ClientTask for each client
         for target in targets:
             client: Client = self._get_client(target, engine)
@@ -114,21 +120,25 @@ class ClientController(FLComponent, ControllerSpec):
             # get the client task for the target
             for client_task in task.client_tasks:
                 if client_task.client.name == target:
-                    # apply result filters
-                    filter_error, result = apply_result_filters(task_filter_list, reply, self.logger, fl_ctx)
-                    if filter_error:
-                        error_reply = make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
-                        client_task.result = error_reply
-                        break
+                    rc = reply.get_return_code()
+                    if rc and rc == ReturnCode.OK:
+                        # apply result filters
+                        filter_error, result = apply_result_filters(task_filter_list, reply, self.logger, fl_ctx)
+                        if filter_error:
+                            error_reply = make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
+                            client_task.result = error_reply
+                            break
 
-                    # assign replies to client task, prepare for the result_received_cb
-                    client_task.result = reply
+                        # assign replies to client task, prepare for the result_received_cb
+                        client_task.result = reply
 
-                    client: Client = self._get_client(target, engine)
-                    task_cb_error = self._call_task_cb(task.result_received_cb, client, task, fl_ctx)
-                    if task_cb_error:
+                        client: Client = self._get_client(target, engine)
+                        task_cb_error = self._call_task_cb(task.result_received_cb, client, task, fl_ctx)
+                        if task_cb_error:
+                            client_task.result = make_reply(ReturnCode.ERROR)
+                            break
+                    else:
                         client_task.result = make_reply(ReturnCode.ERROR)
-                        break
 
                     break
 
@@ -207,6 +217,10 @@ class ClientController(FLComponent, ControllerSpec):
         send_order: SendOrder = SendOrder.SEQUENTIAL,
         task_assignment_timeout: int = 0,
     ):
+        engine = fl_ctx.get_engine()
+
+        self._validate_target(engine, targets)
+
         return self.send_and_wait(task, fl_ctx, targets, send_order, task_assignment_timeout)
 
     def send_and_wait(
@@ -218,8 +232,22 @@ class ClientController(FLComponent, ControllerSpec):
         task_assignment_timeout: int = 0,
         abort_signal: Signal = None,
     ):
+        engine = fl_ctx.get_engine()
+
+        self._validate_target(engine, targets)
+
         replies = {}
         for target in targets:
             reply = self.broadcast_and_wait(task, fl_ctx, [target], abort_signal=abort_signal)
             replies.update(reply)
         return replies
+
+    def _validate_target(self, engine, targets):
+        if len(targets) == 0:
+            raise ValueError("Must provide a target to send.")
+        if len(targets) != 1:
+            raise ValueError("send_and_wait can only send to a single target.")
+        target_names = get_target_names(targets)
+        _, invalid_names = engine.validate_targets(target_names)
+        if invalid_names:
+            raise ValueError(f"invalid target(s): {invalid_names}")
