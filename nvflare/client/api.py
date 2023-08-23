@@ -60,8 +60,13 @@ def init(config: Union[str, Dict] = f"config/{CONFIG_EXCHANGE}"):
     PROCESS_CACHE[pid] = Cache(mdx, client_config)
 
 
-def receive() -> FLModel:
+def receive(use_cache: bool = False) -> FLModel:
     """Receives model from NVFlare side.
+
+    Args:
+        use_cache (bool): If use_cache is True and there is a cached model, will just use that.
+            If use_cache is True and there is no cached model, will receive a new model.
+            If use_cache is False, will receive a new model.
 
     Returns:
         A tuple of model, metadata received.
@@ -70,7 +75,7 @@ def receive() -> FLModel:
     if pid not in PROCESS_CACHE:
         raise RuntimeError("needs to call init method first")
     cache = PROCESS_CACHE[pid]
-    cache.receive()
+    cache.receive(use_cache=use_cache)
     return cache.input_model
 
 
@@ -96,16 +101,6 @@ def clear():
     PROCESS_CACHE.pop(pid)
 
 
-def _receive_for_system_info():
-    pid = os.getpid()
-    if pid not in PROCESS_CACHE:
-        raise RuntimeError("needs to call init method first")
-    cache = PROCESS_CACHE[pid]
-    if not cache.input_model:
-        cache.receive(sys_info_receive=True)
-    return cache.input_model, cache.sys_info
-
-
 def system_info() -> Dict:
     """Gets NVFlare system information.
 
@@ -115,8 +110,12 @@ def system_info() -> Dict:
     Returns:
        A dict of system information.
     """
-    _, sys_info = _receive_for_system_info()
-    return sys_info
+    pid = os.getpid()
+    if pid not in PROCESS_CACHE:
+        raise RuntimeError("needs to call init method first")
+    cache = PROCESS_CACHE[pid]
+    cache.receive(use_cache=True)
+    return cache.sys_info
 
 
 def params_diff(original: Dict, new: Dict) -> Dict:

@@ -43,8 +43,8 @@ class Cache:
         self.sys_info = None
         self.output_meta = {}
 
-    def receive(self, sys_info_receive=False):
-        if sys_info_receive and self.input_model is not None:
+    def receive(self, use_cache=False):
+        if use_cache and self.input_model is not None:
             return
         self.input_model = self.model_exchanger.receive_model()
         self.sys_info = get_meta_from_fl_model(self.input_model, SYS_ATTRS)

@@ -19,7 +19,7 @@ from pytorch_lightning.callbacks import Callback
 from torch import Tensor
 
 from nvflare.app_common.abstract.fl_model import FLModel
-from nvflare.client.api import _receive_for_system_info, clear, get_config, init, receive, send
+from nvflare.client.api import clear, get_config, init, receive, send
 from nvflare.client.config import ConfigKey
 
 
@@ -41,7 +41,7 @@ class FLCallback(Callback):
         init()
         self.has_global_eval = get_config().get(ConfigKey.GLOBAL_EVAL, False)
         self.has_training = get_config().get(ConfigKey.TRAINING, False)
-        self.input_fl_model, _ = _receive_for_system_info()
+        self.input_fl_model = receive(use_cache=True)
         self.metrics = None
 
     def reset_state(self):
