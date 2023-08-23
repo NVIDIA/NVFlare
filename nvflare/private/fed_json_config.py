@@ -34,7 +34,7 @@ class FilterChain(object):
 
     @classmethod
     def is_correct_direction(cls, direction):
-        return direction in [FilterChain.IN, FilterChain.OUT, FilterChain.OUT]
+        return direction in [FilterChain.IN, FilterChain.OUT, FilterChain.INOUT]
 
 
 class FedJsonConfigurator(JsonConfigurator):
@@ -187,29 +187,27 @@ class FedJsonConfigurator(JsonConfigurator):
 
         data_filter_table = {}
         for c in self.task_data_filter_chains:
-            direction = c.direction.lower()
-            if not FilterChain.is_correct_direction(direction):
-                raise TypeError("Filter chain direction {} is not supported.".format(direction))
-            if not isinstance(c, FilterChain):
-                raise TypeError("chain must be FilterChain but got {}".format(type(c)))
-            for t in c.tasks:
-                task_key = t + FilterChain.DELIMITER + c.direction
-                if task_key in data_filter_table:
-                    raise ConfigError("multiple data filter chains defined for task {}".format(task_key))
-                data_filter_table[task_key] = c.filters
+            self._build_filter_table(c, data_filter_table)
         self.data_filter_table = data_filter_table
 
         result_filter_table = {}
         for c in self.task_result_filter_chains:
-            direction = c.direction.lower()
-            if not FilterChain.is_correct_direction(direction):
-                raise TypeError("Filter chain direction {} is not supported.".format(direction))
-            if not isinstance(c, FilterChain):
-                raise TypeError("chain must be FilterChain but got {}".format(type(c)))
-            for t in c.tasks:
-                task_key = t + FilterChain.DELIMITER + c.direction
-                if task_key in result_filter_table:
-                    raise ConfigError("multiple data filter chains defined for task {}".format(task_key))
-                result_filter_table[task_key] = c.filters
-
+            self._build_filter_table(c, result_filter_table)
         self.result_filter_table = result_filter_table
+
+    def _build_filter_table(self, c, data_filter_table):
+        direction = c.direction.lower()
+        if not FilterChain.is_correct_direction(direction):
+            raise TypeError("Filter chain direction {} is not supported.".format(direction))
+        if not isinstance(c, FilterChain):
+            raise TypeError("chain must be FilterChain but got {}".format(type(c)))
+        for t in c.tasks:
+            if direction == FilterChain.INOUT:
+                directions = [FilterChain.IN, FilterChain.OUT]
+            else:
+                directions = [direction]
+            for item in directions:
+                task_key = t + FilterChain.DELIMITER + item
+                if task_key in data_filter_table:
+                    raise ConfigError("multiple data filter chains defined for task {}".format(task_key))
+                data_filter_table[task_key] = c.filters
