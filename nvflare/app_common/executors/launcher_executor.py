@@ -304,7 +304,7 @@ class LauncherExecutor(Executor):
     def _log_result(self, fl_ctx):
         if self._training and self._result_fl_model is None:
             self.log_error(fl_ctx, "missing result FLModel with training flag True.")
-        
+
         if self._global_evaluation and self._result_metrics is None:
             self.log_error(fl_ctx, "missing result metrics with global_evaluation flag True.")
 
