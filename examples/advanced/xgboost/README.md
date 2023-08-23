@@ -142,7 +142,7 @@ accelerated using GPUs.
 GPUs are enabled by using :code:`gpu_hist` as :code:`tree_method` parameter.
 For example,
 ::
-              "xgboost_params": {
+              "xgb_params": {
                 "max_depth": 8,
                 "eta": 0.1,
                 "objective": "binary:logistic",
