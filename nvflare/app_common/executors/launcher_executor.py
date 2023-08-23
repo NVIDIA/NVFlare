@@ -292,7 +292,7 @@ class LauncherExecutor(Executor):
             if self._launcher_finish.is_set():
                 self.log_error(
                     fl_ctx,
-                    f"launcher already exit before exchange ends. exit status is: '{self._launcher_finish_status}'",
+                    f"Launcher already exited before exchange ended. Exit status is: '{self._launcher_finish_status}'",
                 )
                 self._log_result(fl_ctx)
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
