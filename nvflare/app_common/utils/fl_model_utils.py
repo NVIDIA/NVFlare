@@ -161,14 +161,22 @@ class FLModelUtils:
         if not isinstance(dxo.data, dict):
             raise ValueError(f"Invalid dxo with data of type: {type(dxo.data)}")
 
+        params = dxo.data.get(FLModelConst.PARAMS, None)
+        params_type = dxo.data.get(FLModelConst.PARAMS_TYPE, None)
+        metrics = dxo.data.get(FLModelConst.METRICS, None)
+        optimizer_params = dxo.data.get(FLModelConst.OPTIMIZER_PARAMS, None)
+        current_round = dxo.data.get(FLModelConst.CURRENT_ROUND, None)
+        total_rounds = dxo.data.get(FLModelConst.TOTAL_ROUNDS, None)
+        meta = dxo.data.get(FLModelConst.META, None)
+
         return FLModel(
-            params=dxo.data.get(FLModelConst.PARAMS, None),
-            params_type=dxo.data.get(FLModelConst.PARAMS_TYPE, None),
-            metrics=dxo.data.get(FLModelConst.METRICS, None),
-            optimizer_params=dxo.data.get(FLModelConst.OPTIMIZER_PARAMS, None),
-            current_round=dxo.data.get(FLModelConst.CURRENT_ROUND, None),
-            total_rounds=dxo.data.get(FLModelConst.TOTAL_ROUNDS, None),
-            meta=dxo.data.get(FLModelConst.META, None),
+            params=params,
+            params_type=params_type,
+            metrics=metrics,
+            optimizer_params=optimizer_params,
+            current_round=current_round,
+            total_rounds=total_rounds,
+            meta=meta,
         )
 
     @staticmethod
