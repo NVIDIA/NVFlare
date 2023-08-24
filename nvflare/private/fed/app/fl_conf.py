@@ -19,7 +19,7 @@ import re
 import sys
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import SiteType, SystemConfigs
+from nvflare.apis.fl_constant import FilterKey, SiteType, SystemConfigs
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
@@ -30,7 +30,6 @@ from nvflare.private.fed.utils.fed_utils import configure_logging
 from nvflare.private.json_configer import JsonConfigurator
 from nvflare.private.privacy_manager import PrivacyManager, Scope
 
-from ...fed_json_config import FilterChain
 from .deployer.base_client_deployer import BaseClientDeployer
 from .deployer.server_deployer import ServerDeployer
 from .fl_app_validator import FLAppValidator
@@ -489,7 +488,7 @@ class PrivacyConfiger(JsonConfigurator):
                 if direction:
                     direction = direction.lower()
                 else:
-                    direction = FilterChain.OUT if self.is_server else FilterChain.IN
+                    direction = FilterKey.OUT if self.is_server else FilterKey.IN
                 if f:
                     self.current_scope.add_task_data_filter(f, direction)
                 return
@@ -500,7 +499,7 @@ class PrivacyConfiger(JsonConfigurator):
                 if direction:
                     direction = direction.lower()
                 else:
-                    direction = FilterChain.IN if self.is_server else FilterChain.OUT
+                    direction = FilterKey.IN if self.is_server else FilterKey.OUT
                 if f:
                     self.current_scope.add_task_result_filter(f, direction)
                 return

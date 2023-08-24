@@ -17,13 +17,12 @@ from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, ControllerSpec, SendOrder, Task, TaskCompletionStatus
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic, ReturnCode, SiteType
+from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode, SiteType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.task_utils import apply_data_filters, apply_result_filters
 from nvflare.private.fed.utils.fed_utils import get_target_names
-from nvflare.private.fed_json_config import FilterChain
 from nvflare.security.logging import secure_format_exception
 
 
@@ -83,7 +82,7 @@ class ClientController(FLComponent, ControllerSpec):
         # # first apply privacy-defined filters
         try:
             filter_error, task.data = apply_data_filters(
-                self.task_data_filters, request, fl_ctx, task.name, FilterChain.OUT
+                self.task_data_filters, request, fl_ctx, task.name, FilterKey.OUT
             )
         except Exception as e:
             self.log_exception(
@@ -130,7 +129,7 @@ class ClientController(FLComponent, ControllerSpec):
                         # apply result filters
                         try:
                             filter_error, reply = apply_result_filters(
-                                self.task_result_filters, reply, fl_ctx, task.name, FilterChain.IN
+                                self.task_result_filters, reply, fl_ctx, task.name, FilterKey.IN
                             )
                         except Exception as e:
                             self.log_exception(

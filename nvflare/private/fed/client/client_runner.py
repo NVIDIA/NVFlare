@@ -17,7 +17,7 @@ import time
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic, ReturnCode
+from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
@@ -26,8 +26,6 @@ from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.apis.utils.task_utils import apply_data_filters, apply_result_filters
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.private.fed.client.client_engine_executor_spec import ClientEngineExecutorSpec, TaskAssignment
-from nvflare.private.fed_json_config import FilterChain
-from nvflare.private.privacy_manager import Scope
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
@@ -210,7 +208,7 @@ class ClientRunner(FLComponent):
         task_data = task.data
         try:
             filter_error, task_data = apply_data_filters(
-                self.task_data_filters, task_data, fl_ctx, task.name, FilterChain.IN
+                self.task_data_filters, task_data, fl_ctx, task.name, FilterKey.IN
             )
         except UnsafeJobError:
             self.log_exception(fl_ctx, f"UnsafeJobError from Task Data Filters")
@@ -317,7 +315,7 @@ class ClientRunner(FLComponent):
 
         try:
             filter_error, reply = apply_result_filters(
-                self.task_result_filters, reply, fl_ctx, task.name, FilterChain.OUT
+                self.task_result_filters, reply, fl_ctx, task.name, FilterKey.OUT
             )
         except UnsafeJobError:
             self.log_exception(fl_ctx, f"UnsafeJobError from Task Result Filters")

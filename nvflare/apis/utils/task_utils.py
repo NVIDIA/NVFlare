@@ -12,8 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.apis.fl_constant import FLContextKey
-from nvflare.private.fed_json_config import FilterChain
+from nvflare.apis.fl_constant import FilterKey, FLContextKey
 
 
 def _apply_filters(filter_list, filter_error, filter_data, fl_ctx):
@@ -30,7 +29,7 @@ def apply_data_filters(data_filters, task_data, fl_ctx, task_name, direction):
     filter_list = []
     if scope_object and scope_object.task_data_filters:
         filter_list.extend(scope_object.task_data_filters.get(direction, []))
-    task_filter_list = data_filters.get(task_name + FilterChain.DELIMITER + direction)
+    task_filter_list = data_filters.get(task_name + FilterKey.DELIMITER + direction)
     if task_filter_list:
         filter_list.extend(task_filter_list)
     filter_error, task_data = _apply_filters(filter_list, filter_error, task_data, fl_ctx)
@@ -43,7 +42,7 @@ def apply_result_filters(result_filters, result, fl_ctx, task_name, direction):
     scope_object = fl_ctx.get_prop(FLContextKey.SCOPE_OBJECT)
     if scope_object and scope_object.task_result_filters:
         filter_list.extend(scope_object.task_result_filters.get(direction, []))
-    result_filter_list = result_filters.get(task_name + FilterChain.DELIMITER + direction)
+    result_filter_list = result_filters.get(task_name + FilterKey.DELIMITER + direction)
     if result_filter_list:
         filter_list.extend(result_filter_list)
     filter_error, result = _apply_filters(filter_list, filter_error, result, fl_ctx)

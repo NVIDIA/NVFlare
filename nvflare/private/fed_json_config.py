@@ -15,16 +15,12 @@
 import re
 
 from nvflare.apis.filter import Filter, FilterChainType, FilterContextKey, FilterSource
+from nvflare.apis.fl_constant import FilterKey
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.private.json_configer import ConfigContext, ConfigError, JsonConfigurator
 
 
 class FilterChain(object):
-    IN = "in"
-    OUT = "out"
-    INOUT = "inout"
-    DELIMITER = "/"
-
     def __init__(self, chain_type, direction):
         """To init the FilterChain."""
         self.chain_type = chain_type
@@ -34,7 +30,7 @@ class FilterChain(object):
 
     @classmethod
     def validate_direction(cls, direction):
-        return direction in [FilterChain.IN, FilterChain.OUT, FilterChain.INOUT]
+        return direction in [FilterKey.IN, FilterKey.OUT, FilterKey.INOUT]
 
 
 class FedJsonConfigurator(JsonConfigurator):
@@ -99,7 +95,7 @@ class FedJsonConfigurator(JsonConfigurator):
 
         # result filters
         if re.search(r"^task_result_filters\.#[0-9]+$", path):
-            default_direction = FilterChain.IN if self.is_server else FilterChain.OUT
+            default_direction = FilterKey.IN if self.is_server else FilterKey.OUT
             self.current_filter_chain = FilterChain(FilterChainType.TASK_RESULT_CHAIN, default_direction)
             node.props["data"] = self.current_filter_chain
             node.exit_cb = self._process_result_filter_chain
@@ -120,7 +116,7 @@ class FedJsonConfigurator(JsonConfigurator):
 
         # data filters
         if re.search(r"^task_data_filters\.#[0-9]+$", path):
-            default_direction = FilterChain.OUT if self.is_server else FilterChain.IN
+            default_direction = FilterKey.OUT if self.is_server else FilterKey.IN
             self.current_filter_chain = FilterChain(FilterChainType.TASK_DATA_CHAIN, default_direction)
             node.props["data"] = self.current_filter_chain
             node.exit_cb = self._process_data_filter_chain
@@ -202,12 +198,12 @@ class FedJsonConfigurator(JsonConfigurator):
         if not isinstance(c, FilterChain):
             raise TypeError("chain must be FilterChain but got {}".format(type(c)))
         for t in c.tasks:
-            if direction == FilterChain.INOUT:
-                directions = [FilterChain.IN, FilterChain.OUT]
+            if direction == FilterKey.INOUT:
+                directions = [FilterKey.IN, FilterKey.OUT]
             else:
                 directions = [direction]
             for item in directions:
-                task_key = t + FilterChain.DELIMITER + item
+                task_key = t + FilterKey.DELIMITER + item
                 if task_key in data_filter_table:
                     raise ConfigError("multiple data filter chains defined for task {}".format(task_key))
                 data_filter_table[task_key] = c.filters
