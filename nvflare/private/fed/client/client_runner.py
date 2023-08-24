@@ -211,7 +211,7 @@ class ClientRunner(FLComponent):
                 self.task_data_filters, task_data, fl_ctx, task.name, FilterKey.IN
             )
         except UnsafeJobError:
-            self.log_exception(fl_ctx, f"UnsafeJobError from Task Data Filters")
+            self.log_exception(fl_ctx, "UnsafeJobError from Task Data Filters")
             executor.unsafe = True
             fl_ctx.set_job_is_unsafe()
             self.run_abort_signal.trigger(True)
@@ -222,7 +222,7 @@ class ClientRunner(FLComponent):
                 msg=f"submit result: {ReturnCode.UNSAFE_JOB}",
             )
         except Exception as e:
-            self.log_exception(fl_ctx, f"Processing error from Task Data Filters : {secure_format_exception(e)}")
+            self.log_exception(fl_ctx, "Processing error from Task Data Filters : {secure_format_exception(e)}")
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.TASK_DATA_FILTER_ERROR),
                 ref=server_audit_event_id,
