@@ -145,6 +145,16 @@ In this scenario, all experiments utilize the same validation set, allowing for 
 
 The validation losses for all experiments are shown below.
 ![Validation losses](images/val_loss.png)
+The curves shown are:
+- yellow: oasst1 
+- green: dolly
+- blue: alpaca
+- magenta: three datasets combined, 'centralized' training
+
+The light curves are for single site training, and the dark curves are for FedAvg
+
+As shown, the global model from FedAvg is able to generate a loss comparable to that of centralized training.
+
 
 ## Inference
 We use NeMo's [inference script](https://github.com/NVIDIA/NeMo/blob/main/examples/nlp/language_modeling/megatron_gpt_eval.py) for generation task with models after SFT. 
@@ -156,9 +166,10 @@ ALPACA: The first human to orbit the Earth was Neil Armstrong, who flew on the A
 DOLLY: The International Space Station is the largest floating structure in the universe. It is made of steel and is about the size of a small house.
 OASST: Sure! Here are a few interesting facts about space travel:\n\n1. Space travel is possible even with small amounts of fuel. The amount of
 COMBINED: The first human to set foot on the Moon was Neil Armstrong.
+FEDAVG: The first person to travel to space was Neil Armstrong, who set foot on the moon in 1969.
 ```
 Note that models mostly gives plausible answers, but ALPACA-finetuned model in fact gives misinformation, since it should be Yuri Gagarin who is the first human to orbit the Earth.
-On the other hand, the model trained on the combined dataset is able to generate a more accurate answer.
+On the other hand, the model trained on the combined dataset, as well as the FL model trained with FedAvg, are able to generate a more accurate answer.
 
 Next, we ask the model to answer a question according to a given context, one instance from [SQuAD dataset](https://rajpurkar.github.io/SQuAD-explorer/).
 
@@ -172,16 +183,8 @@ ALPACA: The AFC champion Denver Broncos represented the AFC at Super Bowl 50.'
 DOLLY: The NFL team that represented the AFC at Super Bowl 50 was the Denver Broncos.'
 OASST: The Denver Broncos defeated the Carolina Panthers 24–10 to win the Super Bowl 50 championship.'
 COMBINED: The Denver Broncos'
+FEDAVG: The AFC champion Denver Broncos defeated the NFC champion Carolina Panthers 24–10 to win the Super Bowl.'
 ```
-As we can see, the key word "Denver Broncos" is correctly captured by all models. However, ALPACA answer is a bit redundant, and OASST answer is not directly "to the question".
+As we can see, the key word "Denver Broncos" is correctly captured by all models. However, ALPACA and FedAvg answers are a bit redundant, and OASST answer is not directly "to the question".
 
-By using a more sophisticated prompt `***TASK*** Give ANSWER to the QUESTION according to the CONTEXT. ***CONTEXT*** + context + ***QUESTION*** + question + ***ANSWER***`, we have the following results:
-```
-ALPACA: The Denver Broncos.'
-DOLLY: The AFC champion Denver Broncos represented the NFL at Super Bowl 50, as they defeated the NFC Carolina Panthers 24–10.'
-OASST: The Denver Broncos represented the AFC at Super Bowl 50.'
-COMBINED: The Denver Broncos represented the AFC at Super Bowl 50.'
-```
-This time all answers make sense, only DOLLY gives redundant information irrelevant to the question.
-
-Based on the above results, we can see that the model trained on the combined dataset is able to generate more stable and accurate answers.
+Based on the above results, we can see that the models trained on the combined dataset and in a federated fashion are able to generate more stable and accurate answers.
