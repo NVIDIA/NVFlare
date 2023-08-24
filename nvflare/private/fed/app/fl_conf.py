@@ -30,6 +30,7 @@ from nvflare.private.fed.utils.fed_utils import configure_logging
 from nvflare.private.json_configer import JsonConfigurator
 from nvflare.private.privacy_manager import PrivacyManager, Scope
 
+from ...fed_json_config import FilterChain
 from .deployer.base_client_deployer import BaseClientDeployer
 from .deployer.server_deployer import ServerDeployer
 from .fl_app_validator import FLAppValidator
@@ -430,7 +431,7 @@ class FLAdminClientStarterConfigurator(JsonConfigurator):
 
 
 class PrivacyConfiger(JsonConfigurator):
-    def __init__(self, workspace: Workspace, names_only: bool):
+    def __init__(self, workspace: Workspace, names_only: bool, is_server=False):
         """Uses the json configuration to start the FL admin client.
 
         Args:
@@ -442,6 +443,7 @@ class PrivacyConfiger(JsonConfigurator):
         self.components = {}
         self.current_scope = None
         self.names_only = names_only
+        self.is_server = is_server
 
         privacy_file_path = workspace.get_site_privacy_file_path()
         JsonConfigurator.__init__(
@@ -483,14 +485,24 @@ class PrivacyConfiger(JsonConfigurator):
 
             if re.search(r"^scopes.#[0-9]+\.task_data_filters\.#[0-9]+$", path):
                 f = self.build_component(element)
+                direction = element.get("direction")
+                if direction:
+                    direction = direction.lower()
+                else:
+                    direction = FilterChain.OUT if self.is_server else FilterChain.IN
                 if f:
-                    self.current_scope.add_task_data_filter(f)
+                    self.current_scope.add_task_data_filter(f, direction)
                 return
 
             if re.search(r"^scopes.#[0-9]+\.task_result_filters\.#[0-9]+$", path):
                 f = self.build_component(element)
+                direction = element.get("direction")
+                if direction:
+                    direction = direction.lower()
+                else:
+                    direction = FilterChain.IN if self.is_server else FilterChain.OUT
                 if f:
-                    self.current_scope.add_task_result_filter(f)
+                    self.current_scope.add_task_result_filter(f, direction)
                 return
 
             if re.search(r"^components\.#[0-9]+$", path):
@@ -514,13 +526,13 @@ class PrivacyConfiger(JsonConfigurator):
         )
 
 
-def create_privacy_manager(workspace: Workspace, names_only: bool):
+def create_privacy_manager(workspace: Workspace, names_only: bool, is_server=False):
     privacy_file_path = workspace.get_site_privacy_file_path()
     if not os.path.isfile(privacy_file_path):
         # privacy policy not defined
         mgr = PrivacyManager(scopes=None, default_scope_name=None, components=None)
     else:
-        configer = PrivacyConfiger(workspace, names_only)
+        configer = PrivacyConfiger(workspace, names_only, is_server=is_server)
         configer.configure()
         mgr = configer.privacy_manager
     return mgr

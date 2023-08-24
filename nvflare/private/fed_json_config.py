@@ -33,7 +33,7 @@ class FilterChain(object):
         self.direction = direction
 
     @classmethod
-    def is_correct_direction(cls, direction):
+    def validate_direction(cls, direction):
         return direction in [FilterChain.IN, FilterChain.OUT, FilterChain.INOUT]
 
 
@@ -197,7 +197,7 @@ class FedJsonConfigurator(JsonConfigurator):
 
     def _build_filter_table(self, c, data_filter_table):
         direction = c.direction.lower()
-        if not FilterChain.is_correct_direction(direction):
+        if not FilterChain.validate_direction(direction):
             raise TypeError("Filter chain direction {} is not supported.".format(direction))
         if not isinstance(c, FilterChain):
             raise TypeError("chain must be FilterChain but got {}".format(type(c)))

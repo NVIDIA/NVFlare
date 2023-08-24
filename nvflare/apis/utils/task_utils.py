@@ -29,7 +29,7 @@ def apply_data_filters(data_filters, task_data, fl_ctx, task_name, direction):
     scope_object = fl_ctx.get_prop(FLContextKey.SCOPE_OBJECT)
     filter_list = []
     if scope_object and scope_object.task_data_filters:
-        filter_list.extend(scope_object.task_data_filters)
+        filter_list.extend(scope_object.task_data_filters.get(direction, []))
     task_filter_list = data_filters.get(task_name + FilterChain.DELIMITER + direction)
     if task_filter_list:
         filter_list.extend(task_filter_list)
@@ -42,7 +42,7 @@ def apply_result_filters(result_filters, result, fl_ctx, task_name, direction):
     filter_list = []
     scope_object = fl_ctx.get_prop(FLContextKey.SCOPE_OBJECT)
     if scope_object and scope_object.task_result_filters:
-        filter_list.extend(scope_object.task_result_filters)
+        filter_list.extend(scope_object.task_result_filters.get(direction, []))
     result_filter_list = result_filters.get(task_name + FilterChain.DELIMITER + direction)
     if result_filter_list:
         filter_list.extend(result_filter_list)
