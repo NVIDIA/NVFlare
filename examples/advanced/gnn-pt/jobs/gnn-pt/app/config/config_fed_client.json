@@ -3,20 +3,12 @@
 
   "executors": [
     {
-      "tasks": ["train", "submit_model", "get_weights"],
+      "tasks": ["train"],
       "executor": {
-        "path": "graphsage_trainer.GraphSageTrainer",
+        "name": "PTFilePipeLauncherExecutor",
         "args": {
-          "lr": 0.01,
-          "epochs": 1
-        }
-      }
-    },
-    {
-      "tasks": ["validate"],
-      "executor": {
-        "path": "graphsage_validator.GraphSageValidator",
-        "args": {
+          "launcher_id": "launcher",
+          "heartbeat_timeout": 60
         }
       }
     }
@@ -26,5 +18,12 @@
   "task_data_filters": [
   ],
   "components": [
+    {
+      "id": "launcher",
+      "name": "SubprocessLauncher",
+      "args": {
+        "script": "python custom/graphsage.py"
+      }
+    }
   ]
 }
