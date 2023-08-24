@@ -35,8 +35,11 @@ from nvflare.security.logging import secure_format_exception
 
 
 def main():
-    if sys.version_info < (3, 7):
-        raise RuntimeError("Please use Python 3.7 or above.")
+    if sys.version_info >= (3, 11):
+        raise RuntimeError("Python versions 3.11 and above are not yet supported. Please use Python 3.8, 3.9 or 3.10.")
+    if sys.version_info < (3, 8):
+        raise RuntimeError("Python versions 3.7 and below are not supported. Please use Python 3.8, 3.9 or 3.10")
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
     parser.add_argument(
@@ -59,6 +62,7 @@ def main():
     args.config_folder = config_folder
     logger = logging.getLogger()
     args.log_config = None
+    args.job_id = None
 
     workspace = Workspace(root_dir=args.workspace, site_name="server")
     for name in [WorkspaceConstants.RESTART_FILE, WorkspaceConstants.SHUTDOWN_FILE]:
@@ -154,4 +158,5 @@ if __name__ == "__main__":
     This is the main program when starting the NVIDIA FLARE server process.
     """
 
-    mpm.run(main_func=main)
+    rc = mpm.run(main_func=main)
+    sys.exit(rc)

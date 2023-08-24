@@ -99,7 +99,7 @@ For starting the FL system with 8 clients in the secure workspace, run
 To run FL experiments in POC mode, create your local FL workspace the below command. 
 In the following experiments, we will be using 8 clients. Press y and enter when prompted. 
 ```
-nvflare poc --prepare -n 8
+nvflare poc prepare -n 8
 ```
 By default, POC will create startup kits at `/tmp/nvflare/poc`.
 
@@ -131,7 +131,7 @@ done
 Then, start the FL system with 8 clients by running
 ```
 export PYTHONPATH=${PWD}/..
-nvflare poc --start
+nvflare poc start
 ```
 
 For details about resource management and consumption, please refer to the [documentation](https://nvflare.readthedocs.io/en/latest/programming_guide/resource_manager_and_consumer.html).
@@ -229,6 +229,8 @@ same CIFAR-10 test set. The plotting script used for the below graphs is in
 
 To use it, download all job results using the `download_job` admin command and specify the `download_dir` in 
 [./figs/plot_tensorboard_events.py](./figs/plot_tensorboard_events.py). 
+
+> **_NOTE:_** You need to install [./plot-requirements.txt](./plot-requirements.txt) to plot.
 
 ### 5.1 FedAvg vs. FedAvg with HE
 With a data split using `alpha=1.0`, i.e. a non-heterogeneous split, we achieve the following final validation scores.

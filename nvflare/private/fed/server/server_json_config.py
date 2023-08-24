@@ -109,7 +109,7 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             return
 
         if re.search(r"^workflows\.#[0-9]+$", path):
-            workflow = self.build_component(element)
+            workflow = self.authorize_and_build_component(element, config_ctx, node)
             if not isinstance(workflow, Responder):
                 raise ConfigError(
                     '"workflow" must be a Responder or Controller object, but got {}'.format(type(workflow))
@@ -141,8 +141,7 @@ class ServerJsonConfigurator(FedJsonConfigurator):
     def build_component(self, config_dict):
         t = super().build_component(config_dict)
         if isinstance(t, FLComponent):
-            if type(t).__name__ not in [type(h).__name__ for h in self.handlers]:
-                self.handlers.append(t)
+            self.handlers.append(t)
         return t
 
     def finalize_config(self, config_ctx: ConfigContext):

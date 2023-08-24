@@ -97,6 +97,7 @@ class AppConstants(object):
 
     TASK_SUBMIT_MODEL = "submit_model"
     TASK_VALIDATION = "validate"
+    TASK_CONFIGURE = "configure"
 
     CROSS_VAL_SERVER_MODEL = "_cross_val_server_model_"
     CROSS_VAL_CLIENT_MODEL = "_cross_val_client_model_"

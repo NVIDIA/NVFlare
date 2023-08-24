@@ -73,6 +73,13 @@ class ServerRunnerConfig(object):
 
 
 class ServerRunner(FLComponent):
+
+    ABORT_RETURN_CODES = [
+        ReturnCode.RUN_MISMATCH,
+        ReturnCode.TASK_UNKNOWN,
+        ReturnCode.UNSAFE_JOB,
+    ]
+
     def __init__(self, config: ServerRunnerConfig, job_id: str, engine: ServerEngineSpec):
         """Server runner class.
 
@@ -99,10 +106,10 @@ class ServerRunner(FLComponent):
                 with self.engine.new_context() as fl_ctx:
                     self.log_info(fl_ctx, "starting workflow {} ({}) ...".format(wf.id, type(wf.responder)))
 
+                    fl_ctx.set_prop(FLContextKey.WORKFLOW, wf.id, sticky=True)
                     wf.responder.initialize_run(fl_ctx)
 
                     self.log_info(fl_ctx, "Workflow {} ({}) started".format(wf.id, type(wf.responder)))
-                    fl_ctx.set_prop(FLContextKey.WORKFLOW, wf.id, sticky=True)
                     self.log_debug(fl_ctx, "firing event EventType.START_WORKFLOW")
                     self.fire_event(EventType.START_WORKFLOW, fl_ctx)
 
@@ -404,6 +411,15 @@ class ServerRunner(FLComponent):
         if not peer_job_id or peer_job_id != self.job_id:
             # the client is on a different RUN
             self.log_info(fl_ctx, "invalid result submission: not the same job id - dropped")
+            return
+
+        rc = result.get_return_code(default=ReturnCode.OK)
+        if rc in self.ABORT_RETURN_CODES:
+            self.log_error(fl_ctx, f"aborting ServerRunner due to fatal return code {rc} from client {client.name}")
+            self.system_panic(
+                reason=f"Aborted job {self.job_id} due to fatal return code {rc} from client {client.name}",
+                fl_ctx=fl_ctx,
+            )
             return
 
         result.set_header(ReservedHeaderKey.TASK_NAME, task_name)

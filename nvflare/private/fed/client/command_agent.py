@@ -18,9 +18,9 @@ import logging
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
-from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
-from nvflare.fuel.f3.cellnet.cell import MessageHeaderKey, ReturnCode
-from nvflare.fuel.f3.cellnet.cell import make_reply as make_cellnet_reply
+from nvflare.fuel.f3.cellnet.core_cell import Message as CellMessage
+from nvflare.fuel.f3.cellnet.core_cell import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.core_cell import make_reply as make_cellnet_reply
 from nvflare.fuel.utils import fobs
 from nvflare.private.defs import CellChannel, new_cell_message
 

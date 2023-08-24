@@ -23,8 +23,9 @@ import time
 from abc import ABC
 from typing import List, Union
 
-from nvflare.fuel.f3.cellnet.cell import Cell, Message
+from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.connector_manager import ConnectorData
+from nvflare.fuel.f3.cellnet.core_cell import Message
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import make_reply
@@ -112,7 +113,9 @@ class SubnetMonitor(ABC):
 
 
 class NetAgent:
-    def __init__(self, cell: Cell, change_root_cb=None, agent_closed_cb=None):
+    def __init__(self, cell, change_root_cb=None, agent_closed_cb=None):
+        if isinstance(cell, Cell):
+            cell = cell.core_cell
         self.cell = cell
         self.change_root_cb = change_root_cb
         self.agent_closed_cb = agent_closed_cb

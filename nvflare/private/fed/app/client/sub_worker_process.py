@@ -37,8 +37,8 @@ from nvflare.fuel.common.multi_process_executor_constants import (
     MultiProcessCommandNames,
 )
 from nvflare.fuel.f3.cellnet.cell import Cell
-from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
-from nvflare.fuel.f3.cellnet.cell import MessageHeaderKey, make_reply
+from nvflare.fuel.f3.cellnet.core_cell import Message as CellMessage
+from nvflare.fuel.f3.cellnet.core_cell import MessageHeaderKey, make_reply
 from nvflare.fuel.f3.cellnet.defs import ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent

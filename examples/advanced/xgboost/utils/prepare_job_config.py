@@ -122,7 +122,7 @@ def _update_client_config(config: dict, args, lr_scale, site_name: str):
     data_split_name = _get_data_split_name(args, site_name)
     if args.training_mode == "bagging" or args.training_mode == "cyclic":
         # update client config
-        config["executors"][0]["executor"]["args"]["data_split_filename"] = data_split_name
+        config["components"][0]["args"]["data_split_filename"] = data_split_name
         config["executors"][0]["executor"]["args"]["lr_scale"] = lr_scale
         config["executors"][0]["executor"]["args"]["lr_mode"] = args.lr_mode
         config["executors"][0]["executor"]["args"]["nthread"] = args.nthread
@@ -133,9 +133,9 @@ def _update_client_config(config: dict, args, lr_scale, site_name: str):
             num_client_bagging = args.site_num
         config["executors"][0]["executor"]["args"]["num_client_bagging"] = num_client_bagging
     else:
-        config["executors"][0]["executor"]["args"]["data_split_filename"] = data_split_name
-        config["executors"][0]["executor"]["args"]["xgboost_params"]["nthread"] = args.nthread
-        config["executors"][0]["executor"]["args"]["xgboost_params"]["tree_method"] = args.tree_method
+        config["components"][0]["args"]["data_split_filename"] = data_split_name
+        config["executors"][0]["executor"]["args"]["xgb_params"]["nthread"] = args.nthread
+        config["executors"][0]["executor"]["args"]["xgb_params"]["tree_method"] = args.tree_method
 
 
 def _update_server_config(config: dict, args):

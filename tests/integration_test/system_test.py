@@ -107,14 +107,13 @@ def setup_and_teardown_system(request):
             poc = False
             super_user_name = "super@test.org"
         else:
-            POC_PATH = "../../nvflare/poc"
-            if not os.path.isdir(POC_PATH):
-                raise NVFTestError(f"Missing POC folder at {POC_PATH}.")
             n_servers = int(test_config["n_servers"])
+            if n_servers != 1:
+                raise NVFTestError("POC mode can only use one server. For more servers, use HA with provisioned mode.")
             n_clients = int(test_config["n_clients"])
-            site_launcher = POCSiteLauncher(poc_dir=POC_PATH, n_servers=n_servers, n_clients=n_clients)
-            poc = True
-            super_user_name = "admin"
+            site_launcher = POCSiteLauncher(n_servers=n_servers, n_clients=n_clients)
+            poc = False  # POC now uses SSL as well so this needs to be False
+            super_user_name = "admin@nvidia.com"
 
         workspace_root = site_launcher.prepare_workspace()
         print(f"Workspace root is {workspace_root}")

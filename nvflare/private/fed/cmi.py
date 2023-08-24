@@ -18,8 +18,8 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
-from nvflare.fuel.f3.cellnet.cell import FQCN, Cell, Message, MessageHeaderKey
-from nvflare.fuel.f3.cellnet.cell import ReturnCode as CellReturnCode
+from nvflare.fuel.f3.cellnet.core_cell import FQCN, CoreCell, Message, MessageHeaderKey
+from nvflare.fuel.f3.cellnet.core_cell import ReturnCode as CellReturnCode
 from nvflare.private.defs import CellMessageHeaderKeys
 
 
@@ -201,7 +201,7 @@ class JobCellMessenger(CellMessageInterface):
         request.set_header(ReservedHeaderKey.TOPIC, topic)
         job_id = fl_ctx.get_job_id()
         cell = self.engine.get_cell()
-        assert isinstance(cell, Cell)
+        assert isinstance(cell, CoreCell)
 
         target_names = []
         for t in targets:

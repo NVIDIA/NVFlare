@@ -86,7 +86,7 @@ CLIENT_OUTPUT_PASSED = (
 #  "Other threads are currently calling into gRPC, skipping fork() handlers"
 GRPC_ERROR_MSG = "Other threads are currently calling into gRPC, skipping fork() handlers"
 
-SERVER_START_TIME = 8
+SERVER_START_TIME = 15
 
 
 def _filter_output(output):

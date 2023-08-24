@@ -46,7 +46,7 @@ from nvflare.apis.job_def import Job
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
-from nvflare.fuel.f3.cellnet.cell import FQCN, Cell
+from nvflare.fuel.f3.cellnet.core_cell import FQCN, CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellMsgReturnCode
 from nvflare.fuel.utils import fobs
@@ -229,7 +229,8 @@ class ServerEngine(ServerEngineInternalSpec):
                 if return_code and return_code != 0:
                     self.logger.info(f"Job: {job_id} child process exit with return code {return_code}")
                     run_process_info[RunProcessKey.PROCESS_RETURN_CODE] = return_code
-                    self.exception_run_processes[job_id] = run_process_info
+                    if job_id not in self.exception_run_processes:
+                        self.exception_run_processes[job_id] = run_process_info
                 self.run_processes.pop(job_id, None)
         self.engine_info.status = MachineStatus.STOPPED
 
@@ -243,7 +244,7 @@ class ServerEngine(ServerEngineInternalSpec):
         job_id,
         job_clients,
         snapshot,
-        cell: Cell,
+        cell: CoreCell,
         server_state: ServerState,
     ):
         new_env = os.environ.copy()

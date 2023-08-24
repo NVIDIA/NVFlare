@@ -15,6 +15,7 @@
 import copy
 from typing import List, Union
 
+from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.fuel.utils import fobs
 
@@ -31,18 +32,8 @@ class DataKind(object):
     PSI = "PSI"
 
 
-class MetaKey(object):
-    NUM_STEPS_CURRENT_ROUND = "NUM_STEPS_CURRENT_ROUND"
-    PROCESSED_ALGORITHM = "PROCESSED_ALGORITHM"
-    PROCESSED_KEYS = "PROCESSED_KEYS"
-    INITIAL_METRICS = "initial_metrics"
-    FILTER_HISTORY = "filter_history"
-
-    CONFIGS = "configs"
-    VALIDATE_TYPE = "validate_type"
-    CLIENT_WEIGHTS = "client_weights"
-    CURRENT_ROUND = "current_round"
-    TOTAL_ROUNDS = "total_rounds"
+class MetaKey(FLMetaKey):
+    pass
 
 
 _KEY_KIND = "kind"

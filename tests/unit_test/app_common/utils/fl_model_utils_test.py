@@ -30,7 +30,7 @@ FL_MODEL_TEST_CASES = [
         FLModel(params={"hello": 123}, params_type=ParamsType.DIFF, current_round=0, total_rounds=10),
         DataKind.WEIGHT_DIFF,
     ),
-    (FLModel(metrics={"loss": 0.79}, current_round=0, total_rounds=10), DataKind.METRICS),
+    (FLModel(metrics={"loss": 0.79}, current_round=0, total_rounds=10, params_type=None), DataKind.METRICS),
 ]
 
 

@@ -23,7 +23,7 @@ from nvflare.apis.signal import Signal
 
 from .client import Client
 from .fl_context import FLContext
-from .shareable import Shareable
+from .shareable import ReservedHeaderKey, Shareable
 
 
 class TaskCompletionStatus(Enum):
@@ -104,7 +104,6 @@ class Task(object):
 
         if not isinstance(data, Shareable):
             raise TypeError("data must be an instance of Shareable, but got {}.".format(type(data)))
-
         if operator and not isinstance(operator, dict):
             raise TypeError(f"operator must be a dict but got {type(operator)}")
 
@@ -112,6 +111,8 @@ class Task(object):
         self.data = data  # task data to be sent to client(s)
         self.operator = operator
         self.cb_lock = threading.Lock()
+
+        data.set_header(ReservedHeaderKey.TASK_NAME, name)
 
         if props is None:
             self.props = {}
@@ -524,27 +525,5 @@ class ControllerSpec(ABC):
         Args:
             completion_status: the TaskCompletionStatus of the task
             fl_ctx: the FL context
-        """
-        pass
-
-    def abort_task(self, task: Task, fl_ctx: FLContext):
-        """Asks all clients to abort the execution of the specified task.
-
-        Args:
-            task: the task to be aborted
-            fl_ctx: the FL context
-
-        """
-        pass
-
-    def abort_all_tasks(self, fl_ctx: FLContext):
-        """Asks clients to abort the execution of all tasks.
-
-        NOTE: the server should send a notification to all clients, regardless of whether the server
-        has any standing tasks.
-
-        Args:
-            fl_ctx: the FL context
-
         """
         pass

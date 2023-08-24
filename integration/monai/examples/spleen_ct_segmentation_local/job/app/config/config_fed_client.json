@@ -33,12 +33,12 @@
       "args": {
         "bundle_root": "config/spleen_ct_segmentation",
         "local_epochs": 10,
-        "train_args": {
+        "train_kwargs": {
             "tracking": "{tracking}",
             "tracking_uri": "{tracking_uri}",
             "experiment_name": "{experiment_name}"
         },
-        "eval_args": {
+        "eval_kwargs": {
             "tracking": "{tracking}",
             "tracking_uri": "{tracking_uri}",
             "experiment_name": "{experiment_name}"

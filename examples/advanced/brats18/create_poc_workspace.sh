@@ -9,7 +9,7 @@ then
 fi
 
 # There should be $n_clients site-N folders.
-nvflare poc --prepare -n "${n_clients}"
+nvflare poc prepare -n "${n_clients}"
 
 mv /tmp/nvflare/poc/* ${workspace}
 
