@@ -41,7 +41,10 @@ class FLCallback(Callback):
         init()
         self.has_global_eval = get_config().get(ConfigKey.GLOBAL_EVAL, False)
         self.has_training = get_config().get(ConfigKey.TRAINING, False)
-        self.input_fl_model = receive(use_cache=True)
+        self.input_fl_model = None
+        self.init_model_received = False
+        self._receive_model(init=True)
+
         self.metrics = None
 
     def reset_state(self):
@@ -53,7 +56,7 @@ class FLCallback(Callback):
     def on_train_start(self, trainer, pl_module):
         # receive the global model and update the local model with global model
         if self.has_training:
-            self._receive_update_model(pl_module)
+            self._receive_and_update_model(pl_module)
 
     def on_train_end(self, trainer, pl_module):
         if self.has_training:
@@ -68,23 +71,33 @@ class FLCallback(Callback):
         # The subsequence validate() calls will not trigger the receive update model.
         # Hence the validate() will be validating the local model.
         if pl_module and self.has_global_eval and self.metrics is None:
-            self._receive_update_model(pl_module)
+            self._receive_and_update_model(pl_module)
 
     def on_validation_end(self, trainer, pl_module):
         if pl_module and self.has_global_eval and self.metrics is None:
             self.metrics = _extract_metrics(trainer.callback_metrics)
             self._send_model(FLModel(metrics=self.metrics))
 
-    def _receive_update_model(self, pl_module):
-        if not self.input_fl_model:
-            model = self._receive_model()
-            if model and model.params:
-                pl_module.load_state_dict(model.params)
+    def _receive_and_update_model(self, pl_module):
+        if not self.init_model_received:
+            self._receive_model(init=True)
+        elif not self.input_fl_model:
+            self._receive_model()
+        if self.input_fl_model and self.input_fl_model.params:
+            pl_module.load_state_dict(self.input_fl_model.params)
 
-    def _receive_model(self) -> FLModel:
-        model = receive()
+    def _receive_model(self, init: bool = False) -> FLModel:
+        """Receives model from NVFlare.
+
+        Args:
+            init (bool): whether this is the first time in the process to receive the model from NVFlare.
+        """
+        use_cache = True if init else False
+        model = receive(use_cache)
         if model:
             self.input_fl_model = model
+            if init:
+                self.init_model_received = True
         return model
 
     def _send_model(self, output_model: FLModel):

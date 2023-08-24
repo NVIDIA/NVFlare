@@ -205,15 +205,15 @@ def cli_main():
     # (1) patch the lightning trainer
     flare.patch(cli.trainer)
 
-    # (2) evaluate the current global model to allow server-side model selection
-    print("--- validate global model ---")
-    cli.trainer.validate(cli.model, datamodule=cli.datamodule)
+    # (optional) print flare system information
+    print(flare.system_info())
 
-    # (3) Perform local training starting with the received global model
-    print("--- train new model ---")
+    # (2) Evaluate the current global model to allow server-side model selection and
+    #     perform local training starting with the received global model
+    print("--- validate global model and train new model ---")
     cli.trainer.fit(cli.model, datamodule=cli.datamodule)
 
-    # (4) optionally test the new local model
+    # (3) optionally test the new local model
     print("--- test new model ---")
     cli.trainer.test(ckpt_path="best", datamodule=cli.datamodule)
 
