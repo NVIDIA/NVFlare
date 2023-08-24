@@ -269,10 +269,16 @@ class ServerRunner(FLComponent):
             self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_DATA_FILTER")
             self.fire_event(EventType.BEFORE_TASK_DATA_FILTER, fl_ctx)
 
-            task_filter_list = self.config.task_data_filters.get(task_name + FilterChain.DELIMITER + FilterChain.OUT)
-            filter_error, task_data = apply_data_filters(task_filter_list, task_data, self.logger, fl_ctx)
-
-            if filter_error:
+            try:
+                filter_error, task_data = apply_data_filters(
+                    self.config.task_data_filters, task_data, fl_ctx, task_name, FilterChain.OUT
+                )
+            except Exception as e:
+                self.log_exception(
+                    fl_ctx,
+                    "processing error in task data filter {}; "
+                    "asked client to try again later".format(secure_format_exception(e)),
+                )
                 with self.wf_lock:
                     if self.current_wf:
                         self.current_wf.responder.handle_exception(task_id, fl_ctx)
@@ -428,12 +434,15 @@ class ServerRunner(FLComponent):
                 self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_RESULT_FILTER")
                 self.fire_event(EventType.BEFORE_TASK_RESULT_FILTER, fl_ctx)
 
-                task_filter_list = self.config.task_result_filters.get(
-                    task_name + FilterChain.DELIMITER + FilterChain.IN
-                )
-                filter_error, result = apply_result_filters(task_filter_list, result, self.logger, fl_ctx)
-
-                if filter_error:
+                try:
+                    filter_error, result = apply_result_filters(
+                        self.config.task_result_filters, result, fl_ctx, task_name, FilterChain.IN
+                    )
+                except Exception as e:
+                    self.log_exception(
+                        fl_ctx,
+                        "processing error in task result filter {}; ".format(secure_format_exception(e)),
+                    )
                     result = make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
 
                 self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_RESULT_FILTER")

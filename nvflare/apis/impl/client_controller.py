@@ -81,10 +81,16 @@ class ClientController(FLComponent, ControllerSpec):
         self.fire_event(EventType.BEFORE_TASK_DATA_FILTER, fl_ctx)
 
         # # first apply privacy-defined filters
-        task_filter_list = self.task_data_filters.get(task.name + FilterChain.DELIMITER + FilterChain.OUT)
-        filter_error, task.data = apply_data_filters(task_filter_list, request, self.logger, fl_ctx)
-
-        if filter_error:
+        try:
+            filter_error, task.data = apply_data_filters(
+                self.task_data_filters, request, fl_ctx, task.name, FilterChain.OUT
+            )
+        except Exception as e:
+            self.log_exception(
+                fl_ctx,
+                "processing error in task data filter {}; "
+                "asked client to try again later".format(secure_format_exception(e)),
+            )
             replies = self._make_error_reply(ReturnCode.TASK_DATA_FILTER_ERROR, targets)
             return replies
 
@@ -115,7 +121,6 @@ class ClientController(FLComponent, ControllerSpec):
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_RESULT_FILTER")
         self.fire_event(EventType.BEFORE_TASK_RESULT_FILTER, fl_ctx)
 
-        task_filter_list = self.task_result_filters.get(task.name + FilterChain.DELIMITER + FilterChain.IN)
         for target, reply in replies.items():
             # get the client task for the target
             for client_task in task.client_tasks:
@@ -123,8 +128,15 @@ class ClientController(FLComponent, ControllerSpec):
                     rc = reply.get_return_code()
                     if rc and rc == ReturnCode.OK:
                         # apply result filters
-                        filter_error, result = apply_result_filters(task_filter_list, reply, self.logger, fl_ctx)
-                        if filter_error:
+                        try:
+                            filter_error, reply = apply_result_filters(
+                                self.task_result_filters, reply, fl_ctx, task.name, FilterChain.IN
+                            )
+                        except Exception as e:
+                            self.log_exception(
+                                fl_ctx,
+                                "processing error in task result filter {}; ".format(secure_format_exception(e)),
+                            )
                             error_reply = make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
                             client_task.result = error_reply
                             break

@@ -23,6 +23,7 @@ from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
+from nvflare.apis.utils.task_utils import apply_data_filters, apply_result_filters
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.private.fed.client.client_engine_executor_spec import ClientEngineExecutorSpec, TaskAssignment
 from nvflare.private.fed_json_config import FilterChain
@@ -206,58 +207,43 @@ class ClientRunner(FLComponent):
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_DATA_FILTER")
         self.fire_event(EventType.BEFORE_TASK_DATA_FILTER, fl_ctx)
 
-        # first apply privacy-defined filters
-        scope_object = fl_ctx.get_prop(FLContextKey.SCOPE_OBJECT)
-        filter_list = []
-        if scope_object:
-            assert isinstance(scope_object, Scope)
-            if scope_object.task_data_filters:
-                filter_list.extend(scope_object.task_data_filters)
+        task_data = task.data
+        try:
+            filter_error, task_data = apply_data_filters(
+                self.task_data_filters, task_data, fl_ctx, task.name, FilterChain.IN
+            )
+        except UnsafeJobError:
+            self.log_exception(fl_ctx, f"UnsafeJobError from Task Data Filters")
+            executor.unsafe = True
+            fl_ctx.set_job_is_unsafe()
+            self.run_abort_signal.trigger(True)
+            return self._reply_and_audit(
+                reply=make_reply(ReturnCode.UNSAFE_JOB),
+                ref=server_audit_event_id,
+                fl_ctx=fl_ctx,
+                msg=f"submit result: {ReturnCode.UNSAFE_JOB}",
+            )
+        except Exception as e:
+            self.log_exception(fl_ctx, f"Processing error from Task Data Filters : {secure_format_exception(e)}")
+            return self._reply_and_audit(
+                reply=make_reply(ReturnCode.TASK_DATA_FILTER_ERROR),
+                ref=server_audit_event_id,
+                fl_ctx=fl_ctx,
+                msg=f"submit result: {ReturnCode.TASK_DATA_FILTER_ERROR}",
+            )
 
-        task_filter_list = self.task_data_filters.get(task.name + FilterChain.DELIMITER + FilterChain.IN)
-        if task_filter_list:
-            filter_list.extend(task_filter_list)
+        if not isinstance(task_data, Shareable):
+            self.log_error(
+                fl_ctx, "task data was converted to wrong type: expect Shareable but got {}".format(type(task_data))
+            )
+            return self._reply_and_audit(
+                reply=make_reply(ReturnCode.TASK_DATA_FILTER_ERROR),
+                ref=server_audit_event_id,
+                fl_ctx=fl_ctx,
+                msg=f"submit result: {ReturnCode.TASK_DATA_FILTER_ERROR}",
+            )
 
-        if filter_list:
-            task_data = task.data
-            for f in filter_list:
-                filter_name = f.__class__.__name__
-                try:
-                    task_data = f.process(task_data, fl_ctx)
-                except UnsafeJobError:
-                    self.log_exception(fl_ctx, f"UnsafeJobError from Task Data Filter {filter_name}")
-                    executor.unsafe = True
-                    fl_ctx.set_job_is_unsafe()
-                    self.run_abort_signal.trigger(True)
-                    return self._reply_and_audit(
-                        reply=make_reply(ReturnCode.UNSAFE_JOB),
-                        ref=server_audit_event_id,
-                        fl_ctx=fl_ctx,
-                        msg=f"submit result: {ReturnCode.UNSAFE_JOB}",
-                    )
-                except Exception as e:
-                    self.log_exception(
-                        fl_ctx, f"Processing error from Task Data Filter {filter_name}: {secure_format_exception(e)}"
-                    )
-                    return self._reply_and_audit(
-                        reply=make_reply(ReturnCode.TASK_DATA_FILTER_ERROR),
-                        ref=server_audit_event_id,
-                        fl_ctx=fl_ctx,
-                        msg=f"submit result: {ReturnCode.TASK_DATA_FILTER_ERROR}",
-                    )
-
-            if not isinstance(task_data, Shareable):
-                self.log_error(
-                    fl_ctx, "task data was converted to wrong type: expect Shareable but got {}".format(type(task_data))
-                )
-                return self._reply_and_audit(
-                    reply=make_reply(ReturnCode.TASK_DATA_FILTER_ERROR),
-                    ref=server_audit_event_id,
-                    fl_ctx=fl_ctx,
-                    msg=f"submit result: {ReturnCode.TASK_DATA_FILTER_ERROR}",
-                )
-
-            task.data = task_data
+        task.data = task_data
 
         self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_DATA_FILTER")
         fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task.data, private=True, sticky=False)
@@ -329,50 +315,39 @@ class ClientRunner(FLComponent):
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_RESULT_FILTER")
         self.fire_event(EventType.BEFORE_TASK_RESULT_FILTER, fl_ctx)
 
-        filter_list = []
-        if scope_object and scope_object.task_result_filters:
-            filter_list.extend(scope_object.task_result_filters)
+        try:
+            filter_error, reply = apply_result_filters(
+                self.task_result_filters, reply, fl_ctx, task.name, FilterChain.OUT
+            )
+        except UnsafeJobError:
+            self.log_exception(fl_ctx, f"UnsafeJobError from Task Result Filters")
+            executor.unsafe = True
+            fl_ctx.set_job_is_unsafe()
+            return self._reply_and_audit(
+                reply=make_reply(ReturnCode.UNSAFE_JOB),
+                ref=server_audit_event_id,
+                fl_ctx=fl_ctx,
+                msg=f"submit result: {ReturnCode.UNSAFE_JOB}",
+            )
+        except Exception as e:
+            self.log_exception(fl_ctx, f"Processing error in Task Result Filter : {secure_format_exception(e)}")
+            return self._reply_and_audit(
+                reply=make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR),
+                ref=server_audit_event_id,
+                fl_ctx=fl_ctx,
+                msg=f"submit result: {ReturnCode.TASK_RESULT_FILTER_ERROR}",
+            )
 
-        task_filter_list = self.task_result_filters.get(task.name + FilterChain.DELIMITER + FilterChain.OUT)
-        if task_filter_list:
-            filter_list.extend(task_filter_list)
-
-        if filter_list:
-            for f in filter_list:
-                filter_name = f.__class__.__name__
-                try:
-                    reply = f.process(reply, fl_ctx)
-                except UnsafeJobError:
-                    self.log_exception(fl_ctx, f"UnsafeJobError from Task Result Filter {filter_name}")
-                    executor.unsafe = True
-                    fl_ctx.set_job_is_unsafe()
-                    return self._reply_and_audit(
-                        reply=make_reply(ReturnCode.UNSAFE_JOB),
-                        ref=server_audit_event_id,
-                        fl_ctx=fl_ctx,
-                        msg=f"submit result: {ReturnCode.UNSAFE_JOB}",
-                    )
-                except Exception as e:
-                    self.log_exception(
-                        fl_ctx, f"Processing error in Task Result Filter {filter_name}: {secure_format_exception(e)}"
-                    )
-                    return self._reply_and_audit(
-                        reply=make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR),
-                        ref=server_audit_event_id,
-                        fl_ctx=fl_ctx,
-                        msg=f"submit result: {ReturnCode.TASK_RESULT_FILTER_ERROR}",
-                    )
-
-            if not isinstance(reply, Shareable):
-                self.log_error(
-                    fl_ctx, "task result was converted to wrong type: expect Shareable but got {}".format(type(reply))
-                )
-                return self._reply_and_audit(
-                    reply=make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR),
-                    ref=server_audit_event_id,
-                    fl_ctx=fl_ctx,
-                    msg=f"submit result: {ReturnCode.TASK_RESULT_FILTER_ERROR}",
-                )
+        if not isinstance(reply, Shareable):
+            self.log_error(
+                fl_ctx, "task result was converted to wrong type: expect Shareable but got {}".format(type(reply))
+            )
+            return self._reply_and_audit(
+                reply=make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR),
+                ref=server_audit_event_id,
+                fl_ctx=fl_ctx,
+                msg=f"submit result: {ReturnCode.TASK_RESULT_FILTER_ERROR}",
+            )
 
         fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=reply, private=True, sticky=False)
 

@@ -13,44 +13,38 @@
 # limitations under the License.
 
 from nvflare.apis.fl_constant import FLContextKey
-from nvflare.security.logging import secure_format_exception
+from nvflare.private.fed_json_config import FilterChain
 
 
-def _apply_filters(filter_list, filter_error, filter_data, logger, fl_ctx):
+def _apply_filters(filter_list, filter_error, filter_data, fl_ctx):
     if filter_list:
         for f in filter_list:
-            try:
-                filter_data = f.process(filter_data, fl_ctx)
-            except Exception as e:
-                logger.error(
-                    "processing error in task data filter {}: {}; "
-                    "asked client to try again later".format(type(f), secure_format_exception(e)),
-                )
-                filter_error = True
-                break
+            filter_data = f.process(filter_data, fl_ctx)
     return filter_error, filter_data
 
 
-def apply_data_filters(task_filter_list, task_data, logger, fl_ctx):
+def apply_data_filters(data_filters, task_data, fl_ctx, task_name, direction):
     filter_error = False
     # apply scope filters first
     scope_object = fl_ctx.get_prop(FLContextKey.SCOPE_OBJECT)
     filter_list = []
     if scope_object and scope_object.task_data_filters:
         filter_list.extend(scope_object.task_data_filters)
+    task_filter_list = data_filters.get(task_name + FilterChain.DELIMITER + direction)
     if task_filter_list:
         filter_list.extend(task_filter_list)
-    filter_error, task_data = _apply_filters(filter_list, filter_error, task_data, logger, fl_ctx)
+    filter_error, task_data = _apply_filters(filter_list, filter_error, task_data, fl_ctx)
     return filter_error, task_data
 
 
-def apply_result_filters(task_filter_list, result, logger, fl_ctx):
+def apply_result_filters(result_filters, result, fl_ctx, task_name, direction):
     filter_error = False
     filter_list = []
     scope_object = fl_ctx.get_prop(FLContextKey.SCOPE_OBJECT)
     if scope_object and scope_object.task_result_filters:
         filter_list.extend(scope_object.task_result_filters)
-    if task_filter_list:
-        filter_list.extend(task_filter_list)
-    filter_error, result = _apply_filters(filter_list, filter_error, result, logger, fl_ctx)
+    result_filter_list = result_filters.get(task_name + FilterChain.DELIMITER + direction)
+    if result_filter_list:
+        filter_list.extend(result_filter_list)
+    filter_error, result = _apply_filters(filter_list, filter_error, result, fl_ctx)
     return filter_error, result
