@@ -207,9 +207,7 @@ class ClientRunner(FLComponent):
 
         task_data = task.data
         try:
-            filter_error, task_data = apply_data_filters(
-                self.task_data_filters, task_data, fl_ctx, task.name, FilterKey.IN
-            )
+            task_data = apply_data_filters(self.task_data_filters, task_data, fl_ctx, task.name, FilterKey.IN)
         except UnsafeJobError:
             self.log_exception(fl_ctx, "UnsafeJobError from Task Data Filters")
             executor.unsafe = True
@@ -314,11 +312,9 @@ class ClientRunner(FLComponent):
         self.fire_event(EventType.BEFORE_TASK_RESULT_FILTER, fl_ctx)
 
         try:
-            filter_error, reply = apply_result_filters(
-                self.task_result_filters, reply, fl_ctx, task.name, FilterKey.OUT
-            )
+            reply = apply_result_filters(self.task_result_filters, reply, fl_ctx, task.name, FilterKey.OUT)
         except UnsafeJobError:
-            self.log_exception(fl_ctx, f"UnsafeJobError from Task Result Filters")
+            self.log_exception(fl_ctx, "UnsafeJobError from Task Result Filters")
             executor.unsafe = True
             fl_ctx.set_job_is_unsafe()
             return self._reply_and_audit(

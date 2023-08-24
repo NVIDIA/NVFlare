@@ -81,9 +81,7 @@ class ClientController(FLComponent, ControllerSpec):
 
         # # first apply privacy-defined filters
         try:
-            filter_error, task.data = apply_data_filters(
-                self.task_data_filters, request, fl_ctx, task.name, FilterKey.OUT
-            )
+            task.data = apply_data_filters(self.task_data_filters, request, fl_ctx, task.name, FilterKey.OUT)
         except Exception as e:
             self.log_exception(
                 fl_ctx,
@@ -109,6 +107,9 @@ class ClientController(FLComponent, ControllerSpec):
             # if task_cb_error:
             #     return self._make_error_reply(ReturnCode.ERROR, targets)
 
+        if task.timeout <= 0:
+            raise ValueError(f"The task timeout must > 0. But got {task.timeout}")
+
         request.set_header(ReservedKey.TASK_NAME, task.name)
         replies = engine.send_aux_request(
             targets=targets, topic=ReservedTopic.DO_TASK, request=request, timeout=task.timeout, fl_ctx=fl_ctx
@@ -128,7 +129,7 @@ class ClientController(FLComponent, ControllerSpec):
                     if rc and rc == ReturnCode.OK:
                         # apply result filters
                         try:
-                            filter_error, reply = apply_result_filters(
+                            reply = apply_result_filters(
                                 self.task_result_filters, reply, fl_ctx, task.name, FilterKey.IN
                             )
                         except Exception as e:

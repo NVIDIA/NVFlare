@@ -269,7 +269,7 @@ class ServerRunner(FLComponent):
             self.fire_event(EventType.BEFORE_TASK_DATA_FILTER, fl_ctx)
 
             try:
-                filter_error, task_data = apply_data_filters(
+                task_data = apply_data_filters(
                     self.config.task_data_filters, task_data, fl_ctx, task_name, FilterKey.OUT
                 )
             except Exception as e:
@@ -434,7 +434,7 @@ class ServerRunner(FLComponent):
                 self.fire_event(EventType.BEFORE_TASK_RESULT_FILTER, fl_ctx)
 
                 try:
-                    filter_error, result = apply_result_filters(
+                    result = apply_result_filters(
                         self.config.task_result_filters, result, fl_ctx, task_name, FilterKey.IN
                     )
                 except Exception as e:
