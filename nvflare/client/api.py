@@ -74,8 +74,12 @@ def receive() -> FLModel:
     return model_registry.get_model()
 
 
-def send(fl_model: FLModel, clear_registry=True) -> None:
-    """Sends the model to NVFlare side."""
+def send(fl_model: FLModel, clear_registry: bool = True) -> None:
+    """Sends the model to NVFlare side.
+
+    Args:
+        clear_registry (bool): To clear the registry or not.
+    """
     pid = os.getpid()
     if pid not in PROCESS_MODEL_REGISTRY:
         raise RuntimeError("needs to call init method first")

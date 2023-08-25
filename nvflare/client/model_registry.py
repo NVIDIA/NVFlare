@@ -39,7 +39,7 @@ class ModelRegistry:
         self.config = config
 
         self.cached_model: Optional[FLModel] = None
-        self.cache_valid = False
+        self.cache_loaded = False
         self.metrics = None
         self.sys_info = None
         self.output_meta = {}
@@ -47,15 +47,15 @@ class ModelRegistry:
     def receive(self):
         self.cached_model = self.model_exchanger.receive_model()
         self.sys_info = get_meta_from_fl_model(self.cached_model, SYS_ATTRS)
-        self.cache_valid = True
+        self.cache_loaded = True
 
     def get_model(self):
-        if not self.cache_valid:
+        if not self.cache_loaded:
             self.receive()
         return self.cached_model
 
     def get_sys_info(self):
-        if not self.cache_valid:
+        if not self.cache_loaded:
             self.receive()
         return self.sys_info
 
@@ -76,7 +76,7 @@ class ModelRegistry:
 
     def clear(self):
         self.cached_model = None
-        self.cache_valid = False
+        self.cache_loaded = False
         self.sys_info = None
         self.metrics = None
         self.model_exchanger.finalize(close_pipe=False)
