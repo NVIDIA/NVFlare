@@ -41,7 +41,7 @@ class AioTcpDriver(BaseDriver):
 
     @staticmethod
     def capabilities() -> Dict[str, Any]:
-        return {DriverCap.HEARTBEAT.value: False, DriverCap.SUPPORT_SSL.value: True}
+        return {DriverCap.SEND_HEARTBEAT.value: True, DriverCap.SUPPORT_SSL.value: True}
 
     def listen(self, connector: ConnectorInfo):
         self._run(connector, Mode.PASSIVE)

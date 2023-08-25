@@ -61,7 +61,7 @@ class HeartbeatMonitor(Thread):
 
             driver = sfm_conn.conn.connector.driver
             caps = driver.capabilities()
-            if caps and caps.get(DriverCap.HEARTBEAT.value, False):
+            if caps and not caps.get(DriverCap.SEND_HEARTBEAT.value, False):
                 continue
 
             if self.curr_time - sfm_conn.last_activity > self.interval:
