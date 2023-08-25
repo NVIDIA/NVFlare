@@ -30,7 +30,7 @@ class WarpDriver(BaseDriver):
 
     @staticmethod
     def capabilities() -> Dict[str, Any]:
-        return {DriverCap.HEARTBEAT.value: False, DriverCap.SUPPORT_SSL.value: False}
+        return {DriverCap.SEND_HEARTBEAT.value: True, DriverCap.SUPPORT_SSL.value: False}
 
     def listen(self, connector: ConnectorInfo):
         self.connector = connector

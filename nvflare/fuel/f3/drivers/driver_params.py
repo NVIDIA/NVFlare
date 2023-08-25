@@ -43,5 +43,5 @@ class DriverParams(str, Enum):
 
 class DriverCap(str, Enum):
 
-    HEARTBEAT = "heartbeat"
+    SEND_HEARTBEAT = "send_heartbeat"
     SUPPORT_SSL = "support_ssl"

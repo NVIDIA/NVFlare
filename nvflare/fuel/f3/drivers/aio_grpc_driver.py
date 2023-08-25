@@ -257,7 +257,7 @@ class AioGrpcDriver(BaseDriver):
 
     @staticmethod
     def capabilities() -> Dict[str, Any]:
-        return {DriverCap.HEARTBEAT.value: True, DriverCap.SUPPORT_SSL.value: True}
+        return {DriverCap.SEND_HEARTBEAT.value: True, DriverCap.SUPPORT_SSL.value: True}
 
     async def _start_server(self, connector: ConnectorInfo, aio_ctx: AioContext, conn_ctx: _ConnCtx):
         self.connector = connector
