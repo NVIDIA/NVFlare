@@ -22,7 +22,7 @@ from .constants import SYS_ATTRS
 from .utils import DIFF_FUNCS, get_meta_from_fl_model
 
 
-class Cache:
+class ModelRegistry:
     """This class is used to remember attributes that need to share for a user code.
 
     For example, after "global_evaluate" we should remember the "metrics" value.
@@ -38,16 +38,26 @@ class Cache:
         self.model_exchanger = model_exchanger
         self.config = config
 
-        self.input_model: Optional[FLModel] = None
+        self.cached_model: Optional[FLModel] = None
+        self.cache_valid = False
         self.metrics = None
         self.sys_info = None
         self.output_meta = {}
 
-    def receive(self, use_cache=False):
-        if use_cache and self.input_model is not None:
-            return
-        self.input_model = self.model_exchanger.receive_model()
-        self.sys_info = get_meta_from_fl_model(self.input_model, SYS_ATTRS)
+    def receive(self):
+        self.cached_model = self.model_exchanger.receive_model()
+        self.sys_info = get_meta_from_fl_model(self.cached_model, SYS_ATTRS)
+        self.cache_valid = True
+
+    def get_model(self):
+        if not self.cache_valid:
+            self.receive()
+        return self.cached_model
+
+    def get_sys_info(self):
+        if not self.cache_valid:
+            self.receive()
+        return self.sys_info
 
     def send(self, model: FLModel) -> None:
         if self.config.get_transfer_type() == "DIFF":
@@ -55,14 +65,21 @@ class Cache:
             diff_func = DIFF_FUNCS.get(exchange_format, None)
             if diff_func is None:
                 raise RuntimeError(f"no default params diff function for {exchange_format}")
-            elif self.input_model is None:
+            elif self.cached_model is None:
                 raise RuntimeError("no received model")
             try:
-                model.params = diff_func(original=self.input_model.params, new=model.params)
+                model.params = diff_func(original=self.cached_model.params, new=model.params)
                 model.params_type = ParamsType.DIFF
             except Exception as e:
                 raise RuntimeError(f"params diff function failed: {e}")
         self.model_exchanger.submit_model(model=model)
 
+    def clear(self):
+        self.cached_model = None
+        self.cache_valid = False
+        self.sys_info = None
+        self.metrics = None
+        self.model_exchanger.finalize(close_pipe=False)
+
     def __str__(self):
-        return f"Cache(config: {self.config.get_config()})"
+        return f"{self.__class__.__name__}(config: {self.config.get_config()})"

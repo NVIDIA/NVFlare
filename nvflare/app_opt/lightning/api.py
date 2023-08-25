@@ -15,6 +15,7 @@
 from typing import Dict
 
 import pytorch_lightning as pl
+import torch
 from pytorch_lightning.callbacks import Callback
 from torch import Tensor
 
@@ -42,8 +43,7 @@ class FLCallback(Callback):
         self.has_global_eval = get_config().get(ConfigKey.GLOBAL_EVAL, False)
         self.has_training = get_config().get(ConfigKey.TRAINING, False)
         self.input_fl_model = None
-        self.init_model_received = False
-        self._receive_model(init=True)
+        self._receive_model()
 
         self.metrics = None
 
@@ -52,18 +52,24 @@ class FLCallback(Callback):
         # instance, the reset_state() needs to be called first
         self.input_fl_model = None
         self.metrics = None
+        clear()
 
     def on_train_start(self, trainer, pl_module):
+        print("********** calling on_train_start *************")
         # receive the global model and update the local model with global model
         if self.has_training:
             self._receive_and_update_model(pl_module)
+        self._print_module(pl_module)
 
     def on_train_end(self, trainer, pl_module):
+        print("********** calling on_train_end *************")
         if self.has_training:
             self._send_model(FLModel(params=pl_module.cpu().state_dict()))
             self.reset_state()
+        self._print_module(pl_module)
 
     def on_validation_start(self, trainer, pl_module):
+        print("********** calling on_validation_start *************")
         # receive the global model and update the local model with global model
         # the 1st time validate() or train() is called.
         # expect user will validate the global model first (i.e. validate()), once that's done.
@@ -72,37 +78,39 @@ class FLCallback(Callback):
         # Hence the validate() will be validating the local model.
         if pl_module and self.has_global_eval and self.metrics is None:
             self._receive_and_update_model(pl_module)
+        self._print_module(pl_module)
 
     def on_validation_end(self, trainer, pl_module):
+        print("********** calling on_validation_end *************")
         if pl_module and self.has_global_eval and self.metrics is None:
             self.metrics = _extract_metrics(trainer.callback_metrics)
             self._send_model(FLModel(metrics=self.metrics))
+        self._print_module(pl_module)
+
+    def _print_module(self, pl_module):
+        _sum = 0
+        _n = 0
+        for k, v in pl_module.state_dict().items():
+            for kk, vv in v.items():
+                _sum += torch.sum(vv)
+                _n += 1
+        print("***************** model sum=", _sum, "layers=", _n, "*****************************")
 
     def _receive_and_update_model(self, pl_module):
-        if not self.init_model_received:
-            self._receive_model(init=True)
-        elif not self.input_fl_model:
-            self._receive_model()
+        self._receive_model()
         if self.input_fl_model and self.input_fl_model.params:
             pl_module.load_state_dict(self.input_fl_model.params)
 
-    def _receive_model(self, init: bool = False) -> FLModel:
-        """Receives model from NVFlare.
-
-        Args:
-            init (bool): whether this is the first time in the process to receive the model from NVFlare.
-        """
-        use_cache = True if init else False
-        model = receive(use_cache)
+    def _receive_model(self) -> FLModel:
+        """Receives model from NVFlare."""
+        model = receive()
         if model:
             self.input_fl_model = model
-            if init:
-                self.init_model_received = True
         return model
 
     def _send_model(self, output_model: FLModel):
         try:
-            send(output_model, clear=False)
+            send(output_model, clear_registry=False)
         except Exception as e:
             raise RuntimeError("failed to send FL model", e)
 
