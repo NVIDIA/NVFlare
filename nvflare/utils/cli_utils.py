@@ -85,8 +85,7 @@ def create_startup_kit_config(nvflare_config: ConfigTree, startup_kit_dir: Optio
         ConfigTree: The merged configuration tree.
     """
     old_startup_kit_dir = nvflare_config.get_string("startup_kit", None)
-
-    if old_startup_kit_dir is None and (not startup_kit_dir or not os.path.isdir(startup_kit_dir)):
+    if old_startup_kit_dir is None and (startup_kit_dir is not None and not os.path.isdir(startup_kit_dir)):
         raise ValueError(f"invalid startup kit location '{startup_kit_dir}'")
     if startup_kit_dir:
         startup_kit_dir = get_startup_kit_dir(startup_kit_dir)
@@ -152,7 +151,6 @@ def check_dir(dir_path: str):
 
 
 def get_startup_kit_dir(startup_kit_dir: Optional[str] = None) -> str:
-
     if not startup_kit_dir:
         # load from config file:
         startup_kit_dir = find_startup_kit_location()
