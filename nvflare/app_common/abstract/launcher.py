@@ -14,12 +14,18 @@
 
 import os
 from abc import ABC, abstractmethod
+from enum import Enum
 from typing import Optional
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
+
+
+class LauncherCompleteStatus(str, Enum):
+    SUCCESS = "success"
+    FAILED = "failed"
 
 
 class Launcher(ABC):
@@ -55,13 +61,16 @@ class Launcher(ABC):
         pass
 
     @abstractmethod
-    def wait_task(self, task_name: str, fl_ctx: FLContext, timeout: Optional[float] = None) -> None:
+    def wait_task(self, task_name: str, fl_ctx: FLContext, timeout: Optional[float] = None) -> LauncherCompleteStatus:
         """Waits for external system to end.
 
         Args:
             task_name (str): task name.
             fl_ctx (FLContext): fl context.
             timeout (optional, float): time to wait for task.
+
+        Returns:
+            The completion status of Launcher.
         """
         pass
 

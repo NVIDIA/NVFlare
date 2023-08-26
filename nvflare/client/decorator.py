@@ -18,7 +18,7 @@ from inspect import signature
 
 from nvflare.app_common.abstract.fl_model import FLModel
 
-from .api import PROCESS_CACHE
+from .api import PROCESS_MODEL_REGISTRY
 
 
 def _replace_func_args(func, kwargs, model: FLModel):
@@ -35,14 +35,14 @@ def train(
         @functools.wraps(train_fn)
         def wrapper(*args, **kwargs):
             pid = os.getpid()
-            if pid not in PROCESS_CACHE:
+            if pid not in PROCESS_MODEL_REGISTRY:
                 raise RuntimeError("needs to call init method first")
-            cache = PROCESS_CACHE[pid]
-            if cache.input_model is None:
-                cache.receive()
+            cache = PROCESS_MODEL_REGISTRY[pid]
+            if cache.cached_model is None:
+                cache.get_model()
 
             # Replace func arguments
-            _replace_func_args(train_fn, kwargs, cache.input_model)
+            _replace_func_args(train_fn, kwargs, cache.cached_model)
             return_value = train_fn(**kwargs)
 
             if return_value is None:
@@ -55,7 +55,7 @@ def train(
 
             cache.send(model=return_value)
             cache.model_exchanger.finalize(close_pipe=False)
-            PROCESS_CACHE.pop(pid)
+            PROCESS_MODEL_REGISTRY.pop(pid)
 
             return return_value
 
@@ -75,13 +75,13 @@ def evaluate(
         @functools.wraps(eval_fn)
         def wrapper(*args, **kwargs):
             pid = os.getpid()
-            if pid not in PROCESS_CACHE:
+            if pid not in PROCESS_MODEL_REGISTRY:
                 raise RuntimeError("needs to call init method first")
-            cache = PROCESS_CACHE[pid]
-            if cache.input_model is None:
-                cache.receive()
+            cache = PROCESS_MODEL_REGISTRY[pid]
+            if cache.cached_model is None:
+                cache.get_model()
 
-            _replace_func_args(eval_fn, kwargs, cache.input_model)
+            _replace_func_args(eval_fn, kwargs, cache.cached_model)
             return_value = eval_fn(**kwargs)
 
             if return_value is None:
