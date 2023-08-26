@@ -40,7 +40,9 @@ import argparse
 
 import torchvision.datasets as datasets
 
-from examples.advanced.cifar10.pt.utils.cifar10_data_utils import CIFAR10_ROOT
+
+# default dataset path
+CIFAR10_ROOT = "/tmp/nvflare/data/cifar10"
 
 
 def define_parser():
