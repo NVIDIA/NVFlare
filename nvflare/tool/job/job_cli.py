@@ -502,7 +502,6 @@ def prepare_meta_config(cmd_args):
             break
 
     # Use existing meta.conf if user already defined it.
-    folder_name_key = JobMetaKey.JOB_FOLDER_NAME.value
     if not dst_path:
         dst_config = load_src_config_template("meta.conf")
         dst_config.put("name", app_name)
@@ -510,7 +509,6 @@ def prepare_meta_config(cmd_args):
     else:
         dst_config = CF.from_dict(ConfigFactory.load_config(dst_path).to_dict())
 
-    # dst_config.put(folder_name_key, os.path.basename(job_folder))
     save_config(dst_config, dst_path)
 
     # clean up
