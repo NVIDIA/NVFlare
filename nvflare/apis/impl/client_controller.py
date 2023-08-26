@@ -23,6 +23,7 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.task_utils import apply_filters
 from nvflare.private.fed.utils.fed_utils import get_target_names
+from nvflare.private.privacy_manager import Scope
 from nvflare.security.logging import secure_format_exception
 
 
@@ -81,7 +82,7 @@ class ClientController(FLComponent, ControllerSpec):
 
         # # first apply privacy-defined filters
         try:
-            filter_name = f"{self.task_data_filters=}".split("=")[0].split(".")[-1]
+            filter_name = f"{Scope().task_data_filters=}".split("=")[0].split(".")[-1]
             task.data = apply_filters(filter_name, request, fl_ctx, self.task_data_filters, task.name, FilterKey.OUT)
         except Exception as e:
             self.log_exception(
@@ -130,7 +131,7 @@ class ClientController(FLComponent, ControllerSpec):
                     if rc and rc == ReturnCode.OK:
                         # apply result filters
                         try:
-                            filter_name = f"{self.task_result_filters=}".split("=")[0].split(".")[-1]
+                            filter_name = f"{Scope().task_result_filters=}".split("=")[0].split(".")[-1]
                             reply = apply_filters(
                                 filter_name, reply, fl_ctx, self.task_result_filters, task.name, FilterKey.IN
                             )

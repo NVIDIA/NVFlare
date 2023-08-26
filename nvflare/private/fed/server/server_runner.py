@@ -26,6 +26,7 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.apis.utils.task_utils import apply_filters
 from nvflare.private.defs import SpecialTaskName, TaskConstant
+from nvflare.private.privacy_manager import Scope
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
@@ -269,7 +270,7 @@ class ServerRunner(FLComponent):
             self.fire_event(EventType.BEFORE_TASK_DATA_FILTER, fl_ctx)
 
             try:
-                filter_name = f"{self.config.task_data_filters=}".split("=")[0].split(".")[-1]
+                filter_name = f"{Scope().task_data_filters=}".split("=")[0].split(".")[-1]
                 task_data = apply_filters(
                     filter_name, task_data, fl_ctx, self.config.task_data_filters, task_name, FilterKey.OUT
                 )
@@ -435,7 +436,7 @@ class ServerRunner(FLComponent):
                 self.fire_event(EventType.BEFORE_TASK_RESULT_FILTER, fl_ctx)
 
                 try:
-                    filter_name = f"{self.config.task_result_filters=}".split("=")[0].split(".")[-1]
+                    filter_name = f"{Scope().task_result_filters=}".split("=")[0].split(".")[-1]
                     result = apply_filters(
                         filter_name, result, fl_ctx, self.config.task_result_filters, task_name, FilterKey.IN
                     )
