@@ -12,6 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+SYMBOL_ALL = "@all"
+SYMBOL_NONE = "@none"
+
+
+class DefaultPolicy:
+
+    DISALLOW = "disallow"
+    ANY = "any"
+    EMPTY = "empty"
+    ALL = "all"
+
 
 def check_positive_int(name, value):
     if not isinstance(value, int):
@@ -53,3 +64,98 @@ def check_object_type(name, value, obj_type):
 def check_callable(name, value):
     if not callable(value):
         raise ValueError(f"{name} must be callable, but got {type(value)}.")
+
+
+def _validate_candidates(var_name: str, candidates, base: list):
+    if candidates is None:
+        return []  # empty
+
+    if isinstance(candidates, str):
+        c = candidates.lower().strip()
+        if not c:
+            return None
+
+        if c == SYMBOL_ALL:
+            return candidates
+        elif c == SYMBOL_NONE:
+            return None
+        elif c in candidates:
+            return [c]
+        else:
+            raise ValueError(f"value of '{var_name}' ({candidates}) is invalid")
+
+    if not isinstance(candidates, list):
+        raise ValueError(f"invalid '{var_name}': expect str or list of str but got {type(candidates)}")
+
+    validated = []
+    for c in candidates:
+        if not isinstance(c, str):
+            raise ValueError(f"invalid value in '{var_name}': must be str but got {type(c)}")
+        n = c.strip()
+        if n not in base:
+            raise ValueError(f"invalid value '{n}' in '{var_name}'")
+        if n not in validated:
+            validated.append(n)
+
+    return validated
+
+
+def validate_candidates(var_name: str, candidates, base: list, default_policy: str, allow_none: bool):
+    c = _validate_candidates(var_name, candidates, base)
+
+    if c is None:
+        if not allow_none:
+            raise ValueError(f"{var_name} must not be none")
+        else:
+            return []  # empty
+
+    if not c:
+        # empty
+        if default_policy == DefaultPolicy.EMPTY:
+            return []
+        elif default_policy == DefaultPolicy.ALL:
+            return base
+        elif default_policy == DefaultPolicy.DISALLOW:
+            raise ValueError(f"invalid value '{candidates}' in '{var_name}': it must be subset of {base}")
+        else:
+            # any
+            return [candidates[0]]
+    return c
+
+
+def _validate_candidate(var_name: str, candidate, base: list):
+    if candidate is None:
+        return None
+
+    if not isinstance(candidate, str):
+        raise ValueError(f"invalid '{var_name}': must be str but got {type(candidate)}")
+    n = candidate.strip()
+    if n in base:
+        return n
+
+    c = n.lower()
+    if c == SYMBOL_NONE:
+        return None
+    elif not c:
+        return ""
+    else:
+        raise ValueError(f"invalid value '{candidate}' in '{var_name}'")
+
+
+def validate_candidate(var_name: str, candidate, base: list, default_policy: str, allow_none: bool):
+    c = _validate_candidate(var_name, candidate, base)
+    if c is None:
+        if not allow_none:
+            raise ValueError(f"{var_name} must be specified")
+        else:
+            return ""
+
+    if not c:
+        if default_policy == DefaultPolicy.EMPTY:
+            return ""
+        elif default_policy == DefaultPolicy.ANY:
+            return base[0]
+        else:
+            raise ValueError(f"invalid value '{candidate}' in '{var_name}': it must be one of {base}")
+    else:
+        return c
