@@ -24,15 +24,16 @@ class SwarmServerController(ServerSideController):
         num_rounds: int,
         start_round: int = 0,
         start_task_name=Constant.TASK_NAME_SWARM_START,
-        start_task_timeout=5,
+        start_task_timeout=Constant.START_TASK_TIMEOUT,
         configure_task_name=Constant.TASK_NAME_SWARM_CONFIGURE,
-        configure_task_timeout=10,
-        task_check_period: float = 0.5,
-        job_status_check_interval: float = 2.0,
+        configure_task_timeout=Constant.CONFIG_TASK_TIMEOUT,
+        task_check_period: float = Constant.TASK_CHECK_INTERVAL,
+        job_status_check_interval: float = Constant.JOB_STATUS_CHECK_INTERVAL,
         participating_clients=None,
         result_clients=None,
         starting_client: str = "",
-        max_status_report_interval: float = 3600.0,
+        max_status_report_interval: float = Constant.PER_CLIENT_STATUS_REPORT_TIMEOUT,
+        progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
         aggr_clients=None,
         train_clients=None,
     ):
@@ -56,6 +57,7 @@ class SwarmServerController(ServerSideController):
             starting_client_policy=DefaultPolicy.ANY,
             starting_client_allow_none=False,
             max_status_report_interval=max_status_report_interval,
+            progress_timeout=progress_timeout,
         )
         self.aggr_clients = aggr_clients
         self.train_clients = train_clients
