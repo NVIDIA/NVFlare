@@ -49,7 +49,6 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.core_cell import FQCN, CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellMsgReturnCode
-from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
@@ -70,18 +69,6 @@ from .run_info import RunInfo
 from .run_manager import RunManager
 from .server_engine_internal_spec import EngineInfo, ServerEngineInternalSpec
 from .server_status import ServerStatus
-
-
-class ClientConnection:
-    def __init__(self, client):
-        self.client = client
-
-    def send(self, data):
-        data = fobs.dumps(data)
-        self.client.send(data)
-
-    def recv(self):
-        return self.client.recv()
 
 
 class ServerEngine(ServerEngineInternalSpec):
