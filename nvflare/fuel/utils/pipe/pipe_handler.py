@@ -147,7 +147,8 @@ class PipeHandler(object):
 
         Args:
             msg: message to be sent
-            timeout: how long to wait for the peer to read the data. If not specified, return False immediately.
+            timeout: how long to wait for the peer to read the data.
+                If not specified, return False immediately.
 
         Returns:
             Whether the peer has read the data.

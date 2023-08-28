@@ -608,9 +608,7 @@ class TestCallback(TestController):
 
         task_name_out, _, data = controller.process_task_request(client, fl_ctx)
 
-        expected = Shareable()
-        expected["_test_data"] = client_name
-        assert data["_test_data"] == expected["_test_data"]
+        assert data["_test_data"] == client_name
         controller.cancel_task(task)
         assert task.completion_status == TaskCompletionStatus.CANCELLED
         launch_thread.join()
@@ -643,9 +641,7 @@ class TestCallback(TestController):
             client=client, task_name="__test_task", task_id=client_task_id, fl_ctx=fl_ctx, result=data
         )
 
-        expected = Shareable()
-        expected["_test_data"] = client_name
-        assert task.last_client_task_map[client_name].result["_test_data"] == expected["_test_data"]
+        assert task.last_client_task_map[client_name].result["_test_data"] == client_name
         controller._check_tasks()
         assert task.completion_status == TaskCompletionStatus.OK
         launch_thread.join()
@@ -691,6 +687,7 @@ class TestCallback(TestController):
                     )
         if task_complete == "timeout":
             time.sleep(timeout)
+            controller._check_tasks()
             assert task.completion_status == TaskCompletionStatus.TIMEOUT
         elif task_complete == "cancel":
             controller.cancel_task(task)
@@ -1257,7 +1254,7 @@ class TestBroadcastBehavior(TestController):
                 client=client, task_name="__test_task", task_id=client_task_id, result=result, fl_ctx=fl_ctx
             )
 
-        time.sleep(0.5)
+        controller._check_tasks()
         assert controller.get_num_standing_tasks() == 0
         assert task.completion_status == TaskCompletionStatus.OK
         launch_thread.join()
@@ -1317,22 +1314,22 @@ def _process_task_request_test_cases():
     client_names = [c.name for c in clients]
 
     dynamic_targets_cases = [
-        (clients[1:], clients[0], True, 1, 0, False, [clients[1].name, clients[2].name, clients[0].name]),
-        (clients[1:], clients[1], True, 1, 0, True, client_names[1:]),
-        (clients[1:], clients[2], True, 1, 0, False, client_names[1:]),
-        ([clients[0]], clients[1], True, 1, 0, False, [clients[0].name, clients[1].name]),
+        (clients[1:], clients[0], True, 2, 0, False, [clients[1].name, clients[2].name, clients[0].name]),
+        (clients[1:], clients[1], True, 2, 0, True, client_names[1:]),
+        (clients[1:], clients[2], True, 2, 0, False, client_names[1:]),
+        ([clients[0]], clients[1], True, 2, 0, False, [clients[0].name, clients[1].name]),
         ([clients[0]], clients[1], True, 1, 2, False, [clients[0].name]),
         ([clients[0], clients[0]], clients[0], True, 1, 0, True, [clients[0].name, clients[0].name]),
         (None, clients[0], True, 1, 0, True, [clients[0].name]),
     ]
 
     static_targets_cases = [
-        (clients[1:], clients[0], False, 1, 0, False, client_names[1:]),
-        (clients[1:], clients[1], False, 1, 0, True, client_names[1:]),
-        (clients[1:], clients[2], False, 1, 0, False, client_names[1:]),
-        (clients[1:], clients[0], False, 1, 2, False, client_names[1:]),
-        (clients[1:], clients[1], False, 1, 2, True, client_names[1:]),
-        (clients[1:], clients[2], False, 1, 2, True, client_names[1:]),
+        (clients[1:], clients[0], False, 2, 0, False, client_names[1:]),
+        (clients[1:], clients[1], False, 2, 0, True, client_names[1:]),
+        (clients[1:], clients[2], False, 2, 0, False, client_names[1:]),
+        (clients[1:], clients[0], False, 1, 1.5, False, client_names[1:]),
+        (clients[1:], clients[1], False, 1, 1.5, True, client_names[1:]),
+        (clients[1:], clients[2], False, 1, 1.5, True, client_names[1:]),
     ]
 
     return dynamic_targets_cases + static_targets_cases

@@ -84,7 +84,7 @@ Alternative way to run job is using POC mode
 ### 4.1 Prepare POC Workspace
 
 ```
-   nvflare poc --prepare 
+   nvflare poc prepare 
 ```
 This will create a poc at /tmp/nvflare/poc with n = 2 clients.
 
@@ -98,17 +98,17 @@ then repeat above
 ### 4.2 Start nvflare in POC mode
 
 ```
-nvflare poc --start
+nvflare poc start
 ```
 once you have done with above command, you are already login to the NVFLARE console (aka Admin Console)
 if you prefer to have NVFLARE Console in separate terminal, you can do
 
 ```
-nvflare poc --start ex admin
+nvflare poc start ex admin
 ```
 Then open a separate terminal to start the NVFLARE console
 ```
-nvflare poc --start -p admin
+nvflare poc start -p admin
 ```
 
 ### 4.3 Submit job

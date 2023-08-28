@@ -23,7 +23,8 @@
       "id": "model_selector",
       "name": "IntimeModelSelector",
       "args": {
-        "key_metric": "test_neg_loss_epoch"
+        "key_metric": "val_loss_epoch",
+        "negate_key_metric": true
       }
     }
   ],
