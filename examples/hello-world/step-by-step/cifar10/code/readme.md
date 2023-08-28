@@ -42,6 +42,7 @@ assuming the current directory is
 
 ```
 examples/hello-world/step-by-step/cifar10/sag_pt
+```
 
 we can first create a job folder
 
