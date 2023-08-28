@@ -32,18 +32,19 @@ class CrossSiteEvalServerController(ServerSideController):
     def __init__(
         self,
         start_task_name=Constant.TASK_NAME_CSE_START,
-        start_task_timeout=5,
+        start_task_timeout=Constant.START_TASK_TIMEOUT,
         configure_task_name=Constant.TASK_NAME_CSE_CONFIGURE,
-        configure_task_timeout=10,
+        configure_task_timeout=Constant.CONFIG_TASK_TIMEOUT,
         eval_task_name=Constant.TASK_NAME_CSE_EVAL,
         eval_task_timeout=30,
-        task_check_period: float = 0.5,
-        job_status_check_interval: float = 2.0,
+        task_check_period: float = Constant.TASK_CHECK_INTERVAL,
+        job_status_check_interval: float = Constant.JOB_STATUS_CHECK_INTERVAL,
+        progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
         participating_clients=None,
         evaluators=None,
         evaluatees=None,
         global_model_client=None,
-        max_status_report_interval: float = 3600.0,
+        max_status_report_interval: float = Constant.PER_CLIENT_STATUS_REPORT_TIMEOUT,
         eval_result_dir=AppConstants.CROSS_VAL_DIR,
     ):
         if not evaluatees:
@@ -68,6 +69,7 @@ class CrossSiteEvalServerController(ServerSideController):
             result_clients=None,
             result_clients_policy=DefaultPolicy.EMPTY,
             result_clients_allow_none=True,
+            progress_timeout=progress_timeout,
         )
 
         if not global_model_client:
