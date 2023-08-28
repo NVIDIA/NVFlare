@@ -27,7 +27,6 @@ class MessageHeaderKey:
     REQ_ID = CELLNET_PREFIX + "req_id"
     REPLY_EXPECTED = CELLNET_PREFIX + "reply_expected"
     TOPIC = CELLNET_PREFIX + "topic"
-    WAIT_UNTIL = CELLNET_PREFIX + "wait_until"
     ORIGIN = CELLNET_PREFIX + "origin"
     DESTINATION = CELLNET_PREFIX + "destination"
     FROM_CELL = CELLNET_PREFIX + "from"

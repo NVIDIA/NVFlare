@@ -42,7 +42,7 @@ Then you can use admin client to submit the job via `submit_job` command.
 ## Customization
 
 The provided XGBoost executor can be customized using Boost parameters
-provided in `xgboost_params` argument.
+provided in `xgb_params` argument.
 
 If the parameter change alone is not sufficient and code changes are required,
 a custom executor can be implemented to make calls to xgboost library directly.

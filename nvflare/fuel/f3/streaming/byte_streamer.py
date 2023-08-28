@@ -15,7 +15,7 @@ import logging
 import threading
 from typing import Optional
 
-from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.stream_const import (
@@ -60,7 +60,7 @@ class TxTask:
 
 
 class ByteStreamer:
-    def __init__(self, cell: Cell):
+    def __init__(self, cell: CoreCell):
         self.cell = cell
         self.cell.register_request_cb(channel=STREAM_CHANNEL, topic=STREAM_ACK_TOPIC, cb=self._ack_handler)
         self.tx_task_map = {}

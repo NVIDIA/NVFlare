@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 from typing import Optional
 
 from nvflare.apis.event_type import EventType
@@ -22,8 +24,10 @@ from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.app_common.abstract.launcher import Launcher
+from nvflare.app_common.abstract.launcher import Launcher, LauncherCompleteStatus
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils, ParamsConverter
+from nvflare.client.config import ClientConfig, ConfigKey, from_file
+from nvflare.client.constants import CONFIG_EXCHANGE
 from nvflare.fuel.utils.pipe.pipe import Message, Pipe
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler, Topic
 from nvflare.fuel.utils.validation_utils import check_object_type
@@ -44,6 +48,8 @@ class LauncherExecutor(Executor):
         heartbeat_interval: float = 5.0,
         heartbeat_timeout: float = 30.0,
         workers: int = 1,
+        training: bool = True,
+        global_evaluation: bool = True,
         from_nvflare_converter_id: Optional[str] = None,
         to_nvflare_converter_id: Optional[str] = None,
     ) -> None:
@@ -61,15 +67,19 @@ class LauncherExecutor(Executor):
             heartbeat_interval (float): Interval for sending heartbeat to the peer. Defaults to 5.0.
             heartbeat_timeout (float): Timeout for waiting for a heartbeat from the peer. Defaults to 30.0.
             workers (int): Number of worker threads needed.
+            training (bool): Whether to run training using global model. Defaults to True.
+            global_evaluation (bool): Whether to run evaluation on global model. Defaults to True.
             from_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
-                This converter will be called when model is get from nvflare controller side to executor side.
+                This converter will be called when model is sent from nvflare controller side to executor side.
             to_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
-                This converter will be called when model is get from nvflare executor side to controller side.
+                This converter will be called when model is sent from nvflare executor side to controller side.
         """
         super().__init__()
         self._launcher_id = launcher_id
         self.launch_timeout = launch_timeout
         self.launcher: Optional[Launcher] = None
+        self._launcher_finish = Event()
+        self._launcher_finish_status = None
         self._thread_pool_executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix=self.__class__.__name__)
 
         self.pipe_handler: Optional[PipeHandler] = None
@@ -82,6 +92,14 @@ class LauncherExecutor(Executor):
         self._task_wait_time = task_wait_time
         self._result_poll_interval = result_poll_interval
         self._task_read_wait_time = task_read_wait_time
+
+        # flags to indicate whether the launcher side will send back trained model and/or metrics
+        self._training = training
+        self._global_evaluation = global_evaluation
+        if self._training is False and self._global_evaluation is False:
+            raise RuntimeError("training and global_evaluation can't be both False.")
+        self._result_fl_model = None
+        self._result_metrics = None
 
         self._from_nvflare_converter_id = from_nvflare_converter_id
         self._from_nvflare_converter: Optional[ParamsConverter] = None
@@ -106,6 +124,7 @@ class LauncherExecutor(Executor):
             heartbeat_timeout=self._heartbeat_timeout,
         )
         self.pipe_handler.start()
+        self._update_config_exchange(fl_ctx)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext) -> None:
         if event_type == EventType.START_RUN:
@@ -124,16 +143,24 @@ class LauncherExecutor(Executor):
         try:
             launch_success = future.result(timeout=self.launch_timeout)
         except TimeoutError:
-            self.log_error(fl_ctx, f"launch task: {task_name} takes too long")
+            self.log_error(fl_ctx, f"launch task: {task_name} exceeds {self.launch_timeout} seconds")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
         if not launch_success:
             self.log_error(fl_ctx, f"launch task: {task_name} failed")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
+        future = self._wait_in_new_thread(task_name, fl_ctx, self._task_wait_time)
         result = self._exchange(task_name, shareable, fl_ctx, abort_signal)
-        if self.launcher:
-            self._stop_launcher(task_name, fl_ctx)
+        try:
+            completion_status = future.result(timeout=self._task_wait_time)
+            if completion_status != LauncherCompleteStatus.SUCCESS:
+                self.log_error(fl_ctx, "launcher execution failed")
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+        except TimeoutError:
+            self.log_error(fl_ctx, f"wait task: {task_name} exceeds {self._task_wait_time} seconds")
+            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+        self._clear()
 
         return result
 
@@ -157,6 +184,21 @@ class LauncherExecutor(Executor):
             check_object_type(self._to_nvflare_converter_id, to_nvflare_converter, ParamsConverter)
             self._to_nvflare_converter = to_nvflare_converter
 
+    def _update_config_exchange(self, fl_ctx: FLContext):
+        workspace = fl_ctx.get_engine().get_workspace()
+        app_dir = workspace.get_app_dir(fl_ctx.get_job_id())
+        config_file = os.path.join(app_dir, workspace.config_folder, CONFIG_EXCHANGE)
+        if os.path.exists(config_file):
+            client_config = from_file(config_file=config_file)
+        else:
+            client_config = ClientConfig({})
+        self._update_config_exchange_dict(client_config.config)
+        client_config.to_json(config_file)
+
+    def _update_config_exchange_dict(self, config: dict):
+        config[ConfigKey.GLOBAL_EVAL] = self._global_evaluation
+        config[ConfigKey.TRAINING] = self._training
+
     def _launch(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> bool:
         if self.launcher:
             return self.launcher.launch_task(task_name, shareable, fl_ctx, abort_signal)
@@ -172,6 +214,22 @@ class LauncherExecutor(Executor):
                 self.launcher.stop_task(task_name=task_name, fl_ctx=fl_ctx)
         except Exception as e:
             self.log_exception(fl_ctx, f"launcher stop exception: {secure_format_exception(e)}")
+
+    def _wait_launcher(self, task_name: str, fl_ctx: FLContext, timeout: Optional[float]) -> LauncherCompleteStatus:
+        return_status = LauncherCompleteStatus.FAILED
+        try:
+            if self.launcher:
+                return_status = self.launcher.wait_task(task_name=task_name, fl_ctx=fl_ctx, timeout=timeout)
+        except Exception as e:
+            self.log_exception(fl_ctx, f"launcher wait exception: {secure_format_exception(e)}")
+            self._stop_launcher(task_name=task_name, fl_ctx=fl_ctx)
+        self._launcher_finish.set()
+        self._launcher_finish_status = return_status
+        return return_status
+
+    def _wait_in_new_thread(self, task_name: str, fl_ctx: FLContext, timeout: Optional[float]):
+        future = self._thread_pool_executor.submit(self._wait_launcher, task_name, fl_ctx, timeout)
+        return future
 
     def _exchange(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if self.pipe_handler is None:
@@ -189,7 +247,9 @@ class LauncherExecutor(Executor):
         start = time.time()
         while True:
             if abort_signal.triggered:
+                self.log_error(fl_ctx, f"task '{task_name}' is aborted.")
                 self.pipe_handler.notify_abort(task_name)
+                self._stop_launcher(task_name, fl_ctx)
                 return make_reply(ReturnCode.TASK_ABORTED)
 
             reply: Optional[Message] = self.pipe_handler.get_next()
@@ -197,12 +257,18 @@ class LauncherExecutor(Executor):
                 if self._task_wait_time and time.time() - start > self._task_wait_time:
                     self.log_error(fl_ctx, f"task '{task_name}' timeout after {self._task_wait_time} secs")
                     self.pipe_handler.notify_abort(task_name)
+                    self._stop_launcher(task_name, fl_ctx)
+                    self._log_result(fl_ctx)
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
             elif reply.topic == Topic.ABORT:
                 self.log_error(fl_ctx, f"the other end ask to abort task '{task_name}'")
+                self._stop_launcher(task_name, fl_ctx)
+                self._log_result(fl_ctx)
                 return make_reply(ReturnCode.TASK_ABORTED)
             elif reply.topic in [Topic.END, Topic.PEER_GONE]:
                 self.log_error(fl_ctx, f"received {reply.topic} while waiting for result for {task_name}")
+                self._stop_launcher(task_name, fl_ctx)
+                self._log_result(fl_ctx)
                 return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
             elif reply.msg_type != Message.REPLY:
                 self.log_warning(
@@ -215,5 +281,54 @@ class LauncherExecutor(Executor):
                 self.log_warning(fl_ctx, f"ignored '{reply.req_id}' when waiting for '{req.msg_id}'")
             else:
                 self.log_info(fl_ctx, f"got result for task '{task_name}'")
-                return FLModelUtils.to_shareable(reply.data, self._to_nvflare_converter)
+                if reply.data.params is not None:
+                    self._result_fl_model = reply.data
+                if reply.data.metrics is not None:
+                    self._result_metrics = reply.data
+
+            if self._check_exchange_exit():
+                break
+
+            if self._launcher_finish.is_set():
+                self.log_error(
+                    fl_ctx,
+                    f"Launcher already exited before exchange ended. Exit status is: '{self._launcher_finish_status}'",
+                )
+                self._log_result(fl_ctx)
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+
             time.sleep(self._result_poll_interval)
+        result_fl_model = self._create_result_fl_model()
+        return FLModelUtils.to_shareable(result_fl_model, self._to_nvflare_converter)
+
+    def _log_result(self, fl_ctx):
+        if self._training and self._result_fl_model is None:
+            self.log_error(fl_ctx, "missing result FLModel with training flag True.")
+
+        if self._global_evaluation and self._result_metrics is None:
+            self.log_error(fl_ctx, "missing result metrics with global_evaluation flag True.")
+
+    def _check_exchange_exit(self):
+        if self._training and self._result_fl_model is None:
+            return False
+
+        if self._global_evaluation and self._result_metrics is None:
+            return False
+
+        return True
+
+    def _create_result_fl_model(self):
+        if self._result_fl_model is not None:
+            if self._result_metrics is not None:
+                self._result_fl_model.metrics = self._result_metrics.metrics
+            return self._result_fl_model
+        elif self._result_metrics is not None:
+            return self._result_metrics
+        else:
+            raise RuntimeError("Missing result fl model and result metrics")
+
+    def _clear(self):
+        self._result_fl_model = None
+        self._result_metrics = None
+        self._launcher_finish_status = None
+        self._launcher_finish.clear()

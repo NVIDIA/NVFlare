@@ -99,7 +99,7 @@ For starting the FL system with 8 clients in the secure workspace, run
 To run FL experiments in POC mode, create your local FL workspace the below command. 
 In the following experiments, we will be using 8 clients. Press y and enter when prompted. 
 ```
-nvflare poc --prepare -n 8
+nvflare poc prepare -n 8
 ```
 By default, POC will create startup kits at `/tmp/nvflare/poc`.
 
@@ -131,7 +131,7 @@ done
 Then, start the FL system with 8 clients by running
 ```
 export PYTHONPATH=${PWD}/..
-nvflare poc --start
+nvflare poc start
 ```
 
 For details about resource management and consumption, please refer to the [documentation](https://nvflare.readthedocs.io/en/latest/programming_guide/resource_manager_and_consumer.html).

@@ -82,7 +82,7 @@ It is worth noting that PSI is used as a pre-processing step in the split learni
 
 Split Learning
 --------------
-Split Learning can allow the training of deep neural networks on vertically separated data. With this release, we include an [example](https://github.com/NVIDIA/NVFlare/blob/dev/examples/advanced/vertical_federated_learning/cifar10-splitnn/README.md) 
+Split Learning can allow the training of deep neural networks on vertically separated data. With this release, we include an [example](https://github.com/NVIDIA/NVFlare/blob/main/examples/advanced/vertical_federated_learning/cifar10-splitnn/README.md)
 on how to run [split learning](https://arxiv.org/abs/1810.06060) using the CIFAR-10 dataset assuming one client holds the images and the other client holds the labels to compute losses and accuracy metrics.
 
 Activations and corresponding gradients are being exchanged between the clients using FLARE's new communication API.
@@ -90,7 +90,7 @@ Activations and corresponding gradients are being exchanged between the clients 
 New Example for NLP
 ===================
 The new `NLP-NER Example <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/nlp-ner/README.md>`_ illustrates both `BERT <https://github.com/google-research/bert>`_ and
-`GPT-2 <https://github.com/openai/gpt-2>`_ models from `Hugging Face <https://huggingface.co/>`_ (`BERT-base-uncased <https://huggingface.co/bert-base-uncased>`_, `GPT-2 <https://huggingface.co/gpt2>`_)
+`GPT-2 <https://github.com/openai/gpt-2>`__ models from `Hugging Face <https://huggingface.co/>`_ (`BERT-base-uncased <https://huggingface.co/bert-base-uncased>`_, `GPT-2 <https://huggingface.co/gpt2>`__)
 on a Named Entity Recognition (NER) task using the `NCBI disease dataset <https://pubmed.ncbi.nlm.nih.gov/24393765/>`_.
 
 Research Areas

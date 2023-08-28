@@ -1,0 +1,10 @@
+{
+    "name": "vertical_xgb",
+    "resource_spec": {},
+    "deploy_map": {
+      "app": [
+        "@ALL"
+      ]
+    },
+    "min_clients": 2
+  }

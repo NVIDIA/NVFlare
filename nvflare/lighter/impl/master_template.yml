@@ -1147,22 +1147,32 @@ azure_start_svr_sh: |
   if [ $container = true ]
   then
     echo "Installing and lauching container in $VM_NAME, may take a few minutes."
+    scripts=$(cat <<- 'EOF'
+    sudo apt-get update && \
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl gnupg lsb-release && \
+    sudo mkdir -p /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+    echo \
+    "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+    $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+    sudo apt-get update && \
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io
+    EOF
+    )
     az vm run-command invoke \
       --output json \
       --resource-group $RESOURCE_GROUP \
       --command-id RunShellScript \
       --name $VM_NAME \
       --scripts \
-      "sudo apt-get update && \
-      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl gnupg lsb-release && \
-      sudo mkdir -p /etc/apt/keyrings && \
-      curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
-      echo \
-      \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-      $(lsb_release -cs) stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && \
-      sudo apt-get update && \
-      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io && \
-      sudo usermod -aG docker $ADMIN_USERNAME" > /tmp/docker_engine.json
+      "$scripts" > /tmp/docker_engine.json
+    az vm run-command invoke \
+      --output json \
+      --resource-group $RESOURCE_GROUP \
+      --command-id RunShellScript \
+      --name $VM_NAME \
+      --scripts \
+      "sudo usermod -aG docker $ADMIN_USERNAME" >> /tmp/docker_engine.json
     report_status "$?" "installing docker engine"
     az vm run-command invoke \
       --output json \
@@ -1323,23 +1333,34 @@ azure_start_cln_sh: |
   if [ $container = true ]
   then
     echo "Installing and lauching container in $VM_NAME, may take a few minutes."
+    scripts=$(cat <<- 'EOF'
+    sudo apt-get update && \
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl gnupg lsb-release && \
+    sudo mkdir -p /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+    echo \
+    "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+    $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+    sudo apt-get update && \
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io
+    EOF
+    )
     az vm run-command invoke \
       --output json \
       --resource-group $RESOURCE_GROUP \
       --command-id RunShellScript \
       --name $VM_NAME \
       --scripts \
-      "sudo apt-get update && \
-      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl gnupg lsb-release && \
-      sudo mkdir -p /etc/apt/keyrings && \
-      curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
-      echo \
-      \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-      $(lsb_release -cs) stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && \
-      sudo apt-get update && \
-      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io && \
+      "$scripts" > /tmp/docker_engine.json
       sudo usermod -aG docker $ADMIN_USERNAME" > /tmp/docker_engine.json
     report_status "$?" "installing docker engine"
+    az vm run-command invoke \
+      --output json \
+      --resource-group $RESOURCE_GROUP \
+      --command-id RunShellScript \
+      --name $VM_NAME \
+      --scripts \
+      "sudo usermod -aG docker $ADMIN_USERNAME" >> /tmp/docker_engine.json
     az vm run-command invoke \
       --output json \
       --resource-group $RESOURCE_GROUP \
@@ -1463,22 +1484,33 @@ azure_start_dsb_sh: |
   report_status "$?" "updating network interface card"
 
   echo "Installing docker engine in $VM_NAME, may take a few minutes."
+  scripts=$(cat << 'EOF'
+  sudo apt-get update && \
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl gnupg lsb-release && \
+  sudo mkdir -p /etc/apt/keyrings && \
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+  echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+  sudo apt-get update && \
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io
+  EOF
+  )
   az vm run-command invoke \
     --output json \
     --resource-group $RESOURCE_GROUP \
     --command-id RunShellScript \
     --name $VM_NAME \
     --scripts \
-    "sudo apt-get update && \
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl gnupg lsb-release && \
-    sudo mkdir -p /etc/apt/keyrings && \
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
-    echo \
-    \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-    $(lsb_release -cs) stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && \
-    sudo apt-get update && \
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io && \
-    sudo usermod -aG docker $ADMIN_USERNAME" > /tmp/docker_engine.json
+    "$scripts" > /tmp/docker_engine.json
+  report_status "$?" "installing docker engine"
+  az vm run-command invoke \
+    --output json \
+    --resource-group $RESOURCE_GROUP \
+    --command-id RunShellScript \
+    --name $VM_NAME \
+    --scripts \
+    "sudo usermod -aG docker $ADMIN_USERNAME" >> /tmp/docker_engine.json
   report_status "$?" "installing docker engine"
     
   DEST_FOLDER=/home/${ADMIN_USERNAME}
@@ -1977,15 +2009,21 @@ aws_start_dsb_sh: |
 
   echo "Installing docker engine in $VM_NAME, may take a few minutes."
   DEST_SITE=${ADMIN_USERNAME}@${IP_ADDRESS}
-  ssh -t -i $KEY_FILE -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
-    "sudo apt-get update && \
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl gnupg lsb-release && \
-    sudo mkdir -p /etc/apt/keyrings && \
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
-    echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && \
-    sudo apt-get update && \
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io && \
-    sudo usermod -aG docker $ADMIN_USERNAME && exit" > /tmp/docker_engine.log
+  scripts=$(cat << 'EOF'
+  sudo apt-get update && \
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl gnupg lsb-release && \
+  sudo mkdir -p /etc/apt/keyrings && \
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+  echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+  sudo apt-get update && \
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io
+  EOF
+  )
+  ssh -t -i $KEY_FILE -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} "$scripts" > /tmp/docker_engine.log
+  report_status "$?" "installing docker engine"
+  ssh -t -i $KEY_FILE -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} "sudo usermod -aG docker $ADMIN_USERNAME && exit" >> /tmp/docker_engine.log
   report_status "$?" "installing docker engine"
 
   echo "Installing nvflare in $VM_NAME, may take a few minutes."

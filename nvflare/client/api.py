@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-import json
 import os
 from typing import Dict, Union
 
@@ -22,40 +20,35 @@ from nvflare.app_common.model_exchange.file_pipe_model_exchanger import FilePipe
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.import_utils import optional_import
 
-from .config import ClientConfig
-from .constants import ModelExchangeFormat
-from .model_cache import Cache
+from .config import ClientConfig, from_file
+from .constants import CONFIG_EXCHANGE, ModelExchangeFormat
+from .model_registry import ModelRegistry
 from .utils import DIFF_FUNCS
 
-PROCESS_CACHE: Dict[int, Cache] = {}
+PROCESS_MODEL_REGISTRY: Dict[int, ModelRegistry] = {}
 
 # TODO: some other helper methods:
 #   - get_total_rounds()
 #   - get_job_id()
 
 
-def init(config: Union[str, Dict] = "config/config_exchange.json"):
+def init(config: Union[str, Dict] = f"config/{CONFIG_EXCHANGE}"):
     """Initializes NVFlare Client API environment.
 
     Args:
         config (str or dict): configuration file or config dictionary.
     """
     pid = os.getpid()
-    if pid in PROCESS_CACHE:
+    if pid in PROCESS_MODEL_REGISTRY:
         raise RuntimeError("Can't call init twice.")
 
     if isinstance(config, str):
-        if not os.path.exists(config):
-            raise RuntimeError(f"Missing config file {config}.")
-
-        with open(config, "r") as f:
-            config_dict = json.load(f)
+        client_config = from_file(config_file=config)
     elif isinstance(config, dict):
-        config_dict = config
+        client_config = ClientConfig(config=config)
     else:
         raise ValueError("config should be either a string or dictionary.")
 
-    client_config = ClientConfig(config=config_dict)
     if client_config.get_exchange_format() == ModelExchangeFormat.PYTORCH:
         tensor_decomposer, ok = optional_import(module="nvflare.app_opt.pt.decomposers", name="TensorDecomposer")
         if ok:
@@ -64,7 +57,7 @@ def init(config: Union[str, Dict] = "config/config_exchange.json"):
             raise RuntimeError(f"Can't import TensorDecomposer for format: {ModelExchangeFormat.PYTORCH}")
 
     mdx = FilePipeModelExchanger(data_exchange_path=client_config.get_exchange_path())
-    PROCESS_CACHE[pid] = Cache(mdx, client_config)
+    PROCESS_MODEL_REGISTRY[pid] = ModelRegistry(mdx, client_config)
 
 
 def receive() -> FLModel:
@@ -74,44 +67,68 @@ def receive() -> FLModel:
         A tuple of model, metadata received.
     """
     pid = os.getpid()
-    if pid not in PROCESS_CACHE:
+    if pid not in PROCESS_MODEL_REGISTRY:
         raise RuntimeError("needs to call init method first")
-    cache = PROCESS_CACHE[pid]
-    cache.receive()
-    return cache.input_model
+
+    model_registry = PROCESS_MODEL_REGISTRY[pid]
+    return model_registry.get_model()
 
 
-def send(fl_model: FLModel) -> None:
-    """Sends the model to NVFlare side."""
+def send(fl_model: FLModel, clear_registry: bool = True) -> None:
+    """Sends the model to NVFlare side.
+
+    Args:
+        clear_registry (bool): To clear the registry or not.
+    """
     pid = os.getpid()
-    if pid not in PROCESS_CACHE:
+    if pid not in PROCESS_MODEL_REGISTRY:
         raise RuntimeError("needs to call init method first")
 
-    cache = PROCESS_CACHE[pid]
-    cache.send(model=fl_model)
-    cache.model_exchanger.finalize(close_pipe=False)
-    PROCESS_CACHE.pop(pid)
+    model_registry = PROCESS_MODEL_REGISTRY[pid]
+    model_registry.send(model=fl_model)
+    if clear_registry:
+        clear()
+
+
+def clear():
+    """Clears the model registry."""
+    pid = os.getpid()
+    if pid not in PROCESS_MODEL_REGISTRY:
+        raise RuntimeError("needs to call init method first")
+    model_registry = PROCESS_MODEL_REGISTRY[pid]
+    model_registry.clear()
 
 
 def system_info() -> Dict:
     """Gets NVFlare system information.
 
+    System information will be available after a valid FLModel is received.
+    It does not retrieve information actively.
+
     Returns:
        A dict of system information.
     """
     pid = os.getpid()
-    if pid not in PROCESS_CACHE:
+    if pid not in PROCESS_MODEL_REGISTRY:
         raise RuntimeError("needs to call init method first")
-    cache = PROCESS_CACHE[pid]
-    return cache.sys_info
+    model_registry = PROCESS_MODEL_REGISTRY[pid]
+    return model_registry.get_sys_info()
 
 
 def params_diff(original: Dict, new: Dict) -> Dict:
     pid = os.getpid()
-    if pid not in PROCESS_CACHE:
+    if pid not in PROCESS_MODEL_REGISTRY:
         raise RuntimeError("needs to call init method first")
-    cache = PROCESS_CACHE[pid]
-    diff_func = DIFF_FUNCS.get(cache.config.get_exchange_format(), None)
+    model_registry = PROCESS_MODEL_REGISTRY[pid]
+    diff_func = DIFF_FUNCS.get(model_registry.config.get_exchange_format(), None)
     if diff_func is None:
         raise RuntimeError("no default params diff function")
     return diff_func(original, new)
+
+
+def get_config() -> Dict:
+    pid = os.getpid()
+    if pid not in PROCESS_MODEL_REGISTRY:
+        raise RuntimeError("needs to call init method first")
+    model_registry = PROCESS_MODEL_REGISTRY[pid]
+    return model_registry.config.config

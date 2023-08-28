@@ -73,7 +73,7 @@ class FedXGBHistogramExecutor(Executor):
     This class implements a basic xgb_train logic, feel free to overwrite the function for custom behavior.
     """
 
-    def __init__(self, num_rounds, early_stopping_round, xgboost_params: dict, data_loader_id: str, verbose_eval=False):
+    def __init__(self, num_rounds, early_stopping_rounds, xgb_params: dict, data_loader_id: str, verbose_eval=False):
         """Federated XGBoost Executor for histogram-base collaboration.
 
         This class sets up the training environment for Federated XGBoost.
@@ -81,8 +81,8 @@ class FedXGBHistogramExecutor(Executor):
 
         Args:
             num_rounds: number of boosting rounds
-            early_stopping_round: early stopping round
-            xgboost_params: This dict is passed to `xgboost.train()` as the first argument `params`.
+            early_stopping_rounds: early stopping rounds
+            xgb_params: This dict is passed to `xgboost.train()` as the first argument `params`.
                 It contains all the Booster parameters.
                 Please refer to XGBoost documentation for details:
                 https://xgboost.readthedocs.io/en/stable/python/python_api.html#module-xgboost.training
@@ -93,9 +93,9 @@ class FedXGBHistogramExecutor(Executor):
         self.app_dir = None
 
         self.num_rounds = num_rounds
-        self.early_stopping_round = early_stopping_round
+        self.early_stopping_rounds = early_stopping_rounds
         self.verbose_eval = verbose_eval
-        self.xgb_params = xgboost_params
+        self.xgb_params = xgb_params
 
         self.rank = None
         self.world_size = None
@@ -107,6 +107,19 @@ class FedXGBHistogramExecutor(Executor):
         self.data_loader_id = data_loader_id
         self.train_data = None
         self.val_data = None
+
+    def initialize(self, fl_ctx):
+        self.client_id = fl_ctx.get_identity_name()
+        self._server_address = self._get_server_address(fl_ctx)
+        self.log_info(fl_ctx, f"server address is {self._server_address}")
+
+        engine = fl_ctx.get_engine()
+        ws = engine.get_workspace()
+        self.app_dir = ws.get_app_dir(fl_ctx.get_job_id())
+
+        self.data_loader = engine.get_component(self.data_loader_id)
+        if not isinstance(self.data_loader, XGBDataLoader):
+            self.system_panic("data_loader should be type XGBDataLoader", fl_ctx)
 
     def xgb_train(self, params: XGBoostParams) -> xgb.core.Booster:
         """XGBoost training logic.
@@ -144,21 +157,7 @@ class FedXGBHistogramExecutor(Executor):
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
-            self.client_id = fl_ctx.get_identity_name()
-            self._server_address = self._get_server_address(fl_ctx)
-            self.log_info(fl_ctx, f"server address is {self._server_address}")
-
-            engine = fl_ctx.get_engine()
-            ws = engine.get_workspace()
-            self.app_dir = ws.get_app_dir(fl_ctx.get_job_id())
-
-            data_loader = engine.get_component(self.data_loader_id)
-            if not isinstance(data_loader, XGBDataLoader):
-                self.system_panic("data_loader should be type XGBDataLoader", fl_ctx)
-            try:
-                self.train_data, self.val_data = data_loader.load_data(self.client_id)
-            except Exception as e:
-                self.system_panic(f"load_data failed: {secure_format_exception(e)}", fl_ctx)
+            self.initialize(fl_ctx)
 
     def _get_server_address(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
@@ -241,7 +240,7 @@ class FedXGBHistogramExecutor(Executor):
         params = XGBoostParams(
             xgb_params=self.xgb_params,
             num_rounds=self.num_rounds,
-            early_stopping_rounds=self.early_stopping_round,
+            early_stopping_rounds=self.early_stopping_rounds,
             verbose_eval=self.verbose_eval,
         )
 
@@ -264,6 +263,10 @@ class FedXGBHistogramExecutor(Executor):
 
         try:
             with xgb.collective.CommunicatorContext(**communicator_env):
+                # Load the data. Dmatrix must be created with column split mode in CommunicatorContext for vertical FL
+                if not self.train_data or not self.val_data:
+                    self.train_data, self.val_data = self.data_loader.load_data(self.client_id)
+
                 bst = self.xgb_train(params)
 
                 # Save the model.

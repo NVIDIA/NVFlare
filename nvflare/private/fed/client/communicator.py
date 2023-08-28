@@ -25,7 +25,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
-from nvflare.fuel.f3.cellnet.cell import FQCN, Cell
+from nvflare.fuel.f3.cellnet.core_cell import FQCN, CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.utils import fobs
 from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, SpecialTaskName, new_cell_message
@@ -62,7 +62,7 @@ class Communicator:
         secure_train=False,
         client_state_processors: Optional[List[Filter]] = None,
         compression=None,
-        cell: Cell = None,
+        cell: CoreCell = None,
         client_register_interval=2,
         timeout=5.0,
     ):
