@@ -43,7 +43,7 @@ assuming the current directory is
 ```
 examples/hello-world/step-by-step/cifar10/sag_pt
 
-we can first to create a job folder
+we can first create a job folder
 
 ```bash
 nvflare job create -j /tmp/nvflare/cifar10_sag -w sag_pt -s fl/train.py 
