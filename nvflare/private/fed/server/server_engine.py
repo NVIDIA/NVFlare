@@ -726,7 +726,7 @@ class ServerEngine(ServerEngineInternalSpec):
             # assume server resource is unlimited
             if site_name == "server":
                 continue
-            request = Message(topic=TrainingTopic.CHECK_RESOURCE, body=fobs.dumps(resource_requirements))
+            request = Message(topic=TrainingTopic.CHECK_RESOURCE, body=resource_requirements)
             request.set_header(RequestHeader.JOB_ID, job_id)
             client = self.get_client_from_name(site_name)
             if client:
@@ -743,7 +743,7 @@ class ServerEngine(ServerEngineInternalSpec):
                     self.logger.error(f"Client reply error: {r.reply.body}")
                     result[site_name] = (False, "")
                 else:
-                    resp = fobs.loads(r.reply.body)
+                    resp = r.reply.body
                     result[site_name] = (
                         resp.get_header(ShareableHeader.IS_RESOURCE_ENOUGH, False),
                         resp.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, ""),
@@ -760,7 +760,7 @@ class ServerEngine(ServerEngineInternalSpec):
             is_resource_enough, token = result
             if is_resource_enough and token:
                 resource_requirements = resource_reqs[site_name]
-                request = Message(topic=TrainingTopic.CANCEL_RESOURCE, body=fobs.dumps(resource_requirements))
+                request = Message(topic=TrainingTopic.CANCEL_RESOURCE, body=resource_requirements)
                 request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
                 client = self.get_client_from_name(site_name)
                 if client:
@@ -773,7 +773,7 @@ class ServerEngine(ServerEngineInternalSpec):
         for site, dispatch_info in client_sites.items():
             resource_requirement = dispatch_info.resource_requirements
             token = dispatch_info.token
-            request = Message(topic=TrainingTopic.START_JOB, body=fobs.dumps(resource_requirement))
+            request = Message(topic=TrainingTopic.START_JOB, body=resource_requirement)
             request.set_header(RequestHeader.JOB_ID, job_id)
             request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
             client = self.get_client_from_name(site)

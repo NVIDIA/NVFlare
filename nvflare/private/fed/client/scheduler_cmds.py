@@ -65,7 +65,7 @@ class CheckResourceProcessor(RequestProcessor):
         with engine.new_context() as fl_ctx:
             try:
                 job_id = req.get_header(RequestHeader.JOB_ID, "")
-                resource_spec = fobs.loads(req.body)
+                resource_spec = req.body
                 fl_ctx.set_prop(key=FLContextKey.CLIENT_RESOURCE_SPECS, value=resource_spec, private=True, sticky=False)
 
                 fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job_id, private=True, sticky=False)
@@ -85,7 +85,7 @@ class CheckResourceProcessor(RequestProcessor):
         result.set_header(ShareableHeader.IS_RESOURCE_ENOUGH, is_resource_enough)
         result.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
 
-        return Message(topic="reply_" + req.topic, body=fobs.dumps(result))
+        return Message(topic="reply_" + req.topic, body=result)
 
 
 class StartJobProcessor(RequestProcessor):
@@ -98,7 +98,7 @@ class StartJobProcessor(RequestProcessor):
 
         allocated_resources = None
         try:
-            resource_spec = fobs.loads(req.body)
+            resource_spec = req.body
             job_id = req.get_header(RequestHeader.JOB_ID)
             token = req.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN)
         except Exception as e:
@@ -141,7 +141,7 @@ class CancelResourceProcessor(RequestProcessor):
 
         with engine.new_context() as fl_ctx:
             try:
-                resource_spec = fobs.loads(req.body)
+                resource_spec = req.body
                 token = req.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN)
                 resource_manager.cancel_resources(resource_requirement=resource_spec, token=token, fl_ctx=fl_ctx)
             except Exception:
