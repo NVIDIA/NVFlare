@@ -11,17 +11,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
 import random
 import threading
 import time
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.fl_constant import ReturnCode, FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.aggregator import Aggregator
+from nvflare.app_common.abstract.learnable import Learnable
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.ccwf.client_ctl import ClientSideController
@@ -293,7 +295,7 @@ class SwarmClientController(ClientSideController):
                 return
 
             self.best_metric = fl_ctx.get_prop(AppConstants.VALIDATION_RESULT)
-            self.best_result = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
+            self.best_result = copy.deepcopy(fl_ctx.get_prop(AppConstants.GLOBAL_MODEL))
             self.log_info(fl_ctx, f"got GLOBAL_BEST_MODEL_AVAILABLE: best metric={self.best_metric}")
             current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
             self.best_round = current_round
@@ -359,6 +361,7 @@ class SwarmClientController(ClientSideController):
 
         # aggr_result could be just weight diffs, not full weights!
         # need to call shareable_to_learnable to get full weights.
+        self.log_info(fl_ctx, f"aggr result: {aggr_result}")
         global_weights = self.shareable_generator.shareable_to_learnable(aggr_result, fl_ctx)
         self.record_last_result(fl_ctx, gatherer.for_round, global_weights)
 
@@ -443,6 +446,9 @@ class SwarmClientController(ClientSideController):
             current_round = request.get_header(AppConstants.CURRENT_ROUND)
             self.log_info(fl_ctx, f"got training result from {client_name} for round {current_round}")
 
+            # to be compatible with some widgets that rely on peer_ctx to get result
+            peer_ctx.set_prop(FLContextKey.SHAREABLE, request)
+
             gatherer = self.gatherer
             if not gatherer:
                 # this could be from a fast client before I even create the waiter;
@@ -489,7 +495,18 @@ class SwarmClientController(ClientSideController):
             return
 
         self.log_info(fl_ctx, f"Round {current_round} started.")
+
+        # Some shareable generators assume the base model (GLOBAL_MODEL) is always available, which is true for
+        # server-controlled fed-avg. But this is not true for swarm learning.
+        # To make these generators happy, we create an empty global model here if not present.
+        base_model = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
+        if not base_model:
+            base_model = Learnable()
+            fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, base_model, private=True, sticky=True)
         global_weights = self.shareable_generator.shareable_to_learnable(task_data, fl_ctx)
+
+        self.log_info(fl_ctx, f"current global model: {global_weights}")
+
         fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, global_weights, private=True, sticky=True)
         fl_ctx.set_prop(AppConstants.CURRENT_ROUND, current_round, private=True, sticky=True)
         self.fire_event(AppEventType.ROUND_STARTED, fl_ctx)

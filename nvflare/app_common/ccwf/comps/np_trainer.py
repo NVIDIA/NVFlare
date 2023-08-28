@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import os
 import random
 import time
@@ -82,7 +83,7 @@ class NPTrainer(Executor):
         if incoming_dxo.data_kind != DataKind.WEIGHTS:
             self.system_panic("Model DXO should be of kind DataKind.WEIGHTS.", fl_ctx)
             return make_reply(ReturnCode.BAD_TASK_DATA)
-        np_data = incoming_dxo.data
+        np_data = copy.deepcopy(incoming_dxo.data)
 
         # Display properties.
         self.log_info(fl_ctx, f"Incoming data kind: {incoming_dxo.data_kind}")
@@ -127,9 +128,13 @@ class NPTrainer(Executor):
 
         # Prepare a DXO for our updated model. Create shareable and return
         fake_metric = random.uniform(0.1, 1.0)
+        d = self._delta
+        outgoing_np = {
+            NPConstants.NUMPY_KEY: np.array([[d, d, d], [d, d, d], [d, d, d]], dtype=np.float32)
+        }
         outgoing_dxo = DXO(
-            data_kind=incoming_dxo.data_kind,
-            data=np_data,
+            data_kind=DataKind.WEIGHT_DIFF,
+            data=outgoing_np,
             meta={
                 MetaKey.NUM_STEPS_CURRENT_ROUND: 1,
                 MetaKey.INITIAL_METRICS: fake_metric,
