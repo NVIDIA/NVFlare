@@ -129,9 +129,7 @@ class NPTrainer(Executor):
         # Prepare a DXO for our updated model. Create shareable and return
         fake_metric = random.uniform(0.1, 1.0)
         d = self._delta
-        outgoing_np = {
-            NPConstants.NUMPY_KEY: np.array([[d, d, d], [d, d, d], [d, d, d]], dtype=np.float32)
-        }
+        outgoing_np = {NPConstants.NUMPY_KEY: np.array([[d, d, d], [d, d, d], [d, d, d]], dtype=np.float32)}
         outgoing_dxo = DXO(
             data_kind=DataKind.WEIGHT_DIFF,
             data=outgoing_np,
