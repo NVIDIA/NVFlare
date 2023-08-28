@@ -74,14 +74,6 @@ class Constant:
     RC_NO_LOCAL_MODEL = "cwf.no_local_model"
     RC_UNABLE_TO_EVAL = "cwf.unable_to_eval"
 
-    CONFIG_TASK_TIMEOUT = 300
-    START_TASK_TIMEOUT = 10
-    END_WORKFLOW_TIMEOUT = 2.0
-    TASK_CHECK_INTERVAL = 0.5
-    JOB_STATUS_CHECK_INTERVAL = 2.0
-    PER_CLIENT_STATUS_REPORT_TIMEOUT = 3600.0
-    WORKFLOW_PROGRESS_TIMEOUT = 3600.0
-
 
 class ModelType:
 

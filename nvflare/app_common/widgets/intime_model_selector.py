@@ -76,7 +76,7 @@ class IntimeModelSelector(Widget):
 
     def _before_accept(self, fl_ctx: FLContext):
         peer_ctx = fl_ctx.get_peer_context()
-        shareable: Shareable = fl_ctx.get_prop(AppConstants.TRAINING_RESULT)
+        shareable: Shareable = peer_ctx.get_prop(FLContextKey.SHAREABLE)
         try:
             dxo = from_shareable(shareable)
         except Exception as e:
@@ -154,7 +154,6 @@ class IntimeModelSelector(Widget):
             self.log_info(fl_ctx, f"new best validation metric at round {current_round}: {self.best_val_metric}")
 
             # Fire event to notify that the current global model is a new best
-            fl_ctx.set_prop(AppConstants.VALIDATION_RESULT, self.best_val_metric, private=True, sticky=False)
             self.fire_event(AppEventType.GLOBAL_BEST_MODEL_AVAILABLE, fl_ctx)
 
         self._reset_stats()

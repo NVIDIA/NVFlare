@@ -42,12 +42,12 @@ class ServerSideController(Controller):
         num_rounds: int,
         start_round: int = 0,
         configure_task_name="wf_config",
-        configure_task_timeout=Constant.CONFIG_TASK_TIMEOUT,
-        end_workflow_timeout=Constant.END_WORKFLOW_TIMEOUT,
+        configure_task_timeout=10,
+        end_workflow_timeout=2.0,
         start_task_name="wf_start",
-        start_task_timeout=Constant.START_TASK_TIMEOUT,
-        task_check_period: float = Constant.TASK_CHECK_INTERVAL,
-        job_status_check_interval: float = Constant.JOB_STATUS_CHECK_INTERVAL,
+        start_task_timeout=5,
+        task_check_period: float = 0.5,
+        job_status_check_interval: float = 2.0,
         starting_client: str = None,
         starting_client_policy: str = DefaultPolicy.ANY,
         starting_client_allow_none=False,
@@ -55,8 +55,8 @@ class ServerSideController(Controller):
         result_clients=None,
         result_clients_policy: str = DefaultPolicy.ALL,
         result_clients_allow_none=True,
-        max_status_report_interval: float = Constant.PER_CLIENT_STATUS_REPORT_TIMEOUT,
-        progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
+        max_status_report_interval: float = 3600.0,
+        progress_timeout: float = 3600,
     ):
         """
         Constructor
@@ -185,7 +185,7 @@ class ServerSideController(Controller):
         )
 
         self.log_info(fl_ctx, f"sending task {self.configure_task_name} to clients {self.participating_clients}")
-        start_time = time.time()
+
         self.broadcast_and_wait(
             task=task,
             targets=self.participating_clients,
@@ -193,8 +193,6 @@ class ServerSideController(Controller):
             fl_ctx=fl_ctx,
             abort_signal=abort_signal,
         )
-
-        self.log_info(fl_ctx, f"client preparation took {time.time()-start_time} seconds")
 
         failed_clients = []
         for c, cs in self.client_statuses.items():
