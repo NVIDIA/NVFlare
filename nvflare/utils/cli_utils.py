@@ -21,6 +21,7 @@ from pyhocon import ConfigTree, HOCONConverter
 
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel_opt.utils.pyhocon_loader import PyhoconConfig
+from nvflare.tool.job.job_client_const import JOB_TEMPLATE, JOB_TEMPLATES
 
 
 def get_home_dir() -> Path:
@@ -182,7 +183,7 @@ def find_job_template_location(job_template_dir: Optional[str] = None):
     if job_template_dir is None:
         nvflare_home = os.environ.get("NVFLARE_HOME", None)
         if nvflare_home:
-            job_template_dir = os.path.join(nvflare_home, "job_templates")
+            job_template_dir = os.path.join(nvflare_home, JOB_TEMPLATES)
 
     if job_template_dir is None:
         nvflare_config = load_hidden_config()
