@@ -40,7 +40,6 @@ import argparse
 
 import torchvision.datasets as datasets
 
-
 # default dataset path
 CIFAR10_ROOT = "/tmp/nvflare/data/cifar10"
 

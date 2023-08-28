@@ -21,7 +21,6 @@ from typing import List, Optional, Tuple
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree
 
-from nvflare.apis.job_def import JobMetaKey
 from nvflare.fuel.flare_api.flare_api import new_secure_session
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
