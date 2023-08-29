@@ -63,9 +63,11 @@ class FLModelUtils:
         if fl_model.params is None and fl_model.metrics is None:
             raise ValueError("FLModel without params and metrics is NOT supported.")
         elif fl_model.params is not None:
+            if fl_model.params_type is None:
+                raise ValueError(f"Invalid ParamsType: ({fl_model.params_type}).")
             data_kind = params_type_to_data_kind.get(fl_model.params_type)
             if data_kind is None:
-                raise ValueError(f"Invalid ModelType: ({fl_model.params_type}).")
+                raise ValueError(f"Invalid ParamsType: ({fl_model.params_type}).")
             if params_converter is not None:
                 fl_model.params = params_converter.convert(fl_model.params)
 
@@ -77,13 +79,14 @@ class FLModelUtils:
         else:
             dxo = DXO(DataKind.METRICS, data=fl_model.metrics, meta={})
 
-        shareable = dxo.to_shareable()
-        if fl_model.current_round is not None:
-            shareable.set_header(AppConstants.CURRENT_ROUND, fl_model.current_round)
-
         meta = fl_model.meta if fl_model.meta is not None else {}
         meta[MetaKey.CURRENT_ROUND] = fl_model.current_round
         meta[MetaKey.TOTAL_ROUNDS] = fl_model.total_rounds
+        dxo.meta.update(meta)
+
+        shareable = dxo.to_shareable()
+        if fl_model.current_round is not None:
+            shareable.set_header(AppConstants.CURRENT_ROUND, fl_model.current_round)
 
         if MetaKey.VALIDATE_TYPE in meta:
             shareable.set_header(AppConstants.VALIDATE_TYPE, meta[MetaKey.VALIDATE_TYPE])
