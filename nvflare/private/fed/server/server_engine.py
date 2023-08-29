@@ -49,7 +49,6 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.core_cell import FQCN, CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellMsgReturnCode
-from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
@@ -70,18 +69,6 @@ from .run_info import RunInfo
 from .run_manager import RunManager
 from .server_engine_internal_spec import EngineInfo, ServerEngineInternalSpec
 from .server_status import ServerStatus
-
-
-class ClientConnection:
-    def __init__(self, client):
-        self.client = client
-
-    def send(self, data):
-        data = fobs.dumps(data)
-        self.client.send(data)
-
-    def recv(self):
-        return self.client.recv()
 
 
 class ServerEngine(ServerEngineInternalSpec):
@@ -551,7 +538,7 @@ class ServerEngine(ServerEngineInternalSpec):
         return self.client_manager.clients
 
     def _retrieve_clients_data(self, job_id):
-        request = new_cell_message({CellMessageHeaderKeys.JOB_ID: job_id}, fobs.dumps({}))
+        request = new_cell_message({CellMessageHeaderKeys.JOB_ID: job_id}, {})
         return_data = self.server.cell.send_request(
             target=FQCN.ROOT_SERVER,
             channel=CellChannel.SERVER_PARENT_LISTENER,
@@ -565,7 +552,7 @@ class ServerEngine(ServerEngineInternalSpec):
             self.logger.debug(f"cannot retrieve clients from parent: {rc}")
             return None
 
-        data = fobs.loads(return_data.payload)
+        data = return_data.payload
         clients = data.get(ServerCommandKey.CLIENTS, None)
         if clients is None:
             self.logger.error(f"parent failed to return clients info for job {job_id}")
@@ -576,7 +563,7 @@ class ServerEngine(ServerEngineInternalSpec):
             execution_error = fl_ctx.get_prop(FLContextKey.FATAL_SYSTEM_ERROR, False)
             data = {"execution_error": execution_error}
             job_id = fl_ctx.get_job_id()
-            request = new_cell_message({CellMessageHeaderKeys.JOB_ID: job_id}, fobs.dumps(data))
+            request = new_cell_message({CellMessageHeaderKeys.JOB_ID: job_id}, data)
             return_data = self.server.cell.fire_and_forget(
                 targets=FQCN.ROOT_SERVER,
                 channel=CellChannel.SERVER_PARENT_LISTENER,
@@ -589,7 +576,7 @@ class ServerEngine(ServerEngineInternalSpec):
     ):
         with self.lock:
             fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
-            request = new_cell_message({}, fobs.dumps(command_data))
+            request = new_cell_message({}, command_data)
             if timeout <= 0.0:
                 self.server.cell.fire_and_forget(
                     targets=fqcn,
@@ -610,7 +597,7 @@ class ServerEngine(ServerEngineInternalSpec):
             )
             rc = return_data.get_header(MessageHeaderKey.RETURN_CODE, CellMsgReturnCode.OK)
             if rc == CellMsgReturnCode.OK:
-                result = fobs.loads(return_data.payload)
+                result = return_data.payload
             else:
                 result = None
         return result
@@ -726,7 +713,7 @@ class ServerEngine(ServerEngineInternalSpec):
             # assume server resource is unlimited
             if site_name == "server":
                 continue
-            request = Message(topic=TrainingTopic.CHECK_RESOURCE, body=fobs.dumps(resource_requirements))
+            request = Message(topic=TrainingTopic.CHECK_RESOURCE, body=resource_requirements)
             request.set_header(RequestHeader.JOB_ID, job_id)
             client = self.get_client_from_name(site_name)
             if client:
@@ -743,7 +730,7 @@ class ServerEngine(ServerEngineInternalSpec):
                     self.logger.error(f"Client reply error: {r.reply.body}")
                     result[site_name] = (False, "")
                 else:
-                    resp = fobs.loads(r.reply.body)
+                    resp = r.reply.body
                     result[site_name] = (
                         resp.get_header(ShareableHeader.IS_RESOURCE_ENOUGH, False),
                         resp.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, ""),
@@ -760,7 +747,7 @@ class ServerEngine(ServerEngineInternalSpec):
             is_resource_enough, token = result
             if is_resource_enough and token:
                 resource_requirements = resource_reqs[site_name]
-                request = Message(topic=TrainingTopic.CANCEL_RESOURCE, body=fobs.dumps(resource_requirements))
+                request = Message(topic=TrainingTopic.CANCEL_RESOURCE, body=resource_requirements)
                 request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
                 client = self.get_client_from_name(site_name)
                 if client:
@@ -773,7 +760,7 @@ class ServerEngine(ServerEngineInternalSpec):
         for site, dispatch_info in client_sites.items():
             resource_requirement = dispatch_info.resource_requirements
             token = dispatch_info.token
-            request = Message(topic=TrainingTopic.START_JOB, body=fobs.dumps(resource_requirement))
+            request = Message(topic=TrainingTopic.START_JOB, body=resource_requirement)
             request.set_header(RequestHeader.JOB_ID, job_id)
             request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
             client = self.get_client_from_name(site)
