@@ -166,8 +166,6 @@ class LitAutoEncoder(LightningModule):
         x = self._prepare_batch(batch)
         loss = F.mse_loss(x, self(x))
         self.log(f"{stage}_loss", loss, on_step=True)
-        # (optional) use negative loss as metric
-        self.log(f"{stage}_neg_loss", -1.0 * loss, on_step=True)
         return loss
 
 
@@ -193,7 +191,6 @@ class MyDataModule(LightningDataModule):
 
 
 def cli_main():
-
     cli = LightningCLI(
         LitAutoEncoder,
         MyDataModule,
@@ -208,11 +205,14 @@ def cli_main():
     # (1) patch the lightning trainer
     flare.patch(cli.trainer)
 
-    # (2) evaluate the current global model to allow server-side model selection
-    print("--- test global model ---")
-    cli.trainer.test(cli.model, datamodule=cli.datamodule)
+    # (optional) print flare system information
+    print(flare.system_info())
 
-    # (3) Perform local training starting with the received global model
+    # (2) evaluate the current global model to allow server-side model selection
+    print("--- validate global model ---")
+    cli.trainer.validate(cli.model, datamodule=cli.datamodule)
+
+    # (3) perform local training starting with the received global model
     print("--- train new model ---")
     cli.trainer.fit(cli.model, datamodule=cli.datamodule)
 

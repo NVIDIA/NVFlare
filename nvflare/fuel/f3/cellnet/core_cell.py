@@ -1175,7 +1175,6 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                     {
                         MessageHeaderKey.REQ_ID: waiter.id,
                         MessageHeaderKey.REPLY_EXPECTED: True,
-                        MessageHeaderKey.WAIT_UNTIL: time.time() + timeout,
                         MessageHeaderKey.OPTIONAL: optional,
                     }
                 )
@@ -1501,12 +1500,6 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 self.logger.debug(f"{self.my_info.fqcn}: can't forward: drop the message since reply is not expected")
                 return
 
-            wait_until = message.get_header(MessageHeaderKey.WAIT_UNTIL, None)
-            if isinstance(wait_until, float) and time.time() > wait_until:
-                # no need to reply since peer already gave up waiting by now
-                self.logger.debug(f"{self.my_info.fqcn}: can't forward: drop the message since too late")
-                return
-
             # tell the requester that message couldn't be delivered
             req_id = message.get_header(MessageHeaderKey.REQ_ID, "")
             reply = make_reply(ReturnCode.COMM_ERROR, error="cannot forward")
@@ -1786,15 +1779,6 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 self.logger.debug(f"{self.my_info.fqcn}: don't send response - request expects no reply")
                 self.received_msg_counter_pool.increment(
                     category=self._stats_category(message), counter_name=_CounterName.REPLY_NOT_EXPECTED
-                )
-                return
-
-            wait_until = message.get_header(MessageHeaderKey.WAIT_UNTIL, None)
-            if isinstance(wait_until, float) and time.time() > wait_until:
-                # no need to reply since peer already gave up waiting by now
-                self.logger.debug(f"{self.my_info.fqcn}: don't send response - reply is too late")
-                self.received_msg_counter_pool.increment(
-                    category=self._stats_category(message), counter_name=_CounterName.NO_REPLY_LATE
                 )
                 return
 

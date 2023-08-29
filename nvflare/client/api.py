@@ -22,10 +22,10 @@ from nvflare.fuel.utils.import_utils import optional_import
 
 from .config import ClientConfig, from_file
 from .constants import CONFIG_EXCHANGE, ModelExchangeFormat
-from .model_cache import Cache
+from .model_registry import ModelRegistry
 from .utils import DIFF_FUNCS
 
-PROCESS_CACHE: Dict[int, Cache] = {}
+PROCESS_MODEL_REGISTRY: Dict[int, ModelRegistry] = {}
 
 # TODO: some other helper methods:
 #   - get_total_rounds()
@@ -39,7 +39,7 @@ def init(config: Union[str, Dict] = f"config/{CONFIG_EXCHANGE}"):
         config (str or dict): configuration file or config dictionary.
     """
     pid = os.getpid()
-    if pid in PROCESS_CACHE:
+    if pid in PROCESS_MODEL_REGISTRY:
         raise RuntimeError("Can't call init twice.")
 
     if isinstance(config, str):
@@ -57,7 +57,7 @@ def init(config: Union[str, Dict] = f"config/{CONFIG_EXCHANGE}"):
             raise RuntimeError(f"Can't import TensorDecomposer for format: {ModelExchangeFormat.PYTORCH}")
 
     mdx = FilePipeModelExchanger(data_exchange_path=client_config.get_exchange_path())
-    PROCESS_CACHE[pid] = Cache(mdx, client_config)
+    PROCESS_MODEL_REGISTRY[pid] = ModelRegistry(mdx, client_config)
 
 
 def receive() -> FLModel:
@@ -67,54 +67,60 @@ def receive() -> FLModel:
         A tuple of model, metadata received.
     """
     pid = os.getpid()
-    if pid not in PROCESS_CACHE:
+    if pid not in PROCESS_MODEL_REGISTRY:
         raise RuntimeError("needs to call init method first")
-    cache = PROCESS_CACHE[pid]
-    cache.receive()
-    return cache.input_model
+
+    model_registry = PROCESS_MODEL_REGISTRY[pid]
+    return model_registry.get_model()
 
 
-def send(fl_model: FLModel, clear=True) -> None:
-    """Sends the model to NVFlare side."""
+def send(fl_model: FLModel, clear_registry: bool = True) -> None:
+    """Sends the model to NVFlare side.
+
+    Args:
+        clear_registry (bool): To clear the registry or not.
+    """
     pid = os.getpid()
-    if pid not in PROCESS_CACHE:
+    if pid not in PROCESS_MODEL_REGISTRY:
         raise RuntimeError("needs to call init method first")
 
-    cache = PROCESS_CACHE[pid]
-    cache.send(model=fl_model)
-    if clear:
-        cache.model_exchanger.finalize(close_pipe=False)
-        PROCESS_CACHE.pop(pid)
+    model_registry = PROCESS_MODEL_REGISTRY[pid]
+    model_registry.send(model=fl_model)
+    if clear_registry:
+        clear()
 
 
 def clear():
+    """Clears the model registry."""
     pid = os.getpid()
-    if pid not in PROCESS_CACHE:
+    if pid not in PROCESS_MODEL_REGISTRY:
         raise RuntimeError("needs to call init method first")
-    cache = PROCESS_CACHE[pid]
-    cache.model_exchanger.finalize(close_pipe=False)
-    PROCESS_CACHE.pop(pid)
+    model_registry = PROCESS_MODEL_REGISTRY[pid]
+    model_registry.clear()
 
 
 def system_info() -> Dict:
     """Gets NVFlare system information.
 
+    System information will be available after a valid FLModel is received.
+    It does not retrieve information actively.
+
     Returns:
        A dict of system information.
     """
     pid = os.getpid()
-    if pid not in PROCESS_CACHE:
+    if pid not in PROCESS_MODEL_REGISTRY:
         raise RuntimeError("needs to call init method first")
-    cache = PROCESS_CACHE[pid]
-    return cache.sys_info
+    model_registry = PROCESS_MODEL_REGISTRY[pid]
+    return model_registry.get_sys_info()
 
 
 def params_diff(original: Dict, new: Dict) -> Dict:
     pid = os.getpid()
-    if pid not in PROCESS_CACHE:
+    if pid not in PROCESS_MODEL_REGISTRY:
         raise RuntimeError("needs to call init method first")
-    cache = PROCESS_CACHE[pid]
-    diff_func = DIFF_FUNCS.get(cache.config.get_exchange_format(), None)
+    model_registry = PROCESS_MODEL_REGISTRY[pid]
+    diff_func = DIFF_FUNCS.get(model_registry.config.get_exchange_format(), None)
     if diff_func is None:
         raise RuntimeError("no default params diff function")
     return diff_func(original, new)
@@ -122,7 +128,7 @@ def params_diff(original: Dict, new: Dict) -> Dict:
 
 def get_config() -> Dict:
     pid = os.getpid()
-    if pid not in PROCESS_CACHE:
+    if pid not in PROCESS_MODEL_REGISTRY:
         raise RuntimeError("needs to call init method first")
-    cache = PROCESS_CACHE[pid]
-    return cache.config.config
+    model_registry = PROCESS_MODEL_REGISTRY[pid]
+    return model_registry.config.config

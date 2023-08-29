@@ -42,50 +42,49 @@ class FLCallback(Callback):
         self.has_global_eval = get_config().get(ConfigKey.GLOBAL_EVAL, False)
         self.has_training = get_config().get(ConfigKey.TRAINING, False)
         self.input_fl_model = None
+        self._receive_model()
+
         self.metrics = None
-        self.model_sent = False
-        self.prev_loop_run = None
 
     def reset_state(self):
         # If the next round of federated training needs to reuse the same callback
         # instance, the reset_state() needs to be called first
-
         self.input_fl_model = None
         self.metrics = None
-        self.model_sent = False
-        self.prev_loop_run = None
+        clear()
 
-    def on_fit_start(self, trainer, pl_module):
+    def on_train_start(self, trainer, pl_module):
         # receive the global model and update the local model with global model
-        # the 1st time test() or fit() is called.
-        self._receive_update_model(pl_module)
+        if self.has_training:
+            self._receive_and_update_model(pl_module)
 
     def on_train_end(self, trainer, pl_module):
         if self.has_training:
             self._send_model(FLModel(params=pl_module.cpu().state_dict()))
+            self.reset_state()
 
-    def on_test_start(self, trainer, pl_module):
+    def on_validation_start(self, trainer, pl_module):
         # receive the global model and update the local model with global model
-        # the 1st time test() or train() is called.
-        # expect user will validate the global model first (i.e. test()), once that's done.
-        # the metrics_captured will be set to True.
-        # The subsequence test() calls will not trigger the receive update model.
-        # Hence the test() will be validating the local model.
+        # the 1st time validate() or train() is called.
+        # expect user will validate the global model first (i.e. validate()), once that's done.
+        # the metrics will be set.
+        # The subsequence validate() calls will not trigger the receive update model.
+        # Hence the validate() will be validating the local model.
         if pl_module and self.has_global_eval and self.metrics is None:
-            self._receive_update_model(pl_module)
+            self._receive_and_update_model(pl_module)
 
-    def on_test_end(self, trainer, pl_module):
+    def on_validation_end(self, trainer, pl_module):
         if pl_module and self.has_global_eval and self.metrics is None:
             self.metrics = _extract_metrics(trainer.callback_metrics)
             self._send_model(FLModel(metrics=self.metrics))
 
-    def _receive_update_model(self, pl_module):
-        if not self.input_fl_model:
-            model = self._receive_model()
-            if model and model.params:
-                pl_module.load_state_dict(model.params)
+    def _receive_and_update_model(self, pl_module):
+        self._receive_model()
+        if self.input_fl_model and self.input_fl_model.params:
+            pl_module.load_state_dict(self.input_fl_model.params)
 
     def _receive_model(self) -> FLModel:
+        """Receives model from NVFlare."""
         model = receive()
         if model:
             self.input_fl_model = model
@@ -93,7 +92,7 @@ class FLCallback(Callback):
 
     def _send_model(self, output_model: FLModel):
         try:
-            send(output_model, clear=False)
+            send(output_model, clear_registry=False)
         except Exception as e:
             raise RuntimeError("failed to send FL model", e)
 

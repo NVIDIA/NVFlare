@@ -28,6 +28,7 @@ from nvflare.fuel.f3.drivers.net_utils import ssl_required
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.message import Message, MessageReceiver
 from nvflare.fuel.f3.sfm.constants import HandshakeKeys, Types
+from nvflare.fuel.f3.sfm.heartbeat_monitor import HeartbeatMonitor
 from nvflare.fuel.f3.sfm.prefix import PREFIX_LEN, Prefix
 from nvflare.fuel.f3.sfm.sfm_conn import SfmConnection
 from nvflare.fuel.f3.sfm.sfm_endpoint import SfmEndpoint
@@ -89,6 +90,7 @@ class ConnManager(ConnMonitor):
                 "sfm_send_frame", "SFM send_frame time in secs", scope=local_endpoint.name
             )
         self.send_frame_stats = stats
+        self.heartbeat_monitor = HeartbeatMonitor(self.sfm_conns)
 
     def add_connector(self, driver: Driver, params: dict, mode: Mode) -> str:
 
@@ -133,9 +135,13 @@ class ConnManager(ConnMonitor):
                 if not connector.started:
                     self.start_connector(connector)
 
+        self.heartbeat_monitor.start()
+
         self.started = True
 
     def stop(self):
+
+        self.heartbeat_monitor.stop()
 
         with self.lock:
             for handle in sorted(self.connectors.keys()):
@@ -327,7 +333,11 @@ class ConnManager(ConnMonitor):
 
                 data = self.get_dict_payload(prefix, frame)
                 self.update_endpoint(sfm_conn, data)
-
+            elif prefix.type == Types.PING:
+                sfm_conn.send_heartbeat(Types.PONG)
+            elif prefix.type == Types.PONG:
+                log.debug(f"PONG received for {sfm_conn.conn}")
+                # No action is needed for PONG. The last_activity is already updated
             elif prefix.type == Types.DATA:
                 if prefix.length > PREFIX_LEN + prefix.header_len:
                     payload = frame[PREFIX_LEN + prefix.header_len :]
@@ -454,6 +464,8 @@ class SfmFrameReceiver(FrameReceiver):
         self.conn = conn
 
     def process_frame(self, frame: BytesAlike):
+        self.conn.last_activity = time.time()
+
         try:
             self.conn_manager.process_frame(self.conn, frame)
         except Exception as ex:
