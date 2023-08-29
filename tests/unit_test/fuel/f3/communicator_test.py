@@ -58,6 +58,7 @@ class Receiver(MessageReceiver):
             self.tester.b_received = True
 
 
+@pytest.mark.xdist_group(name="test_f3_communicator")
 class TestCommunicator:
     @pytest.fixture
     def comm_a(self):
