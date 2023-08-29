@@ -49,7 +49,6 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
-from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes
 from nvflare.ha.overseer_agent import HttpOverseerAgent
@@ -346,7 +345,7 @@ class FederatedServer(BaseServer):
     def _listen_command(self, request: Message) -> Message:
         job_id = request.get_header(CellMessageHeaderKeys.JOB_ID)
         command = request.get_header(MessageHeaderKey.TOPIC)
-        data = fobs.loads(request.payload)
+        data = request.payload
 
         if command == ServerCommandNames.GET_CLIENTS:
             if job_id in self.engine.run_processes:
@@ -355,7 +354,7 @@ class FederatedServer(BaseServer):
             else:
                 return_data = {ServerCommandKey.CLIENTS: None, ServerCommandKey.JOB_ID: job_id}
 
-            return make_cellnet_reply(F3ReturnCode.OK, "", fobs.dumps(return_data))
+            return make_cellnet_reply(F3ReturnCode.OK, "", return_data)
         elif command == ServerCommandNames.UPDATE_RUN_STATUS:
             execution_error = data.get("execution_error")
             with self.lock:
@@ -594,7 +593,7 @@ class FederatedServer(BaseServer):
                 shareable = Shareable()
                 shareable.set_header(ServerCommandKey.FL_CLIENT, client.name)
                 fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
-                request = new_cell_message({}, fobs.dumps(shareable))
+                request = new_cell_message({}, shareable)
                 self.cell.fire_and_forget(
                     targets=fqcn,
                     channel=CellChannel.SERVER_COMMAND,
@@ -777,7 +776,7 @@ class FederatedServer(BaseServer):
                 target_fqcns = []
                 for job_id in keys:
                     target_fqcns.append(FQCN.join([FQCN.ROOT_SERVER, job_id]))
-                cell_msg = new_cell_message(headers={}, payload=fobs.dumps(self.server_state))
+                cell_msg = new_cell_message(headers={}, payload=self.server_state)
                 self.cell.broadcast_request(
                     channel=CellChannel.SERVER_COMMAND,
                     topic=ServerCommandNames.SERVER_STATE,

@@ -21,7 +21,6 @@ from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import MessageHeaderKey, ReturnCode, make_reply
 from nvflare.fuel.f3.message import Message as CellMessage
-from nvflare.fuel.utils import fobs
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
 
 from .server_commands import ServerCommands
@@ -58,7 +57,8 @@ class ServerCommandAgent(object):
             raise RuntimeError("request must be CellMessage but got {}".format(type(request)))
 
         command_name = request.get_header(MessageHeaderKey.TOPIC)
-        data = fobs.loads(request.payload)
+        # data = fobs.loads(request.payload)
+        data = request.payload
 
         token = request.get_header(CellMessageHeaderKeys.TOKEN, None)
         # client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME, None)
@@ -75,7 +75,7 @@ class ServerCommandAgent(object):
                     return make_reply(
                         ReturnCode.AUTHENTICATION_ERROR,
                         "Request from client: missing client token",
-                        fobs.dumps(None),
+                        None,
                     )
 
             with self.engine.new_context() as new_fl_ctx:
@@ -83,17 +83,17 @@ class ServerCommandAgent(object):
                     state_check = command.get_state_check(new_fl_ctx)
                     error = self.engine.server.authentication_check(request, state_check)
                     if error:
-                        return make_reply(ReturnCode.AUTHENTICATION_ERROR, error, fobs.dumps(None))
+                        return make_reply(ReturnCode.AUTHENTICATION_ERROR, error, None)
 
                 reply = command.process(data=data, fl_ctx=new_fl_ctx)
                 if reply is not None:
-                    return_message = new_cell_message({}, fobs.dumps(reply))
+                    return_message = new_cell_message({}, reply)
                     return_message.set_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
                 else:
-                    return_message = make_reply(ReturnCode.PROCESS_EXCEPTION, "No process results", fobs.dumps(None))
+                    return_message = make_reply(ReturnCode.PROCESS_EXCEPTION, "No process results", None)
                 return return_message
         else:
-            return make_reply(ReturnCode.INVALID_REQUEST, "No server command found", fobs.dumps(None))
+            return make_reply(ReturnCode.INVALID_REQUEST, "No server command found", None)
 
     def _get_client(self, token):
         fl_server = self.engine.server
@@ -112,7 +112,7 @@ class ServerCommandAgent(object):
             state_check = server_state.aux_communicate(fl_ctx)
             error = self.engine.server.authentication_check(request, state_check)
             if error:
-                make_reply(ReturnCode.AUTHENTICATION_ERROR, error, fobs.dumps(None))
+                make_reply(ReturnCode.AUTHENTICATION_ERROR, error, None)
 
             engine = fl_ctx.get_engine()
             reply = engine.dispatch(topic=topic, request=data, fl_ctx=fl_ctx)
