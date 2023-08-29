@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Tuple
+from typing import List
 
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args
 from nvflare.fuel.hci.conn import Connection
@@ -25,12 +25,12 @@ from .constants import ConnProps
 class CommandFilter(object):
     """Base class for filters to run before or after commands."""
 
-    def pre_command(self, conn: Connection, args: List[str]) -> Tuple[bool, str]:
+    def pre_command(self, conn: Connection, args: List[str]) -> bool:
         """Code to execute before executing a command.
 
         Returns: True to continue filter chain or False to not
         """
-        return True, ""
+        return True
 
     def post_command(self, conn: Connection, args: List[str]) -> bool:
         """Code to execute after executing a command."""
@@ -89,9 +89,8 @@ class ServerCommandRegister(CommandRegister):
         # invoke pre filters
         if len(self.filters) > 0:
             for f in self.filters:
-                ok, message = f.pre_command(conn, args)
+                ok = f.pre_command(conn, args)
                 if not ok:
-                    conn.append_error(message)
                     return
 
         handler(conn, args)

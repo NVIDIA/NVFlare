@@ -38,7 +38,7 @@ class SiteSecurityFilter(CommandFilter):
     def __init__(self) -> None:
         super().__init__()
 
-    def pre_command(self, conn: Connection, args: List[str]) -> Tuple[bool, str]:
+    def pre_command(self, conn: Connection, args: List[str]) -> bool:
         engine = conn.app_ctx
         command = args[0]
 
@@ -47,9 +47,10 @@ class SiteSecurityFilter(CommandFilter):
             filter_succeed, messages = self.authorization_check(engine, command, fl_ctx)
 
         if filter_succeed:
-            return True, ""
+            return True
         else:
-            return False, messages
+            conn.append_error(messages)
+            return False
 
     def authorization_check(self, engine, command, fl_ctx: FLContext):
         filter_succeed = True

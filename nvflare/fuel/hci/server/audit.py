@@ -43,4 +43,4 @@ class CommandAudit(CommandFilter):
         )
 
         conn.set_prop(ConnProps.EVENT_ID, event_id)
-        return True, ""
+        return True
