@@ -21,7 +21,7 @@ from pyhocon import ConfigTree, HOCONConverter
 
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel_opt.utils.pyhocon_loader import PyhoconConfig
-from nvflare.tool.job.job_client_const import JOB_TEMPLATE, JOB_TEMPLATES
+from nvflare.tool.job.job_client_const import JOB_TEMPLATES
 
 
 def get_home_dir() -> Path:
