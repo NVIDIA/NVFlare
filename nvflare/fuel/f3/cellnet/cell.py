@@ -20,11 +20,12 @@ from typing import Dict, List, Union
 from nvflare.apis.fl_constant import ServerCommandNames
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessageType, ReturnCode
-from nvflare.fuel.f3.cellnet.utils import make_reply
+from nvflare.fuel.f3.cellnet.utils import encode_payload, make_reply
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stream_cell import StreamCell
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import StreamFuture
+from nvflare.fuel.utils import fobs
 from nvflare.private.defs import CellChannel
 
 
@@ -98,16 +99,20 @@ class Cell(StreamCell):
         Returns: None
 
         """
-        if channel == CellChannel.SERVER_COMMAND and topic == ServerCommandNames.HANDLE_DEAD_JOB:
-            if isinstance(targets, list):
-                for target in targets:
-                    self.send_blob(channel=channel, topic=topic, target=target, message=message)
-            else:
-                self.send_blob(channel=channel, topic=topic, target=targets, message=message)
-        else:
-            self.core_cell.fire_and_forget(
-                channel=channel, topic=topic, targets=targets, message=message, optional=optional
-            )
+        # if channel == CellChannel.SERVER_COMMAND and topic == ServerCommandNames.HANDLE_DEAD_JOB:
+        #     if isinstance(targets, list):
+        #         for target in targets:
+        #             self.send_blob(channel=channel, topic=topic, target=target, message=message)
+        #     else:
+        #         self.send_blob(channel=channel, topic=topic, target=targets, message=message)
+        # else:
+        #     self.core_cell.fire_and_forget(
+        #         channel=channel, topic=topic, targets=targets, message=message, optional=optional
+        #     )
+
+        self.core_cell.fire_and_forget(
+            channel=channel, topic=topic, targets=targets, message=message, optional=optional
+        )
 
     def _get_result(self, req_id):
         waiter = self.requests_dict.pop(req_id)
@@ -126,47 +131,53 @@ class Cell(StreamCell):
 
     def send_request(self, channel, target, topic, request, timeout=10.0, optional=False):
         self.logger.debug(f"send_request: {channel=}, {topic=}, {target=}, {timeout=}")
-        if channel != CellChannel.SERVER_COMMAND:
-            return self.core_cell.send_request(
-                channel=channel, target=target, topic=topic, request=request, timeout=timeout, optional=optional
-            )
+        # if channel != CellChannel.SERVER_COMMAND:
+        #     return self.core_cell.send_request(
+        #         channel=channel, target=target, topic=topic, request=request, timeout=timeout, optional=optional
+        #     )
+        #
+        # request.payload = fobs.dumps(request.payload)
+        #
+        # req_id = str(uuid.uuid4())
+        # request.add_headers({StreamHeaderKey.STREAM_REQ_ID: req_id})
+        #
+        # # this future can be used to check sending progress, but not for checking return blob
+        # future = self.send_blob(channel, topic, target, request)
+        #
+        # waiter = SimpleWaiter(req_id=req_id, result=make_reply(ReturnCode.TIMEOUT))
+        # self.requests_dict[req_id] = waiter
+        #
+        # # Three stages, sending, waiting for receiving first byte, receiving
+        #
+        # # sending with progress timeout
+        # self.logger.debug(f"{req_id=}: entering sending wait {timeout=}")
+        # sending_complete = self._future_wait(future, timeout)
+        # if not sending_complete:
+        #     self.logger.debug(f"{req_id=}: sending timeout")
+        #     return self._get_result(req_id)
+        # self.logger.debug(f"{req_id=}: sending complete")
+        #
+        # # waiting for receiving first byte
+        # self.logger.debug(f"{req_id=}: entering remote process wait {timeout=}")
+        # if not waiter.in_receiving.wait(timeout):
+        #     self.logger.debug(f"{req_id=}: remote processing timeout")
+        #     return self._get_result(req_id)
+        # self.logger.debug(f"{req_id=}: in receiving")
+        #
+        # # receiving with progress timeout
+        # r_future = waiter.receiving_future
+        # self.logger.debug(f"{req_id=}: entering receiving wait {timeout=}")
+        # receiving_complete = self._future_wait(r_future, timeout)
+        # if not receiving_complete:
+        #     self.logger.debug(f"{req_id=}: receiving timeout")
+        #     return self._get_result(req_id)
+        # self.logger.debug(f"{req_id=}: receiving complete")
+        # waiter.result = Message(r_future.headers, r_future.result())
+        # return self._get_result(req_id)
 
-        req_id = str(uuid.uuid4())
-        request.add_headers({StreamHeaderKey.STREAM_REQ_ID: req_id})
-
-        # this future can be used to check sending progress, but not for checking return blob
-        future = self.send_blob(channel, topic, target, request)
-
-        waiter = SimpleWaiter(req_id=req_id, result=make_reply(ReturnCode.TIMEOUT))
-        self.requests_dict[req_id] = waiter
-
-        # Three stages, sending, waiting for receiving first byte, receiving
-
-        # sending with progress timeout
-        self.logger.debug(f"{req_id=}: entering sending wait {timeout=}")
-        sending_complete = self._future_wait(future, timeout)
-        if not sending_complete:
-            self.logger.debug(f"{req_id=}: sending timeout")
-            return self._get_result(req_id)
-        self.logger.debug(f"{req_id=}: sending complete")
-
-        # waiting for receiving first byte
-        self.logger.debug(f"{req_id=}: entering remote process wait {timeout=}")
-        if not waiter.in_receiving.wait(timeout):
-            self.logger.debug(f"{req_id=}: remote processing timeout")
-            return self._get_result(req_id)
-        self.logger.debug(f"{req_id=}: in receiving")
-
-        # receiving with progress timeout
-        r_future = waiter.receiving_future
-        self.logger.debug(f"{req_id=}: entering receiving wait {timeout=}")
-        receiving_complete = self._future_wait(r_future, timeout)
-        if not receiving_complete:
-            self.logger.debug(f"{req_id=}: receiving timeout")
-            return self._get_result(req_id)
-        self.logger.debug(f"{req_id=}: receiving complete")
-        waiter.result = Message(r_future.headers, r_future.result())
-        return self._get_result(req_id)
+        return self.core_cell.send_request(
+            channel=channel, target=target, topic=topic, request=request, timeout=timeout, optional=optional
+        )
 
     def _process_reply(self, future: StreamFuture):
         headers = future.headers
@@ -195,14 +206,17 @@ class Cell(StreamCell):
         """
         if not callable(cb):
             raise ValueError(f"specified request_cb {type(cb)} is not callable")
-        if channel == CellChannel.SERVER_COMMAND and topic in [
-            "*",
-            ServerCommandNames.GET_TASK,
-            ServerCommandNames.SUBMIT_UPDATE,
-        ]:
-            self.logger.debug(f"Register blob CB for {channel=}, {topic=}")
-            adapter = Adapter(cb, self.core_cell.my_info, self)
-            self.register_blob_cb(channel, topic, adapter.call, *args, **kwargs)
-        else:
-            self.logger.debug(f"Register regular CB for {channel=}, {topic=}")
-            self.core_cell.register_request_cb(channel, topic, cb, *args, **kwargs)
+        # if channel == CellChannel.SERVER_COMMAND and topic in [
+        #     "*",
+        #     ServerCommandNames.GET_TASK,
+        #     ServerCommandNames.SUBMIT_UPDATE,
+        # ]:
+        #     self.logger.debug(f"Register blob CB for {channel=}, {topic=}")
+        #     adapter = Adapter(cb, self.core_cell.my_info, self)
+        #     self.register_blob_cb(channel, topic, adapter.call, *args, **kwargs)
+        # else:
+        #     self.logger.debug(f"Register regular CB for {channel=}, {topic=}")
+        #     self.core_cell.register_request_cb(channel, topic, cb, *args, **kwargs)
+
+        self.logger.debug(f"Register regular CB for {channel=}, {topic=}")
+        self.core_cell.register_request_cb(channel, topic, cb, *args, **kwargs)
