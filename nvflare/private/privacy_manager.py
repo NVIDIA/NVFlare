@@ -20,6 +20,9 @@ from nvflare.private.fed_json_config import FilterChain
 
 
 class Scope(object):
+    TASK_DATA_FILTERS_NAME = "task_data_filters"
+    TASK_RESULT_FILTERS_NAME = "task_result_filters"
+
     def __init__(self):
         self.name = ""
         self.props = {}

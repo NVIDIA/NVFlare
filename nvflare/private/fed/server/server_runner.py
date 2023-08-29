@@ -270,7 +270,7 @@ class ServerRunner(FLComponent):
             self.fire_event(EventType.BEFORE_TASK_DATA_FILTER, fl_ctx)
 
             try:
-                filter_name = f"{Scope().task_data_filters=}".split("=")[0].split(".")[-1]
+                filter_name = Scope.TASK_DATA_FILTERS_NAME
                 task_data = apply_filters(
                     filter_name, task_data, fl_ctx, self.config.task_data_filters, task_name, FilterKey.OUT
                 )
@@ -436,7 +436,7 @@ class ServerRunner(FLComponent):
                 self.fire_event(EventType.BEFORE_TASK_RESULT_FILTER, fl_ctx)
 
                 try:
-                    filter_name = f"{Scope().task_result_filters=}".split("=")[0].split(".")[-1]
+                    filter_name = Scope.TASK_RESULT_FILTERS_NAME
                     result = apply_filters(
                         filter_name, result, fl_ctx, self.config.task_result_filters, task_name, FilterKey.IN
                     )
