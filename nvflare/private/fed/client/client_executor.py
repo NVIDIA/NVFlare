@@ -26,7 +26,6 @@ from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 from nvflare.fuel.common.exit_codes import PROCESS_EXIT_REASON, ProcessExitCode
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
-from nvflare.fuel.utils import fobs
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey, new_cell_message
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
@@ -222,7 +221,7 @@ class ProcessExecutor(ClientExecutor):
             with self.lock:
                 data = {}
                 fqcn = FQCN.join([self.client.client_name, job_id])
-                request = new_cell_message({}, fobs.dumps(data))
+                request = new_cell_message({}, data)
                 return_data = self.client.cell.send_request(
                     target=fqcn,
                     channel=CellChannel.CLIENT_COMMAND,
@@ -232,7 +231,7 @@ class ProcessExecutor(ClientExecutor):
                 )
                 return_code = return_data.get_header(MessageHeaderKey.RETURN_CODE)
                 if return_code == ReturnCode.OK:
-                    status_message = fobs.loads(return_data.payload)
+                    status_message = return_data.payload
                     self.logger.debug("check status from process listener......")
                     return status_message
                 else:
@@ -256,7 +255,7 @@ class ProcessExecutor(ClientExecutor):
             with self.lock:
                 data = {}
                 fqcn = FQCN.join([self.client.client_name, job_id])
-                request = new_cell_message({}, fobs.dumps(data))
+                request = new_cell_message({}, data)
                 return_data = self.client.cell.send_request(
                     target=fqcn,
                     channel=CellChannel.CLIENT_COMMAND,
@@ -266,7 +265,7 @@ class ProcessExecutor(ClientExecutor):
                 )
                 return_code = return_data.get_header(MessageHeaderKey.RETURN_CODE)
                 if return_code == ReturnCode.OK:
-                    run_info = fobs.loads(return_data.payload)
+                    run_info = return_data.payload
                     return run_info
                 else:
                     return {}
@@ -288,7 +287,7 @@ class ProcessExecutor(ClientExecutor):
             with self.lock:
                 data = {"command": AdminCommandNames.SHOW_ERRORS, "data": {}}
                 fqcn = FQCN.join([self.client.client_name, job_id])
-                request = new_cell_message({}, fobs.dumps(data))
+                request = new_cell_message({}, data)
                 return_data = self.client.cell.send_request(
                     target=fqcn,
                     channel=CellChannel.CLIENT_COMMAND,
@@ -317,7 +316,7 @@ class ProcessExecutor(ClientExecutor):
             with self.lock:
                 data = {"command": AdminCommandNames.RESET_ERRORS, "data": {}}
                 fqcn = FQCN.join([self.client.client_name, job_id])
-                request = new_cell_message({}, fobs.dumps(data))
+                request = new_cell_message({}, data)
                 self.client.cell.fire_and_forget(
                     targets=fqcn,
                     channel=CellChannel.CLIENT_COMMAND,
@@ -347,7 +346,7 @@ class ProcessExecutor(ClientExecutor):
                         child_process = self.run_processes[job_id][RunProcessKey.CHILD_PROCESS]
                         data = {}
                         fqcn = FQCN.join([self.client.client_name, job_id])
-                        request = new_cell_message({}, fobs.dumps(data))
+                        request = new_cell_message({}, data)
                         self.client.cell.fire_and_forget(
                             targets=fqcn,
                             channel=CellChannel.CLIENT_COMMAND,
@@ -414,7 +413,7 @@ class ProcessExecutor(ClientExecutor):
             if process_status == ClientStatus.STARTED:
                 data = {"command": AdminCommandNames.ABORT_TASK, "data": {}}
                 fqcn = FQCN.join([self.client.client_name, job_id])
-                request = new_cell_message({}, fobs.dumps(data))
+                request = new_cell_message({}, data)
                 self.client.cell.fire_and_forget(
                     targets=fqcn,
                     channel=CellChannel.CLIENT_COMMAND,

@@ -87,6 +87,20 @@ class SfmConnection:
 
         self.send_dict(frame_type, 1, data)
 
+    def send_heartbeat(self, frame_type: int, data: Optional[dict] = None):
+        """Send Ping or Pong"""
+
+        if frame_type not in (Types.PING, Types.PONG):
+            log.error(f"Heartbeat type must be PING or PONG, not {frame_type}")
+            return
+
+        if not self.sfm_endpoint:
+            log.error("Trying to send heartbeat before SFM Endpoint is established")
+            return
+
+        stream_id = self.sfm_endpoint.next_stream_id()
+        self.send_dict(frame_type, stream_id, data)
+
     def send_data(self, app_id: int, stream_id: int, headers: Optional[dict], payload: BytesAlike):
         """Send user data"""
 

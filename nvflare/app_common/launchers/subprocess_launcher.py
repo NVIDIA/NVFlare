@@ -21,7 +21,7 @@ from typing import Optional
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.app_common.abstract.launcher import Launcher
+from nvflare.app_common.abstract.launcher import Launcher, LauncherCompleteStatus
 
 
 class SubprocessLauncher(Launcher):
@@ -53,10 +53,14 @@ class SubprocessLauncher(Launcher):
             return True
         return False
 
-    def wait_task(self, task_name: str, fl_ctx: FLContext, timeout=None) -> None:
+    def wait_task(self, task_name: str, fl_ctx: FLContext, timeout=None) -> LauncherCompleteStatus:
         if self._process:
-            self._process.wait(timeout)
+            return_code = self._process.wait(timeout)
             self.stop_task(task_name, fl_ctx)
+            if return_code == 0:
+                return LauncherCompleteStatus.SUCCESS
+            return LauncherCompleteStatus.FAILED
+        return LauncherCompleteStatus.SUCCESS
 
     def stop_task(self, task_name: str, fl_ctx: FLContext) -> None:
         if self._process:
