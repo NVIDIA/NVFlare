@@ -36,7 +36,7 @@ def define_parser():
     return parser.parse_args()
 
 
-def main(args):
+def _main(args):
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
     dataset_path = args.dataset_path
@@ -114,5 +114,9 @@ def main(args):
     local_accuracy = evaluate(torch.load(model_path))
 
 
+def main():
+    _main(define_parser())
+
+
 if __name__ == "__main__":
-    main(define_parser())
+    main()
