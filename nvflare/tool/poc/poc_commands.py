@@ -520,7 +520,7 @@ def get_examples_dir(examples_dir):
     return default_examples_dir
 
 
-def sort_service_cmds(cmd_type, service_cmds: list, service_config) -> list:
+def _sort_service_cmds(cmd_type, service_cmds: list, service_config) -> list:
     def sort_first(val):
         return val[0]
 
@@ -747,7 +747,7 @@ def _build_commands(
                         cmd = get_service_command(cmd_type, prod_dir, service_dir_name, service_config)
                         if cmd:
                             service_commands.append((service_dir_name, cmd))
-    return sort_service_cmds(cmd_type, service_commands, service_config)
+    return _sort_service_cmds(cmd_type, service_commands, service_config)
 
 
 def prepare_env(service_name, gpu_ids: Optional[List[int]], service_config: Dict):
