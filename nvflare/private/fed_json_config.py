@@ -203,7 +203,7 @@ class FedJsonConfigurator(JsonConfigurator):
             else:
                 directions = [direction]
             for item in directions:
-                task_key = t + FilterKey.DELIMITER + item
-                if task_key in data_filter_table:
-                    raise ConfigError("multiple data filter chains defined for task {}".format(task_key))
-                data_filter_table[task_key] = c.filters
+                task_filter_key = t + FilterKey.DELIMITER + item
+                if task_filter_key in data_filter_table:
+                    raise ConfigError("multiple data filter chains defined for task {}".format(task_filter_key))
+                data_filter_table[task_filter_key] = c.filters
