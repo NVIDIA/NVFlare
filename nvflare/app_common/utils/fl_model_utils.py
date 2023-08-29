@@ -80,18 +80,16 @@ class FLModelUtils:
             dxo = DXO(DataKind.METRICS, data=fl_model.metrics, meta={})
 
         meta = fl_model.meta if fl_model.meta is not None else {}
-        meta[MetaKey.CURRENT_ROUND] = fl_model.current_round
-        meta[MetaKey.TOTAL_ROUNDS] = fl_model.total_rounds
         dxo.meta.update(meta)
 
         shareable = dxo.to_shareable()
         if fl_model.current_round is not None:
             shareable.set_header(AppConstants.CURRENT_ROUND, fl_model.current_round)
+        if fl_model.total_rounds is not None:
+            shareable.set_header(AppConstants.NUM_ROUNDS, fl_model.total_rounds)
 
         if MetaKey.VALIDATE_TYPE in meta:
             shareable.set_header(AppConstants.VALIDATE_TYPE, meta[MetaKey.VALIDATE_TYPE])
-        if MetaKey.TOTAL_ROUNDS in meta:
-            shareable.set_header(AppConstants.NUM_ROUNDS, meta[MetaKey.TOTAL_ROUNDS])
         return shareable
 
     @staticmethod
