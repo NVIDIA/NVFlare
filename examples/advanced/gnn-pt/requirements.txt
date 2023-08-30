@@ -1,0 +1,6 @@
+nvflare[PT]>=2.3.0
+scikit_learn==0.24.2
+torch_geometric==2.3.1
+torch_sparse==0.6.17
+tqdm==4.64.1
+
