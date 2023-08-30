@@ -110,7 +110,7 @@ def main():
         )
 
         # initialize Privacy Service
-        privacy_manager = create_privacy_manager(workspace, names_only=True)
+        privacy_manager = create_privacy_manager(workspace, names_only=True, is_server=True)
         PrivacyService.initialize(privacy_manager)
 
         admin_server = None

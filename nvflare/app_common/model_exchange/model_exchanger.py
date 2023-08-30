@@ -158,6 +158,7 @@ class ModelExchanger:
             data: The data exchange object to be sent.
             req_id: request ID.
             timeout: how long to wait for the peer to read the data.
+                If not specified, return False immediately.
 
         Returns:
             A bool indicates whether the peer has read the data.

@@ -31,7 +31,7 @@ def _set_up_run_config(workspace: Workspace, server, conf):
     runner_config = conf.runner_config
 
     # configure privacy control!
-    privacy_manager = create_privacy_manager(workspace, names_only=False)
+    privacy_manager = create_privacy_manager(workspace, names_only=False, is_server=True)
     if privacy_manager.is_policy_defined():
         if privacy_manager.components:
             for cid, comp in privacy_manager.components.items():
