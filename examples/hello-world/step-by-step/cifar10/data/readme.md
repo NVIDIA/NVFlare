@@ -31,7 +31,7 @@ to download data
 cd cifar10/data
 ```
 
-```python
+```bash
 
 python download.py
 
@@ -39,7 +39,10 @@ python download.py
 
 * Split the data so each client will have a portion of the data
 
-Next we can choose whether to split the data depending on the type of problem or type of data. For simplicity, in this example we assume all clients will have the same data for horizontal federated learning cases.
+In real-world scenarios, the data will be distributed among different clients/sides. We don't need this step. 
+
+In simulated cases, we may need to split the data into different clients/sites. How to split the data, 
+depending on the type of problem or type of data. For simplicity, in this example we assume all clients will have the same data for horizontal federated learning cases.
 Thus we do not do a data split, but rather point all clients to the same data location.
 
 

@@ -5,19 +5,7 @@
 
 the CIFAR10 example with pytorch is adapted from [pytorch tutorial example](https://github.com/pytorch/tutorials/blob/main/beginner_source/blitz/cifar10_tutorial.py)
 
- 
-
-```
-
-def define_parser():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset_path', type=str, default= CIFAR10_ROOT,  nargs="?")
-    parser.add_argument('--batch_size', type=int, default= 4,  nargs="?")
-    parser.add_argument('--num_workers', type=int, default= 1,  nargs="?")
-    parser.add_argument('--model_path', type=str, default= f"{CIFAR10_ROOT}/cifar_net.pth",  nargs="?")
-    return parser.parse_args()
-
-```
+we added the CLI parser to make it easier to handle CLI arguments. 
 
 to run, in ``dl`` directory, we could run
 
