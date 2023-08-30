@@ -16,7 +16,6 @@ import time
 from threading import Lock
 from typing import List
 
-from nvflare.apis.client import Client
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
@@ -25,6 +24,7 @@ from nvflare.fuel.f3.cellnet.core_cell import Message, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.core_cell import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.private.defs import CellChannel
+from nvflare.private.fed.utils.fed_utils import get_target_names
 from nvflare.security.logging import secure_format_traceback
 
 
@@ -151,22 +151,7 @@ class AuxRunner(FLComponent):
         bulk_send: bool = False,
         optional: bool = False,
     ) -> dict:
-        # validate targets
-        target_names = []
-        for t in targets:
-            if isinstance(t, str):
-                name = t
-            elif isinstance(t, Client):
-                name = t.name
-            else:
-                raise ValueError(f"invalid target in list: got {type(t)}")
-
-            if not name:
-                # ignore empty name
-                continue
-
-            if name not in target_names:
-                target_names.append(t)
+        target_names = get_target_names(targets)
 
         if not target_names:
             return {}
