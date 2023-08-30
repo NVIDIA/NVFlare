@@ -37,6 +37,7 @@ epochs=5
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 # need to change 64 2 64 to json
+#print ("in_channel", train_dataset.num_features) # in_channels is 50
 model = GraphSAGE(
             in_channels=train_dataset.num_features,
             hidden_channels=64,
