@@ -12,7 +12,13 @@
       "name": "PTFileModelPersistor",
       "args": {
         "model": {
-          "path": "graphsage.GraphSAGE"
+          "path": "graphsage.GraphSAGE",
+          "args": {
+            "hidden_channels": 64,
+            "num_layers": 2,
+            "out_channels": 64
+            
+          } 
         }
       }
     },

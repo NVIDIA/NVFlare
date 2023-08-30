@@ -59,11 +59,6 @@ optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 for epoch in range(epochs):
     running_loss = 0.0
     for data in tqdm.tqdm(train_loader):
-        if abort_signal.triggered:
-            # If abort_signal is triggered, we simply return.
-            # The outside function will check it again and decide steps to take.
-            return
-
         data = data.to(self.device)
         optimizer.zero_grad()
         h = self.model(data.x, data.edge_index)
