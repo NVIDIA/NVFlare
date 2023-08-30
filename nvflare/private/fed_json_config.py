@@ -15,20 +15,26 @@
 import re
 
 from nvflare.apis.filter import Filter, FilterChainType, FilterContextKey, FilterSource
+from nvflare.apis.fl_constant import FilterKey
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.private.json_configer import ConfigContext, ConfigError, JsonConfigurator
 
 
 class FilterChain(object):
-    def __init__(self, chain_type):
+    def __init__(self, chain_type, direction):
         """To init the FilterChain."""
         self.chain_type = chain_type
         self.tasks = []
         self.filters = []
+        self.direction = direction
+
+    @classmethod
+    def validate_direction(cls, direction):
+        return direction in [FilterKey.IN, FilterKey.OUT, FilterKey.INOUT]
 
 
 class FedJsonConfigurator(JsonConfigurator):
-    def __init__(self, config_file_name: str, base_pkgs: [str], module_names: [str], exclude_libs=True):
+    def __init__(self, config_file_name: str, base_pkgs: [str], module_names: [str], exclude_libs=True, is_server=True):
         """To init the FedJsonConfigurator.
 
         Args:
@@ -53,6 +59,7 @@ class FedJsonConfigurator(JsonConfigurator):
         self.current_filter_chain = None
         self.data_filter_table = None
         self.result_filter_table = None
+        self.is_server = is_server
 
     def process_config_element(self, config_ctx: ConfigContext, node: Node):
         element = node.element
@@ -88,13 +95,18 @@ class FedJsonConfigurator(JsonConfigurator):
 
         # result filters
         if re.search(r"^task_result_filters\.#[0-9]+$", path):
-            self.current_filter_chain = FilterChain(FilterChainType.TASK_RESULT_CHAIN)
+            default_direction = FilterKey.IN if self.is_server else FilterKey.OUT
+            self.current_filter_chain = FilterChain(FilterChainType.TASK_RESULT_CHAIN, default_direction)
             node.props["data"] = self.current_filter_chain
             node.exit_cb = self._process_result_filter_chain
             return
 
         if re.search(r"^task_result_filters\.#[0-9]+\.tasks$", path):
             self.current_filter_chain.tasks = element
+            return
+
+        if re.search(r"^task_result_filters\.#[0-9]+\.direction$", path):
+            self.current_filter_chain.direction = element
             return
 
         if re.search(r"^task_result_filters.#[0-9]+\.filters\.#[0-9]+$", path):
@@ -104,13 +116,18 @@ class FedJsonConfigurator(JsonConfigurator):
 
         # data filters
         if re.search(r"^task_data_filters\.#[0-9]+$", path):
-            self.current_filter_chain = FilterChain(FilterChainType.TASK_DATA_CHAIN)
+            default_direction = FilterKey.OUT if self.is_server else FilterKey.IN
+            self.current_filter_chain = FilterChain(FilterChainType.TASK_DATA_CHAIN, default_direction)
             node.props["data"] = self.current_filter_chain
             node.exit_cb = self._process_data_filter_chain
             return
 
         if re.search(r"^task_data_filters\.#[0-9]+\.tasks$", path):
             self.current_filter_chain.tasks = element
+            return
+
+        if re.search(r"^task_data_filters\.#[0-9]+\.direction$", path):
+            self.current_filter_chain.direction = element
             return
 
         if re.search(r"^task_data_filters.#[0-9]+\.filters\.#[0-9]+$", path):
@@ -166,21 +183,27 @@ class FedJsonConfigurator(JsonConfigurator):
 
         data_filter_table = {}
         for c in self.task_data_filter_chains:
-            if not isinstance(c, FilterChain):
-                raise TypeError("chain must be FilterChain but got {}".format(type(c)))
-            for t in c.tasks:
-                if t in data_filter_table:
-                    raise ConfigError("multiple data filter chains defined for task {}".format(t))
-                data_filter_table[t] = c.filters
+            self._build_filter_table(c, data_filter_table)
         self.data_filter_table = data_filter_table
 
         result_filter_table = {}
         for c in self.task_result_filter_chains:
-            if not isinstance(c, FilterChain):
-                raise TypeError("chain must be FilterChain but got {}".format(type(c)))
-            for t in c.tasks:
-                if t in result_filter_table:
-                    raise ConfigError("multiple data filter chains defined for task {}".format(t))
-                result_filter_table[t] = c.filters
-
+            self._build_filter_table(c, result_filter_table)
         self.result_filter_table = result_filter_table
+
+    def _build_filter_table(self, c, data_filter_table):
+        direction = c.direction.lower()
+        if not FilterChain.validate_direction(direction):
+            raise TypeError("Filter chain direction {} is not supported.".format(direction))
+        if not isinstance(c, FilterChain):
+            raise TypeError("chain must be FilterChain but got {}".format(type(c)))
+        for t in c.tasks:
+            if direction == FilterKey.INOUT:
+                directions = [FilterKey.IN, FilterKey.OUT]
+            else:
+                directions = [direction]
+            for item in directions:
+                task_filter_key = t + FilterKey.DELIMITER + item
+                if task_filter_key in data_filter_table:
+                    raise ConfigError("multiple data filter chains defined for task {}".format(task_filter_key))
+                data_filter_table[task_filter_key] = c.filters
