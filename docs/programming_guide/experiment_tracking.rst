@@ -11,19 +11,7 @@ Overview and Approaches
 In a federated computing setting, the data is distributed across multiple devices or systems, and training is run
 on each device independently while preserving each client's data privacy.
 
-Federated ML experiment tracking presents unique challenges:
-
-    - Authentication and accessibility: with many clients, not every client has access to the experiment tracking server directly
-      and those who do will require an additional authentication process
-    - Networking challenges: high latency, limited bandwidth, and unreliable connectivity can be issues if the every client is trying to connect
-      to ML tracking server
-    - Tracking server load challenges: with many clients sending logging data to the same ML tracking server, depending on the number of the
-      iterations (usually in thousands or tens of thousands) and rate of metrics logs, we could potentially have very high traffic to the ML
-      tracking server
-    - Code re-usability: if we develop the code for Tensorboard, but now like to switch to MLFLow, can we do it without having to
-      rewrite the logging statements?
-
-Assuming a Federated System consisting of one server and many clients and the server coordinating the ML training of clients,
+Assuming a federated system consisting of one server and many clients and the server coordinating the ML training of clients,
 we can interact with ML experiment tracking tools in two different ways: 
 
     - Client-side experiment tracking: Each client will directly send the log metrics/parameters to the ML experiment tracking server or local file system
