@@ -214,12 +214,6 @@ class ServerSideController(Controller):
 
         time_taken = time.time() - start_time
         self.log_info(fl_ctx, f"client configuration took {time_taken} seconds")
-        if time_taken > 10.0:
-            self.system_panic(
-                f"too much time to configure clients",
-                fl_ctx,
-            )
-            return
 
         failed_clients = []
         for c, cs in self.client_statuses.items():

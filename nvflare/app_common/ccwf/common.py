@@ -12,9 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.apis.shareable import ReservedHeaderKey, Shareable
-from nvflare.app_common.abstract.learnable import Learnable
-
 
 class Constant:
 
