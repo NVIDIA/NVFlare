@@ -14,11 +14,13 @@ on each device independently while preserving each client's data privacy.
 Assuming a federated system consisting of one server and many clients and the server coordinating the ML training of clients,
 we can interact with ML experiment tracking tools in two different ways: 
 
-    - Client-side experiment tracking: Each client will directly send the log metrics/parameters to the ML experiment tracking server or local file system
-    - Server-side experiment tracking: Clients will send the log metrics/parameters to FL server, and the FL server will send the metrics to ML experiment
-      tracking server or local file system
+    - Client-side experiment tracking: Each client will directly send the log metrics/parameters to the ML experiment
+      tracking server (like MLflow or Weights and Biases) or local file system (like tensorboard)
+    - Aggregated experiment tracking: Clients will send the log metrics/parameters to FL server, and the FL server will
+      send the metrics to ML experiment tracking server or local file system
 
-Each approach will have its use cases and unique challenges. In NVFLARE, we developed a server-side approach:
+Each approach will have its use cases and unique challenges. In NVFLARE, we developed a server-side approach (in the
+provided examples, the Receiver is on the FL server, but it could also be on the FL client):
 
     - Clients don't need to have access to the tracking server, avoiding the additional
       authentication for every client. In many cases, the clients may be from different organizations
@@ -40,11 +42,11 @@ Tools, Sender, LogWriter and Receivers
 **************************************
 
 With the "experiment_tracking" examples in the advanced examples directory, you can see how to track and visualize
-experiments in real time and compare results by leveraging several experiment tracking tools:
+experiments in real time and compare results by leveraging several experiment tracking solutions:
 
-    - Tensorboard
-    - MLflow 
-    - Weights and Biases
+    - `Tensorboard <https://www.tensorflow.org/tensorboard>`_
+    - `MLflow <https://mlflow.org/>`_
+    - `Weights and Biases <https://wandb.ai/site>`_
 
 .. note::
 
@@ -53,7 +55,8 @@ experiments in real time and compare results by leveraging several experiment tr
 In the Federated Learning phase, users can choose an API syntax that they are used to from one
 of above tools. NVFlare has developed components that mimic these APIs called
 :class:`LogWriters <nvflare.app_common.tracking.log_writer.LogWriter>`. All clients experiment logs
-are streamed over to the FL server, where the actual experiment logs are recorded. The components that receive
+are streamed over to the FL server (with :class:`ConvertToFedEvent<nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent>`),
+where the actual experiment logs are recorded. The components that receive
 these logs are called Receivers based on :class:`AnalyticsReceiver <nvflare.app_common.widgets.streaming.AnalyticsReceiver>`.
 The receiver component leverages the experiment tracking tool and records the logs during the experiment run.
 
@@ -116,7 +119,7 @@ site name. In the WandB implementation, we have to leverage multiprocess and let
 Examples Overview
 *****************
 
-The `experiment tracking examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/experiment-tracking`
+The `experiment tracking examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/experiment-tracking>`_
 illustrate how to leverage different writers and receivers. All examples are based upon the hello-pt example.
 
 The example in the "tensorboard" directory shows how to use the Tensorboard Tracking Tool (for both the
@@ -126,6 +129,6 @@ Under the "mlflow" directory, the "hello-pt-mlflow" job shows how to use MLflow 
 and receiver. The "hello-pt-tb-mlflow" job shows how to use the Tensorboard Sender, while the receiver is MLflow.
 See :ref:`experiment_tracking_mlflow` for details.
 
-Under the `wandb <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/experiment-tracking/wandb` directory, the
+Under the `wandb <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/experiment-tracking/wandb>`_ directory, the
 "hello-pt-wandb" job shows how to use Weights and Biases for experiment tracking with
 the WandBWriter and WandBReceiver to log metrics.
