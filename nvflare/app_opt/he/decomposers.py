@@ -17,16 +17,17 @@ from typing import Any
 import tenseal as ts
 
 from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils.fobs.datum import DatumManager
 
 
 class CKKSVectorDecomposer(fobs.Decomposer):
     def supported_type(self):
         return ts.CKKSVector
 
-    def decompose(self, target: ts.CKKSVector) -> Any:
+    def decompose(self, target: ts.CKKSVector, manager: DatumManager = None) -> Any:
         return target.serialize(), target.context().serialize()
 
-    def recompose(self, data: Any) -> ts.CKKSVector:
+    def recompose(self, data: Any, manager: DatumManager = None) -> ts.CKKSVector:
         vec_data, ctx_data = data
         context = ts.context_from(ctx_data)
         return ts.ckks_vector_from(context, vec_data)

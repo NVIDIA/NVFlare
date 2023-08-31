@@ -17,6 +17,8 @@ from enum import Enum
 from typing import Any, Type, TypeVar
 
 # Generic type supported by the decomposer.
+from nvflare.fuel.utils.fobs.datum import DatumManager
+
 T = TypeVar("T")
 
 
@@ -37,13 +39,14 @@ class Decomposer(ABC):
         pass
 
     @abstractmethod
-    def decompose(self, target: T) -> Any:
+    def decompose(self, target: T, manager: DatumManager = None) -> Any:
         """Decompose the target into types supported by msgpack or classes with decomposers registered.
 
         Msgpack supports primitives, bytes, memoryview, lists, dicts.
 
         Args:
             target: The instance to be serialized
+            manager: Datum manager to store externalized datum
 
         Returns:
             The decomposed serializable objects
@@ -51,11 +54,12 @@ class Decomposer(ABC):
         pass
 
     @abstractmethod
-    def recompose(self, data: Any) -> T:
+    def recompose(self, data: Any, manager: DatumManager = None) -> T:
         """Reconstruct the object from decomposed components.
 
         Args:
-            data: The decomposed components
+            data: The decomposed component
+            manager: Datum manager to internalize datum
 
         Returns:
             The reconstructed object
@@ -72,14 +76,50 @@ class DictDecomposer(Decomposer):
     def supported_type(self):
         return self.dict_type
 
-    def decompose(self, target: dict) -> Any:
-        return target.copy()
+    def decompose(self, target: dict, manager: DatumManager = None) -> Any:
+        result = target.copy()
+        if manager:
+            result = self._externalize(result, manager)
+        return result
 
-    def recompose(self, data: dict) -> dict:
+    def recompose(self, data: dict, manager: DatumManager = None) -> dict:
+        if manager:
+            data = self._internalize(data, manager)
         obj = self.dict_type()
         for k, v in data.items():
             obj[k] = v
         return obj
+
+    def _externalize(self, target: dict, manager: DatumManager) -> Any:
+        if not manager:
+            return target
+
+        if isinstance(target, dict):
+            for k, v in target.items():
+                target[k] = self._externalize(v, manager)
+        elif isinstance(target, list):
+            for i, v in enumerate(target):
+                target[i] = self._externalize(v, manager)
+        else:
+            # leaf node
+            target = manager.externalize(target)
+
+        return target
+
+    def _internalize(self, target, manager: DatumManager) -> Any:
+        if not manager:
+            return target
+
+        if isinstance(target, dict):
+            for k, v in target.items():
+                target[k] = self._internalize(v, manager)
+        elif isinstance(target, list):
+            for i, v in enumerate(target):
+                target[i] = self._internalize(v, manager)
+        else:
+            target = manager.internalize(target)
+
+        return target
 
 
 class DataClassDecomposer(Decomposer):
@@ -100,10 +140,10 @@ class DataClassDecomposer(Decomposer):
     def supported_type(self) -> Type[T]:
         return self.data_type
 
-    def decompose(self, target: T) -> Any:
+    def decompose(self, target: T, manager: DatumManager = None) -> Any:
         return vars(target)
 
-    def recompose(self, data: dict) -> T:
+    def recompose(self, data: dict, manager: DatumManager = None) -> T:
         instance = self.data_type.__new__(self.data_type)
         instance.__dict__.update(data)
         return instance
@@ -121,8 +161,8 @@ class EnumTypeDecomposer(Decomposer):
     def supported_type(self) -> Type[Enum]:
         return self.data_type
 
-    def decompose(self, target: Enum) -> Any:
+    def decompose(self, target: Enum, manager: DatumManager = None) -> Any:
         return target.name
 
-    def recompose(self, data: Any) -> Enum:
+    def recompose(self, data: Any, manager: DatumManager = None) -> Enum:
         return self.data_type[data]

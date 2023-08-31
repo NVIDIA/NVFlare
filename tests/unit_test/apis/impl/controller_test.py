@@ -94,7 +94,7 @@ def launch_task(controller, method, task, fl_ctx, kwargs):
             min_responses = 1
         controller.broadcast_and_wait(task=task, fl_ctx=fl_ctx, min_responses=min_responses, **kwargs)
     elif method == "send":
-        controller.send(task=task, fl_ctx=fl_ctx, **kwargs)
+        controller.send(**kwargs)
     elif method == "send_and_wait":
         controller.send_and_wait(task=task, fl_ctx=fl_ctx, **kwargs)
     elif method == "relay":
