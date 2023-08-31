@@ -114,7 +114,7 @@ class ServerSideController(Controller):
 
         check_positive_int("num_rounds", num_rounds)
         check_positive_int("configure_task_timeout", configure_task_timeout)
-        check_positive_int("end_workflow_timeout", end_workflow_timeout)
+        check_positive_number("end_workflow_timeout", end_workflow_timeout)
         check_positive_number("job_status_check_interval", job_status_check_interval)
         check_positive_number("max_status_report_interval", max_status_report_interval)
         check_positive_number("progress_timeout", progress_timeout)
