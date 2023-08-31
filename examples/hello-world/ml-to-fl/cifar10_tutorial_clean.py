@@ -19,13 +19,8 @@ import torchvision
 import torchvision.transforms as transforms
 from net import Net
 
-# (1.0) import nvflare client API
-import nvflare.client as flare
-
-# (optional) set a fix place so we don't need to download everytime
-DATASET_PATH = "/tmp/nvflare/data"
 # (optional) We change to use GPU to speed things up.
-# if you want to use CPU, change DEVICE=“cpu”
+# if you want to use CPU, change DEVICE="cpu"
 DEVICE = "cuda:0"
 
 
@@ -34,29 +29,20 @@ def main():
 
     batch_size = 4
 
-    trainset = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=True, download=True, transform=transform)
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=1)
+    trainset = torchvision.datasets.CIFAR10(root="./data", train=True, download=True, transform=transform)
+    trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=2)
 
-    testset = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=False, download=True, transform=transform)
-    testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=1)
+    testset = torchvision.datasets.CIFAR10(root="./data", train=False, download=True, transform=transform)
+    testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=2)
 
     net = Net()
-
-    # (1.1) initializes NVFlare client API
-    flare.init()
-    # (1.2) gets FLModel from NVFlare
-    input_model = flare.receive()
-
-    # (1.3) loads model from NVFlare
-    net.load_state_dict(input_model.params)
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 
     # (optional) use GPU to speed things up
     net.to(DEVICE)
-    # (optional) calculate total steps
-    steps = 2 * len(trainloader)
+
     for epoch in range(2):  # loop over the dataset multiple times
 
         running_loss = 0.0
@@ -105,15 +91,6 @@ def main():
             correct += (predicted == labels).sum().item()
 
     print(f"Accuracy of the network on the 10000 test images: {100 * correct // total} %")
-
-    # (1.4) construct trained FL model
-    output_model = flare.FLModel(
-        params=net.cpu().state_dict(),
-        metrics={"accuracy": 100 * correct // total},
-        meta={"NUM_STEPS_CURRENT_ROUND": steps},
-    )
-    # (1.5) send model back to NVFlare
-    flare.send(output_model)
 
 
 if __name__ == "__main__":

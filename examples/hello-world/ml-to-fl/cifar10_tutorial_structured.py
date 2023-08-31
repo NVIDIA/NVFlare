@@ -19,14 +19,9 @@ import torchvision
 import torchvision.transforms as transforms
 from net import Net
 
-# (2.0) import nvflare client API
-import nvflare.client as flare
-
-# (optional) set a fix place so we don't need to download everytime
-DATASET_PATH = "/tmp/nvflare/data"
 # (optional) We change to use GPU to speed things up.
 # if you want to use CPU, change DEVICE="cpu"
-DEVICE = "cpu"
+DEVICE = "cuda:0"
 PATH = "./cifar_net.pth"
 
 
@@ -35,30 +30,21 @@ def main():
 
     batch_size = 4
 
-    trainset = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=True, download=True, transform=transform)
+    trainset = torchvision.datasets.CIFAR10(root="./data", train=True, download=True, transform=transform)
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=2)
 
-    testset = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=False, download=True, transform=transform)
+    testset = torchvision.datasets.CIFAR10(root="./data", train=False, download=True, transform=transform)
     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=2)
 
     net = Net()
 
-    # (2.1) initializes NVFlare client API
-    flare.init()
-
-    # (2.2) decorates with flare.train and load model from the first argument
     # (1.1) wraps training logic into a method
-    @flare.train
-    def train(input_model=None, total_epochs=2, lr=0.001, device="cpu"):
-        net.load_state_dict(input_model.params)
-
+    def train(total_epochs=2, lr=0.001, device="cpu"):
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.SGD(net.parameters(), lr=lr, momentum=0.9)
 
         # (optional) use GPU to speed things up
         net.to(device)
-        # (optional) calculate total steps
-        steps = 2 * len(trainloader)
 
         for epoch in range(total_epochs):  # loop over the dataset multiple times
 
@@ -87,15 +73,6 @@ def main():
 
         torch.save(net.state_dict(), PATH)
 
-        # (2.3) construct trained FL model
-        output_model = flare.FLModel(params=net.cpu().state_dict(), meta={"NUM_STEPS_CURRENT_ROUND": steps})
-        return output_model
-
-    # (2.4) decorates with flare.evaluate and load model from the first argument
-    @flare.evaluate
-    def fl_evaluate(input_model=None, device="cpu"):
-        return evaluate(input_weights=input_model.params)
-
     # (1.2) wraps evaluate logic into a method
     def evaluate(input_weights, device="cpu"):
         net.load_state_dict(input_weights)
@@ -120,9 +97,6 @@ def main():
         # (1.3) return evaluation metrics
         return 100 * correct // total
 
-    # (2.6) call fl_evaluate method before training
-    #       to evaluate on the received/aggregated model
-    fl_evaluate(device=DEVICE)
     # (1.4) call train method
     train(total_epochs=2, lr=0.001, device=DEVICE)
     # (1.5) call evaluate method

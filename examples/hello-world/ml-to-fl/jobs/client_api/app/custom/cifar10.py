@@ -25,7 +25,7 @@ import nvflare.client as flare
 # (optional) set a fix place so we don't need to download everytime
 DATASET_PATH = "/tmp/nvflare/data"
 # (optional) We change to use GPU to speed things up.
-# if you want to use CPU, change DEVICE=“cpu”
+# if you want to use CPU, change DEVICE="cpu"
 DEVICE = "cuda:0"
 
 
@@ -35,10 +35,10 @@ def main():
     batch_size = 4
 
     trainset = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=True, download=True, transform=transform)
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=1)
+    trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=2)
 
     testset = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=False, download=True, transform=transform)
-    testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=1)
+    testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=2)
 
     net = Net()
 
@@ -55,8 +55,7 @@ def main():
 
     # (optional) use GPU to speed things up
     net.to(DEVICE)
-    # (optional) calculate total steps
-    steps = 2 * len(trainloader)
+
     for epoch in range(2):  # loop over the dataset multiple times
 
         running_loss = 0.0
@@ -85,41 +84,29 @@ def main():
     PATH = "./cifar_net.pth"
     torch.save(net.state_dict(), PATH)
 
-    # (2.0) wraps evaluation logic into a method to re-use for
-    #       evaluation on both trained and received model
-    def evaluate(input_weights):
-        net = Net()
-        net.load_state_dict(input_weights)
-        # (optional) use GPU to speed things up
-        net.to(DEVICE)
+    net = Net()
+    net.load_state_dict(torch.load(PATH))
+    # (optional) use GPU to speed things up
+    net.to(DEVICE)
 
-        correct = 0
-        total = 0
-        # since we're not training, we don't need to calculate the gradients for our outputs
-        with torch.no_grad():
-            for data in testloader:
-                # (optional) use GPU to speed things up
-                images, labels = data[0].to(DEVICE), data[1].to(DEVICE)
-                # calculate outputs by running images through the network
-                outputs = net(images)
-                # the class with the highest energy is what we choose as prediction
-                _, predicted = torch.max(outputs.data, 1)
-                total += labels.size(0)
-                correct += (predicted == labels).sum().item()
+    correct = 0
+    total = 0
+    # since we're not training, we don't need to calculate the gradients for our outputs
+    with torch.no_grad():
+        for data in testloader:
+            # (optional) use GPU to speed things up
+            images, labels = data[0].to(DEVICE), data[1].to(DEVICE)
+            # calculate outputs by running images through the network
+            outputs = net(images)
+            # the class with the highest energy is what we choose as prediction
+            _, predicted = torch.max(outputs.data, 1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
 
-        print(f"Accuracy of the network on the 10000 test images: {100 * correct // total} %")
-        return 100 * correct // total
+    print(f"Accuracy of the network on the 10000 test images: {100 * correct // total} %")
 
-    # (2.1) evaluation on local trained model
-    local_accuracy = evaluate(torch.load(PATH))
-    # (2.2) evaluate on received model
-    accuracy = evaluate(input_model.params)
-    # (2.3) construct trained FL model
-    output_model = flare.FLModel(
-        params=net.cpu().state_dict(),
-        metrics={"accuracy": accuracy},
-        meta={"NUM_STEPS_CURRENT_ROUND": steps},
-    )
+    # (1.4) construct trained FL model
+    output_model = flare.FLModel(params=net.cpu().state_dict())
     # (1.5) send model back to NVFlare
     flare.send(output_model)
 

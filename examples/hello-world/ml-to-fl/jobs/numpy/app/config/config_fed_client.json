@@ -5,10 +5,9 @@
     {
       "tasks": ["train"],
       "executor": {
-        "name": "PTFilePipeLauncherExecutor",
+        "name": "FilePipeLauncherExecutor",
         "args": {
-          "launcher_id": "launcher",
-          "heartbeat_timeout": 60
+          "launcher_id": "launcher"
         }
       }
     }
@@ -22,7 +21,7 @@
       "id": "launcher",
       "name": "SubprocessLauncher",
       "args": {
-        "script": "python custom/cifar10.py"
+        "script": "python custom/train.py --epochs 1"
       }
     }
   ]

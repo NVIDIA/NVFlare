@@ -1,5 +1,5 @@
 {
-  "name": "subprocess with file pipe with pytorch",
+  "name": "ML2FL Client API with model select",
   "resource_spec": {},
   "min_clients" : 2,
   "deploy_map": {

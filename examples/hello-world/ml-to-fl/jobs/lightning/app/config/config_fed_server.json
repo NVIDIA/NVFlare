@@ -8,15 +8,6 @@
   "task_result_filters": [],
   "components": [
     {
-      "id": "persistor",
-      "name": "PTFileModelPersistor",
-      "args": {
-        "model": {
-          "path": "net.Net"
-        }
-      }
-    },
-    {
       "id": "shareable_generator",
       "path": "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator",
       "args": {}
@@ -32,7 +23,7 @@
       "id": "model_selector",
       "name": "IntimeModelSelector",
       "args": {
-        "key_metric": "accuracy"
+        "key_metric": "val_acc_epoch"
       }
     }
   ],
@@ -42,11 +33,10 @@
         "name": "ScatterAndGather",
         "args": {
             "min_clients" : 2,
-            "num_rounds" : 2,
+            "num_rounds" : 5,
             "start_round": 0,
             "wait_time_after_min_received": 0,
             "aggregator_id": "aggregator",
-            "persistor_id": "persistor",
             "shareable_generator_id": "shareable_generator",
             "train_task_name": "train",
             "train_timeout": 0
