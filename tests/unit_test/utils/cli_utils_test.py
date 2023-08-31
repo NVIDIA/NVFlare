@@ -35,37 +35,28 @@ class TestCLIUtils:
             Path.home() / ".nvflare/config.conf"
         )
 
-    # this test pass locally, but somehow failed in Jenkins, remove it for now.
-
-    # def test_find_startup_kit_location(self):
-    #     with patch("nvflare..utils.cli_utils.load_config") as mock2:
-    #         conf = CF.parse_string(
-    #             """
-    #             startup_kit {
-    #                 path = "/tmp/nvflare/poc/example_project/prod_00"
-    #             }
-    #         """
-    #         )
-    #         mock2.return_value = conf
-    #         assert "/tmp/nvflare/poc/example_project/prod_00" == find_startup_kit_location()
-
     def test_create_startup_kit_config(self):
         with patch("nvflare.utils.cli_utils.check_startup_dir", side_effect=None) as mock:
             mock.return_value = ""
+            with patch("os.path.isdir", side_effect=None) as mock1:
+                mock1.return_value = True
+                prev_conf = CF.parse_string(
+                    """
+                        poc_workspace {
+                            path = "/tmp/nvflare/poc"
+                        }
+                    """
+                )
+                config = create_startup_kit_config(
+                    nvflare_config=prev_conf, startup_kit_dir="/tmp/nvflare/poc/example_project/prod_00"
+                )
 
-            prev_conf = CF.parse_string(
-                """
-                    poc_workspace {
-                        path = "/tmp/nvflare/poc"
-                    }
-                """
-            )
-            config = create_startup_kit_config(
-                nvflare_config=prev_conf, startup_kit_dir="/tmp/nvflare/poc/example_project/prod_00"
-            )
+                assert "/tmp/nvflare/poc" == config.get("poc_workspace.path")
+                assert "/tmp/nvflare/poc/example_project/prod_00" == config.get("startup_kit.path")
 
-            assert "/tmp/nvflare/poc" == config.get("poc_workspace.path")
-            assert "/tmp/nvflare/poc/example_project/prod_00" == config.get("startup_kit.path")
+                config = create_startup_kit_config(nvflare_config=prev_conf, startup_kit_dir="")
+
+                assert config.get("startup_kit.path", None) is None
 
     @pytest.mark.parametrize(
         "inputs, result", [(([], "a"), ["a"]), ((["a"], "a"), ["a"]), ((["a", "b"], "b"), ["a", "b"])]
