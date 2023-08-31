@@ -19,7 +19,9 @@ from nvflare.fuel.flare_api.api_spec import JobNotFound, NoConnection
 from nvflare.fuel.flare_api.flare_api import Session
 
 
-def shutdown_system(prod_dir: str, username: str = "admin", secure_mode: bool = True, timeout_in_sec: int = 30):
+def shutdown_system(
+    prod_dir: str, username: str = "admin@nvidia.com", secure_mode: bool = True, timeout_in_sec: int = 30
+):
     admin_user_dir = os.path.join(prod_dir, username)
     print("connect to nvflare server")
     sess = None
@@ -73,7 +75,6 @@ def wait_for_system_shutdown(sess: Session, timeout_in_sec: int = 30):
     status = None
     while (status is None or status == "started") and duration < timeout_in_sec:
         try:
-            print("trying to connect to NVFLARE server")
             sys_info = sess.get_system_info()
             status = sys_info.server_info.status
             curr = time.time()
@@ -81,7 +82,7 @@ def wait_for_system_shutdown(sess: Session, timeout_in_sec: int = 30):
             if cnt % 25 == 0:
                 print("waiting system to shutdown")
             cnt += 1
-            time.sleep(0.1)
+            time.sleep(0.2)
         except Exception:
             # Server is already shutdown
             return
