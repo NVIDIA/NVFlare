@@ -12,7 +12,7 @@
       "name": "PTFileModelPersistor",
       "args": {
         "model": {
-          "path": "graphsage.GraphSAGE",
+          "path": "torch_geometric.nn.GraphSAGE",
           "args": {
             "in_channels": 50,
             "hidden_channels": 64,
@@ -39,7 +39,7 @@
       "id": "model_selector",
       "name": "IntimeModelSelector",
       "args": {
-        "key_metric": "accuracy"
+        "key_metric": "test_f1"
       }
     }
   ],
