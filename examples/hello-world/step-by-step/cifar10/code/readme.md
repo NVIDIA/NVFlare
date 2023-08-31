@@ -1,5 +1,5 @@
 
-# pytorch example with SAG workflow
+# SAG workflow example with pytorch 
 
 ## Code example
 
