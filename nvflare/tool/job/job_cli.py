@@ -21,7 +21,6 @@ from typing import List, Optional, Tuple
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree
 
-from nvflare.apis.job_def import JobMetaKey
 from nvflare.fuel.flare_api.flare_api import new_secure_session
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
@@ -147,7 +146,6 @@ def show_variables(cmd_args):
 
 
 def check_template_exists(target_template_name, template_index_conf):
-
     targets = [os.path.basename(key) for key in template_index_conf.get("templates").keys()]
     found = target_template_name in targets
 
@@ -198,18 +196,19 @@ def display_template_variables(job_folder, variable_values):
 
 def list_templates(cmd_args):
     job_template_dir = find_job_template_location(cmd_args.job_template_dir)
+    job_template_dir = os.path.abspath(job_template_dir)
     template_index_conf = build_job_template_indices(job_template_dir)
     display_available_templates(template_index_conf)
 
-    if cmd_args.job_template_dir:
-        update_job_template_dir(cmd_args.job_template_dir)
+    if job_template_dir:
+        update_job_template_dir(job_template_dir)
 
 
 def update_job_template_dir(job_template_dir: str):
     hidden_nvflare_dir = get_hidden_nvflare_dir()
     file_path = os.path.join(hidden_nvflare_dir, CONFIG_CONF)
     config = CF.parse_file(file_path)
-    config.put(JOB_TEMPLATE, job_template_dir)
+    config.put(f"{JOB_TEMPLATE}.path", job_template_dir)
     save_config(config, file_path)
 
 
@@ -428,10 +427,15 @@ def define_create_job_parser(job_subparser):
 # ====================================================================
 def prepare_job_config(cmd_args, tmp_job_dir: Optional[str] = None):
     update_client_app_script(cmd_args)
-    merged_conf = merge_configs_from_cli(cmd_args)
+    merged_conf, config_modified = merge_configs_from_cli(cmd_args)
+    need_save_config = config_modified is True or tmp_job_dir is not None
+
     if tmp_job_dir is None:
         tmp_job_dir = cmd_args.job_folder
-    save_merged_configs(merged_conf, tmp_job_dir)
+
+    if need_save_config:
+        save_merged_configs(merged_conf, tmp_job_dir)
+
     variable_values = filter_indices(merged_conf)
 
     return variable_values
@@ -439,12 +443,19 @@ def prepare_job_config(cmd_args, tmp_job_dir: Optional[str] = None):
 
 def update_client_app_script(cmd_args):
     if cmd_args.app_config:
+        print(cmd_args.app_config)
         client_config, config_path = _update_client_app_config_script(cmd_args.job_folder, cmd_args.app_config)
         save_config(client_config, config_path)
 
 
-def _update_client_app_config_script(job_folder, app_config: str) -> Tuple[ConfigTree, str]:
-    config_args = " ".join([f"--{k}" for k in app_config])
+def _update_client_app_config_script(job_folder, app_configs: List[str]) -> Tuple[ConfigTree, str]:
+    xs = []
+    for cli_kv in app_configs:
+        tokens = cli_kv.split("=")
+        k, v = tokens[0], tokens[1]
+        xs.append((k, v))
+
+    config_args = " ".join([f"--{k} {v}" for k, v in xs])
     config_dir = get_config_dir(job_folder)
     config = ConfigFactory.load_config(os.path.join(config_dir, "config_fed_client.xxx"))
     if config.format == ConfigFormat.JSON or config.format == ConfigFormat.OMEGACONF:
@@ -490,7 +501,6 @@ def prepare_meta_config(cmd_args):
             break
 
     # Use existing meta.conf if user already defined it.
-    folder_name_key = JobMetaKey.JOB_FOLDER_NAME.value
     if not dst_path:
         dst_config = load_src_config_template("meta.conf")
         dst_config.put("name", app_name)
@@ -498,7 +508,6 @@ def prepare_meta_config(cmd_args):
     else:
         dst_config = CF.from_dict(ConfigFactory.load_config(dst_path).to_dict())
 
-    dst_config.put(folder_name_key, os.path.basename(job_folder))
     save_config(dst_config, dst_path)
 
     # clean up

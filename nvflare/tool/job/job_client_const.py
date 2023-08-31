@@ -18,7 +18,7 @@ JOB_INFO_CONTROLLER_TYPE_KEY = "controller_type"
 JOB_INFO_CONTROLLER_TYPE = "Controller Type"
 JOB_INFO_CLIENT_TYPE_KEY = "client_category"
 JOB_INFO_CLIENT_TYPE = "Client Category"
-JOB_TEMPLATES = "templates"
+JOB_TEMPLATES = "job_templates"
 JOB_TEMPLATE = "job_template"
 
 JOB_TEMPLATE_CONF = "job_templates.conf"
