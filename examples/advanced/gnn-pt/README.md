@@ -14,7 +14,7 @@ GNNs excel in learning, modeling, and leveraging complex relationships within gr
 Here we give an example of classifying protein roles based on their cellular functions from gene ontology with unsupervised [GraphSAGE](https://arxiv.org/pdf/1706.02216.pdf). The dataset we are using is 
 [protein-protein interaction]([http://snap.stanford.edu/graphsage/#code]) graphs, where each graph represents a specific human tissue. 
 
-We are adopting the example from Pytorch Geometrics (PyG), which is  a library built upon PyTorch to easily write and train Graph Neural Networks (GNNs) for a wide range of applications related to structured data.
+We are adopting the example from [Pytorch Geometrics](https://pytorch-geometric.readthedocs.io/en/latest/), which is  a library built upon PyTorch to easily write and train Graph Neural Networks (GNNs) for a wide range of applications related to structured data.
 > **_NOTE:_** 
 You can follow the https://github.com/pyg-team/pytorch_geometric/blob/master/examples/graph_sage_unsup_ppi.py for GraphSAGE code.
 
