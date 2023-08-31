@@ -21,6 +21,7 @@ from pyhocon import ConfigTree, HOCONConverter
 
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel_opt.utils.pyhocon_loader import PyhoconConfig
+from nvflare.tool.job.job_client_const import JOB_TEMPLATES
 
 
 def get_home_dir() -> Path:
@@ -84,18 +85,24 @@ def create_startup_kit_config(nvflare_config: ConfigTree, startup_kit_dir: Optio
     Returns:
         ConfigTree: The merged configuration tree.
     """
-    startup_kit_dir = get_startup_kit_dir(startup_kit_dir)
-    conf_str = f"""
-        startup_kit {{
-            path = {startup_kit_dir}
-        }}
-    """
-    conf: ConfigTree = CF.parse_string(conf_str)
+    old_startup_kit_dir = nvflare_config.get_string("startup_kit", None)
+    if old_startup_kit_dir is None and (startup_kit_dir is not None and not os.path.isdir(startup_kit_dir)):
+        raise ValueError(f"invalid startup kit location '{startup_kit_dir}'")
+    if startup_kit_dir:
+        startup_kit_dir = get_startup_kit_dir(startup_kit_dir)
+        conf_str = f"""
+            startup_kit {{
+                path = {startup_kit_dir}
+            }}
+        """
+        conf: ConfigTree = CF.parse_string(conf_str)
 
-    return conf.with_fallback(nvflare_config)
+        return conf.with_fallback(nvflare_config)
+    else:
+        return nvflare_config
 
 
-def create_poc_workspace(nvflare_config: ConfigTree, poc_workspace_dir: Optional[str] = None) -> ConfigTree:
+def create_poc_workspace_config(nvflare_config: ConfigTree, poc_workspace_dir: Optional[str] = None) -> ConfigTree:
     """
     Args:
         poc_workspace_dir: specified poc_workspace_dir
@@ -117,13 +124,34 @@ def create_poc_workspace(nvflare_config: ConfigTree, poc_workspace_dir: Optional
     return conf.with_fallback(nvflare_config)
 
 
+def create_job_template_config(nvflare_config: ConfigTree, job_template_dir: Optional[str] = None) -> ConfigTree:
+    """
+    Args:
+        job_template_dir: specified job template directory
+        nvflare_config (ConfigTree): The existing nvflare configuration.
+
+    Returns:
+        ConfigTree: The merged configuration tree.
+    """
+    if job_template_dir is None:
+        return nvflare_config
+
+    conf_str = f"""
+        job_template {{
+            path = {job_template_dir}
+        }}
+    """
+    conf: ConfigTree = CF.parse_string(conf_str)
+
+    return conf.with_fallback(nvflare_config)
+
+
 def check_dir(dir_path: str):
     if not dir_path or not os.path.isdir(dir_path):
         raise ValueError(f"directory {dir_path} doesn't exists")
 
 
 def get_startup_kit_dir(startup_kit_dir: Optional[str] = None) -> str:
-
     if not startup_kit_dir:
         # load from config file:
         startup_kit_dir = find_startup_kit_location()
@@ -149,27 +177,26 @@ def check_startup_dir(startup_kit_dir):
 def find_job_template_location(job_template_dir: Optional[str] = None):
     def check_job_template_dir(job_temp_dir: str):
         if job_temp_dir:
-            if os.path.isdir(job_temp_dir):
-                return job_temp_dir
-            else:
+            if not os.path.isdir(job_temp_dir):
                 raise ValueError(f"Invalid job template directory {job_temp_dir}")
 
-    template_dir = check_job_template_dir(job_template_dir)
-    if template_dir:
-        return template_dir
+    if job_template_dir is None:
+        nvflare_home = os.environ.get("NVFLARE_HOME", None)
+        if nvflare_home:
+            job_template_dir = os.path.join(nvflare_home, JOB_TEMPLATES)
 
-    nvflare_config = load_hidden_config()
-    job_template_dir = nvflare_config.get_string("job_template.path", None) if nvflare_config else None
-    job_template_dir = check_job_template_dir(job_template_dir)
+    if job_template_dir is None:
+        nvflare_config = load_hidden_config()
+        job_template_dir = nvflare_config.get_string("job_template.path", None) if nvflare_config else None
 
-    nvflare_home = os.environ.get("NVFLARE_HOME", None)
-    if nvflare_home:
-        job_template_dir = os.path.join(nvflare_home, "integration", "job_templates")
-
-    job_template_dir = check_job_template_dir(job_template_dir)
+    if job_template_dir:
+        check_job_template_dir(job_template_dir)
 
     if not job_template_dir:
-        raise ValueError("required job_template directory is not specified. please check ~/.nvflare/config.conf")
+        raise ValueError(
+            "Required job_template directory is not specified. "
+            "Please check ~/.nvflare/config.conf or set env variable NVFLARE_HOME "
+        )
 
     return job_template_dir
 
