@@ -82,6 +82,7 @@ class IntimeModelSelector(Widget):
             self.log_exception(
                 fl_ctx, f"shareable data is not a valid DXO. Received Exception: {secure_format_exception(e)}"
             )
+            return False
 
         if dxo.data_kind not in (DataKind.WEIGHT_DIFF, DataKind.WEIGHTS, DataKind.COLLECTION):
             self.log_debug(fl_ctx, "cannot handle {}".format(dxo.data_kind))
