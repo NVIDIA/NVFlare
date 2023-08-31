@@ -16,6 +16,7 @@ import numpy as np
 
 from nvflare.apis.dxo import DataKind, MetaKey, from_shareable
 from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.app_constant import AppConstants
@@ -75,7 +76,7 @@ class IntimeModelSelector(Widget):
 
     def _before_accept(self, fl_ctx: FLContext):
         peer_ctx = fl_ctx.get_peer_context()
-        shareable: Shareable = fl_ctx.get_prop(AppConstants.TRAINING_RESULT)
+        shareable: Shareable = peer_ctx.get_prop(FLContextKey.SHAREABLE)
         try:
             dxo = from_shareable(shareable)
         except Exception as e:
