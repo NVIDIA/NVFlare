@@ -28,14 +28,7 @@ from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
-from nvflare.app_common.ccwf.common import (
-    Constant,
-    ResultType,
-    StatusReport,
-    learnable_to_shareable,
-    make_task_name,
-    topic_for_end_workflow,
-)
+from nvflare.app_common.ccwf.common import Constant, ResultType, StatusReport, make_task_name, topic_for_end_workflow
 from nvflare.fuel.utils.validation_utils import check_positive_number, check_str
 from nvflare.security.logging import secure_format_traceback
 
@@ -172,15 +165,14 @@ class ClientSideController(Executor, ClientController):
                 )
                 return
 
-            if self.shareable_generator_id:
-                self.shareable_generator = engine.get_component(self.shareable_generator_id)
-                if not isinstance(self.shareable_generator, ShareableGenerator):
-                    self.system_panic(
-                        f"Shareable generator {self.shareable_generator_id} must be a Shareable Generator instance, "
-                        f"but got {type(self.shareable_generator)}",
-                        fl_ctx,
-                    )
-                    return
+            self.shareable_generator = engine.get_component(self.shareable_generator_id)
+            if not isinstance(self.shareable_generator, ShareableGenerator):
+                self.system_panic(
+                    f"Shareable generator {self.shareable_generator_id} must be a Shareable Generator instance, "
+                    f"but got {type(self.shareable_generator)}",
+                    fl_ctx,
+                )
+                return
 
             self.initialize(fl_ctx)
             self.log_info(fl_ctx, "Started learn thread")
@@ -367,12 +359,7 @@ class ClientSideController(Executor, ClientController):
 
             learnable = self.persistor.load(fl_ctx)
             fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, learnable, private=True, sticky=True)
-
-            if self.shareable_generator:
-                initial_model = self.shareable_generator.learnable_to_shareable(learnable, fl_ctx)
-            else:
-                initial_model = learnable_to_shareable(learnable)
-
+            initial_model = self.shareable_generator.learnable_to_shareable(learnable, fl_ctx)
             return self.start_workflow(initial_model, fl_ctx, abort_signal)
 
         elif task_name == self.do_learn_task_name:

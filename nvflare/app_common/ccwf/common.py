@@ -165,19 +165,6 @@ def status_report_from_dict(d: dict) -> StatusReport:
     )
 
 
-def learnable_to_shareable(learnable: Learnable) -> Shareable:
-    s = Shareable()
-    s.update(learnable)
-    return s
-
-
-def shareable_to_learnable(shareable: Shareable) -> Learnable:
-    learnable = Learnable()
-    learnable.update(shareable)
-    learnable.pop(ReservedHeaderKey.HEADERS, None)
-    return learnable
-
-
 def rotate_to_front(item, items: list):
     num_items = len(items)
     idx = items.index(item)
