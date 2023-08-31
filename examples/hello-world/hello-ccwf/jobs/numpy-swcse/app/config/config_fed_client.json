@@ -11,7 +11,7 @@
       }
     },
     {
-      "tasks": ["swarm_config", "swarm_start"],
+      "tasks": ["swarm_*"],
       "executor": {
         "path": "nvflare.app_common.ccwf.SwarmClientController",
         "args": {
@@ -26,7 +26,7 @@
       }
     },
     {
-      "tasks": ["cse_config", "cse_start", "cse_eval"],
+      "tasks": ["cse_*"],
       "executor": {
         "path": "nvflare.app_common.ccwf.CrossSiteEvalClientController",
         "args": {
@@ -54,7 +54,7 @@
       "id": "aggregator",
       "path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
       "args": {
-        "expected_data_kind": "WEIGHTS"
+        "expected_data_kind": "WEIGHT_DIFF"
       }
     },
     {

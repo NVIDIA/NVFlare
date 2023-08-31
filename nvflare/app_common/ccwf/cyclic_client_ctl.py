@@ -25,20 +25,18 @@ from nvflare.app_common.ccwf.common import Constant, ResultType, RROrder, rotate
 class CyclicClientController(ClientSideController):
     def __init__(
         self,
-        start_task_name=Constant.TASK_NAME_CYCLIC_START,
-        configure_task_name=Constant.TASK_NAME_CYCLIC_CONFIGURE,
+        task_name_prefix=Constant.TN_PREFIX_CYCLIC,
         learn_task_name=AppConstants.TASK_TRAIN,
         persistor_id=AppConstants.DEFAULT_PERSISTOR_ID,
         shareable_generator_id=AppConstants.DEFAULT_SHAREABLE_GENERATOR_ID,
-        max_status_report_interval: float = 600.0,
-        learn_task_check_interval: float = 0.5,
-        learn_task_abort_timeout: float = 5.0,
-        learn_task_send_timeout: float = 10.0,
-        final_result_send_timeout: float = 10.0,
+        max_status_report_interval=Constant.MAX_STATUS_REPORT_INTERVAL,
+        learn_task_check_interval=Constant.LEARN_TASK_CHECK_INTERVAL,
+        learn_task_abort_timeout=Constant.LEARN_TASK_ABORT_TIMEOUT,
+        learn_task_send_timeout=Constant.LEARN_TASK_SEND_TIMEOUT,
+        final_result_send_timeout=Constant.FINAL_RESULT_SEND_TIMEOUT,
     ):
         super().__init__(
-            start_task_name=start_task_name,
-            configure_task_name=configure_task_name,
+            task_name_prefix=task_name_prefix,
             learn_task_name=learn_task_name,
             persistor_id=persistor_id,
             shareable_generator_id=shareable_generator_id,

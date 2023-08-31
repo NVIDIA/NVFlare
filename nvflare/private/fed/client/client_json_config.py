@@ -24,7 +24,7 @@ from nvflare.fuel.utils.json_scanner import Node
 from nvflare.private.fed_json_config import FedJsonConfigurator
 from nvflare.private.json_configer import ConfigContext, ConfigError
 
-from .client_runner import ClientRunnerConfig
+from .client_runner import ClientRunnerConfig, TaskRouter
 
 
 class _ExecutorDef(object):
@@ -126,15 +126,12 @@ class ClientJsonConfigurator(FedJsonConfigurator):
         if len(self.executors) <= 0:
             raise ConfigError("executors are not specified")
 
-        task_table = {}
+        task_router = TaskRouter()
         for e in self.executors:
-            for t in e.tasks:
-                if t in task_table:
-                    raise ConfigError('Multiple executors defined for task "{}"'.format(t))
-                task_table[t] = e.executor
+            task_router.add_executor(e.tasks, e.executor)
 
         self.runner_config = ClientRunnerConfig(
-            task_table=task_table,
+            task_router=task_router,
             task_data_filters=self.data_filter_table,
             task_result_filters=self.result_filter_table,
             components=self.components,

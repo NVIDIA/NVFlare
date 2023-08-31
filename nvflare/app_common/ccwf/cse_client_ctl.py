@@ -13,6 +13,7 @@
 # limitations under the License.
 import threading
 
+from nvflare.apis.controller_spec import Task
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
@@ -22,30 +23,33 @@ from nvflare.app_common.abstract.model import model_learnable_to_dxo
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.app_constant import AppConstants, ValidateType
 from nvflare.app_common.ccwf.client_ctl import ClientSideController
-from nvflare.app_common.ccwf.common import Constant, ModelType, topic_for_end_workflow
+from nvflare.app_common.ccwf.common import Constant, ModelType, make_task_name
+from nvflare.fuel.utils.validation_utils import check_positive_number, check_str
 from nvflare.security.logging import secure_format_traceback
 
 
 class CrossSiteEvalClientController(ClientSideController):
     def __init__(
         self,
-        start_task_name=Constant.TASK_NAME_CSE_START,
-        configure_task_name=Constant.TASK_NAME_CSE_CONFIGURE,
-        eval_task_name=Constant.TASK_NAME_CSE_EVAL,
+        task_name_prefix=Constant.TN_PREFIX_CROSS_SITE_EVAL,
         submit_model_task_name=AppConstants.TASK_SUBMIT_MODEL,
         validation_task_name=AppConstants.TASK_VALIDATION,
-        persistor_id="persistor",
-        max_status_report_interval: float = 600.0,
-        get_model_timeout: float = 10.0,
+        persistor_id=AppConstants.DEFAULT_PERSISTOR_ID,
+        max_status_report_interval=Constant.MAX_STATUS_REPORT_INTERVAL,
+        get_model_timeout=Constant.GET_MODEL_TIMEOUT,
     ):
+        check_positive_number("get_model_timeout", get_model_timeout)
+        check_str("submit_model_task_name", submit_model_task_name)
+        check_str("validation_task_name", validation_task_name)
+
         super().__init__(
-            start_task_name=start_task_name,
-            configure_task_name=configure_task_name,
+            task_name_prefix=task_name_prefix,
             persistor_id=persistor_id,
             max_status_report_interval=max_status_report_interval,
         )
-        self.eval_task_name = eval_task_name
-        self.submit_model_task_name = submit_model_task_name
+        self.eval_task_name = make_task_name(task_name_prefix, Constant.BASENAME_EVAL)
+        self.ask_for_model_task_name = make_task_name(task_name_prefix, Constant.BASENAME_ASK_FOR_MODEL)
+        self.submit_model_task_name = submit_model_task_name  # this is for the learner executor
         self.validation_task_name = validation_task_name
         self.my_local_model = None
         self.global_model_inventory = None
@@ -71,13 +75,13 @@ class CrossSiteEvalClientController(ClientSideController):
             self.me = fl_ctx.get_identity_name()
 
             if self.submit_model_task_name:
-                self.submit_model_executor = runner.task_table.get(self.submit_model_task_name)
+                self.submit_model_executor = runner.find_executor(self.submit_model_task_name)
                 if not self.submit_model_executor:
                     self.system_panic(f"no executor for task {self.submit_model_task_name}", fl_ctx)
                     return
 
             if self.validation_task_name:
-                self.validate_executor = runner.task_table.get(self.validation_task_name)
+                self.validate_executor = runner.find_executor(self.validation_task_name)
                 if not self.validate_executor:
                     self.system_panic(f"no executor for task {self.validation_task_name}", fl_ctx)
                     return
@@ -96,42 +100,19 @@ class CrossSiteEvalClientController(ClientSideController):
             super().handle_event(event_type, fl_ctx)
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        if task_name == self.configure_task_name:
-            self.config = shareable[Constant.CONFIG]
-            my_wf_id = self.get_config_prop(FLContextKey.WORKFLOW)
-            if not my_wf_id:
-                self.log_error(fl_ctx, "missing workflow id in configuration!")
-                return make_reply(ReturnCode.BAD_REQUEST_DATA)
-            self.log_info(fl_ctx, f"got my workflow id {my_wf_id}")
-            self.workflow_id = my_wf_id
-
-            self.engine.register_aux_message_handler(
-                topic=topic_for_end_workflow(my_wf_id),
-                message_handle_func=self._process_end_workflow,
-            )
-
-            self.engine.register_aux_message_handler(
-                topic=self.topic_for_my_workflow(Constant.TOPIC_GET_MODEL),
-                message_handle_func=self._process_get_model_request,
-            )
-
-            result = self.process_config(fl_ctx)
-            if result:
-                return result
-            else:
-                return make_reply(ReturnCode.OK)
-
-        elif task_name == self.start_task_name:
+        if task_name == self.start_task_name:
             self.is_starting_client = True
             return self.start_workflow(shareable, fl_ctx, abort_signal)
 
         elif task_name == self.eval_task_name:
-            self.is_starting_client = True
+            # server assigned task
             return self.do_eval(shareable, fl_ctx, abort_signal)
 
-        else:
-            self.log_error(fl_ctx, f"Could not handle task: {task_name}")
-            return make_reply(ReturnCode.TASK_UNKNOWN)
+        elif task_name == self.ask_for_model_task_name:
+            # client-assigned task
+            return self._process_get_model_request(shareable, fl_ctx)
+
+        return super().execute(task_name, shareable, fl_ctx, abort_signal)
 
     def process_config(self, fl_ctx: FLContext):
         eval_local = self.get_config_prop(Constant.EVAL_LOCAL)
@@ -181,11 +162,17 @@ class CrossSiteEvalClientController(ClientSideController):
         self.update_status(action="eval:get_model", last_round=current_round)
 
         self.log_info(fl_ctx, f"asking client {model_owner} for model {model_type} {model_name}")
-        resp = self.engine.send_aux_request(
+
+        task = Task(
+            name=self.ask_for_model_task_name,
+            data=req,
+            timeout=int(self.get_model_timeout),
+        )
+
+        resp = self.broadcast_and_wait(
+            task=task,
             targets=[model_owner],
-            topic=self.topic_for_my_workflow(Constant.TOPIC_GET_MODEL),
-            request=req,
-            timeout=self.get_model_timeout,
+            min_responses=1,
             fl_ctx=fl_ctx,
         )
 
@@ -224,7 +211,7 @@ class CrossSiteEvalClientController(ClientSideController):
         result.set_header(AppConstants.CURRENT_ROUND, current_round)
         return result
 
-    def _process_get_model_request(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
+    def _process_get_model_request(self, request: Shareable, fl_ctx: FLContext) -> Shareable:
         with self.model_lock:
             return self._do_process_get_model_request(request, fl_ctx)
 

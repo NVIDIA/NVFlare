@@ -16,6 +16,7 @@ import random
 import threading
 import time
 
+from nvflare.apis.controller_spec import Task
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
@@ -27,7 +28,8 @@ from nvflare.app_common.abstract.learnable import Learnable
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.ccwf.client_ctl import ClientSideController
-from nvflare.app_common.ccwf.common import Constant, ResultType
+from nvflare.app_common.ccwf.common import Constant, ResultType, make_task_name
+from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number, check_str
 from nvflare.security.logging import secure_format_traceback
 
 
@@ -209,24 +211,30 @@ class Gatherer(FLComponent):
 class SwarmClientController(ClientSideController):
     def __init__(
         self,
-        start_task_name=Constant.TASK_NAME_SWARM_START,
-        configure_task_name=Constant.TASK_NAME_SWARM_CONFIGURE,
+        task_name_prefix=Constant.TN_PREFIX_SWARM,
         learn_task_name=AppConstants.TASK_TRAIN,
         persistor_id=AppConstants.DEFAULT_PERSISTOR_ID,
         shareable_generator_id=AppConstants.DEFAULT_SHAREABLE_GENERATOR_ID,
         aggregator_id=AppConstants.DEFAULT_AGGREGATOR_ID,
-        max_status_report_interval: float = 600.0,
-        learn_task_check_interval: float = 1.0,
-        learn_task_abort_timeout: float = 5.0,
-        learn_task_send_timeout: float = 30.0,
+        max_status_report_interval=Constant.MAX_STATUS_REPORT_INTERVAL,
+        learn_task_check_interval=Constant.LEARN_TASK_CHECK_INTERVAL,
+        learn_task_abort_timeout=Constant.LEARN_TASK_ABORT_TIMEOUT,
+        learn_task_send_timeout=Constant.LEARN_TASK_SEND_TIMEOUT,
         learn_task_timeout=None,
-        final_result_send_timeout: float = 10.0,
+        final_result_send_timeout=Constant.FINAL_RESULT_SEND_TIMEOUT,
         min_responses_required: int = 1,
         wait_time_after_min_resps_received: float = 10.0,
     ):
+        check_str("aggregator_id", aggregator_id)
+
+        if learn_task_timeout:
+            check_positive_number("learn_task_timeout", learn_task_timeout)
+
+        check_positive_int("min_responses_required", min_responses_required)
+        check_positive_number("wait_time_after_min_resps_received", wait_time_after_min_resps_received)
+
         super().__init__(
-            start_task_name=start_task_name,
-            configure_task_name=configure_task_name,
+            task_name_prefix=task_name_prefix,
             learn_task_name=learn_task_name,
             persistor_id=persistor_id,
             shareable_generator_id=shareable_generator_id,
@@ -237,6 +245,7 @@ class SwarmClientController(ClientSideController):
             final_result_send_timeout=final_result_send_timeout,
             allow_busy_task=True,
         )
+        self.rcv_learn_result_task_name = make_task_name(task_name_prefix, Constant.BASENAME_RCV_LEARN_RESULT)
         self.learn_task_timeout = learn_task_timeout
         self.min_responses_required = min_responses_required
         self.wait_time_after_min_resps_received = wait_time_after_min_resps_received
@@ -264,14 +273,14 @@ class SwarmClientController(ClientSideController):
         self.is_aggr = self.me in self.aggrs
 
         self.engine.register_aux_message_handler(
-            topic=self.topic_for_my_workflow(Constant.TOPIC_RESULT),
-            message_handle_func=self._process_learn_result,
-        )
-
-        self.engine.register_aux_message_handler(
             topic=self.topic_for_my_workflow(Constant.TOPIC_SHARE_RESULT),
             message_handle_func=self._process_share_result,
         )
+
+    def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+        if task_name == self.rcv_learn_result_task_name:
+            return self._process_learn_result(shareable, fl_ctx, abort_signal)
+        return super().execute(task_name, shareable, fl_ctx, abort_signal)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         super().handle_event(event_type, fl_ctx)
@@ -348,6 +357,7 @@ class SwarmClientController(ClientSideController):
                         self._end_gather(gatherer)
                     except:
                         self.logger.error(f"exception ending gatherer: {secure_format_traceback()}")
+                        self.update_status(action="aggregate", error=ReturnCode.EXECUTION_EXCEPTION)
             time.sleep(0.2)
 
     def _end_gather(self, gatherer: Gatherer):
@@ -438,7 +448,7 @@ class SwarmClientController(ClientSideController):
         self.log_info(fl_ctx, "distributing last result")
         self.broadcast_final_result(fl_ctx, ResultType.LAST, self.last_result, round_num=self.last_round)
 
-    def _process_learn_result(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
+    def _process_learn_result(self, request: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         try:
             peer_ctx = fl_ctx.get_peer_context()
             assert isinstance(peer_ctx, FLContext)
@@ -462,6 +472,9 @@ class SwarmClientController(ClientSideController):
                 # wait until the gatherer is set up.
                 self.log_info(fl_ctx, f"got result from {client_name} for round {current_round} before gatherer setup")
                 self.gatherer_waiter.wait(self.learn_task_abort_timeout)
+
+            if abort_signal.triggered:
+                return make_reply(ReturnCode.TASK_ABORTED)
 
             gatherer = self.gatherer
             if not gatherer:
@@ -552,13 +565,20 @@ class SwarmClientController(ClientSideController):
 
             # send the result to the aggr
             self.log_info(fl_ctx, f"sending training result to aggregation client {aggr}")
-            resp = self.engine.send_aux_request(
+
+            task = Task(
+                name=self.rcv_learn_result_task_name,
+                data=result,
+                timeout=int(self.learn_task_send_timeout),
+            )
+
+            resp = self.broadcast_and_wait(
+                task=task,
                 targets=[aggr],
-                topic=self.topic_for_my_workflow(Constant.TOPIC_RESULT),
-                request=result,
-                timeout=self.learn_task_send_timeout,
+                min_responses=1,
                 fl_ctx=fl_ctx,
             )
+
             reply = resp.get(aggr)
             if not reply:
                 self.log_error(fl_ctx, f"failed to receive reply from aggregation client: {aggr}")

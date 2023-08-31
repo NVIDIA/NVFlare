@@ -22,8 +22,21 @@ from nvflare.apis.impl.controller import ClientTask, Controller, Task
 from nvflare.apis.shareable import ReturnCode, Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.ccwf.common import Constant, StatusReport, status_report_from_dict, topic_for_end_workflow
-from nvflare.fuel.utils.validation_utils import DefaultPolicy, validate_candidate, validate_candidates
+from nvflare.app_common.ccwf.common import (
+    Constant,
+    StatusReport,
+    make_task_name,
+    status_report_from_dict,
+    topic_for_end_workflow,
+)
+from nvflare.fuel.utils.validation_utils import (
+    DefaultPolicy,
+    check_positive_int,
+    check_positive_number,
+    check_str,
+    validate_candidate,
+    validate_candidates,
+)
 from nvflare.security.logging import secure_format_traceback
 
 
@@ -41,10 +54,9 @@ class ServerSideController(Controller):
         self,
         num_rounds: int,
         start_round: int = 0,
-        configure_task_name="wf_config",
+        task_name_prefix: str = "wf",
         configure_task_timeout=Constant.CONFIG_TASK_TIMEOUT,
         end_workflow_timeout=Constant.END_WORKFLOW_TIMEOUT,
-        start_task_name="wf_start",
         start_task_timeout=Constant.START_TASK_TIMEOUT,
         task_check_period: float = Constant.TASK_CHECK_INTERVAL,
         job_status_check_interval: float = Constant.JOB_STATUS_CHECK_INTERVAL,
@@ -64,10 +76,9 @@ class ServerSideController(Controller):
         Args:
             num_rounds:
             start_round:
-            configure_task_name:
+            task_name_prefix:
             configure_task_timeout:
             end_workflow_timeout:
-            start_task_name:
             start_task_timeout:
             task_check_period:
             job_status_check_interval:
@@ -78,9 +89,10 @@ class ServerSideController(Controller):
             progress_timeout:
         """
         Controller.__init__(self, task_check_period)
-        self.configure_task_name = configure_task_name
+        self.task_name_prefix = task_name_prefix
+        self.configure_task_name = make_task_name(task_name_prefix, Constant.BASENAME_CONFIG)
         self.configure_task_timeout = configure_task_timeout
-        self.start_task_name = start_task_name
+        self.start_task_name = make_task_name(task_name_prefix, Constant.BASENAME_START)
         self.start_task_timeout = start_task_timeout
         self.end_workflow_timeout = end_workflow_timeout
         self.num_rounds = num_rounds
@@ -100,8 +112,13 @@ class ServerSideController(Controller):
         self.asked_to_stop = False
         self.workflow_id = None
 
-        if num_rounds <= 0:
-            raise ValueError(f"invalid num_rounds {num_rounds}: must > 0")
+        check_positive_int("num_rounds", num_rounds)
+        check_positive_int("configure_task_timeout", configure_task_timeout)
+        check_positive_int("end_workflow_timeout", end_workflow_timeout)
+        check_positive_number("job_status_check_interval", job_status_check_interval)
+        check_positive_number("max_status_report_interval", max_status_report_interval)
+        check_positive_number("progress_timeout", progress_timeout)
+        check_str("starting_client_policy", starting_client_policy)
 
         if participating_clients and len(participating_clients) < 2:
             raise ValueError(f"Not enough participating_clients: must > 1, but got {participating_clients}")
@@ -161,6 +178,7 @@ class ServerSideController(Controller):
         self.log_info(fl_ctx, f"Configuring clients {self.participating_clients} for workflow {self.workflow_id}")
 
         learn_config = {
+            Constant.TASK_NAME_PREFIX: self.task_name_prefix,
             Constant.CLIENTS: self.participating_clients,
             Constant.START_CLIENT: self.starting_client,
             Constant.RESULT_CLIENTS: self.result_clients,
@@ -194,7 +212,14 @@ class ServerSideController(Controller):
             abort_signal=abort_signal,
         )
 
-        self.log_info(fl_ctx, f"client preparation took {time.time()-start_time} seconds")
+        time_taken = time.time() - start_time
+        self.log_info(fl_ctx, f"client configuration took {time_taken} seconds")
+        if time_taken > 10.0:
+            self.system_panic(
+                f"too much time to configure clients",
+                fl_ctx,
+            )
+            return
 
         failed_clients = []
         for c, cs in self.client_statuses.items():

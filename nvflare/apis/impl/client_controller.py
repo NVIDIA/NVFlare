@@ -32,8 +32,8 @@ class ClientController(FLComponent, ControllerSpec):
         self,
     ) -> None:
         super().__init__()
-        self.task_data_filters = None
-        self.task_result_filters = None
+        self.task_data_filters = {}
+        self.task_result_filters = {}
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -44,7 +44,12 @@ class ClientController(FLComponent, ControllerSpec):
     def start_controller(self, fl_ctx: FLContext):
         client_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
         self.task_data_filters = client_runner.task_data_filters
+        if not self.task_data_filters:
+            self.task_data_filters = {}
+
         self.task_result_filters = client_runner.task_result_filters
+        if not self.task_result_filters:
+            self.task_result_filters = {}
 
     def stop_controller(self, fl_ctx: FLContext):
         pass

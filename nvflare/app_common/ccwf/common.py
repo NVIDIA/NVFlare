@@ -18,16 +18,19 @@ from nvflare.app_common.abstract.learnable import Learnable
 
 class Constant:
 
-    TASK_NAME_CYCLIC_CONFIGURE = "cyclic_config"
-    TASK_NAME_CYCLIC_START = "cyclic_start"
+    TN_PREFIX_CYCLIC = "cyclic"
+    TN_PREFIX_SWARM = "swarm"
+    TN_PREFIX_CROSS_SITE_EVAL = "cse"
 
-    TASK_NAME_SWARM_CONFIGURE = "swarm_config"
-    TASK_NAME_SWARM_START = "swarm_start"
+    BASENAME_CONFIG = "config"
+    BASENAME_START = "start"
+    BASENAME_LEARN = "learn"
+    BASENAME_EVAL = "eval"
+    BASENAME_RCV_LEARN_RESULT = "rcv_learn_result"
+    BASENAME_RCV_FINAL_RESULT = "rcv_final_result"
+    BASENAME_ASK_FOR_MODEL = "ask_for_model"
 
-    TASK_NAME_CSE_CONFIGURE = "cse_config"
-    TASK_NAME_CSE_START = "cse_start"
-    TASK_NAME_CSE_EVAL = "cse_eval"
-
+    TASK_NAME_PREFIX = "cwf.task_prefix"
     ERROR = "cwf.error"
     ORDER = "cwf.order"
     CLIENTS = "cwf.clients"
@@ -62,13 +65,8 @@ class Constant:
     EXECUTOR_INITIALIZED = "cwf.executor_initialized"
     EXECUTOR_FINALIZED = "cwf.executor_finalized"
 
-    TOPIC_LEARN = "cwf.learn"
-    TOPIC_RESULT = "cwf.result"
-    TOPIC_FINAL_RESULT = "cwf.final_result"
     TOPIC_SHARE_RESULT = "cwf.share_result"
     TOPIC_END_WORKFLOW = "cwf.end_wf"
-    TOPIC_EVAL = "cwf.eval"
-    TOPIC_GET_MODEL = "cwf.get_model"
 
     RC_NO_GLOBAL_MODELS = "cwf.no_global_models"
     RC_NO_LOCAL_MODEL = "cwf.no_local_model"
@@ -81,6 +79,13 @@ class Constant:
     JOB_STATUS_CHECK_INTERVAL = 2.0
     PER_CLIENT_STATUS_REPORT_TIMEOUT = 3600.0
     WORKFLOW_PROGRESS_TIMEOUT = 3600.0
+
+    MAX_STATUS_REPORT_INTERVAL = 600.0
+    LEARN_TASK_CHECK_INTERVAL = 1.0
+    LEARN_TASK_SEND_TIMEOUT = 10
+    LEARN_TASK_ABORT_TIMEOUT = 5.0
+    FINAL_RESULT_SEND_TIMEOUT = 10
+    GET_MODEL_TIMEOUT = 10
 
 
 class ModelType:
@@ -190,3 +195,7 @@ def rotate_to_front(item, items: list):
 
 def topic_for_end_workflow(wf_id):
     return f"{Constant.TOPIC_END_WORKFLOW}.{wf_id}"
+
+
+def make_task_name(prefix: str, base_name: str) -> str:
+    return f"{prefix}_{base_name}"

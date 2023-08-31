@@ -20,6 +20,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.impl.client_controller import ClientController, Task
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.learnable import Learnable
@@ -32,8 +33,10 @@ from nvflare.app_common.ccwf.common import (
     ResultType,
     StatusReport,
     learnable_to_shareable,
+    make_task_name,
     topic_for_end_workflow,
 )
+from nvflare.fuel.utils.validation_utils import check_positive_number, check_str
 from nvflare.security.logging import secure_format_traceback
 
 
@@ -45,27 +48,25 @@ class _LearnTask:
         self.abort_signal = Signal()
 
 
-class ClientSideController(Executor):
+class ClientSideController(Executor, ClientController):
     def __init__(
         self,
-        start_task_name: str,
-        configure_task_name: str,
+        task_name_prefix: str,
         learn_task_name=AppConstants.TASK_TRAIN,
-        persistor_id="persistor",
-        shareable_generator_id="shareable_generator",
-        max_status_report_interval: float = 600.0,
-        learn_task_check_interval: float = 1.0,
-        learn_task_send_timeout: float = 10.0,
-        learn_task_abort_timeout: float = 5.0,
-        final_result_send_timeout: float = 10.0,
+        persistor_id=AppConstants.DEFAULT_PERSISTOR_ID,
+        shareable_generator_id=AppConstants.DEFAULT_SHAREABLE_GENERATOR_ID,
+        max_status_report_interval=Constant.MAX_STATUS_REPORT_INTERVAL,
+        learn_task_check_interval=Constant.LEARN_TASK_CHECK_INTERVAL,
+        learn_task_send_timeout=Constant.LEARN_TASK_SEND_TIMEOUT,
+        learn_task_abort_timeout=Constant.LEARN_TASK_ABORT_TIMEOUT,
+        final_result_send_timeout=Constant.FINAL_RESULT_SEND_TIMEOUT,
         allow_busy_task: bool = False,
     ):
         """
         Constructor of a CWE object.
 
         Args:
-            start_task_name: task name for starting the workflow
-            configure_task_name: task name for getting workflow config properties
+            task_name_prefix: prefix of task names
             learn_task_name: name for the Learning Task (LT)
             max_status_report_interval: max interval between status reports to the server
             learn_task_check_interval: interval for checking incoming Learning Task (LT)
@@ -74,9 +75,24 @@ class ClientSideController(Executor):
             learn_task_abort_timeout: time to wait for the LT to become stopped after aborting it
             allow_busy_task:
         """
-        super().__init__()
-        self.start_task_name = start_task_name
-        self.configure_task_name = configure_task_name
+        check_str("task_name_prefix", task_name_prefix)
+        check_str("learn_task_name", learn_task_name)
+        check_str("persistor_id", persistor_id)
+        check_str("shareable_generator_id", shareable_generator_id)
+
+        check_positive_number("max_status_report_interval", max_status_report_interval)
+        check_positive_number("learn_task_check_interval", learn_task_check_interval)
+        check_positive_number("learn_task_send_timeout", learn_task_send_timeout)
+        check_positive_number("learn_task_abort_timeout", learn_task_abort_timeout)
+        check_positive_number("final_result_send_timeout", final_result_send_timeout)
+
+        Executor.__init__(self)
+        ClientController.__init__(self)
+        self.task_name_prefix = task_name_prefix
+        self.start_task_name = make_task_name(task_name_prefix, Constant.BASENAME_START)
+        self.configure_task_name = make_task_name(task_name_prefix, Constant.BASENAME_CONFIG)
+        self.do_learn_task_name = make_task_name(task_name_prefix, Constant.BASENAME_LEARN)
+        self.rcv_final_result_task_name = make_task_name(task_name_prefix, Constant.BASENAME_RCV_FINAL_RESULT)
         self.learn_task_name = learn_task_name
         self.max_status_report_interval = max_status_report_interval
         self.learn_task_abort_timeout = learn_task_abort_timeout
@@ -142,7 +158,7 @@ class ClientSideController(Executor):
                 return
 
             self.me = fl_ctx.get_identity_name()
-            self.learn_executor = runner.task_table.get(self.learn_task_name)
+            self.learn_executor = runner.find_executor(self.learn_task_name)
             if not self.learn_executor:
                 self.system_panic(f"no executor for task {self.learn_task_name}", fl_ctx)
                 return
@@ -294,11 +310,16 @@ class ClientSideController(Executor):
 
         self.update_status(action=f"broadcast_{result_type}_result")
 
-        resp = self.engine.send_aux_request(
+        task = Task(
+            name=self.rcv_final_result_task_name,
+            data=shareable,
+            timeout=int(self.final_result_send_timeout),
+        )
+
+        resp = self.broadcast_and_wait(
+            task=task,
             targets=targets,
-            topic=self.topic_for_my_workflow(Constant.TOPIC_FINAL_RESULT),
-            request=shareable,
-            timeout=self.final_result_send_timeout,
+            min_responses=len(targets),
             fl_ctx=fl_ctx,
         )
 
@@ -337,20 +358,9 @@ class ClientSideController(Executor):
                 message_handle_func=self._process_end_workflow,
             )
 
-            self.engine.register_aux_message_handler(
-                topic=self.topic_for_my_workflow(Constant.TOPIC_LEARN),
-                message_handle_func=self._process_learn_request,
-            )
-
-            self.engine.register_aux_message_handler(
-                topic=self.topic_for_my_workflow(Constant.TOPIC_FINAL_RESULT),
-                message_handle_func=self._process_final_result,
-            )
-
-            if reply:
-                return reply
-            else:
-                return make_reply(ReturnCode.OK)
+            if not reply:
+                reply = make_reply(ReturnCode.OK)
+            return reply
 
         elif task_name == self.start_task_name:
             self.is_starting_client = True
@@ -364,6 +374,12 @@ class ClientSideController(Executor):
                 initial_model = learnable_to_shareable(learnable)
 
             return self.start_workflow(initial_model, fl_ctx, abort_signal)
+
+        elif task_name == self.do_learn_task_name:
+            return self._process_learn_request(shareable, fl_ctx)
+
+        elif task_name == self.rcv_final_result_task_name:
+            return self._process_final_result(shareable, fl_ctx)
 
         else:
             self.log_error(fl_ctx, f"Could not handle task: {task_name}")
@@ -490,7 +506,7 @@ class ClientSideController(Executor):
         """
         pass
 
-    def _process_final_result(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
+    def _process_final_result(self, request: Shareable, fl_ctx: FLContext) -> Shareable:
         peer_ctx = fl_ctx.get_peer_context()
         assert isinstance(peer_ctx, FLContext)
         client_name = peer_ctx.get_identity_name()
@@ -533,15 +549,15 @@ class ClientSideController(Executor):
         self.finalize(fl_ctx)
         return make_reply(ReturnCode.OK)
 
-    def _process_learn_request(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
+    def _process_learn_request(self, request: Shareable, fl_ctx: FLContext) -> Shareable:
         try:
-            return self._try_process_learn_request(topic, request, fl_ctx)
+            return self._try_process_learn_request(request, fl_ctx)
         except Exception as ex:
             self.log_exception(fl_ctx, f"exception: {ex}")
             self.update_status(action="process_learn_request", error=ReturnCode.EXECUTION_EXCEPTION)
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-    def _try_process_learn_request(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
+    def _try_process_learn_request(self, request: Shareable, fl_ctx: FLContext) -> Shareable:
         peer_ctx = fl_ctx.get_peer_context()
         assert isinstance(peer_ctx, FLContext)
         sender = peer_ctx.get_identity_name()
@@ -563,11 +579,16 @@ class ClientSideController(Executor):
         self.log_info(fl_ctx, f"sending learn task to clients {targets}")
         request.set_header(AppConstants.NUM_ROUNDS, self.get_config_prop(AppConstants.NUM_ROUNDS))
 
-        resp = self.engine.send_aux_request(
+        task = Task(
+            name=self.do_learn_task_name,
+            data=request,
+            timeout=int(self.learn_task_send_timeout),
+        )
+
+        resp = self.broadcast_and_wait(
+            task=task,
             targets=targets,
-            topic=self.topic_for_my_workflow(Constant.TOPIC_LEARN),
-            request=request,
-            timeout=self.learn_task_send_timeout,
+            min_responses=len(targets),
             fl_ctx=fl_ctx,
         )
 

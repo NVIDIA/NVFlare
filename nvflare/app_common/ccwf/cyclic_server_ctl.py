@@ -14,16 +14,15 @@
 
 from nvflare.app_common.ccwf.common import Constant, RROrder
 from nvflare.app_common.ccwf.server_ctl import ServerSideController
-from nvflare.fuel.utils.validation_utils import DefaultPolicy
+from nvflare.fuel.utils.validation_utils import DefaultPolicy, check_str
 
 
 class CyclicServerController(ServerSideController):
     def __init__(
         self,
         num_rounds: int,
-        start_task_name=Constant.TASK_NAME_CYCLIC_START,
+        task_name_prefix=Constant.TN_PREFIX_CYCLIC,
         start_task_timeout=Constant.START_TASK_TIMEOUT,
-        configure_task_name=Constant.TASK_NAME_CYCLIC_CONFIGURE,
         configure_task_timeout=Constant.CONFIG_TASK_TIMEOUT,
         task_check_period: float = Constant.TASK_CHECK_INTERVAL,
         job_status_check_interval: float = Constant.JOB_STATUS_CHECK_INTERVAL,
@@ -39,9 +38,8 @@ class CyclicServerController(ServerSideController):
 
         super().__init__(
             num_rounds=num_rounds,
-            start_task_name=start_task_name,
+            task_name_prefix=task_name_prefix,
             start_task_timeout=start_task_timeout,
-            configure_task_name=configure_task_name,
             configure_task_timeout=configure_task_timeout,
             task_check_period=task_check_period,
             job_status_check_interval=job_status_check_interval,
@@ -55,6 +53,9 @@ class CyclicServerController(ServerSideController):
             max_status_report_interval=max_status_report_interval,
             progress_timeout=progress_timeout,
         )
+        check_str("rr_order", rr_order)
+        if rr_order not in [RROrder.FIXED, RROrder.RANDOM]:
+            raise ValueError(f"invalid rr_order {rr_order}: must be in {[RROrder.FIXED, RROrder.RANDOM]}")
         self.rr_order = rr_order
 
     def prepare_config(self):

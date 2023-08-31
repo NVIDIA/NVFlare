@@ -22,20 +22,24 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.app_constant import AppConstants, ModelName
 from nvflare.app_common.app_event_type import AppEventType
-from nvflare.app_common.ccwf.common import Constant, ModelType
+from nvflare.app_common.ccwf.common import Constant, ModelType, make_task_name
 from nvflare.app_common.ccwf.server_ctl import ServerSideController
 from nvflare.app_common.ccwf.val_result_manager import EvalResultManager
-from nvflare.fuel.utils.validation_utils import DefaultPolicy, validate_candidate, validate_candidates
+from nvflare.fuel.utils.validation_utils import (
+    DefaultPolicy,
+    check_positive_number,
+    check_str,
+    validate_candidate,
+    validate_candidates,
+)
 
 
 class CrossSiteEvalServerController(ServerSideController):
     def __init__(
         self,
-        start_task_name=Constant.TASK_NAME_CSE_START,
+        task_name_prefix=Constant.TN_PREFIX_CROSS_SITE_EVAL,
         start_task_timeout=Constant.START_TASK_TIMEOUT,
-        configure_task_name=Constant.TASK_NAME_CSE_CONFIGURE,
         configure_task_timeout=Constant.CONFIG_TASK_TIMEOUT,
-        eval_task_name=Constant.TASK_NAME_CSE_EVAL,
         eval_task_timeout=30,
         task_check_period: float = Constant.TASK_CHECK_INTERVAL,
         job_status_check_interval: float = Constant.JOB_STATUS_CHECK_INTERVAL,
@@ -55,9 +59,8 @@ class CrossSiteEvalServerController(ServerSideController):
 
         super().__init__(
             num_rounds=1,
-            start_task_name=start_task_name,
+            task_name_prefix=task_name_prefix,
             start_task_timeout=start_task_timeout,
-            configure_task_name=configure_task_name,
             configure_task_timeout=configure_task_timeout,
             task_check_period=task_check_period,
             job_status_check_interval=job_status_check_interval,
@@ -72,10 +75,13 @@ class CrossSiteEvalServerController(ServerSideController):
             progress_timeout=progress_timeout,
         )
 
+        check_str("eval_result_dir", eval_result_dir)
+        check_positive_number("eval_task_timeout", eval_task_timeout)
+
         if not global_model_client:
             global_model_client = ""
         self.global_model_client = global_model_client
-        self.eval_task_name = eval_task_name
+        self.eval_task_name = make_task_name(task_name_prefix, Constant.BASENAME_EVAL)
         self.eval_task_timeout = eval_task_timeout
         self.eval_local = False
         self.eval_global = False
