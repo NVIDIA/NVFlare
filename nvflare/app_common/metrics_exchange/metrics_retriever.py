@@ -20,7 +20,7 @@ from typing import Optional
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.metric_exchange.metric_exchanger import MetricData, MetricExchanger
+from nvflare.app_common.metrics_exchange.metrics_exchanger import MetricData, MetricsExchanger
 from nvflare.app_common.tracking.tracker_types import LogWriterName
 from nvflare.app_common.widgets.streaming import ANALYTIC_EVENT_TYPE, AnalyticsSender
 from nvflare.fuel.utils.constants import Mode
@@ -29,10 +29,10 @@ from nvflare.fuel.utils.pipe.pipe import Message
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler, Topic
 
 
-class MetricRetriever(FLComponent):
+class MetricsRetriever(FLComponent):
     def __init__(
         self,
-        metric_exchanger_id: str,
+        metrics_exchanger_id: str,
         event_type=ANALYTIC_EVENT_TYPE,
         writer_name=LogWriterName.TORCH_TB,
         topic: str = "metrics",
@@ -41,14 +41,14 @@ class MetricRetriever(FLComponent):
         heartbeat_interval: float = 5.0,
         heartbeat_timeout: float = 30.0,
     ):
-        """Metric retriever.
+        """Metrics retriever.
 
         Args:
             event_type (str): event type to fire (defaults to "analytix_log_stats").
             writer_name: the log writer for syntax information (defaults to LogWriterName.TORCH_TB)
         """
         super().__init__()
-        self.metric_exchanger_id = metric_exchanger_id
+        self.metrics_exchanger_id = metrics_exchanger_id
         self.analytic_sender = AnalyticsSender(event_type=event_type, writer_name=writer_name)
         self.x_queue = Queue()
         self.y_queue = Queue()
@@ -81,9 +81,9 @@ class MetricRetriever(FLComponent):
             self.analytic_sender.handle_event(event_type, fl_ctx)
             # inserts MetricsExchanger into engine components
             pipe_handler = self._create_pipe_handler(mode=Mode.ACTIVE)
-            metrics_exchanger = MetricExchanger(pipe_handler=pipe_handler)
+            metrics_exchanger = MetricsExchanger(pipe_handler=pipe_handler)
             all_components = engine.get_all_components()
-            all_components[self.metric_exchanger_id] = metrics_exchanger
+            all_components[self.metrics_exchanger_id] = metrics_exchanger
             self.fl_ctx = fl_ctx
             self._receive_thread.start()
         elif event_type == EventType.ABOUT_TO_END_RUN:
@@ -91,7 +91,7 @@ class MetricRetriever(FLComponent):
             self._receive_thread.join()
 
     def receive_data(self):
-        """Receives a data."""
+        """Receives data and sends with AnalyticsSender."""
         while True:
             if self.stop.is_set():
                 break

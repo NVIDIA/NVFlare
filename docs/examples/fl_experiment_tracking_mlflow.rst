@@ -6,10 +6,10 @@ FL Experiment Tracking with MLflow
 Introduction
 -------------
 
-The example for experiment tracking with MLflow has  clients streaming their statistics to the server through
+The example for experiment tracking with MLflow has clients streaming their statistics to the server through
 events and the server writing the statistics to MLflow. This is similar to the :ref:`tensorboard_streaming` example
 but uses MLflow as a back end for experiment tracking. This example is in the advanced examples folder under 
-xperiment-tracking, in the "mlflow" directory.
+experiment-tracking, in the "mlflow" directory.
 
 The setup of this exercise consists of one **server** and two **clients**. The clients stream their statistics to
 the server as events with :class:`MLflowWriter<nvflare.app_opt.tracking.mlflow.mlflow_writer.MLflowWriter>`,
