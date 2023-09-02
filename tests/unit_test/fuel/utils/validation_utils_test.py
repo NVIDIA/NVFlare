@@ -18,7 +18,6 @@ from nvflare.fuel.utils.validation_utils import validate_candidate, validate_can
 
 
 class TestValidationUtils:
-
     @pytest.mark.parametrize(
         "var_name, candidate, base, default_policy, allow_none, output",
         [
