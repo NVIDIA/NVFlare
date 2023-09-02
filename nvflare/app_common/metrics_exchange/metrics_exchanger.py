@@ -27,7 +27,7 @@ class MetricData:
         self.additional_args = {} if additional_args is None else additional_args
 
 
-class MetricExchanger:
+class MetricsExchanger:
     def __init__(
         self,
         pipe_handler: PipeHandler,

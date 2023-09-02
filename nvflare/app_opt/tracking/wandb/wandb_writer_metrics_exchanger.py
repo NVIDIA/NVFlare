@@ -15,11 +15,11 @@
 from typing import Dict, Optional
 
 from nvflare.apis.analytix import AnalyticsDataType
-from nvflare.app_common.tracking.log_writer_me import LogWriterForMetricExchanger
+from nvflare.app_common.tracking.log_writer_me import LogWriterForMetricsExchanger
 from nvflare.app_common.tracking.tracker_types import LogWriterName
 
 
-class WandBWriterForMetricsExchanger(LogWriterForMetricExchanger):
+class WandBWriterForMetricsExchanger(LogWriterForMetricsExchanger):
     """Sends experiment tracking data through MetricsExchanger."""
 
     def get_writer_name(self) -> LogWriterName:
