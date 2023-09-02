@@ -20,6 +20,7 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.ccwf.client_ctl import ClientSideController
 from nvflare.app_common.ccwf.common import Constant, ResultType, RROrder, rotate_to_front
+from nvflare.fuel.utils.validation_utils import check_non_empty_str
 
 
 class CyclicClientController(ClientSideController):
@@ -35,6 +36,10 @@ class CyclicClientController(ClientSideController):
         learn_task_send_timeout=Constant.LEARN_TASK_SEND_TIMEOUT,
         final_result_send_timeout=Constant.FINAL_RESULT_SEND_TIMEOUT,
     ):
+        check_non_empty_str("learn_task_name", learn_task_name)
+        check_non_empty_str("persistor_id", persistor_id)
+        check_non_empty_str("shareable_generator_id", shareable_generator_id)
+
         super().__init__(
             task_name_prefix=task_name_prefix,
             learn_task_name=learn_task_name,

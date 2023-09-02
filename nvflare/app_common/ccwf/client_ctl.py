@@ -29,7 +29,7 @@ from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.ccwf.common import Constant, ResultType, StatusReport, make_task_name, topic_for_end_workflow
-from nvflare.fuel.utils.validation_utils import check_positive_number, check_str
+from nvflare.fuel.utils.validation_utils import check_non_empty_str, check_positive_number
 from nvflare.security.logging import secure_format_traceback
 
 
@@ -56,23 +56,21 @@ class ClientSideController(Executor, ClientController):
         allow_busy_task: bool = False,
     ):
         """
-        Constructor of a CWE object.
+        Constructor of a ClientSideController object.
 
         Args:
-            task_name_prefix: prefix of task names
+            task_name_prefix: prefix of task names. All CCWF task names are prefixed with this.
             learn_task_name: name for the Learning Task (LT)
+            persistor_id: ID of the persistor component
+            shareable_generator_id: ID of the shareable generator component
             max_status_report_interval: max interval between status reports to the server
             learn_task_check_interval: interval for checking incoming Learning Task (LT)
             learn_task_send_timeout: timeout for sending the LT to other client(s)
             final_result_send_timeout: timeout for sending final result to participating clients
             learn_task_abort_timeout: time to wait for the LT to become stopped after aborting it
-            allow_busy_task:
+            allow_busy_task: whether a new learn task is allowed when working on current learn task
         """
-        check_str("task_name_prefix", task_name_prefix)
-        check_str("learn_task_name", learn_task_name)
-        check_str("persistor_id", persistor_id)
-        check_str("shareable_generator_id", shareable_generator_id)
-
+        check_non_empty_str("task_name_prefix", task_name_prefix)
         check_positive_number("max_status_report_interval", max_status_report_interval)
         check_positive_number("learn_task_check_interval", learn_task_check_interval)
         check_positive_number("learn_task_send_timeout", learn_task_send_timeout)
@@ -138,34 +136,34 @@ class ClientSideController(Executor, ClientController):
             return default
         return self.config.get(name, default)
 
-    def handle_event(self, event_type: str, fl_ctx: FLContext):
-        if event_type == EventType.START_RUN:
-            self.engine = fl_ctx.get_engine()
-            if not self.engine:
-                self.system_panic("no engine", fl_ctx)
-                return
+    def start_run(self, fl_ctx: FLContext):
+        self.engine = fl_ctx.get_engine()
+        if not self.engine:
+            self.system_panic("no engine", fl_ctx)
+            return
 
-            runner = fl_ctx.get_prop(FLContextKey.RUNNER)
-            if not runner:
-                self.system_panic("no client runner", fl_ctx)
-                return
+        runner = fl_ctx.get_prop(FLContextKey.RUNNER)
+        if not runner:
+            self.system_panic("no client runner", fl_ctx)
+            return
 
-            self.me = fl_ctx.get_identity_name()
+        self.me = fl_ctx.get_identity_name()
+        if self.learn_task_name:
             self.learn_executor = runner.find_executor(self.learn_task_name)
             if not self.learn_executor:
                 self.system_panic(f"no executor for task {self.learn_task_name}", fl_ctx)
                 return
 
-            engine = fl_ctx.get_engine()
-            self.persistor = engine.get_component(self.persistor_id)
-            if not isinstance(self.persistor, LearnablePersistor):
-                self.system_panic(
-                    f"Persistor {self.persistor_id} must be a Persistor instance, but got {type(self.persistor)}",
-                    fl_ctx,
-                )
-                return
+        self.persistor = self.engine.get_component(self.persistor_id)
+        if not isinstance(self.persistor, LearnablePersistor):
+            self.system_panic(
+                f"Persistor {self.persistor_id} must be a Persistor instance, but got {type(self.persistor)}",
+                fl_ctx,
+            )
+            return
 
-            self.shareable_generator = engine.get_component(self.shareable_generator_id)
+        if self.shareable_generator_id:
+            self.shareable_generator = self.engine.get_component(self.shareable_generator_id)
             if not isinstance(self.shareable_generator, ShareableGenerator):
                 self.system_panic(
                     f"Shareable generator {self.shareable_generator_id} must be a Shareable Generator instance, "
@@ -174,9 +172,16 @@ class ClientSideController(Executor, ClientController):
                 )
                 return
 
-            self.initialize(fl_ctx)
+        self.initialize(fl_ctx)
+
+        if self.learn_task_name:
             self.log_info(fl_ctx, "Started learn thread")
             self.learn_thread.start()
+
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        if event_type == EventType.START_RUN:
+            self.start_run(fl_ctx)
+
         elif event_type == EventType.BEFORE_PULL_TASK:
             # add my status to fl_ctx
             if not self.workflow_id:
@@ -320,8 +325,11 @@ class ClientSideController(Executor, ClientController):
         for t in targets:
             reply = resp.get(t)
             if not isinstance(reply, Shareable):
-                self.log_error(fl_ctx, f"failed to send {result_type} result to client {t}")
-                self.log_error(fl_ctx, f"reply must be Shareable but got {type(reply)}")
+                self.log_error(
+                    fl_ctx,
+                    f"bad response for {result_type} result from client {t}: "
+                    f"reply must be Shareable but got {type(reply)}",
+                )
                 num_errors += 1
                 continue
 
@@ -329,6 +337,7 @@ class ClientSideController(Executor, ClientController):
             if rc != ReturnCode.OK:
                 self.log_error(fl_ctx, f"bad response for {result_type} result from client {t}: {rc}")
                 num_errors += 1
+
         if num_errors == 0:
             self.log_info(fl_ctx, f"successfully broadcast {result_type} result to {targets}")
         return num_errors

@@ -14,7 +14,6 @@
 import threading
 
 from nvflare.apis.controller_spec import Task
-from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
@@ -24,7 +23,7 @@ from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.app_constant import AppConstants, ValidateType
 from nvflare.app_common.ccwf.client_ctl import ClientSideController
 from nvflare.app_common.ccwf.common import Constant, ModelType, make_task_name
-from nvflare.fuel.utils.validation_utils import check_positive_number, check_str
+from nvflare.fuel.utils.validation_utils import check_non_empty_str, check_positive_number
 from nvflare.security.logging import secure_format_traceback
 
 
@@ -39,11 +38,14 @@ class CrossSiteEvalClientController(ClientSideController):
         get_model_timeout=Constant.GET_MODEL_TIMEOUT,
     ):
         check_positive_number("get_model_timeout", get_model_timeout)
-        check_str("submit_model_task_name", submit_model_task_name)
-        check_str("validation_task_name", validation_task_name)
+        check_non_empty_str("submit_model_task_name", submit_model_task_name)
+        check_non_empty_str("validation_task_name", validation_task_name)
+        check_non_empty_str("persistor_id", persistor_id)
 
         super().__init__(
             task_name_prefix=task_name_prefix,
+            learn_task_name="",
+            shareable_generator_id="",
             persistor_id=persistor_id,
             max_status_report_interval=max_status_report_interval,
         )
@@ -60,44 +62,20 @@ class CrossSiteEvalClientController(ClientSideController):
         self.local_model = None
         self.model_lock = threading.Lock()
 
-    def handle_event(self, event_type: str, fl_ctx: FLContext):
-        if event_type == EventType.START_RUN:
-            self.engine = fl_ctx.get_engine()
-            if not self.engine:
-                self.system_panic("no engine", fl_ctx)
+    def start_run(self, fl_ctx: FLContext):
+        super().start_run(fl_ctx)
+        runner = fl_ctx.get_prop(FLContextKey.RUNNER)
+        if self.submit_model_task_name:
+            self.submit_model_executor = runner.find_executor(self.submit_model_task_name)
+            if not self.submit_model_executor:
+                self.system_panic(f"no executor for task {self.submit_model_task_name}", fl_ctx)
                 return
 
-            runner = fl_ctx.get_prop(FLContextKey.RUNNER)
-            if not runner:
-                self.system_panic("no client runner", fl_ctx)
+        if self.validation_task_name:
+            self.validate_executor = runner.find_executor(self.validation_task_name)
+            if not self.validate_executor:
+                self.system_panic(f"no executor for task {self.validation_task_name}", fl_ctx)
                 return
-
-            self.me = fl_ctx.get_identity_name()
-
-            if self.submit_model_task_name:
-                self.submit_model_executor = runner.find_executor(self.submit_model_task_name)
-                if not self.submit_model_executor:
-                    self.system_panic(f"no executor for task {self.submit_model_task_name}", fl_ctx)
-                    return
-
-            if self.validation_task_name:
-                self.validate_executor = runner.find_executor(self.validation_task_name)
-                if not self.validate_executor:
-                    self.system_panic(f"no executor for task {self.validation_task_name}", fl_ctx)
-                    return
-
-            engine = fl_ctx.get_engine()
-            self.persistor = engine.get_component(self.persistor_id)
-            if not isinstance(self.persistor, ModelPersistor):
-                self.system_panic(
-                    f"Persistor {self.persistor_id} must be a ModelPersistor instance, but got {type(self.persistor)}",
-                    fl_ctx,
-                )
-                return
-
-            self.initialize(fl_ctx)
-        else:
-            super().handle_event(event_type, fl_ctx)
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if task_name == self.start_task_name:

@@ -33,9 +33,6 @@ class CyclicServerController(ServerSideController):
         progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
         rr_order: str = RROrder.FIXED,
     ):
-        if not result_clients:
-            result_clients = []
-
         super().__init__(
             num_rounds=num_rounds,
             task_name_prefix=task_name_prefix,

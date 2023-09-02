@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Union
+
+from nvflare.app_common.abstract.metric_comparator import MetricComparator
+
 
 class Constant:
 
@@ -183,3 +187,14 @@ def topic_for_end_workflow(wf_id):
 
 def make_task_name(prefix: str, base_name: str) -> str:
     return f"{prefix}_{base_name}"
+
+
+class NumberMetricComparator(MetricComparator):
+    def compare(self, a, b) -> Union[int, float]:
+        if not isinstance(a, (int, float)):
+            raise ValueError(f"metric value must be a number but got {type(a)}")
+
+        if not isinstance(b, (int, float)):
+            raise ValueError(f"metric value must be a number but got {type(b)}")
+
+        return a - b

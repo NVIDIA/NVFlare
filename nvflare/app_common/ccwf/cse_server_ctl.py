@@ -144,12 +144,12 @@ class CrossSiteEvalServerController(ServerSideController):
         }
 
     def process_config_reply(self, client_name: str, reply: Shareable, fl_ctx: FLContext) -> bool:
-        global_models = reply.get(Constant.GLOBAL_NAMES)
-        if global_models:
-            for m in global_models:
+        global_names = reply.get(Constant.GLOBAL_NAMES)
+        if global_names:
+            for m in global_names:
                 if m not in self.global_names:
                     self.global_names[m] = client_name
-                    self.log_info(fl_ctx, f"got global model {m} from {client_name}")
+                    self.log_info(fl_ctx, f"got global model name {m} from {client_name}")
         return True
 
     def _ask_to_evaluate(

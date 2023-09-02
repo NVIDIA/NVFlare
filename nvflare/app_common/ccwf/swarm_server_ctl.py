@@ -57,6 +57,12 @@ class SwarmServerController(ServerSideController):
             max_status_report_interval=max_status_report_interval,
             progress_timeout=progress_timeout,
         )
+        if not train_clients:
+            train_clients = []
+
+        if not aggr_clients:
+            aggr_clients = []
+
         self.aggr_clients = aggr_clients
         self.train_clients = train_clients
 

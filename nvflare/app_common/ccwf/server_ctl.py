@@ -60,7 +60,7 @@ class ServerSideController(Controller):
         start_task_timeout=Constant.START_TASK_TIMEOUT,
         task_check_period: float = Constant.TASK_CHECK_INTERVAL,
         job_status_check_interval: float = Constant.JOB_STATUS_CHECK_INTERVAL,
-        starting_client: str = None,
+        starting_client=None,
         starting_client_policy: str = DefaultPolicy.ANY,
         starting_client_allow_none=False,
         participating_clients=None,
@@ -89,6 +89,15 @@ class ServerSideController(Controller):
             progress_timeout:
         """
         Controller.__init__(self, task_check_period)
+        if not participating_clients:
+            participating_clients = []
+
+        if not result_clients:
+            result_clients = []
+
+        if not starting_client:
+            starting_client = ""
+
         self.task_name_prefix = task_name_prefix
         self.configure_task_name = make_task_name(task_name_prefix, Constant.BASENAME_CONFIG)
         self.configure_task_timeout = configure_task_timeout

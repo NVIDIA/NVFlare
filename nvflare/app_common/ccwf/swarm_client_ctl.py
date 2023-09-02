@@ -17,7 +17,6 @@ import threading
 import time
 
 from nvflare.apis.controller_spec import Task
-from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
@@ -25,11 +24,12 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.learnable import Learnable
+from nvflare.app_common.abstract.metric_comparator import MetricComparator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.ccwf.client_ctl import ClientSideController
-from nvflare.app_common.ccwf.common import Constant, ResultType, make_task_name
-from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number, check_str
+from nvflare.app_common.ccwf.common import Constant, NumberMetricComparator, ResultType, make_task_name
+from nvflare.fuel.utils.validation_utils import check_non_empty_str, check_positive_int, check_positive_number
 from nvflare.security.logging import secure_format_traceback
 
 
@@ -47,6 +47,7 @@ class Gatherer(FLComponent):
         for_round: int,
         executor: ClientSideController,
         aggregator: Aggregator,
+        metric_comparator: MetricComparator,
         all_clients: list,
         trainers: list,
         min_responses_required: int,
@@ -57,6 +58,7 @@ class Gatherer(FLComponent):
         self.fl_ctx = fl_ctx
         self.executor = executor
         self.aggregator = aggregator
+        self.metric_comparator = metric_comparator
         self.all_clients = all_clients
         self.trainers = trainers
         self.for_round = for_round
@@ -75,12 +77,15 @@ class Gatherer(FLComponent):
         self.current_best_client = task_data.get_header(Constant.CLIENT)
         self.current_best_global_metric = task_data.get_header(Constant.METRIC)
         self.current_best_round = task_data.get_header(Constant.ROUND)
-        self.log_info(
-            fl_ctx,
-            f"gatherer starting with best client {self.current_best_client} "
-            f"with metric {self.current_best_global_metric} "
-            f"at round {self.current_best_round}",
-        )
+        if not self.current_best_client:
+            self.log_info(fl_ctx, "gatherer starting from scratch")
+        else:
+            self.log_info(
+                fl_ctx,
+                f"gatherer starting with previous best result from client {self.current_best_client} "
+                f"with metric {self.current_best_global_metric} "
+                f"at round {self.current_best_round}",
+            )
 
     def gather(self, client_name: str, result: Shareable, fl_ctx: FLContext) -> Shareable:
         with self.lock:
@@ -162,7 +167,10 @@ class Gatherer(FLComponent):
 
         mine_is_better = False
         if self.current_best_global_metric is not None:
-            if self.executor.best_metric is not None and self.executor.best_metric > self.current_best_global_metric:
+            if (
+                self.executor.best_metric is not None
+                and self.metric_comparator.compare(self.executor.best_metric, self.current_best_global_metric) > 0
+            ):
                 mine_is_better = True
         elif self.executor.best_metric is not None:
             mine_is_better = True
@@ -198,6 +206,7 @@ class Gatherer(FLComponent):
         # timeout?
         now = time.time()
         if self.timeout and now - self.start_time > self.timeout:
+            self.log_warning(self.fl_ctx, f"gatherer for round {self.for_round} timed out after {self.timeout} seconds")
             return True
 
         if (
@@ -205,6 +214,11 @@ class Gatherer(FLComponent):
             and now - self.min_resps_received_time > self.wait_time_after_min_resps_received
         ):
             # received min responses required and waited for long time
+            self.log_info(
+                self.fl_ctx,
+                f"gatherer for round {self.for_round} exit after {self.wait_time_after_min_resps_received} seconds "
+                f"since received minimum responses",
+            )
             return True
 
 
@@ -216,6 +230,7 @@ class SwarmClientController(ClientSideController):
         persistor_id=AppConstants.DEFAULT_PERSISTOR_ID,
         shareable_generator_id=AppConstants.DEFAULT_SHAREABLE_GENERATOR_ID,
         aggregator_id=AppConstants.DEFAULT_AGGREGATOR_ID,
+        metric_comparator_id=None,
         max_status_report_interval=Constant.MAX_STATUS_REPORT_INTERVAL,
         learn_task_check_interval=Constant.LEARN_TASK_CHECK_INTERVAL,
         learn_task_abort_timeout=Constant.LEARN_TASK_ABORT_TIMEOUT,
@@ -225,7 +240,13 @@ class SwarmClientController(ClientSideController):
         min_responses_required: int = 1,
         wait_time_after_min_resps_received: float = 10.0,
     ):
-        check_str("aggregator_id", aggregator_id)
+        check_non_empty_str("learn_task_name", learn_task_name)
+        check_non_empty_str("persistor_id", persistor_id)
+        check_non_empty_str("shareable_generator_id", shareable_generator_id)
+        check_non_empty_str("aggregator_id", aggregator_id)
+
+        if metric_comparator_id:
+            check_non_empty_str("metric_comparator_id", metric_comparator_id)
 
         if learn_task_timeout:
             check_positive_number("learn_task_timeout", learn_task_timeout)
@@ -245,6 +266,8 @@ class SwarmClientController(ClientSideController):
             final_result_send_timeout=final_result_send_timeout,
             allow_busy_task=True,
         )
+        self.metric_comparator_id = metric_comparator_id
+        self.metric_comparator = None
         self.rcv_learn_result_task_name = make_task_name(task_name_prefix, Constant.BASENAME_RCV_LEARN_RESULT)
         self.learn_task_timeout = learn_task_timeout
         self.min_responses_required = min_responses_required
@@ -282,33 +305,52 @@ class SwarmClientController(ClientSideController):
             return self._process_learn_result(shareable, fl_ctx, abort_signal)
         return super().execute(task_name, shareable, fl_ctx, abort_signal)
 
-    def handle_event(self, event_type: str, fl_ctx: FLContext):
-        super().handle_event(event_type, fl_ctx)
-        if event_type == EventType.START_RUN:
-            self.aggregator = self.engine.get_component(self.aggregator_id)
-            if not isinstance(self.aggregator, Aggregator):
+    def start_run(self, fl_ctx: FLContext):
+        super().start_run(fl_ctx)
+        self.aggregator = self.engine.get_component(self.aggregator_id)
+        if not isinstance(self.aggregator, Aggregator):
+            self.system_panic(
+                f"aggregator {self.aggregator_id} must be an Aggregator but got {type(self.aggregator)}",
+                fl_ctx,
+            )
+            return
+
+        if self.metric_comparator_id:
+            self.metric_comparator = self.engine.get_component(self.metric_comparator_id)
+            if not isinstance(self.metric_comparator, MetricComparator):
                 self.system_panic(
-                    f"aggregator {self.aggregator_id} must be an Aggregator but got {type(self.aggregator)}",
+                    f"metric comparator {self.metric_comparator_id} must be a MetricComparator "
+                    f"but got {type(self.metric_comparator)}",
                     fl_ctx,
                 )
                 return
+        else:
+            # use default comparator
+            self.metric_comparator = NumberMetricComparator()
 
-            aggr_thread = threading.Thread(target=self._monitor_gather)
-            aggr_thread.daemon = True
-            aggr_thread.start()
-            self.log_info(fl_ctx, "started aggregator thread")
-        elif event_type == AppEventType.GLOBAL_BEST_MODEL_AVAILABLE:
+        aggr_thread = threading.Thread(target=self._monitor_gather)
+        aggr_thread.daemon = True
+        aggr_thread.start()
+        self.log_info(fl_ctx, "started aggregator thread")
+
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        if event_type == AppEventType.GLOBAL_BEST_MODEL_AVAILABLE:
             client = fl_ctx.get_prop(Constant.CLIENT)
             if client and client != self.me:
                 # this global best model is from other client
+                # we got here because this event is fired when I receive the best model shared from another
+                # client at the end of the workflow.
                 return
 
+            # we got here because the best model selector fired this event: it found the "local best global"
             self.best_metric = fl_ctx.get_prop(AppConstants.VALIDATION_RESULT)
             self.best_result = copy.deepcopy(fl_ctx.get_prop(AppConstants.GLOBAL_MODEL))
             self.log_info(fl_ctx, f"got GLOBAL_BEST_MODEL_AVAILABLE: best metric={self.best_metric}")
             current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
             self.best_round = current_round
             self.update_status(last_round=current_round, action="better_aggregation")
+        else:
+            super().handle_event(event_type, fl_ctx)
 
     def start_workflow(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         clients = self.get_config_prop(Constant.CLIENTS)
@@ -541,6 +583,7 @@ class SwarmClientController(ClientSideController):
             self.gatherer = Gatherer(
                 fl_ctx=fl_ctx,
                 all_clients=self.get_config_prop(Constant.CLIENTS),
+                metric_comparator=self.metric_comparator,
                 trainers=self.trainers,
                 for_round=current_round,
                 timeout=self.learn_task_timeout,
