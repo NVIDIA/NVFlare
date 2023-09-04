@@ -38,7 +38,7 @@ FL_MODULES = ["apis", "app_common", "widgets", "app_opt"]
 
 
 class ClientJsonConfigurator(FedJsonConfigurator):
-    def __init__(self, config_file_name: str, args, kv_list=None, exclude_libs=True):
+    def __init__(self, config_file_name: str, args, app_root: str, kv_list=None, exclude_libs=True):
         """To init the ClientJsonConfigurator.
 
         Args:
@@ -46,6 +46,7 @@ class ClientJsonConfigurator(FedJsonConfigurator):
             exclude_libs: True/False to exclude the libs folder
         """
         self.args = args
+        self.app_root = app_root
 
         base_pkgs = FL_PACKAGES
         module_names = FL_MODULES
@@ -141,7 +142,7 @@ class ClientJsonConfigurator(FedJsonConfigurator):
 
         ConfigService.initialize(
             section_files={SystemConfigs.APPLICATION_CONF: os.path.basename(self.config_files[0])},
-            config_path=[self.args.workspace],
+            config_path=[self.app_root],
             parsed_args=self.args,
             var_dict=self.cmd_vars,
         )

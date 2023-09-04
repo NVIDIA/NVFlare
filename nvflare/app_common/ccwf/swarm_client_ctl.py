@@ -378,8 +378,12 @@ class SwarmClientController(ClientSideController):
         task_data.add_cookie(AppConstants.CONTRIBUTION_ROUND, for_round)
         task_data.set_header(Constant.AGGREGATOR, aggr)
 
-        self.log_info(fl_ctx, f"broadcasting learn task of round {for_round} to {clients}; aggr client is {aggr}")
-        return self.send_learn_task(targets=clients, request=task_data, fl_ctx=fl_ctx)
+        targets = copy.copy(clients)
+        if aggr not in targets:
+            targets.append(aggr)
+
+        self.log_info(fl_ctx, f"broadcasting learn task of round {for_round} to {targets}; aggr client is {aggr}")
+        return self.send_learn_task(targets=targets, request=task_data, fl_ctx=fl_ctx)
 
     def _monitor_gather(self):
         while True:
