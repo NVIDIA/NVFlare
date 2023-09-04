@@ -164,11 +164,7 @@ handlers = {
 def run(prog_name):
     cwd = os.getcwd()
     sys.path.append(cwd)
-    try:
-        prog_parser, prog_args, sub_cmd_parsers = parse_args(prog_name)
-    except BaseException as be:
-        print(be)
-        raise be
+    prog_parser, prog_args, sub_cmd_parsers = parse_args(prog_name)
 
     sub_cmd = None
     try:
