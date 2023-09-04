@@ -231,12 +231,11 @@ class SwarmClientController(ClientSideController):
         shareable_generator_id=AppConstants.DEFAULT_SHAREABLE_GENERATOR_ID,
         aggregator_id=AppConstants.DEFAULT_AGGREGATOR_ID,
         metric_comparator_id=None,
-        max_status_report_interval=Constant.MAX_STATUS_REPORT_INTERVAL,
         learn_task_check_interval=Constant.LEARN_TASK_CHECK_INTERVAL,
         learn_task_abort_timeout=Constant.LEARN_TASK_ABORT_TIMEOUT,
-        learn_task_send_timeout=Constant.LEARN_TASK_SEND_TIMEOUT,
+        learn_task_ack_timeout=Constant.LEARN_TASK_ACK_TIMEOUT,
         learn_task_timeout=None,
-        final_result_send_timeout=Constant.FINAL_RESULT_SEND_TIMEOUT,
+        final_result_ack_timeout=Constant.FINAL_RESULT_ACK_TIMEOUT,
         min_responses_required: int = 1,
         wait_time_after_min_resps_received: float = 10.0,
     ):
@@ -259,11 +258,10 @@ class SwarmClientController(ClientSideController):
             learn_task_name=learn_task_name,
             persistor_id=persistor_id,
             shareable_generator_id=shareable_generator_id,
-            max_status_report_interval=max_status_report_interval,
             learn_task_check_interval=learn_task_check_interval,
-            learn_task_send_timeout=learn_task_send_timeout,
+            learn_task_ack_timeout=learn_task_ack_timeout,
             learn_task_abort_timeout=learn_task_abort_timeout,
-            final_result_send_timeout=final_result_send_timeout,
+            final_result_ack_timeout=final_result_ack_timeout,
             allow_busy_task=True,
         )
         self.metric_comparator_id = metric_comparator_id
@@ -448,7 +446,7 @@ class SwarmClientController(ClientSideController):
             targets=[client],
             topic=self.topic_for_my_workflow(Constant.TOPIC_SHARE_RESULT),
             request=Shareable(),
-            timeout=self.final_result_send_timeout,
+            timeout=self.final_result_ack_timeout,
             fl_ctx=fl_ctx,
         )
 
@@ -612,7 +610,7 @@ class SwarmClientController(ClientSideController):
             task = Task(
                 name=self.rcv_learn_result_task_name,
                 data=result,
-                timeout=int(self.learn_task_send_timeout),
+                timeout=int(self.learn_task_ack_timeout),
             )
 
             resp = self.broadcast_and_wait(

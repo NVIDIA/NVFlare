@@ -14,10 +14,113 @@
 
 import pytest
 
-from nvflare.fuel.utils.validation_utils import validate_candidate, validate_candidates
+from nvflare.fuel.utils.validation_utils import (
+    check_non_empty_str,
+    check_number_range,
+    check_positive_int,
+    check_positive_number,
+    validate_candidate,
+    validate_candidates,
+)
 
 
 class TestValidationUtils:
+    @pytest.mark.parametrize(
+        "name, num, min_value, max_value",
+        [
+            ("x", 12.34, None, None),
+            ("x", 0.23, -1.0, None),
+            ("x", 0, None, 1.0),
+            ("x", 0, -0.01, 0.1),
+        ],
+    )
+    def test_check_number_range(self, name, num, min_value, max_value):
+        check_number_range(name, num, min_value, max_value)
+
+    @pytest.mark.parametrize(
+        "name, num, min_value, max_value",
+        [
+            ("x", -1.0, 0.0, None),
+            ("x", "0", None, None),
+            ("x", 2.0, 0.1, 1.0),
+            ("x", -5, -10, -6),
+            ("x", 0, "-1", None),
+            ("x", 0, -1, "-2"),
+        ],
+    )
+    def test_check_number_range_error(self, name, num, min_value, max_value):
+        with pytest.raises(Exception):
+            check_number_range(name, num, min_value, max_value)
+
+    @pytest.mark.parametrize(
+        "name, num",
+        [
+            ("x", 1),
+            ("x", 100),
+            ("x", 12345),
+        ],
+    )
+    def test_check_positive_int(self, name, num):
+        check_positive_int(name, num)
+
+    @pytest.mark.parametrize(
+        "name, num",
+        [
+            ("x", 0),
+            ("x", -1.0),
+            ("x", "0"),
+            ("x", 2.0),
+            ("x", -5),
+        ],
+    )
+    def test_check_positive_int_error(self, name, num):
+        with pytest.raises(Exception):
+            check_positive_int(name, num)
+
+    @pytest.mark.parametrize(
+        "name, num",
+        [
+            ("x", 1),
+            ("x", 100),
+            ("x", 12345),
+            ("x", 0.001),
+            ("x", 1.3e5),
+        ],
+    )
+    def test_check_positive_number(self, name, num):
+        check_positive_number(name, num)
+
+    @pytest.mark.parametrize(
+        "name, num",
+        [("x", 0), ("x", 0.0), ("x", -1.0), ("x", "0"), ("x", -5), ("x", -1.3e5)],
+    )
+    def test_check_positive_number_error(self, name, num):
+        with pytest.raises(Exception):
+            check_positive_number(name, num)
+
+    @pytest.mark.parametrize(
+        "name, value",
+        [
+            ("x", "abc"),
+            ("x", "  vsd "),
+        ],
+    )
+    def test_check_non_empty_str(self, name, value):
+        check_non_empty_str(name, value)
+
+    @pytest.mark.parametrize(
+        "name, num",
+        [
+            ("x", 0),
+            ("x", 1.2324),
+            ("x", ""),
+            ("x", "  "),
+        ],
+    )
+    def test_check_non_empty_str_error(self, name, num):
+        with pytest.raises(Exception):
+            check_non_empty_str(name, num)
+
     @pytest.mark.parametrize(
         "var_name, candidate, base, default_policy, allow_none, output",
         [

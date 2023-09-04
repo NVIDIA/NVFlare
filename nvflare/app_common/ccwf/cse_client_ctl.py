@@ -34,7 +34,6 @@ class CrossSiteEvalClientController(ClientSideController):
         submit_model_task_name=AppConstants.TASK_SUBMIT_MODEL,
         validation_task_name=AppConstants.TASK_VALIDATION,
         persistor_id=AppConstants.DEFAULT_PERSISTOR_ID,
-        max_status_report_interval=Constant.MAX_STATUS_REPORT_INTERVAL,
         get_model_timeout=Constant.GET_MODEL_TIMEOUT,
     ):
         check_positive_number("get_model_timeout", get_model_timeout)
@@ -47,7 +46,6 @@ class CrossSiteEvalClientController(ClientSideController):
             learn_task_name="",
             shareable_generator_id="",
             persistor_id=persistor_id,
-            max_status_report_interval=max_status_report_interval,
         )
         self.eval_task_name = make_task_name(task_name_prefix, Constant.BASENAME_EVAL)
         self.ask_for_model_task_name = make_task_name(task_name_prefix, Constant.BASENAME_ASK_FOR_MODEL)

@@ -53,6 +53,23 @@ def check_positive_number(name, value):
         raise ValueError(f"{name} must > 0, but got {value}")
 
 
+def check_number_range(name, value, min_value=None, max_value=None):
+    if not isinstance(value, (int, float)):
+        raise TypeError(f"{name} must be a number, but got {type(value)}.")
+
+    if min_value is not None:
+        if not isinstance(min_value, (int, float)):
+            raise TypeError(f"{name}: min_value must be a number but got {type(min_value)}.")
+        if value < min_value:
+            raise ValueError(f"{name} must be >= {min_value} but got {value}")
+
+    if max_value is not None:
+        if not isinstance(max_value, (int, float)):
+            raise TypeError(f"{name}: max_value must be a number but got {type(max_value)}.")
+        if value > max_value:
+            raise ValueError(f"{name} must be <= {max_value} but got {value}")
+
+
 def check_non_negative_number(name, value):
     if not isinstance(value, (int, float)):
         raise TypeError(f"{name} must be a number, but got {type(value)}.")

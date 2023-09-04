@@ -29,7 +29,7 @@ from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.ccwf.common import Constant, ResultType, StatusReport, make_task_name, topic_for_end_workflow
-from nvflare.fuel.utils.validation_utils import check_non_empty_str, check_positive_number
+from nvflare.fuel.utils.validation_utils import check_non_empty_str, check_number_range, check_positive_number
 from nvflare.security.logging import secure_format_traceback
 
 
@@ -48,11 +48,10 @@ class ClientSideController(Executor, ClientController):
         learn_task_name=AppConstants.TASK_TRAIN,
         persistor_id=AppConstants.DEFAULT_PERSISTOR_ID,
         shareable_generator_id=AppConstants.DEFAULT_SHAREABLE_GENERATOR_ID,
-        max_status_report_interval=Constant.MAX_STATUS_REPORT_INTERVAL,
         learn_task_check_interval=Constant.LEARN_TASK_CHECK_INTERVAL,
-        learn_task_send_timeout=Constant.LEARN_TASK_SEND_TIMEOUT,
+        learn_task_ack_timeout=Constant.LEARN_TASK_ACK_TIMEOUT,
         learn_task_abort_timeout=Constant.LEARN_TASK_ABORT_TIMEOUT,
-        final_result_send_timeout=Constant.FINAL_RESULT_SEND_TIMEOUT,
+        final_result_ack_timeout=Constant.FINAL_RESULT_ACK_TIMEOUT,
         allow_busy_task: bool = False,
     ):
         """
@@ -63,19 +62,17 @@ class ClientSideController(Executor, ClientController):
             learn_task_name: name for the Learning Task (LT)
             persistor_id: ID of the persistor component
             shareable_generator_id: ID of the shareable generator component
-            max_status_report_interval: max interval between status reports to the server
             learn_task_check_interval: interval for checking incoming Learning Task (LT)
-            learn_task_send_timeout: timeout for sending the LT to other client(s)
-            final_result_send_timeout: timeout for sending final result to participating clients
+            learn_task_ack_timeout: timeout for sending the LT to other client(s)
+            final_result_ack_timeout: timeout for sending final result to participating clients
             learn_task_abort_timeout: time to wait for the LT to become stopped after aborting it
             allow_busy_task: whether a new learn task is allowed when working on current learn task
         """
         check_non_empty_str("task_name_prefix", task_name_prefix)
-        check_positive_number("max_status_report_interval", max_status_report_interval)
         check_positive_number("learn_task_check_interval", learn_task_check_interval)
-        check_positive_number("learn_task_send_timeout", learn_task_send_timeout)
+        check_number_range("learn_task_ack_timeout", learn_task_ack_timeout, min_value=1.0)
         check_positive_number("learn_task_abort_timeout", learn_task_abort_timeout)
-        check_positive_number("final_result_send_timeout", final_result_send_timeout)
+        check_number_range("final_result_ack_timeout", final_result_ack_timeout, min_value=1.0)
 
         Executor.__init__(self)
         ClientController.__init__(self)
@@ -85,11 +82,10 @@ class ClientSideController(Executor, ClientController):
         self.do_learn_task_name = make_task_name(task_name_prefix, Constant.BASENAME_LEARN)
         self.rcv_final_result_task_name = make_task_name(task_name_prefix, Constant.BASENAME_RCV_FINAL_RESULT)
         self.learn_task_name = learn_task_name
-        self.max_status_report_interval = max_status_report_interval
         self.learn_task_abort_timeout = learn_task_abort_timeout
         self.learn_task_check_interval = learn_task_check_interval
-        self.learn_task_send_timeout = learn_task_send_timeout
-        self.final_result_send_timeout = final_result_send_timeout
+        self.learn_task_ack_timeout = learn_task_ack_timeout
+        self.final_result_ack_timeout = final_result_ack_timeout
         self.allow_busy_task = allow_busy_task
         self.persistor_id = persistor_id
         self.shareable_generator_id = shareable_generator_id
@@ -310,7 +306,7 @@ class ClientSideController(Executor, ClientController):
         task = Task(
             name=self.rcv_final_result_task_name,
             data=shareable,
-            timeout=int(self.final_result_send_timeout),
+            timeout=int(self.final_result_ack_timeout),
         )
 
         resp = self.broadcast_and_wait(
@@ -401,17 +397,11 @@ class ClientSideController(Executor, ClientController):
         with self.status_lock:
             status = self.current_status
             must_report = False
-            now = time.time()
             if status.error:
                 must_report = True
-            elif status.timestamp and status.timestamp > self.last_status_report_time:
-                # status has changed since last reported:
-                must_report = True
-            elif now - self.last_status_report_time > self.max_status_report_interval:
-                # too long after last report time. report again even if no status change to keep alive
+            elif status.timestamp:
                 must_report = True
 
-            self.logger.info(f"reporting={must_report}. t={status.timestamp}, rt={self.last_status_report_time}")
             if not must_report:
                 return None
 
@@ -578,7 +568,7 @@ class ClientSideController(Executor, ClientController):
         task = Task(
             name=self.do_learn_task_name,
             data=request,
-            timeout=int(self.learn_task_send_timeout),
+            timeout=int(self.learn_task_ack_timeout),
         )
 
         resp = self.broadcast_and_wait(

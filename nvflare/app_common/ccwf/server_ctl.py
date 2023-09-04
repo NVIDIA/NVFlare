@@ -31,6 +31,7 @@ from nvflare.app_common.ccwf.common import (
 )
 from nvflare.fuel.utils.validation_utils import (
     DefaultPolicy,
+    check_number_range,
     check_positive_int,
     check_positive_number,
     check_str,
@@ -122,11 +123,11 @@ class ServerSideController(Controller):
         self.workflow_id = None
 
         check_positive_int("num_rounds", num_rounds)
-        check_positive_int("configure_task_timeout", configure_task_timeout)
-        check_positive_number("end_workflow_timeout", end_workflow_timeout)
+        check_number_range("configure_task_timeout", configure_task_timeout, min_value=1)
+        check_number_range("end_workflow_timeout", end_workflow_timeout, min_value=1)
         check_positive_number("job_status_check_interval", job_status_check_interval)
-        check_positive_number("max_status_report_interval", max_status_report_interval)
-        check_positive_number("progress_timeout", progress_timeout)
+        check_number_range("max_status_report_interval", max_status_report_interval, min_value=10.0)
+        check_number_range("progress_timeout", progress_timeout, min_value=5.0)
         check_str("starting_client_policy", starting_client_policy)
 
         if participating_clients and len(participating_clients) < 2:
@@ -382,7 +383,7 @@ class ServerSideController(Controller):
             assert isinstance(cs.status, StatusReport)
 
             if cs.status.all_done:
-                self.log_info(fl_ctx, f"got ALL_DONE from client {client_name}")
+                self.log_info(fl_ctx, f"Got ALL_DONE from client {client_name}")
                 return True
 
             if now - cs.last_report_time > self.max_status_report_interval:
@@ -445,7 +446,7 @@ class ServerSideController(Controller):
                 f"timestamp={timestamp}, action={report.action}, all_done={report.all_done}",
             )
         else:
-            self.log_info(
+            self.log_debug(
                 fl_ctx, f"ignored status report from client {client_name} at round {report.last_round}: no change"
             )
 

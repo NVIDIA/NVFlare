@@ -30,11 +30,10 @@ class CyclicClientController(ClientSideController):
         learn_task_name=AppConstants.TASK_TRAIN,
         persistor_id=AppConstants.DEFAULT_PERSISTOR_ID,
         shareable_generator_id=AppConstants.DEFAULT_SHAREABLE_GENERATOR_ID,
-        max_status_report_interval=Constant.MAX_STATUS_REPORT_INTERVAL,
         learn_task_check_interval=Constant.LEARN_TASK_CHECK_INTERVAL,
         learn_task_abort_timeout=Constant.LEARN_TASK_ABORT_TIMEOUT,
-        learn_task_send_timeout=Constant.LEARN_TASK_SEND_TIMEOUT,
-        final_result_send_timeout=Constant.FINAL_RESULT_SEND_TIMEOUT,
+        learn_task_ack_timeout=Constant.LEARN_TASK_ACK_TIMEOUT,
+        final_result_ack_timeout=Constant.FINAL_RESULT_ACK_TIMEOUT,
     ):
         check_non_empty_str("learn_task_name", learn_task_name)
         check_non_empty_str("persistor_id", persistor_id)
@@ -45,11 +44,10 @@ class CyclicClientController(ClientSideController):
             learn_task_name=learn_task_name,
             persistor_id=persistor_id,
             shareable_generator_id=shareable_generator_id,
-            max_status_report_interval=max_status_report_interval,
             learn_task_check_interval=learn_task_check_interval,
             learn_task_abort_timeout=learn_task_abort_timeout,
-            learn_task_send_timeout=learn_task_send_timeout,
-            final_result_send_timeout=final_result_send_timeout,
+            learn_task_ack_timeout=learn_task_ack_timeout,
+            final_result_ack_timeout=final_result_ack_timeout,
             allow_busy_task=False,
         )
 
