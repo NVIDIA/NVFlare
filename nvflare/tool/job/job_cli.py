@@ -14,6 +14,7 @@
 import os
 import pathlib
 import shutil
+import traceback
 from distutils.dir_util import copy_tree
 from tempfile import mkdtemp
 from typing import List, Optional, Tuple
@@ -134,6 +135,8 @@ def create_job(cmd_args):
 
     except ValueError as e:
         print(f"\nUnable to handle command: {CMD_CREATE_JOB} due to: {e} \n")
+        if cmd_args.debug:
+            print(traceback.format_exc())
         sub_cmd_parser = job_sub_cmd_parser[CMD_CREATE_JOB]
         if sub_cmd_parser:
             sub_cmd_parser.print_help()
@@ -159,6 +162,8 @@ def show_variables(cmd_args):
 
     except ValueError as e:
         print(f"\nUnable to handle command: {CMD_SHOW_VARIABLES} due to: {e} \n")
+        if cmd_args.debug:
+            print(traceback.format_exc())
         sub_cmd_parser = job_sub_cmd_parser[CMD_SHOW_VARIABLES]
         if sub_cmd_parser:
             sub_cmd_parser.print_help()
@@ -225,6 +230,8 @@ def list_templates(cmd_args):
 
     except ValueError as e:
         print(f"\nUnable to handle command: {CMD_LIST_TEMPLATES} due to: {e} \n")
+        if cmd_args.debug:
+            print(traceback.format_exc())
         sub_cmd_parser = job_sub_cmd_parser[CMD_LIST_TEMPLATES]
         if sub_cmd_parser:
             sub_cmd_parser.print_help()
@@ -286,6 +293,8 @@ def submit_job(cmd_args):
 
     except ValueError as e:
         print(f"\nUnable to handle command: {CMD_SUBMIT_JOB} due to: {e} \n")
+        if cmd_args.debug:
+            print(traceback.format_exc())
         sub_cmd_parser = job_sub_cmd_parser[CMD_SUBMIT_JOB]
         if sub_cmd_parser:
             sub_cmd_parser.print_help()
