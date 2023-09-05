@@ -18,6 +18,7 @@ import sys
 import traceback
 
 from nvflare.cli_exception import CLIException
+from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.dashboard.cli import define_dashboard_parser, handle_dashboard
 from nvflare.fuel.hci.tools.authz_preview import define_authz_preview_parser, run_command
 from nvflare.lighter.provision import define_provision_parser, handle_provision
@@ -136,6 +137,15 @@ def parse_args(prog_name: str):
     sub_cmd_parsers.update(def_job_cli_parser(sub_cmd))
     sub_cmd_parsers.update(def_config_parser(sub_cmd))
 
+    args, argv = _parser.parse_known_args(None, None)
+    cmd = args.__dict__.get("sub_command")
+    sub_cmd_parser = sub_cmd_parsers.get(cmd)
+    if argv:
+        msg = f"{prog_name} {cmd}: unrecognized arguments: {''.join(argv)}\n"
+        print(f"\nerror: {msg}")
+        sub_cmd_parser.print_help()
+        _parser.exit(2, "\n")
+
     return _parser, _parser.parse_args(), sub_cmd_parsers
 
 
@@ -155,6 +165,7 @@ def run(prog_name):
     cwd = os.getcwd()
     sys.path.append(cwd)
     prog_parser, prog_args, sub_cmd_parsers = parse_args(prog_name)
+
     sub_cmd = None
     try:
         sub_cmd = prog_args.sub_command
@@ -165,6 +176,10 @@ def run(prog_name):
         else:
             prog_parser.print_help()
 
+    except CLIUnknownCmdException as e:
+        print(e)
+        print_help(prog_parser, sub_cmd, sub_cmd_parsers)
+        sys.exit(1)
     except CLIException as e:
         print(e)
         sys.exit(1)
