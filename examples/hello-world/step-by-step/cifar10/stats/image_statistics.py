@@ -21,6 +21,7 @@ import torchvision.transforms as transforms
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.statistics_spec import Bin, DataType, Feature, Histogram, HistogramType, Statistics
 
+# the dataset path
 CIFAR10_ROOT = "/tmp/nvflare/data/cifar10"
 
 
@@ -29,13 +30,18 @@ class ImageStatistics(Statistics):
         """local image intensity calculator.
 
         Args:
-            dataset_path: directory with local image data.
+            data_root: directory with local image data.
          Returns:
             Histogram of local statistics`
         """
         super().__init__()
         self.dataset_path = data_root
         self.batch_size = batch_size
+
+        # there are three color channels : RGB, each corresponding to each channel index
+        # we are going treat each channel as one feature, the feature Ids are corresponding to tensor channel index.
+        # The feature name is named "red", "gree", "blue" (RGB).
+
         self.features_ids = {"red": 0, "green": 1, "blue": 2}
         self.image_features = [
             Feature("red", DataType.FLOAT),
@@ -44,14 +50,19 @@ class ImageStatistics(Statistics):
         ]
 
         self.classes = ("plane", "car", "bird", "cat", "deer", "dog", "frog", "horse", "ship", "truck")
-        self.datasets = {}
+        self.dataset_lengths = {}
         self.loaders = {}
 
         self.client_name = None
-        self.failure_images = 0
         self.fl_ctx = None
 
     def initialize(self, fl_ctx: FLContext):
+
+        # FLContext is context information for the client side NVFLARE engine.
+        # it includes many runtime information.
+        # Here we only interested in client site name.
+        # fl_ctx.get_identity_name() will return the client's name
+
         self.fl_ctx = fl_ctx
         self.client_name = "local_client" if fl_ctx is None else fl_ctx.get_identity_name()
 
@@ -59,7 +70,7 @@ class ImageStatistics(Statistics):
 
         trainset = torchvision.datasets.CIFAR10(root=self.dataset_path, train=True, download=True, transform=transform)
         testset = torchvision.datasets.CIFAR10(root=self.dataset_path, train=False, download=True, transform=transform)
-        self.datasets = {"train": trainset, "test": testset}
+        self.dataset_lengths = {"train": len(trainset), "test": len(testset)}
 
         trainloader = torch.utils.data.DataLoader(trainset, batch_size=self.batch_size, shuffle=True, num_workers=2)
         testloader = torch.utils.data.DataLoader(testset, batch_size=self.batch_size, shuffle=False, num_workers=2)
@@ -69,7 +80,7 @@ class ImageStatistics(Statistics):
         return {"train": self.image_features, "test": self.image_features}
 
     def count(self, dataset_name: str, feature_name: str) -> int:
-        return len(self.datasets[dataset_name])
+        return self.dataset_lengths[dataset_name]
 
     def histogram(
         self, dataset_name: str, feature_name: str, num_of_bins: int, global_min_value: float, global_max_value: float
