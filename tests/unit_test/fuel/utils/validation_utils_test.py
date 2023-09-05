@@ -15,6 +15,7 @@
 import pytest
 
 from nvflare.fuel.utils.validation_utils import (
+    DefaultValuePolicy,
     check_non_empty_str,
     check_number_range,
     check_positive_int,
@@ -124,28 +125,28 @@ class TestValidationUtils:
     @pytest.mark.parametrize(
         "var_name, candidate, base, default_policy, allow_none, output",
         [
-            ("x", "red", ["red", "blue"], "any", True, "red"),
-            ("x", " red  ", ["red", "blue"], "any", True, "red"),
-            ("x", "", ["red", "blue"], "any", True, "red"),
-            ("x", "", ["red", "blue"], "empty", True, ""),
-            ("x", None, ["red", "blue"], "any", True, ""),
-            ("x", "@none", ["red", "blue"], "any", True, ""),
+            ("x", "red", ["red", "blue"], DefaultValuePolicy.ANY, True, "red"),
+            ("x", " red  ", ["red", "blue"], DefaultValuePolicy.ANY, True, "red"),
+            ("x", "", ["red", "blue"], DefaultValuePolicy.ANY, True, "red"),
+            ("x", "", ["red", "blue"], DefaultValuePolicy.EMPTY, True, ""),
+            ("x", None, ["red", "blue"], DefaultValuePolicy.ANY, True, ""),
+            ("x", "@none", ["red", "blue"], DefaultValuePolicy.ANY, True, ""),
         ],
     )
-    def test_validate_candidate(self, var_name, candidate, base, default_policy, allow_none, output):
+    def test_validate_candidate(self, var_name, candidate, base, default_policy: str, allow_none, output):
         assert validate_candidate(var_name, candidate, base, default_policy, allow_none) == output
 
     @pytest.mark.parametrize(
         "var_name, candidate, base, default_policy, allow_none",
         [
             ("x", "red", ["red", "blue"], "bad", True),
-            ("x", 2, ["red", "blue"], "any", True),
-            ("x", "", ["red", "blue"], "disallow", True),
-            ("x", "", ["red", "blue"], "all", True),
-            ("x", "yellow", ["red", "blue"], "any", True),
-            ("x", None, ["red", "blue"], "any", False),
-            ("x", "@none", ["red", "blue"], "any", False),
-            ("x", "@all", ["red", "blue"], "any", False),
+            ("x", 2, ["red", "blue"], DefaultValuePolicy.ANY, True),
+            ("x", "", ["red", "blue"], DefaultValuePolicy.DISALLOW, True),
+            ("x", "", ["red", "blue"], DefaultValuePolicy.ALL, True),
+            ("x", "yellow", ["red", "blue"], DefaultValuePolicy.ANY, True),
+            ("x", None, ["red", "blue"], DefaultValuePolicy.ANY, False),
+            ("x", "@none", ["red", "blue"], DefaultValuePolicy.ANY, False),
+            ("x", "@all", ["red", "blue"], DefaultValuePolicy.ANY, False),
         ],
     )
     def test_validate_candidate_error(self, var_name, candidate, base, default_policy, allow_none):
@@ -155,18 +156,18 @@ class TestValidationUtils:
     @pytest.mark.parametrize(
         "var_name, candidates, base, default_policy, allow_none, output",
         [
-            ("x", "red", ["red", "blue"], "any", True, ["red"]),
-            ("x", [" red ", "blue", "red"], ["red", "blue", "green"], "any", True, ["red", "blue"]),
-            ("x", "", ["red", "blue"], "any", True, ["red"]),
-            ("x", "", ["red", "blue"], "all", True, ["red", "blue"]),
-            ("x", "", ["red", "blue"], "empty", True, []),
-            ("x", "red", ["red", "blue"], "any", True, ["red"]),
-            ("x", [], ["red", "blue"], "any", True, ["red"]),
-            ("x", [], ["red", "blue"], "empty", True, []),
-            ("x", [], ["red", "blue"], "all", True, ["red", "blue"]),
-            ("x", None, ["red", "blue"], "any", True, []),
-            ("x", "@all", ["red", "blue"], "any", True, ["red", "blue"]),
-            ("x", "@none", ["red", "blue"], "any", True, []),
+            ("x", "red", ["red", "blue"], DefaultValuePolicy.ANY, True, ["red"]),
+            ("x", [" red ", "blue", "red"], ["red", "blue", "green"], DefaultValuePolicy.ANY, True, ["red", "blue"]),
+            ("x", "", ["red", "blue"], DefaultValuePolicy.ANY, True, ["red"]),
+            ("x", "", ["red", "blue"], DefaultValuePolicy.ALL, True, ["red", "blue"]),
+            ("x", "", ["red", "blue"], DefaultValuePolicy.EMPTY, True, []),
+            ("x", "red", ["red", "blue"], DefaultValuePolicy.ANY, True, ["red"]),
+            ("x", [], ["red", "blue"], DefaultValuePolicy.ANY, True, ["red"]),
+            ("x", [], ["red", "blue"], DefaultValuePolicy.EMPTY, True, []),
+            ("x", [], ["red", "blue"], DefaultValuePolicy.ALL, True, ["red", "blue"]),
+            ("x", None, ["red", "blue"], DefaultValuePolicy.ANY, True, []),
+            ("x", "@all", ["red", "blue"], DefaultValuePolicy.ANY, True, ["red", "blue"]),
+            ("x", "@none", ["red", "blue"], DefaultValuePolicy.ANY, True, []),
         ],
     )
     def test_validate_candidates(self, var_name, candidates, base, default_policy, allow_none, output):
@@ -176,12 +177,12 @@ class TestValidationUtils:
         "var_name, candidate, base, default_policy, allow_none",
         [
             ("x", "red", ["red", "blue"], "bad", True),
-            ("x", 2, ["red", "blue"], "any", True),
-            ("x", "", ["red", "blue"], "disallow", True),
-            ("x", [], ["red", "blue"], "disallow", True),
-            ("x", "yellow", ["red", "blue"], "any", True),
-            ("x", None, ["red", "blue"], "any", False),
-            ("x", "@none", ["red", "blue"], "any", False),
+            ("x", 2, ["red", "blue"], DefaultValuePolicy.ANY, True),
+            ("x", "", ["red", "blue"], DefaultValuePolicy.DISALLOW, True),
+            ("x", [], ["red", "blue"], DefaultValuePolicy.DISALLOW, True),
+            ("x", "yellow", ["red", "blue"], DefaultValuePolicy.ANY, True),
+            ("x", None, ["red", "blue"], DefaultValuePolicy.ANY, False),
+            ("x", "@none", ["red", "blue"], DefaultValuePolicy.ANY, False),
         ],
     )
     def test_validate_candidates_error(self, var_name, candidate, base, default_policy, allow_none):

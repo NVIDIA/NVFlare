@@ -14,7 +14,7 @@
 
 from nvflare.app_common.ccwf.common import Constant, RROrder
 from nvflare.app_common.ccwf.server_ctl import ServerSideController
-from nvflare.fuel.utils.validation_utils import DefaultPolicy, check_str
+from nvflare.fuel.utils.validation_utils import DefaultValuePolicy, check_str
 
 
 class CyclicServerController(ServerSideController):
@@ -42,10 +42,10 @@ class CyclicServerController(ServerSideController):
             job_status_check_interval=job_status_check_interval,
             participating_clients=participating_clients,
             result_clients=result_clients,
-            result_clients_policy=DefaultPolicy.ALL,
+            result_clients_policy=DefaultValuePolicy.ALL,
             result_clients_allow_none=True,
             starting_client=starting_client,
-            starting_client_policy=DefaultPolicy.ANY,
+            starting_client_policy=DefaultValuePolicy.ANY,
             starting_client_allow_none=False,
             max_status_report_interval=max_status_report_interval,
             progress_timeout=progress_timeout,

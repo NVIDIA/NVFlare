@@ -80,7 +80,7 @@ class ClientSideController(Executor, ClientController):
         self.start_task_name = make_task_name(task_name_prefix, Constant.BASENAME_START)
         self.configure_task_name = make_task_name(task_name_prefix, Constant.BASENAME_CONFIG)
         self.do_learn_task_name = make_task_name(task_name_prefix, Constant.BASENAME_LEARN)
-        self.rcv_final_result_task_name = make_task_name(task_name_prefix, Constant.BASENAME_RCV_FINAL_RESULT)
+        self.report_final_result_task_name = make_task_name(task_name_prefix, Constant.BASENAME_REPORT_FINAL_RESULT)
         self.learn_task_name = learn_task_name
         self.learn_task_abort_timeout = learn_task_abort_timeout
         self.learn_task_check_interval = learn_task_check_interval
@@ -304,7 +304,7 @@ class ClientSideController(Executor, ClientController):
         self.update_status(action=f"broadcast_{result_type}_result")
 
         task = Task(
-            name=self.rcv_final_result_task_name,
+            name=self.report_final_result_task_name,
             data=shareable,
             timeout=int(self.final_result_ack_timeout),
         )
@@ -370,7 +370,7 @@ class ClientSideController(Executor, ClientController):
         elif task_name == self.do_learn_task_name:
             return self._process_learn_request(shareable, fl_ctx)
 
-        elif task_name == self.rcv_final_result_task_name:
+        elif task_name == self.report_final_result_task_name:
             return self._process_final_result(shareable, fl_ctx)
 
         else:

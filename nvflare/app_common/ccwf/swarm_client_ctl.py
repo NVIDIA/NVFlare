@@ -266,7 +266,7 @@ class SwarmClientController(ClientSideController):
         )
         self.metric_comparator_id = metric_comparator_id
         self.metric_comparator = None
-        self.rcv_learn_result_task_name = make_task_name(task_name_prefix, Constant.BASENAME_RCV_LEARN_RESULT)
+        self.report_learn_result_task_name = make_task_name(task_name_prefix, Constant.BASENAME_REPORT_LEARN_RESULT)
         self.learn_task_timeout = learn_task_timeout
         self.min_responses_required = min_responses_required
         self.wait_time_after_min_resps_received = wait_time_after_min_resps_received
@@ -299,7 +299,7 @@ class SwarmClientController(ClientSideController):
         )
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        if task_name == self.rcv_learn_result_task_name:
+        if task_name == self.report_learn_result_task_name:
             return self._process_learn_result(shareable, fl_ctx, abort_signal)
         return super().execute(task_name, shareable, fl_ctx, abort_signal)
 
@@ -612,7 +612,7 @@ class SwarmClientController(ClientSideController):
             self.log_info(fl_ctx, f"sending training result to aggregation client {aggr}")
 
             task = Task(
-                name=self.rcv_learn_result_task_name,
+                name=self.report_learn_result_task_name,
                 data=result,
                 timeout=int(self.learn_task_ack_timeout),
             )

@@ -16,7 +16,7 @@ SYMBOL_ALL = "@all"
 SYMBOL_NONE = "@none"
 
 
-class DefaultPolicy:
+class DefaultValuePolicy:
 
     """
     Defines policy for how to determine default value
@@ -169,7 +169,7 @@ def validate_candidates(var_name: str, candidates, base: list, default_policy: s
     Returns:
 
     """
-    if not DefaultPolicy.valid_policy(default_policy):
+    if not DefaultValuePolicy.valid_policy(default_policy):
         raise ValueError(f"invalid default policy {default_policy}")
 
     c = _determine_candidates_value(var_name, candidates, base)
@@ -182,11 +182,11 @@ def validate_candidates(var_name: str, candidates, base: list, default_policy: s
 
     if not c:
         # empty
-        if default_policy == DefaultPolicy.EMPTY:
+        if default_policy == DefaultValuePolicy.EMPTY:
             return []
-        elif default_policy == DefaultPolicy.ALL:
+        elif default_policy == DefaultValuePolicy.ALL:
             return base
-        elif default_policy == DefaultPolicy.DISALLOW:
+        elif default_policy == DefaultValuePolicy.DISALLOW:
             raise ValueError(f"invalid value '{candidates}' in '{var_name}': it must be subset of {base}")
         else:
             # any
@@ -244,7 +244,7 @@ def validate_candidate(var_name: str, candidate, base: list, default_policy: str
     Returns:
 
     """
-    if not DefaultPolicy.valid_policy(default_policy):
+    if not DefaultValuePolicy.valid_policy(default_policy):
         raise ValueError(f"invalid default policy {default_policy}")
 
     c = _determine_candidate_value(var_name, candidate, base)
@@ -255,9 +255,9 @@ def validate_candidate(var_name: str, candidate, base: list, default_policy: str
             return ""
 
     if not c:
-        if default_policy == DefaultPolicy.EMPTY:
+        if default_policy == DefaultValuePolicy.EMPTY:
             return ""
-        elif default_policy == DefaultPolicy.ANY:
+        elif default_policy == DefaultValuePolicy.ANY:
             return base[0]
         else:
             raise ValueError(f"invalid value '{candidate}' in '{var_name}': it must be one of {base}")

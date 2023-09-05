@@ -26,7 +26,7 @@ from nvflare.app_common.ccwf.common import Constant, ModelType, make_task_name
 from nvflare.app_common.ccwf.server_ctl import ServerSideController
 from nvflare.app_common.ccwf.val_result_manager import EvalResultManager
 from nvflare.fuel.utils.validation_utils import (
-    DefaultPolicy,
+    DefaultValuePolicy,
     check_positive_number,
     check_str,
     validate_candidate,
@@ -66,11 +66,11 @@ class CrossSiteEvalServerController(ServerSideController):
             job_status_check_interval=job_status_check_interval,
             participating_clients=participating_clients,
             starting_client="",
-            starting_client_policy=DefaultPolicy.EMPTY,
+            starting_client_policy=DefaultValuePolicy.EMPTY,
             starting_client_allow_none=True,
             max_status_report_interval=max_status_report_interval,
             result_clients=None,
-            result_clients_policy=DefaultPolicy.EMPTY,
+            result_clients_policy=DefaultValuePolicy.EMPTY,
             result_clients_allow_none=True,
             progress_timeout=progress_timeout,
         )
@@ -99,7 +99,7 @@ class CrossSiteEvalServerController(ServerSideController):
             var_name="evaluators",
             candidates=self.evaluators,
             base=self.participating_clients,
-            default_policy=DefaultPolicy.ALL,
+            default_policy=DefaultValuePolicy.ALL,
             allow_none=False,
         )
 
@@ -107,7 +107,7 @@ class CrossSiteEvalServerController(ServerSideController):
             var_name="evaluatees",
             candidates=self.evaluatees,
             base=self.participating_clients,
-            default_policy=DefaultPolicy.ALL,
+            default_policy=DefaultValuePolicy.ALL,
             allow_none=True,
         )
 
@@ -115,7 +115,7 @@ class CrossSiteEvalServerController(ServerSideController):
             var_name="global_model_client",
             candidate=self.global_model_client,
             base=self.participating_clients,
-            default_policy=DefaultPolicy.ANY,
+            default_policy=DefaultValuePolicy.ANY,
             allow_none=True,
         )
 

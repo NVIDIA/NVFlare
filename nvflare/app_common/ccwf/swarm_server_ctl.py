@@ -15,7 +15,7 @@
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.ccwf.common import Constant
 from nvflare.app_common.ccwf.server_ctl import ServerSideController
-from nvflare.fuel.utils.validation_utils import DefaultPolicy, validate_candidates
+from nvflare.fuel.utils.validation_utils import DefaultValuePolicy, validate_candidates
 
 
 class SwarmServerController(ServerSideController):
@@ -49,10 +49,10 @@ class SwarmServerController(ServerSideController):
             job_status_check_interval=job_status_check_interval,
             participating_clients=participating_clients,
             result_clients=result_clients,
-            result_clients_policy=DefaultPolicy.ALL,
+            result_clients_policy=DefaultValuePolicy.ALL,
             result_clients_allow_none=True,
             starting_client=starting_client,
-            starting_client_policy=DefaultPolicy.ANY,
+            starting_client_policy=DefaultValuePolicy.ANY,
             starting_client_allow_none=False,
             max_status_report_interval=max_status_report_interval,
             progress_timeout=progress_timeout,
@@ -73,7 +73,7 @@ class SwarmServerController(ServerSideController):
             var_name="train_clients",
             candidates=self.train_clients,
             base=self.participating_clients,
-            default_policy=DefaultPolicy.ALL,
+            default_policy=DefaultValuePolicy.ALL,
             allow_none=False,
         )
 
@@ -81,7 +81,7 @@ class SwarmServerController(ServerSideController):
             var_name="aggr_clients",
             candidates=self.aggr_clients,
             base=self.participating_clients,
-            default_policy=DefaultPolicy.ALL,
+            default_policy=DefaultValuePolicy.ALL,
             allow_none=False,
         )
 

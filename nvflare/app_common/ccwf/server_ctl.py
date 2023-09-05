@@ -30,7 +30,7 @@ from nvflare.app_common.ccwf.common import (
     topic_for_end_workflow,
 )
 from nvflare.fuel.utils.validation_utils import (
-    DefaultPolicy,
+    DefaultValuePolicy,
     check_number_range,
     check_positive_int,
     check_positive_number,
@@ -62,11 +62,11 @@ class ServerSideController(Controller):
         task_check_period: float = Constant.TASK_CHECK_INTERVAL,
         job_status_check_interval: float = Constant.JOB_STATUS_CHECK_INTERVAL,
         starting_client=None,
-        starting_client_policy: str = DefaultPolicy.ANY,
+        starting_client_policy: str = DefaultValuePolicy.ANY,
         starting_client_allow_none=False,
         participating_clients=None,
         result_clients=None,
-        result_clients_policy: str = DefaultPolicy.ALL,
+        result_clients_policy: str = DefaultValuePolicy.ALL,
         result_clients_allow_none=True,
         max_status_report_interval: float = Constant.PER_CLIENT_STATUS_REPORT_TIMEOUT,
         progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
@@ -149,7 +149,7 @@ class ServerSideController(Controller):
             var_name="participating_clients",
             candidates=self.participating_clients,
             base=all_client_names,
-            default_policy=DefaultPolicy.ALL,
+            default_policy=DefaultValuePolicy.ALL,
             allow_none=False,
         )
 

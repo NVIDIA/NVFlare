@@ -27,8 +27,8 @@ class Constant:
     BASENAME_START = "start"
     BASENAME_LEARN = "learn"
     BASENAME_EVAL = "eval"
-    BASENAME_RCV_LEARN_RESULT = "rcv_learn_result"
-    BASENAME_RCV_FINAL_RESULT = "rcv_final_result"
+    BASENAME_REPORT_LEARN_RESULT = "report_learn_result"
+    BASENAME_REPORT_FINAL_RESULT = "report_final_result"
     BASENAME_ASK_FOR_MODEL = "ask_for_model"
 
     TASK_NAME_PREFIX = "cwf.task_prefix"
