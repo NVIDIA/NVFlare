@@ -645,8 +645,11 @@ class JobCommandModule(CommandModule, CommandUtil):
             return
         try:
             data = zip_directory_to_bytes(download_dir, job_id)
+            # data = job_data
             b64str = bytes_to_b64str(data)
             conn.append_string(b64str, meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_ID: job_id}))
+
+            job_def_manager.
         except FileNotFoundError:
             conn.append_error("No record found for job '{}'".format(job_id))
         except Exception:

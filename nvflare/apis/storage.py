@@ -15,6 +15,10 @@
 from abc import ABC, abstractmethod
 from typing import List, Tuple
 
+DATA = "data"
+META = "meta"
+WORKSPACE = "workspace"
+
 
 class StorageException(Exception):
     """Base class for Storage exceptions."""
@@ -56,6 +60,19 @@ class StorageSpec(ABC):
 
         """
         pass
+
+    @abstractmethod
+    def update_object(self, uri: str, data: bytes, component: str):
+        """Update the object
+
+        Args:
+            uri: URI of the object
+            data: content data of the component
+            component: component name
+
+        Raises StorageException when the object does not exit.
+
+        """
 
     @abstractmethod
     def update_meta(self, uri: str, meta: dict, replace: bool):
@@ -163,3 +180,7 @@ class StorageSpec(ABC):
 
         """
         pass
+
+    @staticmethod
+    def is_valid_component(component):
+        return component in [DATA, META, WORKSPACE]
