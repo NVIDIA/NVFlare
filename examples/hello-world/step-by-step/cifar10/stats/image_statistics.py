@@ -25,10 +25,7 @@ CIFAR10_ROOT = "/tmp/nvflare/data/cifar10"
 
 
 class ImageStatistics(Statistics):
-
-    def __init__(self,
-                 data_root: str = CIFAR10_ROOT,
-                 batch_size: int = 4):
+    def __init__(self, data_root: str = CIFAR10_ROOT, batch_size: int = 4):
         """local image intensity calculator.
 
         Args:
@@ -39,12 +36,14 @@ class ImageStatistics(Statistics):
         super().__init__()
         self.dataset_path = data_root
         self.batch_size = batch_size
-        self.features_ids = { "red": 0, "green": 1,"blue": 2}
-        self.image_features  = [Feature("red", DataType.FLOAT),
-                                Feature("green", DataType.FLOAT),
-                                Feature("blue", DataType.FLOAT)]
+        self.features_ids = {"red": 0, "green": 1, "blue": 2}
+        self.image_features = [
+            Feature("red", DataType.FLOAT),
+            Feature("green", DataType.FLOAT),
+            Feature("blue", DataType.FLOAT),
+        ]
 
-        self.classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
+        self.classes = ("plane", "car", "bird", "cat", "deer", "dog", "frog", "horse", "ship", "truck")
         self.datasets = {}
         self.loaders = {}
 
@@ -56,29 +55,25 @@ class ImageStatistics(Statistics):
         self.fl_ctx = fl_ctx
         self.client_name = "local_client" if fl_ctx is None else fl_ctx.get_identity_name()
 
-        transform = transforms.Compose([transforms.ToTensor(),transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+        transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
         trainset = torchvision.datasets.CIFAR10(root=self.dataset_path, train=True, download=True, transform=transform)
-        testset = torchvision.datasets.CIFAR10(root=self.dataset_path, train=False,  download=True, transform=transform)
-        self.datasets = {"train": trainset, "test":testset}
+        testset = torchvision.datasets.CIFAR10(root=self.dataset_path, train=False, download=True, transform=transform)
+        self.datasets = {"train": trainset, "test": testset}
 
         trainloader = torch.utils.data.DataLoader(trainset, batch_size=self.batch_size, shuffle=True, num_workers=2)
         testloader = torch.utils.data.DataLoader(testset, batch_size=self.batch_size, shuffle=False, num_workers=2)
         self.loaders = {"train": trainloader, "test": testloader}
 
     def features(self) -> Dict[str, List[Feature]]:
-        return {"train": self.image_features,
-                "test":  self.image_features}
+        return {"train": self.image_features, "test": self.image_features}
 
     def count(self, dataset_name: str, feature_name: str) -> int:
         return len(self.datasets[dataset_name])
 
-    def histogram(self,
-                  dataset_name: str,
-                  feature_name: str,
-                  num_of_bins: int,
-                  global_min_value: float,
-                  global_max_value: float) -> Histogram:
+    def histogram(
+        self, dataset_name: str, feature_name: str, num_of_bins: int, global_min_value: float, global_max_value: float
+    ) -> Histogram:
 
         print(f"calculating image intensity histogram for client {self.client_name}")
         channel = self.features_ids[feature_name]
@@ -90,9 +85,9 @@ class ImageStatistics(Statistics):
 
         for inputs, _ in self.loaders[dataset_name]:
             for img in inputs:
-                counts, bin_edges = np.histogram(img[channel, : , :],
-                                                 bins=num_of_bins,
-                                                 range=(global_min_value, global_max_value))
+                counts, bin_edges = np.histogram(
+                    img[channel, :, :], bins=num_of_bins, range=(global_min_value, global_max_value)
+                )
                 histogram += counts
 
         for i in range(num_of_bins):
@@ -102,4 +97,3 @@ class ImageStatistics(Statistics):
             histogram_bins.append(Bin(low_value=low_value, high_value=high_value, sample_count=bin_sample_count))
 
         return Histogram(HistogramType.STANDARD, histogram_bins)
-
