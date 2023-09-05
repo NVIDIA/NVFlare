@@ -10,7 +10,7 @@ The images in CIFAR-10 are of size 3x32x32, i.e. 3-channel color images of 32x32
 ![image](data/cifar10.png)
 
 
-* Federated Histogram analysis with Federated Statistics
+* [Image intensity histogram caculation](stats)
 * Scatter and Gather (SAG) workflow with NVFLARE Client APIs
 * Cyclic Weight Transfer workflow with NVFLARE Client APIs
 * Swarm Learning Workflow with NVFLARE Client APIs
