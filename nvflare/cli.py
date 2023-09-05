@@ -189,7 +189,6 @@ def run(prog_name):
             print_help(prog_parser, sub_cmd, sub_cmd_parsers)
 
 
-
 def print_help(prog_parser, sub_cmd, sub_cmd_parsers):
     if sub_cmd:
         sub_parser = sub_cmd_parsers[sub_cmd]
