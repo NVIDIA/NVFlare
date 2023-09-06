@@ -20,7 +20,7 @@ We are adopting the example from [Pytorch Geometrics](https://pytorch-geometric.
 You can follow the https://github.com/pyg-team/pytorch_geometric/blob/master/examples/graph_sage_unsup_ppi.py for GraphSAGE code.
 
 
-### 1. Install NVIDIA FLARE
+###  Install NVIDIA FLARE
 
 Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions.
 Install additional requirements:
@@ -29,7 +29,7 @@ Install additional requirements:
 python3 -m pip install -r requirements.txt
 ```
 
-### 2. Run the experiment
+###  Run the experiment
 
 Use nvflare simulator to run the hello-examples:
 
@@ -37,7 +37,7 @@ Use nvflare simulator to run the hello-examples:
 nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 gnn-pt/jobs/gnn-pt
 ```
 
-### 3. Access the logs and results
+###  Access the logs and results
 
 You can find the running logs and results inside the simulator's workspace/simulate_job
 
