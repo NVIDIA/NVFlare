@@ -71,13 +71,13 @@ def encode(loader):
 
 with torch.no_grad():
     x, y = encode(train_loader)
-    clf = MultiOutputClassifier(SGDClassifier(loss="log", penalty="l2"))
+    clf = MultiOutputClassifier(SGDClassifier(loss="log_loss", penalty="l2"))
     clf.fit(x, y)
     train_f1 = f1_score(y, clf.predict(x), average="micro")
 
     # Evaluate on test set:
     x, y = encode(test_loader)
-    test_f1 = f1_score(y, clf.predict(x), average="micro")
+    global_test_f1 = f1_score(y, clf.predict(x), average="micro")
 
 optimizer = torch.optim.Adam(net.parameters(), lr=LR)
 
@@ -102,7 +102,7 @@ for epoch in range(EPOCHS):
 
 
 # (5) construct the FLModel to returned back
-output_model = flare.FLModel(params=net.cpu().state_dict(), params_type="FULL", metrics={"f1": test_f1})
+output_model = flare.FLModel(params=net.cpu().state_dict(), params_type="FULL", metrics={"f1": global_test_f1})
 
 # (6) send back model
 flare.send(output_model)
