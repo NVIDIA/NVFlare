@@ -26,8 +26,9 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.launcher import Launcher, LauncherCompleteStatus
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils, ParamsConverter
-from nvflare.client.config import ClientConfig, ConfigKey, from_file
+from nvflare.client.config import ClientConfig, ConfigKey
 from nvflare.client.constants import CONFIG_EXCHANGE
+from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.fuel.utils.pipe.pipe import Message, Pipe
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler, Topic
 from nvflare.fuel.utils.validation_utils import check_object_type
@@ -188,10 +189,11 @@ class LauncherExecutor(Executor):
         workspace = fl_ctx.get_engine().get_workspace()
         app_dir = workspace.get_app_dir(fl_ctx.get_job_id())
         config_file = os.path.join(app_dir, workspace.config_folder, CONFIG_EXCHANGE)
-        if os.path.exists(config_file):
-            client_config = from_file(config_file=config_file)
-        else:
-            client_config = ClientConfig({})
+        config = ConfigFactory.load_config(config_file)
+        if config is None:
+            raise RuntimeError(f"Load config file {config} failed.")
+
+        client_config = ClientConfig(config=config.to_dict())
         self._update_config_exchange_dict(client_config.config)
         client_config.to_json(config_file)
 
