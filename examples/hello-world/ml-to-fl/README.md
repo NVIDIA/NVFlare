@@ -165,7 +165,7 @@ Then we can create the job using sag_pt template:
 nvflare job create -force -j ./jobs/lightning -w sag_pt -sd ./codes/ -s ./codes/cifar10_lightning.py
 ```
 
-We need to modify the "key_metric" in "config_fed_server.conf" from "accuracy" to "val_acc_epoch" (this name originates from the code [here](./codes/cifar10_lightning.py#94)) which means the validation accuracy for that epoch:
+We need to modify the "key_metric" in "config_fed_server.conf" from "accuracy" to "val_acc_epoch" (this name originates from the code [here](./codes/lit_net.py#L56)) which means the validation accuracy for that epoch:
 
 ```
 {
