@@ -23,7 +23,7 @@ from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person
 from nvflare.private.admin_defs import Message, error_reply, ok_reply
 from nvflare.private.defs import CellChannel, RequestHeader, new_cell_message
-from nvflare.private.fed.server.site_security import SiteSecurityFilter
+from nvflare.private.fed.server.site_security import SiteSecurity
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 
@@ -153,10 +153,10 @@ class FedAdminAgent(object):
                             elif not authorized:
                                 reply = error_reply("not authorized")
 
-                            site_security_filter = SiteSecurityFilter()
+                            site_security = SiteSecurity()
                             self._set_security_data(self.app_ctx, req)
-                            ok, messages = site_security_filter.authorization_check(self.app_ctx, cmd, fl_ctx)
-                            if not ok:
+                            authorized, messages = site_security.authorization_check(self.app_ctx, cmd, fl_ctx)
+                            if not authorized:
                                 reply = error_reply(messages)
 
                         else:

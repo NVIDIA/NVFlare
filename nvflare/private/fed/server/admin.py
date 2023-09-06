@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import copy
 import threading
 import time
 from typing import List, Optional
@@ -34,8 +34,6 @@ from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import ERROR_MSG_PREFIX, RequestHeader
 from nvflare.private.fed.server.message_send import ClientReply, send_requests
-
-from .site_security import SiteSecurityFilter
 
 
 def new_message(conn: Connection, topic, body, require_authz: bool) -> Message:
@@ -150,9 +148,6 @@ class FedAdminServer(AdminServer):
             raise TypeError("auditor must be Auditor but got {}".format(type(auditor)))
         audit_filter = CommandAudit(auditor)
         cmd_reg.add_filter(audit_filter)
-
-        site_security_filter = SiteSecurityFilter()
-        cmd_reg.add_filter(site_security_filter)
 
         self.file_upload_dir = file_upload_dir
         self.file_download_dir = file_download_dir
@@ -278,10 +273,10 @@ class FedAdminServer(AdminServer):
             A list of ClientReply
         """
 
-        with self.sai.new_context() as fl_ctx:
-            for _, request in requests.items():
+        for _, request in requests.items():
+            with self.sai.new_context() as fl_ctx:
                 self.sai.fire_event(EventType.BEFORE_SEND_ADMIN_COMMAND, fl_ctx)
-                request.set_header(ReservedHeaderKey.PEER_PROPS, fl_ctx.get_all_public_props())
+                request.set_header(ReservedHeaderKey.PEER_PROPS, copy.deepcopy(fl_ctx.get_all_public_props()))
 
         return send_requests(
             cell=self.cell,

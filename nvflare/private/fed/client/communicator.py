@@ -87,7 +87,7 @@ class Communicator:
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def client_registration(self, client_name, project_name, register_data: dict, fl_ctx: FLContext):
+    def client_registration(self, client_name, project_name, fl_ctx: FLContext):
         """Client's metadata used to authenticate and communicate.
 
         Args:
@@ -110,9 +110,8 @@ class Communicator:
             CellMessageHeaderKeys.CLIENT_NAME: client_name,
             CellMessageHeaderKeys.CLIENT_IP: local_ip,
             CellMessageHeaderKeys.PROJECT_NAME: project_name,
-            CellMessageHeaderKeys.CLIENT_REGISTER_DATA: register_data,
         }
-        login_message = new_cell_message(headers, fobs.dumps(shareable))
+        login_message = new_cell_message(headers, shareable)
 
         start = time.time()
         while not self.cell:

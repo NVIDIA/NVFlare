@@ -741,7 +741,7 @@ class ServerEngine(ServerEngineInternalSpec):
         return result
 
     def _make_message_for_check_resource(self, job, resource_requirements, fl_ctx):
-        request = Message(topic=TrainingTopic.CHECK_RESOURCE, body=fobs.dumps(resource_requirements))
+        request = Message(topic=TrainingTopic.CHECK_RESOURCE, body=resource_requirements)
         request.set_header(RequestHeader.JOB_ID, job.job_id)
         request.set_header(RequestHeader.REQUIRE_AUTHZ, "true")
         request.set_header(RequestHeader.ADMIN_COMMAND, AdminCommandNames.CHECK_RESOURCES)
