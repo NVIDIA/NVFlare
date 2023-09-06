@@ -5,7 +5,7 @@
         controller_type = "server"
         executor_type = "statistics_executor"
         contributor = "NVIDIA"
-        init_publish_date = "2022"
+        init_publish_date = "2023"
         last_updated_date = "2023"
  
  

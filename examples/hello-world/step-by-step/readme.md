@@ -1,10 +1,9 @@
 #  Step-by-Step Examples
 
-When give an machine learning problem, we probably wonder, 
-where do we start to formulate the federated learning problem. 
+When give a machine learning problem, we probably wonder, where do we start to formulate the federated learning problem. 
 
-* What the data looks like ?
-* How do we analyze the data and compare global statistics with site's data analytics ? 
+* What does the data look like ?
+* How do we compare global statistics with the site's local data statistics ? 
 * How to formulate the federated algorithms
   * https://developer.download.nvidia.com/healthcare/clara/docs/federated_traditional_machine_learning_algorithms.pdf
 * Given the formulation, how to convert the existing machine learning or deep learning code to Federated learning code.
