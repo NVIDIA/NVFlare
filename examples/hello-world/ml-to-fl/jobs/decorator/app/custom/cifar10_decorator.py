@@ -19,7 +19,7 @@ import torchvision
 import torchvision.transforms as transforms
 from net import Net
 
-# (2.0) import nvflare client API
+# (1) import nvflare client API
 import nvflare.client as flare
 
 # (optional) set a fix place so we don't need to download everytime
@@ -43,11 +43,11 @@ def main():
 
     net = Net()
 
-    # (2.1) initializes NVFlare client API
+    # (2) initializes NVFlare client API
     flare.init()
 
-    # (2.2) decorates with flare.train and load model from the first argument
-    # (1.1) wraps training logic into a method
+    # (3) decorates with flare.train and load model from the first argument
+    # wraps training logic into a method
     @flare.train
     def train(input_model=None, total_epochs=2, lr=0.001):
         net.load_state_dict(input_model.params)
@@ -87,16 +87,16 @@ def main():
 
         torch.save(net.state_dict(), PATH)
 
-        # (2.3) construct trained FL model
+        # (4) construct trained FL model
         output_model = flare.FLModel(params=net.cpu().state_dict(), meta={"NUM_STEPS_CURRENT_ROUND": steps})
         return output_model
 
-    # (2.4) decorates with flare.evaluate and load model from the first argument
+    # (5) decorates with flare.evaluate and load model from the first argument
     @flare.evaluate
     def fl_evaluate(input_model=None):
         return evaluate(input_weights=input_model.params)
 
-    # (1.2) wraps evaluate logic into a method
+    # wraps evaluate logic into a method
     def evaluate(input_weights):
         net.load_state_dict(input_weights)
         # (optional) use GPU to speed things up
@@ -117,15 +117,15 @@ def main():
                 correct += (predicted == labels).sum().item()
 
         print(f"Accuracy of the network on the 10000 test images: {100 * correct // total} %")
-        # (1.3) return evaluation metrics
+        # return evaluation metrics
         return 100 * correct // total
 
-    # (2.5) call fl_evaluate method before training
+    # (6) call fl_evaluate method before training
     #       to evaluate on the received/aggregated model
     fl_evaluate()
-    # (1.4) call train method
+    # call train method
     train(total_epochs=2, lr=0.001)
-    # (1.5) call evaluate method
+    # call evaluate method
     evaluate(input_weights=torch.load(PATH))
 
 

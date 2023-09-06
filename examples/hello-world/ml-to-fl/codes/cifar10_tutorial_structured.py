@@ -38,7 +38,7 @@ def main():
 
     net = Net()
 
-    # (1.1) wraps training logic into a method
+    # wraps training logic into a method
     def train(total_epochs=2, lr=0.001):
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.SGD(net.parameters(), lr=lr, momentum=0.9)
@@ -73,7 +73,7 @@ def main():
 
         torch.save(net.state_dict(), PATH)
 
-    # (1.2) wraps evaluate logic into a method
+    # wraps evaluate logic into a method
     def evaluate(input_weights):
         net.load_state_dict(input_weights)
         # (optional) use GPU to speed things up
@@ -94,12 +94,12 @@ def main():
                 correct += (predicted == labels).sum().item()
 
         print(f"Accuracy of the network on the 10000 test images: {100 * correct // total} %")
-        # (1.3) return evaluation metrics
+        # return evaluation metrics
         return 100 * correct // total
 
-    # (1.4) call train method
+    # call train method
     train(total_epochs=2, lr=0.001)
-    # (1.5) call evaluate method
+    # call evaluate method
     evaluate(input_weights=torch.load(PATH))
 
 

@@ -33,11 +33,24 @@ class CIFAR10DataModule(LightningDataModule):
         super().__init__()
         self.data_dir = data_dir
         self.batch_size = batch_size
-        dataset = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=True, download=True, transform=transform)
-        self.cifar_test = torchvision.datasets.CIFAR10(
-            root=DATASET_PATH, train=False, download=True, transform=transform
-        )
-        self.cifar_train, self.cifar_val = random_split(dataset, [0.8, 0.2])
+
+    def prepare_data(self):
+        torchvision.datasets.CIFAR10(root=self.data_dir, train=True, download=True, transform=transform)
+        torchvision.datasets.CIFAR10(root=self.data_dir, train=False, download=True, transform=transform)
+
+    def setup(self, stage: str):
+        # Assign train/val datasets for use in dataloaders
+        if stage == "fit" or stage == "validate":
+            cifar_full = torchvision.datasets.CIFAR10(
+                root=self.data_dir, train=True, download=False, transform=transform
+            )
+            self.cifar_train, self.cifar_val = random_split(cifar_full, [0.8, 0.2])
+
+        # Assign test dataset for use in dataloader(s)
+        if stage == "test" or stage == "predict":
+            self.cifar_test = torchvision.datasets.CIFAR10(
+                root=self.data_dir, train=False, download=False, transform=transform
+            )
 
     def train_dataloader(self):
         return DataLoader(self.cifar_train, batch_size=self.batch_size)
@@ -68,7 +81,7 @@ def main():
 
     # get predictions
     print("--- prediction with new best model ---")
-    predictions = trainer.predict(ckpt_path="best", datamodule=cifar10_dm)
+    trainer.predict(ckpt_path="best", datamodule=cifar10_dm)
 
 
 if __name__ == "__main__":

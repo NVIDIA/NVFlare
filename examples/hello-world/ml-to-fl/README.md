@@ -93,6 +93,8 @@ nvflare job list_templates
 nvflare job create -force -j ./jobs/client_api -w sag_pt -sd ./codes/ -s ./codes/cifar10_client_api.py
 ```
 
+Note that we have already created the [client_api job folder](./jobs/client_api/)
+
 Now we have re-write our code and created the [client_api job folder](./jobs/client_api/), we can run it using NVFlare Simulator:
 
 ```bash
@@ -109,13 +111,13 @@ The above case show how you can change non-structured DL code to FL.
 Usually people have already put their codes into "train", "evaluate", "test" methods so they can reuse.
 In that case, the NVFlare DL2FL decorator is the way to go.
 
-[cifar10_tutorial_structured.py](./codes/cifar10_tutorial_structured.py) is an example of structured code. It wraps the training and evaluation logic into 2 methods.
-
-It has the following changes (compare to [./codes/cifar10_tutorial_clean.py](./codes/cifar10_tutorial_clean.py)):
+To structure the code, we make the following changes to [./codes/cifar10_tutorial_clean.py](./codes/cifar10_tutorial_clean.py):
 
 1. Wrap training logic into a train method
 2. Wrap evaluation logic into an evaluate method
 3. Call train method and evaluate method
+
+The result is [cifar10_tutorial_structured.py](./codes/cifar10_tutorial_structured.py)
 
 To modify this structured code to be used in FL.
 We do the following changes:
@@ -141,6 +143,7 @@ Then we can create the job and run it using simulator:
 
 ```bash
 nvflare job create -force -j ./jobs/decorator -w sag_pt -sd ./codes/ -s ./codes/cifar10_decorator.py
+./prepare_data.sh
 nvflare simulator -n 2 -t 2 ./jobs/decorator
 ```
 
@@ -194,5 +197,6 @@ And we modify the model architecture to use the LitNet class:
 Finally we run it using simulator:
 
 ```bash
+./prepare_data.sh
 nvflare simulator -n 2 -t 2 ./jobs/lightning
 ```
