@@ -165,7 +165,6 @@ def show_variables(cmd_args):
 
 def check_template_exists(target_template_name, template_index_conf):
     targets = [os.path.basename(key) for key in template_index_conf.get("templates").keys()]
-    print(f"{targets=}")
     found = target_template_name in targets
 
     if not found:
@@ -496,7 +495,6 @@ def prepare_job_config(cmd_args, tmp_job_dir: Optional[str] = None):
 
 def update_client_app_script(cmd_args):
     if cmd_args.app_config:
-        print(cmd_args.app_config)
         client_config, config_path = _update_client_app_config_script(cmd_args.job_folder, cmd_args.app_config)
         save_config(client_config, config_path)
 

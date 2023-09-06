@@ -58,6 +58,7 @@ def _main(args):
 
     # (1.1) initializes NVFlare client API
     flare.init()
+    print(f"{flare.system_info()=}")
     # (1.2) gets FLModel from NVFlare
     input_model = flare.receive()
 
