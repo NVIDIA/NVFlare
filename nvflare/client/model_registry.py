@@ -67,11 +67,14 @@ class ModelRegistry:
                 raise RuntimeError(f"no default params diff function for {exchange_format}")
             elif self.cached_model is None:
                 raise RuntimeError("no received model")
-            try:
-                model.params = diff_func(original=self.cached_model.params, new=model.params)
-                model.params_type = ParamsType.DIFF
-            except Exception as e:
-                raise RuntimeError(f"params diff function failed: {e}")
+            elif model.params is not None:
+                try:
+                    model.params = diff_func(original=self.cached_model.params, new=model.params)
+                    model.params_type = ParamsType.DIFF
+                except Exception as e:
+                    raise RuntimeError(f"params diff function failed: {e}")
+            elif model.metrics is None:
+                raise RuntimeError("the model to send does not have either params or metrics")
         self.model_exchanger.submit_model(model=model)
 
     def clear(self):

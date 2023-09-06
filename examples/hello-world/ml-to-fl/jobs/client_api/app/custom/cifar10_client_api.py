@@ -19,7 +19,7 @@ import torchvision
 import torchvision.transforms as transforms
 from net import Net
 
-# (1.0) import nvflare client API
+# (1) import nvflare client API
 import nvflare.client as flare
 
 # (optional) set a fix place so we don't need to download everytime
@@ -42,12 +42,12 @@ def main():
 
     net = Net()
 
-    # (1.1) initializes NVFlare client API
+    # (2) initializes NVFlare client API
     flare.init()
-    # (1.2) gets FLModel from NVFlare
+    # (3) gets FLModel from NVFlare
     input_model = flare.receive()
 
-    # (1.3) loads model from NVFlare
+    # (4) loads model from NVFlare
     net.load_state_dict(input_model.params)
 
     criterion = nn.CrossEntropyLoss()
@@ -85,7 +85,7 @@ def main():
     PATH = "./cifar_net.pth"
     torch.save(net.state_dict(), PATH)
 
-    # (2.0) wraps evaluation logic into a method to re-use for
+    # (5) wraps evaluation logic into a method to re-use for
     #       evaluation on both trained and received model
     def evaluate(input_weights):
         net = Net()
@@ -110,17 +110,15 @@ def main():
         print(f"Accuracy of the network on the 10000 test images: {100 * correct // total} %")
         return 100 * correct // total
 
-    # (2.1) evaluation on local trained model
-    local_accuracy = evaluate(torch.load(PATH))
-    # (2.2) evaluate on received model for model selection
+    # (6) evaluate on received model for model selection
     accuracy = evaluate(input_model.params)
-    # (2.3) construct trained FL model
+    # (7) construct trained FL model
     output_model = flare.FLModel(
         params=net.cpu().state_dict(),
         metrics={"accuracy": accuracy},
         meta={"NUM_STEPS_CURRENT_ROUND": steps},
     )
-    # (1.5) send model back to NVFlare
+    # (8) send model back to NVFlare
     flare.send(output_model)
 
 

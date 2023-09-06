@@ -39,12 +39,12 @@ def main():
     net = Net()
 
     # (1.1) wraps training logic into a method
-    def train(total_epochs=2, lr=0.001, device="cpu"):
+    def train(total_epochs=2, lr=0.001):
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.SGD(net.parameters(), lr=lr, momentum=0.9)
 
         # (optional) use GPU to speed things up
-        net.to(device)
+        net.to(DEVICE)
 
         for epoch in range(total_epochs):  # loop over the dataset multiple times
 
@@ -52,7 +52,7 @@ def main():
             for i, data in enumerate(trainloader, 0):
                 # get the inputs; data is a list of [inputs, labels]
                 # (optional) use GPU to speed things up
-                inputs, labels = data[0].to(device), data[1].to(device)
+                inputs, labels = data[0].to(DEVICE), data[1].to(DEVICE)
 
                 # zero the parameter gradients
                 optimizer.zero_grad()
@@ -74,10 +74,10 @@ def main():
         torch.save(net.state_dict(), PATH)
 
     # (1.2) wraps evaluate logic into a method
-    def evaluate(input_weights, device="cpu"):
+    def evaluate(input_weights):
         net.load_state_dict(input_weights)
         # (optional) use GPU to speed things up
-        net.to(device)
+        net.to(DEVICE)
 
         correct = 0
         total = 0
@@ -85,7 +85,7 @@ def main():
         with torch.no_grad():
             for data in testloader:
                 # (optional) use GPU to speed things up
-                images, labels = data[0].to(device), data[1].to(device)
+                images, labels = data[0].to(DEVICE), data[1].to(DEVICE)
                 # calculate outputs by running images through the network
                 outputs = net(images)
                 # the class with the highest energy is what we choose as prediction
@@ -98,9 +98,9 @@ def main():
         return 100 * correct // total
 
     # (1.4) call train method
-    train(total_epochs=2, lr=0.001, device=DEVICE)
+    train(total_epochs=2, lr=0.001)
     # (1.5) call evaluate method
-    evaluate(input_weights=torch.load(PATH), device=DEVICE)
+    evaluate(input_weights=torch.load(PATH))
 
 
 if __name__ == "__main__":

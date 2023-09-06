@@ -26,7 +26,7 @@ import nvflare.client as flare
 DATASET_PATH = "/tmp/nvflare/data"
 # (optional) We change to use GPU to speed things up.
 # if you want to use CPU, change DEVICE="cpu"
-DEVICE = "cpu"
+DEVICE = "cuda:0"
 PATH = "./cifar_net.pth"
 
 
@@ -49,14 +49,14 @@ def main():
     # (2.2) decorates with flare.train and load model from the first argument
     # (1.1) wraps training logic into a method
     @flare.train
-    def train(input_model=None, total_epochs=2, lr=0.001, device="cpu"):
+    def train(input_model=None, total_epochs=2, lr=0.001):
         net.load_state_dict(input_model.params)
 
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.SGD(net.parameters(), lr=lr, momentum=0.9)
 
         # (optional) use GPU to speed things up
-        net.to(device)
+        net.to(DEVICE)
         # (optional) calculate total steps
         steps = 2 * len(trainloader)
 
@@ -66,7 +66,7 @@ def main():
             for i, data in enumerate(trainloader, 0):
                 # get the inputs; data is a list of [inputs, labels]
                 # (optional) use GPU to speed things up
-                inputs, labels = data[0].to(device), data[1].to(device)
+                inputs, labels = data[0].to(DEVICE), data[1].to(DEVICE)
 
                 # zero the parameter gradients
                 optimizer.zero_grad()
@@ -93,14 +93,14 @@ def main():
 
     # (2.4) decorates with flare.evaluate and load model from the first argument
     @flare.evaluate
-    def fl_evaluate(input_model=None, device="cpu"):
+    def fl_evaluate(input_model=None):
         return evaluate(input_weights=input_model.params)
 
     # (1.2) wraps evaluate logic into a method
-    def evaluate(input_weights, device="cpu"):
+    def evaluate(input_weights):
         net.load_state_dict(input_weights)
         # (optional) use GPU to speed things up
-        net.to(device)
+        net.to(DEVICE)
 
         correct = 0
         total = 0
@@ -108,7 +108,7 @@ def main():
         with torch.no_grad():
             for data in testloader:
                 # (optional) use GPU to speed things up
-                images, labels = data[0].to(device), data[1].to(device)
+                images, labels = data[0].to(DEVICE), data[1].to(DEVICE)
                 # calculate outputs by running images through the network
                 outputs = net(images)
                 # the class with the highest energy is what we choose as prediction
@@ -120,13 +120,13 @@ def main():
         # (1.3) return evaluation metrics
         return 100 * correct // total
 
-    # (2.6) call fl_evaluate method before training
+    # (2.5) call fl_evaluate method before training
     #       to evaluate on the received/aggregated model
-    fl_evaluate(device=DEVICE)
+    fl_evaluate()
     # (1.4) call train method
-    train(total_epochs=2, lr=0.001, device=DEVICE)
+    train(total_epochs=2, lr=0.001)
     # (1.5) call evaluate method
-    evaluate(input_weights=torch.load(PATH), device=DEVICE)
+    evaluate(input_weights=torch.load(PATH))
 
 
 if __name__ == "__main__":
