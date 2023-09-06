@@ -20,7 +20,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.impl.client_controller import ClientController, Task
+from nvflare.apis.impl.task_controller import Task, TaskController
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.learnable import Learnable
@@ -41,7 +41,7 @@ class _LearnTask:
         self.abort_signal = Signal()
 
 
-class ClientSideController(Executor, ClientController):
+class ClientSideController(Executor, TaskController):
     def __init__(
         self,
         task_name_prefix: str,
@@ -75,7 +75,7 @@ class ClientSideController(Executor, ClientController):
         check_number_range("final_result_ack_timeout", final_result_ack_timeout, min_value=1.0)
 
         Executor.__init__(self)
-        ClientController.__init__(self)
+        TaskController.__init__(self)
         self.task_name_prefix = task_name_prefix
         self.start_task_name = make_task_name(task_name_prefix, Constant.BASENAME_START)
         self.configure_task_name = make_task_name(task_name_prefix, Constant.BASENAME_CONFIG)

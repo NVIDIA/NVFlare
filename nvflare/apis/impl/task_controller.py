@@ -27,7 +27,7 @@ from nvflare.private.privacy_manager import Scope
 from nvflare.security.logging import secure_format_exception
 
 
-class ClientController(FLComponent, ControllerSpec):
+class TaskController(FLComponent, ControllerSpec):
     def __init__(
         self,
     ) -> None:
