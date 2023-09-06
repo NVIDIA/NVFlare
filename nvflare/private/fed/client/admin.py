@@ -190,4 +190,4 @@ class FedAdminAgent(object):
 
             security_items[FLContextKey.JOB_META] = req.get_header(RequestHeader.JOB_META, {})
 
-            fl_ctx.set_prop(FLContextKey.SECURITY_ITEMS, security_items, private=True, sticky=True)
+            fl_ctx.set_prop(FLContextKey.SECURITY_ITEMS, security_items, private=True, sticky=False)

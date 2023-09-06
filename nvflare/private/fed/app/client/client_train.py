@@ -121,8 +121,6 @@ def main():
         with client_engine.new_context() as fl_ctx:
             client_engine.fire_event(EventType.SYSTEM_BOOTSTRAP, fl_ctx)
 
-            fl_ctx.set_prop("aaaa", "1111", private=False)
-
             client_engine.fire_event(EventType.BEFORE_CLIENT_REGISTER, fl_ctx)
             federated_client.register(fl_ctx)
             fl_ctx.set_prop(FLContextKey.CLIENT_TOKEN, federated_client.token)
