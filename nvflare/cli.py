@@ -145,7 +145,6 @@ def parse_args(prog_name: str):
         print(f"\nerror: {msg}")
         sub_cmd_parser.print_help()
         _parser.exit(2, "\n")
-
     return _parser, _parser.parse_args(), sub_cmd_parsers
 
 
@@ -175,7 +174,6 @@ def run(prog_name):
             print_nvflare_version()
         else:
             prog_parser.print_help()
-
     except CLIUnknownCmdException as e:
         print(e)
         print_help(prog_parser, sub_cmd, sub_cmd_parsers)

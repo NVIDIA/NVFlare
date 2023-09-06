@@ -1,7 +1,7 @@
 # Job Workflow Information Card
 
-## stats_df
-        description = ""Federated Statistics of tabulated data with panda frame "
+## stats_image
+        description = ""Federated image intensity histogram calculation"
         controller_type = "server"
         executor_type = "statistics_executor"
         contributor = "NVIDIA"

@@ -114,6 +114,8 @@ def create_poc_workspace_config(nvflare_config: ConfigTree, poc_workspace_dir: O
     if poc_workspace_dir is None:
         return nvflare_config
 
+    poc_workspace_dir = os.path.abspath(poc_workspace_dir)
+
     conf_str = f"""
         poc_workspace {{
             path = {poc_workspace_dir}
@@ -136,6 +138,7 @@ def create_job_template_config(nvflare_config: ConfigTree, job_template_dir: Opt
     if job_template_dir is None:
         return nvflare_config
 
+    job_template_dir = os.path.abspath(job_template_dir)
     conf_str = f"""
         job_template {{
             path = {job_template_dir}
@@ -162,6 +165,7 @@ def get_startup_kit_dir(startup_kit_dir: Optional[str] = None) -> str:
             raise ValueError("startup kit directory is not specified")
 
     check_startup_dir(startup_kit_dir)
+    startup_kit_dir = os.path.abspath(startup_kit_dir)
     return startup_kit_dir
 
 
