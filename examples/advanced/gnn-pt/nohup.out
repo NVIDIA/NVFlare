@@ -1,0 +1,64 @@
+2023-09-06 20:23:59,182 - SimulatorRunner - INFO - Create the Simulator Server.
+2023-09-06 20:23:59,184 - CoreCell - INFO - server: creating listener on tcp://0:42801
+2023-09-06 20:23:59,217 - CoreCell - INFO - server: created backbone external listener for tcp://0:42801
+2023-09-06 20:23:59,217 - ConnectorManager - INFO - 19131: Try start_listener Listener resources: {'secure': False, 'host': 'localhost'}
+2023-09-06 20:23:59,220 - nvflare.fuel.f3.sfm.conn_manager - INFO - Connector [CH00002 PASSIVE tcp://0:17579] is starting
+2023-09-06 20:23:59,721 - CoreCell - INFO - server: created backbone internal listener for tcp://localhost:17579
+2023-09-06 20:23:59,721 - nvflare.fuel.f3.sfm.conn_manager - INFO - Connector [CH00001 PASSIVE tcp://0:42801] is starting
+2023-09-06 20:23:59,813 - nvflare.fuel.hci.server.hci - INFO - Starting Admin Server localhost on Port 39943
+2023-09-06 20:23:59,813 - SimulatorRunner - INFO - Deploy the Apps.
+2023-09-06 20:23:59,818 - SimulatorRunner - INFO - Create the simulate clients.
+2023-09-06 20:23:59,825 - ClientManager - INFO - Client: New client site-1@10.33.227.151 joined. Sent token: 43e1e8e7-4a2a-41bf-b809-1f576283d001.  Total clients: 1
+2023-09-06 20:23:59,826 - FederatedClient - INFO - Successfully registered client:site-1 for project simulator_server. Token:43e1e8e7-4a2a-41bf-b809-1f576283d001 SSID:
+2023-09-06 20:23:59,832 - ClientManager - INFO - Client: New client site-2@10.33.227.151 joined. Sent token: 173438e6-0080-404f-9f82-a0bcc5ac8c36.  Total clients: 2
+2023-09-06 20:23:59,833 - FederatedClient - INFO - Successfully registered client:site-2 for project simulator_server. Token:173438e6-0080-404f-9f82-a0bcc5ac8c36 SSID:
+2023-09-06 20:23:59,833 - SimulatorRunner - INFO - Set the client status ready.
+2023-09-06 20:23:59,834 - SimulatorRunner - INFO - Deploy and start the Server App.
+2023-09-06 20:23:59,838 - ServerCommandAgent - INFO - ServerCommandAgent cell register_request_cb: server.simulate_job
+2023-09-06 20:24:03,225 - IntimeModelSelector - INFO - model selection weights control: None
+2023-09-06 20:24:03,227 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job]: Server runner starting ...
+2023-09-06 20:24:03,227 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job]: starting workflow scatter_and_gather (<class 'nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather'>) ...
+2023-09-06 20:24:03,228 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather]: Initializing ScatterAndGather workflow.
+2023-09-06 20:24:03,228 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather]: Workflow scatter_and_gather (<class 'nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather'>) started
+2023-09-06 20:24:03,229 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather]: Beginning ScatterAndGather training phase.
+2023-09-06 20:24:03,229 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather]: Round 0 started.
+2023-09-06 20:24:03,229 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather]: scheduled task train
+2023-09-06 20:24:03,944 - SimulatorClientRunner - INFO - Start the clients run simulation.
+2023-09-06 20:24:04,946 - SimulatorClientRunner - INFO - Simulate Run client: site-1 on GPU group: None
+2023-09-06 20:24:04,946 - SimulatorClientRunner - INFO - Simulate Run client: site-2 on GPU group: None
+2023-09-06 20:24:05,971 - ClientTaskWorker - INFO - ClientTaskWorker started to run
+2023-09-06 20:24:05,975 - ClientTaskWorker - INFO - ClientTaskWorker started to run
+2023-09-06 20:24:06,004 - CoreCell - INFO - site-1.simulate_job: created backbone external connector to tcp://localhost:42801
+2023-09-06 20:24:06,004 - nvflare.fuel.f3.sfm.conn_manager - INFO - Connector [CH00001 ACTIVE tcp://localhost:42801] is starting
+2023-09-06 20:24:06,005 - CoreCell - INFO - site-2.simulate_job: created backbone external connector to tcp://localhost:42801
+2023-09-06 20:24:06,005 - nvflare.fuel.f3.sfm.conn_manager - INFO - Connector [CH00001 ACTIVE tcp://localhost:42801] is starting
+2023-09-06 20:24:08,140 - ClientRunner - INFO - [identity=site-1, run=simulate_job]: client runner started
+2023-09-06 20:24:08,140 - ClientTaskWorker - INFO - Initialize ClientRunner for client: site-1
+2023-09-06 20:24:08,144 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-1, peer_run=simulate_job, task_name=train, task_id=13b7f40e-e557-45ed-9b11-cf0a7c859cf1]: assigned task to client site-1: name=train, id=13b7f40e-e557-45ed-9b11-cf0a7c859cf1
+2023-09-06 20:24:08,144 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-1, peer_run=simulate_job, task_name=train, task_id=13b7f40e-e557-45ed-9b11-cf0a7c859cf1]: sent task assignment to client. client_name:site-1 task_id:13b7f40e-e557-45ed-9b11-cf0a7c859cf1
+2023-09-06 20:24:08,145 - GetTaskCommand - INFO - return task to client.  client_name: site-1  task_name: train   task_id: 13b7f40e-e557-45ed-9b11-cf0a7c859cf1  sharable_header_task_id: 13b7f40e-e557-45ed-9b11-cf0a7c859cf1
+2023-09-06 20:24:08,148 - Communicator - INFO - Received from simulator_server server  (2 Bytes). getTask: train time: 0.006873607635498047 seconds
+2023-09-06 20:24:08,149 - FederatedClient - INFO - pull_task completed. Task name:train Status:True 
+2023-09-06 20:24:08,150 - ClientRunner - INFO - [identity=site-1, run=simulate_job, peer=simulator_server, peer_run=simulate_job]: got task assignment: name=train, id=13b7f40e-e557-45ed-9b11-cf0a7c859cf1
+2023-09-06 20:24:08,150 - ClientRunner - INFO - [identity=site-1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=13b7f40e-e557-45ed-9b11-cf0a7c859cf1]: invoking task executor PTFilePipeLauncherExecutor
+2023-09-06 20:24:08,177 - ClientRunner - INFO - [identity=site-2, run=simulate_job]: client runner started
+2023-09-06 20:24:08,177 - ClientTaskWorker - INFO - Initialize ClientRunner for client: site-2
+2023-09-06 20:24:08,181 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-2, peer_run=simulate_job, task_name=train, task_id=b4782594-b566-4c68-894a-356e4fa2c59a]: assigned task to client site-2: name=train, id=b4782594-b566-4c68-894a-356e4fa2c59a
+2023-09-06 20:24:08,181 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-2, peer_run=simulate_job, task_name=train, task_id=b4782594-b566-4c68-894a-356e4fa2c59a]: sent task assignment to client. client_name:site-2 task_id:b4782594-b566-4c68-894a-356e4fa2c59a
+2023-09-06 20:24:08,182 - GetTaskCommand - INFO - return task to client.  client_name: site-2  task_name: train   task_id: b4782594-b566-4c68-894a-356e4fa2c59a  sharable_header_task_id: b4782594-b566-4c68-894a-356e4fa2c59a
+2023-09-06 20:24:08,185 - Communicator - INFO - Received from simulator_server server  (2 Bytes). getTask: train time: 0.006091117858886719 seconds
+2023-09-06 20:24:08,186 - FederatedClient - INFO - pull_task completed. Task name:train Status:True 
+2023-09-06 20:24:08,186 - ClientRunner - INFO - [identity=site-2, run=simulate_job, peer=simulator_server, peer_run=simulate_job]: got task assignment: name=train, id=b4782594-b566-4c68-894a-356e4fa2c59a
+2023-09-06 20:24:08,187 - ClientRunner - INFO - [identity=site-2, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=b4782594-b566-4c68-894a-356e4fa2c59a]: invoking task executor PTFilePipeLauncherExecutor
+Downloading https://data.dgl.ai/dataset/ppi.zip
+Extracting /tmp/nvflare/simulate_job/app_site-1/data/PPI/ppi.zip
+Processing...
+Done!
+/usr/local/lib/python3.8/site-packages/torch_geometric/sampler/neighbor_sampler.py:50: UserWarning: Using '{self.__class__.__name__}' without a 'pyg-lib' installation is deprecated and will be removed soon. Please install 'pyg-lib' for accelerated neighborhood sampling
+  warnings.warn("Using '{self.__class__.__name__}' without a "
+Downloading https://data.dgl.ai/dataset/ppi.zip
+Extracting /tmp/nvflare/simulate_job/app_site-2/data/PPI/ppi.zip
+Processing...
+Done!
+/usr/local/lib/python3.8/site-packages/torch_geometric/sampler/neighbor_sampler.py:50: UserWarning: Using '{self.__class__.__name__}' without a 'pyg-lib' installation is deprecated and will be removed soon. Please install 'pyg-lib' for accelerated neighborhood sampling
+  warnings.warn("Using '{self.__class__.__name__}' without a "
