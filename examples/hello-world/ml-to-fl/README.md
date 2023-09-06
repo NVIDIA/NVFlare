@@ -21,9 +21,9 @@ transition from your DL code to FL with NVFlare.
 We will demonstrate how to transform an existing DL code into FL application step-by-step:
 
   1. Show a base line training script [the base line](#the-base-line)
-  2. How to modify a non-structured script using DL2FL Client API [the Client API usage example](#the-api-call-use-case)
+  2. How to modify a non-structured script using DL2FL Client API [the Client API usage example](#transform-cifar10-dl-training-code-to-fl-including-best-model-selection-using-client-api)
   3. How to modify a structured script using DL2FL decorator [the decorator usage example](#the-decorator-use-case)
-  4. How to modify a structured "lightning" script using DL2FL Lightning Client API [the lightning use case](#the-lightning-use-case)
+  4. How to modify a structured "lightning" script using DL2FL Lightning Client API [the lightning use case](#transform-cifar10-lightning-training-code-to-fl-with-nvflare-client-lightning-integration-api)
 
 ## The base line
 
