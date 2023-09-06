@@ -12,36 +12,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import shutil
 from argparse import ArgumentParser
 from pathlib import Path
 
-import numpy as np
 import nibabel as nib
+import numpy as np
 from tqdm.contrib import tzip
 
-
-TASK_FILE_ID = {
-    "liver":    "LVR",
-    "spleen":   "SPL",
-    "pancreas": "PAN",
-    "kidney":   "KITS"
-}
+TASK_FILE_ID = {"liver": "LVR", "spleen": "SPL", "pancreas": "PAN", "kidney": "KITS"}
 
 TASK_LABEL_MAP = {
-    "liver":    { 0: 0, 1: 1, 2: 2 },
-    "spleen":   { 0: 0, 1: 3 },
-    "pancreas": { 0: 0, 1: 4, 2: 5 },
-    "kidney":   { 0: 0, 1: 6, 2: 7 }
+    "liver": {0: 0, 1: 1, 2: 2},
+    "spleen": {0: 0, 1: 3},
+    "pancreas": {0: 0, 1: 4, 2: 5},
+    "kidney": {0: 0, 1: 6, 2: 7},
 }
 
 DEFAULT_DATA_LIST = {
-    "liver":    "data/Liver/datalist.json",
-    "spleen":   "data/Spleen/datalist.json",
+    "liver": "data/Liver/datalist.json",
+    "spleen": "data/Spleen/datalist.json",
     "pancreas": "data/Pancreas/datalist.json",
-    "kidney":   "data/KiTS19/datalist.json"
+    "kidney": "data/KiTS19/datalist.json",
 }
+
 
 def map_values(data: np.ndarray, task: str) -> np.ndarray:
     data = data.astype(np.uint8)
@@ -50,6 +44,7 @@ def map_values(data: np.ndarray, task: str) -> np.ndarray:
     f = np.vectorize(lambda x: m[x])
 
     return f(data).astype(np.uint8)
+
 
 def convert_msd_dataset(src: str, dst: str, task: str) -> None:
     if not Path(src).is_dir():
@@ -88,6 +83,7 @@ def convert_msd_dataset(src: str, dst: str, task: str) -> None:
     except shutil.SameFileError:
         pass
 
+
 def convert_kits_dataset(src: str, dst: str, task: str) -> None:
     if not Path(src).is_dir():
         raise ValueError(f"source path {src} must be a directory.")
@@ -123,11 +119,13 @@ def convert_kits_dataset(src: str, dst: str, task: str) -> None:
     except shutil.SameFileError:
         pass
 
+
 def main(args) -> None:
     if args.task in ["liver", "pancreas", "spleen"]:
         convert_msd_dataset(args.src, args.dst, args.task)
     else:
         convert_kits_dataset(args.src, args.dst, args.task)
+
 
 if __name__ == "__main__":
     parser = ArgumentParser()
@@ -136,11 +134,10 @@ if __name__ == "__main__":
         "-t",
         type=str,
         choices=["kidney", "liver", "pancreas", "spleen"],
-        help="Choose which dataset to process."
+        help="Choose which dataset to process.",
     )
     parser.add_argument("--src", "-s", type=str, help="Path to the dataset root directory.")
     parser.add_argument("--dst", "-d", type=str, help="Path to the output dataset directory.")
     args = parser.parse_args()
 
     main(args)
-

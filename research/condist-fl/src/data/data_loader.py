@@ -12,21 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict
-
-from torch.utils.data import Dataset as _Dataset
 from monai.data import DataLoader
+from torch.utils.data import Dataset as _Dataset
 
-def create_data_loader(
-    dataset: _Dataset,
-    batch_size: int = 1,
-    num_workers: int = 0,
-    shuffle: bool = False
-):
-    return DataLoader(
-        dataset,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        shuffle=shuffle
-    )
 
+def create_data_loader(dataset: _Dataset, batch_size: int = 1, num_workers: int = 0, shuffle: bool = False):
+    return DataLoader(dataset, batch_size=batch_size, num_workers=num_workers, shuffle=shuffle)

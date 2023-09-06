@@ -12,15 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Callable, Dict, Optional, Sequence, Tuple, Union
+from typing import Callable, Optional, Sequence, Tuple, Union
 
 import torch
+from monai.losses import DiceCELoss, MaskedDiceLoss
+from monai.networks import one_hot
+from monai.utils import LossReduction
 from torch import Tensor
 from torch.nn import functional as F
 from torch.nn.modules.loss import _Loss
-from monai.losses import DiceCELoss, MaskedDiceLoss
-from monai.networks import one_hot
-from monai.utils import DiceCEReduction, LossReduction, look_up_option
+
 
 class ConDistTransform(object):
     def __init__(
@@ -28,7 +29,7 @@ class ConDistTransform(object):
         num_classes: int,
         foreground: Sequence[int],
         background: Sequence[Union[int, Sequence[int]]],
-        temperature: float = 2.0
+        temperature: float = 2.0,
     ):
         self.num_classes = num_classes
 
@@ -45,9 +46,7 @@ class ConDistTransform(object):
     def reduce_channels(self, data: Tensor, eps: float = 1e-5):
         batch, channels, *shape = data.shape
         if channels != self.num_classes:
-            raise ValueError(
-                f"Expect input with {self.num_classes} channels, get {channels}"
-            )
+            raise ValueError(f"Expect input with {self.num_classes} channels, get {channels}")
 
         fg_shape = [batch] + [1] + shape
         bg_shape = [batch] + [len(self.background)] + shape
@@ -55,7 +54,7 @@ class ConDistTransform(object):
         # Compute the probability for the union of local foreground
         fg = torch.zeros(fg_shape, dtype=torch.float32, device=data.device)
         for c in self.foreground:
-            fg += data[: ,c, ::].view(*fg_shape)
+            fg += data[:, c, ::].view(*fg_shape)
 
         # Compute the raw probabilities for each background group
         bg = torch.zeros(bg_shape, dtype=torch.float32, device=data.device)
@@ -69,31 +68,18 @@ class ConDistTransform(object):
         # Compute condistional probability for background groups
         return bg / (1.0 - fg + eps)
 
-    def generate_mask(
-        self,
-        targets: Tensor,
-        ground_truth: Tensor
-    ):
+    def generate_mask(self, targets: Tensor, ground_truth: Tensor):
         targets = torch.argmax(targets, dim=1, keepdim=True)
 
         # The mask covers the background but excludes false positive areas
         condition = torch.zeros_like(targets, device=targets.device)
         for c in self.foreground:
-            condition = torch.where(
-                torch.logical_or(targets == c, ground_truth == c),
-                1,
-                condition
-            )
+            condition = torch.where(torch.logical_or(targets == c, ground_truth == c), 1, condition)
         mask = 1 - condition
 
         return mask.astype(torch.float32)
 
-    def __call__(
-        self,
-        preds: Tensor,
-        targets: Tensor,
-        ground_truth: Tensor
-    ) -> Tuple[Tensor]:
+    def __call__(self, preds: Tensor, targets: Tensor, ground_truth: Tensor) -> Tuple[Tensor]:
         mask = self.generate_mask(targets, ground_truth)
 
         preds = self.softmax(preds)
@@ -104,12 +90,9 @@ class ConDistTransform(object):
 
         return preds, targets, mask
 
+
 class MarginalTransform(object):
-    def __init__(
-        self,
-        foreground: Sequence[int],
-        softmax: bool = False
-    ):
+    def __init__(self, foreground: Sequence[int], softmax: bool = False):
         self.foreground = foreground
         self.softmax = softmax
 
@@ -135,14 +118,13 @@ class MarginalTransform(object):
         if target.shape[1] == 1:
             target = one_hot(target, num_classes=n_pred_ch)
         elif target.shape != n_pred_ch:
-            raise ValueError(
-                f"Number of channels of label must be 1 or {n_pred_ch}."
-            )
+            raise ValueError(f"Number of channels of label must be 1 or {n_pred_ch}.")
 
         preds = self.reduce_background_channels(preds)
         target = self.reduce_background_channels(target)
 
         return preds, target
+
 
 class ConDistDiceLoss(_Loss):
     def __init__(
@@ -158,16 +140,11 @@ class ConDistDiceLoss(_Loss):
         reduction: Union[LossReduction, str] = LossReduction.MEAN,
         smooth_nr: float = 1e-5,
         smooth_dr: float = 1e-5,
-        batch: bool = False
+        batch: bool = False,
     ) -> None:
         super().__init__()
 
-        self.transform = ConDistTransform(
-            num_classes,
-            foreground,
-            background,
-            temperature=temperature
-        )
+        self.transform = ConDistTransform(num_classes, foreground, background, temperature=temperature)
         self.dice = MaskedDiceLoss(
             include_background=include_background,
             to_onehot_y=False,
@@ -179,21 +156,17 @@ class ConDistDiceLoss(_Loss):
             reduction=reduction,
             smooth_nr=smooth_nr,
             smooth_dr=smooth_dr,
-            batch=batch
+            batch=batch,
         )
 
-    def forward(
-        self,
-        preds: Tensor,
-        targets: Tensor,
-        ground_truth: Tensor
-    ):
+    def forward(self, preds: Tensor, targets: Tensor, ground_truth: Tensor):
         n_chs = preds.shape[1]
         if (ground_truth.shape[1] > 1) and (ground_truth.shape[1] == n_chs):
             ground_truth = torch.argmax(ground_truth, dim=1, keepdim=True)
 
         preds, targets, mask = self.transform(preds, targets, ground_truth)
         return self.dice(preds, targets, mask=mask)
+
 
 class MarginalDiceCELoss(_Loss):
     def __init__(
@@ -210,7 +183,7 @@ class MarginalDiceCELoss(_Loss):
         batch: bool = False,
         ce_weight: Optional[Tensor] = None,
         lambda_dice: float = 1.0,
-        lambda_ce: float = 1.0
+        lambda_ce: float = 1.0,
     ):
         super().__init__()
 
@@ -229,12 +202,13 @@ class MarginalDiceCELoss(_Loss):
             batch=batch,
             ce_weight=ce_weight,
             lambda_dice=lambda_dice,
-            lambda_ce=lambda_ce
+            lambda_ce=lambda_ce,
         )
 
     def forward(self, preds: Tensor, targets: Tensor):
         preds, targets = self.transform(preds, targets)
         return self.dice_ce(preds, targets)
+
 
 class MoonContrasiveLoss(torch.nn.Module):
     def __init__(self, tau: float = 1.0):
@@ -253,4 +227,3 @@ class MoonContrasiveLoss(torch.nn.Module):
 
         loss = -torch.log(exp_glob / (exp_glob + exp_prev))
         return loss.mean()
-

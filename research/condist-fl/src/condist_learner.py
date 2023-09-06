@@ -12,32 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import json
+import os
 import traceback
 from pathlib import Path
 from typing import Dict, Literal, Optional
 
 import numpy as np
+from data import DataManager
 from prettytable import PrettyTable
 from torch.utils.tensorboard import SummaryWriter
+from trainer import ConDistTrainer
+from utils.get_model import get_model
+from utils.model_weights import extract_weights, load_weights
+from validator import Validator
+
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
-from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.learner_spec import Learner
 from nvflare.app_common.app_constant import AppConstants, ModelName, ValidateType
 
-from data import DataManager
-from utils.get_model import get_model
-from utils.model_weights import (
-    load_weights,
-    extract_weights
-)
-from trainer import ConDistTrainer
-from validator import Validator
 
 class ConDistLearner(Learner):
     def __init__(
@@ -49,7 +46,7 @@ class ConDistLearner(Learner):
         seed: Optional[int] = None,
         max_retry: int = 1,
         train_task_name: str = AppConstants.TASK_TRAIN,
-        submit_model_task_name: str = AppConstants.TASK_SUBMIT_MODEL
+        submit_model_task_name: str = AppConstants.TASK_SUBMIT_MODEL,
     ):
         super().__init__()
 
@@ -95,12 +92,7 @@ class ConDistLearner(Learner):
         # Create logger
         self.tb_logger = SummaryWriter(log_dir=prefix / "logs")
 
-    def train(
-        self,
-        data: Shareable,
-        fl_ctx: FLContext,
-        abort_signal: Signal
-    ) -> Shareable:
+    def train(self, data: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         # Log training info
         num_rounds = data.get_header(AppConstants.NUM_ROUNDS)
         current_round = data.get_header(AppConstants.CURRENT_ROUND)
@@ -124,15 +116,12 @@ class ConDistLearner(Learner):
                     self.model,
                     self.dm.get_data_loader("train"),
                     num_steps=self.aggregation_steps,
-                    logger=self.tb_logger
+                    logger=self.tb_logger,
                 )
                 break
             except Exception as e:
                 if i < self._max_retry:
-                    self.log_warning(
-                        fl_ctx,
-                        f"Someting wrong in training, retrying ({i+1}/{self._max_retry})."
-                    )
+                    self.log_warning(fl_ctx, f"Someting wrong in training, retrying ({i+1}/{self._max_retry}).")
                     # Restore trainer states to the beginning of the round
                     if os.path.exists(self.last_model_path):
                         self.trainer.load_checkpoint(self.last_model_path, self.model)
@@ -148,17 +137,11 @@ class ConDistLearner(Learner):
         # Run validation
         for i in range(self._max_retry + 1):
             try:
-                metrics = self.validator.run(
-                    self.model,
-                    self.dm.get_data_loader("validate")
-                )
+                metrics = self.validator.run(self.model, self.dm.get_data_loader("validate"))
                 break
             except Exception as e:
                 if i < self._max_retry:
-                    self.log_warning(
-                        fl_ctx,
-                        f"Someting wrong in training, retrying ({i+1}/{self._max_retry})."
-                    )
+                    self.log_warning(fl_ctx, f"Someting wrong in training, retrying ({i+1}/{self._max_retry}).")
                     # Reset dataset & dataloader
                     self.dm._data_loader["validate"] = None
                     self.dm._dataset["validate"] = None
@@ -193,22 +176,15 @@ class ConDistLearner(Learner):
         dxo = DXO(
             data_kind=DataKind.WEIGHT_DIFF,
             data=weight_diff,
-            meta={MetaKey.NUM_STEPS_CURRENT_ROUND: self.aggregation_steps}
+            meta={MetaKey.NUM_STEPS_CURRENT_ROUND: self.aggregation_steps},
         )
         return dxo.to_shareable()
 
-    def get_model_for_validation(
-        self,
-        model_name: str,
-        fl_ctx: FLContext
-    ) -> Shareable:
+    def get_model_for_validation(self, model_name: str, fl_ctx: FLContext) -> Shareable:
         if model_name == ModelName.BEST_MODEL:
             model_data = None
             try:
-                model_data = torch.load(
-                    self.best_model_path,
-                    map_location="cpu"
-                )
+                model_data = torch.load(self.best_model_path, map_location="cpu")
                 self.log_info(fl_ctx, f"Load best model from {self.best_model_path}")
             except Exception as e:
                 self.log_error(fl_ctx, f"Unable to load best model: {e}")
@@ -220,21 +196,13 @@ class ConDistLearner(Learner):
                 dxo = DXO(data_kind=DataKind.WEIGHTS, data=data)
                 return dxo.to_shareable()
             else:
-                self.log_error(
-                    fl_ctx,
-                    f"best local model not available at {self.best_model_path}"
-                )
+                self.log_error(fl_ctx, f"best local model not available at {self.best_model_path}")
                 return make_reply(ReturnCode.EXECUTION_RESULT_ERROR)
         else:
             self.log_error(fl_ctx, f"Unknown model_type {model_name}")
             return make_reply(ReturnCode.BAD_TASK_DATA)
 
-    def validate(
-        self,
-        data: Shareable,
-        fl_ctx: FLContext,
-        abort_signal: Signal
-    ) -> Shareable:
+    def validate(self, data: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         # 1. Extract data from shareable
         model_owner = data.get_header(AppConstants.MODEL_OWNER, "global_model")
         validate_type = data.get_header(AppConstants.VALIDATE_TYPE)
@@ -258,10 +226,7 @@ class ConDistLearner(Learner):
             return make_reply(ReturnCode.BAD_TASK_DATA)
 
         if not dxo.data_kind == DataKind.WEIGHTS:
-            self.log_exception(
-                fl_ctx,
-                f"DXO is of type {dxo.data_kind} but expected type WEIGHTS"
-            )
+            self.log_exception(fl_ctx, f"DXO is of type {dxo.data_kind} but expected type WEIGHTS")
             return make_reply(ReturnCode.BAD_TASK_DATA)
         load_weights(self.model, dxo.data)
 
@@ -274,10 +239,7 @@ class ConDistLearner(Learner):
                 break
             except Exception as e:
                 if i < self._max_retry:
-                    self.log_warning(
-                        fl_ctx,
-                        f"Error encountered in validation, retrying ({i+1}/{self._max_retry})."
-                    )
+                    self.log_warning(fl_ctx, f"Error encountered in validation, retrying ({i+1}/{self._max_retry}).")
                     # Cleanup previous dataset & dataloader
                     data_loader = None
                     self.dm._data_loader[phase] = None
@@ -290,13 +252,12 @@ class ConDistLearner(Learner):
 
         self.log_info(
             fl_ctx,
-            f"Validation metrics of {model_owner}'s model on"
-            f" {fl_ctx.get_identity_name()}'s data: {raw_metrics}"
+            f"Validation metrics of {model_owner}'s model on" f" {fl_ctx.get_identity_name()}'s data: {raw_metrics}",
         )
 
         # For validation before training, only key metric is needed
         if validate_type == ValidateType.BEFORE_TRAIN_VALIDATE:
-            metrics = { MetaKey.INITIAL_METRICS: raw_metrics[self.key_metric] }
+            metrics = {MetaKey.INITIAL_METRICS: raw_metrics[self.key_metric]}
             # Save as best model
             if self.best_metric < raw_metrics[self.key_metric]:
                 self.best_metric = raw_metrics[self.key_metric]
@@ -305,14 +266,9 @@ class ConDistLearner(Learner):
             metrics = raw_metrics
 
         # 5. Return results
-        dxo = DXO(
-            data_kind=DataKind.METRICS,
-            data=metrics
-        )
+        dxo = DXO(data_kind=DataKind.METRICS, data=metrics)
         return dxo.to_shareable()
 
     def finalize(self, fl_ctx: FLContext):
         self.dm.teardown()
         self.tb_logger.close()
-
-

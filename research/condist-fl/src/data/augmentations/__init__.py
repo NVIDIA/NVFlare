@@ -20,19 +20,13 @@ __all__ = [
     "RandFlipAxes3D",
     "RandFlipAxes3Dd",
     "SimulateLowResolution",
-    "SimulateLowResolutiond"
+    "SimulateLowResolutiond",
 ]
 
 from .intensity import (
     RandAdjustBrightnessAndContrast,
     RandAdjustBrightnessAndContrastd,
     RandInverseIntensityGamma,
-    RandInverseIntensityGammad
+    RandInverseIntensityGammad,
 )
-
-from .spatial import (
-    RandFlipAxes3D,
-    RandFlipAxes3Dd,
-    SimulateLowResolution,
-    SimulateLowResolutiond
-)
+from .spatial import RandFlipAxes3D, RandFlipAxes3Dd, SimulateLowResolution, SimulateLowResolutiond

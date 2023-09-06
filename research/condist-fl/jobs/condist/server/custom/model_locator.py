@@ -17,12 +17,14 @@ import traceback
 from typing import List
 
 import torch
+
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model_locator import ModelLocator
-from nvflare.app_common.pt.pt_fed_utils import PTModelPersistenceFormatManager
 from nvflare.app_common.app_constant import DefaultCheckpointFileName
+from nvflare.app_common.pt.pt_fed_utils import PTModelPersistenceFormatManager
+
 
 class SimpleModelLocator(ModelLocator):
     SERVER_MODEL_NAME = "server"
@@ -32,7 +34,7 @@ class SimpleModelLocator(ModelLocator):
         self,
         model_dir="app_server",
         model_name=DefaultCheckpointFileName.GLOBAL_MODEL,
-        best_model_name=DefaultCheckpointFileName.BEST_GLOBAL_MODEL
+        best_model_name=DefaultCheckpointFileName.BEST_GLOBAL_MODEL,
     ):
         super().__init__()
 
@@ -41,10 +43,7 @@ class SimpleModelLocator(ModelLocator):
         self.best_model_file_name = best_model_name
 
     def get_model_names(self, fl_ctx: FLContext) -> List[str]:
-        return [
-            SimpleModelLocator.SERVER_MODEL_NAME,
-            SimpleModelLocator.SERVER_BEST_MODEL_NAME
-        ]
+        return [SimpleModelLocator.SERVER_MODEL_NAME, SimpleModelLocator.SERVER_BEST_MODEL_NAME]
 
     def locate_model(self, model_name, fl_ctx: FLContext) -> DXO:
         dxo = None
@@ -59,13 +58,9 @@ class SimpleModelLocator(ModelLocator):
 
             # Generate model path
             if model_name == SimpleModelLocator.SERVER_BEST_MODEL_NAME:
-                model_load_path = os.path.join(
-                    model_path, self.best_model_file_name
-                )
+                model_load_path = os.path.join(model_path, self.best_model_file_name)
             else:
-                model_load_path = os.path.join(
-                    model_path, self.model_file_name
-                )
+                model_load_path = os.path.join(model_path, self.model_file_name)
 
             # Load checkpoint
             model_data = None
@@ -81,11 +76,6 @@ class SimpleModelLocator(ModelLocator):
 
             if model_data is not None:
                 mgr = PTModelPersistenceFormatManager(model_data)
-                dxo = DXO(
-                    data_kind=DataKind.WEIGHTS,
-                    data=mgr.var_dict,
-                    meta=mgr.meta
-                )
+                dxo = DXO(data_kind=DataKind.WEIGHTS, data=mgr.var_dict, meta=mgr.meta)
 
         return dxo
-

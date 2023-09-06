@@ -15,20 +15,24 @@
 import traceback
 from typing import Any, Dict
 
-import torch
 import numpy as np
+import torch
+
 from nvflare.apis.dxo import DataKind, from_bytes
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.formatter import Formatter
 from nvflare.app_common.app_constant import AppConstants
+
 
 def array_to_list(data: Any) -> Any:
     if isinstance(data, torch.Tensor) or isinstance(data, np.ndarray):
         return data.tolist()
     return data
 
+
 def simplify_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
     return {k: array_to_list(v) for k, v in metrics}
+
 
 class SimpleFormatter(Formatter):
     def __init__(self) -> None:
@@ -37,10 +41,7 @@ class SimpleFormatter(Formatter):
 
     def format(self, fl_ctx: FLContext) -> str:
         # Get validation result
-        validation_shareables_dict = fl_ctx.get_prop(
-            AppConstants.VALIDATION_RESULT,
-            {}
-        )
+        validation_shareables_dict = fl_ctx.get_prop(AppConstants.VALIDATION_RESULT, {})
         result = {}
 
         try:

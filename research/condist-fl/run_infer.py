@@ -12,21 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import json
+import os
 from argparse import ArgumentParser
 
-import torch
 import numpy as np
-from monai.data import MetaTensor
+import torch
 from monai.inferers import SlidingWindowInferer
-from monai.transforms import (
-    AsDiscrete,
-    EnsureChannelFirst,
-    LoadImage,
-    Spacing,
-    SaveImage
-)
+from monai.transforms import AsDiscrete, EnsureChannelFirst, LoadImage, SaveImage, Spacing
+
 
 class ImageDataset(object):
     def __init__(self, data_root: str, data_list: str, data_list_key: str):
@@ -41,15 +35,9 @@ class ImageDataset(object):
     def __iter__(self):
         return iter(self.data)
 
+
 class DataProcessor(object):
-    def __init__(
-        self,
-        i_min: float,
-        i_max: float,
-        mean: float,
-        std: float,
-        output_dir: str
-    ) -> None:
+    def __init__(self, i_min: float, i_max: float, mean: float, std: float, output_dir: str) -> None:
         self.i_min = i_min
         self.i_max = i_max
         self.mean = mean
@@ -60,17 +48,10 @@ class DataProcessor(object):
         self.spacing = Spacing(pixdim=[1.44, 1.44, 2.87])
         self.post = AsDiscrete(argmax=True)
         self.writer = SaveImage(
-            output_dir=output_dir,
-            output_postfix="seg",
-            output_dtype=np.uint8,
-            separate_folder=False,
-            resample=True
+            output_dir=output_dir, output_postfix="seg", output_dtype=np.uint8, separate_folder=False, resample=True
         )
 
-    def preprocess(
-        self,
-        input_file_name: str
-    ) -> torch.Tensor:
+    def preprocess(self, input_file_name: str) -> torch.Tensor:
         image = self.reader(input_file_name)
         image = self.channel(image)
         image = image.cuda()
@@ -81,35 +62,17 @@ class DataProcessor(object):
         image.div_(self.std)
         return image
 
-    def postprocess(
-        self,
-        seg: torch.Tensor
-    ) -> None:
+    def postprocess(self, seg: torch.Tensor) -> None:
         seg = self.post(seg)
         self.writer(seg)
 
 
 def main(args):
-    data = ImageDataset(
-        args.data_root,
-        args.data_list,
-        args.data_list_key
-    )
+    data = ImageDataset(args.data_root, args.data_list, args.data_list_key)
 
-    dp = DataProcessor(
-        i_min=-54.0,
-        i_max=258.0,
-        mean=100.0,
-        std=50.0,
-        output_dir=args.output
-    )
+    dp = DataProcessor(i_min=-54.0, i_max=258.0, mean=100.0, std=50.0, output_dir=args.output)
 
-    inferer = SlidingWindowInferer(
-        roi_size=[224, 224, 64],
-        mode="gaussian",
-        sw_batch_size=1,
-        overlap=0.50
-    )
+    inferer = SlidingWindowInferer(roi_size=[224, 224, 64], mode="gaussian", sw_batch_size=1, overlap=0.50)
 
     model = torch.jit.load(args.model)
     model = model.eval().cuda()
@@ -122,6 +85,7 @@ def main(args):
                 output = inferer(image, model)
                 output = torch.squeeze(output, dim=0)
                 dp.postprocess(output)
+
 
 if __name__ == "__main__":
     parser = ArgumentParser()

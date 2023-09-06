@@ -14,20 +14,18 @@
 
 from copy import deepcopy
 from pathlib import Path, PurePath
-from typing import Any, Dict, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, Optional
 
 import torch
 import torch.nn as nn
-from torch import Tensor
+from losses import MarginalDiceCELoss
+from monai.losses import DeepSupervisionLoss
 from torch.optim import SGD
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from monai.losses import DeepSupervisionLoss
 
-from losses import ConDistDiceLoss, MarginalDiceCELoss
-from utils.get_model import get_model
 
 class Trainer(object):
     def __init__(self, task_config: Dict):
@@ -43,16 +41,8 @@ class Trainer(object):
         background = task_config["condist_config"]["background"]
         self.model_config = task_config["model"]
 
-        self.marginal_loss_fn = MarginalDiceCELoss(
-            foreground,
-            softmax=True,
-            smooth_nr=0.0,
-            batch=True
-        )
-        self.ds_loss_fn = DeepSupervisionLoss(
-            self.marginal_loss_fn,
-            weights=[0.5333, 0.2667, 0.1333, 0.0667]
-        )
+        self.marginal_loss_fn = MarginalDiceCELoss(foreground, softmax=True, smooth_nr=0.0, batch=True)
+        self.ds_loss_fn = DeepSupervisionLoss(self.marginal_loss_fn, weights=[0.5333, 0.2667, 0.1333, 0.0667])
 
         self.current_step = 0
         self.current_round = 0
@@ -68,21 +58,11 @@ class Trainer(object):
         self.weight = left + intv * self.current_round
 
     def configure_optimizer(self):
-        self.opt = SGD(
-            self.model.parameters(),
-            lr=self.init_lr,
-            momentum=0.99,
-            nesterov=True,
-            weight_decay=1e-5
-        )
+        self.opt = SGD(self.model.parameters(), lr=self.init_lr, momentum=0.99, nesterov=True, weight_decay=1e-5)
         if self.opt_state is not None:
             self.opt.load_state_dict(self.opt_state)
 
-        self.sch = CosineAnnealingLR(
-            self.opt,
-            T_max=self.max_steps,
-            eta_min=1e-7
-        )
+        self.sch = CosineAnnealingLR(self.opt, T_max=self.max_steps, eta_min=1e-7)
         if self.sch_state is not None:
             self.sch.load_state_dict(self.sch_state)
 
@@ -130,11 +110,7 @@ class Trainer(object):
 
                 # Gradient clipping
                 self.scaler.unscale_(self.opt)
-                torch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(),
-                    max_norm=1.0,
-                    norm_type=2.0
-                )
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0, norm_type=2.0)
 
                 # Apply gradient
                 self.scaler.step(self.opt)
@@ -187,7 +163,7 @@ class Trainer(object):
             "global_steps": self.current_step,
             "model": model.state_dict(),
             "optimizer": self.opt_state,
-            "scheduler": self.sch_state
+            "scheduler": self.sch_state,
         }
         torch.save(ckpt, str(path))
 
@@ -209,7 +185,7 @@ class Trainer(object):
         num_steps: int,
         device: str = "cuda:0",
         logger: Optional[SummaryWriter] = None,
-        abort_signal: Optional[Any] = None
+        abort_signal: Optional[Any] = None,
     ):
         self.setup(model, logger, abort_signal)
 
@@ -219,4 +195,3 @@ class Trainer(object):
         self.current_round += 1
 
         self.cleanup()
-

@@ -15,16 +15,16 @@
 import os
 from typing import Dict, Optional
 
-import numpy as np
 from torch.utils.tensorboard import SummaryWriter
+
 from nvflare.apis.dxo import DataKind, MetaKey, from_shareable
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.widgets.widget import Widget
+
 
 class GlobalMetricLogger(Widget):
     def __init__(
@@ -32,7 +32,7 @@ class GlobalMetricLogger(Widget):
         log_dir: str = "logs",
         log_name: str = "key_metric",
         val_metric_name: str = MetaKey.INITIAL_METRICS,
-        aggregation_weights: Optional[Dict] = None
+        aggregation_weights: Optional[Dict] = None,
     ):
         super().__init__()
 
@@ -92,13 +92,12 @@ class GlobalMetricLogger(Widget):
         client_name = shareable.get_peer_prop(ReservedKey.IDENTITY_NAME, default="?")
 
         if current_round == 0:
-            self.log_debug(fl_ctx, f"Skip the first round.")
+            self.log_debug(fl_ctx, "Skip the first round.")
             return
 
         if contribution_round != current_round:
             self.log_warning(
-                fl_ctx,
-                f"Discard round {contribution_round} metrics from {client_name} at round {current_round}"
+                fl_ctx, f"Discard round {contribution_round} metrics from {client_name} at round {current_round}"
             )
             return
 
@@ -119,15 +118,10 @@ class GlobalMetricLogger(Widget):
             return
 
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
-        self.writer.add_scalar(
-            self.log_name,
-            self.val_metric_sum / self.val_metric_weights,
-            current_round
-        )
+        self.writer.add_scalar(self.log_name, self.val_metric_sum / self.val_metric_weights, current_round)
         self.log_info(fl_ctx, f"Write metric summary for round {current_round}.")
 
         self._reset_metrics()
 
     def _shutdown(self, fl_ctx: FLContext):
         self.writer.close()
-

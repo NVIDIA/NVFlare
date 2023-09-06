@@ -14,8 +14,9 @@
 
 from typing import Dict, Optional
 
-from .dataset import create_dataset
 from .data_loader import create_data_loader
+from .dataset import create_dataset
+
 
 class DataManager(object):
     def __init__(self, app_root: str, config: Dict):
@@ -46,14 +47,10 @@ class DataManager(object):
                 ds,
                 batch_size=self.config["data_loader"].get("batch_size", 1),
                 num_workers=self.config["data_loader"].get("num_workers", 0),
-                shuffle=True
+                shuffle=True,
             )
         else:
-            dl = create_data_loader(
-                ds,
-                batch_size=1,
-                num_workers=self.config["data_loader"].get("num_workers", 0)
-            )
+            dl = create_data_loader(ds, batch_size=1, num_workers=self.config["data_loader"].get("num_workers", 0))
         return dl
 
     def setup(self, stage: Optional[str] = None):
@@ -74,4 +71,3 @@ class DataManager(object):
     def teardown(self):
         self._dataset = {}
         self._data_loader = {}
-

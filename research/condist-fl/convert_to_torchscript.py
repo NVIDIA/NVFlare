@@ -51,6 +51,7 @@ def run_convert(args):
 
     torch.jit.save(traced_module, args.output)
 
+
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--config", "-c", type=str, help="Path to the config file.")
@@ -60,7 +61,7 @@ if __name__ == "__main__":
         "-a",
         type=str,
         choices=["server", "kidney", "liver", "pancreas", "spleen"],
-        help="Select app to convert checkpoint."
+        help="Select app to convert checkpoint.",
     )
     parser.add_argument("--output", "-o", type=str, help="Output result JSON.")
     args = parser.parse_args()

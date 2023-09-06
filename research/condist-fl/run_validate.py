@@ -16,11 +16,11 @@ import json
 from argparse import ArgumentParser
 from pathlib import Path
 
-import torch
 import numpy as np
+import torch
 from src.data import DataManager
-from src.validator import Validator
 from src.utils.get_model import get_model
+from src.validator import Validator
 
 
 def load_ckpt(app: str, model: torch.nn.Module, ckpt_path: str):
@@ -40,19 +40,13 @@ def run_validation(args):
     clients = [p.name for p in prefix.glob("app_*") if "server" not in p.name]
 
     # Collect all checkpoints to evaluate
-    checkpoints = {
-        "app_server": str(prefix / "app_server/best_FL_global_model.pt")
-    }
-    checkpoints.update({
-        c: str(prefix / c / "models/best_model.pt") for c in clients
-    })
+    checkpoints = {"app_server": str(prefix / "app_server/best_FL_global_model.pt")}
+    checkpoints.update({c: str(prefix / c / "models/best_model.pt") for c in clients})
 
     # Collect configs from clients
     config = {
-        c: {
-            "data": str(prefix / c / "config/config_data.json"),
-            "task": str(prefix / c / "config/config_task.json")
-        } for c in clients
+        c: {"data": str(prefix / c / "config/config_data.json"), "task": str(prefix / c / "config/config_task.json")}
+        for c in clients
     }
 
     metrics = {app: {} for app in [server] + clients}
@@ -97,6 +91,7 @@ def run_validation(args):
 
     with open(args.output, "w") as f:
         json.dump(metrics, f, indent=4, sort_keys=True)
+
 
 if __name__ == "__main__":
     parser = ArgumentParser()
