@@ -76,11 +76,7 @@ class CrossSiteEvalClientController(ClientSideController):
                 return
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        if task_name == self.start_task_name:
-            self.is_starting_client = True
-            return self.start_workflow(shareable, fl_ctx, abort_signal)
-
-        elif task_name == self.eval_task_name:
+        if task_name == self.eval_task_name:
             # server assigned task
             return self.do_eval(shareable, fl_ctx, abort_signal)
 
