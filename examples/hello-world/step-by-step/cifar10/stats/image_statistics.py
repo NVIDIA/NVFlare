@@ -49,7 +49,6 @@ class ImageStatistics(Statistics):
             Feature("blue", DataType.FLOAT),
         ]
 
-        self.classes = ("plane", "car", "bird", "cat", "deer", "dog", "frog", "horse", "ship", "truck")
         self.dataset_lengths = {}
         self.loaders = {}
 
