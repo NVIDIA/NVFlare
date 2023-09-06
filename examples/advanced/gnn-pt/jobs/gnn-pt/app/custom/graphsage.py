@@ -34,8 +34,8 @@ test_loader = DataLoader(test_dataset, batch_size=2)
 
 n_iterations = len(train_loader)
 
-LR = 0.01
-EPOCHS = 5
+LR = 0.003
+EPOCHS = 60
 
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
