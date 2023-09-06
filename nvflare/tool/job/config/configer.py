@@ -21,11 +21,16 @@ from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.tool.job.config.config_indexer import KeyIndex, build_reverse_order_index
 
 
-def merge_configs_from_cli(cmd_args) -> Dict[str, tuple]:
-    cli_config_dict: Dict[str, Dict[str, str]] = get_cli_config(cmd_args)
-    copy_app_config_file(cli_config_dict, cmd_args)
+def merge_configs_from_cli(cmd_args) -> Tuple[Dict[str, tuple], bool]:
     indices: Dict[str, Tuple] = build_config_file_indices(cmd_args.job_folder)
-    return merge_configs(indices, cli_config_dict)
+    cli_config_dict: Dict[str, Dict[str, str]] = get_cli_config(cmd_args)
+    config_modified = False
+    if cli_config_dict:
+        config_modified = True
+        copy_app_config_file(cli_config_dict, cmd_args)
+        return merge_configs(indices, cli_config_dict), config_modified
+    else:
+        return indices, config_modified
 
 
 def copy_app_config_file(cli_config_dict, cmd_args):
@@ -160,7 +165,15 @@ def get_cli_config(cmd_args: Any) -> Dict[str, Dict[str, str]]:
     cli_config_dict = {}
     if cmd_args.config_file:
         cli_configs = cmd_args.config_file
-        return parse_cli_config(cli_configs)
+        cli_config_dict = parse_cli_config(cli_configs)
+
+    if "script" in cmd_args and cmd_args.script:
+        script = os.path.basename(cmd_args.script)
+        if "config_fed_client.conf" in cli_config_dict:
+            cli_config_dict["config_fed_client.conf"].update({"app_script": script})
+        else:
+            cli_config_dict["config_fed_client.conf"] = {"app_script": script}
+
     return cli_config_dict
 
 

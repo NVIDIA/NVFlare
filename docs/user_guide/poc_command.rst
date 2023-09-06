@@ -33,7 +33,8 @@ should happen in prepare now).
     stop                stop services in poc mode
     clean               clean up poc workspace
 
-
+nvflare poc prepare
+-------------------
 The detailed options for ``nvflare poc prepare``:
 
 .. code-block:: none
@@ -70,6 +71,8 @@ The detailed options for ``nvflare poc prepare``:
     variable can still be used.
 
 
+nvflare poc start
+-----------------
 The detailed options for ``nvflare poc start``:
 
 .. code-block:: none
@@ -89,6 +92,8 @@ The detailed options for ``nvflare poc start``:
     -debug, --debug       debug is on
 
 
+nvflare poc stop
+----------------
 The detailed options for ``nvflare poc stop``:
 
 .. code-block:: none
@@ -104,6 +109,8 @@ The detailed options for ``nvflare poc stop``:
     -debug, --debug       debug is on
 
 
+nvflare poc clean
+-----------------
 The detailed options for ``nvflare poc clean``:
 
 .. code-block:: none

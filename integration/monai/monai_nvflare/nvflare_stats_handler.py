@@ -23,7 +23,7 @@ from monai.config import IgniteInfo
 from monai.utils import is_scalar, min_version, optional_import
 
 from nvflare.apis.analytix import AnalyticsDataType
-from nvflare.app_common.tracking.log_writer_me import LogWriterForMetricExchanger
+from nvflare.app_common.tracking.log_writer_me import LogWriterForMetricsExchanger
 from nvflare.app_common.tracking.tracker_types import LogWriterName
 
 Events, _ = optional_import("ignite.engine", IgniteInfo.OPT_IMPORT_VERSION, min_version, "Events")
@@ -40,11 +40,11 @@ ANALYTIC_EVENT_TYPE = "analytix_log_stats"
 DEFAULT_TAG = "Loss"
 
 
-class NVFlareStatsHandler(LogWriterForMetricExchanger):
+class NVFlareStatsHandler(LogWriterForMetricsExchanger):
     """
-    NVFlareStatsHandler defines a set of Ignite Event-handlers for all the NVFlare ``LogWriterForMetricExchanger`` logics.
+    NVFlareStatsHandler defines a set of Ignite Event-handlers for all the NVFlare ``LogWriterForMetricsExchanger`` logics.
     It can be used for any Ignite Engine(trainer, validator and evaluator).
-    And it can support both epoch level and iteration level with pre-defined LogWriterForMetricExchanger event sender.
+    And it can support both epoch level and iteration level with pre-defined LogWriterForMetricsExchanger event sender.
     The expected data source is Ignite ``engine.state.output`` and ``engine.state.metrics``.
 
     Default behaviors:

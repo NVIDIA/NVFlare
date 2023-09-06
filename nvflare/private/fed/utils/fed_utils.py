@@ -22,6 +22,7 @@ from multiprocessing.connection import Listener
 from typing import List
 
 from nvflare.apis.app_validation import AppValidator
+from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLContext
 from nvflare.apis.fl_constant import FLContextKey, SiteType, WorkspaceConstants
@@ -320,3 +321,23 @@ def set_message_security_data(request, job, fl_ctx):
     custom_data = fl_ctx.get_prop(FLContextKey.CUSTOM_PROPS)
     if custom_data:
         request.set_header(RequestHeader.CUSTOM_PROPS, custom_data)
+
+
+def get_target_names(targets):
+    # validate targets
+    target_names = []
+    for t in targets:
+        if isinstance(t, str):
+            name = t
+        elif isinstance(t, Client):
+            name = t.name
+        else:
+            raise ValueError(f"invalid target in list: got {type(t)}")
+
+        if not name:
+            # ignore empty name
+            continue
+
+        if name not in target_names:
+            target_names.append(t)
+    return target_names

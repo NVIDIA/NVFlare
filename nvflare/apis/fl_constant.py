@@ -408,3 +408,10 @@ class FLMetaKey:
     TOTAL_ROUNDS = "total_rounds"
     JOB_ID = "job_id"
     SITE_NAME = "site_name"
+
+
+class FilterKey:
+    IN = "in"
+    OUT = "out"
+    INOUT = "inout"
+    DELIMITER = "/"

@@ -62,4 +62,4 @@ class TestJobCLI:
 
             app_config = ["trainer.batch_size=1024", "eval_iters=100", "lr=0.1"]
             config, config_path = _update_client_app_config_script("/tmp/my_job/", app_config)
-            assert config.get("app_config") == "--trainer.batch_size=1024 --eval_iters=100 --lr=0.1"
+            assert config.get("app_config") == "--trainer.batch_size 1024 --eval_iters 100 --lr 0.1"
