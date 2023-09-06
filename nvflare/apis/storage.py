@@ -138,11 +138,12 @@ class StorageSpec(ABC):
         pass
 
     @abstractmethod
-    def get_data(self, uri: str) -> bytes:
+    def get_data(self, uri: str, component: str = DATA) -> bytes:
         """Gets data of the specified object.
 
         Args:
             uri: URI of the object
+            component: storage component name
 
         Returns:
             data of the object.

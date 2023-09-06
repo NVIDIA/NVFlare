@@ -230,11 +230,12 @@ class FilesystemStorage(StorageSpec):
 
         return ast.literal_eval(json.loads(_read(os.path.join(full_uri, META)).decode("utf-8")))
 
-    def get_data(self, uri: str) -> bytes:
+    def get_data(self, uri: str, component: str = DATA) -> bytes:
         """Gets data of the specified object.
 
         Args:
             uri: URI of the object
+            component: storage component name
 
         Returns:
             data of the object.
@@ -246,10 +247,13 @@ class FilesystemStorage(StorageSpec):
         """
         full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
 
+        if not StorageSpec.is_valid_component(component):
+            raise StorageException(f"{component } is not a valid component for storage object.")
+
         if not _object_exists(full_uri):
             raise StorageException("object {} does not exist".format(uri))
 
-        return _read(os.path.join(full_uri, DATA))
+        return _read(os.path.join(full_uri, component))
 
     def get_detail(self, uri: str) -> Tuple[dict, bytes]:
         """Gets both data and meta of the specified object.

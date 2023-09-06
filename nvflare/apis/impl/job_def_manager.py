@@ -290,3 +290,10 @@ class SimpleJobDefManager(JobDefManagerSpec):
         # store.update_data(self.job_uri(jid), fobs.dumps(job_data))
 
         store.update_object(self.job_uri(jid), data, WORKSPACE)
+
+    def get_workspace(self, jid: str, fl_ctx: FLContext):
+        store = self._get_job_store(fl_ctx)
+        return store.get_data(self.job_uri(jid), WORKSPACE)
+
+
+
