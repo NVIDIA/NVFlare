@@ -263,3 +263,14 @@ def validate_candidate(var_name: str, candidate, base: list, default_policy: str
             raise ValueError(f"invalid value '{candidate}' in '{var_name}': it must be one of {base}")
     else:
         return c
+
+
+def normalize_config_arg(value):
+    if value is False:
+        return None  # specified to be "empty"
+    if isinstance(value, str):
+        if value.strip().lower() == SYMBOL_NONE:
+            return None
+    if not value:
+        return ""  # meaning to take default
+    return value

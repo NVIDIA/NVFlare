@@ -35,6 +35,7 @@ from nvflare.fuel.utils.validation_utils import (
     check_positive_int,
     check_positive_number,
     check_str,
+    normalize_config_arg,
     validate_candidate,
     validate_candidates,
 )
@@ -63,11 +64,9 @@ class ServerSideController(Controller):
         job_status_check_interval: float = Constant.JOB_STATUS_CHECK_INTERVAL,
         starting_client=None,
         starting_client_policy: str = DefaultValuePolicy.ANY,
-        starting_client_allow_none=False,
         participating_clients=None,
         result_clients=None,
         result_clients_policy: str = DefaultValuePolicy.ALL,
-        result_clients_allow_none=True,
         max_status_report_interval: float = Constant.PER_CLIENT_STATUS_REPORT_TIMEOUT,
         progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
     ):
@@ -90,14 +89,9 @@ class ServerSideController(Controller):
             progress_timeout:
         """
         Controller.__init__(self, task_check_period)
-        if not participating_clients:
-            participating_clients = []
-
-        if not result_clients:
-            result_clients = []
-
-        if not starting_client:
-            starting_client = ""
+        participating_clients = normalize_config_arg(participating_clients)
+        if participating_clients is None:
+            raise ValueError("participating_clients must not be empty")
 
         self.task_name_prefix = task_name_prefix
         self.configure_task_name = make_task_name(task_name_prefix, Constant.BASENAME_CONFIG)
@@ -112,11 +106,9 @@ class ServerSideController(Controller):
         self.job_status_check_interval = job_status_check_interval
         self.starting_client = starting_client
         self.starting_client_policy = starting_client_policy
-        self.starting_client_allow_none = starting_client_allow_none
         self.participating_clients = participating_clients
         self.result_clients = result_clients
         self.result_clients_policy = result_clients_policy
-        self.result_clients_allow_none = result_clients_allow_none
         self.client_statuses = {}  # client name => ClientStatus
         self.cw_started = False
         self.asked_to_stop = False
@@ -141,8 +133,8 @@ class ServerSideController(Controller):
         self.workflow_id = wf_id
 
         all_clients = self._engine.get_clients()
-        if len(all_clients) <= 1:
-            raise RuntimeError("Not enough client sites.")
+        if len(all_clients) < 2:
+            raise RuntimeError(f"this workflow requires at least 2 clients, but only got {all_clients}")
 
         all_client_names = [t.name for t in all_clients]
         self.participating_clients = validate_candidates(
@@ -158,7 +150,7 @@ class ServerSideController(Controller):
             candidate=self.starting_client,
             base=self.participating_clients,
             default_policy=self.starting_client_policy,
-            allow_none=self.starting_client_allow_none,
+            allow_none=True,
         )
 
         self.result_clients = validate_candidates(
@@ -166,10 +158,8 @@ class ServerSideController(Controller):
             candidates=self.result_clients,
             base=self.participating_clients,
             default_policy=self.result_clients_policy,
-            allow_none=self.result_clients_allow_none,
+            allow_none=True,
         )
-
-        self.log_info(fl_ctx, f"result clients: {self.result_clients}")
 
         for c in self.participating_clients:
             self.client_statuses[c] = ClientStatus()
@@ -200,6 +190,8 @@ class ServerSideController(Controller):
         extra_config = self.prepare_config()
         if extra_config:
             learn_config.update(extra_config)
+
+        self.log_info(fl_ctx, f"Workflow Config: {learn_config}")
 
         # configure all clients
         shareable = Shareable()

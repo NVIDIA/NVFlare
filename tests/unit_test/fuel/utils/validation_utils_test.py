@@ -20,12 +20,32 @@ from nvflare.fuel.utils.validation_utils import (
     check_number_range,
     check_positive_int,
     check_positive_number,
+    normalize_config_arg,
     validate_candidate,
     validate_candidates,
 )
 
 
 class TestValidationUtils:
+    @pytest.mark.parametrize(
+        "value, result",
+        [
+            ("x", "x"),
+            (123, 123),
+            ("", ""),
+            (False, None),
+            ("@None", None),
+            (None, ""),
+            (0, ""),
+            ([], ""),
+            ({}, ""),
+            ((), ""),
+            ([1, 2, 3], [1, 2, 3]),
+        ],
+    )
+    def test_normalize_config_arg(self, value, result):
+        assert normalize_config_arg(value) == result
+
     @pytest.mark.parametrize(
         "name, num, min_value, max_value",
         [

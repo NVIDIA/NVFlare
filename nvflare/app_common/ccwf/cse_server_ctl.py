@@ -67,11 +67,9 @@ class CrossSiteEvalServerController(ServerSideController):
             participating_clients=participating_clients,
             starting_client="",
             starting_client_policy=DefaultValuePolicy.EMPTY,
-            starting_client_allow_none=True,
             max_status_report_interval=max_status_report_interval,
-            result_clients=None,
+            result_clients="",
             result_clients_policy=DefaultValuePolicy.EMPTY,
-            result_clients_allow_none=True,
             progress_timeout=progress_timeout,
         )
 

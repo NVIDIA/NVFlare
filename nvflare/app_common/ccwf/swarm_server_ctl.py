@@ -15,7 +15,7 @@
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.ccwf.common import Constant
 from nvflare.app_common.ccwf.server_ctl import ServerSideController
-from nvflare.fuel.utils.validation_utils import DefaultValuePolicy, validate_candidates
+from nvflare.fuel.utils.validation_utils import DefaultValuePolicy, normalize_config_arg, validate_candidates
 
 
 class SwarmServerController(ServerSideController):
@@ -36,8 +36,10 @@ class SwarmServerController(ServerSideController):
         aggr_clients=None,
         train_clients=None,
     ):
-        if not result_clients:
-            result_clients = []
+        result_clients = normalize_config_arg(result_clients)
+        starting_client = normalize_config_arg(starting_client)
+        if starting_client is None:
+            raise ValueError("starting_client must be specified")
 
         super().__init__(
             num_rounds=num_rounds,
@@ -50,10 +52,8 @@ class SwarmServerController(ServerSideController):
             participating_clients=participating_clients,
             result_clients=result_clients,
             result_clients_policy=DefaultValuePolicy.ALL,
-            result_clients_allow_none=True,
             starting_client=starting_client,
             starting_client_policy=DefaultValuePolicy.ANY,
-            starting_client_allow_none=False,
             max_status_report_interval=max_status_report_interval,
             progress_timeout=progress_timeout,
         )

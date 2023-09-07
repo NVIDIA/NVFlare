@@ -14,7 +14,7 @@
 
 from nvflare.app_common.ccwf.common import Constant, RROrder
 from nvflare.app_common.ccwf.server_ctl import ServerSideController
-from nvflare.fuel.utils.validation_utils import DefaultValuePolicy, check_str
+from nvflare.fuel.utils.validation_utils import DefaultValuePolicy, check_str, normalize_config_arg
 
 
 class CyclicServerController(ServerSideController):
@@ -33,6 +33,11 @@ class CyclicServerController(ServerSideController):
         progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
         rr_order: str = RROrder.FIXED,
     ):
+        result_clients = normalize_config_arg(result_clients)
+        starting_client = normalize_config_arg(starting_client)
+        if starting_client is None:
+            raise ValueError("starting_client must be specified")
+
         super().__init__(
             num_rounds=num_rounds,
             task_name_prefix=task_name_prefix,
@@ -43,10 +48,8 @@ class CyclicServerController(ServerSideController):
             participating_clients=participating_clients,
             result_clients=result_clients,
             result_clients_policy=DefaultValuePolicy.ALL,
-            result_clients_allow_none=True,
             starting_client=starting_client,
             starting_client_policy=DefaultValuePolicy.ANY,
-            starting_client_allow_none=False,
             max_status_report_interval=max_status_report_interval,
             progress_timeout=progress_timeout,
         )
