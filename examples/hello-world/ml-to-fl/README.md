@@ -27,7 +27,7 @@ We will demonstrate how to transform an existing DL code into FL application ste
 
 ## The base line
 
-We take a CIFAR10 example directly from [PyTorch website](https://github.com/pytorch/tutorials/blob/main/beginner_source/blitz/cifar10_tutorial.py) and do the following cleanups to get [cifar10_tutorial_clean.py](./codes/cifar10_tutorial_clean.py):
+We take a CIFAR10 example directly from [PyTorch website](https://github.com/pytorch/tutorials/blob/main/beginner_source/blitz/cifar10_tutorial.py) and do the following cleanups to get [cifar10_original.py](./codes/cifar10_original.py):
 
 1. Remove the comments
 2. Move the definition of Convolutional Neural Network to [net.py](./codes/net.py)
@@ -37,7 +37,7 @@ We take a CIFAR10 example directly from [PyTorch website](https://github.com/pyt
 You can run the baseline using
 
 ```bash
-python3 ./codes/cifar10_tutorial_clean.py
+python3 ./codes/cifar10_original.py
 ```
 
 It will run for 2 epochs and you will see something like:
@@ -79,7 +79,7 @@ We make the following changes:
 
 Optional: Change the data path to an absolute path and use ```prepare_data.sh``` to download data
 
-The modified code can be found in [./codes/cifar10_client_api.py](./codes/cifar10_client_api.py)
+The modified code can be found in [./codes/cifar10_fl.py](./codes/cifar10_fl.py)
 
 After we modify our training script, we need to put it into a [job structure](https://nvflare.readthedocs.io/en/latest/real_world_fl/job.html) so that NVFlare system knows how to deploy and run the job.
 
@@ -90,7 +90,7 @@ We choose the [sag_pt job template](../../../job_templates/sag_pt/) and run the 
 ```bash
 nvflare config -jt ../../../job_templates/
 nvflare job list_templates
-nvflare job create -force -j ./jobs/client_api -w sag_pt -sd ./codes/ -s ./codes/cifar10_client_api.py
+nvflare job create -force -j ./jobs/client_api -w sag_pt -sd ./codes/ -s ./codes/cifar10_fl.py
 ```
 
 Note that we have already created the [client_api job folder](./jobs/client_api/)
@@ -111,13 +111,13 @@ The above case show how you can change non-structured DL code to FL.
 Usually people have already put their codes into "train", "evaluate", "test" methods so they can reuse.
 In that case, the NVFlare DL2FL decorator is the way to go.
 
-To structure the code, we make the following changes to [./codes/cifar10_tutorial_clean.py](./codes/cifar10_tutorial_clean.py):
+To structure the code, we make the following changes to [./codes/cifar10_original.py](./codes/cifar10_original.py):
 
 1. Wrap training logic into a train method
 2. Wrap evaluation logic into an evaluate method
 3. Call train method and evaluate method
 
-The result is [cifar10_tutorial_structured.py](./codes/cifar10_tutorial_structured.py)
+The result is [cifar10_structured_original.py](./codes/cifar10_structured_original.py)
 
 To modify this structured code to be used in FL.
 We do the following changes:
@@ -137,12 +137,12 @@ We do the following changes:
 
 Optional: Change the data path to an absolute path and use ```prepare_data.sh``` to download data
 
-The modified code can be found in [./codes/cifar10_decorator.py](./codes/cifar10_decorator.py)
+The modified code can be found in [./codes/cifar10_structured_fl.py](./codes/cifar10_structured_fl.py)
 
 Then we can create the job and run it using simulator:
 
 ```bash
-nvflare job create -force -j ./jobs/decorator -w sag_pt -sd ./codes/ -s ./codes/cifar10_decorator.py
+nvflare job create -force -j ./jobs/decorator -w sag_pt -sd ./codes/ -s ./codes/cifar10_structured_fl.py
 ./prepare_data.sh
 nvflare simulator -n 2 -t 2 ./jobs/decorator
 ```
@@ -151,7 +151,7 @@ nvflare simulator -n 2 -t 2 ./jobs/decorator
 
 If you are using lightning framework to write your training scripts, you can use our NVFlare lightning client API to convert it into FL.
 
-Given a CIFAR10 lightning code example: [./codes/cifar10_tutorial_lightning.py](./codes/cifar10_tutorial_lightning.py).
+Given a CIFAR10 lightning code example: [./codes/cifar10_lightning_original.py](./codes/cifar10_lightning_original.py).
 Notice we wrap the [Net class](./codes/net.py) into LightningModule: [LitNet class](./codes/lit_net.py)
 
 To transform the existing code to FL training code, we made the following changes:
@@ -160,12 +160,12 @@ To transform the existing code to FL training code, we made the following change
 2. Patch the lightning trainer ```flare.patch(trainer)```
 3. Call trainer.evaluate() method to evaluate newly received aggregated/global model. The resulting evaluation metric will be used for best model selection
 
-The modified code can be found in [./codes/cifar10_lightning.py](./codes/cifar10_lightning.py)
+The modified code can be found in [./codes/cifar10_lightning_fl.py](./codes/cifar10_lightning_fl.py)
 
 Then we can create the job using sag_pt template:
 
 ```bash
-nvflare job create -force -j ./jobs/lightning -w sag_pt -sd ./codes/ -s ./codes/cifar10_lightning.py
+nvflare job create -force -j ./jobs/lightning -w sag_pt -sd ./codes/ -s ./codes/cifar10_lightning_fl.py
 ```
 
 We need to modify the "key_metric" in "config_fed_server.conf" from "accuracy" to "val_acc_epoch" (this name originates from the code [here](./codes/lit_net.py#L56)) which means the validation accuracy for that epoch:
