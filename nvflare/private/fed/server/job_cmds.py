@@ -642,6 +642,7 @@ class JobCommandModule(CommandModule, CommandUtil):
                         return
                 except StorageException:
                     workspace_data = None
+                    self.logger.info(f"The workspace for job: {job_id} does not exist.")
 
         except Exception as e:
             conn.append_error(f"Exception occurred trying to get job from store: {secure_format_exception(e)}")
