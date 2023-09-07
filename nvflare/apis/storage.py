@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 DATA = "data"
 JOB = "job"
@@ -64,17 +64,18 @@ class StorageSpec(ABC):
         pass
 
     @abstractmethod
-    def update_object(self, uri: str, data: bytes, component: str):
+    def update_object(self, uri: str, data: Union[bytes, str], component: str):
         """Update the object
 
         Args:
             uri: URI of the object
-            data: content data of the component
+            data: content data of the component, or the content file location
             component: component name
 
         Raises StorageException when the object does not exit.
 
         """
+        pass
 
     @abstractmethod
     def update_meta(self, uri: str, meta: dict, replace: bool):
