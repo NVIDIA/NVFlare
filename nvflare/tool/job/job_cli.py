@@ -214,13 +214,13 @@ def display_template_variables(job_folder, variable_values):
 
 def list_templates(cmd_args):
     try:
-        job_template_dir = find_job_templates_location(cmd_args.job_template_dir)
-        job_template_dir = os.path.abspath(job_template_dir)
-        template_index_conf = build_job_template_indices(job_template_dir)
+        job_templates_dir = find_job_templates_location(cmd_args.job_template_dir)
+        job_templates_dir = os.path.abspath(job_templates_dir)
+        template_index_conf = build_job_template_indices(job_templates_dir)
         display_available_templates(template_index_conf)
 
-        if job_template_dir:
-            update_job_template_dir(job_template_dir)
+        if job_templates_dir:
+            update_job_template_dir(job_templates_dir)
 
     except ValueError as e:
         print(f"\nUnable to handle command: {CMD_LIST_TEMPLATES} due to: {e} \n")
