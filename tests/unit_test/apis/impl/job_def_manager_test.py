@@ -20,7 +20,7 @@ from unittest import mock
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.job_def_manager import SimpleJobDefManager
-from nvflare.apis.job_def import JobDataKey, JobMetaKey
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.storage import WORKSPACE
 from nvflare.app_common.storages.filesystem_storage import FilesystemStorage
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
