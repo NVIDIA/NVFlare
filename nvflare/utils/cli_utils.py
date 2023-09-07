@@ -178,31 +178,31 @@ def check_startup_dir(startup_kit_dir):
         )
 
 
-def find_job_template_location(job_template_dir: Optional[str] = None):
+def find_job_templates_location(job_templates_dir: Optional[str] = None):
     def check_job_template_dir(job_temp_dir: str):
         if job_temp_dir:
             if not os.path.isdir(job_temp_dir):
                 raise ValueError(f"Invalid job template directory {job_temp_dir}")
 
-    if job_template_dir is None:
+    if job_templates_dir is None:
         nvflare_home = os.environ.get("NVFLARE_HOME", None)
         if nvflare_home:
-            job_template_dir = os.path.join(nvflare_home, JOB_TEMPLATES)
+            job_templates_dir = os.path.join(nvflare_home, JOB_TEMPLATES)
 
-    if job_template_dir is None:
+    if job_templates_dir is None:
         nvflare_config = load_hidden_config()
-        job_template_dir = nvflare_config.get_string("job_template.path", None) if nvflare_config else None
+        job_templates_dir = nvflare_config.get_string("job_template.path", None) if nvflare_config else None
 
-    if job_template_dir:
-        check_job_template_dir(job_template_dir)
+    if job_templates_dir:
+        check_job_template_dir(job_templates_dir)
 
-    if not job_template_dir:
+    if not job_templates_dir:
         raise ValueError(
             "Required job_template directory is not specified. "
             "Please check ~/.nvflare/config.conf or set env variable NVFLARE_HOME "
         )
 
-    return job_template_dir
+    return job_templates_dir
 
 
 def get_curr_dir():
