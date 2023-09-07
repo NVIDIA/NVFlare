@@ -22,12 +22,12 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.tracking.tracker_types import LogWriterName
 
 
-class LogWriterForMetricExchanger(FLComponent, ABC):
+class LogWriterForMetricsExchanger(FLComponent, ABC):
     def __init__(self, metrics_exchanger_id: str):
-        """Base class for log writer for MetricExchanger.
+        """Base class for log writer for MetricsExchanger.
 
         Args:
-            metrics_exchanger_id (str, optional): Expects MetricExchanger with this id. Defaults to None.
+            metrics_exchanger_id (str, optional): Expects MetricsExchanger with this id. Defaults to None.
         """
         super().__init__()
         self.metrics_exchanger_id = metrics_exchanger_id
@@ -38,7 +38,7 @@ class LogWriterForMetricExchanger(FLComponent, ABC):
             engine = fl_ctx.get_engine()
             self.sender = engine.get_component(self.metrics_exchanger_id)
             if self.sender is None:
-                self.task_panic("Cannot load MetricExchanger!", fl_ctx=fl_ctx)
+                self.task_panic("Cannot load MetricsExchanger!", fl_ctx=fl_ctx)
 
     def log(self, key: str, value: Any, data_type: AnalyticsDataType, **kwargs):
         self.sender.log(key=key, value=value, data_type=data_type, **kwargs)

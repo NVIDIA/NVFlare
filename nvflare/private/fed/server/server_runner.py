@@ -18,12 +18,13 @@ import time
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic, ReturnCode
+from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
+from nvflare.apis.utils.task_utils import apply_filters
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.private.privacy_manager import Scope
 from nvflare.security.logging import secure_format_exception
@@ -268,33 +269,21 @@ class ServerRunner(FLComponent):
             self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_DATA_FILTER")
             self.fire_event(EventType.BEFORE_TASK_DATA_FILTER, fl_ctx)
 
-            # apply scope filters first
-            scope_object = fl_ctx.get_prop(FLContextKey.SCOPE_OBJECT)
-            filter_list = []
-            if scope_object:
-                assert isinstance(scope_object, Scope)
-                if scope_object.task_data_filters:
-                    filter_list.extend(scope_object.task_data_filters)
-
-            task_filter_list = self.config.task_data_filters.get(task_name)
-            if task_filter_list:
-                filter_list.extend(task_filter_list)
-
-            if filter_list:
-                for f in filter_list:
-                    try:
-                        task_data = f.process(task_data, fl_ctx)
-                    except Exception as e:
-                        self.log_exception(
-                            fl_ctx,
-                            "processing error in task data filter {}: {}; "
-                            "asked client to try again later".format(type(f), secure_format_exception(e)),
-                        )
-
-                        with self.wf_lock:
-                            if self.current_wf:
-                                self.current_wf.responder.handle_exception(task_id, fl_ctx)
-                        return self._task_try_again()
+            try:
+                filter_name = Scope.TASK_DATA_FILTERS_NAME
+                task_data = apply_filters(
+                    filter_name, task_data, fl_ctx, self.config.task_data_filters, task_name, FilterKey.OUT
+                )
+            except Exception as e:
+                self.log_exception(
+                    fl_ctx,
+                    "processing error in task data filter {}; "
+                    "asked client to try again later".format(secure_format_exception(e)),
+                )
+                with self.wf_lock:
+                    if self.current_wf:
+                        self.current_wf.responder.handle_exception(task_id, fl_ctx)
+                return self._task_try_again()
 
             self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_DATA_FILTER")
             self.fire_event(EventType.AFTER_TASK_DATA_FILTER, fl_ctx)
@@ -446,29 +435,17 @@ class ServerRunner(FLComponent):
                 self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_RESULT_FILTER")
                 self.fire_event(EventType.BEFORE_TASK_RESULT_FILTER, fl_ctx)
 
-                filter_list = []
-                scope_object = fl_ctx.get_prop(FLContextKey.SCOPE_OBJECT)
-                if scope_object and scope_object.task_result_filters:
-                    filter_list.extend(scope_object.task_result_filters)
-
-                task_filter_list = self.config.task_result_filters.get(task_name)
-                if task_filter_list:
-                    filter_list.extend(task_filter_list)
-
-                if filter_list:
-                    for f in filter_list:
-                        try:
-                            result = f.process(result, fl_ctx)
-                        except Exception as e:
-                            self.log_exception(
-                                fl_ctx,
-                                "Error processing in task result filter {}: {}".format(
-                                    type(f), secure_format_exception(e)
-                                ),
-                            )
-
-                            result = make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
-                            break
+                try:
+                    filter_name = Scope.TASK_RESULT_FILTERS_NAME
+                    result = apply_filters(
+                        filter_name, result, fl_ctx, self.config.task_result_filters, task_name, FilterKey.IN
+                    )
+                except Exception as e:
+                    self.log_exception(
+                        fl_ctx,
+                        "processing error in task result filter {}; ".format(secure_format_exception(e)),
+                    )
+                    result = make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
 
                 self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_RESULT_FILTER")
                 self.fire_event(EventType.AFTER_TASK_RESULT_FILTER, fl_ctx)

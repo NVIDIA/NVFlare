@@ -18,6 +18,9 @@ Before you run the notebook, the following preparation work must be done:
 * [Hello world notebook](./hello_world.ipynb)
 
 ## Hello World Examples
+### Easier ML/DL to FL transition
+* [ML to FL](./ml-to-fl/README.md): Showcase how to convert existing ML/DL codes to a NVFlare job.
+
 ### Workflows
 * [Hello Scatter and Gather](./hello-numpy-sag/README.md)
     * Example using "[ScatterAndGather](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.scatter_and_gather.html)" controller workflow.

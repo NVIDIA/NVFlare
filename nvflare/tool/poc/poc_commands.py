@@ -25,6 +25,7 @@ from typing import Dict, List, Optional, OrderedDict, Tuple
 import yaml
 
 from nvflare.cli_exception import CLIException
+from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.fuel.utils.class_utils import instantiate_class
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
 from nvflare.lighter.provision import gen_default_project_config, prepare_project
@@ -138,14 +139,15 @@ def prepare_examples(cmd_args):
 
 
 def _prepare_examples(example_dir: str, workspace: str, config_packages: Optional[Tuple] = None):
-    _, service_config = config_packages if config_packages else setup_service_config(workspace)
+    project_config, service_config = config_packages if config_packages else setup_service_config(workspace)
+    project_name = project_config.get("name")
     if example_dir is None or example_dir == "":
         raise CLIException("example_dir is required")
     src = os.path.abspath(example_dir)
     if not os.path.isdir(src):
         raise CLIException(f"example_dir '{example_dir}' is not valid directory")
 
-    prod_dir = get_prod_dir(workspace)
+    prod_dir = get_prod_dir(workspace, project_name)
     if not os.path.exists(prod_dir):
         raise CLIException("please use nvflare poc prepare to create workspace first")
 
@@ -375,9 +377,9 @@ def prepare_clients(clients, number_of_clients):
     return clients
 
 
-def save_startup_kit_dir_config(workspace):
+def save_startup_kit_dir_config(workspace, project_name):
     dst = get_hidden_nvflare_config_path()
-    prod_dir = get_prod_dir(workspace)
+    prod_dir = get_prod_dir(workspace, project_name)
     conf = f"""
     startup_kit {{
         path = {prod_dir}
@@ -423,8 +425,8 @@ def _prepare_poc(
     else:
         print(f"prepare poc at {workspace} with {project_conf_path}")
 
-    save_startup_kit_dir_config(workspace)
-
+    project_config = None
+    result = False
     if os.path.exists(workspace):
         answer = input(
             f"This will delete poc folder in {workspace} directory and create a new one. Is it OK to proceed? (y/N) "
@@ -442,17 +444,21 @@ def _prepare_poc(
                 )
 
             shutil.rmtree(workspace, ignore_errors=True)
-            prepare_poc_provision(
+            project_config = prepare_poc_provision(
                 clients, number_of_clients, workspace, docker_image, use_he, project_conf_path, examples_dir
             )
-            return True
+            result = True
         else:
-            return False
+            result = False
     else:
-        prepare_poc_provision(
+        project_config = prepare_poc_provision(
             clients, number_of_clients, workspace, docker_image, use_he, project_conf_path, examples_dir
         )
-        return True
+        result = True
+
+    project_name = project_config.get("name") if project_config else None
+    save_startup_kit_dir_config(workspace, project_name)
+    return result
 
 
 def get_home_dir():
@@ -488,18 +494,23 @@ def prepare_poc_provision(
     use_he: bool = False,
     project_conf_path: str = "",
     examples_dir: Optional[str] = None,
-):
+) -> Dict:
     os.makedirs(workspace, exist_ok=True)
     os.makedirs(os.path.join(workspace, "data"), exist_ok=True)
-    _, service_config = local_provision(clients, number_of_clients, workspace, docker_image, use_he, project_conf_path)
+    project_config, service_config = local_provision(
+        clients, number_of_clients, workspace, docker_image, use_he, project_conf_path
+    )
+    project_name = project_config.get("name")
     server_name = service_config[SC.FLARE_SERVER]
     # update storage
     if workspace != DEFAULT_WORKSPACE:
-        prod_dir = get_prod_dir(workspace)
+        prod_dir = get_prod_dir(workspace, project_name)
         update_storage_locations(local_dir=f"{prod_dir}/{server_name}/local", workspace=workspace)
     examples_dir = get_examples_dir(examples_dir)
     if examples_dir is not None:
         _prepare_examples(examples_dir, workspace, None)
+
+    return project_config
 
 
 def get_examples_dir(examples_dir):
@@ -510,7 +521,7 @@ def get_examples_dir(examples_dir):
     return default_examples_dir
 
 
-def sort_service_cmds(cmd_type, service_cmds: list, service_config) -> list:
+def _sort_service_cmds(cmd_type, service_cmds: list, service_config) -> list:
     def sort_first(val):
         return val[0]
 
@@ -539,16 +550,17 @@ def get_cmd_path(poc_workspace, service_name, cmd):
     return cmd_path
 
 
-def is_poc_ready(poc_workspace: str, service_config):
+def is_poc_ready(poc_workspace: str, service_config, project_config):
     # check server and admin directories exist
-    prod_dir = get_prod_dir(poc_workspace)
+    project_name = project_config.get("name") if project_config else DEFAULT_PROJECT_NAME
+    prod_dir = get_prod_dir(poc_workspace, project_name)
     console_dir = os.path.join(prod_dir, service_config[SC.FLARE_PROJ_ADMIN])
     server_dir = os.path.join(prod_dir, service_config[SC.FLARE_SERVER])
     return os.path.isdir(server_dir) and os.path.isdir(console_dir)
 
 
-def validate_poc_workspace(poc_workspace: str, service_config):
-    if not is_poc_ready(poc_workspace, service_config):
+def validate_poc_workspace(poc_workspace: str, service_config, project_config=None):
+    if not is_poc_ready(poc_workspace, service_config, project_config):
         raise CLIException(f"workspace {poc_workspace} is not ready, please use poc prepare to prepare poc workspace")
 
 
@@ -610,8 +622,16 @@ def _start_poc(poc_workspace: str, gpu_ids: List[int], excluded=None, services_l
         excluded = []
     print(f"start_poc at {poc_workspace}, gpu_ids={gpu_ids}, excluded = {excluded}, services_list={services_list}")
     validate_services(project_config, services_list, excluded)
-    validate_poc_workspace(poc_workspace, service_config)
-    _run_poc(SC.CMD_START, poc_workspace, gpu_ids, service_config, excluded=excluded, services_list=services_list)
+    validate_poc_workspace(poc_workspace, service_config, project_config)
+    _run_poc(
+        SC.CMD_START,
+        poc_workspace,
+        gpu_ids,
+        service_config,
+        project_config,
+        excluded=excluded,
+        services_list=services_list,
+    )
 
 
 def validate_services(project_config, services_list: List, excluded: List):
@@ -656,9 +676,10 @@ def _stop_poc(poc_workspace: str, excluded=None, services_list=None):
 
     validate_services(project_config, services_list, excluded)
 
-    validate_poc_workspace(poc_workspace, service_config)
+    validate_poc_workspace(poc_workspace, service_config, project_config)
     gpu_ids: List[int] = []
-    prod_dir = get_prod_dir(poc_workspace)
+    project_name = project_config.get("name")
+    prod_dir = get_prod_dir(poc_workspace, project_name)
 
     p_size = len(services_list)
     if p_size == 0 or service_config[SC.FLARE_SERVER] in services_list:
@@ -667,7 +688,15 @@ def _stop_poc(poc_workspace: str, excluded=None, services_list=None):
     else:
         print(f"start shutdown {services_list}")
 
-    _run_poc(SC.CMD_STOP, poc_workspace, gpu_ids, service_config, excluded=excluded, services_list=services_list)
+    _run_poc(
+        SC.CMD_STOP,
+        poc_workspace,
+        gpu_ids,
+        service_config,
+        project_config,
+        excluded=excluded,
+        services_list=services_list,
+    )
 
 
 def _get_clients(service_commands: list, service_config) -> List[str]:
@@ -680,7 +709,9 @@ def _get_clients(service_commands: list, service_config) -> List[str]:
     return clients
 
 
-def _build_commands(cmd_type: str, poc_workspace: str, service_config, excluded: list, services_list=None) -> list:
+def _build_commands(
+    cmd_type: str, poc_workspace: str, service_config, project_config, excluded: list, services_list=None
+) -> list:
     """Builds commands.
 
     Args:
@@ -702,7 +733,8 @@ def _build_commands(cmd_type: str, poc_workspace: str, service_config, excluded:
         )
         return fl_service
 
-    prod_dir = get_prod_dir(poc_workspace)
+    project_name = project_config.get("name")
+    prod_dir = get_prod_dir(poc_workspace, project_name)
 
     if services_list is None:
         services_list = []
@@ -716,7 +748,7 @@ def _build_commands(cmd_type: str, poc_workspace: str, service_config, excluded:
                         cmd = get_service_command(cmd_type, prod_dir, service_dir_name, service_config)
                         if cmd:
                             service_commands.append((service_dir_name, cmd))
-    return sort_service_cmds(cmd_type, service_commands, service_config)
+    return _sort_service_cmds(cmd_type, service_commands, service_config)
 
 
 def prepare_env(service_name, gpu_ids: Optional[List[int]], service_config: Dict):
@@ -753,11 +785,17 @@ def sync_process(service_name, cmd_path):
 
 
 def _run_poc(
-    cmd_type: str, poc_workspace: str, gpu_ids: List[int], service_config: Dict, excluded: list, services_list=None
+    cmd_type: str,
+    poc_workspace: str,
+    gpu_ids: List[int],
+    service_config: Dict,
+    project_config: Dict,
+    excluded: list,
+    services_list=None,
 ):
     if services_list is None:
         services_list = []
-    service_commands = _build_commands(cmd_type, poc_workspace, service_config, excluded, services_list)
+    service_commands = _build_commands(cmd_type, poc_workspace, service_config, project_config, excluded, services_list)
     clients = _get_clients(service_commands, service_config)
     gpu_assignments: Dict[str, List[int]] = client_gpu_assignments(clients, gpu_ids)
     for service_name, cmd_path in service_commands:
@@ -783,7 +821,7 @@ def _clean_poc(poc_workspace: str):
     if os.path.isdir(poc_workspace):
         project_config, service_config = setup_service_config(poc_workspace)
         if project_config is not None:
-            if is_poc_ready(poc_workspace, service_config):
+            if is_poc_ready(poc_workspace, service_config, project_config):
                 shutil.rmtree(poc_workspace, ignore_errors=True)
                 print(f"{poc_workspace} is removed")
             else:
@@ -812,7 +850,6 @@ def def_poc_parser(sub_cmd):
     define_start_parser(poc_parser)
     define_stop_parser(poc_parser)
     define_clean_parser(poc_parser)
-
     return {cmd: parser}
 
 
@@ -982,6 +1019,7 @@ def get_local_host_gpu_ids():
 
 
 def handle_poc_cmd(cmd_args):
+
     if cmd_args.poc_sub_cmd:
         poc_cmd_handler = poc_sub_cmd_handlers.get(cmd_args.poc_sub_cmd, None)
         poc_cmd_handler(cmd_args)
@@ -994,53 +1032,7 @@ def handle_poc_cmd(cmd_args):
     elif cmd_args.old_prepare_poc:
         old_prepare_poc()
     else:
-        raise ValueError("unknown command")
-
-
-def _handle_poc_cmd(cmd_args):
-    if cmd_args.service != "all":
-        services_list = [cmd_args.service]
-    else:
-        services_list = []
-
-    excluded = None
-    if cmd_args.exclude != "":
-        excluded = [cmd_args.exclude]
-
-    if cmd_args.gpu is not None and cmd_args.prepare_poc:
-        raise CLIException(
-            "-gpu should not be used for 'nvflare poc prepare' command,"
-            " it is intended to use in 'nvflare poc start' command "
-        )
-
-    poc_workspace = get_poc_workspace()
-    if cmd_args.start_poc:
-        if cmd_args.gpu is not None and isinstance(cmd_args.gpu, list) and len(cmd_args.gpu) > 0:
-            gpu_ids = get_gpu_ids(cmd_args.gpu, get_local_host_gpu_ids())
-        else:
-            gpu_ids = []
-        _start_poc(poc_workspace, gpu_ids, excluded, services_list)
-    elif cmd_args.prepare_poc:
-        project_conf_path = ""
-        if cmd_args.project_input:
-            project_conf_path = cmd_args.project_input
-        _prepare_poc(
-            cmd_args.clients,
-            cmd_args.number_of_clients,
-            poc_workspace,
-            cmd_args.docker_image,
-            cmd_args.he,
-            project_conf_path,
-            cmd_args.examples,
-        )
-    elif cmd_args.prepare_examples:
-        _prepare_examples(cmd_args.examples, poc_workspace)
-    elif cmd_args.stop_poc:
-        _stop_poc(poc_workspace, excluded, services_list)
-    elif cmd_args.clean_poc:
-        _clean_poc(poc_workspace)
-    else:
-        raise Exception(f"unable to handle poc command:{cmd_args}")
+        raise CLIUnknownCmdException("unknown command")
 
 
 def get_poc_workspace():
