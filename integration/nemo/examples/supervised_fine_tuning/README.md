@@ -6,25 +6,25 @@ feature to showcase how to fine-tune the whole model on supervised data for lear
 Due to the large model size of the LLM, we use NVFlare's streaming feature to transfer the model in chunks.
 
 ## Dependencies
-This example running a 1.3B GPT model requires considerable computational resources. For training 1.3B model, SFT needs ~30GB GPU memory using fp16 precision. Hence, to run three clients in parallel, we can compute the resource needs accordingly.
-The example for 3-client 1.3B GPT model was performed on two A100 GPUs with 80 GB memory each.
+This example running a 1.3B GPT model requires considerable computational resources. For training 1.3B model, SFT needs ~24GB GPU memory using fp16 precision. Hence, to run three clients in parallel, we can compute the resource needed accordingly.
+
+The example for a 3-client 1.3B GPT model experiment can be performed on either three 32 GB V100 GPUs, or one 80 GB A100 GPU.
 
 We assume you followed the instructions [here](../../README.md#requirements) 
 to install the NeMo, NVFlare, and the NeMo-NVFlare package. 
 
 The example was tested using the [NeMo Docker container](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/nemo), 
-available with `docker pull nvcr.io/nvidia/nemo:23.02`.
+available with `docker pull nvcr.io/nvidia/nemo:23.02`. In the following, we assume the root folder of the container is mounted to `/workspace` and all downloading, etc. operations are based on this root path.
 
 For downloading the pre-trained model, we use [git lfs](https://git-lfs.com).
 
 ## Download the pre-trained LLM
-In this example, we use [Megatron-GPT 1.3B](https://huggingface.co/nvidia/nemo-megatron-gpt-1.3B) and [Megatron-GPT 5B](https://huggingface.co/nvidia/nemo-megatron-gpt-5B), transformer-based language models based on the GPT architecture.
+In this example, we use [Megatron-GPT 1.3B](https://huggingface.co/nvidia/nemo-megatron-gpt-1.3B), a transformer-based language model based on the GPT architecture.
 We download the model from HuggingFace using git lfs
 ```
 mkdir Models
 cd Models
 git clone https://huggingface.co/nvidia/nemo-megatron-gpt-1.3B
-git clone https://huggingface.co/nvidia/nemo-megatron-gpt-5B
 cd ..
 ```
 
@@ -78,15 +78,15 @@ each client training on their own dataset locally, centralized training with all
 #### 1. Local and Centralized SFT
 For single-site and centralized training experiments, we create the poc workspaces:
 ```
-nvflare poc --prepare -n 1
+nvflare poc prepare -n 1
 ```
 For 1.3B model experiment, we start the NVFlare system with one GPU:
 ```
-nvflare poc --start --gpu 0
+nvflare poc start --gpu 0
 ```
 For better usability, open a new terminal and start the [admin command prompt](https://nvflare.readthedocs.io/en/main/real_world_fl/operation.html#admin-command-prompt):
 ```
-nvflare poc --start --package admin
+nvflare poc start -p admin@nvidia.com
 ```
 
 We create the configuration files and modify them to include the current directory path to access the dataset and pre-trained LLM.
@@ -101,13 +101,17 @@ python utils/create_configs.py --job_folder "jobs/gpt_sft_1.3B_combined" --num_c
 ```
 Note that we used the combined validation set for all experiments, allowing for a direct comparison across all training settings.
 
-Next, submit the single-client SFT jobs using the admin prompt.
-Replace `[PWD]` with the path to this directory.
+Next, copy the jobs to temp workspace.
 ```
-submit_job [PWD]/jobs/gpt_sft_1.3B_alpaca
-submit_job [PWD]/jobs/gpt_sft_1.3B_dolly
-submit_job [PWD]/jobs/gpt_sft_1.3B_oasst1
-submit_job [PWD]/jobs/gpt_sft_1.3B_combined
+cp -r jobs/* /tmp/nvflare/poc/example_project/prod_00/admin\@nvidia.com/transfer/
+```
+
+To submit the single-client SFT jobs for each experiment:
+```
+submit_job gpt_sft_1.3B_alpaca
+submit_job gpt_sft_1.3B_dolly
+submit_job gpt_sft_1.3B_oasst1
+submit_job gpt_sft_1.3B_combined
 ```
 
 #### 2. Federated SFT
@@ -115,15 +119,15 @@ We use the [FedAvg](https://arxiv.org/abs/1602.05629) algorithm to perform SFT o
 
 We create the poc workspaces:
 ```
-nvflare poc --prepare -n 3
+nvflare poc prepare -n 3
 ```
-For 1.3B model experiment, we start the NVFlare system with two GPUs:
+For 1.3B model experiment, each client needs ~24 GB memory, here we start the NVFlare system with one 80GB A100 GPU :
 ```
-nvflare poc --start --gpu 0,1
+nvflare poc start --gpu 0
 ```
 For better usability, open a new terminal and start the [admin command prompt](https://nvflare.readthedocs.io/en/main/real_world_fl/operation.html#admin-command-prompt):
 ```
-nvflare poc --start --package admin
+nvflare poc start -p admin@nvidia.com
 ```
 
 First, create and modify the configuration files again. 
@@ -131,9 +135,13 @@ Here, each client performs SFT for one local epoch before sending their local mo
 ```
 python3 utils/create_configs.py --job_folder "jobs/gpt_sft_1.3B_fedavg" --num_clients 3 --devices 1 --train_ds_files /workspace/Data/Processed/alpaca/training.jsonl /workspace/Data/Processed/dolly/training.jsonl /workspace/Data/Processed/oasst1/training.jsonl --validation_ds_files /workspace/Data/Processed/combined/validation.jsonl  /workspace/Data/Processed/combined/validation.jsonl  /workspace/Data/Processed/combined/validation.jsonl
 ```
-Next, simulate the federated p-tuning using FedAvg.
+Next, simulate the federated SFT using FedAvg, similarly to single-client experiments
 ```
-submit_job [PWD]/jobs/gpt_sft_1.3B_fedavg
+cp -r jobs/gpt_sft_1.3B_fedavg /tmp/nvflare/poc/example_project/prod_00/admin\@nvidia.com/transfer/
+```
+and
+```
+submit_job gpt_sft_1.3B_fedavg
 ```
 
 ## Results

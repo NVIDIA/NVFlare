@@ -39,8 +39,6 @@ class RestoreOptimizers(Callback):
         if len(self.scaler_states) > 0:
             trainer.scaler.load_state_dict(self.scaler_states[0])
             self.logger.info("scaler states restored.")
-        else:
-            return
 
         if len(self.lr_scheduler_states) > 0:
             for config, lr_scheduler_state in zip(trainer.lr_scheduler_configs, self.lr_scheduler_states):
