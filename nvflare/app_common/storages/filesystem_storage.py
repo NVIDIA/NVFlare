@@ -20,7 +20,7 @@ import uuid
 from pathlib import Path
 from typing import List, Tuple
 
-from nvflare.apis.storage import StorageException, StorageSpec, DATA, META
+from nvflare.apis.storage import DATA, MANIFEST, META, StorageException, StorageSpec
 from nvflare.apis.utils.format_check import validate_class_methods_args
 from nvflare.security.logging import secure_format_exception
 
@@ -61,7 +61,6 @@ def _object_exists(uri: str):
 
 @validate_class_methods_args
 class FilesystemStorage(StorageSpec):
-
     def __init__(self, root_dir=os.path.abspath(os.sep), uri_root="/"):
         """Init FileSystemStorage.
 
@@ -118,6 +117,11 @@ class FilesystemStorage(StorageSpec):
             raise e
         os.rename(tmp_data_path, data_path)
 
+        manifest = os.path.join(full_uri, MANIFEST)
+        manifest_json = '{"data": {"description": "job definition","format": "bytes"},\
+                  "meta":{"description": "job meta.json","format": "text"}}'
+        _write(manifest, manifest_json.encode("utf-8"))
+
         return full_uri
 
     def update_object(self, uri: str, data: bytes, component: str):
@@ -140,6 +144,12 @@ class FilesystemStorage(StorageSpec):
 
         component_path = os.path.join(full_dir_path, component)
         _write(component_path, data)
+
+        manifest = os.path.join(full_dir_path, MANIFEST)
+        with open(manifest) as manifest_file:
+            manifest_json = json.loads(manifest_file.read())
+            manifest_json[component] = {"format": "bytes"}
+            _write(manifest, json.dumps(manifest_json).encode("utf-8"))
 
     def update_meta(self, uri: str, meta: dict, replace: bool):
         """Updates the meta of the specified object.

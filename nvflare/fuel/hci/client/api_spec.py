@@ -118,7 +118,7 @@ class ReplyProcessor:
     def reply_start(self, ctx: CommandContext, reply_json):
         pass
 
-    def process_string(self, ctx: CommandContext, item: str):
+    def process_string(self, ctx: CommandContext, item: str, meta: {}):
         pass
 
     def process_success(self, ctx: CommandContext, item: str):

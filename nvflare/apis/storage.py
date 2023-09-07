@@ -16,8 +16,10 @@ from abc import ABC, abstractmethod
 from typing import List, Tuple
 
 DATA = "data"
+JOB = "job"
 META = "meta"
 WORKSPACE = "workspace"
+MANIFEST = "manifest.json"
 
 
 class StorageException(Exception):
@@ -184,4 +186,4 @@ class StorageSpec(ABC):
 
     @staticmethod
     def is_valid_component(component):
-        return component in [DATA, META, WORKSPACE]
+        return component in [DATA, META, WORKSPACE, MANIFEST]
