@@ -64,13 +64,13 @@ class StorageSpec(ABC):
         pass
 
     @abstractmethod
-    def update_object(self, uri: str, data: Union[bytes, str], component: str):
+    def update_object(self, uri: str, data: Union[bytes, str], component_name: str):
         """Update the object
 
         Args:
             uri: URI of the object
             data: content data of the component, or the content file location
-            component: component name
+            component_name: component name
 
         Raises StorageException when the object does not exit.
 
@@ -85,22 +85,6 @@ class StorageSpec(ABC):
             uri: URI of the object
             meta: value of new meta info
             replace: whether to replace the current meta completely or partial update
-
-        Raises StorageException when:
-            - invalid args
-            - no such object
-            - error updating the object
-
-        """
-        pass
-
-    @abstractmethod
-    def update_data(self, uri: str, data: bytes):
-        """Updates the data of the specified object.
-
-        Args:
-            uri: URI of the object
-            data: value of new data
 
         Raises StorageException when:
             - invalid args
@@ -141,12 +125,12 @@ class StorageSpec(ABC):
         pass
 
     @abstractmethod
-    def get_data(self, uri: str, component: str = DATA) -> bytes:
+    def get_data(self, uri: str, component_name: str = DATA) -> bytes:
         """Gets data of the specified object.
 
         Args:
             uri: URI of the object
-            component: storage component name
+            component_name: storage component name
 
         Returns:
             data of the object.
@@ -186,5 +170,5 @@ class StorageSpec(ABC):
         pass
 
     @staticmethod
-    def is_valid_component(component):
-        return component in [DATA, META, WORKSPACE, MANIFEST]
+    def is_valid_component(component_name):
+        return component_name in [DATA, META, WORKSPACE, MANIFEST]
