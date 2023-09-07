@@ -106,16 +106,17 @@ def _determine_candidates_value(var_name: str, candidates, base: list):
         return None  # empty
 
     if isinstance(candidates, str):
-        c = candidates.lower().strip()
-        if not c:
+        nc = candidates.strip()
+        if not nc:
             return []
 
+        c = nc.lower()
         if c == SYMBOL_ALL:
             return base
         elif c == SYMBOL_NONE:
             return None
-        elif c in base:
-            return [c]
+        elif nc in base:
+            return [nc]
         else:
             raise ValueError(f"value of '{var_name}' ({candidates}) is invalid")
 

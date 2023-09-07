@@ -600,7 +600,7 @@ class SwarmClientController(ClientSideController):
         # execute the task
         if self.is_trainer:
             # update status
-            result = self.execute_train(task_data, fl_ctx, abort_signal)
+            result = self.execute_learn_task(task_data, fl_ctx, abort_signal)
 
             rc = result.get_return_code(ReturnCode.OK)
             if rc != ReturnCode.OK:

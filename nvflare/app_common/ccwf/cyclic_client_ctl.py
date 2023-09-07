@@ -89,7 +89,7 @@ class CyclicClientController(ClientSideController):
         fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, global_weights, private=True, sticky=True)
 
         # execute the task
-        result = self.execute_train(data, fl_ctx, abort_signal)
+        result = self.execute_learn_task(data, fl_ctx, abort_signal)
 
         rc = result.get_return_code(ReturnCode.OK)
         if rc != ReturnCode.OK:

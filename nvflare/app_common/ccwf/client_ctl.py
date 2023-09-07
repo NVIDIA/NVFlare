@@ -104,7 +104,7 @@ class ClientSideController(Executor, TaskController):
         self.learn_task = None
         self.current_task = None
         self.learn_executor = None
-        self.learn_lock = threading.Lock()
+        self.learn_task_lock = threading.Lock()
         self.asked_to_stop = False
         self.status_lock = threading.Lock()
         self.engine = None
@@ -419,30 +419,33 @@ class ClientSideController(Executor, TaskController):
         self.fire_event(EventType.ABORT_TASK, fl_ctx)
 
     def set_learn_task(self, task_data: Shareable, fl_ctx: FLContext) -> bool:
-        task_data.set_header(AppConstants.NUM_ROUNDS, self.get_config_prop(AppConstants.NUM_ROUNDS))
-        task = _LearnTask(self.learn_task_name, task_data, fl_ctx)
-        current_task = self.learn_task
-        if not current_task:
+        with self.learn_task_lock:
+            task_data.set_header(AppConstants.NUM_ROUNDS, self.get_config_prop(AppConstants.NUM_ROUNDS))
+            task = _LearnTask(self.learn_task_name, task_data, fl_ctx)
+            current_task = self.learn_task
+            if not current_task:
+                self.learn_task = task
+                return True
+
+            if not self.allow_busy_task:
+                return False
+
+            # already has a task!
+            self.log_warning(fl_ctx, "already running a task: aborting it")
+            self._abort_current_task(fl_ctx)
+
+            # monitor until the task is done
+            start = time.time()
+            while self.learn_task:
+                if time.time() - start > self.learn_task_abort_timeout:
+                    self.log_error(
+                        fl_ctx, f"failed to stop the running task after {self.learn_task_abort_timeout} seconds"
+                    )
+                    return False
+                time.sleep(0.1)
+
             self.learn_task = task
             return True
-
-        if not self.allow_busy_task:
-            return False
-
-        # already has a task!
-        self.log_warning(fl_ctx, "already running a task: aborting it")
-        self._abort_current_task(fl_ctx)
-
-        # monitor until the task is done
-        start = time.time()
-        while self.learn_task:
-            if time.time() - start > self.learn_task_abort_timeout:
-                self.log_error(fl_ctx, f"failed to stop the running task after {self.learn_task_abort_timeout} seconds")
-                return False
-            time.sleep(0.1)
-
-        self.learn_task = task
-        return True
 
     def _do_learn(self):
         while not self.asked_to_stop:
@@ -594,7 +597,7 @@ class ClientSideController(Executor, TaskController):
                 return False
         return True
 
-    def execute_train(self, data: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+    def execute_learn_task(self, data: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         current_round = data.get_header(AppConstants.CURRENT_ROUND)
 
         self.log_info(fl_ctx, f"started training round {current_round}")

@@ -160,6 +160,7 @@ class TestValidationUtils:
         "var_name, candidate, base, default_policy, allow_none",
         [
             ("x", "red", ["red", "blue"], "bad", True),
+            ("x", "Red", ["red", "blue"], "bad", True),
             ("x", 2, ["red", "blue"], DefaultValuePolicy.ANY, True),
             ("x", "", ["red", "blue"], DefaultValuePolicy.DISALLOW, True),
             ("x", "", ["red", "blue"], DefaultValuePolicy.ALL, True),
@@ -197,7 +198,10 @@ class TestValidationUtils:
         "var_name, candidate, base, default_policy, allow_none",
         [
             ("x", "red", ["red", "blue"], "bad", True),
+            ("x", "Red", ["red", "blue"], DefaultValuePolicy.ANY, True),
             ("x", 2, ["red", "blue"], DefaultValuePolicy.ANY, True),
+            ("x", ["red", "green"], ["red", "blue"], DefaultValuePolicy.ANY, True),
+            ("x", ["Red"], ["red", "blue"], DefaultValuePolicy.ANY, True),
             ("x", "", ["red", "blue"], DefaultValuePolicy.DISALLOW, True),
             ("x", [], ["red", "blue"], DefaultValuePolicy.DISALLOW, True),
             ("x", "yellow", ["red", "blue"], DefaultValuePolicy.ANY, True),
