@@ -7,7 +7,7 @@ Before starting please make sure you set up a [virtual environment](../../../REA
 python3 -m pip install -r requirements.txt
 ```
 
-> **_NOTE:_** If vertical federated learning support is not available in the XGBoost PyPI release yet, reinstall XGBoost from a [wheel](https://xgboost.readthedocs.io/en/stable/install.html#nightly-build) with a recent commit.
+> **_NOTE:_** If vertical federated learning support is not available in the XGBoost PyPI release yet, either reinstall XGBoost from a [wheel](https://xgboost.readthedocs.io/en/stable/install.html#nightly-build) with a recent commit, or build from [source](https://github.com/dmlc/xgboost/blob/master/plugin/federated/README.md).
 
 ## Preparing HIGGS Data
 In this example we showcase a binary classification task based on the [HIGGS dataset](https://archive.ics.uci.edu/dataset/280/higgs), which contains 11 million instances, each with 28 features and 1 class label.
@@ -47,7 +47,13 @@ Next, we can use `FedXGBHistogramExecutor` and set XGBoost training parameters i
 
 Lastly, we must subclass `XGBDataLoader` and implement the `load_data()` method. For vertical federated learning, it is important when creating the `xgb.Dmatrix` to set `data_split_mode=1` for column mode, and to specify the presence of a label column `?format=csv&label_column=0` for the csv file. To support PSI, the dataloader can also read in the dataset based on the calculated intersection, and split the data into training and validation.
 
-> **_NOTE:_** For secure mode, make sure to provide the required certificates for the federated communicator. Also as of now, GPUs are not yet supported by vertical federated XGBoost.
+> **_NOTE:_** For secure mode, make sure to provide the required certificates for the federated communicator.
+
+### GPU Support
+By default, CPU based training is used.
+
+In order to enable GPU accelerated training, first ensure that your machine has CUDA installed and has at least two GPUs to simulate two clients.
+Then in `config_fed_client.json` set `"use_gpus": true` and  `"tree_method": "hist"` in `xgb_params`.
 
 ## Run the Example
 Run the vertical xgboost job:
