@@ -529,15 +529,6 @@ def save_merged_configs(merged_conf, tmp_job_dir):
         save_config(root_index.value, dst_path)
 
 
-def prepare_model_exchange_config(job_folder: str, force: bool):
-    dst_path = dst_config_path(job_folder, "config_exchange.conf")
-    if os.path.isfile(dst_path) and not force:
-        return
-
-    dst_config = load_default_config_template("config_exchange.conf")
-    save_config(dst_config, dst_path)
-
-
 def prepare_meta_config(cmd_args, target_template_dir):
 
     job_folder = cmd_args.job_folder
