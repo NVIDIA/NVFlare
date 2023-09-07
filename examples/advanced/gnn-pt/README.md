@@ -47,3 +47,5 @@ app_server  app_site-1  app_site-2  log.txt
 
 ```
 
+### Loss for FL training and local traning
+
