@@ -16,6 +16,7 @@ from torch_geometric.nn import GraphSAGE
 # (0) import nvflare client API
 import nvflare.client as flare
 
+
 #Create PPI dataset for training.
 path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "data", "PPI")
 train_dataset = PPI(path, split="train")
@@ -63,12 +64,12 @@ print("finish init")
 input_model = flare.receive()
 print("finish receive")
 
+# (3) loads model from NVFlare
+model.load_state_dict(input_model.params)
+model.to(device)
+print("finish load_state_dict")
 
 def train():
-    # (3) loads model from NVFlare
-    model.load_state_dict(input_model.params)
-    model.to(device)
-    print("finish load_state_dict")
     model.train()
 
     total_loss = total_examples = 0
@@ -128,13 +129,17 @@ def test():
 times = []
 _, _, global_test_f1 = test()
 print(f"Global Test F1: {global_test_f1:.4f}")
-for epoch in range(1, 61):
+
+
+for epoch in range(1, 60):
     start = time.time()
     loss = train()
     print(f"Epoch: {epoch:02d}, Loss: {loss:.4f}")
     train_f1, val_f1, test_f1 = test()
     print(f"Train F1: {train_f1:.4f}, Val F1: {val_f1:.4f}, " f"Test F1: {test_f1:.4f}")
     times.append(time.time() - start)
+
+
 print(f"Median time per epoch: {torch.tensor(times).median():.4f}s")
 
 
@@ -143,3 +148,4 @@ output_model = flare.FLModel(params=model.cpu().state_dict(), params_type="FULL"
 
 # (6) send back model
 flare.send(output_model)
+
