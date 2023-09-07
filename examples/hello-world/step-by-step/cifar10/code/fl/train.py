@@ -60,11 +60,13 @@ def _main(args):
     flare.init()
     # (1.2) gets FLModel from NVFlare
     input_model = flare.receive()
-    print(f" current_round={input_model.current_round},"
-          f" total_round={input_model.total_rounds},"
-          f" client={flare.system_info().get('site_name', None)}")
+    print(
+        f" current_round={input_model.current_round},"
+        f" total_round={input_model.total_rounds},"
+        f" client={flare.system_info().get('site_name', None)}"
+    )
 
-# (1.3) loads model from NVFlare
+    # (1.3) loads model from NVFlare
     net.load_state_dict(input_model.params)
 
     criterion = nn.CrossEntropyLoss()
