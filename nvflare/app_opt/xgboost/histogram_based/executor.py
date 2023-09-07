@@ -73,7 +73,15 @@ class FedXGBHistogramExecutor(Executor):
     This class implements a basic xgb_train logic, feel free to overwrite the function for custom behavior.
     """
 
-    def __init__(self, num_rounds, early_stopping_rounds, xgb_params: dict, data_loader_id: str, verbose_eval=False, use_gpus=False):
+    def __init__(
+        self,
+        num_rounds,
+        early_stopping_rounds,
+        xgb_params: dict,
+        data_loader_id: str,
+        verbose_eval=False,
+        use_gpus=False,
+    ):
         """Federated XGBoost Executor for histogram-base collaboration.
 
         This class sets up the training environment for Federated XGBoost.
@@ -88,15 +96,17 @@ class FedXGBHistogramExecutor(Executor):
                 https://xgboost.readthedocs.io/en/stable/python/python_api.html#module-xgboost.training
             data_loader_id: the ID points to XGBDataLoader.
             verbose_eval: verbose_eval in xgboost.train
+            use_gpus: flag to enable gpu training
         """
         super().__init__()
         self.app_dir = None
 
         self.num_rounds = num_rounds
         self.early_stopping_rounds = early_stopping_rounds
+        self.xgb_params = xgb_params
+        self.data_loader_id = data_loader_id
         self.verbose_eval = verbose_eval
         self.use_gpus = use_gpus
-        self.xgb_params = xgb_params
 
         self.rank = None
         self.world_size = None
@@ -105,7 +115,6 @@ class FedXGBHistogramExecutor(Executor):
         self._client_key_path = None
         self._client_cert_path = None
         self._server_address = "localhost"
-        self.data_loader_id = data_loader_id
         self.train_data = None
         self.val_data = None
 
@@ -238,8 +247,8 @@ class FedXGBHistogramExecutor(Executor):
         self.world_size = world_size
 
         if self.use_gpus:
-            self.log_info(fl_ctx, f'Training with GPU {self.rank}')
-            self.xgb_params['device'] = f"cuda:{self.rank}"
+            self.log_info(fl_ctx, f"Training with GPU {self.rank}")
+            self.xgb_params["device"] = f"cuda:{self.rank}"
 
         self.log_info(fl_ctx, f"Using xgb params: {self.xgb_params}")
         params = XGBoostParams(
