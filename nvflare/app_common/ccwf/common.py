@@ -100,7 +100,7 @@ class ResultType:
     LAST = "last"
 
 
-class RROrder:
+class CyclicOrder:
 
     FIXED = "fixed"
     RANDOM = "random"

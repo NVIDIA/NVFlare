@@ -19,7 +19,7 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.ccwf.client_ctl import ClientSideController
-from nvflare.app_common.ccwf.common import Constant, ResultType, RROrder, rotate_to_front
+from nvflare.app_common.ccwf.common import Constant, CyclicOrder, ResultType, rotate_to_front
 from nvflare.fuel.utils.validation_utils import check_non_empty_str
 
 
@@ -118,8 +118,8 @@ class CyclicClientController(ClientSideController):
                 all_done = True
             else:
                 # decide the next round order
-                rr_order = self.get_config_prop(Constant.ORDER)
-                if rr_order == RROrder.RANDOM:
+                cyclic_order = self.get_config_prop(Constant.ORDER)
+                if cyclic_order == CyclicOrder.RANDOM:
                     random.shuffle(client_order)
                     # make sure I'm not the first in the new order
                     if client_order[0] == self.me:

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.app_common.ccwf.common import Constant, RROrder
+from nvflare.app_common.ccwf.common import Constant, CyclicOrder
 from nvflare.app_common.ccwf.server_ctl import ServerSideController
 from nvflare.fuel.utils.validation_utils import DefaultValuePolicy, check_str, normalize_config_arg
 
@@ -31,7 +31,7 @@ class CyclicServerController(ServerSideController):
         starting_client: str = "",
         max_status_report_interval: float = Constant.PER_CLIENT_STATUS_REPORT_TIMEOUT,
         progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
-        rr_order: str = RROrder.FIXED,
+        cyclic_order: str = CyclicOrder.FIXED,
     ):
         result_clients = normalize_config_arg(result_clients)
         starting_client = normalize_config_arg(starting_client)
@@ -53,10 +53,10 @@ class CyclicServerController(ServerSideController):
             max_status_report_interval=max_status_report_interval,
             progress_timeout=progress_timeout,
         )
-        check_str("rr_order", rr_order)
-        if rr_order not in [RROrder.FIXED, RROrder.RANDOM]:
-            raise ValueError(f"invalid rr_order {rr_order}: must be in {[RROrder.FIXED, RROrder.RANDOM]}")
-        self.rr_order = rr_order
+        check_str("cyclic_order", cyclic_order)
+        if cyclic_order not in [CyclicOrder.FIXED, CyclicOrder.RANDOM]:
+            raise ValueError(f"invalid rr_order {cyclic_order}: must be in {[CyclicOrder.FIXED, CyclicOrder.RANDOM]}")
+        self.cyclic_order = cyclic_order
 
     def prepare_config(self):
-        return {Constant.ORDER: self.rr_order}
+        return {Constant.ORDER: self.cyclic_order}

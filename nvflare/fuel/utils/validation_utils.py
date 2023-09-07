@@ -248,6 +248,9 @@ def validate_candidate(var_name: str, candidate, base: list, default_policy: str
     if not DefaultValuePolicy.valid_policy(default_policy):
         raise ValueError(f"invalid default policy {default_policy}")
 
+    if default_policy == DefaultValuePolicy.ALL:
+        raise ValueError(f"the policy '{default_policy}' is not applicable to validate_candidate")
+
     c = _determine_candidate_value(var_name, candidate, base)
     if c is None:
         if not allow_none:
