@@ -24,7 +24,7 @@ from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey
 from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey, TopDir, is_valid_job_id
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
-from nvflare.apis.storage import DATA, JOB, MANIFEST, WORKSPACE, StorageException
+from nvflare.apis.storage import JOB, WORKSPACE, StorageException
 from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
 from nvflare.fuel.hci.base64_utils import b64str_to_bytes, bytes_to_b64str
 from nvflare.fuel.hci.conn import Connection
@@ -34,7 +34,7 @@ from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.utils.argument_utils import SafeArgumentParser
 from nvflare.fuel.utils.obj_utils import get_size
-from nvflare.fuel.utils.zip_utils import ls_zip_from_bytes, unzip_all_from_bytes, zip_directory_to_bytes
+from nvflare.fuel.utils.zip_utils import ls_zip_from_bytes, unzip_all_from_bytes
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
