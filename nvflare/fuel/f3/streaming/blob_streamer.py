@@ -117,9 +117,9 @@ class BlobStreamer:
         self.byte_streamer = byte_streamer
         self.byte_receiver = byte_receiver
 
-    def send(self, channel: str, topic: str, target: str, message: Message) -> StreamFuture:
+    def send(self, channel: str, topic: str, target: str, message: Message, secure: bool) -> StreamFuture:
         blob_stream = BlobStream(message.payload, message.headers)
-        return self.byte_streamer.send(channel, topic, target, message.headers, blob_stream)
+        return self.byte_streamer.send(channel, topic, target, message.headers, blob_stream, secure)
 
     def register_blob_callback(self, channel, topic, blob_cb: Callable, *args, **kwargs):
         handler = BlobHandler(blob_cb)

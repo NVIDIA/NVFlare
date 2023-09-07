@@ -18,6 +18,7 @@ from typing import Optional
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.streaming.stream_cipher import StreamCipher
 from nvflare.fuel.f3.streaming.stream_const import (
     STREAM_ACK_TOPIC,
     STREAM_CHANNEL,
@@ -36,7 +37,7 @@ log = logging.getLogger(__name__)
 
 
 class TxTask:
-    def __init__(self, channel: str, topic: str, target: str, headers: dict, stream: Stream):
+    def __init__(self, channel: str, topic: str, target: str, headers: dict, stream: Stream, secure: bool):
         self.sid = gen_stream_id()
         self.buffer = bytearray(STREAM_CHUNK_SIZE)
         # Optimization to send the original buffer without copying
@@ -53,14 +54,16 @@ class TxTask:
         self.seq = 0
         self.offset = 0
         self.offset_ack = 0
+        self.secure = secure
 
     def __str__(self):
         return f"Tx[SID:{self.sid} to {self.target} for {self.channel}/{self.topic}]"
 
 
 class ByteStreamer:
-    def __init__(self, cell: CoreCell):
+    def __init__(self, cell: CoreCell, cipher: StreamCipher):
         self.cell = cell
+        self.cipher = cipher
         self.cell.register_request_cb(channel=STREAM_CHANNEL, topic=STREAM_ACK_TOPIC, cb=self._ack_handler)
         self.tx_task_map = {}
         self.map_lock = threading.Lock()
@@ -69,8 +72,8 @@ class ByteStreamer:
     def get_chunk_size():
         return STREAM_CHUNK_SIZE
 
-    def send(self, channel: str, topic: str, target: str, headers: dict, stream: Stream) -> StreamFuture:
-        tx_task = TxTask(channel, topic, target, headers, stream)
+    def send(self, channel: str, topic: str, target: str, headers: dict, stream: Stream, secure=False) -> StreamFuture:
+        tx_task = TxTask(channel, topic, target, headers, stream, secure)
         with self.map_lock:
             self.tx_task_map[tx_task.sid] = tx_task
 
@@ -118,7 +121,7 @@ class ByteStreamer:
     def _transmit(self, task: TxTask, final=False):
 
         if task.buffer_size == 0:
-            payload = None
+            payload = bytes(0)
         elif task.buffer_size == STREAM_CHUNK_SIZE:
             if task.direct_buf:
                 payload = task.direct_buf
@@ -126,6 +129,11 @@ class ByteStreamer:
                 payload = task.buffer
         else:
             payload = wrap_view(task.buffer)[0 : task.buffer_size]
+
+        if task.secure:
+            original_len = len(payload)
+            payload = self.cipher.encrypt(task.target, payload)
+            log.debug(f"Payload ({original_len} bytes) is encrypted into {len(payload)} bytes")
 
         message = Message(None, payload)
 
@@ -148,6 +156,7 @@ class ByteStreamer:
                 StreamHeaderKey.DATA_TYPE: StreamDataType.FINAL if final else StreamDataType.CHUNK,
                 StreamHeaderKey.SEQUENCE: task.seq,
                 StreamHeaderKey.OFFSET: task.offset,
+                StreamHeaderKey.SECURE: task.secure,
             }
         )
 

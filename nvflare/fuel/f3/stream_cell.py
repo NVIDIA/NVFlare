@@ -21,14 +21,16 @@ from nvflare.fuel.f3.streaming.byte_receiver import ByteReceiver
 from nvflare.fuel.f3.streaming.byte_streamer import ByteStreamer
 from nvflare.fuel.f3.streaming.file_streamer import FileStreamer
 from nvflare.fuel.f3.streaming.object_streamer import ObjectStreamer
+from nvflare.fuel.f3.streaming.stream_cipher import StreamCipher
 from nvflare.fuel.f3.streaming.stream_types import ObjectIterator, ObjectStreamFuture, Stream, StreamError, StreamFuture
 
 
 class StreamCell:
     def __init__(self, cell: CoreCell):
         self.cell = cell
-        self.byte_streamer = ByteStreamer(cell)
-        self.byte_receiver = ByteReceiver(cell)
+        cipher = StreamCipher(cell)
+        self.byte_streamer = ByteStreamer(cell, cipher)
+        self.byte_receiver = ByteReceiver(cell, cipher)
         self.blob_streamer = BlobStreamer(self.byte_streamer, self.byte_receiver)
         self.file_streamer = FileStreamer(self.byte_streamer, self.byte_receiver)
         self.object_streamer = ObjectStreamer(self.blob_streamer)
@@ -40,7 +42,7 @@ class StreamCell:
         """
         return ByteStreamer.get_chunk_size()
 
-    def send_stream(self, channel: str, topic: str, target: str, message: Message) -> StreamFuture:
+    def send_stream(self, channel: str, topic: str, target: str, message: Message, secure=False) -> StreamFuture:
         """
         Send a byte-stream over a channel/topic asynchronously. The streaming is performed in a different thread.
         The streamer will read from stream and send the data in chunks till the stream reaches EOF.
@@ -50,6 +52,7 @@ class StreamCell:
             topic: topic for the stream
             target: destination cell FQCN
             message: The payload is the stream to send
+            secure: Send the message with end-end encryption if True
 
         Returns: StreamFuture that can be used to check status/progress, or register callbacks.
             The future result is the number of bytes sent
@@ -59,7 +62,7 @@ class StreamCell:
         if not isinstance(message.payload, Stream):
             raise StreamError(f"Message payload is not a stream: {type(message.payload)}")
 
-        return self.byte_streamer.send(channel, topic, target, message.headers, message.payload)
+        return self.byte_streamer.send(channel, topic, target, message.headers, message.payload, secure)
 
     def register_stream_cb(self, channel: str, topic: str, stream_cb: Callable, *args, **kwargs):
         """
@@ -87,7 +90,7 @@ class StreamCell:
         """
         self.byte_receiver.register_callback(channel, topic, stream_cb, *args, **kwargs)
 
-    def send_blob(self, channel: str, topic: str, target: str, message: Message) -> StreamFuture:
+    def send_blob(self, channel: str, topic: str, target: str, message: Message, secure=False) -> StreamFuture:
         """
         Send a BLOB (Binary Large Object) to the target. The payload of message is the BLOB. The BLOB must fit in
         memory on the receiving end.
@@ -97,16 +100,20 @@ class StreamCell:
             topic: topic of the message
             target: destination cell IDs
             message: the headers and the blob as payload
+            secure: Send the message with end-end encryption if True
 
         Returns: StreamFuture that can be used to check status/progress and get result
             The future result is the total number of bytes sent
 
         """
 
+        if message.payload is None:
+            message.payload = bytes(0)
+
         if not isinstance(message.payload, (bytes, bytearray, memoryview)):
             raise StreamError(f"Message payload is not a byte array: {type(message.payload)}")
 
-        return self.blob_streamer.send(channel, topic, target, message)
+        return self.blob_streamer.send(channel, topic, target, message, secure)
 
     def register_blob_cb(self, channel: str, topic: str, blob_cb, *args, **kwargs):
         """
@@ -126,7 +133,7 @@ class StreamCell:
         """
         self.blob_streamer.register_blob_callback(channel, topic, blob_cb, *args, **kwargs)
 
-    def send_file(self, channel: str, topic: str, target: str, message: Message) -> StreamFuture:
+    def send_file(self, channel: str, topic: str, target: str, message: Message, secure=False) -> StreamFuture:
         """
         Send a file to target using stream API.
 
@@ -135,6 +142,7 @@ class StreamCell:
             topic: topic for the message
             target: destination cell FQCN
             message: the headers and the full path of the file to be sent as payload
+            secure: Send the message with end-end encryption if True
 
         Returns: StreamFuture that can be used to check status/progress and get the total bytes sent
 
@@ -146,7 +154,7 @@ class StreamCell:
         if not os.path.isfile(file_name) or not os.access(file_name, os.R_OK):
             raise StreamError(f"File {file_name} doesn't exist or isn't readable")
 
-        return self.file_streamer.send(channel, topic, target, message)
+        return self.file_streamer.send(channel, topic, target, message, secure)
 
     def register_file_cb(self, channel: str, topic: str, file_cb, *args, **kwargs):
         """
@@ -162,7 +170,7 @@ class StreamCell:
         """
         self.file_streamer.register_file_callback(channel, topic, file_cb, *args, **kwargs)
 
-    def send_objects(self, channel: str, topic: str, target: str, message: Message) -> ObjectStreamFuture:
+    def send_objects(self, channel: str, topic: str, target: str, message: Message, secure=False) -> ObjectStreamFuture:
         """
         Send a list of objects to the destination. Each object is sent as BLOB, so it must fit in memory
 
@@ -171,13 +179,15 @@ class StreamCell:
             topic: topic of the message
             target: destination cell IDs
             message: Headers and the payload which is an iterator that provides next object
+            secure: Send the message with end-end encryption if True
+
 
         Returns: ObjectStreamFuture that can be used to check status/progress, or register callbacks
         """
         if not isinstance(message.payload, ObjectIterator):
             raise StreamError(f"Message payload is not an object iterator: {type(message.payload)}")
 
-        return self.object_streamer.stream_objects(channel, topic, target, message.headers, message.payload)
+        return self.object_streamer.stream_objects(channel, topic, target, message.headers, message.payload, secure)
 
     def register_objects_cb(
         self, channel: str, topic: str, object_stream_cb: Callable, object_cb: Callable, *args, **kwargs

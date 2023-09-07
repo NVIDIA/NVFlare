@@ -21,6 +21,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.registry import Callback, Registry
 from nvflare.fuel.f3.connection import BytesAlike
 from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.streaming.stream_cipher import StreamCipher
 from nvflare.fuel.f3.streaming.stream_const import (
     EOS,
     STREAM_ACK_TOPIC,
@@ -133,8 +134,9 @@ class RxStream(Stream):
 
 
 class ByteReceiver:
-    def __init__(self, cell: CoreCell):
+    def __init__(self, cell: CoreCell, cipher: StreamCipher):
         self.cell = cell
+        self.cipher = cipher
         self.cell.register_request_cb(channel=STREAM_CHANNEL, topic=STREAM_DATA_TOPIC, cb=self._data_handler)
         self.registry = Registry()
         self.rx_task_map = {}
@@ -174,7 +176,13 @@ class ByteReceiver:
         sid = message.get_header(StreamHeaderKey.STREAM_ID)
         origin = message.get_header(MessageHeaderKey.ORIGIN)
         seq = message.get_header(StreamHeaderKey.SEQUENCE)
+        secure = message.get_header(StreamHeaderKey.SECURE)
         error = message.get_header(StreamHeaderKey.ERROR_MSG, None)
+
+        if secure:
+            payload = self.cipher.decrypt(origin, message.payload)
+        else:
+            payload = message.payload
 
         with self.map_lock:
             task = self.rx_task_map.get(sid, None)
@@ -215,7 +223,7 @@ class ByteReceiver:
                 task.last_chunk_received = True
 
             if seq == task.next_seq:
-                self._append(task, (last_chunk, message.payload))
+                self._append(task, (last_chunk, payload))
                 task.next_seq += 1
 
                 # Try to reassemble out-of-seq buffers
@@ -230,7 +238,7 @@ class ByteReceiver:
                     self.stop_task(task, StreamError(f"Too many out-of-sequence chunks: {len(task.out_seq_buffers)}"))
                     return
                 else:
-                    task.out_seq_buffers[seq] = last_chunk, message.payload
+                    task.out_seq_buffers[seq] = last_chunk, payload
 
             # If all chunks are lined up, the task can be deleted
             if not task.out_seq_buffers and task.buffers:
