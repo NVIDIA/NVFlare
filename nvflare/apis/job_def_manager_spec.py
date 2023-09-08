@@ -223,3 +223,15 @@ class JobDefManagerSpec(FLComponent, ABC):
 
         """
         pass
+
+    @abstractmethod
+    def get_storage_component(self, jid: str, component: str, fl_ctx: FLContext):
+        """Get the workspace data from the job storage.
+
+        Args:
+            jid (str): Job ID
+            component: storage component name
+            fl_ctx (FLContext): FLContext information
+
+        """
+        pass

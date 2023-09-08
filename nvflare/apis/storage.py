@@ -13,7 +13,13 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import List, Tuple
+from typing import List, Tuple, Union
+
+DATA = "data"
+JOB = "job"
+META = "meta"
+WORKSPACE = "workspace"
+MANIFEST = "manifest.json"
 
 
 class StorageException(Exception):
@@ -58,6 +64,20 @@ class StorageSpec(ABC):
         pass
 
     @abstractmethod
+    def update_object(self, uri: str, data: Union[bytes, str], component_name: str):
+        """Update the object
+
+        Args:
+            uri: URI of the object
+            data: content data of the component, or the content file location
+            component_name: component name
+
+        Raises StorageException when the object does not exit.
+
+        """
+        pass
+
+    @abstractmethod
     def update_meta(self, uri: str, meta: dict, replace: bool):
         """Updates the meta info of the specified object.
 
@@ -65,22 +85,6 @@ class StorageSpec(ABC):
             uri: URI of the object
             meta: value of new meta info
             replace: whether to replace the current meta completely or partial update
-
-        Raises StorageException when:
-            - invalid args
-            - no such object
-            - error updating the object
-
-        """
-        pass
-
-    @abstractmethod
-    def update_data(self, uri: str, data: bytes):
-        """Updates the data of the specified object.
-
-        Args:
-            uri: URI of the object
-            data: value of new data
 
         Raises StorageException when:
             - invalid args
@@ -121,11 +125,12 @@ class StorageSpec(ABC):
         pass
 
     @abstractmethod
-    def get_data(self, uri: str) -> bytes:
+    def get_data(self, uri: str, component_name: str = DATA) -> bytes:
         """Gets data of the specified object.
 
         Args:
             uri: URI of the object
+            component_name: storage component name
 
         Returns:
             data of the object.
@@ -163,3 +168,7 @@ class StorageSpec(ABC):
 
         """
         pass
+
+    @staticmethod
+    def is_valid_component(component_name):
+        return component_name in [DATA, META, WORKSPACE, MANIFEST]

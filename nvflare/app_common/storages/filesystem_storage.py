@@ -20,7 +20,7 @@ import uuid
 from pathlib import Path
 from typing import List, Tuple
 
-from nvflare.apis.storage import StorageException, StorageSpec
+from nvflare.apis.storage import DATA, MANIFEST, META, StorageException, StorageSpec
 from nvflare.apis.utils.format_check import validate_class_methods_args
 from nvflare.security.logging import secure_format_exception
 
@@ -105,8 +105,8 @@ class FilesystemStorage(StorageSpec):
         if not _object_exists(full_uri) and os.path.isdir(full_uri) and os.listdir(full_uri):
             raise StorageException("cannot create object {} at nonempty directory".format(uri))
 
-        data_path = os.path.join(full_uri, "data")
-        meta_path = os.path.join(full_uri, "meta")
+        data_path = os.path.join(full_uri, DATA)
+        meta_path = os.path.join(full_uri, META)
 
         tmp_data_path = data_path + "_" + str(uuid.uuid4())
         _write(tmp_data_path, data)
@@ -117,7 +117,42 @@ class FilesystemStorage(StorageSpec):
             raise e
         os.rename(tmp_data_path, data_path)
 
+        manifest = os.path.join(full_uri, MANIFEST)
+        manifest_json = '{"data": {"description": "job definition","format": "bytes"},\
+                  "meta":{"description": "job meta.json","format": "text"}}'
+        _write(manifest, manifest_json.encode("utf-8"))
+
         return full_uri
+
+    def update_object(self, uri: str, data: bytes, component_name: str = DATA):
+        """Update the object
+
+        Args:
+            uri: URI of the object
+            data: content data of the component
+            component_name: component name
+
+        Raises StorageException when the object does not exit.
+
+        """
+        full_dir_path = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
+        if not os.path.isdir(full_dir_path):
+            raise StorageException(f"path {full_dir_path} is not a valid directory.")
+
+        if not StorageSpec.is_valid_component(component_name):
+            raise StorageException(f"{component_name } is not a valid component for storage object.")
+
+        if not isinstance(data, bytes):
+            raise StorageException(f"data must be in the type of bytes, got {type(data)}.")
+
+        component_path = os.path.join(full_dir_path, component_name)
+        _write(component_path, data)
+
+        manifest = os.path.join(full_dir_path, MANIFEST)
+        with open(manifest) as manifest_file:
+            manifest_json = json.loads(manifest_file.read())
+            manifest_json[component_name] = {"format": "bytes"}
+            _write(manifest, json.dumps(manifest_json).encode("utf-8"))
 
     def update_meta(self, uri: str, meta: dict, replace: bool):
         """Updates the meta of the specified object.
@@ -139,31 +174,11 @@ class FilesystemStorage(StorageSpec):
             raise StorageException("object {} does not exist".format(uri))
 
         if replace:
-            _write(os.path.join(full_uri, "meta"), json.dumps(str(meta)).encode("utf-8"))
+            _write(os.path.join(full_uri, META), json.dumps(str(meta)).encode("utf-8"))
         else:
             prev_meta = self.get_meta(uri)
             prev_meta.update(meta)
-            _write(os.path.join(full_uri, "meta"), json.dumps(str(prev_meta)).encode("utf-8"))
-
-    def update_data(self, uri: str, data: bytes):
-        """Updates the data of the specified object.
-
-        Args:
-            uri: URI of the object
-            data: value of new data
-
-        Raises:
-            TypeError: if invalid argument types
-            StorageException: if object does not exist
-            IOError: if error writing the object
-
-        """
-        full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
-
-        if not _object_exists(full_uri):
-            raise StorageException("object {} does not exist".format(uri))
-
-        _write(os.path.join(full_uri, "data"), data)
+            _write(os.path.join(full_uri, META), json.dumps(str(prev_meta)).encode("utf-8"))
 
     def list_objects(self, path: str) -> List[str]:
         """List all objects in the specified path.
@@ -206,13 +221,14 @@ class FilesystemStorage(StorageSpec):
         if not _object_exists(full_uri):
             raise StorageException("object {} does not exist".format(uri))
 
-        return ast.literal_eval(json.loads(_read(os.path.join(full_uri, "meta")).decode("utf-8")))
+        return ast.literal_eval(json.loads(_read(os.path.join(full_uri, META)).decode("utf-8")))
 
-    def get_data(self, uri: str) -> bytes:
+    def get_data(self, uri: str, component_name: str = DATA) -> bytes:
         """Gets data of the specified object.
 
         Args:
             uri: URI of the object
+            component_name: storage component name
 
         Returns:
             data of the object.
@@ -224,10 +240,13 @@ class FilesystemStorage(StorageSpec):
         """
         full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
 
+        if not StorageSpec.is_valid_component(component_name):
+            raise StorageException(f"{component_name } is not a valid component for storage object.")
+
         if not _object_exists(full_uri):
             raise StorageException("object {} does not exist".format(uri))
 
-        return _read(os.path.join(full_uri, "data"))
+        return _read(os.path.join(full_uri, component_name))
 
     def get_detail(self, uri: str) -> Tuple[dict, bytes]:
         """Gets both data and meta of the specified object.
