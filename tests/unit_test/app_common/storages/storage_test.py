@@ -167,7 +167,7 @@ class TestStorage:
     )
     def test_update_data_invalid_inputs(self, storage, uri, data):
         with pytest.raises(TypeError):
-            storage.update_data(uri, data)
+            storage.update_object(uri, data)
 
     @pytest.mark.parametrize(
         "uri",
@@ -245,7 +245,7 @@ class TestStorage:
         # methods on non-existent object
         with pytest.raises(StorageException):
             data3 = random_data()
-            storage.update_data(uri, data3)
+            storage.update_object(uri, data3)
         with pytest.raises(StorageException):
             meta4 = random_meta()
             storage.update_meta(uri, meta4, replace=True)
@@ -273,7 +273,7 @@ class TestStorage:
 
         # update_data()
         data2 = random_data()
-        storage.update_data(uri, data2)
+        storage.update_object(uri, data2)
         assert storage.get_data(uri) == data2
         assert storage.get_detail(uri)[1] == data2
 

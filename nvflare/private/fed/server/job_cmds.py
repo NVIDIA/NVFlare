@@ -24,6 +24,7 @@ from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey
 from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey, TopDir, is_valid_job_id
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
+from nvflare.apis.storage import JOB, WORKSPACE, StorageException
 from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
 from nvflare.fuel.hci.base64_utils import b64str_to_bytes, bytes_to_b64str
 from nvflare.fuel.hci.conn import Connection
@@ -33,7 +34,7 @@ from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.utils.argument_utils import SafeArgumentParser
 from nvflare.fuel.utils.obj_utils import get_size
-from nvflare.fuel.utils.zip_utils import ls_zip_from_bytes, unzip_all_from_bytes, zip_directory_to_bytes
+from nvflare.fuel.utils.zip_utils import ls_zip_from_bytes, unzip_all_from_bytes
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
@@ -616,7 +617,6 @@ class JobCommandModule(CommandModule, CommandUtil):
 
     def download_job(self, conn: Connection, args: List[str]):
         job_id = args[1]
-        download_dir = conn.get_prop(ConnProps.DOWNLOAD_DIR)
         download_job_url = conn.get_prop(ConnProps.DOWNLOAD_JOB_URL)
 
         engine = conn.app_ctx
@@ -628,25 +628,39 @@ class JobCommandModule(CommandModule, CommandUtil):
                 )
             with engine.new_context() as fl_ctx:
                 job_data = job_def_manager.get_job_data(job_id, fl_ctx)
-                size = get_size(job_data, seen=None)
-                if size > MAX_DOWNLOAD_JOB_SIZE:
-                    conn.append_string(
-                        ftd.DOWNLOAD_URL_MARKER + download_job_url + job_id,
-                        meta=make_meta(
-                            MetaStatusValue.OK,
-                            extra={MetaKey.JOB_ID: job_id, MetaKey.JOB_DOWNLOAD_URL: download_job_url + job_id},
-                        ),
-                    )
-                    return
+                try:
+                    workspace_data = job_def_manager.get_storage_component(job_id, WORKSPACE, fl_ctx)
+                    size = get_size(workspace_data, seen=None)
+                    if size > MAX_DOWNLOAD_JOB_SIZE:
+                        conn.append_string(
+                            ftd.DOWNLOAD_URL_MARKER + download_job_url + job_id,
+                            meta=make_meta(
+                                MetaStatusValue.OK,
+                                extra={MetaKey.JOB_ID: job_id, MetaKey.JOB_DOWNLOAD_URL: download_job_url + job_id},
+                            ),
+                        )
+                        return
+                except StorageException:
+                    workspace_data = None
+                    self.logger.info(f"The workspace for job: {job_id} does not exist.")
 
-                self._unzip_data(download_dir, job_data, job_id)
         except Exception as e:
             conn.append_error(f"Exception occurred trying to get job from store: {secure_format_exception(e)}")
             return
         try:
-            data = zip_directory_to_bytes(download_dir, job_id)
+            data = job_data[JobDataKey.JOB_DATA.value]
             b64str = bytes_to_b64str(data)
-            conn.append_string(b64str, meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_ID: job_id}))
+            conn.append_string(
+                b64str, meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_ID: job_id, MetaKey.DATA_TYPE: JOB})
+            )
+            conn.flush()
+
+            if workspace_data:
+                b64str = bytes_to_b64str(workspace_data)
+                conn.append_string(
+                    b64str,
+                    meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_ID: job_id, MetaKey.DATA_TYPE: WORKSPACE}),
+                )
         except FileNotFoundError:
             conn.append_error("No record found for job '{}'".format(job_id))
         except Exception:

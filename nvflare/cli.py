@@ -107,7 +107,7 @@ def def_config_parser(sub_cmd):
         "-pw", "--poc_workspace_dir", type=str, nargs="?", default=None, help="POC workspace location"
     )
     config_parser.add_argument(
-        "-jt", "--job_template_dir", type=str, nargs="?", default=None, help="job template location"
+        "-jt", "--job_templates_dir", type=str, nargs="?", default=None, help="job templates location"
     )
     config_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     return {cmd: config_parser}
@@ -118,7 +118,7 @@ def handle_config_cmd(args):
 
     nvflare_config = create_startup_kit_config(nvflare_config, args.startup_kit_dir)
     nvflare_config = create_poc_workspace_config(nvflare_config, args.poc_workspace_dir)
-    nvflare_config = create_job_template_config(nvflare_config, args.job_template_dir)
+    nvflare_config = create_job_template_config(nvflare_config, args.job_templates_dir)
 
     save_config(nvflare_config, config_file_path)
 
