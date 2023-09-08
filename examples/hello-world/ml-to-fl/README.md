@@ -27,17 +27,17 @@ We will demonstrate how to transform an existing DL code into FL application ste
 
 ## The base line
 
-We take a CIFAR10 example directly from [PyTorch website](https://github.com/pytorch/tutorials/blob/main/beginner_source/blitz/cifar10_tutorial.py) and do the following cleanups to get [cifar10_original.py](./codes/cifar10_original.py):
+We take a CIFAR10 example directly from [PyTorch website](https://github.com/pytorch/tutorials/blob/main/beginner_source/blitz/cifar10_tutorial.py) and do the following cleanups to get [cifar10_original.py](./pt/cifar10_original.py):
 
 1. Remove the comments
-2. Move the definition of Convolutional Neural Network to [net.py](./codes/net.py)
+2. Move the definition of Convolutional Neural Network to [net.py](./pt/net.py)
 3. Wrap the whole code inside a main method (https://docs.python.org/3/library/multiprocessing.html#the-spawn-and-forkserver-start-methods)
 4. Add the ability to run on GPU to speed up the training process (optional)
 
 You can run the baseline using
 
 ```bash
-python3 ./codes/cifar10_original.py
+python3 ./pt/cifar10_original.py
 ```
 
 It will run for 2 epochs and you will see something like:
@@ -79,7 +79,7 @@ We make the following changes:
 
 Optional: Change the data path to an absolute path and use ```prepare_data.sh``` to download data
 
-The modified code can be found in [./codes/cifar10_fl.py](./codes/cifar10_fl.py)
+The modified code can be found in [./pt/cifar10_fl.py](./pt/cifar10_fl.py)
 
 After we modify our training script, we need to put it into a [job structure](https://nvflare.readthedocs.io/en/latest/real_world_fl/job.html) so that NVFlare system knows how to deploy and run the job.
 
@@ -90,7 +90,7 @@ We choose the [sag_pt job template](../../../job_templates/sag_pt/) and run the 
 ```bash
 nvflare config -jt ../../../job_templates/
 nvflare job list_templates
-nvflare job create -force -j ./jobs/client_api -w sag_pt -sd ./codes/ -s ./codes/cifar10_fl.py
+nvflare job create -force -j ./jobs/client_api -w sag_pt -sd ./pt/ -s ./pt/cifar10_fl.py
 ```
 
 Note that we have already created the [client_api job folder](./jobs/client_api/)
@@ -111,13 +111,13 @@ The above case show how you can change non-structured DL code to FL.
 Usually people have already put their codes into "train", "evaluate", "test" methods so they can reuse.
 In that case, the NVFlare DL2FL decorator is the way to go.
 
-To structure the code, we make the following changes to [./codes/cifar10_original.py](./codes/cifar10_original.py):
+To structure the code, we make the following changes to [./pt/cifar10_original.py](./pt/cifar10_original.py):
 
 1. Wrap training logic into a train method
 2. Wrap evaluation logic into an evaluate method
 3. Call train method and evaluate method
 
-The result is [cifar10_structured_original.py](./codes/cifar10_structured_original.py)
+The result is [cifar10_structured_original.py](./pt/cifar10_structured_original.py)
 
 To modify this structured code to be used in FL.
 We do the following changes:
@@ -137,12 +137,12 @@ We do the following changes:
 
 Optional: Change the data path to an absolute path and use ```prepare_data.sh``` to download data
 
-The modified code can be found in [./codes/cifar10_structured_fl.py](./codes/cifar10_structured_fl.py)
+The modified code can be found in [./pt/cifar10_structured_fl.py](./pt/cifar10_structured_fl.py)
 
 Then we can create the job and run it using simulator:
 
 ```bash
-nvflare job create -force -j ./jobs/decorator -w sag_pt -sd ./codes/ -s ./codes/cifar10_structured_fl.py
+nvflare job create -force -j ./jobs/decorator -w sag_pt -sd ./pt/ -s ./pt/cifar10_structured_fl.py
 ./prepare_data.sh
 nvflare simulator -n 2 -t 2 ./jobs/decorator
 ```
@@ -151,8 +151,15 @@ nvflare simulator -n 2 -t 2 ./jobs/decorator
 
 If you are using lightning framework to write your training scripts, you can use our NVFlare lightning client API to convert it into FL.
 
-Given a CIFAR10 lightning code example: [./codes/cifar10_lightning_original.py](./codes/cifar10_lightning_original.py).
-Notice we wrap the [Net class](./codes/net.py) into LightningModule: [LitNet class](./codes/lit_net.py)
+Given a CIFAR10 lightning code example: [./pt/cifar10_lightning_original.py](./pt/cifar10_lightning_original.py).
+Notice we wrap the [Net class](./pt/net.py) into LightningModule: [LitNet class](./pt/lit_net.py)
+
+You can run the it using
+
+```bash
+python3 ./pt/cifar10_lightning_original.py
+```
+
 
 To transform the existing code to FL training code, we made the following changes:
 
@@ -160,15 +167,15 @@ To transform the existing code to FL training code, we made the following change
 2. Patch the lightning trainer ```flare.patch(trainer)```
 3. Call trainer.evaluate() method to evaluate newly received aggregated/global model. The resulting evaluation metric will be used for best model selection
 
-The modified code can be found in [./codes/cifar10_lightning_fl.py](./codes/cifar10_lightning_fl.py)
+The modified code can be found in [./pt/cifar10_lightning_fl.py](./pt/cifar10_lightning_fl.py)
 
 Then we can create the job using sag_pt template:
 
 ```bash
-nvflare job create -force -j ./jobs/lightning -w sag_pt -sd ./codes/ -s ./codes/cifar10_lightning_fl.py
+nvflare job create -force -j ./jobs/lightning -w sag_pt -sd ./pt/ -s ./pt/cifar10_lightning_fl.py
 ```
 
-We need to modify the "key_metric" in "config_fed_server.conf" from "accuracy" to "val_acc_epoch" (this name originates from the code [here](./codes/lit_net.py#L56)) which means the validation accuracy for that epoch:
+We need to modify the "key_metric" in "config_fed_server.conf" from "accuracy" to "val_acc_epoch" (this name originates from the code [here](./pt/lit_net.py#L56)) which means the validation accuracy for that epoch:
 
 ```
 {
@@ -199,4 +206,68 @@ Finally we run it using simulator:
 ```bash
 ./prepare_data.sh
 nvflare simulator -n 2 -t 2 ./jobs/lightning
+```
+
+## Transform CIFAR10 Tensorflow training code to FL with NVFLARE Client API
+
+If you are using other DL framework, you can also utilize Client API.
+
+Given a Tensorflow CIFAR10 example: [./tf/cifar10_tf_original.py](./tf/cifar10_tf_original.py).
+
+You can run the it using
+
+```bash
+python3 ./tf/cifar10_tf_original.py
+```
+
+To transform the existing code to FL training code, we made the following changes:
+
+1. Import NVFlare Client API: ```import nvflare.client as flare```
+2. Initialize NVFlare Client API: ```flare.init()```
+3. Receive aggregated/global FLModel from NVFlare side: ```input_model = flare.receive()```
+4. Load the received aggregated/global model weights into model structure: ```load_flat_weights(net, input_model.params)```
+5. Evaluate on received aggregated/global model to get the metrics for model selection
+6. Construct the FLModel to be returned to the NVFlare side: ```output_model = flare.FLModel(params=get_flat_weights(net), xxx)```
+7. Send the model back to NVFlare: ```flare.send(output_model)```
+
+Notice that we need to flatten/unflatten the model weights because NVFlare server side aggregators now
+only accept a dict of arrays.
+
+The modified code can be found here: [./tf/cifar10_tf_fl.py](./pt/cifar10_tf_fl.py), [./tf/tf_net.py](./pt/tf_net.py),
+[./tf/tf_utils.py](./pt/tf_utils.py)
+
+
+Then we can create the job using sag_pt template:
+
+```bash
+nvflare job create -force -j ./jobs/tensorflow -w sag_pt -sd ./tf/ -s ./tf/cifar10_tf_fl.py
+```
+
+We need to change the following places in the config:
+
+1. In "config_exchange.conf", change the "exchange_format" from "pytorch" to "numpy", this means we will be exchanging
+   the model weights/weight difference using numpy arrays
+
+2. In "config_fed_client.conf", change the "executor" from "nvflare.app_opt.pt.file_pipe_launcher_executor.PTFilePipeLauncherExecutor" to "nvflare.app_common.executors.file_pipe_launcher_executor.FilePipeLauncherExecutor", this means
+   we will NOT be using the special PTFilePipeLauncherExecutor that is target on PyTorch
+
+3. In "config_fed_server.conf", change the "persistor" from "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor"
+    to "tf_model_persistor.TFModelPersistor":
+
+```
+  {
+    id = "persistor"
+    path = "tf_model_persistor.TFModelPersistor"
+    args {
+      save_name = "tf_model.fobs"
+    }
+  }
+```
+
+We have done these changes for you in [./jobs/tensorflow](./jobs/tensorflow/)
+
+Then we can run the TF code in FL using the simulator:
+
+```
+nvflare simulator -n 2 -t 2 ./jobs/tensorflow
 ```
