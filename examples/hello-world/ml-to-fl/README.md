@@ -233,8 +233,8 @@ To transform the existing code to FL training code, we made the following change
 Notice that we need to flatten/unflatten the model weights because NVFlare server side aggregators now
 only accept a dict of arrays.
 
-The modified code can be found here: [./tf/cifar10_tf_fl.py](./pt/cifar10_tf_fl.py), [./tf/tf_net.py](./pt/tf_net.py),
-[./tf/tf_utils.py](./pt/tf_utils.py)
+The modified code can be found here: [./tf/cifar10_tf_fl.py](./tf/cifar10_tf_fl.py), [./tf/tf_net.py](./tf/tf_net.py),
+[./tf/tf_utils.py](./tf/tf_utils.py)
 
 
 Then we can create the job using sag_pt template:
