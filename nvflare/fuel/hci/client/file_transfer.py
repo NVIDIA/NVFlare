@@ -30,6 +30,7 @@ from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, zip_d
 from nvflare.lighter.utils import load_private_key_file, sign_folders
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
+from ..proto import MetaKey
 from .api_spec import CommandContext, ReplyProcessor
 from .api_status import APIStatus
 
@@ -128,7 +129,7 @@ class _DownloadFolderProcessor(ReplyProcessor):
         self.data_received = True
         ctx.set_command_result({"status": APIStatus.ERROR_RUNTIME, "details": err})
 
-    def process_string(self, ctx: CommandContext, item: str):
+    def process_string(self, ctx: CommandContext, item: str, meta: {}):
         try:
             self.data_received = True
             if item.startswith(ftd.DOWNLOAD_URL_MARKER):
@@ -140,7 +141,14 @@ class _DownloadFolderProcessor(ReplyProcessor):
                 )
             else:
                 data_bytes = b64str_to_bytes(item)
-                unzip_all_from_bytes(data_bytes, self.download_dir)
+                job_id = meta.get(MetaKey.JOB_ID)
+                data_type = meta.get(MetaKey.DATA_TYPE)
+                if job_id and data_type:
+                    unzip_folder = os.path.join(self.download_dir, job_id, data_type)
+                    os.makedirs(unzip_folder, exist_ok=True)
+                else:
+                    unzip_folder = self.download_dir
+                unzip_all_from_bytes(data_bytes, unzip_folder)
                 ctx.set_command_result(
                     {
                         "status": APIStatus.SUCCESS,
