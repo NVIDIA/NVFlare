@@ -51,7 +51,7 @@ from nvflare.tool.job.job_client_const import (
     JOB_TEMPLATE_CONF,
 )
 from nvflare.utils.cli_utils import (
-    find_job_template_location,
+    find_job_templates_location,
     get_curr_dir,
     get_hidden_nvflare_dir,
     get_startup_kit_dir,
@@ -72,12 +72,12 @@ def find_filename_basename(f: str):
         return basename
 
 
-def build_job_template_indices(job_template_dir: str) -> ConfigTree:
+def build_job_template_indices(job_templates_dir: str) -> ConfigTree:
     conf = CF.parse_string("{ templates = {} }")
     config_file_base_names = CONFIG_FILE_BASE_NAME_WO_EXTS
     template_conf = conf.get("templates")
     keys = JOB_INFO_KEYS
-    for root, dirs, files in os.walk(job_template_dir):
+    for root, dirs, files in os.walk(job_templates_dir):
         config_files = [f for f in files if find_filename_basename(f) in config_file_base_names]
         if len(config_files) > 0:
             info_conf = get_template_info_config(root)
@@ -104,8 +104,8 @@ def get_template_info_config(template_dir):
 def create_job(cmd_args):
     try:
         prepare_job_folder(cmd_args)
-        job_template_dir = find_job_template_location()
-        template_index_conf = build_job_template_indices(job_template_dir)
+        job_templates_dir = find_job_templates_location()
+        template_index_conf = build_job_template_indices(job_templates_dir)
         job_folder = cmd_args.job_folder
         config_dir = get_config_dir(job_folder)
 
@@ -120,9 +120,9 @@ def create_job(cmd_args):
 
         target_template_name = cmd_args.template
         check_template_exists(target_template_name, template_index_conf)
-        src = os.path.join(job_template_dir, target_template_name)
+        src = os.path.join(job_templates_dir, target_template_name)
         copy_tree(src=src, dst=config_dir)
-        prepare_meta_config(cmd_args)
+        prepare_meta_config(cmd_args, src)
         remove_extra_file(config_dir)
         variable_values = prepare_job_config(cmd_args)
         display_template_variables(job_folder, variable_values)
@@ -214,13 +214,13 @@ def display_template_variables(job_folder, variable_values):
 
 def list_templates(cmd_args):
     try:
-        job_template_dir = find_job_template_location(cmd_args.job_template_dir)
-        job_template_dir = os.path.abspath(job_template_dir)
-        template_index_conf = build_job_template_indices(job_template_dir)
+        job_templates_dir = find_job_templates_location(cmd_args.job_templates_dir)
+        job_templates_dir = os.path.abspath(job_templates_dir)
+        template_index_conf = build_job_template_indices(job_templates_dir)
         display_available_templates(template_index_conf)
 
-        if job_template_dir:
-            update_job_template_dir(job_template_dir)
+        if job_templates_dir:
+            update_job_templates_dir(job_templates_dir)
 
     except ValueError as e:
         print(f"\nUnable to handle command: {CMD_LIST_TEMPLATES} due to: {e} \n")
@@ -231,11 +231,11 @@ def list_templates(cmd_args):
             sub_cmd_parser.print_help()
 
 
-def update_job_template_dir(job_template_dir: str):
+def update_job_templates_dir(job_templates_dir: str):
     hidden_nvflare_dir = get_hidden_nvflare_dir()
     file_path = os.path.join(hidden_nvflare_dir, CONFIG_CONF)
     config = CF.parse_file(file_path)
-    config.put(f"{JOB_TEMPLATE}.path", job_template_dir)
+    config.put(f"{JOB_TEMPLATE}.path", job_templates_dir)
     save_config(config, file_path)
 
 
@@ -394,7 +394,7 @@ def define_list_templates_parser(job_subparser):
     show_jobs_parser = job_subparser.add_parser("list_templates", help="show available job templates")
     show_jobs_parser.add_argument(
         "-d",
-        "--job_template_dir",
+        "--job_templates_dir",
         type=str,
         nargs="?",
         default=None,
@@ -529,16 +529,8 @@ def save_merged_configs(merged_conf, tmp_job_dir):
         save_config(root_index.value, dst_path)
 
 
-def prepare_model_exchange_config(job_folder: str, force: bool):
-    dst_path = dst_config_path(job_folder, "config_exchange.conf")
-    if os.path.isfile(dst_path) and not force:
-        return
+def prepare_meta_config(cmd_args, target_template_dir):
 
-    dst_config = load_src_config_template("config_exchange.conf")
-    save_config(dst_config, dst_path)
-
-
-def prepare_meta_config(cmd_args):
     job_folder = cmd_args.job_folder
     job_folder = job_folder[:-1] if job_folder.endswith("/") else job_folder
 
@@ -551,15 +543,17 @@ def prepare_meta_config(cmd_args):
             dst_path = meta_path
             break
 
+    src_meta_path = os.path.join(target_template_dir, "meta.conf")
+    if not os.path.isfile(src_meta_path):
+        dst_config = load_default_config_template("meta.conf")
+    else:
+        dst_config = CF.parse_file(src_meta_path)
+
     # Use existing meta.conf if user already defined it.
-    if not dst_path:
-        dst_config = load_src_config_template("meta.conf")
+    if not dst_path or (dst_path and cmd_args.force):
         dst_config.put("name", app_name)
         dst_path = os.path.join(job_folder, "meta.conf")
-    else:
-        dst_config = CF.from_dict(ConfigFactory.load_config(dst_path).to_dict())
-
-    save_config(dst_config, dst_path)
+        save_config(dst_config, dst_path)
 
     # clean up
     config_dir = get_config_dir(job_folder)
@@ -569,7 +563,7 @@ def prepare_meta_config(cmd_args):
             os.remove(meta_path)
 
 
-def load_src_config_template(config_file_name: str):
+def load_default_config_template(config_file_name: str):
     file_dir = os.path.dirname(__file__)
     # src config here is always pyhocon
     config_template = CF.parse_file(os.path.join(file_dir, f"config/{config_file_name}"))
