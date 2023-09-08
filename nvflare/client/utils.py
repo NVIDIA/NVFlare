@@ -80,7 +80,12 @@ def numerical_params_diff(original: Dict, new: Dict) -> Dict:
     for k in original:
         if k not in new:
             continue
-        diff_dict[k] = new[k] - original[k]
+        if isinstance(new[k], list) and isinstance(original[k], list):
+            diff = [new[k][i] - original[k][i] for i in range(len(new[k]))]
+        else:
+            diff = new[k] - original[k]
+
+        diff_dict[k] = diff
     return diff_dict
 
 
