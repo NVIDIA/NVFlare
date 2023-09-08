@@ -22,7 +22,15 @@ exp_manager:
   create_tensorboard_logger: True
   resume_if_exists: False
   resume_ignore_no_checkpoint: True
-  create_checkpoint_call: False
+  create_checkpoint_callback: False
+  checkpoint_callback_params:
+    monitor: val_loss
+    save_top_k: 10
+    mode: min
+    always_save_nemo: False # saves nemo file during validation, not implemented for model parallel
+    save_nemo_on_train_end: False # not recommended when training large models on clusters with short time limits
+    filename: 'megatron_gpt--{val_loss:.2f}-{step}-{consumed_samples}'
+    model_parallel_size: ${multiply:${model.tensor_model_parallel_size}, ${model.pipeline_model_parallel_size}}
 
 model:
   seed: 1234
@@ -33,7 +41,7 @@ model:
   num_workers: 0
   restore_from_path: ??? # Path to an existing p-tuned/prompt tuned .nemo model you wish to add new tasks to or run inference with
   resume_from_checkpoint: null # The path to a checkpoint file to continue the training, restores the whole state including the epoch, step, LR schedulers, apex, etc.
-  save_nemo_on_validation_end: True # Saves an inference ready .nemo file every time a checkpoint is saved during training.
+  save_nemo_on_validation_end: False # Saves an inference ready .nemo file every time a checkpoint is saved during training.
   sync_batch_comm: False
   megatron_amp_O2: False
 
