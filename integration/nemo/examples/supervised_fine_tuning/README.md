@@ -103,7 +103,7 @@ Note that we used the combined validation set for all experiments, allowing for 
 
 Next, copy the jobs to temp workspace.
 ```
-cp -r jobs/* /tmp/nvflare/poc/example_project/prod_00/admin\@nvidia.com/transfer/
+cp -r jobs/gpt_sft_1.3B_* /tmp/nvflare/poc/example_project/prod_00/admin\@nvidia.com/transfer/
 ```
 
 To submit the single-client SFT jobs for each experiment:
