@@ -41,10 +41,6 @@
       "args": {}
     },
     {
-      "id": "tb_analytics_receiver",
-      "path": "nvflare.app_opt.tracking.tb.tb_receiver.TBAnalyticsReceiver"
-    },
-    {
       "id": "mlflow_receiver_with_tracking_uri",
       "path": "nvflare.app_opt.tracking.mlflow.mlflow_receiver.MLflowReceiver",
       "args": {
@@ -68,7 +64,7 @@
         "name": "ScatterAndGather",
         "args": {
             "min_clients" : 2,
-            "num_rounds" : 1,
+            "num_rounds" : 2,
             "start_round": 0,
             "wait_time_after_min_received": 10,
             "aggregator_id": "aggregator",

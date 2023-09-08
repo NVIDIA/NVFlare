@@ -138,6 +138,12 @@ Provisioning
 :ref:`Provisioning <provisioning>` is the process of setting up a secure project with startup kits for the different
 participants including the FL Server, FL Clients, and Admin Users.
 
+Roles in NVIDIA FLARE
+=====================
+The :ref:`user roles <nvflare_roles>` in NVIDIA FLARE include :ref:`Project Admin <project_admin_role>`, Org Admin, Lead researcher,
+and Member researcher and can be used to set certain privileges of system operations for different users. See the :ref:`nvflare_security`
+page for details.
+
 Scatter and Gather Workflow
 ===========================
 The :ref:`scatter_and_gather_workflow` is an included reference implementation of the default workflow of previous versions
