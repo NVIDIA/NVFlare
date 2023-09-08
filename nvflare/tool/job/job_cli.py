@@ -72,12 +72,12 @@ def find_filename_basename(f: str):
         return basename
 
 
-def build_job_template_indices(job_template_dir: str) -> ConfigTree:
+def build_job_template_indices(job_templates_dir: str) -> ConfigTree:
     conf = CF.parse_string("{ templates = {} }")
     config_file_base_names = CONFIG_FILE_BASE_NAME_WO_EXTS
     template_conf = conf.get("templates")
     keys = JOB_INFO_KEYS
-    for root, dirs, files in os.walk(job_template_dir):
+    for root, dirs, files in os.walk(job_templates_dir):
         config_files = [f for f in files if find_filename_basename(f) in config_file_base_names]
         if len(config_files) > 0:
             info_conf = get_template_info_config(root)
@@ -214,13 +214,13 @@ def display_template_variables(job_folder, variable_values):
 
 def list_templates(cmd_args):
     try:
-        job_templates_dir = find_job_templates_location(cmd_args.job_template_dir)
+        job_templates_dir = find_job_templates_location(cmd_args.job_templates_dir)
         job_templates_dir = os.path.abspath(job_templates_dir)
         template_index_conf = build_job_template_indices(job_templates_dir)
         display_available_templates(template_index_conf)
 
         if job_templates_dir:
-            update_job_template_dir(job_templates_dir)
+            update_job_templates_dir(job_templates_dir)
 
     except ValueError as e:
         print(f"\nUnable to handle command: {CMD_LIST_TEMPLATES} due to: {e} \n")
@@ -231,11 +231,11 @@ def list_templates(cmd_args):
             sub_cmd_parser.print_help()
 
 
-def update_job_template_dir(job_template_dir: str):
+def update_job_templates_dir(job_templates_dir: str):
     hidden_nvflare_dir = get_hidden_nvflare_dir()
     file_path = os.path.join(hidden_nvflare_dir, CONFIG_CONF)
     config = CF.parse_file(file_path)
-    config.put(f"{JOB_TEMPLATE}.path", job_template_dir)
+    config.put(f"{JOB_TEMPLATE}.path", job_templates_dir)
     save_config(config, file_path)
 
 
@@ -394,7 +394,7 @@ def define_list_templates_parser(job_subparser):
     show_jobs_parser = job_subparser.add_parser("list_templates", help="show available job templates")
     show_jobs_parser.add_argument(
         "-d",
-        "--job_template_dir",
+        "--job_templates_dir",
         type=str,
         nargs="?",
         default=None,
@@ -544,7 +544,6 @@ def prepare_meta_config(cmd_args, target_template_dir):
             break
 
     src_meta_path = os.path.join(target_template_dir, "meta.conf")
-    print(src_meta_path)
     if not os.path.isfile(src_meta_path):
         dst_config = load_default_config_template("meta.conf")
     else:
