@@ -18,12 +18,12 @@ SPECIAL_KEY = "_nvf_"
 def get_flat_weights(network):
     """Gets flat network weights.
 
-    network get_weights() will give a dict of lists.
+    network get_weights() will give a dict of list of arrays.
     for NVFlare server side to work, it needs a dict of arrays.
     So we flatten this list using different key.
     For example:
-      If the original network get_weights return: {"layer0": [item1, item2]}
-      We will flat it to: {"layer0_nvf_0": item1, "layer0_nvf_1": item2}
+      If the original network get_weights return: {"layer0": [array1, array2]}
+      We will flat it to: {"layer0_nvf_0": array1, "layer0_nvf_1": array2}
     """
     result = {}
     for layer in network.layers:
@@ -38,8 +38,8 @@ def load_flat_weights(network, data):
     """Loads the flat weights.
 
     For example:
-      If the flat weight is: {"layer0_nvf_0": item1, "layer0_nvf_1": item2}
-      We will convert it back to: {"layer0": [item1, item2]} and load it back
+      If the flat weight is: {"layer0_nvf_0": array1, "layer0_nvf_1": array2}
+      We will convert it back to: {"layer0": [array1, array2]} and load it back
     """
     result = {}
     for k, v in data.items():
