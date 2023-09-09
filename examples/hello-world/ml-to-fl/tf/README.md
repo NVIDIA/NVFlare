@@ -32,6 +32,10 @@ only accept a ``dict`` of arrays.
 The modified code can be found here: [./code/cifar10_tf_fl.py](./code/cifar10_tf_fl.py), [./code/tf_net.py](./code/tf_net.py),
 [./code/tf_utils.py](./code/tf_utils.py)
 
+After we modify our training script, we need to put it into a [job structure](https://nvflare.readthedocs.io/en/latest/real_world_fl/job.html) so that NVFlare system knows how to deploy and run the job.
+
+Please refer to [JOB CLI tutorial](../../../tutorials/job_cli.ipynb) on how to generate a job easily from our existing job templates.
+
 
 We choose the [tensorflow job template](./job_templates/tensorflow/) and run the following command to create the job:
 

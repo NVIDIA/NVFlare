@@ -65,13 +65,13 @@ We made the following changes:
 7. Construct the FLModel to be returned to the NVFlare side: ```output_model = flare.FLModel(xxx)```
 8. Send the model back to NVFlare: ```flare.send(output_model)```
 
-Optional: Change the data path to an absolute path and use ```prepare_data.sh``` to download data
+Optional: Change the data path to an absolute path and use ```../prepare_data.sh``` to download data
 
 The modified code can be found in [./code/cifar10_fl.py](./code/cifar10_fl.py)
 
 After we modify our training script, we need to put it into a [job structure](https://nvflare.readthedocs.io/en/latest/real_world_fl/job.html) so that NVFlare system knows how to deploy and run the job.
 
-Please refer to [JOB CLI tutorial](../../tutorials/job_cli.ipynb) on how to generate a job easily from our existing job templates.
+Please refer to [JOB CLI tutorial](../../../tutorials/job_cli.ipynb) on how to generate a job easily from our existing job templates.
 
 We choose the [client api job template](./job_templates/client_api/) and run the following command to create the job:
 
@@ -81,9 +81,7 @@ nvflare job list_templates
 nvflare job create -force -j ./jobs/client_api -w client_api -sd ./code/ -s ./code/cifar10_fl.py
 ```
 
-Note that we have already created the [client_api job folder](./jobs/client_api/)
-
-Now we have re-write our code and created the [client_api job folder](./jobs/client_api/), we can run it using NVFlare Simulator:
+Now we have re-write our code and created the client_api job folder, we can run it using NVFlare Simulator:
 
 ```bash
 bash ../prepare_data.sh
