@@ -22,3 +22,6 @@ We will demonstrate how to transform an existing DL code into an FL application:
 
   1. From PyTorch / PyTorch + Lightning: [pt](./pt/README.md)
   2. From TensorFlow: [tf](./tf/README.md)
+
+
+Note: Avoid install tensorflow and pytorch on the same virtual environment due to library conflicts.
