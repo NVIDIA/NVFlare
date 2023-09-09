@@ -1,7 +1,7 @@
 # Job Template Information Card
 
-## sag_tf
-    name = "sag_tf"
+## tensorflow
+    name = "tensorflow"
     description = "Scatter and Gather Workflow using TensorFlow" 
     class_name  =  "ScatterAndGather"
     controller_type = "server"
