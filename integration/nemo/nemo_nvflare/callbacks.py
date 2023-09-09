@@ -26,6 +26,7 @@ class RestoreOptimizers(Callback):
         self.logger = logging.getLogger(self.__class__.__name__)
 
         self.optimizer_states = []
+        self.scaler_states = []
         self.lr_scheduler_states = []
 
     def on_fit_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"):
@@ -35,6 +36,10 @@ class RestoreOptimizers(Callback):
         else:
             return
 
+        if len(self.scaler_states) > 0:
+            trainer.scaler.load_state_dict(self.scaler_states[0])
+            self.logger.info("scaler states restored.")
+
         if len(self.lr_scheduler_states) > 0:
             for config, lr_scheduler_state in zip(trainer.lr_scheduler_configs, self.lr_scheduler_states):
                 config.scheduler.load_state_dict(lr_scheduler_state)
@@ -42,4 +47,5 @@ class RestoreOptimizers(Callback):
 
     def on_fit_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"):
         self.optimizer_states = [deepcopy(opt.state_dict()) for opt in trainer.optimizers]
+        self.scaler_states = [deepcopy(trainer.scaler.state_dict())]
         self.lr_scheduler_states = [deepcopy(config.scheduler.state_dict()) for config in trainer.lr_scheduler_configs]
