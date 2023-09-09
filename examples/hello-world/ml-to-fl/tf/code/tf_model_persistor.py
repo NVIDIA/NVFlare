@@ -17,21 +17,21 @@ import os
 
 import tensorflow as tf
 from tf_net import TFNet
-from tf_utils import get_flat_weights
+from tf_utils import get_flat_weights, load_flat_weights
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.model import ModelLearnable, make_model_learnable
+from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.fuel.utils import fobs
 
 
 class TFModelPersistor(ModelPersistor):
-    def __init__(self, save_name="tf_model.fobs"):
+    def __init__(self, save_name="tf_model.ckpt"):
         super().__init__()
         self.save_name = save_name
+        self.model = self._build_model()
 
     def _initialize(self, fl_ctx: FLContext):
         # get save path from FLContext
@@ -53,24 +53,24 @@ class TFModelPersistor(ModelPersistor):
         if env is not None:
             if env.get("APP_CKPT_DIR", None):
                 fl_ctx.set_prop(AppConstants.LOG_DIR, env["APP_CKPT_DIR"], private=True, sticky=True)
-            if env.get("APP_CKPT") is not None:
-                fl_ctx.set_prop(
-                    AppConstants.CKPT_PRELOAD_PATH,
-                    env["APP_CKPT"],
-                    private=True,
-                    sticky=True,
-                )
 
         log_dir = fl_ctx.get_prop(AppConstants.LOG_DIR)
         if log_dir:
             self.log_dir = os.path.join(app_root, log_dir)
         else:
             self.log_dir = app_root
-        self._fobs_save_path = os.path.join(self.log_dir, self.save_name)
+        self._model_save_path = os.path.join(self.log_dir, self.save_name)
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
 
         fl_ctx.sync_sticky()
+
+    def _build_model(self):
+        model = TFNet()
+        loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+        model.compile(optimizer="sgd", loss=loss_fn, metrics=["accuracy"])
+        _ = model(tf.keras.Input(shape=(32, 32, 3)))
+        return model
 
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
         """Initializes and loads the Model.
@@ -79,24 +79,17 @@ class TFModelPersistor(ModelPersistor):
             fl_ctx: FLContext
 
         Returns:
-            Model object
+            ModelLearnable object
         """
 
-        if os.path.exists(self._fobs_save_path):
-            self.logger.info("Loading server weights")
-            with open(self._fobs_save_path, "rb") as f:
-                model_learnable = fobs.load(f)
-        else:
-            self.logger.info("Initializing server model")
-            network = TFNet()
-            loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-            network.compile(optimizer="sgd", loss=loss_fn, metrics=["accuracy"])
-            _ = network(tf.keras.Input(shape=(32, 32, 3)))
+        if os.path.exists(self._model_save_path):
+            self.logger.info("Loading server model and weights")
+            self.model.load_weights(self._model_save_path)
 
-            # get flat network parameters
-            result = get_flat_weights(network)
+        # get flat model parameters
+        result = get_flat_weights(self.model)
 
-            model_learnable = make_model_learnable(result, dict())
+        model_learnable = make_model_learnable(result, dict())
         return model_learnable
 
     def handle_event(self, event: str, fl_ctx: FLContext):
@@ -110,7 +103,5 @@ class TFModelPersistor(ModelPersistor):
             model_learnable: ModelLearnable object
             fl_ctx: FLContext
         """
-        model_learnable_info = {k: str(type(v)) for k, v in model_learnable.items()}
-        self.logger.info(f"Saving aggregated server weights: \n {model_learnable_info}")
-        with open(self._fobs_save_path, "wb") as f:
-            fobs.dump(model_learnable, f)
+        load_flat_weights(self.model, model_learnable[ModelLearnableKey.WEIGHTS])
+        self.model.save_weights(self._model_save_path)

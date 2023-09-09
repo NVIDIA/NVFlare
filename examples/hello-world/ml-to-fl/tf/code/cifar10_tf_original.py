@@ -19,7 +19,7 @@ from tf_net import TFNet
 # (optional) We change to use GPU to speed things up.
 # if you want to use CPU, change DEVICE="cpu"
 DEVICE = "cuda:0"
-PATH = "./cifar_net.keras"
+PATH = "./tf_model.ckpt"
 
 
 def main():
@@ -28,21 +28,21 @@ def main():
     # Normalize pixel values to be between 0 and 1
     train_images, test_images = train_images / 255.0, test_images / 255.0
 
-    net = TFNet()
-    net.compile(
+    model = TFNet()
+    model.compile(
         optimizer="sgd", loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=["accuracy"]
     )
-    _ = net(tf.keras.Input(shape=(32, 32, 3)))
-    net.summary()
+    _ = model(tf.keras.Input(shape=(32, 32, 3)))
+    model.summary()
 
-    net.fit(train_images, train_labels, epochs=1, validation_data=(test_images, test_labels))
+    model.fit(train_images, train_labels, epochs=1, validation_data=(test_images, test_labels))
 
     print("Finished Training")
 
-    net.save(PATH)
+    model.save_weights(PATH)
 
-    _, test_acc = net.evaluate(test_images, test_labels, verbose=2)
-    print(f"Accuracy of the network on the 10000 test images: {test_acc} %")
+    _, test_acc = model.evaluate(test_images, test_labels, verbose=2)
+    print(f"Accuracy of the model on the 10000 test images: {test_acc} %")
 
 
 if __name__ == "__main__":
