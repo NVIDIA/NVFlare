@@ -15,8 +15,9 @@
 from typing import Dict, Iterable
 
 from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.app_common.model_exchange.constants import ModelExchangeFormat
 
-from .constants import CONST_ATTRS, ModelExchangeFormat
+from .constants import CONST_ATTRS
 
 
 def get_meta_from_fl_model(fl_model: FLModel, attrs: Iterable[str]) -> Dict:

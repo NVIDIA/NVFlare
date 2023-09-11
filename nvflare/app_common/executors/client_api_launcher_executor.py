@@ -12,18 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
+import os
+from typing import Dict, Optional
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.executors.file_pipe_launcher_executor import FilePipeLauncherExecutor
-from nvflare.app_opt.pt.decomposers import TensorDecomposer
-from nvflare.app_opt.pt.params_converter import NumpyToPTParamsConverter, PTToNumpyParamsConverter
-from nvflare.client.config import ConfigKey
-from nvflare.client.constants import ModelExchangeFormat
-from nvflare.fuel.utils import fobs
+from nvflare.app_common.model_exchange.constants import ModelExchangeFormat
+from nvflare.client.config import ClientConfig, ConfigKey, TransferType
+from nvflare.client.constants import CONFIG_EXCHANGE
 
 
-class PTFilePipeLauncherExecutor(FilePipeLauncherExecutor):
+class ClientAPILauncherExecutor(FilePipeLauncherExecutor):
     def __init__(
         self,
         data_exchange_path: Optional[str] = None,
@@ -40,13 +39,15 @@ class PTFilePipeLauncherExecutor(FilePipeLauncherExecutor):
         workers: int = 1,
         training: bool = True,
         global_evaluation: bool = True,
+        params_exchange_format: ModelExchangeFormat = ModelExchangeFormat.NUMPY,
+        params_transfer_type: TransferType = TransferType.FULL,
         from_nvflare_converter_id: Optional[str] = None,
         to_nvflare_converter_id: Optional[str] = None,
     ) -> None:
-        """Initializes the PTFilePipeLauncherExecutor.
+        """Initializes the ClientAPILauncherExecutor.
 
         Args:
-            data_exchange_path (Optional[str]): Path used for data exchange. If None, "app_dir" will be used.
+            data_exchange_path (Optional[str]): Path used for data exchange. If None, the "app_dir" of the running job will be used.
                 If pipe_id is provided, will use the Pipe gets from pipe_id.
             pipe_id (Optional[str]): Identifier used to get the Pipe from NVFlare components.
             pipe_name (str): Name of the pipe. Defaults to "pipe".
@@ -61,12 +62,16 @@ class PTFilePipeLauncherExecutor(FilePipeLauncherExecutor):
             workers (int): Number of worker threads needed.
             training (bool): Whether to run training using global model. Defaults to True.
             global_evaluation (bool): Whether to run evaluation on global model. Defaults to True.
+            params_exchange_format (ModelExchangeFormat): What format to exchange the parameters.
+            params_transfer_type (TransferType): How to transfer the parameters. FULL means the whole model parameters are sent.
+                DIFF means that only the difference is sent.
             from_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
                 This converter will be called when model is sent from nvflare controller side to executor side.
             to_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
                 This converter will be called when model is sent from nvflare executor side to controller side.
         """
         super().__init__(
+            data_exchange_path=data_exchange_path,
             pipe_id=pipe_id,
             pipe_name=pipe_name,
             launcher_id=launcher_id,
@@ -83,15 +88,22 @@ class PTFilePipeLauncherExecutor(FilePipeLauncherExecutor):
             from_nvflare_converter_id=from_nvflare_converter_id,
             to_nvflare_converter_id=to_nvflare_converter_id,
         )
-        fobs.register(TensorDecomposer)
 
-    def initialize(self, fl_ctx: FLContext) -> None:
-        super().initialize(fl_ctx)
-        if self._from_nvflare_converter is None:
-            self._from_nvflare_converter = NumpyToPTParamsConverter()
-        if self._to_nvflare_converter is None:
-            self._to_nvflare_converter = PTToNumpyParamsConverter()
+        self._params_exchange_format = params_exchange_format
+        self._params_transfer_type = params_transfer_type
 
-    def _update_config_exchange_dict(self, config: dict):
-        super()._update_config_exchange_dict(config)
-        config[ConfigKey.EXCHANGE_FORMAT] = ModelExchangeFormat.PYTORCH
+    def prepare_config_for_launch(self, fl_ctx: FLContext):
+        workspace = fl_ctx.get_engine().get_workspace()
+        app_dir = workspace.get_app_dir(fl_ctx.get_job_id())
+        config_file = os.path.join(app_dir, workspace.config_folder, CONFIG_EXCHANGE)
+
+        client_config = ClientConfig()
+        self._update_config_exchange_dict(client_config.config)
+        client_config.to_json(config_file)
+
+    def _update_config_exchange_dict(self, config: Dict):
+        config[ConfigKey.GLOBAL_EVAL] = self._global_evaluation
+        config[ConfigKey.TRAINING] = self._training
+        config[ConfigKey.EXCHANGE_FORMAT] = self._params_exchange_format
+        config[ConfigKey.EXCHANGE_PATH] = self._data_exchange_path
+        config[ConfigKey.TRANSFER_TYPE] = self._params_transfer_type
