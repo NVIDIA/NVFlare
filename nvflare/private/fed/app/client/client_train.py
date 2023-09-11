@@ -36,19 +36,7 @@ from nvflare.private.privacy_manager import PrivacyService
 from nvflare.security.logging import secure_format_exception
 
 
-def main():
-    if sys.version_info >= (3, 11):
-        raise RuntimeError("Python versions 3.11 and above are not yet supported. Please use Python 3.8, 3.9 or 3.10.")
-    if sys.version_info < (3, 8):
-        raise RuntimeError("Python versions 3.7 and below are not supported. Please use Python 3.8, 3.9 or 3.10")
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
-    parser.add_argument("--fed_client", "-s", type=str, help="client config json file", required=True)
-    parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
-    parser.add_argument("--local_rank", type=int, default=0)
-
-    args = parser.parse_args()
+def main(args):
     kv_list = parse_vars(args.set)
 
     config_folder = kv_list.get("config_folder", "")
@@ -140,6 +128,20 @@ def main():
         print(f"ConfigError: {secure_format_exception(e)}")
 
 
+def parse_arguments():
+    if sys.version_info >= (3, 11):
+        raise RuntimeError("Python versions 3.11 and above are not yet supported. Please use Python 3.8, 3.9 or 3.10.")
+    if sys.version_info < (3, 8):
+        raise RuntimeError("Python versions 3.7 and below are not supported. Please use Python 3.8, 3.9 or 3.10")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
+    parser.add_argument("--fed_client", "-s", type=str, help="client config json file", required=True)
+    parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
+    parser.add_argument("--local_rank", type=int, default=0)
+    args = parser.parse_args()
+    return args
+
+
 def create_admin_agent(
     req_processors,
     federated_client: FederatedClient,
@@ -186,5 +188,6 @@ if __name__ == "__main__":
     # multiprocessing.set_start_method('spawn')
 
     # main()
-    rc = mpm.run(main_func=main)
+    args = parse_arguments()
+    rc = mpm.run(main_func=main, run_dir=args.workspace, args=args)
     sys.exit(rc)

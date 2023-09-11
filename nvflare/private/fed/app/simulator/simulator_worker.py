@@ -211,18 +211,7 @@ def _create_connection(listen_port):
     return conn
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--workspace", "-o", type=str, help="WORKSPACE folder", required=True)
-    parser.add_argument("--client", type=str, help="Client name", required=True)
-    parser.add_argument("--token", type=str, help="Client token", required=True)
-    parser.add_argument("--port", type=str, help="Listen port", required=True)
-    parser.add_argument("--gpu", "-g", type=str, help="gpu index number")
-    parser.add_argument("--parent_pid", type=int, help="parent process pid", required=True)
-    parser.add_argument("--simulator_root", "-root", type=str, help="Simulator root folder")
-    parser.add_argument("--root_url", "-r", type=str, help="cellnet root_url")
-    parser.add_argument("--parent_url", "-p", type=str, help="cellnet parent_url")
-    args = parser.parse_args()
+def main(args):
 
     # start parent process checking thread
     parent_pid = args.parent_pid
@@ -259,12 +248,28 @@ def main():
         AuditService.close()
 
 
+def parse_arguments():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--workspace", "-o", type=str, help="WORKSPACE folder", required=True)
+    parser.add_argument("--client", type=str, help="Client name", required=True)
+    parser.add_argument("--token", type=str, help="Client token", required=True)
+    parser.add_argument("--port", type=str, help="Listen port", required=True)
+    parser.add_argument("--gpu", "-g", type=str, help="gpu index number")
+    parser.add_argument("--parent_pid", type=int, help="parent process pid", required=True)
+    parser.add_argument("--simulator_root", "-root", type=str, help="Simulator root folder")
+    parser.add_argument("--root_url", "-r", type=str, help="cellnet root_url")
+    parser.add_argument("--parent_url", "-p", type=str, help="cellnet parent_url")
+    args = parser.parse_args()
+    return args
+
+
 if __name__ == "__main__":
     """
     This is the main program of simulator worker process when running the NVFlare Simulator..
     """
 
     # main()
-    mpm.run(main_func=main)
+    args = parse_arguments()
+    mpm.run(main_func=main, run_dir=args.workspace, args=args)
     time.sleep(2)
     # os._exit(0)

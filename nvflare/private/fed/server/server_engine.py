@@ -31,6 +31,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import (
     AdminCommandNames,
     FLContextKey,
+    FLMetaKey,
     MachineStatus,
     ReturnCode,
     RunProcessKey,
@@ -195,7 +196,7 @@ class ServerEngine(ServerEngineInternalSpec):
             if job_id in self.exception_run_processes:
                 self.exception_run_processes.pop(job_id)
 
-    def wait_for_complete(self, job_id, process):
+    def wait_for_complete(self, workspace, job_id, process):
         process.wait()
         run_process_info = self.run_processes.get(job_id)
         if run_process_info:
@@ -211,7 +212,14 @@ class ServerEngine(ServerEngineInternalSpec):
                     break
                 time.sleep(0.1)
             with self.lock:
-                return_code = process.poll()
+                run_dir = os.path.join(workspace, job_id)
+                rc_file = os.path.join(run_dir, FLMetaKey.PROCESS_RC_FILE)
+                if os.path.exists(rc_file):
+                    with open(rc_file, "r") as f:
+                        return_code = int(f.readline())
+                    os.remove(rc_file)
+                else:
+                    return_code = process.poll()
                 # if process exit but with Execution exception
                 if return_code and return_code != 0:
                     self.logger.info(f"Job: {job_id} child process exit with return code {return_code}")
@@ -290,7 +298,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 RunProcessKey.PARTICIPANTS: job_clients,
             }
 
-        threading.Thread(target=self.wait_for_complete, args=[run_number, process]).start()
+        threading.Thread(target=self.wait_for_complete, args=[args.workspace, run_number, process]).start()
         return process
 
     def get_job_clients(self, client_sites):

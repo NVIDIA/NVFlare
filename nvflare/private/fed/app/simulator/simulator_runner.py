@@ -348,7 +348,9 @@ class SimulatorRunner(FLComponent):
 
     def run_processs(self, return_dict):
         # run_status = self.simulator_run_main()
-        run_status = mpm.run(main_func=self.simulator_run_main, shutdown_grace_time=3, cleanup_grace_time=6)
+        run_status = mpm.run(
+            main_func=self.simulator_run_main, run_dir=self.workspace, shutdown_grace_time=3, cleanup_grace_time=6
+        )
 
         return_dict["run_status"] = run_status
 

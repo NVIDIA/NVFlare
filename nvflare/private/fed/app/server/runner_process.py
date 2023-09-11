@@ -41,25 +41,7 @@ from nvflare.private.fed.utils.fed_utils import (
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 
-def main():
-    """FL Server program starting point."""
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
-    parser.add_argument(
-        "--fed_server", "-s", type=str, help="an aggregation server specification json file", required=True
-    )
-    parser.add_argument("--app_root", "-r", type=str, help="App Root", required=True)
-    parser.add_argument("--job_id", "-n", type=str, help="job id", required=True)
-    parser.add_argument("--root_url", "-u", type=str, help="root_url", required=True)
-    parser.add_argument("--host", "-host", type=str, help="server host", required=True)
-    parser.add_argument("--port", "-port", type=str, help="service port", required=True)
-    parser.add_argument("--ssid", "-id", type=str, help="SSID", required=True)
-    parser.add_argument("--parent_url", "-p", type=str, help="parent_url", required=True)
-    parser.add_argument("--ha_mode", "-ha_mode", type=str, help="HA mode", required=True)
-
-    parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
-
-    args = parser.parse_args()
+def main(args):
     kv_list = parse_vars(args.set)
 
     config_folder = kv_list.get("config_folder", "")
@@ -153,10 +135,32 @@ def main():
         raise e
 
 
+def parse_arguments():
+    """FL Server program starting point."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
+    parser.add_argument(
+        "--fed_server", "-s", type=str, help="an aggregation server specification json file", required=True
+    )
+    parser.add_argument("--app_root", "-r", type=str, help="App Root", required=True)
+    parser.add_argument("--job_id", "-n", type=str, help="job id", required=True)
+    parser.add_argument("--root_url", "-u", type=str, help="root_url", required=True)
+    parser.add_argument("--host", "-host", type=str, help="server host", required=True)
+    parser.add_argument("--port", "-port", type=str, help="service port", required=True)
+    parser.add_argument("--ssid", "-id", type=str, help="SSID", required=True)
+    parser.add_argument("--parent_url", "-p", type=str, help="parent_url", required=True)
+    parser.add_argument("--ha_mode", "-ha_mode", type=str, help="HA mode", required=True)
+    parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
+    args = parser.parse_args()
+    return args
+
+
 if __name__ == "__main__":
     """
     This is the program when starting the child process for running the NVIDIA FLARE server runner.
     """
     # main()
-    rc = mpm.run(main_func=main)
+    args = parse_arguments()
+    run_dir = os.path.join(args.workspace, args.job_id)
+    rc = mpm.run(main_func=main, run_dir=run_dir, args=args)
     sys.exit(rc)
