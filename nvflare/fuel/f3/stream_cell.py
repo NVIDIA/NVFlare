@@ -21,16 +21,14 @@ from nvflare.fuel.f3.streaming.byte_receiver import ByteReceiver
 from nvflare.fuel.f3.streaming.byte_streamer import ByteStreamer
 from nvflare.fuel.f3.streaming.file_streamer import FileStreamer
 from nvflare.fuel.f3.streaming.object_streamer import ObjectStreamer
-from nvflare.fuel.f3.streaming.stream_cipher import StreamCipher
 from nvflare.fuel.f3.streaming.stream_types import ObjectIterator, ObjectStreamFuture, Stream, StreamError, StreamFuture
 
 
 class StreamCell:
     def __init__(self, cell: CoreCell):
         self.cell = cell
-        cipher = StreamCipher(cell)
-        self.byte_streamer = ByteStreamer(cell, cipher)
-        self.byte_receiver = ByteReceiver(cell, cipher)
+        self.byte_streamer = ByteStreamer(cell)
+        self.byte_receiver = ByteReceiver(cell)
         self.blob_streamer = BlobStreamer(self.byte_streamer, self.byte_receiver)
         self.file_streamer = FileStreamer(self.byte_streamer, self.byte_receiver)
         self.object_streamer = ObjectStreamer(self.blob_streamer)

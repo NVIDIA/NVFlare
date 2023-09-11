@@ -72,6 +72,13 @@ def _sign(k, m):
 
 
 def _verify(k, m, s):
+
+    if not isinstance(m, bytes):
+        m = bytes(m)
+
+    if not isinstance(s, bytes):
+        s = bytes(s)
+
     k.verify(
         s,
         m,
@@ -210,6 +217,10 @@ class SimpleCellCipher:
             message[NONCE_LENGTH : NONCE_LENGTH + KEY_ENC_LENGTH],
             message[NONCE_LENGTH + KEY_ENC_LENGTH : SIMPLE_HEADER_LENGTH],
         )
+
+        if not isinstance(key_enc, bytes):
+            key_enc = bytes(key_enc)
+
         key_hash = hash(key_enc)
         dec = self._cached_dec.get(key_hash)
         if dec is None:

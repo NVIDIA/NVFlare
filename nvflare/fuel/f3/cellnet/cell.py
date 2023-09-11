@@ -20,7 +20,7 @@ from typing import Dict, List, Union
 from nvflare.apis.fl_constant import ServerCommandNames
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessageType, ReturnCode
-from nvflare.fuel.f3.cellnet.utils import encode_payload, make_reply, decode_payload
+from nvflare.fuel.f3.cellnet.utils import decode_payload, encode_payload, make_reply
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stream_cell import StreamCell
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
@@ -51,14 +51,14 @@ class Adapter:
         result = future.result()
         request = Message(headers, result)
 
-        decode_payload(request)
+        decode_payload(request, StreamHeaderKey.PAYLOAD_ENCODING)
 
         channel = request.get_header(StreamHeaderKey.CHANNEL)
         request.set_header(MessageHeaderKey.CHANNEL, channel)
         topic = request.get_header(StreamHeaderKey.TOPIC)
         request.set_header(MessageHeaderKey.TOPIC, topic)
         req_id = request.get_header(MessageHeaderKey.REQ_ID, "")
-        secure = request.get_header(StreamHeaderKey.SECURE, False)
+        secure = request.get_header(MessageHeaderKey.SECURE, False)
         response = self.cb(request)
         response.add_headers(
             {
@@ -67,6 +67,8 @@ class Adapter:
                 StreamHeaderKey.STREAM_REQ_ID: stream_req_id,
             }
         )
+
+        encode_payload(response, StreamHeaderKey.PAYLOAD_ENCODING)
         self.cell.send_blob(channel, topic, origin, response, secure)
 
 
@@ -103,9 +105,11 @@ class Cell(StreamCell):
         Returns: None
 
         """
-        encode_payload(message)
 
         if channel == CellChannel.SERVER_COMMAND and topic == ServerCommandNames.HANDLE_DEAD_JOB:
+
+            encode_payload(message, encoding_key=StreamHeaderKey.PAYLOAD_ENCODING)
+
             result = {}
             if isinstance(targets, list):
                 for target in targets:
@@ -136,16 +140,22 @@ class Cell(StreamCell):
                 last_progress = current_progress
         return True
 
-    def send_request(self, channel, target, topic, request, timeout=10.0, secure=True, optional=False):
+    def send_request(self, channel, target, topic, request, timeout=10.0, secure=False, optional=False):
 
         self.logger.debug(f"send_request: {channel=}, {topic=}, {target=}, {timeout=}")
 
-        encode_payload(request)
-
         if channel != CellChannel.SERVER_COMMAND:
             return self.core_cell.send_request(
-                channel=channel, target=target, topic=topic, request=request, timeout=timeout, optional=optional
+                channel=channel,
+                target=target,
+                topic=topic,
+                request=request,
+                timeout=timeout,
+                secure=secure,
+                optional=optional,
             )
+
+        encode_payload(request, StreamHeaderKey.PAYLOAD_ENCODING)
 
         req_id = str(uuid.uuid4())
         request.add_headers({StreamHeaderKey.STREAM_REQ_ID: req_id})
@@ -182,6 +192,7 @@ class Cell(StreamCell):
             return self._get_result(req_id)
         self.logger.debug(f"{req_id=}: receiving complete")
         waiter.result = Message(r_future.headers, r_future.result())
+        decode_payload(waiter.result, encoding_key=StreamHeaderKey.PAYLOAD_ENCODING)
         return self._get_result(req_id)
 
     def _process_reply(self, future: StreamFuture):
@@ -209,9 +220,17 @@ class Cell(StreamCell):
         Returns:
 
         """
+
         if not callable(cb):
             raise ValueError(f"specified request_cb {type(cb)} is not callable")
-
-        self.logger.debug(f"Register blob CB for {channel=}, {topic=}")
-        adapter = Adapter(cb, self.core_cell.my_info, self)
-        self.register_blob_cb(channel, topic, adapter.call, *args, **kwargs)
+        if channel == CellChannel.SERVER_COMMAND and topic in [
+            "*",
+            ServerCommandNames.GET_TASK,
+            ServerCommandNames.SUBMIT_UPDATE,
+        ]:
+            self.logger.debug(f"Register blob CB for {channel=}, {topic=}")
+            adapter = Adapter(cb, self.core_cell.my_info, self)
+            self.register_blob_cb(channel, topic, adapter.call, *args, **kwargs)
+        else:
+            self.logger.debug(f"Register regular CB for {channel=}, {topic=}")
+            self.core_cell.register_request_cb(channel, topic, cb, *args, **kwargs)

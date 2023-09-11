@@ -21,7 +21,6 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.registry import Callback, Registry
 from nvflare.fuel.f3.connection import BytesAlike
 from nvflare.fuel.f3.message import Message
-from nvflare.fuel.f3.streaming.stream_cipher import StreamCipher
 from nvflare.fuel.f3.streaming.stream_const import (
     EOS,
     STREAM_ACK_TOPIC,
@@ -100,6 +99,9 @@ class RxStream(Stream):
 
         with self.task.task_lock:
             last_chunk, buf = self.task.buffers.popleft()
+            if buf is None:
+                buf = bytes(0)
+
             if 0 < chunk_size < len(buf):
                 result = buf[0:chunk_size]
                 # Put leftover to the head of the queue
@@ -134,9 +136,8 @@ class RxStream(Stream):
 
 
 class ByteReceiver:
-    def __init__(self, cell: CoreCell, cipher: StreamCipher):
+    def __init__(self, cell: CoreCell):
         self.cell = cell
-        self.cipher = cipher
         self.cell.register_request_cb(channel=STREAM_CHANNEL, topic=STREAM_DATA_TOPIC, cb=self._data_handler)
         self.registry = Registry()
         self.rx_task_map = {}
@@ -176,13 +177,9 @@ class ByteReceiver:
         sid = message.get_header(StreamHeaderKey.STREAM_ID)
         origin = message.get_header(MessageHeaderKey.ORIGIN)
         seq = message.get_header(StreamHeaderKey.SEQUENCE)
-        secure = message.get_header(StreamHeaderKey.SECURE)
         error = message.get_header(StreamHeaderKey.ERROR_MSG, None)
 
-        if secure:
-            payload = self.cipher.decrypt(origin, message.payload)
-        else:
-            payload = message.payload
+        payload = message.payload
 
         with self.map_lock:
             task = self.rx_task_map.get(sid, None)

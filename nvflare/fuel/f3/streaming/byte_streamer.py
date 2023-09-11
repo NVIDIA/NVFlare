@@ -18,7 +18,6 @@ from typing import Optional
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.message import Message
-from nvflare.fuel.f3.streaming.stream_cipher import StreamCipher
 from nvflare.fuel.f3.streaming.stream_const import (
     STREAM_ACK_TOPIC,
     STREAM_CHANNEL,
@@ -61,9 +60,8 @@ class TxTask:
 
 
 class ByteStreamer:
-    def __init__(self, cell: CoreCell, cipher: StreamCipher):
+    def __init__(self, cell: CoreCell):
         self.cell = cell
-        self.cipher = cipher
         self.cell.register_request_cb(channel=STREAM_CHANNEL, topic=STREAM_ACK_TOPIC, cb=self._ack_handler)
         self.tx_task_map = {}
         self.map_lock = threading.Lock()
@@ -130,11 +128,6 @@ class ByteStreamer:
         else:
             payload = wrap_view(task.buffer)[0 : task.buffer_size]
 
-        if task.secure:
-            original_len = len(payload)
-            payload = self.cipher.encrypt(task.target, payload)
-            log.debug(f"Payload ({original_len} bytes) is encrypted into {len(payload)} bytes")
-
         message = Message(None, payload)
 
         if task.offset == 0:
@@ -156,11 +149,10 @@ class ByteStreamer:
                 StreamHeaderKey.DATA_TYPE: StreamDataType.FINAL if final else StreamDataType.CHUNK,
                 StreamHeaderKey.SEQUENCE: task.seq,
                 StreamHeaderKey.OFFSET: task.offset,
-                StreamHeaderKey.SECURE: task.secure,
             }
         )
 
-        errors = self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_DATA_TOPIC, task.target, message)
+        errors = self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_DATA_TOPIC, task.target, message, secure=task.secure)
         error = errors.get(task.target)
         if error:
             msg = f"Message sending error to target {task.target}: {error}"
@@ -195,7 +187,7 @@ class ByteStreamer:
                         StreamHeaderKey.ERROR_MSG: str(error),
                     }
                 )
-                self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_DATA_TOPIC, task.target, message)
+                self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_DATA_TOPIC, task.target, message, secure=task.secure)
         else:
             # Result is the number of bytes streamed
             task.stream_future.set_result(task.offset)
