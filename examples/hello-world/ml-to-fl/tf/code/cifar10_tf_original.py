@@ -42,7 +42,7 @@ def main():
     model.save_weights(PATH)
 
     _, test_acc = model.evaluate(test_images, test_labels, verbose=2)
-    print(f"Accuracy of the model on the 10000 test images: {test_acc} %")
+    print(f"Accuracy of the model on the 10000 test images: {test_acc * 100} %")
 
 
 if __name__ == "__main__":

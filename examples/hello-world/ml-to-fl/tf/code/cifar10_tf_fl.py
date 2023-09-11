@@ -45,12 +45,18 @@ def main():
     # (3) gets FLModel from NVFlare
     input_model = flare.receive()
 
+    # (optional) print system info
+    system_info = flare.system_info()
+    print(f"NVFlare system info: {system_info}")
+
     # (4) loads model from NVFlare
     load_flat_weights(model, input_model.params)
 
     # (5) evaluate aggregated/received model
     _, test_global_acc = model.evaluate(test_images, test_labels, verbose=2)
-    print(f"Accuracy of the received model on the 10000 test images: {test_global_acc} %")
+    print(
+        f"Accuracy of the received model on round {input_model.current_round} on the 10000 test images: {test_global_acc * 100} %"
+    )
 
     model.fit(train_images, train_labels, epochs=1, validation_data=(test_images, test_labels))
 
@@ -59,7 +65,7 @@ def main():
     model.save_weights(PATH)
 
     _, test_acc = model.evaluate(test_images, test_labels, verbose=2)
-    print(f"Accuracy of the model on the 10000 test images: {test_acc} %")
+    print(f"Accuracy of the model on the 10000 test images: {test_acc * 100} %")
 
     # (6) construct trained FL model
     output_model = flare.FLModel(params=get_flat_weights(model), metrics={"accuracy": test_global_acc})

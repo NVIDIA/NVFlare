@@ -73,15 +73,15 @@ After we modify our training script, we need to put it into a [job structure](ht
 
 Please refer to [JOB CLI tutorial](../../../tutorials/job_cli.ipynb) on how to generate a job easily from our existing job templates.
 
-We choose the [client api job template](./job_templates/client_api/) and run the following command to create the job:
+We choose the [sag_pt job template](../../../../job_templates/sag_pt/) and run the following command to create the job:
 
 ```bash
-nvflare config -jt ./job_templates/
+nvflare config -jt ../../../../job_templates/
 nvflare job list_templates
-nvflare job create -force -j ./jobs/client_api -w client_api -sd ./code/ -s ./code/cifar10_fl.py
+nvflare job create -force -j ./jobs/client_api -w sag_pt -sd ./code/ -s ./code/cifar10_fl.py
 ```
 
-Now we have re-write our code and created the client_api job folder, we can run it using NVFlare Simulator:
+Then we can run it using the NVFlare Simulator:
 
 ```bash
 bash ../prepare_data.sh
@@ -126,13 +126,13 @@ Optional: Change the data path to an absolute path and use ```../prepare_data.sh
 The modified code can be found in [./code/cifar10_structured_fl.py](./code/cifar10_structured_fl.py)
 
 
-We choose the [decorator job template](./job_templates/decorator/) and run the following command to create the job:
+We choose the [sag_pt job template](../../../../job_templates/sag_pt/) and run the following command to create the job:
 
 ```bash
-nvflare job create -force -j ./jobs/decorator -w decorator -sd ./code/ -s ./code/cifar10_structured_fl.py
+nvflare job create -force -j ./jobs/decorator -w sag_pt -sd ./code/ -s ./code/cifar10_structured_fl.py
 ```
 
-Then we can run it using the simulator:
+Then we can run it using the NVFlare simulator:
 
 ```bash
 bash ../prepare_data.sh
@@ -161,13 +161,39 @@ To transform the existing code to FL training code, we made the following change
 
 The modified code can be found in [./code/cifar10_lightning_fl.py](./code/cifar10_lightning_fl.py)
 
-We choose the [lightning job template](./job_templates/lightning/) and run the following command to create the job:
+Then we can create the job using sag_pt template:
 
 ```bash
-nvflare job create -force -j ./jobs/lightning -w lightning -sd ./code/ -s ./code/cifar10_lightning_fl.py
+nvflare job create -force -j ./jobs/lightning -w sag_pt -sd ./code/ -s ./code/cifar10_lightning_fl.py
 ```
 
-Then we can run it using the simulator:
+We need to modify the "key_metric" in "config_fed_server.conf" from "accuracy" to "val_acc_epoch" (this name originates from the code [here](./code/lit_net.py#L56)) which means the validation accuracy for that epoch:
+
+```
+{
+  id = "model_selector"
+  name = "IntimeModelSelector"
+  args {
+    key_metric = "val_acc_epoch"
+  }
+}
+```
+
+And we modify the model architecture to use the LitNet class:
+
+```
+{
+  id = "persistor"
+  path = "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor"
+  args {
+    model {
+      path = "lit_net.LitNet"
+    }
+  }
+}
+```
+
+Then we run it using the NVFlare simulator:
 
 ```bash
 bash ../prepare_data.sh

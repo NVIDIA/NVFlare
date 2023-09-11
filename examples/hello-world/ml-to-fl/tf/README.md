@@ -37,11 +37,11 @@ After we modify our training script, we need to put it into a [job structure](ht
 Please refer to [JOB CLI tutorial](../../../tutorials/job_cli.ipynb) on how to generate a job easily from our existing job templates.
 
 
-We choose the [tensorflow job template](./job_templates/tensorflow/) and run the following command to create the job:
+We choose the [tensorflow job template](../../../../job_templates/sag_tf/) and run the following command to create the job:
 
 ```bash
-nvflare config -jt ./job_templates/
-nvflare job create -force -j ./jobs/tensorflow -w tensorflow -sd ./code/ -s ./code/cifar10_tf_fl.py
+nvflare config -jt ../../../../job_templates
+nvflare job create -force -j ./jobs/tensorflow -w sag_tf -sd ./code/ -s ./code/cifar10_tf_fl.py
 ```
 
 Then we can run the job using the simulator:
