@@ -11,10 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 STREAM_PREFIX = "sm__"
 STREAM_CHANNEL = STREAM_PREFIX + "STREAM"
 STREAM_DATA_TOPIC = STREAM_PREFIX + "DATA"
 STREAM_ACK_TOPIC = STREAM_PREFIX + "ACK"
+STREAM_CERT_TOPIC = STREAM_PREFIX + "CERT"
+
 # End of Stream indicator
 EOS = bytes()
 
@@ -49,3 +52,4 @@ class StreamHeaderKey:
     OBJECT_STREAM_ID = STREAM_PREFIX + "os"
     OBJECT_INDEX = STREAM_PREFIX + "oi"
     STREAM_REQ_ID = STREAM_PREFIX + "ri"
+    PAYLOAD_ENCODING = STREAM_PREFIX + "pe"

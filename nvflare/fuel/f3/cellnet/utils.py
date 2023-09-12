@@ -67,8 +67,8 @@ def format_log_message(fqcn: str, message: Message, log: str) -> str:
     return " ".join(context) + f"] {log}"
 
 
-def encode_payload(message: Message):
-    encoding = message.get_header(MessageHeaderKey.PAYLOAD_ENCODING)
+def encode_payload(message: Message, encoding_key=MessageHeaderKey.PAYLOAD_ENCODING):
+    encoding = message.get_header(encoding_key)
     if not encoding:
         if message.payload is None:
             encoding = Encoding.NONE
@@ -77,11 +77,11 @@ def encode_payload(message: Message):
         else:
             encoding = Encoding.FOBS
             message.payload = fobs.dumps(message.payload)
-        message.set_header(MessageHeaderKey.PAYLOAD_ENCODING, encoding)
+        message.set_header(encoding_key, encoding)
 
 
-def decode_payload(message: Message):
-    encoding = message.get_header(MessageHeaderKey.PAYLOAD_ENCODING)
+def decode_payload(message: Message, encoding_key=MessageHeaderKey.PAYLOAD_ENCODING):
+    encoding = message.get_header(encoding_key)
     if not encoding:
         return
 
@@ -92,4 +92,4 @@ def decode_payload(message: Message):
     else:
         # assume to be bytes
         pass
-    message.remove_header(MessageHeaderKey.PAYLOAD_ENCODING)
+    message.remove_header(encoding_key)
