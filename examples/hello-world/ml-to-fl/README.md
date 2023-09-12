@@ -17,8 +17,8 @@ To configure the workflow, one can reference the config we have here and the doc
 
 We cover the following use cases:
 
-  1. From PyTorch / PyTorch + Lightning: [pt](./pt/README.md)
-  2. From TensorFlow: [tf](./tf/README.md)
+  1. PyTorch and PyTorch Lightning: [pt](./pt/README.md)
+  2. TensorFlow: [tf](./tf/README.md)
 
 
 Note: Avoid install TensorFlow and PyTorch on the same virtual environment due to library conflicts.

@@ -2,10 +2,10 @@
 
 We will demonstrate how to transform an existing DL code into an FL application step-by-step:
 
-  1. Show a baseline training script [the baseline](#the-baseline)
-  2. How to modify a non-structured script using DL2FL Client API [the Client API usage example](#transform-cifar10-dl-training-code-to-fl-including-best-model-selection-using-client-api)
-  3. How to modify a structured script using DL2FL decorator [the decorator usage example](#the-decorator-use-case)
-  4. How to modify a structured "lightning" script using DL2FL Lightning Client API [the lightning use case](#transform-cifar10-lightning-training-code-to-fl-with-nvflare-client-lightning-integration-api)
+  1. [Show a baseline training script](#the-baseline)
+  2. [How to modify an existing training script using DL2FL Client API](#transform-cifar10-dl-training-code-to-fl-including-best-model-selection-using-client-api)
+  3. [How to modify a structured script using DL2FL decorator](#the-decorator-use-case)
+  4. [How to modify a PyTorch Lightning script using DL2FL Lightning Client API](#transform-cifar10-pytorch-lightning-training-code-to-fl-with-nvflare-client-lightning-integration-api)
 
 Please install the requirements first, it is suggested to install inside a virtual environment:
 
@@ -73,12 +73,12 @@ After we modify our training script, we need to put it into a [job structure](ht
 
 Please refer to [JOB CLI tutorial](../../../tutorials/job_cli.ipynb) on how to generate a job easily from our existing job templates.
 
-We choose the [sag_client_api_pt job template](../../../../job_templates/sag_client_api_pt/) and run the following command to create the job:
+We choose the [sag_pt job template](../../../../job_templates/sag_pt/) and run the following command to create the job:
 
 ```bash
 nvflare config -jt ../../../../job_templates/
 nvflare job list_templates
-nvflare job create -force -j ./jobs/client_api -w sag_client_api_pt -sd ./code/ -s ./code/cifar10_fl.py
+nvflare job create -force -j ./jobs/client_api -w sag_pt -sd ./code/ -s ./code/cifar10_fl.py
 ```
 
 Then we can run it using the NVFlare Simulator:
@@ -92,7 +92,7 @@ Congratulations! You have finished an FL training!
 
 ## The Decorator use case
 
-The above case shows how you can change the non-structured DL code to FL.
+The above case shows how you can change an existing DL code to FL.
 
 Usually, people have already put their codes into "train", "evaluate", and "test" methods so they can reuse them.
 In that case, the NVFlare DL2FL decorator is the way to go.
@@ -126,10 +126,10 @@ Optional: Change the data path to an absolute path and use ```../prepare_data.sh
 The modified code can be found in [./code/cifar10_structured_fl.py](./code/cifar10_structured_fl.py)
 
 
-We choose the [sag_client_api_pt job template](../../../../job_templates/sag_client_api_pt/) and run the following command to create the job:
+We choose the [sag_pt job template](../../../../job_templates/sag_pt/) and run the following command to create the job:
 
 ```bash
-nvflare job create -force -j ./jobs/decorator -w sag_client_api_pt -sd ./code/ -s ./code/cifar10_structured_fl.py
+nvflare job create -force -j ./jobs/decorator -w sag_pt -sd ./code/ -s ./code/cifar10_structured_fl.py
 ```
 
 Then we can run it using the NVFlare simulator:
@@ -139,11 +139,11 @@ bash ../prepare_data.sh
 nvflare simulator -n 2 -t 2 ./jobs/decorator -w decorator_workspace
 ```
 
-## Transform CIFAR10 lightning training code to FL with NVFLARE Client lightning integration API
+## Transform CIFAR10 PyTorch Lightning training code to FL with NVFLARE Client lightning integration API
 
-If you are using the [lightning framework](https://lightning.ai/) to write your training scripts, you can use our NVFlare lightning client API to convert it into FL.
+If you are using [PyTorch Lightning](https://lightning.ai/) to write your training scripts, you can use our NVFlare lightning client API to convert it into FL.
 
-Given a CIFAR10 lightning code example: [./code/cifar10_lightning_original.py](./code/cifar10_lightning_original.py).
+Given a CIFAR10 PyTorch Lightning code example: [./code/cifar10_lightning_original.py](./code/cifar10_lightning_original.py).
 Notice we wrap the [Net class](./code/net.py) into LightningModule: [LitNet class](./code/lit_net.py)
 
 You can run it using
@@ -156,15 +156,15 @@ python3 ./code/cifar10_lightning_original.py
 To transform the existing code to FL training code, we made the following changes:
 
 1. Import NVFlare Lightning Client API: ```import nvflare.client.lightning as flare```
-2. Patch the lightning trainer ```flare.patch(trainer)```
+2. Patch the PyTorch Lightning trainer ```flare.patch(trainer)```
 3. Call trainer.evaluate() method to evaluate newly received aggregated/global model. The resulting evaluation metric will be used for the best model selection
 
 The modified code can be found in [./code/cifar10_lightning_fl.py](./code/cifar10_lightning_fl.py)
 
-Then we can create the job using sag_client_api_pt template:
+Then we can create the job using sag_pt template:
 
 ```bash
-nvflare job create -force -j ./jobs/lightning -w sag_client_api_pt -sd ./code/ -s ./code/cifar10_lightning_fl.py
+nvflare job create -force -j ./jobs/lightning -w sag_pt -sd ./code/ -s ./code/cifar10_lightning_fl.py
 ```
 
 We need to modify the "key_metric" in "config_fed_server.conf" from "accuracy" to "val_acc_epoch" (this name originates from the code [here](./code/lit_net.py#L56)) which means the validation accuracy for that epoch:

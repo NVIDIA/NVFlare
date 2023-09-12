@@ -29,19 +29,18 @@ To transform the existing code to FL training code, we made the following change
 Notice that we need to flatten/unflatten the model weights because NVFlare server-side aggregators now
 only accept a ``dict`` of arrays.
 
-The modified code can be found here: [./code/cifar10_tf_fl.py](./code/cifar10_tf_fl.py), [./code/tf_net.py](./code/tf_net.py),
-[./code/tf_utils.py](./code/tf_utils.py)
+The modified code can be found here: [./code/cifar10_tf_fl.py](./code/cifar10_tf_fl.py), [./code/tf_net.py](./code/tf_net.py).
 
 After we modify our training script, we need to put it into a [job structure](https://nvflare.readthedocs.io/en/latest/real_world_fl/job.html) so that NVFlare system knows how to deploy and run the job.
 
 Please refer to [JOB CLI tutorial](../../../tutorials/job_cli.ipynb) on how to generate a job easily from our existing job templates.
 
 
-We choose the [tensorflow job template](../../../../job_templates/sag_client_api_tf/) and run the following command to create the job:
+We choose the [tensorflow job template](../../../../job_templates/sag_tf/) and run the following command to create the job:
 
 ```bash
 nvflare config -jt ../../../../job_templates
-nvflare job create -force -j ./jobs/tensorflow -w sag_client_api_tf -sd ./code/ -s ./code/cifar10_tf_fl.py
+nvflare job create -force -j ./jobs/tensorflow -w sag_tf -sd ./code/ -s ./code/cifar10_tf_fl.py
 ```
 
 Then we can run the job using the simulator:

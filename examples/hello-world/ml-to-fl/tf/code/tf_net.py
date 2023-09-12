@@ -12,19 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from tensorflow.keras import Model, layers
+from tensorflow.keras import Model, layers, losses
 
 
 class TFNet(Model):
-    def __init__(self):
+    def __init__(self, input_shape):
         super().__init__()
-        self.conv1 = layers.Conv2D(6, 5, activation="relu", input_shape=(32, 32, 3))
+        self.conv1 = layers.Conv2D(6, 5, activation="relu")
         self.pool = layers.MaxPooling2D((2, 2), 2)
         self.conv2 = layers.Conv2D(16, 5, activation="relu")
         self.flatten = layers.Flatten()
         self.fc1 = layers.Dense(120, activation="relu")
         self.fc2 = layers.Dense(84, activation="relu")
         self.fc3 = layers.Dense(10)
+        loss_fn = losses.SparseCategoricalCrossentropy(from_logits=True)
+        self.compile(optimizer="sgd", loss=loss_fn, metrics=["accuracy"])
+        self.build(input_shape)
 
     def call(self, x):
         x = self.pool(self.conv1(x))

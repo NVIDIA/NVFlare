@@ -12,65 +12,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import os
 
 import tensorflow as tf
-from tf_net import TFNet
-from tf_utils import get_flat_weights, load_flat_weights
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
-from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_opt.tf.utils import get_flat_weights, load_flat_weights
 
 
 class TFModelPersistor(ModelPersistor):
-    def __init__(self, save_name="tf_model.ckpt"):
+    def __init__(self, model: tf.keras.Model, save_name="tf_model.ckpt"):
         super().__init__()
         self.save_name = save_name
-        self.model = self._build_model()
+        self.model = model
 
     def _initialize(self, fl_ctx: FLContext):
-        # get save path from FLContext
-        app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)
-        env = None
-        run_args = fl_ctx.get_prop(FLContextKey.ARGS)
-        if run_args:
-            env_config_file_name = os.path.join(app_root, run_args.env)
-            if os.path.exists(env_config_file_name):
-                try:
-                    with open(env_config_file_name) as file:
-                        env = json.load(file)
-                except:
-                    self.system_panic(
-                        reason="error opening env config file {}".format(env_config_file_name), fl_ctx=fl_ctx
-                    )
-                    return
-
-        if env is not None:
-            if env.get("APP_CKPT_DIR", None):
-                fl_ctx.set_prop(AppConstants.LOG_DIR, env["APP_CKPT_DIR"], private=True, sticky=True)
-
-        log_dir = fl_ctx.get_prop(AppConstants.LOG_DIR)
-        if log_dir:
-            self.log_dir = os.path.join(app_root, log_dir)
-        else:
-            self.log_dir = app_root
-        self._model_save_path = os.path.join(self.log_dir, self.save_name)
-        if not os.path.exists(self.log_dir):
-            os.makedirs(self.log_dir)
-
-        fl_ctx.sync_sticky()
-
-    def _build_model(self):
-        model = TFNet()
-        loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-        model.compile(optimizer="sgd", loss=loss_fn, metrics=["accuracy"])
-        _ = model(tf.keras.Input(shape=(32, 32, 3)))
-        return model
+        workspace = fl_ctx.get_engine().get_workspace()
+        app_root = workspace.get_app_dir(fl_ctx.get_job_id())
+        self._model_save_path = os.path.join(app_root, self.save_name)
 
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
         """Initializes and loads the Model.
