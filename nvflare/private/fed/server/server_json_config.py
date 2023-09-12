@@ -43,7 +43,7 @@ class WorkFlow:
 
 
 class ServerJsonConfigurator(FedJsonConfigurator):
-    def __init__(self, config_file_name: str, args, kv_list=None, exclude_libs=True):
+    def __init__(self, config_file_name: str, args, app_root: str, kv_list=None, exclude_libs=True):
         """This class parses server config from json file.
 
         Args:
@@ -52,6 +52,7 @@ class ServerJsonConfigurator(FedJsonConfigurator):
         """
         self.config_file_name = config_file_name
         self.args = args
+        self.app_root = app_root
 
         base_pkgs = FL_PACKAGES
         module_names = FL_MODULES
@@ -163,7 +164,7 @@ class ServerJsonConfigurator(FedJsonConfigurator):
 
         ConfigService.initialize(
             section_files={SystemConfigs.APPLICATION_CONF: os.path.basename(self.config_files[0])},
-            config_path=[self.args.workspace],
+            config_path=[self.app_root],
             parsed_args=self.args,
             var_dict=self.cmd_vars,
         )

@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 
 
-class FullModelShareableGenerator(ShareableGenerator):
+class SimpleModelShareableGenerator(ShareableGenerator):
     def learnable_to_shareable(self, model_learnable: ModelLearnable, fl_ctx: FLContext) -> Shareable:
         """Convert ModelLearnable to Shareable.
 
@@ -53,21 +53,22 @@ class FullModelShareableGenerator(ShareableGenerator):
         if not isinstance(shareable, Shareable):
             raise TypeError("shareable must be Shareable, but got {}.".format(type(shareable)))
 
-        base_model = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
         dxo = from_shareable(shareable)
+        base_model = ModelLearnable()
+
         if dxo.data_kind == DataKind.WEIGHT_DIFF:
+            base_model = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
             if not base_model:
-                self.system_panic(reason="No global base model needed for processing WEIGHT_DIFF!", fl_ctx=fl_ctx)
+                self.system_panic(reason="No global base model!", fl_ctx=fl_ctx)
                 return base_model
 
             weights = base_model[ModelLearnableKey.WEIGHTS]
+
             if dxo.data is not None:
                 model_diff = dxo.data
                 for v_name, v_value in model_diff.items():
                     weights[v_name] = weights[v_name] + v_value
         elif dxo.data_kind == DataKind.WEIGHTS:
-            if not base_model:
-                base_model = ModelLearnable()
             weights = dxo.data
             if not weights:
                 self.log_info(fl_ctx, "No model weights found. Model will not be updated.")
