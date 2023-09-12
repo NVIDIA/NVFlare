@@ -31,7 +31,7 @@ FUNCTION_MAPPING = {
     AnalyticsDataType.PARAMETER: "add_scalar",
     AnalyticsDataType.PARAMETERS: "add_scalars",
     AnalyticsDataType.METRIC: "add_scalar",
-    AnalyticsDataType.METRICS: "add_scalars"
+    AnalyticsDataType.METRICS: "add_scalars",
 }
 
 
