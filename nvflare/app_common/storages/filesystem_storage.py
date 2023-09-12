@@ -248,6 +248,19 @@ class FilesystemStorage(StorageSpec):
 
         return _read(os.path.join(full_uri, component_name))
 
+    def get_data_for_download(self, uri: str, component_name: str = DATA, download_file: str = None):
+        full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
+
+        if not StorageSpec.is_valid_component(component_name):
+            raise StorageException(f"{component_name } is not a valid component for storage object.")
+
+        if not _object_exists(full_uri):
+            raise StorageException("object {} does not exist".format(uri))
+
+        if os.path.exists(download_file):
+            os.remove(download_file)
+        os.symlink(os.path.join(full_uri, component_name), download_file)
+
     def get_detail(self, uri: str) -> Tuple[dict, bytes]:
         """Gets both data and meta of the specified object.
 
