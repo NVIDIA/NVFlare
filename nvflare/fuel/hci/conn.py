@@ -18,6 +18,8 @@ from nvflare.fuel.common.ctx import BaseContext
 
 from .proto import Buffer, validate_proto
 from .table import Table
+from .chunk import Receiver
+
 
 # ASCII Message Format:
 #
@@ -30,6 +32,7 @@ ALL_END = "\x04"  # Marks the end of a complete transmission (End of Transmissio
 
 
 MAX_MSG_SIZE = 1024
+MAX_BYTES_SIZE = 1024 * 1024
 
 
 def receive_til_end(sock, end=ALL_END):
@@ -70,6 +73,17 @@ def _process_one_line(line: str, process_json_func):
     """Validate and process one line, which should be a str containing a JSON document."""
     json_data = validate_proto(line)
     process_json_func(json_data)
+
+
+def receive_bytes_and_process(sock, receive_bytes_func):
+    receiver = Receiver(receive_data_func=receive_bytes_func)
+    while True:
+        data = sock.recv(MAX_BYTES_SIZE)
+        if not data:
+            return False
+        done = receiver.receive(data)
+        if done:
+            return True
 
 
 def receive_and_process(sock, process_json_func):
@@ -115,6 +129,7 @@ class Connection(BaseContext):
         self.command = None
         self.args = None
         self.buffer = Buffer()
+        self.binary_mode = False
 
     def _send_line(self, line: str, all_end=False):
         """If not ``self.ended``, send line with sock."""
@@ -128,6 +143,9 @@ class Connection(BaseContext):
             end = LINE_END
 
         self.sock.sendall(bytes(line + end, "utf-8"))
+
+    def flush_bytes(self, data):
+        self.sock.sendall(data)
 
     def append_table(self, headers: List[str], name=None) -> Table:
         return self.buffer.append_table(headers, name=name)
@@ -190,5 +208,6 @@ class Connection(BaseContext):
         self._send_line(line, all_end=False)
 
     def close(self):
-        self.flush()
-        self._send_line("", all_end=True)
+        if not self.binary_mode:
+            self.flush()
+            self._send_line("", all_end=True)

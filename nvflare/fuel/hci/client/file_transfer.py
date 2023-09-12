@@ -14,6 +14,8 @@
 
 import os
 
+from nvflare.fuel.hci.proto import MetaKey, ProtoKey
+
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.fuel.hci.base64_utils import (
     b64str_to_binary_file,
@@ -157,6 +159,27 @@ class _DownloadFolderProcessor(ReplyProcessor):
             )
 
 
+class _FileReceiver:
+
+    def __init__(self, file_path):
+        self.file_path = file_path
+        self.tmp_name = f"{file_path}.tmp"
+        dir_name = os.path.dirname(file_path)
+        if not os.path.exists(dir_name):
+            os.makedirs(dir_name)
+        if os.path.exists(file_path):
+            # remove existing file
+            os.remove(file_path)
+        self.tmp_file = open(self.tmp_name, "ab")
+
+    def close(self):
+        self.tmp_file.close()
+        os.rename(self.tmp_name, self.file_path)
+
+    def receive_data(self, data, start: int, length: int):
+        self.tmp_file.write(data[start:start+length])
+
+
 class FileTransferModule(CommandModule):
     """Command module with commands relevant to file transfer."""
 
@@ -173,6 +196,8 @@ class FileTransferModule(CommandModule):
         self.cmd_handlers = {
             ftd.UPLOAD_FOLDER_FQN: self.upload_folder,
             ftd.DOWNLOAD_FOLDER_FQN: self.download_folder,
+            ftd.PULL_BINARY_FQN: self.pull_binary_file,
+            ftd.PULL_FOLDER_FQN: self.pull_folder,
         }
 
     def get_spec(self):
@@ -205,6 +230,13 @@ class FileTransferModule(CommandModule):
                     description="download one or more binary files in the download_dir",
                     usage="download_binary file_name ...",
                     handler_func=self.download_binary_file,
+                    visible=False,
+                ),
+                CommandSpec(
+                    name="pull_binary",
+                    description="download one binary files in the download_dir",
+                    usage="pull_binary control_id file_name",
+                    handler_func=self.pull_binary_file,
                     visible=False,
                 ),
                 CommandSpec(
@@ -246,8 +278,10 @@ class FileTransferModule(CommandModule):
 
         handler = self.cmd_handlers.get(server_cmd_spec.client_cmd)
         if handler is None:
-            # print('no cmd handler found for {}'.format(server_cmd_spec.client_cmd))
+            print('no cmd handler found for {}'.format(server_cmd_spec.client_cmd))
             return None
+        else:
+            print('cmd handler found for {}'.format(server_cmd_spec.client_cmd))
 
         return CommandModuleSpec(
             name=server_cmd_spec.scope_name,
@@ -308,6 +342,55 @@ class FileTransferModule(CommandModule):
 
     def download_binary_file(self, args, ctx: CommandContext):
         return self.download_file(args, ctx, ftd.SERVER_CMD_DOWNLOAD_BINARY, b64str_to_binary_file)
+
+    def pull_binary_file(self, args, ctx: CommandContext):
+        cmd_entry = ctx.get_command_entry()
+        if len(args) != 3:
+            return {ProtoKey.STATUS: APIStatus.ERROR_SYNTAX,
+                    ProtoKey.DETAILS: "usage: {}".format(cmd_entry.usage)}
+        file_name = args[2]
+        control_id = args[1]
+        parts = [cmd_entry.full_command_name(), control_id, file_name]
+        command = join_args(parts)
+        file_path = os.path.join(self.download_dir, file_name)
+        receiver = _FileReceiver(file_path)
+        api = ctx.get_api()
+        ctx.set_bytes_receiver(receiver.receive_data)
+        result = api.server_execute(command, cmd_ctx=ctx)
+        if result.get(ProtoKey.STATUS) == APIStatus.SUCCESS:
+            receiver.close()
+        return result
+
+    def pull_folder(self, args, ctx: CommandContext):
+        cmd_entry = ctx.get_command_entry()
+        if len(args) != 2:
+            return {ProtoKey.STATUS: APIStatus.ERROR_SYNTAX,
+                    ProtoKey.DETAILS: "usage: {}".format(cmd_entry.usage)}
+        folder_name = args[1]
+        parts = [cmd_entry.full_command_name(), folder_name]
+        command = join_args(parts)
+        api = ctx.get_api()
+        result = api.server_execute(command)
+        meta = result.get(ProtoKey.META)
+        if not meta:
+            return result
+
+        file_names = meta.get(MetaKey.FILES)
+        ctl_id = meta.get(MetaKey.CONTROL_ID)
+        print(f"received ctl_id {ctl_id}, file names: {file_names}")
+        if not file_names:
+            return result
+
+        cmd_name = meta.get(MetaKey.CMD_NAME)
+
+        for file_name in file_names:
+            command = f"{cmd_name} {ctl_id} {file_name}"
+            print(f"sending command: {command}")
+            reply = api.do_command(command)
+            if reply.get(ProtoKey.STATUS) != APIStatus.SUCCESS:
+                return reply
+
+        return {ProtoKey.STATUS: APIStatus.SUCCESS, ProtoKey.DETAILS: "OK"}
 
     def upload_folder(self, args, ctx: CommandContext):
         cmd_entry = ctx.get_command_entry()

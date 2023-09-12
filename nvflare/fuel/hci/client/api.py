@@ -23,7 +23,7 @@ from typing import List, Optional
 
 from nvflare.fuel.hci.client.event import EventContext, EventHandler, EventPropKey, EventType
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args
-from nvflare.fuel.hci.conn import Connection, receive_and_process
+from nvflare.fuel.hci.conn import Connection, receive_and_process, receive_bytes_and_process
 from nvflare.fuel.hci.proto import ConfirmMethod, InternalCommands, MetaKey, ProtoKey, make_error
 from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandRegister
 from nvflare.fuel.hci.table import Table
@@ -710,11 +710,24 @@ class AdminAPI(AdminAPISpec):
             conn.update_meta({MetaKey.CUSTOM_PROPS: custom_props})
 
         conn.close()
-        ok = receive_and_process(sock, process_json_func)
+        receive_bytes_func = ctx.get_bytes_receiver()
+        if receive_bytes_func is not None:
+            print("receive_bytes_and_process ...")
+            ok = receive_bytes_and_process(sock, receive_bytes_func)
+            if ok:
+                ctx.set_command_result({"status": APIStatus.SUCCESS, "details": "OK"})
+            else:
+                ctx.set_command_result({"status": APIStatus.ERROR_RUNTIME, "details": "error receive_bytes"})
+        else:
+            print("receive_and_process ...")
+            ok = receive_and_process(sock, process_json_func)
+
         if not ok:
             process_json_func(
                 make_error("Failed to communicate with Admin Server {} on {}".format(self.host, self.port))
             )
+        else:
+            print("reply received!")
 
     def _try_command(self, cmd_ctx: CommandContext):
         """Try to execute a command on server side.
@@ -895,12 +908,15 @@ class AdminAPI(AdminAPISpec):
 
         return self.server_execute(command, cmd_entry=ent)
 
-    def server_execute(self, command, reply_processor=None, cmd_entry=None):
+    def server_execute(self, command, reply_processor=None, cmd_entry=None, cmd_ctx=None):
         if self.in_logout:
             return {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.DETAILS: "session is logging out"}
 
         args = split_to_args(command)
-        ctx = self._new_command_context(command, args, cmd_entry)
+        if cmd_ctx:
+            ctx = cmd_ctx
+        else:
+            ctx = self._new_command_context(command, args, cmd_entry)
         start = time.time()
         ctx.set_reply_processor(reply_processor)
         self._try_command(ctx)

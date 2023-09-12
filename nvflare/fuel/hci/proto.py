@@ -59,6 +59,9 @@ class MetaKey(object):
     DURATION = "duration"
     CMD_TIMEOUT = "cmd_timeout"
     CUSTOM_PROPS = "custom_props"
+    FILES = "files"
+    CMD_NAME = "cmd_name"
+    CONTROL_ID = "control_id"
 
 
 class MetaStatusValue(object):
