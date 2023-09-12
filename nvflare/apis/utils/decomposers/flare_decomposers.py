@@ -29,7 +29,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils import fobs
-from nvflare.fuel.utils.fobs.datum import DatumManager, Datum, DatumRef
+from nvflare.fuel.utils.fobs.datum import Datum, DatumManager, DatumRef
 from nvflare.fuel.utils.fobs.decomposer import Decomposer, DictDecomposer
 
 

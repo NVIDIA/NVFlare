@@ -53,7 +53,6 @@ _enum_auto_register = True
 
 
 class Packer:
-
     def __init__(self, manager: DatumManager):
         self.manager = manager
 
@@ -210,7 +209,7 @@ def num_decomposers() -> int:
     return len(_decomposers)
 
 
-def serialize(obj: Any, manager: DatumManager = None,  **kwargs) -> bytes:
+def serialize(obj: Any, manager: DatumManager = None, **kwargs) -> bytes:
     """Serialize object into bytes.
 
     Args:

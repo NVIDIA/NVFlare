@@ -12,15 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pytest
-
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.datum import DatumManager
-from nvflare.fuel.utils.fobs.decomposer import DictDecomposer
 
-BLOB_SIZE = 1024*1024  # 1M
+BLOB_SIZE = 1024 * 1024  # 1M
 
 
 class TestDatum:
@@ -29,10 +26,7 @@ class TestDatum:
     test_data["data"] = {
         "key1": "Test",
         "blob1": bytes(BLOB_SIZE),
-        "member": {
-            "key2": 123,
-            "blob2": bytearray(BLOB_SIZE)
-        }
+        "member": {"key2": 123, "blob2": bytearray(BLOB_SIZE)},
     }
 
     def test_datum(self):
@@ -45,4 +39,3 @@ class TestDatum:
 
         data = fobs.loads(buf, manager)
         assert isinstance(data["data"]["blob1"], bytes)
-

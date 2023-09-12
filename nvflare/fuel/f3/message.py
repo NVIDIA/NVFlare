@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import uuid
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 
@@ -64,14 +63,6 @@ class Message:
             return getattr(self, key)
         except AttributeError:
             return default
-
-
-class StreamMessage(Message):
-    def __init__(self, headers: Optional[dict] = None, payload: Any = None, datums: dict = None):
-        """Construct a stream message"""
-        super().__init__(headers, payload)
-        self.message_id = str(uuid.uuid4())
-        self.datums = datums
 
 
 class MessageReceiver(ABC):

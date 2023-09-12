@@ -13,9 +13,9 @@
 # limitations under the License.
 import uuid
 from enum import Enum
-from typing import Any, Union, Dict
+from typing import Any, Dict, Union
 
-TEN_MEGA = 10*1024*1024
+TEN_MEGA = 10 * 1024 * 1024
 
 
 class DatumType(Enum):
@@ -52,7 +52,6 @@ class DatumRef:
 
 
 class DatumManager:
-
     def __init__(self, threshold=TEN_MEGA):
         self.threshold = threshold
         self.datums: Dict[str, Datum] = {}
