@@ -7,13 +7,13 @@ Before starting please make sure you set up a [virtual environment](../../../REA
 python3 -m pip install -r requirements.txt
 ```
 
-> **_NOTE:_** If vertical federated learning support is not available in the XGBoost PyPI release yet, either reinstall XGBoost from a [wheel](https://xgboost.readthedocs.io/en/stable/install.html#nightly-build) with a recent commit, or build from [source](https://github.com/dmlc/xgboost/blob/master/plugin/federated/README.md).
+> **_NOTE:_** If vertical federated learning support or GPU support is not available in the XGBoost PyPI release yet, either reinstall XGBoost from a [wheel](https://xgboost.readthedocs.io/en/stable/install.html#nightly-build) with a recent commit from the master branch, or build from [source](https://github.com/dmlc/xgboost/blob/master/plugin/federated/README.md). When building XGBoost from source, ensure that gRPC, CUDA, and NCCL are installed with sufficient versions and use the cmake options `-DPLUGIN_FEDERATED -DUSE_CUDA -DUSE_NCCL` (`-DNCCL_LIBRARY -DUSE_NCCL_LIB_PATH` might also be needed depending on the location of NCCL). Lastly, we recommend using a [cuda image](https://hub.docker.com/r/nvidia/cuda/tags) if you prefer working with docker.
 
 ## Preparing HIGGS Data
 In this example we showcase a binary classification task based on the [HIGGS dataset](https://archive.ics.uci.edu/dataset/280/higgs), which contains 11 million instances, each with 28 features and 1 class label.
 
 ### Download and Store Dataset
-We first download the dataset from the HIGGS link above, which is a single zipped `.csv` file.
+First download the dataset from the HIGGS link above, which is a single zipped `.csv` file.
 By default, we assume the dataset is downloaded, uncompressed, and stored in `~/dataset/HIGGS.csv`.
 
 ### Vertical Data Splits
@@ -53,7 +53,7 @@ Lastly, we must subclass `XGBDataLoader` and implement the `load_data()` method.
 By default, CPU based training is used.
 
 In order to enable GPU accelerated training, first ensure that your machine has CUDA installed and has at least two GPUs to simulate two clients.
-Then in `config_fed_client.json` set `"use_gpus": true` and  `"tree_method": "hist"` in `xgb_params`.
+In `config_fed_client.json` set `"use_gpus": true` and  `"tree_method": "hist"` in `xgb_params`. Then, in `FedXGBHistogramExecutor` we use the `device` parameter to map each rank to a GPU device ordinal in `xgb_params`.
 
 ## Run the Example
 Run the vertical xgboost job:
