@@ -1,0 +1,10 @@
+{
+  "name": "hello-numpy-sw-cse",
+  "resource_spec": {},
+  "min_clients" : 2,
+  "deploy_map": {
+    "app": [
+      "@ALL"
+    ]
+  }
+}
