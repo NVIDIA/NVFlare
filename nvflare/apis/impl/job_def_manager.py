@@ -289,3 +289,11 @@ class SimpleJobDefManager(JobDefManagerSpec):
     def get_storage_component(self, jid: str, component: str, fl_ctx: FLContext):
         store = self._get_job_store(fl_ctx)
         return store.get_data(self.job_uri(jid), component)
+
+    def get_storage_for_download(
+        self, jid: str, download_dir: str, component: str, download_file: str, fl_ctx: FLContext
+    ):
+        store = self._get_job_store(fl_ctx)
+        os.makedirs(os.path.join(download_dir, jid), exist_ok=True)
+        destination_file = os.path.join(download_dir, jid, download_file)
+        store.get_data_for_download(self.job_uri(jid), component, destination_file)

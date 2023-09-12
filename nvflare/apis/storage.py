@@ -16,9 +16,11 @@ from abc import ABC, abstractmethod
 from typing import List, Tuple, Union
 
 DATA = "data"
-JOB = "job"
+JOB_ZIP = "job.zip"
 META = "meta"
+META_JSON = "meta.json"
 WORKSPACE = "workspace"
+WORKSPACE_ZIP = "workspace.zip"
 MANIFEST = "manifest.json"
 
 
@@ -135,6 +137,21 @@ class StorageSpec(ABC):
         Returns:
             data of the object.
             if object does not exist, return None
+
+        Raises StorageException when:
+            - invalid args
+
+        """
+        pass
+
+    @abstractmethod
+    def get_data_for_download(self, uri: str, component_name: str = DATA, download_file: str = None):
+        """Gets data of the specified object.
+
+        Args:
+            uri: URI of the object
+            component_name: storage component name
+            download_file: component file_name for download
 
         Raises StorageException when:
             - invalid args

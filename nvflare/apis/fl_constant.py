@@ -164,6 +164,7 @@ class ReservedTopic(object):
     ABORT_ASK = "__abort_task__"
     DO_TASK = "__do_task__"
     AUX_COMMAND = "__aux_command__"
+    SYNC_RUNNER = "__sync_runner__"
 
 
 class AdminCommandNames(object):
@@ -399,3 +400,9 @@ class FilterKey:
     OUT = "out"
     INOUT = "inout"
     DELIMITER = "/"
+
+
+class ConfigVarName:
+
+    RUNNER_SYNC_TIMEOUT = "runner_sync_timeout"
+    MAX_RUNNER_SYNC_TRIES = "max_runner_sync_tries"
