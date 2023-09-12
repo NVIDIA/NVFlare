@@ -26,7 +26,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey, job_from_meta, new_job_id
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.server_engine_spec import ServerEngineSpec
-from nvflare.apis.storage import StorageException, StorageSpec
+from nvflare.apis.storage import WORKSPACE, StorageException, StorageSpec
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes
 
@@ -284,7 +284,16 @@ class SimpleJobDefManager(JobDefManagerSpec):
 
     def save_workspace(self, jid: str, data: bytes, fl_ctx: FLContext):
         store = self._get_job_store(fl_ctx)
-        stored_data = store.get_data(self.job_uri(jid))
-        job_data = fobs.loads(stored_data)
-        job_data[JobDataKey.WORKSPACE_DATA.value] = data
-        store.update_data(self.job_uri(jid), fobs.dumps(job_data))
+        store.update_object(self.job_uri(jid), data, WORKSPACE)
+
+    def get_storage_component(self, jid: str, component: str, fl_ctx: FLContext):
+        store = self._get_job_store(fl_ctx)
+        return store.get_data(self.job_uri(jid), component)
+
+    def get_storage_for_download(
+        self, jid: str, download_dir: str, component: str, download_file: str, fl_ctx: FLContext
+    ):
+        store = self._get_job_store(fl_ctx)
+        os.makedirs(os.path.join(download_dir, jid), exist_ok=True)
+        destination_file = os.path.join(download_dir, jid, download_file)
+        store.get_data_for_download(self.job_uri(jid), component, destination_file)

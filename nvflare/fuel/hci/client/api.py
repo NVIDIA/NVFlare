@@ -87,10 +87,11 @@ class _ServerReplyJsonProcessor(object):
 
         if resp is not None:
             data = resp[ProtoKey.DATA]
+            meta = resp[ProtoKey.META]
             for item in data:
                 it = item[ProtoKey.TYPE]
                 if it == ProtoKey.STRING:
-                    reply_processor.process_string(ctx, item[ProtoKey.DATA])
+                    reply_processor.process_string(ctx, item[ProtoKey.DATA], meta)
                 elif it == ProtoKey.SUCCESS:
                     reply_processor.process_success(ctx, item[ProtoKey.DATA])
                 elif it == ProtoKey.ERROR:
@@ -129,7 +130,7 @@ class _DefaultReplyProcessor(ReplyProcessor):
 class _LoginReplyProcessor(ReplyProcessor):
     """Reply processor for handling login and setting the token for the admin client."""
 
-    def process_string(self, ctx: CommandContext, item: str):
+    def process_string(self, ctx: CommandContext, item: str, meta: {}):
         api = ctx.get_api()
         api.login_result = item
 

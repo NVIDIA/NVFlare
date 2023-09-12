@@ -74,7 +74,9 @@ class ClientAppRunner(Runner):
         fl_ctx = FLContext()
         self._set_fl_context(fl_ctx, app_root, args, workspace, secure_train)
         client_config_file_name = os.path.join(app_root, args.client_config)
-        conf = ClientJsonConfigurator(config_file_name=client_config_file_name, args=args, kv_list=args.set)
+        conf = ClientJsonConfigurator(
+            config_file_name=client_config_file_name, app_root=app_root, args=args, kv_list=args.set
+        )
         if event_handlers:
             conf.set_component_build_authorizer(authorize_build_component, fl_ctx=fl_ctx, event_handlers=event_handlers)
         conf.configure()

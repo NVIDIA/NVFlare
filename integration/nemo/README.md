@@ -23,6 +23,9 @@ NVFlare utilizes features from NeMo, such as prompt learning to run LLM tasks in
 For an example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) with NeMo for prompt learning, 
 see [examples/prompt_learning](examples/prompt_learning/README.md) 
 
+For an example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) with NeMo for supervised fine-tuning (SFT), 
+see [examples/supervised_fine_tuning](examples/supervised_fine_tuning/README.md) 
+
 ## Requirements
 
 ### Using docker

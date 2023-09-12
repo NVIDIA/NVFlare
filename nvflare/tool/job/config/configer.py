@@ -124,15 +124,18 @@ def merge_configs(indices_configs: Dict[str, tuple], cli_file_configs: Dict[str,
             if cli_configs:
                 for key, cli_value in cli_configs.items():
                     if key not in key_indices:
-                        raise ValueError(f"Invalid config key: '{key}' for file '{file}'")
-                    indices = key_indices.get(key)
-                    for key_index in indices:
-                        value_type = type(key_index.value)
-                        new_value = value_type(cli_value) if key_index.value is not None else cli_value
-                        key_index.value = new_value
-                        parent_key = key_index.parent_key
-                        if parent_key and isinstance(parent_key.value, ConfigTree):
-                            parent_key.value.put(key_index.key, new_value)
+                        # not every client has app_config, app_script
+                        if key not in ["app_script", "app_config"]:
+                            raise ValueError(f"Invalid config key: '{key}' for file '{file}'")
+                    else:
+                        indices = key_indices.get(key)
+                        for key_index in indices:
+                            value_type = type(key_index.value)
+                            new_value = value_type(cli_value) if key_index.value is not None else cli_value
+                            key_index.value = new_value
+                            parent_key = key_index.parent_key
+                            if parent_key and isinstance(parent_key.value, ConfigTree):
+                                parent_key.value.put(key_index.key, new_value)
 
         merged[basename] = (config, excluded_key_list, key_indices)
 

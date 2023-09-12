@@ -7,9 +7,14 @@ Publications
 Non-exhaustive list of papers and publications related to NVIDIA FLARE, 
 including papers using NVIDIA FLARE's predecessor libraries included in the `Clara Train SDK <https://catalog.ngc.nvidia.com/orgs/nvidia/containers/clara-train-sdk>`__.
 
+Publications: 2023
+------------------
+* **2023-10** `ConDistFL: Conditional Distillation for Federated Learning from Partially Annotated Data <https://arxiv.org/abs/2308.04070>`__ (`DeCaF @ MICCAI 2023 <https://decaf-workshop.github.io/decaf-2023/>`__)
+* **2023-06** `Fair Federated Medical Image Segmentation via Client Contribution Estimation <https://arxiv.org/abs/2303.16520>`__ (`CVPR 2023 <https://cvpr2023.thecvf.com/Conferences/2023/>`__)
+* **2023-03** `FLARE: Federated Learning from Simulation to Real-World <https://arxiv.org/abs/2210.13291>`__ (`IEEE Data Eng. Bull. March 2023, Vol. 46, No. 1, <http://sites.computer.org/debull/A23mar/issue1.htm>`__)
+
 Publications: 2022
 ------------------
-* **2022-12** `FLARE: Federated Learning from Simulation to Real-World <https://arxiv.org/abs/2210.13291>`__ (`International Workshop on Federated Learning, NeurIPS 2022, New Orleans, USA <https://federated-learning.org/fl-neurips-2022>`__)
 * **2022-10** `Auto-FedRL: Federated Hyperparameter Optimization for Multi-institutional Medical Image Segmentation <https://arxiv.org/abs/2203.06338>`__ (`ECCV 2022 <https://eccv2022.ecva.net/>`__)
 * **2022-10** `Joint Multi Organ and Tumor Segmentation from Partial Labels Using Federated Learning <https://link.springer.com/chapter/10.1007/978-3-031-18523-6_6>`__ (`DeCaF @ MICCAI 2022 <https://decaf-workshop.github.io/decaf-2022/>`__)
 * **2022-10** `Split-U-Net: Preventing Data Leakage in Split Learning for Collaborative Multi-modal Brain Tumor Segmentation <https://arxiv.org/abs/2208.10553>`__ (`DeCaF @ MICCAI 2022 <https://decaf-workshop.github.io/decaf-2022/>`__)

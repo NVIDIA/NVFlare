@@ -56,7 +56,9 @@ class ServerAppRunner(Runner):
         try:
             server_config_file_name = os.path.join(app_root, args.server_config)
 
-            conf = ServerJsonConfigurator(config_file_name=server_config_file_name, args=args, kv_list=kv_list)
+            conf = ServerJsonConfigurator(
+                config_file_name=server_config_file_name, app_root=app_root, args=args, kv_list=kv_list
+            )
             if event_handlers:
                 fl_ctx = FLContext()
                 fl_ctx.set_prop(FLContextKey.ARGS, args, sticky=False)
