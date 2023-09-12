@@ -20,14 +20,13 @@ import torchvision
 import torchvision.transforms as transforms
 from net import Net
 
-# (1.0) import nvflare client API
+# (1) import nvflare client API
 import nvflare.client as flare
 
 # default dataset path
 CIFAR10_ROOT = "/tmp/nvflare/data/cifar10"
-
 # (optional) We change to use GPU to speed things up.
-# if you want to use CPU, change DEVICE=“cpu”
+# if you want to use CPU, change DEVICE="cpu"
 DEVICE = "cuda:0"
 
 
@@ -56,9 +55,9 @@ def _main(args):
 
     net = Net()
 
-    # (1.1) initializes NVFlare client API
+    # (2) initializes NVFlare client API
     flare.init()
-    # (1.2) gets FLModel from NVFlare
+    # (3) gets FLModel from NVFlare
     input_model = flare.receive()
     print(
         f" current_round={input_model.current_round},"
@@ -66,7 +65,7 @@ def _main(args):
         f" client={flare.system_info().get('site_name', None)}"
     )
 
-    # (1.3) loads model from NVFlare
+    # (4) loads model from NVFlare
     net.load_state_dict(input_model.params)
 
     criterion = nn.CrossEntropyLoss()
@@ -103,7 +102,7 @@ def _main(args):
 
     torch.save(net.state_dict(), model_path)
 
-    # (2.0) wraps evaluation logic into a method to re-use for
+    # wraps evaluation logic into a method to re-use for
     #       evaluation on both trained and received model
     def evaluate(input_weights):
         net = Net()
@@ -128,17 +127,17 @@ def _main(args):
         print(f"Accuracy of the network on the 10000 test images: {100 * correct // total} %")
         return 100 * correct // total
 
-    # (2.1) evaluation on local trained model
+    # evaluation on local trained model
     local_accuracy = evaluate(torch.load(model_path))
-    # (2.2) evaluate on received model
+    # (5) evaluate on received model
     accuracy = evaluate(input_model.params)
-    # (2.3) construct trained FL model
+    # (6) construct trained FL model
     output_model = flare.FLModel(
         params=net.cpu().state_dict(),
         metrics={"accuracy": accuracy},
         meta={"NUM_STEPS_CURRENT_ROUND": steps},
     )
-    # (1.5) send model back to NVFlare
+    # (7) send model back to NVFlare
     flare.send(output_model)
 
 
