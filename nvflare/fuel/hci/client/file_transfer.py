@@ -175,7 +175,8 @@ class _FileReceiver:
         os.rename(self.tmp_name, self.file_path)
 
     def receive_data(self, data, start: int, length: int):
-        self.tmp_file.write(data[start : start + length])
+        view = memoryview(data)
+        self.tmp_file.write(view[start : start + length])
 
 
 class FileTransferModule(CommandModule):
