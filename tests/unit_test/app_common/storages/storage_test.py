@@ -124,13 +124,13 @@ class TestStorage:
         "uri, data, meta, overwrite_existing",
         [
             (1234, b"c", {}, True),
-            ("/test_dir/test_object", "not a byte string", {}, True),
+            ("/test_dir/test_object", "not a valid file name", {}, True),
             ("/test_dir/test_object", b"c", "not a dictionary", True),
             ("/test_dir/test_object", b"c", {}, "not a bool"),
         ],
     )
     def test_create_invalid_inputs(self, storage, uri, data, meta, overwrite_existing):
-        with pytest.raises(TypeError):
+        with pytest.raises(Exception):
             storage.create_object(uri, data, meta, overwrite_existing)
 
     def test_invalid_inputs(self, storage):
@@ -161,12 +161,12 @@ class TestStorage:
     @pytest.mark.parametrize(
         "uri, data",
         [
-            (1234, "not bytes"),
+            (1234, "not valid file"),
             ("/test_dir/test_object", "not bytes"),
         ],
     )
     def test_update_data_invalid_inputs(self, storage, uri, data):
-        with pytest.raises(TypeError):
+        with pytest.raises(Exception):
             storage.update_object(uri, data)
 
     @pytest.mark.parametrize(

@@ -92,7 +92,7 @@ class FilesystemStorage(StorageSpec):
         else:
             raise ValueError(f"expect data to be bytes or file name but got {type(data)}")
 
-    def create_object(self, uri: str, data: Union[bytes, str], meta: dict, overwrite_existing: bool = False):
+    def create_object(self, uri: str, data, meta: dict, overwrite_existing: bool = False):
         """Creates an object.
 
         Args:
@@ -134,7 +134,7 @@ class FilesystemStorage(StorageSpec):
 
         return full_uri
 
-    def update_object(self, uri: str, data: Union[bytes, str], component_name: str = DATA):
+    def update_object(self, uri: str, data, component_name: str = DATA):
         """Update the object
 
         Args:
