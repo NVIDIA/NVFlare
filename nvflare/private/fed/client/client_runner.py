@@ -488,6 +488,7 @@ class ClientRunner(FLComponent):
                     timeout=sync_timeout,
                     fl_ctx=fl_ctx,
                     optional=True,
+                    secure=False,
                 )
 
                 if not resp:

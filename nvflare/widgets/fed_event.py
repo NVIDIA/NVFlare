@@ -80,9 +80,9 @@ class FedEventRunner(Widget):
             event_data.set_header(FedEventHeader.TIMESTAMP, time.time())
 
             targets = event_data.get_header(FedEventHeader.TARGETS, None)
-            self.fire_and_forget_request(request=event_data, fl_ctx=fl_ctx, targets=targets)
+            self.fire_and_forget_request(request=event_data, fl_ctx=fl_ctx, targets=targets, secure=False)
 
-    def fire_and_forget_request(self, request: Shareable, fl_ctx: FLContext, targets=None):
+    def fire_and_forget_request(self, request: Shareable, fl_ctx: FLContext, targets=None, secure=False):
         pass
 
     def _receive(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
@@ -173,14 +173,11 @@ class ServerFedEventRunner(FedEventRunner):
         """Init ServerFedEventRunner."""
         FedEventRunner.__init__(self, topic, regular_interval, grace_period)
 
-    def fire_and_forget_request(self, request: Shareable, fl_ctx: FLContext, targets=None):
+    def fire_and_forget_request(self, request: Shareable, fl_ctx: FLContext, targets=None, secure=False):
         if not isinstance(self.engine, ServerEngineSpec):
             raise TypeError("self.engine must be ServerEngineSpec but got {}".format(type(self.engine)))
         self.engine.fire_and_forget_aux_request(
-            topic=self.topic,
-            targets=targets,
-            request=request,
-            fl_ctx=fl_ctx,
+            topic=self.topic, targets=targets, request=request, fl_ctx=fl_ctx, secure=secure
         )
 
 
@@ -196,11 +193,11 @@ class ClientFedEventRunner(FedEventRunner):
         if event_type == EventType.START_RUN:
             self.ready = True
 
-    def fire_and_forget_request(self, request: Shareable, fl_ctx: FLContext, targets=None):
+    def fire_and_forget_request(self, request: Shareable, fl_ctx: FLContext, targets=None, secure=False):
         if not self.ready:
             self.log_warning(fl_ctx, "Engine in not ready, skip the fed event firing.")
             return
 
         if not isinstance(self.engine, ClientEngineSpec):
             raise TypeError("self.engine must be ClientEngineSpec but got {}".format(type(self.engine)))
-        self.engine.fire_and_forget_aux_request(topic=self.topic, request=request, fl_ctx=fl_ctx)
+        self.engine.fire_and_forget_aux_request(topic=self.topic, request=request, fl_ctx=fl_ctx, secure=secure)
