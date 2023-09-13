@@ -27,6 +27,7 @@ from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger, create_privacy_manager
+from nvflare.private.fed.app.utils import version_check
 from nvflare.private.fed.client.admin import FedAdminAgent
 from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.client_status import ClientStatus
@@ -129,10 +130,6 @@ def main(args):
 
 
 def parse_arguments():
-    if sys.version_info >= (3, 11):
-        raise RuntimeError("Python versions 3.11 and above are not yet supported. Please use Python 3.8, 3.9 or 3.10.")
-    if sys.version_info < (3, 8):
-        raise RuntimeError("Python versions 3.7 and below are not supported. Please use Python 3.8, 3.9 or 3.10")
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
     parser.add_argument("--fed_client", "-s", type=str, help="client config json file", required=True)
@@ -188,6 +185,7 @@ if __name__ == "__main__":
     # multiprocessing.set_start_method('spawn')
 
     # main()
+    version_check()
     args = parse_arguments()
     rc = mpm.run(main_func=main, run_dir=args.workspace, args=args)
     sys.exit(rc)
