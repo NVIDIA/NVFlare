@@ -18,7 +18,7 @@ import os
 import shutil
 import uuid
 from pathlib import Path
-from typing import List, Tuple, Union
+from typing import List, Tuple
 
 from nvflare.apis.storage import DATA, MANIFEST, META, StorageException, StorageSpec
 from nvflare.apis.utils.format_check import validate_class_methods_args
@@ -79,7 +79,7 @@ class FilesystemStorage(StorageSpec):
         self.root_dir = root_dir
         self.uri_root = uri_root
 
-    def _save_data(self, data: Union[str, bytes], destination: str):
+    def _save_data(self, data, destination: str):
         if isinstance(data, bytes):
             _write(destination, data)
         elif isinstance(data, str):
