@@ -21,7 +21,7 @@ import threading
 import time
 from abc import ABC, abstractmethod
 
-from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey
+from nvflare.apis.fl_constant import AdminCommandNames, FLMetaKey, RunProcessKey
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 from nvflare.fuel.common.exit_codes import PROCESS_EXIT_REASON, ProcessExitCode
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
@@ -204,7 +204,7 @@ class ProcessExecutor(ClientExecutor):
 
         thread = threading.Thread(
             target=self._wait_child_process_finish,
-            args=(client, job_id, allocated_resource, token, resource_manager),
+            args=(client, job_id, allocated_resource, token, resource_manager, args.workspace),
         )
         thread.start()
 
@@ -423,13 +423,22 @@ class ProcessExecutor(ClientExecutor):
                 )
                 self.logger.debug("abort_task sent")
 
-    def _wait_child_process_finish(self, client, job_id, allocated_resource, token, resource_manager):
+    def _wait_child_process_finish(self, client, job_id, allocated_resource, token, resource_manager, workspace):
         self.logger.info(f"run ({job_id}): waiting for child worker process to finish.")
         with self.lock:
             child_process = self.run_processes.get(job_id, {}).get(RunProcessKey.CHILD_PROCESS)
         if child_process:
             child_process.wait()
-            return_code = child_process.returncode
+
+            run_dir = os.path.join(workspace, job_id)
+            rc_file = os.path.join(run_dir, FLMetaKey.PROCESS_RC_FILE)
+            if os.path.exists(rc_file):
+                with open(rc_file, "r") as f:
+                    return_code = int(f.readline())
+                os.remove(rc_file)
+            else:
+                return_code = child_process.returncode
+
             self.logger.info(f"run ({job_id}): child worker process finished with RC {return_code}")
             if return_code in [ProcessExitCode.UNSAFE_COMPONENT, ProcessExitCode.CONFIG_ERROR]:
                 request = new_cell_message(
