@@ -31,6 +31,7 @@ from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
+from nvflare.fuel.hci.server.binary_transfer import BinaryTransfer
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.utils.argument_utils import SafeArgumentParser
 from nvflare.fuel.utils.zip_utils import ls_zip_from_bytes, unzip_all_from_bytes
@@ -40,7 +41,6 @@ from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
-from nvflare.fuel.hci.server.binary_transfer import BinaryTransfer
 
 from .cmd_utils import CommandUtil
 
@@ -146,24 +146,13 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     client_cmd=ftd.UPLOAD_FOLDER_FQN,
                 ),
                 CommandSpec(
-                    name="old_download_job",
+                    name=AdminCommandNames.DOWNLOAD_JOB,
                     description="download a specified job",
                     usage=f"{AdminCommandNames.DOWNLOAD_JOB} job_id",
                     handler_func=self.download_job,
                     authz_func=self.authorize_job,
-                    client_cmd=ftd.DOWNLOAD_FOLDER_FQN,
-                    visible=False,
-                ),
-
-                CommandSpec(
-                    name=AdminCommandNames.DOWNLOAD_JOB,
-                    description="download a specified job",
-                    usage=f"{AdminCommandNames.DOWNLOAD_JOB} job_id",
-                    handler_func=self.pull_job,
-                    authz_func=self.authorize_job,
                     client_cmd=ftd.PULL_FOLDER_FQN,
                 ),
-
                 CommandSpec(
                     name=AdminCommandNames.DOWNLOAD_JOB_FILE,
                     description="download a specified job file",
@@ -171,6 +160,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     handler_func=self.pull_file,
                     authz_func=self.authorize_job_file,
                     client_cmd=ftd.PULL_BINARY_FQN,
+                    visible=False,
                 ),
             ],
         )
@@ -649,10 +639,10 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             return
         self.download_file(conn, file_name=args[2])
 
-    def pull_job(self, conn: Connection, args: List[str]):
+    def download_job(self, conn: Connection, args: List[str]):
         job_id = args[1]
         download_dir = conn.get_prop(ConnProps.DOWNLOAD_DIR)
-        self.logger.info(f"pull_job called for {job_id}")
+        self.logger.debug(f"pull_job called for {job_id}")
 
         engine = conn.app_ctx
         job_def_manager = engine.job_def_manager
@@ -660,38 +650,14 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             self.logger.error(
                 f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
             )
-            conn.append_error(
-                "internal error",
-                meta=make_meta(MetaStatusValue.INTERNAL_ERROR)
-            )
+            conn.append_error("internal error", meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
             return
 
         with engine.new_context() as fl_ctx:
-            job_data = job_def_manager.get_job_data(job_id, fl_ctx)
-            self._unzip_data(download_dir, job_data, job_id)
+            job_def_manager.get_storage_for_download(job_id, download_dir, DATA, JOB_ZIP, fl_ctx)
+            job_def_manager.get_storage_for_download(job_id, download_dir, META, META_JSON, fl_ctx)
+            job_def_manager.get_storage_for_download(job_id, download_dir, WORKSPACE, WORKSPACE_ZIP, fl_ctx)
+
             self.download_folder(
-                conn, job_id,
-                download_file_cmd_name=AdminCommandNames.DOWNLOAD_JOB_FILE,
-                control_id=job_id)
-
-    def download_job(self, conn: Connection, args: List[str]):
-        job_id = args[1]
-
-        engine = conn.app_ctx
-        try:
-            job_def_manager = engine.job_def_manager
-            if not isinstance(job_def_manager, JobDefManagerSpec):
-                raise TypeError(
-                    f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
-                )
-            with engine.new_context() as fl_ctx:
-                download_dir = engine.server.admin_server.file_download_dir
-                job_def_manager.get_storage_for_download(job_id, download_dir, DATA, JOB_ZIP, fl_ctx)
-                job_def_manager.get_storage_for_download(job_id, download_dir, META, META_JSON, fl_ctx)
-                job_def_manager.get_storage_for_download(job_id, download_dir, WORKSPACE, WORKSPACE_ZIP, fl_ctx)
-
-                conn.append_success("Download data has been set up.")
-
-        except Exception as e:
-            conn.append_error(f"Exception occurred trying to get job from store: {secure_format_exception(e)}")
-            return
+                conn, job_id, download_file_cmd_name=AdminCommandNames.DOWNLOAD_JOB_FILE, control_id=job_id
+            )

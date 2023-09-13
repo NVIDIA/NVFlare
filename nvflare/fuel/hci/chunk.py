@@ -25,11 +25,10 @@ MAX_CHUNK_SIZE = 1024 * 1024
 
 
 def get_slice(buf, start: int, length: int):
-    return buf[start:start+length]
+    return buf[start : start + length]
 
 
 class Header:
-
     def __init__(self, marker, num1, num2):
         self.marker = marker
         self.checksum = 0
@@ -63,7 +62,6 @@ class Header:
         return Header(marker, num1, num2)
 
     def to_bytes(self):
-        print(f"header: {self}")
         if self.marker == MARKER_DATA:
             num1 = self.seq
             num2 = self.size
@@ -75,7 +73,6 @@ class Header:
 
 
 class ChunkState:
-
     def __init__(self, expect_seq=1):
         self.header_bytes = bytearray()
         self.header = None
@@ -87,7 +84,7 @@ class ChunkState:
             "header": f"{self.header}",
             "header_bytes": f"{self.header_bytes}",
             "received": self.received,
-            "expect_seq": self.expect_seq
+            "expect_seq": self.expect_seq,
         }
         return f"{d}"
 
@@ -96,18 +93,17 @@ class ChunkState:
         if self.header.marker == MARKER_DATA:
             if self.header.seq != self.expect_seq:
                 raise RuntimeError(
-                    f"Protocol Error: received seq {self.header.seq} does not match expected seq {self.expect_seq}")
+                    f"Protocol Error: received seq {self.header.seq} does not match expected seq {self.expect_seq}"
+                )
 
             if self.header.size < 0 or self.header.size > MAX_CHUNK_SIZE:
-                raise RuntimeError(
-                    f"Protocol Error: received size {self.header.size} is not in [0, {MAX_CHUNK_SIZE}]")
+                raise RuntimeError(f"Protocol Error: received size {self.header.size} is not in [0, {MAX_CHUNK_SIZE}]")
 
     def is_last(self):
         return self.header and self.header.marker == MARKER_END
 
 
 class Receiver:
-
     def __init__(self, receive_data_func):
         self.receive_data_func = receive_data_func
         self.checksum = Checksum()
@@ -126,8 +122,6 @@ class Receiver:
             expected_checksum = self.checksum.result()
             if expected_checksum != s.header.checksum:
                 raise RuntimeError(f"checksum mismatch: expect {expected_checksum} but received {s.header.checksum}")
-            else:
-                print("checksum matched!")
         return done
 
     def _process_chunk(self, c: ChunkState, data, start: int, length: int):
@@ -137,7 +131,6 @@ class Receiver:
 
 
 class Sender:
-
     def __init__(self, send_data_func):
         self.send_data_func = send_data_func
         self.checksum = Checksum()
@@ -159,10 +152,8 @@ class Sender:
             raise RuntimeError("this sender is already closed")
         self.closed = True
         cs = self.checksum.result()
-        print(f"sending checksum: {cs}")
         header = Header(MARKER_END, 0, cs)
         header_bytes = header.to_bytes()
-        print(f"checksum headerbytes: {header_bytes}")
         self.send_data_func(header_bytes)
 
 
@@ -188,7 +179,7 @@ def chunk_it(c: ChunkState, data, cursor: int, process_chunk_func) -> ChunkState
             c.header_bytes.extend(get_slice(data, cursor, num_bytes_needed))
             cursor += num_bytes_needed
             data_len -= num_bytes_needed
-            c.unpack_header() # header bytes are ready
+            c.unpack_header()  # header bytes are ready
         else:
             c.header_bytes.extend(get_slice(data, cursor, data_len))
             return c

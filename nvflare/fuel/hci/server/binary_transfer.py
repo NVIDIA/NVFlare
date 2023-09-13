@@ -15,16 +15,15 @@
 import logging
 import os
 
+from nvflare.fuel.hci.chunk import Sender
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.server.constants import ConnProps
-from nvflare.fuel.hci.chunk import Sender
 
-BINARY_CHUNK_SIZE = 1024 * 1024    # 1M
+BINARY_CHUNK_SIZE = 1024 * 1024  # 1M
 
 
 class _BytesSender:
-
     def __init__(self, conn: Connection):
         self.conn = conn
 
@@ -33,7 +32,6 @@ class _BytesSender:
 
 
 class BinaryTransfer:
-
     def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -49,7 +47,7 @@ class BinaryTransfer:
             self.logger.error(f"not a file: {full_path}")
             return
 
-        self.logger.info(f"called to send {full_path} ...")
+        self.logger.debug(f"called to send {full_path} ...")
         bytes_sender = _BytesSender(conn)
         sender = Sender(send_data_func=bytes_sender.send)
         buffer_size = BINARY_CHUNK_SIZE
@@ -61,12 +59,12 @@ class BinaryTransfer:
                 bytes_sent += len(chunk)
                 chunk = f.read(buffer_size)
             sender.close()
-        self.logger.info(f"finished sending {full_path}: {bytes_sent} bytes sent")
+        self.logger.debug(f"finished sending {full_path}: {bytes_sent} bytes sent")
 
     def download_folder(self, conn: Connection, folder_name: str, download_file_cmd_name: str, control_id: str):
         download_dir = conn.get_prop(ConnProps.DOWNLOAD_DIR)
         folder_path = os.path.join(download_dir, folder_name)
-        self.logger.info(f"download_folder called for {folder_name}")
+        self.logger.debug(f"download_folder called for {folder_name}")
 
         # return list of the files
         files = []
@@ -77,15 +75,14 @@ class BinaryTransfer:
                 p = os.path.join(folder_name, p)
                 files.append(p)
 
-        self.logger.info(f"files of the folder: {files}")
+        self.logger.debug(f"files of the folder: {files}")
         conn.append_string(
             "OK",
             meta=make_meta(
                 MetaStatusValue.OK,
-                extra={
-                    MetaKey.FILES: files,
-                    MetaKey.CONTROL_ID: control_id,
-                    MetaKey.CMD_NAME: download_file_cmd_name
-                }
-            )
+                extra={MetaKey.FILES: files, MetaKey.CONTROL_ID: control_id, MetaKey.CMD_NAME: download_file_cmd_name},
+            ),
         )
+
+        user_name = conn.get_prop(ConnProps.USER_NAME, "?")
+        self.logger.info(f"downloaded {control_id} to user {user_name}")

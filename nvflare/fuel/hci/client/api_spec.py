@@ -37,7 +37,6 @@ class CommandCtxKey(object):
 
 
 class CommandContext(SimpleContext):
-
     def set_bytes_receiver(self, r):
         self.set_prop(CommandCtxKey.BYTES_RECEIVER, r)
 
@@ -126,7 +125,7 @@ class ReplyProcessor:
     def reply_start(self, ctx: CommandContext, reply_json):
         pass
 
-    def process_string(self, ctx: CommandContext, item: str, meta: {}):
+    def process_string(self, ctx: CommandContext, item: str):
         pass
 
     def process_success(self, ctx: CommandContext, item: str):

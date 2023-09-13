@@ -16,10 +16,9 @@ from typing import List
 
 from nvflare.fuel.common.ctx import BaseContext
 
+from .chunk import Receiver
 from .proto import Buffer, validate_proto
 from .table import Table
-from .chunk import Receiver
-
 
 # ASCII Message Format:
 #

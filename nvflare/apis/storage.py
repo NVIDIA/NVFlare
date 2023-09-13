@@ -42,7 +42,7 @@ class StorageSpec(ABC):
     """
 
     @abstractmethod
-    def create_object(self, uri: str, data: bytes, meta: dict, overwrite_existing: bool):
+    def create_object(self, uri: str, data: Union[bytes, str], meta: dict, overwrite_existing: bool):
         """Creates an object.
 
         Examples of URI:

@@ -60,8 +60,6 @@ class _ServerReplyJsonProcessor(object):
     def __init__(self, ctx: CommandContext):
         if not isinstance(ctx, CommandContext):
             raise TypeError(f"ctx is not an instance of CommandContext. but get {type(ctx)}")
-        api = ctx.get_api()
-        self.debug = api.debug
         self.ctx = ctx
 
     def process_server_reply(self, resp):
@@ -72,8 +70,8 @@ class _ServerReplyJsonProcessor(object):
         Args:
             resp: The raw response that returns by the server.
         """
-        if self.debug:
-            print("DEBUG: Server Reply: {}".format(resp))
+        api = self.ctx.get_api()
+        api.debug("Server Reply: {}".format(resp))
 
         ctx = self.ctx
 
@@ -87,11 +85,10 @@ class _ServerReplyJsonProcessor(object):
 
         if resp is not None:
             data = resp[ProtoKey.DATA]
-            meta = resp[ProtoKey.META]
             for item in data:
                 it = item[ProtoKey.TYPE]
                 if it == ProtoKey.STRING:
-                    reply_processor.process_string(ctx, item[ProtoKey.DATA], meta)
+                    reply_processor.process_string(ctx, item[ProtoKey.DATA])
                 elif it == ProtoKey.SUCCESS:
                     reply_processor.process_success(ctx, item[ProtoKey.DATA])
                 elif it == ProtoKey.ERROR:
@@ -130,7 +127,7 @@ class _DefaultReplyProcessor(ReplyProcessor):
 class _LoginReplyProcessor(ReplyProcessor):
     """Reply processor for handling login and setting the token for the admin client."""
 
-    def process_string(self, ctx: CommandContext, item: str, meta: {}):
+    def process_string(self, ctx: CommandContext, item: str):
         api = ctx.get_api()
         api.login_result = item
 
@@ -391,7 +388,7 @@ class AdminAPI(AdminAPISpec):
             self.service_finder.set_secure_context(
                 ca_cert_path=self.ca_cert, cert_path=self.client_cert, private_key_path=self.client_key
             )
-        self.debug = debug
+        self._debug = debug
         self.cmd_timeout = None
 
         # for login
@@ -436,9 +433,12 @@ class AdminAPI(AdminAPISpec):
         self.service_finder.start(self._handle_sp_address_change)
         self._start_session_monitor()
 
+    def debug(self, msg):
+        if self._debug:
+            print(f"DEBUG: {msg}")
+
     def fire_event(self, event_type: str, ctx: EventContext):
-        if self.debug:
-            print(f"DEBUG: firing event {event_type}")
+        self.debug(f"firing event {event_type}")
         if self.event_handlers:
             for h in self.event_handlers:
                 h.handle_event(event_type, ctx)
@@ -507,8 +507,7 @@ class AdminAPI(AdminAPISpec):
     def auto_login(self):
         try:
             result = self._try_auto_login()
-            if self.debug:
-                print(f"DEBUG: login result is {result}")
+            self.debug(f"login result is {result}")
         except Exception as e:
             result = {
                 ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
@@ -539,8 +538,7 @@ class AdminAPI(AdminAPISpec):
         self.sess_monitor_active = False
         if self.sess_monitor_thread:
             self.sess_monitor_thread = None
-        if self.debug:
-            print("DEBUG: session monitor closed!")
+        self.debug("session monitor closed!")
 
     def check_session_status_on_server(self):
         return self.server_execute("_check_session")
@@ -584,8 +582,7 @@ class AdminAPI(AdminAPISpec):
         try:
             self.fire_session_event(EventType.SESSION_CLOSED, msg)
         except Exception as ex:
-            if self.debug:
-                print(f"exception occurred handling event {EventType.SESSION_CLOSED}: {secure_format_exception(ex)}")
+            self.debug(f"exception occurred handling event {EventType.SESSION_CLOSED}: {secure_format_exception(ex)}")
             pass
 
         # this is in the session_monitor thread - do not close the monitor, or we'll run into
@@ -713,14 +710,14 @@ class AdminAPI(AdminAPISpec):
         conn.close()
         receive_bytes_func = ctx.get_bytes_receiver()
         if receive_bytes_func is not None:
-            print("receive_bytes_and_process ...")
+            self.debug("receive_bytes_and_process ...")
             ok = receive_bytes_and_process(sock, receive_bytes_func)
             if ok:
                 ctx.set_command_result({"status": APIStatus.SUCCESS, "details": "OK"})
             else:
                 ctx.set_command_result({"status": APIStatus.ERROR_RUNTIME, "details": "error receive_bytes"})
         else:
-            print("receive_and_process ...")
+            self.debug("receive_and_process ...")
             ok = receive_and_process(sock, process_json_func)
 
         if not ok:
@@ -728,7 +725,7 @@ class AdminAPI(AdminAPISpec):
                 make_error("Failed to communicate with Admin Server {} on {}".format(self.host, self.port))
             )
         else:
-            print("reply received!")
+            self.debug("reply received!")
 
     def _try_command(self, cmd_ctx: CommandContext):
         """Try to execute a command on server side.
@@ -737,8 +734,7 @@ class AdminAPI(AdminAPISpec):
             cmd_ctx: The command to execute.
         """
         # process_json_func can't return data because how "receive_and_process" is written.
-        if self.debug:
-            print(f"DEBUG: sending command '{cmd_ctx.get_command()}'")
+        self.debug(f"sending command '{cmd_ctx.get_command()}'")
 
         json_processor = _ServerReplyJsonProcessor(cmd_ctx)
         process_json_func = json_processor.process_server_reply
@@ -766,8 +762,7 @@ class AdminAPI(AdminAPISpec):
             sp_host = self.host
             sp_port = self.port
 
-        if self.debug:
-            print(f"DEBUG: use server address {sp_host}:{sp_port}")
+        self.debug(f"use server address {sp_host}:{sp_port}")
 
         try:
             if not self.insecure:
@@ -790,7 +785,7 @@ class AdminAPI(AdminAPISpec):
                     sock.connect((sp_host, sp_port))
                     self._send_to_sock(sock, cmd_ctx)
         except Exception as e:
-            if self.debug:
+            if self._debug:
                 secure_log_traceback()
 
             process_json_func(
@@ -924,8 +919,7 @@ class AdminAPI(AdminAPISpec):
         secs = time.time() - start
         usecs = int(secs * 1000000)
 
-        if self.debug:
-            print(f"DEBUG: server_execute Done [{usecs} usecs] {datetime.now()}")
+        self.debug(f"server_execute Done [{usecs} usecs] {datetime.now()}")
 
         result = ctx.get_command_result()
         meta = ctx.get_meta()

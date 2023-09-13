@@ -16,7 +16,6 @@ import zlib
 
 
 class Checksum:
-
     def __init__(self):
         self.current_value = 0
 

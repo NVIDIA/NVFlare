@@ -14,8 +14,6 @@
 
 import os
 
-from nvflare.fuel.hci.proto import MetaKey, ProtoKey
-
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.fuel.hci.base64_utils import (
     b64str_to_binary_file,
@@ -26,9 +24,10 @@ from nvflare.fuel.hci.base64_utils import (
     text_file_to_b64str,
 )
 from nvflare.fuel.hci.cmd_arg_utils import join_args
+from nvflare.fuel.hci.proto import MetaKey, ProtoKey
 from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.table import Table
-from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, zip_directory_to_bytes
+from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, unzip_all_from_file, zip_directory_to_bytes
 from nvflare.lighter.utils import load_private_key_file, sign_folders
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
@@ -131,7 +130,7 @@ class _DownloadFolderProcessor(ReplyProcessor):
         self.data_received = True
         ctx.set_command_result({"status": APIStatus.ERROR_RUNTIME, "details": err})
 
-    def process_string(self, ctx: CommandContext, item: str, meta: {}):
+    def process_string(self, ctx: CommandContext, item: str):
         try:
             self.data_received = True
             if item.startswith(ftd.DOWNLOAD_URL_MARKER):
@@ -143,18 +142,11 @@ class _DownloadFolderProcessor(ReplyProcessor):
                 )
             else:
                 data_bytes = b64str_to_bytes(item)
-                job_id = meta.get(MetaKey.JOB_ID)
-                data_type = meta.get(MetaKey.DATA_TYPE)
-                if job_id and data_type:
-                    unzip_folder = os.path.join(self.download_dir, job_id, data_type)
-                    os.makedirs(unzip_folder, exist_ok=True)
-                else:
-                    unzip_folder = self.download_dir
-                unzip_all_from_bytes(data_bytes, unzip_folder)
+                unzip_all_from_bytes(data_bytes, self.download_dir)
                 ctx.set_command_result(
                     {
                         "status": APIStatus.SUCCESS,
-                        "details": "Download to dir {}".format(self.download_dir),
+                        "details": "Downloaded to dir {}".format(self.download_dir),
                     }
                 )
         except Exception as e:
@@ -168,7 +160,6 @@ class _DownloadFolderProcessor(ReplyProcessor):
 
 
 class _FileReceiver:
-
     def __init__(self, file_path):
         self.file_path = file_path
         self.tmp_name = f"{file_path}.tmp"
@@ -185,7 +176,7 @@ class _FileReceiver:
         os.rename(self.tmp_name, self.file_path)
 
     def receive_data(self, data, start: int, length: int):
-        self.tmp_file.write(data[start:start+length])
+        self.tmp_file.write(data[start : start + length])
 
 
 class FileTransferModule(CommandModule):
@@ -286,10 +277,8 @@ class FileTransferModule(CommandModule):
 
         handler = self.cmd_handlers.get(server_cmd_spec.client_cmd)
         if handler is None:
-            print('no cmd handler found for {}'.format(server_cmd_spec.client_cmd))
+            print("no cmd handler found for {}".format(server_cmd_spec.client_cmd))
             return None
-        else:
-            print('cmd handler found for {}'.format(server_cmd_spec.client_cmd))
 
         return CommandModuleSpec(
             name=server_cmd_spec.scope_name,
@@ -354,26 +343,32 @@ class FileTransferModule(CommandModule):
     def pull_binary_file(self, args, ctx: CommandContext):
         cmd_entry = ctx.get_command_entry()
         if len(args) != 3:
-            return {ProtoKey.STATUS: APIStatus.ERROR_SYNTAX,
-                    ProtoKey.DETAILS: "usage: {}".format(cmd_entry.usage)}
+            return {ProtoKey.STATUS: APIStatus.ERROR_SYNTAX, ProtoKey.DETAILS: "usage: {}".format(cmd_entry.usage)}
         file_name = args[2]
         control_id = args[1]
         parts = [cmd_entry.full_command_name(), control_id, file_name]
         command = join_args(parts)
         file_path = os.path.join(self.download_dir, file_name)
         receiver = _FileReceiver(file_path)
+        print(f"downloading file: {file_path}")
         api = ctx.get_api()
         ctx.set_bytes_receiver(receiver.receive_data)
         result = api.server_execute(command, cmd_ctx=ctx)
         if result.get(ProtoKey.STATUS) == APIStatus.SUCCESS:
             receiver.close()
+
+        dir_name, ext = os.path.splitext(file_path)
+        if ext == ".zip":
+            # unzip the file
+            api.debug(f"unzipping file {file_path} to {dir_name}")
+            os.makedirs(dir_name, exist_ok=True)
+            unzip_all_from_file(file_path, dir_name)
         return result
 
     def pull_folder(self, args, ctx: CommandContext):
         cmd_entry = ctx.get_command_entry()
         if len(args) != 2:
-            return {ProtoKey.STATUS: APIStatus.ERROR_SYNTAX,
-                    ProtoKey.DETAILS: "usage: {}".format(cmd_entry.usage)}
+            return {ProtoKey.STATUS: APIStatus.ERROR_SYNTAX, ProtoKey.DETAILS: "usage: {}".format(cmd_entry.usage)}
         folder_name = args[1]
         parts = [cmd_entry.full_command_name(), folder_name]
         command = join_args(parts)
@@ -385,7 +380,7 @@ class FileTransferModule(CommandModule):
 
         file_names = meta.get(MetaKey.FILES)
         ctl_id = meta.get(MetaKey.CONTROL_ID)
-        print(f"received ctl_id {ctl_id}, file names: {file_names}")
+        api.debug(f"received ctl_id {ctl_id}, file names: {file_names}")
         if not file_names:
             return result
 
@@ -393,7 +388,6 @@ class FileTransferModule(CommandModule):
 
         for file_name in file_names:
             command = f"{cmd_name} {ctl_id} {file_name}"
-            print(f"sending command: {command}")
             reply = api.do_command(command)
             if reply.get(ProtoKey.STATUS) != APIStatus.SUCCESS:
                 return reply
