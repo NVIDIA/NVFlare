@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import List, Tuple, Union
+from typing import List, Tuple
 
 DATA = "data"
 JOB_ZIP = "job.zip"
