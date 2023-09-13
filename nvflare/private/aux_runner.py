@@ -150,6 +150,7 @@ class AuxRunner(FLComponent):
         fl_ctx: FLContext,
         bulk_send: bool = False,
         optional: bool = False,
+        secure: bool = False,
     ) -> dict:
         target_names = get_target_names(targets)
 
@@ -170,6 +171,7 @@ class AuxRunner(FLComponent):
                 fl_ctx=fl_ctx,
                 bulk_send=bulk_send,
                 optional=optional,
+                secure=secure,
             )
         except Exception:
             if optional:
@@ -190,6 +192,7 @@ class AuxRunner(FLComponent):
         fl_ctx: FLContext,
         bulk_send=False,
         optional=False,
+        secure=False,
     ) -> dict:
         """Send request to the job cells of other target sites.
 
@@ -238,7 +241,13 @@ class AuxRunner(FLComponent):
         cell_msg = Message(payload=request)
         if timeout > 0:
             cell_replies = cell.broadcast_request(
-                channel=channel, topic=topic, request=cell_msg, targets=target_fqcns, timeout=timeout, optional=optional
+                channel=channel,
+                topic=topic,
+                request=cell_msg,
+                targets=target_fqcns,
+                timeout=timeout,
+                optional=optional,
+                secure=secure,
             )
 
             replies = {}
