@@ -1,3 +1,0 @@
-nvflare[PT]>=2.4.0
-jsonargparse[signatures]>=4.17.0
-pytorch_lightning

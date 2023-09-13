@@ -212,7 +212,7 @@ def parse_cli_config(cli_configs: List[str]) -> Dict[str, Dict[str, str]]:
 
 def build_config_file_indices(config_dir: str) -> Dict[str, Tuple]:
     excluded = ["info"]
-    included = ["config_fed_client", "config_fed_server", "config_exchange", "meta"]
+    included = ["config_fed_client", "config_fed_server", "meta"]
     config_extensions = ConfigFormat.extensions()
 
     config_file_index = {}
