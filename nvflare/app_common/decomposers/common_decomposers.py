@@ -26,6 +26,7 @@ from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.widgets.event_recorder import _CtxPropReq, _EventReq, _EventStats
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs import Decomposer
+from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.decomposer import DictDecomposer
 
 
@@ -33,7 +34,7 @@ class FLModelDecomposer(fobs.Decomposer):
     def supported_type(self):
         return FLModel
 
-    def decompose(self, b: FLModel) -> Any:
+    def decompose(self, b: FLModel, manager: DatumManager = None) -> Any:
         return [
             b.params_type,
             b.params,
@@ -44,7 +45,7 @@ class FLModelDecomposer(fobs.Decomposer):
             b.meta,
         ]
 
-    def recompose(self, data: list) -> FLModel:
+    def recompose(self, data: list, manager: DatumManager = None) -> FLModel:
         return FLModel(
             params_type=data[0],
             params=data[1],
@@ -60,10 +61,10 @@ class ModelLearnableDecomposer(fobs.Decomposer):
     def supported_type(self):
         return ModelLearnable
 
-    def decompose(self, target: ModelLearnable) -> Any:
+    def decompose(self, target: ModelLearnable, manager: DatumManager = None) -> Any:
         return target.copy()
 
-    def recompose(self, data: Any) -> ModelLearnable:
+    def recompose(self, data: Any, manager: DatumManager = None) -> ModelLearnable:
         obj = ModelLearnable()
         for k, v in data.items():
             obj[k] = v
@@ -73,10 +74,10 @@ class ModelLearnableDecomposer(fobs.Decomposer):
 class NumpyScalarDecomposer(fobs.Decomposer, ABC):
     """Decomposer base class for all numpy types with item method."""
 
-    def decompose(self, target: Any) -> Any:
+    def decompose(self, target: Any, manager: DatumManager = None) -> Any:
         return target.item()
 
-    def recompose(self, data: Any) -> np.ndarray:
+    def recompose(self, data: Any, manager: DatumManager = None) -> np.ndarray:
         return self.supported_type()(data)
 
 
@@ -104,12 +105,12 @@ class NumpyArrayDecomposer(Decomposer):
     def supported_type(self):
         return np.ndarray
 
-    def decompose(self, target: np.ndarray) -> Any:
+    def decompose(self, target: np.ndarray, manager: DatumManager = None) -> Any:
         stream = BytesIO()
         np.save(stream, target, allow_pickle=False)
         return stream.getvalue()
 
-    def recompose(self, data: Any) -> np.ndarray:
+    def recompose(self, data: Any, manager: DatumManager = None) -> np.ndarray:
         stream = BytesIO(data)
         return np.load(stream, allow_pickle=False)
 

@@ -13,11 +13,16 @@
 # limitations under the License.
 
 import json
-from typing import Dict
+from enum import Enum
+from typing import Dict, Optional
 
+from nvflare.app_common.model_exchange.constants import ModelExchangeFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
 
-from .constants import ModelExchangeFormat
+
+class TransferType(str, Enum):
+    FULL = "FULL"
+    DIFF = "DIFF"
 
 
 class ConfigKey:
@@ -39,7 +44,9 @@ class ClientConfig:
         }
     """
 
-    def __init__(self, config: Dict):
+    def __init__(self, config: Optional[Dict] = None):
+        if config is None:
+            config = {}
         self.config = config
         if ConfigKey.EXCHANGE_FORMAT in self.config:
             self.config[ConfigKey.EXCHANGE_FORMAT] = ModelExchangeFormat(self.config[ConfigKey.EXCHANGE_FORMAT])

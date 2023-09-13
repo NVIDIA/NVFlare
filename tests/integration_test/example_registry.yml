@@ -15,5 +15,3 @@ examples:
     prepare_data_script: prepare_data.sh
   - root: advanced/federated-statistics/df_stats
     prepare_data_script: prepare_data.sh
-  - root: hello-world/ml-to-fl
-    prepare_data_script: prepare_data.sh

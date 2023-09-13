@@ -13,9 +13,12 @@
 # limitations under the License.
 
 import argparse
+import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
+
+import pytest
 
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.fuel.hci.server.authz import AuthorizationService
@@ -27,6 +30,7 @@ from nvflare.private.fed.simulator.simulator_server import SimulatorServer
 from nvflare.security.security import EmptyAuthorizer
 
 
+@pytest.mark.xdist_group(name="simulator_deploy")
 class TestSimulatorDeploy(unittest.TestCase):
     def setUp(self) -> None:
         self.deployer = SimulatorDeployer()
@@ -52,6 +56,7 @@ class TestSimulatorDeploy(unittest.TestCase):
             _, server = self.deployer.create_fl_server(args)
             assert isinstance(server, SimulatorServer)
             server.cell.stop()
+            shutil.rmtree(workspace)
 
     @patch("nvflare.private.fed.client.fed_client.FederatedClient.register")
     # @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.start_heartbeat")
@@ -63,3 +68,4 @@ class TestSimulatorDeploy(unittest.TestCase):
         client, _, _, _ = self.deployer.create_fl_client("client0", args)
         assert isinstance(client, FederatedClient)
         client.cell.stop()
+        shutil.rmtree(workspace)
