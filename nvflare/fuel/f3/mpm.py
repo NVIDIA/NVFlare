@@ -141,7 +141,7 @@ class MainProcessMonitor:
             )
 
         if not run_dir:
-            running_folder = os.getcwd()
+            run_dir = os.getcwd()
         rc_file = os.path.join(run_dir, FLMetaKey.PROCESS_RC_FILE)
 
         # call and wait for the main_func to complete
