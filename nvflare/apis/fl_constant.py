@@ -164,6 +164,7 @@ class ReservedTopic(object):
     ABORT_ASK = "__abort_task__"
     DO_TASK = "__do_task__"
     AUX_COMMAND = "__aux_command__"
+    SYNC_RUNNER = "__sync_runner__"
 
 
 class AdminCommandNames(object):
@@ -172,6 +173,7 @@ class AdminCommandNames(object):
     LIST_JOBS = "list_jobs"
     GET_JOB_META = "get_job_meta"
     DOWNLOAD_JOB = "download_job"
+    DOWNLOAD_JOB_FILE = "download_job_file"
     ABORT_JOB = "abort_job"
     DELETE_JOB = "delete_job"
     CLONE_JOB = "clone_job"
@@ -399,3 +401,9 @@ class FilterKey:
     OUT = "out"
     INOUT = "inout"
     DELIMITER = "/"
+
+
+class ConfigVarName:
+
+    RUNNER_SYNC_TIMEOUT = "runner_sync_timeout"
+    MAX_RUNNER_SYNC_TRIES = "max_runner_sync_tries"

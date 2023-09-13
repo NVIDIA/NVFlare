@@ -25,6 +25,7 @@ from typing import Dict, List, Optional, OrderedDict, Tuple
 import yaml
 
 from nvflare.cli_exception import CLIException
+from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.fuel.utils.class_utils import instantiate_class
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
 from nvflare.lighter.provision import gen_default_project_config, prepare_project
@@ -849,7 +850,6 @@ def def_poc_parser(sub_cmd):
     define_start_parser(poc_parser)
     define_stop_parser(poc_parser)
     define_clean_parser(poc_parser)
-
     return {cmd: parser}
 
 
@@ -1019,6 +1019,7 @@ def get_local_host_gpu_ids():
 
 
 def handle_poc_cmd(cmd_args):
+
     if cmd_args.poc_sub_cmd:
         poc_cmd_handler = poc_sub_cmd_handlers.get(cmd_args.poc_sub_cmd, None)
         poc_cmd_handler(cmd_args)
@@ -1031,53 +1032,7 @@ def handle_poc_cmd(cmd_args):
     elif cmd_args.old_prepare_poc:
         old_prepare_poc()
     else:
-        raise ValueError("unknown command")
-
-
-def _handle_poc_cmd(cmd_args):
-    if cmd_args.service != "all":
-        services_list = [cmd_args.service]
-    else:
-        services_list = []
-
-    excluded = None
-    if cmd_args.exclude != "":
-        excluded = [cmd_args.exclude]
-
-    if cmd_args.gpu is not None and cmd_args.prepare_poc:
-        raise CLIException(
-            "-gpu should not be used for 'nvflare poc prepare' command,"
-            " it is intended to use in 'nvflare poc start' command "
-        )
-
-    poc_workspace = get_poc_workspace()
-    if cmd_args.start_poc:
-        if cmd_args.gpu is not None and isinstance(cmd_args.gpu, list) and len(cmd_args.gpu) > 0:
-            gpu_ids = get_gpu_ids(cmd_args.gpu, get_local_host_gpu_ids())
-        else:
-            gpu_ids = []
-        _start_poc(poc_workspace, gpu_ids, excluded, services_list)
-    elif cmd_args.prepare_poc:
-        project_conf_path = ""
-        if cmd_args.project_input:
-            project_conf_path = cmd_args.project_input
-        _prepare_poc(
-            cmd_args.clients,
-            cmd_args.number_of_clients,
-            poc_workspace,
-            cmd_args.docker_image,
-            cmd_args.he,
-            project_conf_path,
-            cmd_args.examples,
-        )
-    elif cmd_args.prepare_examples:
-        _prepare_examples(cmd_args.examples, poc_workspace)
-    elif cmd_args.stop_poc:
-        _stop_poc(poc_workspace, excluded, services_list)
-    elif cmd_args.clean_poc:
-        _clean_poc(poc_workspace)
-    else:
-        raise Exception(f"unable to handle poc command:{cmd_args}")
+        raise CLIUnknownCmdException("unknown command")
 
 
 def get_poc_workspace():

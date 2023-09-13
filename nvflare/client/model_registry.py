@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 from typing import Optional
 
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
@@ -52,7 +53,7 @@ class ModelRegistry:
     def get_model(self):
         if not self.cache_loaded:
             self.receive()
-        return self.cached_model
+        return copy.deepcopy(self.cached_model)
 
     def get_sys_info(self):
         if not self.cache_loaded:
@@ -67,11 +68,14 @@ class ModelRegistry:
                 raise RuntimeError(f"no default params diff function for {exchange_format}")
             elif self.cached_model is None:
                 raise RuntimeError("no received model")
-            try:
-                model.params = diff_func(original=self.cached_model.params, new=model.params)
-                model.params_type = ParamsType.DIFF
-            except Exception as e:
-                raise RuntimeError(f"params diff function failed: {e}")
+            elif model.params is not None:
+                try:
+                    model.params = diff_func(original=self.cached_model.params, new=model.params)
+                    model.params_type = ParamsType.DIFF
+                except Exception as e:
+                    raise RuntimeError(f"params diff function failed: {e}")
+            elif model.metrics is None:
+                raise RuntimeError("the model to send does not have either params or metrics")
         self.model_exchanger.submit_model(model=model)
 
     def clear(self):

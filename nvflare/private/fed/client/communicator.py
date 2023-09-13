@@ -345,7 +345,7 @@ class Communicator:
 
                     num_heartbeats_sent += 1
                     if num_heartbeats_sent % heartbeats_log_interval == 0:
-                        self.logger.info(f"Client: {client_name} has sent {num_heartbeats_sent} heartbeats.")
+                        self.logger.debug(f"Client: {client_name} has sent {num_heartbeats_sent} heartbeats.")
 
                     if not simulate_mode:
                         # server_message = result.get_header(CellMessageHeaderKeys.MESSAGE)

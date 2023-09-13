@@ -14,6 +14,7 @@
 import os
 import pathlib
 import shutil
+import traceback
 from distutils.dir_util import copy_tree
 from tempfile import mkdtemp
 from typing import List, Optional, Tuple
@@ -21,6 +22,7 @@ from typing import List, Optional, Tuple
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree
 
+from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.fuel.flare_api.flare_api import new_secure_session
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
@@ -49,7 +51,7 @@ from nvflare.tool.job.job_client_const import (
     JOB_TEMPLATE_CONF,
 )
 from nvflare.utils.cli_utils import (
-    find_job_template_location,
+    find_job_templates_location,
     get_curr_dir,
     get_hidden_nvflare_dir,
     get_startup_kit_dir,
@@ -70,27 +72,21 @@ def find_filename_basename(f: str):
         return basename
 
 
-def build_job_template_indices(job_template_dir: str) -> ConfigTree:
+def build_job_template_indices(job_templates_dir: str) -> ConfigTree:
     conf = CF.parse_string("{ templates = {} }")
     config_file_base_names = CONFIG_FILE_BASE_NAME_WO_EXTS
     template_conf = conf.get("templates")
     keys = JOB_INFO_KEYS
-    for root, dirs, files in os.walk(job_template_dir):
+    for root, dirs, files in os.walk(job_templates_dir):
         config_files = [f for f in files if find_filename_basename(f) in config_file_base_names]
         if len(config_files) > 0:
             info_conf = get_template_info_config(root)
             for key in keys:
                 value = info_conf.get(key, "NA") if info_conf else "NA"
-                template_conf.put(f"{root}.{key}", value)
+                template_name = os.path.basename(root)
+                template_conf.put(f"{template_name}.{key}", value)
 
-    # save the index file for debugging purpose
-    save_job_template_index_file(conf)
     return conf
-
-
-def save_job_template_index_file(conf):
-    dst_path = get_template_registry_file_path()
-    save_config(conf, dst_path)
 
 
 def get_template_registry_file_path():
@@ -106,29 +102,38 @@ def get_template_info_config(template_dir):
 
 
 def create_job(cmd_args):
-    prepare_job_folder(cmd_args)
-    job_template_dir = find_job_template_location()
-    template_index_conf = build_job_template_indices(job_template_dir)
-    job_folder = cmd_args.job_folder
-    config_dir = get_config_dir(job_folder)
+    try:
+        prepare_job_folder(cmd_args)
+        job_templates_dir = find_job_templates_location()
+        template_index_conf = build_job_template_indices(job_templates_dir)
+        job_folder = cmd_args.job_folder
+        config_dir = get_config_dir(job_folder)
 
-    fmt, real_config_path = ConfigFactory.search_config_format("config_fed_server.conf", [config_dir])
-    if real_config_path and not cmd_args.force:
-        print(
-            f"""\nwarning: configuration files:\n
-                {"config_fed_server.[json|conf|yml]"} already exists.
-            \nNot generating the config files. If you would like to overwrite, use -force option"""
-        )
-        return
+        fmt, real_config_path = ConfigFactory.search_config_format("config_fed_server.conf", [config_dir])
+        if real_config_path and not cmd_args.force:
+            print(
+                f"""\nwarning: configuration files:\n
+                    {"config_fed_server.[json|conf|yml]"} already exists.
+                \nNot generating the config files. If you would like to overwrite, use -force option"""
+            )
+            return
 
-    target_template_name = cmd_args.template
-    check_template_exists(target_template_name, template_index_conf)
-    src = os.path.join(job_template_dir, target_template_name)
-    copy_tree(src=src, dst=config_dir)
-    prepare_meta_config(cmd_args)
-    remove_extra_file(config_dir)
-    variable_values = prepare_job_config(cmd_args)
-    display_template_variables(job_folder, variable_values)
+        target_template_name = cmd_args.template
+        check_template_exists(target_template_name, template_index_conf)
+        src = os.path.join(job_templates_dir, target_template_name)
+        copy_tree(src=src, dst=config_dir)
+        prepare_meta_config(cmd_args, src)
+        remove_extra_file(config_dir)
+        variable_values = prepare_job_config(cmd_args)
+        display_template_variables(job_folder, variable_values)
+
+    except ValueError as e:
+        print(f"\nUnable to handle command: {CMD_CREATE_JOB} due to: {e} \n")
+        if cmd_args.debug:
+            print(traceback.format_exc())
+        sub_cmd_parser = job_sub_cmd_parser[CMD_CREATE_JOB]
+        if sub_cmd_parser:
+            sub_cmd_parser.print_help()
 
 
 def remove_extra_file(config_dir):
@@ -140,9 +145,22 @@ def remove_extra_file(config_dir):
 
 
 def show_variables(cmd_args):
-    indices = build_config_file_indices(cmd_args.job_folder)
-    variable_values = filter_indices(indices_configs=indices)
-    display_template_variables(cmd_args.job_folder, variable_values)
+    try:
+        if not os.path.isdir(cmd_args.job_folder):
+            raise ValueError("required job folder is not specified.")
+
+        config_dir = get_config_dir(cmd_args.job_folder)
+        indices = build_config_file_indices(config_dir)
+        variable_values = filter_indices(indices_configs=indices)
+        display_template_variables(cmd_args.job_folder, variable_values)
+
+    except ValueError as e:
+        print(f"\nUnable to handle command: {CMD_SHOW_VARIABLES} due to: {e} \n")
+        if cmd_args.debug:
+            print(traceback.format_exc())
+        sub_cmd_parser = job_sub_cmd_parser[CMD_SHOW_VARIABLES]
+        if sub_cmd_parser:
+            sub_cmd_parser.print_help()
 
 
 def check_template_exists(target_template_name, template_index_conf):
@@ -195,20 +213,29 @@ def display_template_variables(job_folder, variable_values):
 
 
 def list_templates(cmd_args):
-    job_template_dir = find_job_template_location(cmd_args.job_template_dir)
-    job_template_dir = os.path.abspath(job_template_dir)
-    template_index_conf = build_job_template_indices(job_template_dir)
-    display_available_templates(template_index_conf)
+    try:
+        job_templates_dir = find_job_templates_location(cmd_args.job_templates_dir)
+        job_templates_dir = os.path.abspath(job_templates_dir)
+        template_index_conf = build_job_template_indices(job_templates_dir)
+        display_available_templates(template_index_conf)
 
-    if job_template_dir:
-        update_job_template_dir(job_template_dir)
+        if job_templates_dir:
+            update_job_templates_dir(job_templates_dir)
+
+    except ValueError as e:
+        print(f"\nUnable to handle command: {CMD_LIST_TEMPLATES} due to: {e} \n")
+        if cmd_args.debug:
+            print(traceback.format_exc())
+        sub_cmd_parser = job_sub_cmd_parser[CMD_LIST_TEMPLATES]
+        if sub_cmd_parser:
+            sub_cmd_parser.print_help()
 
 
-def update_job_template_dir(job_template_dir: str):
+def update_job_templates_dir(job_templates_dir: str):
     hidden_nvflare_dir = get_hidden_nvflare_dir()
     file_path = os.path.join(hidden_nvflare_dir, CONFIG_CONF)
     config = CF.parse_file(file_path)
-    config.put(f"{JOB_TEMPLATE}.path", job_template_dir)
+    config.put(f"{JOB_TEMPLATE}.path", job_templates_dir)
     save_config(config, file_path)
 
 
@@ -248,12 +275,23 @@ def fix_length_format(name: str, name_fix_length: int):
 def submit_job(cmd_args):
     temp_job_dir = None
     try:
+        if not os.path.isdir(cmd_args.job_folder):
+            raise ValueError(f"invalid job folder: {cmd_args.job_folder}")
+
         temp_job_dir = mkdtemp()
         copy_tree(cmd_args.job_folder, temp_job_dir)
 
         prepare_job_config(cmd_args, temp_job_dir)
         admin_username, admin_user_dir = find_admin_user_and_dir()
         internal_submit_job(admin_user_dir, admin_username, temp_job_dir)
+
+    except ValueError as e:
+        print(f"\nUnable to handle command: {CMD_SUBMIT_JOB} due to: {e} \n")
+        if cmd_args.debug:
+            print(traceback.format_exc())
+        sub_cmd_parser = job_sub_cmd_parser[CMD_SUBMIT_JOB]
+        if sub_cmd_parser:
+            sub_cmd_parser.print_help()
     finally:
         if temp_job_dir:
             if cmd_args.debug:
@@ -292,10 +330,20 @@ job_sub_cmd_handlers = {
     CMD_SHOW_VARIABLES: show_variables,
 }
 
+job_sub_cmd_parser = {
+    CMD_CREATE_JOB: None,
+    CMD_SUBMIT_JOB: None,
+    CMD_LIST_TEMPLATES: None,
+    CMD_SHOW_VARIABLES: None,
+}
+
 
 def handle_job_cli_cmd(cmd_args):
     job_cmd_handler = job_sub_cmd_handlers.get(cmd_args.job_sub_cmd, None)
-    job_cmd_handler(cmd_args)
+    if job_cmd_handler:
+        job_cmd_handler(cmd_args)
+    else:
+        raise CLIUnknownCmdException("\n invalid command. \n")
 
 
 def def_job_cli_parser(sub_cmd):
@@ -318,7 +366,7 @@ def define_submit_job_parser(job_subparser):
         type=str,
         nargs="?",
         default=os.path.join(get_curr_dir(), "current_job"),
-        help="job_folder path, default to current directory",
+        help="job_folder path, default to ./current_job directory",
     )
     submit_parser.add_argument(
         "-f",
@@ -339,13 +387,14 @@ def define_submit_job_parser(job_subparser):
     )
 
     submit_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
+    job_sub_cmd_parser[CMD_SUBMIT_JOB] = submit_parser
 
 
 def define_list_templates_parser(job_subparser):
     show_jobs_parser = job_subparser.add_parser("list_templates", help="show available job templates")
     show_jobs_parser.add_argument(
         "-d",
-        "--job_template_dir",
+        "--job_templates_dir",
         type=str,
         nargs="?",
         default=None,
@@ -353,6 +402,7 @@ def define_list_templates_parser(job_subparser):
         "will search from ./nvflare/config.conf and NVFLARE_HOME env. variables",
     )
     show_jobs_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
+    job_sub_cmd_parser[CMD_LIST_TEMPLATES] = show_jobs_parser
 
 
 def define_variables_parser(job_subparser):
@@ -365,9 +415,10 @@ def define_variables_parser(job_subparser):
         type=str,
         nargs="?",
         default=os.path.join(get_curr_dir(), "current_job"),
-        help="job_folder path, default to current directory",
+        help="job_folder path, default to ./current_job directory",
     )
     show_variables_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
+    job_sub_cmd_parser[CMD_SHOW_VARIABLES] = show_variables_parser
 
 
 def define_create_job_parser(job_subparser):
@@ -378,7 +429,7 @@ def define_create_job_parser(job_subparser):
         type=str,
         nargs="?",
         default=os.path.join(get_curr_dir(), "current_job"),
-        help="job_folder path, default to current directory",
+        help="job_folder path, default to ./current_job directory",
     )
     create_parser.add_argument(
         "-w",
@@ -423,8 +474,9 @@ def define_create_job_parser(job_subparser):
         help="force create is on, if -force, " "overwrite existing configuration with newly created configurations",
     )
 
+    job_sub_cmd_parser[CMD_CREATE_JOB] = create_parser
 
-# ====================================================================
+
 def prepare_job_config(cmd_args, tmp_job_dir: Optional[str] = None):
     update_client_app_script(cmd_args)
     merged_conf, config_modified = merge_configs_from_cli(cmd_args)
@@ -443,7 +495,6 @@ def prepare_job_config(cmd_args, tmp_job_dir: Optional[str] = None):
 
 def update_client_app_script(cmd_args):
     if cmd_args.app_config:
-        print(cmd_args.app_config)
         client_config, config_path = _update_client_app_config_script(cmd_args.job_folder, cmd_args.app_config)
         save_config(client_config, config_path)
 
@@ -478,16 +529,8 @@ def save_merged_configs(merged_conf, tmp_job_dir):
         save_config(root_index.value, dst_path)
 
 
-def prepare_model_exchange_config(job_folder: str, force: bool):
-    dst_path = dst_config_path(job_folder, "config_exchange.conf")
-    if os.path.isfile(dst_path) and not force:
-        return
+def prepare_meta_config(cmd_args, target_template_dir):
 
-    dst_config = load_src_config_template("config_exchange.conf")
-    save_config(dst_config, dst_path)
-
-
-def prepare_meta_config(cmd_args):
     job_folder = cmd_args.job_folder
     job_folder = job_folder[:-1] if job_folder.endswith("/") else job_folder
 
@@ -500,15 +543,17 @@ def prepare_meta_config(cmd_args):
             dst_path = meta_path
             break
 
+    src_meta_path = os.path.join(target_template_dir, "meta.conf")
+    if not os.path.isfile(src_meta_path):
+        dst_config = load_default_config_template("meta.conf")
+    else:
+        dst_config = CF.parse_file(src_meta_path)
+
     # Use existing meta.conf if user already defined it.
-    if not dst_path:
-        dst_config = load_src_config_template("meta.conf")
+    if not dst_path or (dst_path and cmd_args.force):
         dst_config.put("name", app_name)
         dst_path = os.path.join(job_folder, "meta.conf")
-    else:
-        dst_config = CF.from_dict(ConfigFactory.load_config(dst_path).to_dict())
-
-    save_config(dst_config, dst_path)
+        save_config(dst_config, dst_path)
 
     # clean up
     config_dir = get_config_dir(job_folder)
@@ -518,7 +563,7 @@ def prepare_meta_config(cmd_args):
             os.remove(meta_path)
 
 
-def load_src_config_template(config_file_name: str):
+def load_default_config_template(config_file_name: str):
     file_dir = os.path.dirname(__file__)
     # src config here is always pyhocon
     config_template = CF.parse_file(os.path.join(file_dir, f"config/{config_file_name}"))

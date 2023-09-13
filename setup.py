@@ -48,6 +48,5 @@ setup(
             "*",
         ],
         exclude=["tests", "tests.*"],
-    ),
-    package_data={"": ["*.yml", "*.html", "poc.zip", "*.config"]},
+    ),    package_data={"": ["*.yml", "*.html", "poc.zip", "*.config", "*.conf"]},
 )

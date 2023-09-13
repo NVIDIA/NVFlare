@@ -1,7 +1,7 @@
 ## 3D spleen CT segmentation - Local Provisioning
 In the following, we show an example of running MONAI-bundle configurations with NVFlare.
 
-This example includes instructions on running [FedAvg](https://arxiv.org/abs/1602.05629) with experiment tracking using [MLFlow](https://mlflow.org/)
+This example includes instructions on running [FedAvg](https://arxiv.org/abs/1602.05629) with experiment tracking using [MLflow](https://mlflow.org/)
 and [homomorphic encryption](https://developer.nvidia.com/blog/federated-learning-with-homomorphic-encryption/)
 for secure aggregation.
 It uses the provisioning and the admin API to submit jobs, similar to how one would set up experiments similar to
@@ -138,16 +138,16 @@ For details about resource management and consumption, please refer to the [docu
 > **Note:** Full FL training could take several hours for this task.
 > To speed up your experimentation, you can reduce the `num_rounds` value in `config_fed_server.json`, e.g. to 5 rounds.
 
-### 5.1 Experiment tracking with MLFlow
+### 5.1 Experiment tracking with MLflow
 Using MONAI's experiment [tracking feature](https://github.com/Project-MONAI/tutorials/tree/main/experiment_management),
-we can use MLFlow to track the model performance on the local clients.
+we can use MLflow to track the model performance on the local clients.
 
 In a new terminal, start the mlflow server:
 ```
 mlflow server
 ```
 
-You can access the MLFlow dashboard in your browser using the default tracking uri `http://127.0.0.1:5000`.
+You can access the MLflow dashboard in your browser using the default tracking uri `http://127.0.0.1:5000`.
 Next, submit the job.
 
 ### 5.2 Federated averaging
@@ -184,9 +184,9 @@ You should see the cross-site validation results at
 [DOWNLOAD_DIR]/[JOB_ID]/workspace/cross_site_val/cross_val_results.json
 ```
 
-Once the training started, you can the experiment curves for the local clients in the current run on the MLFlow dashboard.
+Once the training started, you can the experiment curves for the local clients in the current run on the MLflow dashboard.
 
-![MLFlow dashboard](./mlflow.png)
+![MLflow dashboard](./mlflow.png)
 
 ### 5.3 Secure aggregation using homomorphic encryption
 

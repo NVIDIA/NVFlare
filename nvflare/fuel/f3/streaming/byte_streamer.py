@@ -36,7 +36,7 @@ log = logging.getLogger(__name__)
 
 
 class TxTask:
-    def __init__(self, channel: str, topic: str, target: str, headers: dict, stream: Stream):
+    def __init__(self, channel: str, topic: str, target: str, headers: dict, stream: Stream, secure: bool):
         self.sid = gen_stream_id()
         self.buffer = bytearray(STREAM_CHUNK_SIZE)
         # Optimization to send the original buffer without copying
@@ -53,6 +53,7 @@ class TxTask:
         self.seq = 0
         self.offset = 0
         self.offset_ack = 0
+        self.secure = secure
 
     def __str__(self):
         return f"Tx[SID:{self.sid} to {self.target} for {self.channel}/{self.topic}]"
@@ -69,8 +70,8 @@ class ByteStreamer:
     def get_chunk_size():
         return STREAM_CHUNK_SIZE
 
-    def send(self, channel: str, topic: str, target: str, headers: dict, stream: Stream) -> StreamFuture:
-        tx_task = TxTask(channel, topic, target, headers, stream)
+    def send(self, channel: str, topic: str, target: str, headers: dict, stream: Stream, secure=False) -> StreamFuture:
+        tx_task = TxTask(channel, topic, target, headers, stream, secure)
         with self.map_lock:
             self.tx_task_map[tx_task.sid] = tx_task
 
@@ -118,7 +119,7 @@ class ByteStreamer:
     def _transmit(self, task: TxTask, final=False):
 
         if task.buffer_size == 0:
-            payload = None
+            payload = bytes(0)
         elif task.buffer_size == STREAM_CHUNK_SIZE:
             if task.direct_buf:
                 payload = task.direct_buf
@@ -151,7 +152,7 @@ class ByteStreamer:
             }
         )
 
-        errors = self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_DATA_TOPIC, task.target, message)
+        errors = self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_DATA_TOPIC, task.target, message, secure=task.secure)
         error = errors.get(task.target)
         if error:
             msg = f"Message sending error to target {task.target}: {error}"
@@ -186,7 +187,7 @@ class ByteStreamer:
                         StreamHeaderKey.ERROR_MSG: str(error),
                     }
                 )
-                self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_DATA_TOPIC, task.target, message)
+                self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_DATA_TOPIC, task.target, message, secure=task.secure)
         else:
             # Result is the number of bytes streamed
             task.stream_future.set_result(task.offset)

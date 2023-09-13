@@ -53,6 +53,7 @@ def define_parser():
 
 def main(args):
     datasets.CIFAR10(root=args.dataset_path, train=True, download=True)
+    datasets.CIFAR10(root=args.dataset_path, train=False, download=True)
 
 
 if __name__ == "__main__":

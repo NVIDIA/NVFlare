@@ -44,7 +44,10 @@ class MetaKey(object):
     STATUS = "status"
     INFO = "info"
     JOB_ID = "job_id"
+    DATA_TYPE = "data_type"
     JOB_META = "job_meta"
+    JOB_DATA = "job_data"
+    WORKSPACE = "workspace"
     JOB_DOWNLOAD_URL = "job_download_url"
     APP_NAME = "app_name"
     SERVER_STATUS = "server_status"
@@ -59,6 +62,9 @@ class MetaKey(object):
     DURATION = "duration"
     CMD_TIMEOUT = "cmd_timeout"
     CUSTOM_PROPS = "custom_props"
+    FILES = "files"
+    CMD_NAME = "cmd_name"
+    CONTROL_ID = "control_id"
 
 
 class MetaStatusValue(object):

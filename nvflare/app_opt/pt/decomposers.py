@@ -19,20 +19,21 @@ import numpy as np
 import torch
 
 from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils.fobs.datum import DatumManager
 
 
 class TensorDecomposer(fobs.Decomposer):
     def supported_type(self):
         return torch.Tensor
 
-    def decompose(self, target: torch.Tensor) -> Any:
+    def decompose(self, target: torch.Tensor, manager: DatumManager = None) -> Any:
         stream = BytesIO()
         # torch.save uses Pickle so converting Tensor to ndarray first
         array = target.detach().cpu().numpy()
         np.save(stream, array, allow_pickle=False)
         return stream.getvalue()
 
-    def recompose(self, data: Any) -> torch.Tensor:
+    def recompose(self, data: Any, manager: DatumManager = None) -> torch.Tensor:
         stream = BytesIO(data)
         array = np.load(stream, allow_pickle=False)
         return torch.from_numpy(array)

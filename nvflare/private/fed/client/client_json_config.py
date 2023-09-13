@@ -24,7 +24,7 @@ from nvflare.fuel.utils.json_scanner import Node
 from nvflare.private.fed_json_config import FedJsonConfigurator
 from nvflare.private.json_configer import ConfigContext, ConfigError
 
-from .client_runner import ClientRunnerConfig
+from .client_runner import ClientRunnerConfig, TaskRouter
 
 
 class _ExecutorDef(object):
@@ -38,7 +38,7 @@ FL_MODULES = ["apis", "app_common", "widgets", "app_opt"]
 
 
 class ClientJsonConfigurator(FedJsonConfigurator):
-    def __init__(self, config_file_name: str, args, kv_list=None, exclude_libs=True):
+    def __init__(self, config_file_name: str, args, app_root: str, kv_list=None, exclude_libs=True):
         """To init the ClientJsonConfigurator.
 
         Args:
@@ -46,6 +46,7 @@ class ClientJsonConfigurator(FedJsonConfigurator):
             exclude_libs: True/False to exclude the libs folder
         """
         self.args = args
+        self.app_root = app_root
 
         base_pkgs = FL_PACKAGES
         module_names = FL_MODULES
@@ -126,15 +127,12 @@ class ClientJsonConfigurator(FedJsonConfigurator):
         if len(self.executors) <= 0:
             raise ConfigError("executors are not specified")
 
-        task_table = {}
+        task_router = TaskRouter()
         for e in self.executors:
-            for t in e.tasks:
-                if t in task_table:
-                    raise ConfigError('Multiple executors defined for task "{}"'.format(t))
-                task_table[t] = e.executor
+            task_router.add_executor(e.tasks, e.executor)
 
         self.runner_config = ClientRunnerConfig(
-            task_table=task_table,
+            task_router=task_router,
             task_data_filters=self.data_filter_table,
             task_result_filters=self.result_filter_table,
             components=self.components,
@@ -144,7 +142,7 @@ class ClientJsonConfigurator(FedJsonConfigurator):
 
         ConfigService.initialize(
             section_files={SystemConfigs.APPLICATION_CONF: os.path.basename(self.config_files[0])},
-            config_path=[self.args.workspace],
+            config_path=[self.app_root],
             parsed_args=self.args,
             var_dict=self.cmd_vars,
         )
