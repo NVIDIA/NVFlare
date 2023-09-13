@@ -140,6 +140,8 @@ class Sender:
     def send(self, data):
         if self.closed:
             raise RuntimeError("this sender is already closed")
+        if data is None:
+            data = b""
         header = Header(MARKER_DATA, self.next_seq, len(data))
         self.next_seq += 1
         self.checksum.update(data)

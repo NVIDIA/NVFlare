@@ -16,7 +16,7 @@ from typing import List
 
 from nvflare.fuel.common.ctx import BaseContext
 
-from .chunk import Receiver
+from .chunk import MAX_CHUNK_SIZE, Receiver
 from .proto import Buffer, validate_proto
 from .table import Table
 
@@ -31,7 +31,6 @@ ALL_END = "\x04"  # Marks the end of a complete transmission (End of Transmissio
 
 
 MAX_MSG_SIZE = 1024
-MAX_BYTES_SIZE = 1024 * 1024
 
 
 def receive_til_end(sock, end=ALL_END):
@@ -77,7 +76,7 @@ def _process_one_line(line: str, process_json_func):
 def receive_bytes_and_process(sock, receive_bytes_func):
     receiver = Receiver(receive_data_func=receive_bytes_func)
     while True:
-        data = sock.recv(MAX_BYTES_SIZE)
+        data = sock.recv(MAX_CHUNK_SIZE)
         if not data:
             return False
         done = receiver.receive(data)
