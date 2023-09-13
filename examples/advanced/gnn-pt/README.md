@@ -52,12 +52,12 @@ app_server  app_site-1  app_site-2  log.txt
 
 <div align="center">
   <div style="display: inline-block; text-align: center;">
-    <img src=https://github.com/wangxiaoyunNV/NVFlare/blob/main/examples/advanced/gnn-pt/Loss_train_FL.svg width="400" alt="Image 1" />
+    <img src=https://github.com/wangxiaoyunNV/NVFlare/blob/main/examples/advanced/gnn-pt/Loss_train_FL.svg width="600" alt="Image 1" />
     <p><strong>Figure 1:</strong> Loss for Training GraphSAGE with Federated Learning.</p>
   </div>
   
   <div style="display: inline-block; text-align: center;">
-    <img src=https://github.com/wangxiaoyunNV/NVFlare/blob/main/examples/advanced/gnn-pt/Loss_train_Graphsage.svg  width="400" alt="Image 2" />
+    <img src=https://github.com/wangxiaoyunNV/NVFlare/blob/main/examples/advanced/gnn-pt/Loss_train_Graphsage.svg  width="600" alt="Image 2" />
     <p><strong>Figure 2:</strong> Loss for Training GraphSAGE Locally.</p>
   </div>
 </div>
