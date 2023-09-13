@@ -54,7 +54,6 @@ app_server  app_site-1  app_site-2  log.txt
   <br />
   <em>Figure 1:Loss for Training GraphSAGE with Federated Learning.</em>
 
-<p align="center">
   <img src=https://github.com/wangxiaoyunNV/NVFlare/blob/main/examples/advanced/gnn-pt/Loss_train_Graphsage.svg width="400" />
   <br />
   <em>Figure 2: Loss for Training GraphSAGE Locally.</em>
