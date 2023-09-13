@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import List, Tuple, Union
+from typing import List, Tuple
 
 DATA = "data"
 JOB_ZIP = "job.zip"
@@ -42,7 +42,7 @@ class StorageSpec(ABC):
     """
 
     @abstractmethod
-    def create_object(self, uri: str, data: bytes, meta: dict, overwrite_existing: bool):
+    def create_object(self, uri: str, data, meta: dict, overwrite_existing: bool):
         """Creates an object.
 
         Examples of URI:
@@ -66,7 +66,7 @@ class StorageSpec(ABC):
         pass
 
     @abstractmethod
-    def update_object(self, uri: str, data: Union[bytes, str], component_name: str):
+    def update_object(self, uri: str, data, component_name: str):
         """Update the object
 
         Args:

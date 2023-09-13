@@ -15,6 +15,7 @@
 import json
 import os
 import shutil
+import tempfile
 import threading
 import time
 from typing import Dict, List, Tuple
@@ -28,7 +29,7 @@ from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
 from nvflare.apis.job_scheduler_spec import DispatchInfo
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.argument_utils import parse_vars
-from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
+from nvflare.fuel.utils.zip_utils import zip_directory_to_file
 from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
@@ -382,11 +383,13 @@ class JobRunner(FLComponent):
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
         workspace = Workspace(root_dir=self.workspace_root)
         run_dir = workspace.get_run_dir(job_id)
-        workspace_data = zip_directory_to_bytes(run_dir, "")
         engine = fl_ctx.get_engine()
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
-
-        job_manager.save_workspace(job_id, workspace_data, fl_ctx)
+        with tempfile.TemporaryDirectory() as td:
+            output_file = os.path.join(td, "workspace")
+            zip_directory_to_file(run_dir, "", output_file)
+            job_manager.save_workspace(job_id, output_file, fl_ctx)
+            self.log_info(fl_ctx, f"Workspace zipped to {output_file}")
         shutil.rmtree(run_dir)
 
     def run(self, fl_ctx: FLContext):

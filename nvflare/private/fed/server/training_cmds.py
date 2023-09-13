@@ -113,8 +113,8 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         message = new_message(conn, topic=TrainingTopic.SHUTDOWN, body="", require_authz=True)
         clients = conn.get_prop(self.TARGET_CLIENT_TOKENS, None)
         if not clients:
-            conn.append_error("no clients to shutdown")
-            return False
+            # no clients to shut down - this is okay
+            return True
 
         replies = self.send_request_to_clients(conn, message)
         self.process_replies_to_table(conn, replies)
