@@ -48,7 +48,7 @@ app_server  app_site-1  app_site-2  log.txt
 ```
 
 ### Loss for FL training and local training
-
+Figure 1 is the loss for training GraphSAGE with Federated Learning. Figure 2 is the loss for training GraphSAGE locally. In our case, the 2 clients get the same data, so the loss is very similar in federated training and local training.
 
 <div align="center">
   <div style="display: inline-block; text-align: left;">
