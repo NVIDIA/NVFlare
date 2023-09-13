@@ -37,10 +37,17 @@ class SimulatorServerEngine(ServerEngine):
         pass
 
     def send_aux_request(
-        self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext, optional=False
+        self,
+        targets: [],
+        topic: str,
+        request: Shareable,
+        timeout: float,
+        fl_ctx: FLContext,
+        optional=False,
+        secure=False,
     ) -> dict:
         if topic != ReservedTopic.END_RUN:
-            return super().send_aux_request(targets, topic, request, timeout, fl_ctx, optional)
+            return super().send_aux_request(targets, topic, request, timeout, fl_ctx, optional, secure=secure)
         else:
             return {}
 

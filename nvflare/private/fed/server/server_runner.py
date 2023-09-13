@@ -191,6 +191,7 @@ class ServerRunner(FLComponent):
                             timeout=0.0,
                             fl_ctx=fl_ctx,
                             optional=True,
+                            secure=False,
                         )
 
                         self.engine.persist_components(fl_ctx, completed=True)

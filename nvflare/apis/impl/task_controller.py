@@ -119,7 +119,12 @@ class TaskController(FLComponent, ControllerSpec):
 
         request.set_header(ReservedKey.TASK_NAME, task.name)
         replies = engine.send_aux_request(
-            targets=targets, topic=ReservedTopic.DO_TASK, request=request, timeout=task.timeout, fl_ctx=fl_ctx
+            targets=targets,
+            topic=ReservedTopic.DO_TASK,
+            request=request,
+            timeout=task.timeout,
+            fl_ctx=fl_ctx,
+            secure=task.secure,
         )
 
         self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_EXECUTION")
