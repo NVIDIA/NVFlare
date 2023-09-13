@@ -44,7 +44,6 @@ from nvflare.security.logging import secure_format_exception, secure_log_traceba
 
 from .cmd_utils import CommandUtil
 
-MAX_DOWNLOAD_JOB_SIZE = 50 * 1024 * 1024 * 1204
 CLONED_META_KEYS = {
     JobMetaKey.JOB_NAME.value,
     JobMetaKey.JOB_FOLDER_NAME.value,

@@ -14,6 +14,7 @@
 
 import ast
 import json
+import logging
 import os
 import shutil
 import uuid
@@ -23,6 +24,8 @@ from typing import List, Tuple
 from nvflare.apis.storage import DATA, MANIFEST, META, StorageException, StorageSpec
 from nvflare.apis.utils.format_check import validate_class_methods_args
 from nvflare.security.logging import secure_format_exception
+
+log = logging.getLogger(__name__)
 
 
 def _write(path: str, content):
@@ -266,7 +269,11 @@ class FilesystemStorage(StorageSpec):
 
         if os.path.exists(download_file):
             os.remove(download_file)
-        os.symlink(os.path.join(full_uri, component_name), download_file)
+        src = os.path.join(full_uri, component_name)
+        if os.path.exists(src):
+            os.symlink(src, download_file)
+        else:
+            log.info(f"{src} does not exist, skipping the creation of the symlink {download_file} for download.")
 
     def get_detail(self, uri: str) -> Tuple[dict, bytes]:
         """Gets both data and meta of the specified object.
