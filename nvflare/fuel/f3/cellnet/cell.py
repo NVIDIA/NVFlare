@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import concurrent.futures
+import copy
 import logging
 import threading
 import uuid
@@ -61,7 +62,7 @@ class Adapter:
         request.set_header(MessageHeaderKey.CHANNEL, channel)
         topic = request.get_header(StreamHeaderKey.TOPIC)
         request.set_header(MessageHeaderKey.TOPIC, topic)
-        self.logger.info(f"Call back on {channel=}, {topic=}, {stream_req_id=}")
+        self.logger.info(f"Call back on {stream_req_id=}: {channel=}, {topic=}")
 
         req_id = request.get_header(MessageHeaderKey.REQ_ID, "")
         secure = request.get_header(MessageHeaderKey.SECURE, False)
@@ -139,7 +140,8 @@ class Cell(StreamCell):
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(targets)) as executor:
             self.logger.debug(f"broadcast to {targets=}")
             for t in targets:
-                target_argument["request"] = TargetMessage(t, channel, topic, request).message
+                req = Message(copy.deepcopy(request.headers), request.payload)
+                target_argument["request"] = TargetMessage(t, channel, topic, req).message
                 target_argument["target"] = t
                 target_argument.update(fixed_dict)
                 f = executor.submit(self._send_request, **target_argument)
@@ -151,7 +153,7 @@ class Cell(StreamCell):
                 try:
                     data = future.result()
                 except Exception as exc:
-                    self.logger.waring(f"{target} raises {exc}")
+                    self.logger.warning(f"{target} raises {exc}")
                     results[target] = make_reply(ReturnCode.TIMEOUT)
                 else:
                     results[target] = data
@@ -213,7 +215,6 @@ class Cell(StreamCell):
 
     def _send_request(self, channel, target, topic, request, timeout=10.0, secure=False, optional=False):
 
-        self.logger.info(f"send_request: {channel=}, {topic=}, {target=}, {timeout=}")
         try:
             encode_payload(request, StreamHeaderKey.PAYLOAD_ENCODING)
         except BaseException as exc:
@@ -224,7 +225,7 @@ class Cell(StreamCell):
         request.add_headers({StreamHeaderKey.STREAM_REQ_ID: req_id})
 
         # this future can be used to check sending progress, but not for checking return blob
-        self.logger.debug(f"{req_id=}: About to send_blob")
+        self.logger.info(f"{req_id=}, {channel=}, {topic=}, {target=}, {timeout=}: send_request about to send_blob")
         future = self.send_blob(channel=channel, topic=topic, target=target, message=request, secure=secure)
 
         waiter = SimpleWaiter(req_id=req_id, result=make_reply(ReturnCode.TIMEOUT))
