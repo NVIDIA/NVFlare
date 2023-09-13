@@ -56,7 +56,7 @@ class Header:
     @classmethod
     def from_bytes(cls, buffer: bytes):
         if len(buffer) < HEADER_LEN:
-            raise ValueError(f"Prefix too short")
+            raise ValueError("Prefix too short")
 
         marker, num1, num2 = HEADER_STRUCT.unpack_from(buffer, 0)
         return Header(marker, num1, num2)
