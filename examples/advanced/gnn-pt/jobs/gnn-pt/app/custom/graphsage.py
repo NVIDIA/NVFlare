@@ -131,7 +131,12 @@ _, _, global_test_f1 = test()
 print(f"Global Test F1: {global_test_f1:.4f}")
 
 
-for epoch in range(1, 60):
+number_epochs = 60
+# (optional) calculate total steps
+steps = number_epochs * len(loader)
+print (steps)
+
+for epoch in range(1, number_epochs):
     start = time.time()
     loss = train()
     print(f"Epoch: {epoch:02d}, Loss: {loss:.4f}")
@@ -144,7 +149,8 @@ print(f"Median time per epoch: {torch.tensor(times).median():.4f}s")
 
 
 # (5) construct the FLModel to returned back
-output_model = flare.FLModel(params=model.cpu().state_dict(), params_type="FULL", metrics={"test_f1": global_test_f1})
+output_model = flare.FLModel(params=model.cpu().state_dict(), params_type="FULL", metrics={"test_f1": global_test_f1}
+                             , meta={"NUM_STEPS_CURRENT_ROUND": steps})
 
 # (6) send back model
 flare.send(output_model)
