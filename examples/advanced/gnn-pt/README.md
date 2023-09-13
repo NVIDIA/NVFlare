@@ -47,5 +47,7 @@ app_server  app_site-1  app_site-2  log.txt
 
 ```
 
-### Loss for FL training and local traning
+### Loss for FL training and local training
+![alt text](https://github.com/wangxiaoyunNV/NVFlare/blob/main/examples/advanced/gnn-pt/Loss_train_FL.svg "Training GraphSAGE with Federated Learning")
+![alt text](https://github.com/wangxiaoyunNV/NVFlare/blob/main/examples/advanced/gnn-pt/Loss_train_Graphsage.svg)"Local Train GraphSAGE")
 
