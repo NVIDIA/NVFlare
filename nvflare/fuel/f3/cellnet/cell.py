@@ -214,22 +214,11 @@ class Cell(StreamCell):
     def _send_request(self, channel, target, topic, request, timeout=10.0, secure=False, optional=False):
 
         self.logger.info(f"send_request: {channel=}, {topic=}, {target=}, {timeout=}")
-        if channel not in CHANNELS_TO_HANDLE:
-            self.logger.debug("core_cell path")
-            return self.core_cell.send_request(
-                channel=channel,
-                target=target,
-                topic=topic,
-                request=request,
-                timeout=timeout,
-                secure=secure,
-                optional=optional,
-            )
-
         try:
             encode_payload(request, StreamHeaderKey.PAYLOAD_ENCODING)
         except BaseException as exc:
             self.logger.error(f"Can't encode {request=} {exc=}")
+            raise exc
 
         req_id = str(uuid.uuid4())
         request.add_headers({StreamHeaderKey.STREAM_REQ_ID: req_id})
@@ -248,14 +237,14 @@ class Cell(StreamCell):
         self.logger.debug(f"{req_id=}: entering sending wait {timeout=}")
         sending_complete = self._future_wait(future, timeout)
         if not sending_complete:
-            self.logger.info(f"{req_id=}: sending timeout")
+            self.logger.info(f"{req_id=}: sending timeout {timeout=}")
             return self._get_result(req_id)
         self.logger.debug(f"{req_id=}: sending complete")
 
         # waiting for receiving first byte
         self.logger.debug(f"{req_id=}: entering remote process wait {timeout=}")
         if not waiter.in_receiving.wait(timeout):
-            self.logger.info(f"{req_id=}: remote processing timeout")
+            self.logger.info(f"{req_id=}: remote processing timeout {timeout=}")
             return self._get_result(req_id)
         self.logger.debug(f"{req_id=}: in receiving")
 
@@ -264,7 +253,7 @@ class Cell(StreamCell):
         self.logger.debug(f"{req_id=}: entering receiving wait {timeout=}")
         receiving_complete = self._future_wait(r_future, timeout)
         if not receiving_complete:
-            self.logger.info(f"{req_id=}: receiving timeout")
+            self.logger.info(f"{req_id=}: receiving timeout {timeout=}")
             return self._get_result(req_id)
         self.logger.debug(f"{req_id=}: receiving complete")
         waiter.result = Message(r_future.headers, r_future.result())
