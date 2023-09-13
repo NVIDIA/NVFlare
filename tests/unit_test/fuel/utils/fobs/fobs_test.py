@@ -20,6 +20,7 @@ import pytest
 
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs import Decomposer
+from nvflare.fuel.utils.fobs.datum import DatumManager
 
 
 class TestFobs:
@@ -71,8 +72,8 @@ class ExampleClassDecomposer(Decomposer):
     def supported_type(self):
         return ExampleClass
 
-    def decompose(self, target: ExampleClass) -> Any:
+    def decompose(self, target: ExampleClass, manager: DatumManager = None) -> Any:
         return target.number
 
-    def recompose(self, data: Any) -> ExampleClass:
+    def recompose(self, data: Any, manager: DatumManager = None) -> ExampleClass:
         return ExampleClass(data)
