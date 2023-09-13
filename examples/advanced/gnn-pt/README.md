@@ -13,7 +13,7 @@ Graph Neural Networks (GNNs) show promissing future in reaserch and industry, wi
 GNNs excel in learning, modeling, and leveraging complex relationships within graph-structured data. They combine local and global information, incorporate structural knowledge, adapt to diverse tasks, handle heterogeneous data, support transfer learning, scale for large graphs, offer interpretable insights, and achieve impressive performance. 
 [GraphSAGE](https://arxiv.org/pdf/1706.02216.pdf) is a widely used GNN framework due to its ability to perform inductive learning on graph-structured data and scalability. 
 Here we give an example of classifying protein roles based on their cellular functions from gene ontology with unsupervised [GraphSAGE](https://arxiv.org/pdf/1706.02216.pdf). The dataset we are using is PPI( 
-([protein-protein interaction])([http://snap.stanford.edu/graphsage/#code]) graphs, where each graph represents a specific human tissue. 
+([protein-protein interaction])([http://snap.stanford.edu/graphsage/#code]) graphs, where each graph represents a specific human tissue. Protein-protein interaction (PPI) dataset is commonly used in graph-based machine-learning tasks, especially in the field of bioinformatics. This dataset represents interactions between proteins as graphs, where nodes represent proteins and edges represent interactions between them.
 
 We are adopting the example from [Pytorch Geometrics](https://pytorch-geometric.readthedocs.io/en/latest/), which is  a library built upon PyTorch to easily write and train Graph Neural Networks (GNNs) for a wide range of applications related to structured data.
 > **_NOTE:_** 
