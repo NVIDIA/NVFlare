@@ -163,7 +163,7 @@ The light curves are for single site training, and the dark curves are for FedAv
 
 As shown, the global model from FedAvg is able to generate a loss comparable to that of training with all three datasets combined.
 
-Loss curve is one indication of model performance, but we also want to see if the model is able to generate reasonable text. Hence, benchmarked the trained models with standard language modeling tasks under 0-shot setting, including HellaSwag(H), PIQA(P), and WinoGrande(W). 
+Loss curve is one indication of model performance, but we also want to see if the model is able to generate reasonable text. Hence, we benchmarked the trained models with standard language modeling tasks under zero-shot setting, including [HellaSwag](https://arxiv.org/pdf/1905.07830.pdf)(H), [PIQA](https://arxiv.org/pdf/1911.11641.pdf)(P), and [WinoGrande](https://arxiv.org/pdf/1907.10641.pdf)(W). 
 Below is the accuracy of the models on these tasks.
 
 |              | H_acc | H_acc_norm | P_acc | P_acc_norm | W_acc | Mean  |
