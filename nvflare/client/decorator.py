@@ -38,11 +38,10 @@ def train(
             if pid not in PROCESS_MODEL_REGISTRY:
                 raise RuntimeError("needs to call init method first")
             cache = PROCESS_MODEL_REGISTRY[pid]
-            if cache.cached_model is None:
-                cache.get_model()
+            input_model = cache.get_model()
 
             # Replace func arguments
-            _replace_func_args(train_fn, kwargs, cache.cached_model)
+            _replace_func_args(train_fn, kwargs, input_model)
             return_value = train_fn(**kwargs)
 
             if return_value is None:
@@ -78,10 +77,9 @@ def evaluate(
             if pid not in PROCESS_MODEL_REGISTRY:
                 raise RuntimeError("needs to call init method first")
             cache = PROCESS_MODEL_REGISTRY[pid]
-            if cache.cached_model is None:
-                cache.get_model()
+            input_model = cache.get_model()
 
-            _replace_func_args(eval_fn, kwargs, cache.cached_model)
+            _replace_func_args(eval_fn, kwargs, input_model)
             return_value = eval_fn(**kwargs)
 
             if return_value is None:

@@ -77,6 +77,7 @@ class Task(object):
         result_received_cb=None,
         task_done_cb=None,
         operator=None,
+        secure=False,
     ):
         """Init the Task.
 
@@ -97,6 +98,7 @@ class Task(object):
             task_done_cb: If provided, this callback would be called when task is done.
                 It needs to follow the task_done_cb_signature.
             operator: task operator that describes the operation of the task
+            secure: should this task be transmitted in a secure way
 
         """
         if not isinstance(name, str):
@@ -111,6 +113,7 @@ class Task(object):
         self.data = data  # task data to be sent to client(s)
         self.operator = operator
         self.cb_lock = threading.Lock()
+        self.secure = secure
 
         data.set_header(ReservedHeaderKey.TASK_NAME, name)
 

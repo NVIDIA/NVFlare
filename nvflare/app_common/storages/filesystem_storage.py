@@ -14,6 +14,7 @@
 
 import ast
 import json
+import logging
 import os
 import shutil
 import uuid
@@ -23,6 +24,8 @@ from typing import List, Tuple
 from nvflare.apis.storage import DATA, MANIFEST, META, StorageException, StorageSpec
 from nvflare.apis.utils.format_check import validate_class_methods_args
 from nvflare.security.logging import secure_format_exception
+
+log = logging.getLogger(__name__)
 
 
 def _write(path: str, content):
@@ -79,7 +82,20 @@ class FilesystemStorage(StorageSpec):
         self.root_dir = root_dir
         self.uri_root = uri_root
 
-    def create_object(self, uri: str, data: bytes, meta: dict, overwrite_existing: bool = False):
+    def _save_data(self, data, destination: str):
+        if isinstance(data, bytes):
+            _write(destination, data)
+        elif isinstance(data, str):
+            # path to file that contains data
+            if not os.path.exists(data):
+                raise FileNotFoundError(f"file {data} does not exist")
+            if not os.path.isfile(data):
+                raise ValueError(f"{data} is not a valid file")
+            shutil.copyfile(data, destination)
+        else:
+            raise ValueError(f"expect data to be bytes or file name but got {type(data)}")
+
+    def create_object(self, uri: str, data, meta: dict, overwrite_existing: bool = False):
         """Creates an object.
 
         Args:
@@ -107,15 +123,12 @@ class FilesystemStorage(StorageSpec):
 
         data_path = os.path.join(full_uri, DATA)
         meta_path = os.path.join(full_uri, META)
-
-        tmp_data_path = data_path + "_" + str(uuid.uuid4())
-        _write(tmp_data_path, data)
+        self._save_data(data, data_path)
         try:
             _write(meta_path, json.dumps(str(meta)).encode("utf-8"))
         except Exception as e:
-            os.remove(tmp_data_path)
+            os.remove(data_path)
             raise e
-        os.rename(tmp_data_path, data_path)
 
         manifest = os.path.join(full_uri, MANIFEST)
         manifest_json = '{"data": {"description": "job definition","format": "bytes"},\
@@ -124,7 +137,7 @@ class FilesystemStorage(StorageSpec):
 
         return full_uri
 
-    def update_object(self, uri: str, data: bytes, component_name: str = DATA):
+    def update_object(self, uri: str, data, component_name: str = DATA):
         """Update the object
 
         Args:
@@ -142,11 +155,8 @@ class FilesystemStorage(StorageSpec):
         if not StorageSpec.is_valid_component(component_name):
             raise StorageException(f"{component_name } is not a valid component for storage object.")
 
-        if not isinstance(data, bytes):
-            raise StorageException(f"data must be in the type of bytes, got {type(data)}.")
-
         component_path = os.path.join(full_dir_path, component_name)
-        _write(component_path, data)
+        self._save_data(data, component_path)
 
         manifest = os.path.join(full_dir_path, MANIFEST)
         with open(manifest) as manifest_file:
@@ -259,7 +269,11 @@ class FilesystemStorage(StorageSpec):
 
         if os.path.exists(download_file):
             os.remove(download_file)
-        os.symlink(os.path.join(full_uri, component_name), download_file)
+        src = os.path.join(full_uri, component_name)
+        if os.path.exists(src):
+            os.symlink(src, download_file)
+        else:
+            log.info(f"{src} does not exist, skipping the creation of the symlink {download_file} for download.")
 
     def get_detail(self, uri: str) -> Tuple[dict, bytes]:
         """Gets both data and meta of the specified object.

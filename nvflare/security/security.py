@@ -24,6 +24,7 @@ class CommandCategory(object):
     OPERATE = "operate"
     VIEW = "view"
     SHELL_COMMANDS = "shell_commands"
+    DOWNLOAD_JOB = "download_job"
 
 
 COMMAND_CATEGORIES = {
@@ -52,6 +53,8 @@ COMMAND_CATEGORIES = {
     AC.SHELL_LS: CommandCategory.SHELL_COMMANDS,
     AC.SHELL_PWD: CommandCategory.SHELL_COMMANDS,
     AC.SHELL_TAIL: CommandCategory.SHELL_COMMANDS,
+    AC.DOWNLOAD_JOB: CommandCategory.DOWNLOAD_JOB,
+    AC.DOWNLOAD_JOB_FILE: CommandCategory.DOWNLOAD_JOB,
 }
 
 

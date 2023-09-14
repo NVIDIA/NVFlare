@@ -19,7 +19,7 @@ import shutil
 import tempfile
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from nvflare.apis.client_engine_spec import ClientEngineSpec
 from nvflare.apis.fl_context import FLContext
@@ -282,7 +282,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
             store.update_meta(self.job_uri(jid), updated_meta, replace=False)
         return meta
 
-    def save_workspace(self, jid: str, data: bytes, fl_ctx: FLContext):
+    def save_workspace(self, jid: str, data: Union[bytes, str], fl_ctx: FLContext):
         store = self._get_job_store(fl_ctx)
         store.update_object(self.job_uri(jid), data, WORKSPACE)
 

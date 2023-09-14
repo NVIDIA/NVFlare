@@ -452,6 +452,7 @@ class SwarmClientController(ClientSideController):
             request=Shareable(),
             timeout=self.final_result_ack_timeout,
             fl_ctx=fl_ctx,
+            secure=False,
         )
 
         assert isinstance(resp, dict)

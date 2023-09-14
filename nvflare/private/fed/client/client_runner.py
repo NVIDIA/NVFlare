@@ -478,9 +478,9 @@ class ClientRunner(FLComponent):
         synced = False
         sync_start = time.time()
         with self.engine.new_context() as fl_ctx:
-            time.sleep(0.2)
             for i in range(max_sync_tries):
                 # sync with server runner before starting
+                time.sleep(0.5)
                 resp = self.engine.send_aux_request(
                     targets=[target],
                     topic=ReservedTopic.SYNC_RUNNER,
@@ -488,6 +488,7 @@ class ClientRunner(FLComponent):
                     timeout=sync_timeout,
                     fl_ctx=fl_ctx,
                     optional=True,
+                    secure=False,
                 )
 
                 if not resp:
