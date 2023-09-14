@@ -22,7 +22,7 @@ from nvflare.app_common.abstract.model import model_learnable_to_dxo
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.app_constant import AppConstants, ValidateType
 from nvflare.app_common.ccwf.client_ctl import ClientSideController
-from nvflare.app_common.ccwf.common import Constant, ModelType, make_task_name
+from nvflare.app_common.ccwf.common import Constant, ModelType, is_secure, make_task_name
 from nvflare.fuel.utils.validation_utils import check_non_empty_str, check_positive_number
 from nvflare.security.logging import secure_format_traceback
 
@@ -136,9 +136,7 @@ class CrossSiteEvalClientController(ClientSideController):
         self.log_info(fl_ctx, f"asking client {model_owner} for model {model_type} {model_name}")
 
         task = Task(
-            name=self.ask_for_model_task_name,
-            data=req,
-            timeout=int(self.get_model_timeout),
+            name=self.ask_for_model_task_name, data=req, timeout=int(self.get_model_timeout), secure=is_secure(fl_ctx)
         )
 
         resp = self.broadcast_and_wait(

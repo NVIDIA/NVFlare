@@ -28,7 +28,14 @@ from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
-from nvflare.app_common.ccwf.common import Constant, ResultType, StatusReport, make_task_name, topic_for_end_workflow
+from nvflare.app_common.ccwf.common import (
+    Constant,
+    ResultType,
+    StatusReport,
+    is_secure,
+    make_task_name,
+    topic_for_end_workflow,
+)
 from nvflare.fuel.utils.validation_utils import check_non_empty_str, check_number_range, check_positive_number
 from nvflare.security.logging import secure_format_traceback
 
@@ -307,6 +314,7 @@ class ClientSideController(Executor, TaskController):
             name=self.report_final_result_task_name,
             data=shareable,
             timeout=int(self.final_result_ack_timeout),
+            secure=is_secure(fl_ctx),
         )
 
         resp = self.broadcast_and_wait(
@@ -572,6 +580,7 @@ class ClientSideController(Executor, TaskController):
             name=self.do_learn_task_name,
             data=request,
             timeout=int(self.learn_task_ack_timeout),
+            secure=is_secure(fl_ctx),
         )
 
         resp = self.broadcast_and_wait(

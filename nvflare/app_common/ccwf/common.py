@@ -14,6 +14,8 @@
 
 from typing import Union
 
+from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.metric_comparator import MetricComparator
 
 
@@ -186,6 +188,10 @@ def topic_for_end_workflow(wf_id):
 
 def make_task_name(prefix: str, base_name: str) -> str:
     return f"{prefix}_{base_name}"
+
+
+def is_secure(fl_ctx: FLContext):
+    return fl_ctx.get_prop(FLContextKey.SECURE_MODE, False)
 
 
 class NumberMetricComparator(MetricComparator):

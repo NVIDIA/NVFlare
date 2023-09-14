@@ -175,7 +175,8 @@ class _FileReceiver:
         os.rename(self.tmp_name, self.file_path)
 
     def receive_data(self, data, start: int, length: int):
-        self.tmp_file.write(data[start : start + length])
+        view = memoryview(data)
+        self.tmp_file.write(view[start : start + length])
 
 
 class FileTransferModule(CommandModule):
@@ -353,8 +354,9 @@ class FileTransferModule(CommandModule):
         api = ctx.get_api()
         ctx.set_bytes_receiver(receiver.receive_data)
         result = api.server_execute(command, cmd_ctx=ctx)
-        if result.get(ProtoKey.STATUS) == APIStatus.SUCCESS:
-            receiver.close()
+        receiver.close()
+        if result.get(ProtoKey.STATUS) != APIStatus.SUCCESS:
+            return result
 
         dir_name, ext = os.path.splitext(file_path)
         if ext == ".zip":
@@ -362,6 +364,9 @@ class FileTransferModule(CommandModule):
             api.debug(f"unzipping file {file_path} to {dir_name}")
             os.makedirs(dir_name, exist_ok=True)
             unzip_all_from_file(file_path, dir_name)
+
+            # remove the zip file
+            os.remove(file_path)
         return result
 
     def pull_folder(self, args, ctx: CommandContext):

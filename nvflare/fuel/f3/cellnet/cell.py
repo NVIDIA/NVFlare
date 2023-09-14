@@ -137,6 +137,10 @@ class Cell(StreamCell):
         fixed_dict = dict(channel=channel, topic=topic, timeout=timeout, secure=secure, optional=optional)
         results = dict()
         future_to_target = {}
+
+        # encode the request now so each target thread won't need to do it again.
+        self._encode_message(request)
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(targets)) as executor:
             self.logger.debug(f"broadcast to {targets=}")
             for t in targets:
@@ -144,7 +148,7 @@ class Cell(StreamCell):
                 target_argument["request"] = TargetMessage(t, channel, topic, req).message
                 target_argument["target"] = t
                 target_argument.update(fixed_dict)
-                f = executor.submit(self._send_request, **target_argument)
+                f = executor.submit(self._send_one_request, **target_argument)
                 future_to_target[f] = t
                 self.logger.debug(f"submitted to {t} with {target_argument.keys()=}")
             for future in concurrent.futures.as_completed(future_to_target):
@@ -213,14 +217,18 @@ class Cell(StreamCell):
                 last_progress = current_progress
         return True
 
-    def _send_request(self, channel, target, topic, request, timeout=10.0, secure=False, optional=False):
-
+    def _encode_message(self, msg: Message):
         try:
-            encode_payload(request, StreamHeaderKey.PAYLOAD_ENCODING)
+            encode_payload(msg, StreamHeaderKey.PAYLOAD_ENCODING)
         except BaseException as exc:
-            self.logger.error(f"Can't encode {request=} {exc=}")
+            self.logger.error(f"Can't encode {msg=} {exc=}")
             raise exc
 
+    def _send_request(self, channel, target, topic, request, timeout=10.0, secure=False, optional=False):
+        self._encode_message(request)
+        return self._send_one_request(channel, target, topic, request, timeout, secure, optional)
+
+    def _send_one_request(self, channel, target, topic, request, timeout=10.0, secure=False, optional=False):
         req_id = str(uuid.uuid4())
         request.add_headers({StreamHeaderKey.STREAM_REQ_ID: req_id})
 
