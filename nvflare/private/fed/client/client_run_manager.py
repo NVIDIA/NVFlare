@@ -199,6 +199,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
         timeout: float,
         fl_ctx: FLContext,
         optional=False,
+        secure=False,
     ) -> dict:
         if not targets:
             targets = [FQCN.ROOT_SERVER]
@@ -212,7 +213,9 @@ class ClientRunManager(ClientEngineExecutorSpec):
                 else:
                     targets = [targets]
         if targets:
-            return self.aux_runner.send_aux_request(targets, topic, request, timeout, fl_ctx, optional=optional)
+            return self.aux_runner.send_aux_request(
+                targets, topic, request, timeout, fl_ctx, optional=optional, secure=secure
+            )
         else:
             return {}
 
@@ -247,9 +250,11 @@ class ClientRunManager(ClientEngineExecutorSpec):
     def register_aux_message_handler(self, topic: str, message_handle_func):
         self.aux_runner.register_aux_message_handler(topic, message_handle_func)
 
-    def fire_and_forget_aux_request(self, topic: str, request: Shareable, fl_ctx: FLContext, optional=False) -> dict:
+    def fire_and_forget_aux_request(
+        self, topic: str, request: Shareable, fl_ctx: FLContext, optional=False, secure=False
+    ) -> dict:
         return self.send_aux_request(
-            targets=None, topic=topic, request=request, timeout=0.0, fl_ctx=fl_ctx, optional=optional
+            targets=None, topic=topic, request=request, timeout=0.0, fl_ctx=fl_ctx, optional=optional, secure=secure
         )
 
     def abort_app(self, job_id: str, fl_ctx: FLContext):
