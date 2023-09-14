@@ -1,7 +1,7 @@
 # GraphSAGE with PyTorch and PyG
-In this example, we will demonstrate how to train protein classifier using Graph Neural Network (GNN). 
+In this example, we will demonstrate how to train a protein classifier using Graph Neural Network (GNN). 
 
-The dataset we are using is PPI [protein-protein interaction]([http://snap.stanford.edu/graphsage/#code]) graphs, where each graph represents a specific human tissue. 
+The dataset we are using is PPI ([protein-protein interaction](http://snap.stanford.edu/graphsage/#code)) graphs, where each graph represents a specific human tissue. 
 
 The federated learning Algorithm used is FedAvg [FedAvg](https://arxiv.org/abs/1602.05629) with SAG (Scatter and Gather) workflow. The deep learning framework used is pytorch. 
 
