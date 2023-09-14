@@ -52,8 +52,8 @@ Lastly, we must subclass `XGBDataLoader` and implement the `load_data()` method.
 ### GPU Support
 By default, CPU based training is used.
 
-In order to enable GPU accelerated training, first ensure that your machine has CUDA installed and has at least two GPUs to simulate two clients.
-In `config_fed_client.json` set `"use_gpus": true` and  `"tree_method": "hist"` in `xgb_params`. Then, in `FedXGBHistogramExecutor` we use the `device` parameter to map each rank to a GPU device ordinal in `xgb_params` (alternatively, you can simulate multiple GPUs with one only GPU by mapping each rank to the same GPU device).
+In order to enable GPU accelerated training, first ensure that your machine has CUDA installed and has at least one GPU.
+In `config_fed_client.json` set `"use_gpus": true` and  `"tree_method": "hist"` in `xgb_params`. Then, in `FedXGBHistogramExecutor` we use the `device` parameter to map each rank to a GPU device ordinal in `xgb_params`. If using multiple GPUs, we can map each rank to a different GPU device, however you can also map each rank to the same GPU device if using a single GPU.
 
 ## Run the Example
 Run the vertical xgboost job:
