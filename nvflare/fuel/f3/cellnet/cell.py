@@ -92,6 +92,14 @@ class Cell(StreamCell):
         self.register_blob_cb(CellChannel.RETURN_ONLY, "*", self._process_reply)  # this should be one-time registration
 
     def __getattr__(self, func):
+        """
+        This method is called when Python cannot find an invoked method "x" of this class.
+        Method "x" is one of the message sending methods (send_request, broadcast_request, etc.)
+        In this method, we decide which method should be used instead, based on the "channel" of the message.
+        - If the channel is in CHANNELS_TO_HANDLE, use the method "_x" of this class.
+        - Otherwise, user the method "x" of the core_cell.
+        """
+
         def method(*args, **kwargs):
             self.logger.debug(f"__getattr__: {args=}, {kwargs=}")
             if kwargs.get("channel") in CHANNELS_TO_HANDLE:
@@ -182,25 +190,9 @@ class Cell(StreamCell):
         Returns: None
 
         """
-
-        if channel == CellChannel.SERVER_COMMAND and topic == ServerCommandNames.HANDLE_DEAD_JOB:
-
-            encode_payload(message, encoding_key=StreamHeaderKey.PAYLOAD_ENCODING)
-
-            result = {}
-            if isinstance(targets, list):
-                for target in targets:
-                    self.send_blob(channel=channel, topic=topic, target=target, message=message, secure=secure)
-                    result[target] = ""
-            else:
-                self.send_blob(channel=channel, topic=topic, target=targets, message=message, secure=secure)
-                result[targets] = ""
-
-            return result
-        else:
-            return self.core_cell.fire_and_forget(
-                channel=channel, topic=topic, targets=targets, message=message, optional=optional
-            )
+        return self.core_cell.fire_and_forget(
+            channel=channel, topic=topic, targets=targets, message=message, optional=optional
+        )
 
     def _get_result(self, req_id):
         waiter = self.requests_dict.pop(req_id)
