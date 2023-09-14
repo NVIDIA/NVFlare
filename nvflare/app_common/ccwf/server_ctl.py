@@ -282,6 +282,7 @@ class ServerSideController(Controller):
             request=end_wf_request,
             timeout=self.end_workflow_timeout,
             fl_ctx=fl_ctx,
+            secure=False,
         )
 
         assert isinstance(resp, dict)

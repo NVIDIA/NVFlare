@@ -82,7 +82,14 @@ class ServerEngineSpec(EngineSpec, ABC):
 
     @abstractmethod
     def send_aux_request(
-        self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext, optional=False
+        self,
+        targets: [],
+        topic: str,
+        request: Shareable,
+        timeout: float,
+        fl_ctx: FLContext,
+        optional=False,
+        secure=False,
     ) -> dict:
         """Send a request to specified clients via the aux channel.
 
@@ -95,6 +102,7 @@ class ServerEngineSpec(EngineSpec, ABC):
             timeout: number of secs to wait for replies. 0 means fire-and-forget.
             fl_ctx: FL context
             optional: whether this message is optional
+            secure: send the aux request in a secure way
 
         Returns: a dict of replies (client name => reply Shareable)
 
@@ -102,9 +110,9 @@ class ServerEngineSpec(EngineSpec, ABC):
         pass
 
     def fire_and_forget_aux_request(
-        self, targets: [], topic: str, request: Shareable, fl_ctx: FLContext, optional=False
+        self, targets: [], topic: str, request: Shareable, fl_ctx: FLContext, optional=False, secure=False
     ) -> dict:
-        return self.send_aux_request(targets, topic, request, 0.0, fl_ctx, optional)
+        return self.send_aux_request(targets, topic, request, 0.0, fl_ctx, optional, secure=secure)
 
     @abstractmethod
     def get_widget(self, widget_id: str) -> Widget:
