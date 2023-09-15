@@ -28,14 +28,7 @@ from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
-from nvflare.app_common.ccwf.common import (
-    Constant,
-    ResultType,
-    StatusReport,
-    is_secure,
-    make_task_name,
-    topic_for_end_workflow,
-)
+from nvflare.app_common.ccwf.common import Constant, ResultType, StatusReport, make_task_name, topic_for_end_workflow
 from nvflare.fuel.utils.validation_utils import check_non_empty_str, check_number_range, check_positive_number
 from nvflare.security.logging import secure_format_traceback
 
@@ -314,7 +307,7 @@ class ClientSideController(Executor, TaskController):
             name=self.report_final_result_task_name,
             data=shareable,
             timeout=int(self.final_result_ack_timeout),
-            secure=is_secure(fl_ctx),
+            secure=self.is_task_secure(fl_ctx),
         )
 
         resp = self.broadcast_and_wait(
@@ -580,7 +573,7 @@ class ClientSideController(Executor, TaskController):
             name=self.do_learn_task_name,
             data=request,
             timeout=int(self.learn_task_ack_timeout),
-            secure=is_secure(fl_ctx),
+            secure=self.is_task_secure(fl_ctx),
         )
 
         resp = self.broadcast_and_wait(
@@ -640,3 +633,12 @@ class ClientSideController(Executor, TaskController):
         if self.persistor:
             self.log_info(fl_ctx, f"Saving result of round {round_num}")
             self.persistor.save(result, fl_ctx)
+
+    def is_task_secure(self, fl_ctx: FLContext) -> bool:
+        """
+        Determine whether the task should be secure. A secure task requires encrypted communication between the peers.
+        The task is secure only when the training is in secure mode AND private_p2p is set to True.
+        """
+        private_p2p = self.get_config_prop(Constant.PRIVATE_P2P)
+        secure_train = fl_ctx.get_prop(FLContextKey.SECURE_MODE, False)
+        return private_p2p and secure_train

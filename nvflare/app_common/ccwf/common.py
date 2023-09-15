@@ -34,6 +34,7 @@ class Constant:
     BASENAME_ASK_FOR_MODEL = "ask_for_model"
 
     TASK_NAME_PREFIX = "cwf.task_prefix"
+    PRIVATE_P2P = "cwf.private_p2p"
     ERROR = "cwf.error"
     ORDER = "cwf.order"
     CLIENTS = "cwf.clients"
@@ -188,10 +189,6 @@ def topic_for_end_workflow(wf_id):
 
 def make_task_name(prefix: str, base_name: str) -> str:
     return f"{prefix}_{base_name}"
-
-
-def is_secure(fl_ctx: FLContext):
-    return fl_ctx.get_prop(FLContextKey.SECURE_MODE, False)
 
 
 class NumberMetricComparator(MetricComparator):

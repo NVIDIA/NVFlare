@@ -28,7 +28,7 @@ from nvflare.app_common.abstract.metric_comparator import MetricComparator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.ccwf.client_ctl import ClientSideController
-from nvflare.app_common.ccwf.common import Constant, NumberMetricComparator, ResultType, is_secure, make_task_name
+from nvflare.app_common.ccwf.common import Constant, NumberMetricComparator, ResultType, make_task_name
 from nvflare.fuel.utils.validation_utils import check_non_empty_str, check_positive_int, check_positive_number
 from nvflare.security.logging import secure_format_traceback
 
@@ -616,7 +616,7 @@ class SwarmClientController(ClientSideController):
                 name=self.report_learn_result_task_name,
                 data=result,
                 timeout=int(self.learn_task_ack_timeout),
-                secure=is_secure(fl_ctx),
+                secure=self.is_task_secure(fl_ctx),
             )
 
             resp = self.broadcast_and_wait(

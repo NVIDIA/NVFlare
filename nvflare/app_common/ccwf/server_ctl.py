@@ -69,6 +69,7 @@ class ServerSideController(Controller):
         result_clients_policy: str = DefaultValuePolicy.ALL,
         max_status_report_interval: float = Constant.PER_CLIENT_STATUS_REPORT_TIMEOUT,
         progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
+        private_p2p: bool = True,
     ):
         """
         Constructor
@@ -87,6 +88,7 @@ class ServerSideController(Controller):
             result_clients: clients to receive final results
             max_status_report_interval:
             progress_timeout:
+            private_p2p: whether peer-to-peer communication should be private
         """
         Controller.__init__(self, task_check_period)
         participating_clients = normalize_config_arg(participating_clients)
@@ -109,6 +111,13 @@ class ServerSideController(Controller):
         self.participating_clients = participating_clients
         self.result_clients = result_clients
         self.result_clients_policy = result_clients_policy
+
+        # make private_p2p bool
+        if private_p2p:
+            self.private_p2p = True
+        else:
+            self.private_p2p = False
+
         self.client_statuses = {}  # client name => ClientStatus
         self.cw_started = False
         self.asked_to_stop = False
@@ -178,6 +187,7 @@ class ServerSideController(Controller):
         self.log_info(fl_ctx, f"Configuring clients {self.participating_clients} for workflow {self.workflow_id}")
 
         learn_config = {
+            Constant.PRIVATE_P2P: self.private_p2p,
             Constant.TASK_NAME_PREFIX: self.task_name_prefix,
             Constant.CLIENTS: self.participating_clients,
             Constant.START_CLIENT: self.starting_client,
