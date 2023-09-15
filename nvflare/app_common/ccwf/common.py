@@ -14,8 +14,6 @@
 
 from typing import Union
 
-from nvflare.apis.fl_constant import FLContextKey
-from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.metric_comparator import MetricComparator
 
 
