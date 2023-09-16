@@ -159,24 +159,23 @@ class _DownloadFolderProcessor(ReplyProcessor):
 
 
 class _FileReceiver:
-    def __init__(self, file_path):
+    def __init__(self, file_path: str):
         self.file_path = file_path
-        self.tmp_name = f"{file_path}.tmp"
-        dir_name = os.path.dirname(file_path)
+        dir_name = os.path.dirname(self.file_path)
         if not os.path.exists(dir_name):
             os.makedirs(dir_name)
-        if os.path.exists(file_path):
+        if os.path.exists(self.file_path):
             # remove existing file
-            os.remove(file_path)
-        self.tmp_file = open(self.tmp_name, "ab")
+            os.remove(self.file_path)
+        self.file = open(self.file_path, "ab")
 
     def close(self):
-        self.tmp_file.close()
-        os.rename(self.tmp_name, self.file_path)
+        self.file.close()
 
     def receive_data(self, data, start: int, length: int):
+        # print(f"got {length} bytes ...")
         view = memoryview(data)
-        self.tmp_file.write(view[start : start + length])
+        self.file.write(view[start : start + length])
 
 
 class FileTransferModule(CommandModule):
@@ -341,19 +340,23 @@ class FileTransferModule(CommandModule):
         return self.download_file(args, ctx, ftd.SERVER_CMD_DOWNLOAD_BINARY, b64str_to_binary_file)
 
     def pull_binary_file(self, args, ctx: CommandContext):
+        """
+        Args: cmd_name, ctl_id, folder_name, file_name, [end]
+        """
         cmd_entry = ctx.get_command_entry()
-        if len(args) != 3:
+        if len(args) < 4 or len(args) > 5:
             return {ProtoKey.STATUS: APIStatus.ERROR_SYNTAX, ProtoKey.DETAILS: "usage: {}".format(cmd_entry.usage)}
-        file_name = args[2]
-        control_id = args[1]
-        parts = [cmd_entry.full_command_name(), control_id, file_name]
-        command = join_args(parts)
-        file_path = os.path.join(self.download_dir, file_name)
+        tx_id = args[1]
+        folder_name = args[2]
+        file_name = args[3]
+        is_end = len(args) > 4
+        tx_path = os.path.join(self.download_dir, tx_id)
+        file_path = os.path.join(tx_path, file_name)
         receiver = _FileReceiver(file_path)
         print(f"downloading file: {file_path}")
         api = ctx.get_api()
         ctx.set_bytes_receiver(receiver.receive_data)
-        result = api.server_execute(command, cmd_ctx=ctx)
+        result = api.server_execute(ctx.get_command(), cmd_ctx=ctx)
         receiver.close()
         if result.get(ProtoKey.STATUS) != APIStatus.SUCCESS:
             return result
@@ -367,6 +370,14 @@ class FileTransferModule(CommandModule):
 
             # remove the zip file
             os.remove(file_path)
+
+        if is_end:
+            # rename the folder
+            folder_path = os.path.join(self.download_dir, folder_name)
+            if os.path.exists(folder_path):
+                folder_path = f"{folder_path}__{tx_id}"
+            os.rename(tx_path, folder_path)
+            print(f"content downloaded to {folder_path}")
         return result
 
     def pull_folder(self, args, ctx: CommandContext):
@@ -378,24 +389,31 @@ class FileTransferModule(CommandModule):
         command = join_args(parts)
         api = ctx.get_api()
         result = api.server_execute(command)
+        if result.get(ProtoKey.STATUS) != APIStatus.SUCCESS:
+            return result
+
         meta = result.get(ProtoKey.META)
         if not meta:
             return result
 
         file_names = meta.get(MetaKey.FILES)
-        ctl_id = meta.get(MetaKey.CONTROL_ID)
-        api.debug(f"received ctl_id {ctl_id}, file names: {file_names}")
+        tx_id = meta.get(MetaKey.TX_ID)
+        api.debug(f"received tx_id {tx_id}, file names: {file_names}")
         if not file_names:
             return result
 
         cmd_name = meta.get(MetaKey.CMD_NAME)
 
-        for file_name in file_names:
-            command = f"{cmd_name} {ctl_id} {file_name}"
+        for i, file_name in enumerate(file_names):
+            parts = [cmd_name, tx_id, folder_name, file_name]
+            if i == len(file_names) - 1:
+                # this is the last file
+                parts.append("end")
+
+            command = join_args(parts)
             reply = api.do_command(command)
             if reply.get(ProtoKey.STATUS) != APIStatus.SUCCESS:
                 return reply
-
         return {ProtoKey.STATUS: APIStatus.SUCCESS, ProtoKey.DETAILS: "OK"}
 
     def upload_folder(self, args, ctx: CommandContext):

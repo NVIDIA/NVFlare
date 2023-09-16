@@ -913,6 +913,7 @@ class AdminAPI(AdminAPISpec):
             ctx = cmd_ctx
         else:
             ctx = self._new_command_context(command, args, cmd_entry)
+        ctx.set_command(command)
         start = time.time()
         ctx.set_reply_processor(reply_processor)
         self._try_command(ctx)
