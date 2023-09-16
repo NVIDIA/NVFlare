@@ -99,6 +99,9 @@ def build_list_reverse_order_index(
         elmt_key = f"{key}[{index}]"
         key_index = KeyIndex(key=elmt_key, value=value, parent_key=root_index, index=index)
 
+        if value is None:
+            continue
+
         if isinstance(value, list):
             if len(value) > 0:
                 key_indices = build_list_reverse_order_index(

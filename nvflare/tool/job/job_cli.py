@@ -17,7 +17,7 @@ import shutil
 import traceback
 from distutils.dir_util import copy_tree
 from tempfile import mkdtemp
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict
 
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree
@@ -101,15 +101,30 @@ def get_template_info_config(template_dir):
     return CF.parse_file(info_conf_path) if os.path.isfile(info_conf_path) else None
 
 
+def get_app_dirs(template_src):
+    root = os.path.abspath(template_src)
+    app_dirs = [os.path.join(root, f) for f in os.listdir(root) if os.path.isdir(os.path.join(root, f))]
+    return app_dirs
+
+
 def create_job(cmd_args):
     try:
-        prepare_job_folder(cmd_args)
         job_templates_dir = find_job_templates_location()
         template_index_conf = build_job_template_indices(job_templates_dir)
-        job_folder = cmd_args.job_folder
-        config_dir = get_config_dir(job_folder)
 
-        fmt, real_config_path = ConfigFactory.search_config_format("config_fed_server.conf", [config_dir])
+        target_template_name = cmd_args.template
+        check_template_exists(target_template_name, template_index_conf)
+        template_src = os.path.join(job_templates_dir, target_template_name)
+
+        app_dirs = get_app_dirs(template_src)
+        app_names = [os.path.basename(f) for f in app_dirs]
+        job_folder = cmd_args.job_folder
+        prepare_job_folder(cmd_args)
+        app_custom_dirs = prepare_app_dirs(job_folder, app_names)
+        prepare_app_scripts(app_custom_dirs, cmd_args)
+        config_dirs = get_config_dirs(job_folder, app_names)
+
+        fmt, real_config_path = ConfigFactory.search_config_format("config_fed_server.conf", config_dirs)
         if real_config_path and not cmd_args.force:
             print(
                 f"""\nwarning: configuration files:\n
@@ -118,13 +133,16 @@ def create_job(cmd_args):
             )
             return
 
-        target_template_name = cmd_args.template
-        check_template_exists(target_template_name, template_index_conf)
-        src = os.path.join(job_templates_dir, target_template_name)
-        copy_tree(src=src, dst=config_dir)
-        prepare_meta_config(cmd_args, src)
-        remove_extra_file(config_dir)
-        variable_values = prepare_job_config(cmd_args)
+        template_srcs = [template_src] if not app_dirs else app_dirs
+        for src in template_srcs:
+            app_name = os.path.basename(src)
+            app_config_dir = get_config_dir(job_folder, app_name)
+            print(f"copy from {src} to {app_config_dir}")
+            copy_tree(src=src, dst=app_config_dir)
+            remove_extra_file(app_config_dir)
+
+        prepare_meta_config(cmd_args, template_src, app_names)
+        variable_values = prepare_job_config(cmd_args, app_names)
         display_template_variables(job_folder, variable_values)
 
     except ValueError as e:
@@ -399,7 +417,7 @@ def define_list_templates_parser(job_subparser):
         nargs="?",
         default=None,
         help="Job template directory, if not specified, "
-        "will search from ./nvflare/config.conf and NVFLARE_HOME env. variables",
+             "will search from ./nvflare/config.conf and NVFLARE_HOME env. variables",
     )
     show_jobs_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     job_sub_cmd_parser[CMD_LIST_TEMPLATES] = show_jobs_parser
@@ -477,9 +495,9 @@ def define_create_job_parser(job_subparser):
     job_sub_cmd_parser[CMD_CREATE_JOB] = create_parser
 
 
-def prepare_job_config(cmd_args, tmp_job_dir: Optional[str] = None):
-    update_client_app_script(cmd_args)
-    merged_conf, config_modified = merge_configs_from_cli(cmd_args)
+def prepare_job_config(cmd_args, app_names: List[str], tmp_job_dir: Optional[str] = None):
+    update_client_app_script(cmd_args, app_names)
+    merged_conf, config_modified = merge_configs_from_cli(cmd_args, app_names)
     need_save_config = config_modified is True or tmp_job_dir is not None
 
     if tmp_job_dir is None:
@@ -493,13 +511,16 @@ def prepare_job_config(cmd_args, tmp_job_dir: Optional[str] = None):
     return variable_values
 
 
-def update_client_app_script(cmd_args):
+def update_client_app_script(cmd_args, app_names: List[str]):
     if cmd_args.app_config:
-        client_config, config_path = _update_client_app_config_script(cmd_args.job_folder, cmd_args.app_config)
-        save_config(client_config, config_path)
+        app_configs = \
+            _update_client_app_config_script(cmd_args.job_folder, app_names, cmd_args.app_config)
+        save_config(app_configs)
 
 
-def _update_client_app_config_script(job_folder, app_configs: List[str]) -> Tuple[ConfigTree, str]:
+def _update_client_app_config_script(job_folder,
+                                     app_names: List[str],
+                                     app_configs: List[str]) -> Dict[str, Tuple[ConfigTree, str]]:
     xs = []
     for cli_kv in app_configs:
         tokens = cli_kv.split("=")
@@ -507,15 +528,18 @@ def _update_client_app_config_script(job_folder, app_configs: List[str]) -> Tupl
         xs.append((k, v))
 
     config_args = " ".join([f"--{k} {v}" for k, v in xs])
-    config_dir = get_config_dir(job_folder)
-    config = ConfigFactory.load_config(os.path.join(config_dir, "config_fed_client.xxx"))
-    if config.format == ConfigFormat.JSON or config.format == ConfigFormat.OMEGACONF:
-        client_config = CF.from_dict(config.to_dict())
-    else:
-        client_config = config.conf
+    app_configs = {}
+    for app_name in app_names:
+        app_config_dir = get_config_dir(job_folder, app_name)
+        config = ConfigFactory.load_config(os.path.join(app_config_dir, "config_fed_client.xxx"))
+        if config.format == ConfigFormat.JSON or config.format == ConfigFormat.OMEGACONF:
+            client_config = CF.from_dict(config.to_dict())
+        else:
+            client_config = config.conf
 
-    client_config.put("app_config", config_args)
-    return client_config, config.file_path
+        client_config.put("app_config", config_args)
+        app_configs[app_name] = (client_config, config.file_path)
+    return app_configs
 
 
 def save_merged_configs(merged_conf, tmp_job_dir):
@@ -529,12 +553,11 @@ def save_merged_configs(merged_conf, tmp_job_dir):
         save_config(root_index.value, dst_path)
 
 
-def prepare_meta_config(cmd_args, target_template_dir):
-
+def prepare_meta_config(cmd_args, target_template_dir, app_names):
     job_folder = cmd_args.job_folder
     job_folder = job_folder[:-1] if job_folder.endswith("/") else job_folder
 
-    app_name = os.path.basename(job_folder)
+    job_name = os.path.basename(job_folder)
     meta_files = ["meta.json", "meta.conf", "meta.yml"]
     dst_path = None
     for mf in meta_files:
@@ -551,16 +574,18 @@ def prepare_meta_config(cmd_args, target_template_dir):
 
     # Use existing meta.conf if user already defined it.
     if not dst_path or (dst_path and cmd_args.force):
-        dst_config.put("name", app_name)
+        dst_config.put("name", job_name)
         dst_path = os.path.join(job_folder, "meta.conf")
         save_config(dst_config, dst_path)
 
     # clean up
-    config_dir = get_config_dir(job_folder)
-    for mf in meta_files:
-        meta_path = os.path.join(config_dir, mf)
-        if os.path.isfile(meta_path):
-            os.remove(meta_path)
+    app_names = ["app"] if not app_names else app_names
+    for app_name in app_names:
+        config_dir = get_config_dir(job_folder, app_name)
+        for mf in meta_files:
+            meta_path = os.path.join(config_dir, mf)
+            if os.path.isfile(meta_path):
+                os.remove(meta_path)
 
 
 def load_default_config_template(config_file_name: str):
@@ -570,18 +595,29 @@ def load_default_config_template(config_file_name: str):
     return config_template
 
 
-def dst_app_path(job_folder: str):
-    return os.path.join(job_folder, "app")
+def dst_app_path(job_folder: str, app_name="app"):
+    return os.path.join(job_folder, app_name)
 
 
-def dst_config_path(job_folder, config_filename):
-    config_dir = get_config_dir(job_folder)
+def dst_config_path(job_folder, config_filename, app_name: str = "app"):
+    config_dir = get_config_dir(job_folder, app_name)
     dst_path = os.path.join(config_dir, config_filename)
     return dst_path
 
 
-def get_config_dir(job_folder):
-    app_dir = dst_app_path(job_folder)
+def get_config_dirs(job_folder: str, app_names: List[str]) -> List[str]:
+    config_dirs = []
+    if app_names:
+        for app_name in app_names:
+            config_dirs.append(get_config_dir(job_folder, app_name))
+    else:
+        config_dirs.append(get_config_dir(job_folder, "app"))
+
+    return config_dirs
+
+
+def get_config_dir(job_folder: str, app_name: str) -> str:
+    app_dir = dst_app_path(job_folder, app_name)
     config_dir = os.path.join(app_dir, "config")
     return config_dir
 
@@ -619,21 +655,46 @@ def prepare_job_folder(cmd_args):
             shutil.rmtree(job_folder)
             os.makedirs(job_folder)
 
-    app_dir = os.path.join(job_folder, "app")
+    app_folder = os.path.join(cmd_args.job_folder, "app")
+    if os.path.exists(app_folder):
+        if cmd_args.force:
+            shutil.rmtree(app_folder)
+        else:
+            print(
+                f"""\nwarning: app directory already exists.
+                \nIf you would like to overwrite, use -force option"""
+            )
+
+
+def prepare_app_scripts(app_custom_dirs, cmd_args):
+    for app_custom_dir in app_custom_dirs:
+        if cmd_args.script and len(cmd_args.script.strip()) > 0:
+            if os.path.exists(cmd_args.script):
+                shutil.copy(cmd_args.script, app_custom_dir)
+            else:
+                raise ValueError(f"{cmd_args.script} doesn't exists")
+        if cmd_args.script_dir and len(cmd_args.script_dir.strip()) > 0:
+            if os.path.exists(cmd_args.script_dir):
+                copy_tree(cmd_args.script_dir, app_custom_dir)
+            else:
+                raise ValueError(f"{cmd_args.script_dir} doesn't exists")
+
+
+def prepare_app_dirs(job_folder: str, app_names: List[str]) -> List[str]:
+    app_names = ["app"] if not app_names else app_names
+    app_custom_dirs = []
+    for app_name in app_names:
+        app_custom_dir = create_app_dir(job_folder=job_folder, app_name=app_name)
+        app_custom_dirs.append(app_custom_dir)
+
+    return app_custom_dirs
+
+
+def create_app_dir(job_folder, app_name: str = "app"):
+    app_dir = os.path.join(job_folder, app_name)
     app_config_dir = os.path.join(app_dir, "config")
     app_custom_dir = os.path.join(app_dir, "custom")
     dirs = [app_dir, app_config_dir, app_custom_dir]
     for d in dirs:
         os.makedirs(d, exist_ok=True)
-
-    if cmd_args.script and len(cmd_args.script.strip()) > 0:
-        if os.path.exists(cmd_args.script):
-            shutil.copy(cmd_args.script, app_custom_dir)
-        else:
-            raise ValueError(f"{cmd_args.script} doesn't exists")
-
-    if cmd_args.script_dir and len(cmd_args.script_dir.strip()) > 0:
-        if os.path.exists(cmd_args.script_dir):
-            copy_tree(cmd_args.script_dir, app_custom_dir)
-        else:
-            raise ValueError(f"{cmd_args.script_dir} doesn't exists")
+    return app_custom_dir

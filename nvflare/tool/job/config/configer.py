@@ -21,7 +21,8 @@ from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.tool.job.config.config_indexer import KeyIndex, build_reverse_order_index
 
 
-def merge_configs_from_cli(cmd_args) -> Tuple[Dict[str, tuple], bool]:
+def merge_configs_from_cli(cmd_args, app_names: List[str]) -> Tuple[Dict[str, tuple], bool]:
+
     indices: Dict[str, Tuple] = build_config_file_indices(cmd_args.job_folder)
     cli_config_dict: Dict[str, Dict[str, str]] = get_cli_config(cmd_args)
     config_modified = False
@@ -210,14 +211,14 @@ def parse_cli_config(cli_configs: List[str]) -> Dict[str, Dict[str, str]]:
     return cli_config_dict
 
 
-def build_config_file_indices(config_dir: str) -> Dict[str, Tuple]:
+def build_config_file_indices(job_folder: str, app_names: List[str]) -> Dict[str, Tuple]:
     excluded = ["info"]
     included = ["config_fed_client", "config_fed_server", "meta"]
     config_extensions = ConfigFormat.extensions()
 
     config_file_index = {}
     config_files = []
-    for root, _, files in os.walk(config_dir):
+    for root, _, files in os.walk(job_folder):
         for f in files:
             tokens = os.path.splitext(f)
             name_wo_ext = tokens[0]
