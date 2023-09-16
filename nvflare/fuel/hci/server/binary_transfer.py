@@ -79,7 +79,7 @@ class BinaryTransfer:
                 p = os.path.relpath(p, tx_path)
                 files.append(p)
 
-        self.logger.info(f"files of the folder: {files}")
+        self.logger.debug(f"files of the folder: {files}")
         if len(files) > 0:
             conn.append_string(
                 "OK",

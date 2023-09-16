@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import time
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.fuel.hci.base64_utils import (
@@ -198,6 +199,8 @@ class FileTransferModule(CommandModule):
             ftd.PULL_FOLDER_FQN: self.pull_folder,
         }
 
+        self.tx_table = {}  # download transactions: tx_id => location
+
     def get_spec(self):
         return CommandModuleSpec(
             name="file_transfer",
@@ -350,10 +353,10 @@ class FileTransferModule(CommandModule):
         folder_name = args[2]
         file_name = args[3]
         is_end = len(args) > 4
-        tx_path = os.path.join(self.download_dir, tx_id)
+        tx_path = os.path.join(self.download_dir, f"{folder_name}__{tx_id}")
         file_path = os.path.join(tx_path, file_name)
         receiver = _FileReceiver(file_path)
-        print(f"downloading file: {file_path}")
+        print(f"downloading {file_name} ...")
         api = ctx.get_api()
         ctx.set_bytes_receiver(receiver.receive_data)
         result = api.server_execute(ctx.get_command(), cmd_ctx=ctx)
@@ -372,12 +375,17 @@ class FileTransferModule(CommandModule):
             os.remove(file_path)
 
         if is_end:
-            # rename the folder
+            # try to rename the download folder to be the folder_name
+            # if the folder already exists (since the folder may be downloaded already, the renaming will fail.
+            # But this is okay - we'll just leave the folder name alone.
             folder_path = os.path.join(self.download_dir, folder_name)
-            if os.path.exists(folder_path):
-                folder_path = f"{folder_path}__{tx_id}"
-            os.rename(tx_path, folder_path)
-            print(f"content downloaded to {folder_path}")
+            try:
+                os.rename(tx_path, folder_path)
+                location = folder_path
+            except:
+                # ignore the error
+                location = tx_path
+            self.tx_table[tx_id] = location
         return result
 
     def pull_folder(self, args, ctx: CommandContext):
@@ -404,6 +412,7 @@ class FileTransferModule(CommandModule):
 
         cmd_name = meta.get(MetaKey.CMD_NAME)
 
+        error = None
         for i, file_name in enumerate(file_names):
             parts = [cmd_name, tx_id, folder_name, file_name]
             if i == len(file_names) - 1:
@@ -413,8 +422,16 @@ class FileTransferModule(CommandModule):
             command = join_args(parts)
             reply = api.do_command(command)
             if reply.get(ProtoKey.STATUS) != APIStatus.SUCCESS:
-                return reply
-        return {ProtoKey.STATUS: APIStatus.SUCCESS, ProtoKey.DETAILS: "OK"}
+                error = reply
+                break
+
+        if not error:
+            location = self.tx_table.get(tx_id)
+            reply = {ProtoKey.STATUS: APIStatus.SUCCESS, ProtoKey.DETAILS: f"content downloaded to {location}"}
+        else:
+            reply = error
+        self.tx_table.pop(tx_id, None)
+        return reply
 
     def upload_folder(self, args, ctx: CommandContext):
         cmd_entry = ctx.get_command_entry()
