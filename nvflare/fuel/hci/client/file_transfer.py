@@ -24,6 +24,7 @@ from nvflare.fuel.hci.base64_utils import (
     bytes_to_b64str,
     text_file_to_b64str,
 )
+from nvflare.fuel.hci.client.event import EventType
 from nvflare.fuel.hci.cmd_arg_utils import join_args
 from nvflare.fuel.hci.proto import MetaKey, ProtoKey
 from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandModuleSpec, CommandSpec
@@ -169,6 +170,7 @@ class _FileReceiver:
             # remove existing file
             os.remove(self.file_path)
         self.file = open(self.file_path, "ab")
+        self.num_bytes_received = 0
 
     def close(self):
         self.file.close()
@@ -177,6 +179,7 @@ class _FileReceiver:
         # print(f"got {length} bytes ...")
         view = memoryview(data)
         self.file.write(view[start : start + length])
+        self.num_bytes_received += length
 
 
 class FileTransferModule(CommandModule):
@@ -356,14 +359,20 @@ class FileTransferModule(CommandModule):
         tx_path = os.path.join(self.download_dir, f"{folder_name}__{tx_id}")
         file_path = os.path.join(tx_path, file_name)
         receiver = _FileReceiver(file_path)
-        print(f"downloading {file_name} ...")
+        api = ctx.get_api()
+        api.fire_session_event(EventType.BEFORE_DOWNLOAD_FILE, f"downloading {file_name} ...")
         api = ctx.get_api()
         ctx.set_bytes_receiver(receiver.receive_data)
+        download_start = time.time()
         result = api.server_execute(ctx.get_command(), cmd_ctx=ctx)
         receiver.close()
         if result.get(ProtoKey.STATUS) != APIStatus.SUCCESS:
             return result
-
+        download_end = time.time()
+        api.fire_session_event(
+            EventType.AFTER_DOWNLOAD_FILE,
+            f"downloaded {file_name} ({receiver.num_bytes_received} bytes) in {download_end-download_start} seconds",
+        )
         dir_name, ext = os.path.splitext(file_path)
         if ext == ".zip":
             # unzip the file
