@@ -148,7 +148,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 CommandSpec(
                     name=AdminCommandNames.DOWNLOAD_JOB,
                     description="download a specified job",
-                    usage=f"{AdminCommandNames.DOWNLOAD_JOB} job_id",
+                    usage=f"{AdminCommandNames.DOWNLOAD_JOB} job_id [destination]",
                     handler_func=self.download_job,
                     authz_func=self.authorize_job,
                     client_cmd=ftd.PULL_FOLDER_FQN,

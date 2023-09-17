@@ -202,8 +202,6 @@ class FileTransferModule(CommandModule):
             ftd.PULL_FOLDER_FQN: self.pull_folder,
         }
 
-        self.tx_table = {}  # download transactions: tx_id => location
-
     def get_spec(self):
         return CommandModuleSpec(
             name="file_transfer",
@@ -293,7 +291,7 @@ class FileTransferModule(CommandModule):
                     description=server_cmd_spec.description,
                     usage=server_cmd_spec.usage,
                     handler_func=handler,
-                    visible=True,
+                    visible=server_cmd_spec.visible,
                 )
             ],
         )
@@ -345,6 +343,9 @@ class FileTransferModule(CommandModule):
     def download_binary_file(self, args, ctx: CommandContext):
         return self.download_file(args, ctx, ftd.SERVER_CMD_DOWNLOAD_BINARY, b64str_to_binary_file)
 
+    def _tx_path(self, tx_id: str, folder_name: str):
+        return os.path.join(self.download_dir, f"{folder_name}__{tx_id}")
+
     def pull_binary_file(self, args, ctx: CommandContext):
         """
         Args: cmd_name, ctl_id, folder_name, file_name, [end]
@@ -356,7 +357,7 @@ class FileTransferModule(CommandModule):
         folder_name = args[2]
         file_name = args[3]
         is_end = len(args) > 4
-        tx_path = os.path.join(self.download_dir, f"{folder_name}__{tx_id}")
+        tx_path = self._tx_path(tx_id, folder_name)
         file_path = os.path.join(tx_path, file_name)
         receiver = _FileReceiver(file_path)
         api = ctx.get_api()
@@ -382,26 +383,17 @@ class FileTransferModule(CommandModule):
 
             # remove the zip file
             os.remove(file_path)
-
-        if is_end:
-            # try to rename the download folder to be the folder_name
-            # if the folder already exists (since the folder may be downloaded already, the renaming will fail.
-            # But this is okay - we'll just leave the folder name alone.
-            folder_path = os.path.join(self.download_dir, folder_name)
-            try:
-                os.rename(tx_path, folder_path)
-                location = folder_path
-            except:
-                # ignore the error
-                location = tx_path
-            self.tx_table[tx_id] = location
         return result
 
     def pull_folder(self, args, ctx: CommandContext):
         cmd_entry = ctx.get_command_entry()
-        if len(args) != 2:
+        if len(args) < 2:
             return {ProtoKey.STATUS: APIStatus.ERROR_SYNTAX, ProtoKey.DETAILS: "usage: {}".format(cmd_entry.usage)}
         folder_name = args[1]
+        destination_name = folder_name
+        if len(args) > 2:
+            destination_name = args[2]
+
         parts = [cmd_entry.full_command_name(), folder_name]
         command = join_args(parts)
         api = ctx.get_api()
@@ -435,11 +427,28 @@ class FileTransferModule(CommandModule):
                 break
 
         if not error:
-            location = self.tx_table.get(tx_id)
+            tx_path = self._tx_path(tx_id, folder_name)
+            destination_path = os.path.join(self.download_dir, destination_name)
+            try:
+                os.rename(tx_path, destination_path)
+                location = destination_path
+            except:
+                if destination_name != folder_name:
+                    # try to use alt_destination_path
+                    alt_destination_path = os.path.join(
+                        self.download_dir,
+                        f"{destination_name}__{tx_id}",
+                    )
+                    try:
+                        os.rename(tx_path, alt_destination_path)
+                        location = alt_destination_path
+                    except:
+                        location = tx_path
+                else:
+                    location = tx_path
             reply = {ProtoKey.STATUS: APIStatus.SUCCESS, ProtoKey.DETAILS: f"content downloaded to {location}"}
         else:
             reply = error
-        self.tx_table.pop(tx_id, None)
         return reply
 
     def upload_folder(self, args, ctx: CommandContext):
