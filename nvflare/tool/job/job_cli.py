@@ -55,7 +55,7 @@ from nvflare.utils.cli_utils import (
     get_curr_dir,
     get_hidden_nvflare_dir,
     get_startup_kit_dir,
-    save_config,
+    save_config, save_configs,
 )
 
 CMD_LIST_TEMPLATES = "list_templates"
@@ -118,6 +118,7 @@ def create_job(cmd_args):
 
         app_dirs = get_app_dirs(template_src)
         app_names = [os.path.basename(f) for f in app_dirs]
+        app_names = app_names if app_names else ["app"]
         job_folder = cmd_args.job_folder
         prepare_job_folder(cmd_args)
         app_custom_dirs = prepare_app_dirs(job_folder, app_names)
@@ -133,17 +134,23 @@ def create_job(cmd_args):
             )
             return
 
-        template_srcs = [template_src] if not app_dirs else app_dirs
-        for src in template_srcs:
-            app_name = os.path.basename(src)
+        template_srcs = {}
+        if not app_dirs:
+            template_srcs["app"] = template_src
+        else:
+            for app_dir in app_dirs:
+                app_name = os.path.basename(app_dir)
+                template_srcs[app_name] = app_dir
+
+        for app_name in template_srcs:
+            src = template_srcs[app_name]
             app_config_dir = get_config_dir(job_folder, app_name)
-            print(f"copy from {src} to {app_config_dir}")
             copy_tree(src=src, dst=app_config_dir)
             remove_extra_file(app_config_dir)
 
         prepare_meta_config(cmd_args, template_src, app_names)
-        variable_values = prepare_job_config(cmd_args, app_names)
-        display_template_variables(job_folder, variable_values)
+        app_variable_values = prepare_job_config(cmd_args, app_names)
+        display_template_variables(job_folder,app_variable_values)
 
     except ValueError as e:
         print(f"\nUnable to handle command: {CMD_CREATE_JOB} due to: {e} \n")
@@ -169,7 +176,7 @@ def show_variables(cmd_args):
 
         config_dir = get_config_dir(cmd_args.job_folder)
         indices = build_config_file_indices(config_dir)
-        variable_values = filter_indices(indices_configs=indices)
+        variable_values = filter_indices(app_indices_configs=indices)
         display_template_variables(cmd_args.job_folder, variable_values)
 
     except ValueError as e:
@@ -192,7 +199,7 @@ def check_template_exists(target_template_name, template_index_conf):
         )
 
 
-def display_template_variables(job_folder, variable_values):
+def display_template_variables(job_folder, app_variable_values):
     print("\nThe following are the variables you can change in the template\n")
     total_length = 135
     left_margin = 1
@@ -212,21 +219,27 @@ def display_template_variables(job_folder, variable_values):
     var_comp = fix_length_format(JOB_CONFIG_COMP_NAME, var_comp_fix_length)
     print(" " * left_margin, file_name, var_name, var_value, var_comp)
     print("-" * total_length)
-    for file in sorted(variable_values.keys()):
-        indices = variable_values.get(file)
-        file_name = os.path.basename(file)
-        file_name = fix_length_format(file_name, file_name_fix_length)
-        key_indices = indices
+    for app_name, variable_values in app_variable_values.items():
+        if app_name != "app":
+            app_header = fix_length_format(f"app: {app_name}", total_length)
+            print(" " * left_margin, app_header)
+            print(" " * total_length)
 
-        for index in sorted(key_indices.keys()):
-            key_index = key_indices[index]
-            var_name = fix_length_format(index, var_name_fix_length)
-            var_value = fix_length_format(str(key_index.value), var_value_fix_length)
-            var_comp = " " if key_index.component_name is None else key_index.component_name
-            var_comp = fix_length_format(var_comp, var_comp_fix_length)
-            print(" " * left_margin, file_name, var_name, var_value, var_comp)
+        for file in sorted(variable_values.keys()):
+            indices = variable_values.get(file)
+            file_name = os.path.basename(file)
+            file_name = fix_length_format(file_name, file_name_fix_length)
+            key_indices = indices
 
-        print("")
+            for index in sorted(key_indices.keys()):
+                key_index = key_indices[index]
+                var_name = fix_length_format(index, var_name_fix_length)
+                var_value = fix_length_format(str(key_index.value), var_value_fix_length)
+                var_comp = " " if key_index.component_name is None else key_index.component_name
+                var_comp = fix_length_format(var_comp, var_comp_fix_length)
+                print(" " * left_margin, file_name, var_name, var_value, var_comp)
+
+            print("")
     print("-" * total_length)
 
 
@@ -500,14 +513,13 @@ def prepare_job_config(cmd_args, app_names: List[str], tmp_job_dir: Optional[str
     merged_conf, config_modified = merge_configs_from_cli(cmd_args, app_names)
     need_save_config = config_modified is True or tmp_job_dir is not None
 
+    print(f"{merged_conf.keys()=}")
     if tmp_job_dir is None:
         tmp_job_dir = cmd_args.job_folder
 
     if need_save_config:
         save_merged_configs(merged_conf, tmp_job_dir)
-
     variable_values = filter_indices(merged_conf)
-
     return variable_values
 
 
@@ -515,7 +527,10 @@ def update_client_app_script(cmd_args, app_names: List[str]):
     if cmd_args.app_config:
         app_configs = \
             _update_client_app_config_script(cmd_args.job_folder, app_names, cmd_args.app_config)
-        save_config(app_configs)
+        # todo, make sure it don't overwrite the existing config
+        # todo, make sure it don't overwrite the existing config
+        # todo, make sure it don't overwrite the existing config
+        save_configs(app_configs)
 
 
 def _update_client_app_config_script(job_folder,
@@ -542,15 +557,19 @@ def _update_client_app_config_script(job_folder,
     return app_configs
 
 
-def save_merged_configs(merged_conf, tmp_job_dir):
-    for file, (config, excluded_key_List, key_indices) in merged_conf.items():
-        config_dir = pathlib.Path(tmp_job_dir) / "app" / "config"
-        base_filename = os.path.basename(file)
-        if base_filename.startswith("meta."):
-            config_dir = tmp_job_dir
-        dst_path = os.path.join(config_dir, base_filename)
-        root_index = get_root_index(next(iter(key_indices.values()))[0])
-        save_config(root_index.value, dst_path)
+def save_merged_configs(app_merged_conf, tmp_job_dir):
+    print(f"{tmp_job_dir=}")
+
+    for app_name, merged_conf in app_merged_conf.items():
+        print(f"{app_name=}")
+        config_dir = os.path.join(tmp_job_dir, app_name , "config")
+        for file, (config, excluded_key_List, key_indices) in merged_conf.items():
+            base_filename = os.path.basename(file)
+            if base_filename.startswith("meta."):
+                config_dir = tmp_job_dir
+            dst_path = os.path.join(config_dir, base_filename)
+            root_index = get_root_index(next(iter(key_indices.values()))[0])
+            save_config(root_index.value, dst_path)
 
 
 def prepare_meta_config(cmd_args, target_template_dir, app_names):
@@ -683,6 +702,7 @@ def prepare_app_scripts(app_custom_dirs, cmd_args):
 def prepare_app_dirs(job_folder: str, app_names: List[str]) -> List[str]:
     app_names = ["app"] if not app_names else app_names
     app_custom_dirs = []
+    print("app_names =", app_names)
     for app_name in app_names:
         app_custom_dir = create_app_dir(job_folder=job_folder, app_name=app_name)
         app_custom_dirs.append(app_custom_dir)

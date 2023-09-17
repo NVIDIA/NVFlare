@@ -228,36 +228,40 @@ def hocon_to_string(target_fmt: ConfigFormat, dst_config: ConfigTree):
         return omega_conf.to_str()
 
 
-def save_config(app_configs: Dict[str, Tuple], keep_origin_format: bool = True):
+def save_configs(app_configs: Dict[str, Tuple], keep_origin_format: bool = True):
     for app_name, (dst_config, dst_path) in app_configs.items():
-        if dst_path is None or dst_path.rindex(".") == -1:
-            raise ValueError(f"configuration file path '{dst_path}' can't be None or has no extension")
+        save_config(dst_config, dst_path, keep_origin_format)
 
-        require_clean_up = False
-        if keep_origin_format:
-            original_ext = os.path.basename(dst_path).split(".")[1]
-            fmt = ConfigFormat.config_ext_formats().get(f".{original_ext}", None)
-            if fmt is None:
-                raise ValueError(f"invalid file extension {dst_path}, no corresponding configuration format")
+
+def save_config(dst_config, dst_path, keep_origin_format: bool = True):
+    if dst_path is None or dst_path.rindex(".") == -1:
+        raise ValueError(f"configuration file path '{dst_path}' can't be None or has no extension")
+
+    require_clean_up = False
+    if keep_origin_format:
+        original_ext = os.path.basename(dst_path).split(".")[1]
+        fmt = ConfigFormat.config_ext_formats().get(f".{original_ext}", None)
+        if fmt is None:
+            raise ValueError(f"invalid file extension {dst_path}, no corresponding configuration format")
+        dst_config_path = dst_path
+
+    else:
+        fmt = ConfigFormat.PYHOCON
+        ext = ConfigFormat.extensions(fmt)[0]
+        if dst_path.endswith(ext):
             dst_config_path = dst_path
-
         else:
-            fmt = ConfigFormat.PYHOCON
-            ext = ConfigFormat.extensions(fmt)[0]
-            if dst_path.endswith(ext):
-                dst_config_path = dst_path
-            else:
-                filename = f"{os.path.basename(dst_path).split('.')[0]}{ext}"
-                dst_config_path = os.path.join(os.path.dirname(dst_path), filename)
-                require_clean_up = True
+            filename = f"{os.path.basename(dst_path).split('.')[0]}{ext}"
+            dst_config_path = os.path.join(os.path.dirname(dst_path), filename)
+            require_clean_up = True
 
-        config_str = hocon_to_string(fmt, dst_config)
-        with open(dst_config_path, "w") as outfile:
-            outfile.write(f"{config_str}\n")
+    config_str = hocon_to_string(fmt, dst_config)
+    with open(dst_config_path, "w") as outfile:
+        outfile.write(f"{config_str}\n")
 
-        if require_clean_up:
-            if os.path.exists(dst_path):
-                os.remove(dst_path)
+    if require_clean_up:
+        if os.path.exists(dst_path):
+            os.remove(dst_path)
 
 
 def get_hidden_config():
