@@ -61,13 +61,19 @@ class Adapter:
         request.set_header(MessageHeaderKey.CHANNEL, channel)
         topic = request.get_header(StreamHeaderKey.TOPIC)
         request.set_header(MessageHeaderKey.TOPIC, topic)
-        self.logger.info(f"Call back on {stream_req_id=}: {channel=}, {topic=}")
+        self.logger.debug(f"Call back on {stream_req_id=}: {channel=}, {topic=}")
 
         req_id = request.get_header(MessageHeaderKey.REQ_ID, "")
         secure = request.get_header(MessageHeaderKey.SECURE, False)
         self.logger.debug(f"{stream_req_id=}: on {channel=}, {topic=}")
         response = self.cb(request)
         self.logger.debug(f"response available: {stream_req_id=}: on {channel=}, {topic=}")
+
+        if not stream_req_id:
+            # no need to reply!
+            self.logger.debug("Do not send reply because there is no stream_req_id!")
+            return
+
         response.add_headers(
             {
                 MessageHeaderKey.REQ_ID: req_id,
@@ -172,7 +178,7 @@ class Cell(StreamCell):
         self.logger.debug("About to return from broadcast_request")
         return results
 
-    def fire_and_forget(
+    def _fire_and_forget(
         self, channel: str, topic: str, targets: Union[str, List[str]], message: Message, secure=False, optional=False
     ) -> Dict[str, str]:
         """
@@ -189,9 +195,15 @@ class Cell(StreamCell):
         Returns: None
 
         """
-        return self.core_cell.fire_and_forget(
-            channel=channel, topic=topic, targets=targets, message=message, optional=optional
-        )
+        encode_payload(message, encoding_key=StreamHeaderKey.PAYLOAD_ENCODING)
+        if isinstance(targets, str):
+            targets = [targets]
+
+        result = {}
+        for target in targets:
+            self.send_blob(channel=channel, topic=topic, target=target, message=message, secure=secure)
+            result[target] = ""
+        return result
 
     def _get_result(self, req_id):
         waiter = self.requests_dict.pop(req_id)
@@ -224,7 +236,7 @@ class Cell(StreamCell):
         request.add_headers({StreamHeaderKey.STREAM_REQ_ID: req_id})
 
         # this future can be used to check sending progress, but not for checking return blob
-        self.logger.info(f"{req_id=}, {channel=}, {topic=}, {target=}, {timeout=}: send_request about to send_blob")
+        self.logger.debug(f"{req_id=}, {channel=}, {topic=}, {target=}, {timeout=}: send_request about to send_blob")
         future = self.send_blob(channel=channel, topic=topic, target=target, message=request, secure=secure)
 
         waiter = SimpleWaiter(req_id=req_id, result=make_reply(ReturnCode.TIMEOUT))
