@@ -133,6 +133,7 @@ class ClientSideController(Executor, TaskController):
         return self.config.get(name, default)
 
     def start_run(self, fl_ctx: FLContext):
+        self.start_controller(fl_ctx)
         self.engine = fl_ctx.get_engine()
         if not self.engine:
             self.system_panic("no engine", fl_ctx)
