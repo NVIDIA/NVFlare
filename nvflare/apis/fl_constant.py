@@ -156,6 +156,7 @@ class FLContextKey(object):
     COMPONENT_CONFIG = "__component_config__"
     COMPONENT_NODE = "__component_node__"
     CONFIG_CTX = "__config_ctx__"
+    FILTER_DIRECTION = "__filter_dir__"
 
 
 class ReservedTopic(object):

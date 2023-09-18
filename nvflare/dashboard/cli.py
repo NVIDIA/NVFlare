@@ -59,6 +59,8 @@ def start(args):
         pwd = utils.generate_password(8)
         print(f"Project admin credential is {answer} and the password is {pwd}")
         environment.update({"NVFL_CREDENTIAL": f"{answer}:{pwd}"})
+    if args.local:
+        return start_local(environment)
     try:
         client = docker.from_env()
     except docker.errors.DockerException:
@@ -107,6 +109,16 @@ def start(args):
         print(f"id is {container_obj.id}")
     else:
         print("Container failed to start")
+
+
+def start_local(env):
+    print("Local dashboard without docker is for development and test only")
+    file_dir_path = os.path.dirname(__file__)
+    wsgi_location = os.path.join(file_dir_path, "wsgi.py")
+    cmd = [sys.executable, wsgi_location]
+    env.update({"NVFL_WEB_ROOT": os.path.dirname(os.path.abspath(__file__))})
+    process_status = subprocess.run(args=cmd, env=env)
+    return process_status
 
 
 def stop():
@@ -178,13 +190,14 @@ def define_dashboard_parser(parser):
     parser.add_argument("-e", "--env", action="append", help="additonal environment variables: var1=value1")
     parser.add_argument("--cred", help="set credential directly in the form of USER_EMAIL:PASSWORD")
     parser.add_argument("-i", "--image", help="set the container image name")
+    parser.add_argument("--local", action="store_true", help="start dashboard locally without docker image")
 
 
 def handle_dashboard(args):
     support_csp_string = ", ".join(supported_csp)
     if args.stop:
         stop()
-    elif args.start:
+    elif args.start or args.local:
         start(args)
     elif args.cloud:
         if args.cloud in supported_csp:
