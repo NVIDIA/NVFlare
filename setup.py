@@ -37,6 +37,21 @@ if release == "1":
 else:
     package_name = "nvflare-nightly"
 
+
+def package_files(
+    root,
+    starting,
+):
+    paths = []
+    for (path, directories, filenames) in os.walk(os.path.join(root, starting)):
+        rel_dir = os.path.relpath(path, root)
+        for filename in filenames:
+            paths.append(os.path.join(rel_dir, filename))
+    return paths
+
+
+extra_files = package_files(root="nvflare/dashboard/application", starting="static")
+
 setup(
     name=package_name,
     version=version,
@@ -48,5 +63,10 @@ setup(
             "*",
         ],
         exclude=["tests", "tests.*"],
-    ),    package_data={"": ["*.yml", "*.html", "poc.zip", "*.config", "*.conf"]},
+    ),
+    package_data={
+        "": ["*.yml", "*.html", "*.js", "poc.zip", "*.config", "*.conf"],
+        "nvflare.dashboard.application": extra_files,
+    },
+    include_package_data=True,
 )
