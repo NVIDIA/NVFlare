@@ -33,4 +33,4 @@ class WandBWriterForMetricsExchanger(LogWriterForMetricsExchanger):
             metrics (Dict[str, float]): Dictionary of metric_name of type String to Float values.
             step (int, optional): A single integer step at which to log the specified Metrics.
         """
-        super().log(key="metrics", value=metrics, data_type=AnalyticsDataType.METRICS, global_step=step)
+        self.send_log(key="metrics", value=metrics, data_type=AnalyticsDataType.METRICS, global_step=step)

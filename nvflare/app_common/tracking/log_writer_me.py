@@ -40,7 +40,7 @@ class LogWriterForMetricsExchanger(FLComponent, ABC):
             if self.sender is None:
                 self.task_panic("Cannot load MetricsExchanger!", fl_ctx=fl_ctx)
 
-    def log(self, key: str, value: Any, data_type: AnalyticsDataType, **kwargs):
+    def send_log(self, key: str, value: Any, data_type: AnalyticsDataType, **kwargs):
         self.sender.log(key=key, value=value, data_type=data_type, **kwargs)
 
     @abstractmethod
