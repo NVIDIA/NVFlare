@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
-import pathlib
 import shutil
 import traceback
 from distutils.dir_util import copy_tree
@@ -77,14 +76,18 @@ def build_job_template_indices(job_templates_dir: str) -> ConfigTree:
     config_file_base_names = CONFIG_FILE_BASE_NAME_WO_EXTS
     template_conf = conf.get("templates")
     keys = JOB_INFO_KEYS
-    for root, dirs, files in os.walk(job_templates_dir):
-        config_files = [f for f in files if find_filename_basename(f) in config_file_base_names]
-        if len(config_files) > 0:
-            info_conf = get_template_info_config(root)
-            for key in keys:
-                value = info_conf.get(key, "NA") if info_conf else "NA"
-                template_name = os.path.basename(root)
-                template_conf.put(f"{template_name}.{key}", value)
+
+    for f in os.listdir(job_templates_dir):
+        template_path = os.path.join(job_templates_dir, f)
+        if os.path.isdir(template_path):
+            for _, _, files in os.walk(template_path):
+                config_files = [f for f in files if find_filename_basename(f) in config_file_base_names]
+                if len(config_files) > 0:
+                    info_conf = get_template_info_config(template_path)
+                    for key in keys:
+                        value = info_conf.get(key, "NA") if info_conf else "NA"
+                        template_name = os.path.basename(f)
+                        template_conf.put(f"{template_name}.{key}", value)
 
     return conf
 
@@ -101,8 +104,8 @@ def get_template_info_config(template_dir):
     return CF.parse_file(info_conf_path) if os.path.isfile(info_conf_path) else None
 
 
-def get_app_dirs(template_src):
-    root = os.path.abspath(template_src)
+def get_app_dirs(job_folder_or_template):
+    root = os.path.abspath(job_folder_or_template)
     app_dirs = [os.path.join(root, f) for f in os.listdir(root) if os.path.isdir(os.path.join(root, f))]
     return app_dirs
 
@@ -150,7 +153,7 @@ def create_job(cmd_args):
 
         prepare_meta_config(cmd_args, template_src, app_names)
         app_variable_values = prepare_job_config(cmd_args, app_names)
-        display_template_variables(job_folder,app_variable_values)
+        display_template_variables(job_folder, app_variable_values)
 
     except ValueError as e:
         print(f"\nUnable to handle command: {CMD_CREATE_JOB} due to: {e} \n")
@@ -174,8 +177,7 @@ def show_variables(cmd_args):
         if not os.path.isdir(cmd_args.job_folder):
             raise ValueError("required job folder is not specified.")
 
-        config_dir = get_config_dir(cmd_args.job_folder)
-        indices = build_config_file_indices(config_dir)
+        indices = build_config_file_indices(cmd_args.job_folder)
         variable_values = filter_indices(app_indices_configs=indices)
         display_template_variables(cmd_args.job_folder, variable_values)
 
@@ -312,7 +314,9 @@ def submit_job(cmd_args):
         temp_job_dir = mkdtemp()
         copy_tree(cmd_args.job_folder, temp_job_dir)
 
-        prepare_job_config(cmd_args, temp_job_dir)
+        app_names = get_app_dirs(cmd_args.job_folder)
+
+        prepare_job_config(cmd_args, app_names, temp_job_dir)
         admin_username, admin_user_dir = find_admin_user_and_dir()
         internal_submit_job(admin_user_dir, admin_username, temp_job_dir)
 
@@ -413,6 +417,7 @@ def define_submit_job_parser(job_subparser):
         "-a",
         "--app_config",
         type=str,
+        action="append",
         nargs="*",
         help="""key=value options will be passed directly to script argument """,
     )
@@ -494,6 +499,7 @@ def define_create_job_parser(job_subparser):
         "-a",
         "--app_config",
         type=str,
+        action="append",
         nargs="*",
         help="""key=value options will be passed directly to script argument """,
     )
@@ -513,7 +519,6 @@ def prepare_job_config(cmd_args, app_names: List[str], tmp_job_dir: Optional[str
     merged_conf, config_modified = merge_configs_from_cli(cmd_args, app_names)
     need_save_config = config_modified is True or tmp_job_dir is not None
 
-    print(f"{merged_conf.keys()=}")
     if tmp_job_dir is None:
         tmp_job_dir = cmd_args.job_folder
 
@@ -527,42 +532,64 @@ def update_client_app_script(cmd_args, app_names: List[str]):
     if cmd_args.app_config:
         app_configs = \
             _update_client_app_config_script(cmd_args.job_folder, app_names, cmd_args.app_config)
-        # todo, make sure it don't overwrite the existing config
-        # todo, make sure it don't overwrite the existing config
-        # todo, make sure it don't overwrite the existing config
         save_configs(app_configs)
 
 
 def _update_client_app_config_script(job_folder,
                                      app_names: List[str],
                                      app_configs: List[str]) -> Dict[str, Tuple[ConfigTree, str]]:
-    xs = []
-    for cli_kv in app_configs:
-        tokens = cli_kv.split("=")
-        k, v = tokens[0], tokens[1]
-        xs.append((k, v))
+    app_xs = {}
+    for arr in app_configs:
+        if not arr:
+            continue
+        xs = []
+        app_name = "app"
+        if arr[0].find("=") == -1:
+            if arr[0] not in app_names:
+                raise ValueError(f"Unknown app name '{arr[0]}', expecting {app_names}.")
+            else:
+                app_name = arr[0]
+            app_config_kvs = arr[1:]
+        else:
+            app_config_kvs = arr
 
-    config_args = " ".join([f"--{k} {v}" for k, v in xs])
+        for cli_kv in app_config_kvs:
+            tokens = cli_kv.split("=")
+            k, v = tokens[0], tokens[1]
+            xs.append((k, v))
+        config_args = " ".join([f"--{k} {v}" for k, v in xs])
+        app_xs[app_name] = config_args
+
     app_configs = {}
+
+    for app_name_from_app_config in app_xs:
+        if app_name_from_app_config not in app_names:
+            raise ValueError("when site-specific app configurations are used, expecting -a <app_name> k1=v1 k2=v2 ...")
+
     for app_name in app_names:
         app_config_dir = get_config_dir(job_folder, app_name)
-        config = ConfigFactory.load_config(os.path.join(app_config_dir, "config_fed_client.xxx"))
-        if config.format == ConfigFormat.JSON or config.format == ConfigFormat.OMEGACONF:
-            client_config = CF.from_dict(config.to_dict())
-        else:
-            client_config = config.conf
 
-        client_config.put("app_config", config_args)
-        app_configs[app_name] = (client_config, config.file_path)
+        if os.path.exists(os.path.join(app_config_dir, "config_fed_client.conf")) or \
+                os.path.exists(os.path.join(app_config_dir, "config_fed_client.json")) or \
+                os.path.exists(os.path.join(app_config_dir, "config_fed_client.yml")):
+
+            config = ConfigFactory.load_config(os.path.join(app_config_dir, "config_fed_client.xxx"))
+            if config.format == ConfigFormat.JSON or config.format == ConfigFormat.OMEGACONF:
+                client_config = CF.from_dict(config.to_dict())
+            else:
+                client_config = config.conf
+
+            if app_name in app_xs:
+                client_config.put("app_config", app_xs[app_name])
+
+            app_configs[app_name] = (client_config, config.file_path)
+
     return app_configs
 
 
 def save_merged_configs(app_merged_conf, tmp_job_dir):
-    print(f"{tmp_job_dir=}")
-
     for app_name, merged_conf in app_merged_conf.items():
-        print(f"{app_name=}")
-        config_dir = os.path.join(tmp_job_dir, app_name , "config")
+        config_dir = os.path.join(tmp_job_dir, app_name, "config")
         for file, (config, excluded_key_List, key_indices) in merged_conf.items():
             base_filename = os.path.basename(file)
             if base_filename.startswith("meta."):
@@ -702,7 +729,6 @@ def prepare_app_scripts(app_custom_dirs, cmd_args):
 def prepare_app_dirs(job_folder: str, app_names: List[str]) -> List[str]:
     app_names = ["app"] if not app_names else app_names
     app_custom_dirs = []
-    print("app_names =", app_names)
     for app_name in app_names:
         app_custom_dir = create_app_dir(job_folder=job_folder, app_name=app_name)
         app_custom_dirs.append(app_custom_dir)

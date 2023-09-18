@@ -23,23 +23,17 @@ from nvflare.tool.job.config.config_indexer import KeyIndex, build_reverse_order
 
 def merge_configs_from_cli(cmd_args, app_names: List[str]) -> Tuple[Dict[str, Dict[str, tuple]], bool]:
     app_indices: Dict[str, Dict[str, Tuple]] = build_config_file_indices(cmd_args.job_folder)
-    print(f"merge_configs_from cli : {app_indices.keys()=}")
 
     app_cli_config_dict: Dict[str, Dict[str, Dict[str, str]]] = get_cli_config(cmd_args, app_names)
-    print(f"{app_cli_config_dict.keys()=}")
     config_modified = False
     if app_cli_config_dict:
         config_modified = True
-        # todo: Question, why do we need to copy.
-        # todo: copy CLI temp saved to the final destination. What if the CLI config is not saved
-        # alternative for this code
-        copy_app_config_file(app_cli_config_dict, cmd_args)
         return merge_configs(app_indices, app_cli_config_dict), config_modified
     else:
         return app_indices, config_modified
 
 
-def copy_app_config_file(app_cli_config_dict, cmd_args):
+def __not_used_copy_app_config_file_not_used__(app_cli_config_dict, cmd_args):
     for app_name in app_cli_config_dict:
         app_config_dir = os.path.join(cmd_args.job_folder, app_name, "config")
         for cli_config_file in app_cli_config_dict.get(app_name):
@@ -51,6 +45,7 @@ def copy_app_config_file(app_cli_config_dict, cmd_args):
 
             target_file = os.path.join(target_dir, base_config_filename)
             if not os.path.exists(target_file):
+                # this doesn't work
                 shutil.copyfile(cli_config_file, target_file)
 
 
@@ -90,7 +85,7 @@ def extract_string_with_index(input_string):
     return result
 
 
-def filter_indices(app_indices_configs:Dict[str, Dict[str, Tuple]]) -> Dict[str, Dict[str, Dict[str,  KeyIndex]]]:
+def filter_indices(app_indices_configs: Dict[str, Dict[str, Tuple]]) -> Dict[str, Dict[str, Dict[str, KeyIndex]]]:
     app_results = {}
     for app_name in app_indices_configs:
         indices_configs = app_indices_configs.get(app_name)
@@ -115,8 +110,8 @@ def filter_config_name_and_values(excluded_key_list: List[str],
     return temp_results
 
 
-def merge_configs(app_indices_configs: Dict[str,Dict[str, tuple]],
-                  app_cli_file_configs: Dict[str, Dict[str, Dict]]) -> Dict[str,Dict[str, tuple]]:
+def merge_configs(app_indices_configs: Dict[str, Dict[str, tuple]],
+                  app_cli_file_configs: Dict[str, Dict[str, Dict]]) -> Dict[str, Dict[str, tuple]]:
     """
     Merge configurations from indices_configs and cli_file_configs.
 
@@ -130,7 +125,6 @@ def merge_configs(app_indices_configs: Dict[str,Dict[str, tuple]],
     app_merged = {}
     for app_name in app_indices_configs:
         indices_configs = app_indices_configs.get(app_name)
-        print(f"{indices_configs.keys()=}")
 
         cli_file_configs = app_cli_file_configs.get(app_name, None)
         if cli_file_configs:
@@ -157,6 +151,8 @@ def merge_configs(app_indices_configs: Dict[str,Dict[str, tuple]],
 
                 merged[basename] = (config, excluded_key_list, key_indices)
             app_merged[app_name] = merged
+        else:
+            app_merged[app_name] = indices_configs
 
     return app_merged
 
@@ -197,7 +193,7 @@ def get_cli_config(cmd_args: Any, app_names: List[str]) -> Dict[str, Dict[str, D
             if key in cli_config_dict:
                 cli_config_dict[key].update({"app_script": script})
             else:
-                cli_config_dict[key] ={"app_script": script}
+                cli_config_dict[key] = {"app_script": script}
     return app_cli_config_dict
 
 
@@ -219,16 +215,18 @@ def parse_cli_config(cli_configs: List[str], app_names: List[str], job_folder) -
     cli_config_dict = {}
     if cli_configs:
         for arr in cli_configs:
-            print(f"{arr=}")
             config_file = os.path.basename(arr[0])
-            print(f"{config_file=}")
             # incase absolute name is used.
             app_name = get_app_name_from_path(arr[0], job_folder)
             config_data = arr[1:]
             config_dict = {}
             app_name = "app" if not app_name else app_name
             if app_name not in app_names:
-                raise ValueError(f"unknown application name '{app_name}'. Expected app names are {app_names} ")
+                if app_name != "app":
+                    raise ValueError(f"unknown application name '{app_name}'. Expected app names are {app_names} ")
+                else:
+                    raise ValueError(
+                        f"Please specify one of the app names {app_names}. For example '<app_name>/xxx.conf k1=v1 k2=v2...'")
 
             for conf in config_data:
                 conf_key_value = conf.split("=")
@@ -273,9 +271,6 @@ def build_config_file_indices(job_folder: str) -> Dict[str, Dict[str, Tuple]]:
                 config_file_index[real_path] = (config, excluded_key_list, key_indices)
                 app_config_file_index[app_name] = config_file_index
 
-    for app_name, config_file_i in app_config_file_index.items():
-        print(f"{app_name=} {config_file_i.keys()=}")
-
     return app_config_file_index
 
 
@@ -285,13 +280,11 @@ def get_app_name_from_path(path, job_folder: str):
     if index >= 0:
         # <job_folder>/app/config/xxx.conf
         rest = path[index + len(job_folder) + 1:]
-        print("get name from part 1")
         app_name = os.path.dirname(rest)
     elif not path.startswith("/"):
         # path has no job_folder, such as app1/config/xxx.conf
-        # psedo path app1/xxx.conf
+        # path app1/xxx.conf
         # xxx.conf
-        print("get name from part 2, path=", path)
         app_name = os.path.dirname(path)
     else:
         app_name = None
@@ -299,5 +292,4 @@ def get_app_name_from_path(path, job_folder: str):
     index = app_name.find("/")
     if index > 0:
         app_name = app_name[0:index]
-    print(f"{app_name=}" )
     return app_name if app_name else "app"
