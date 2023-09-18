@@ -139,6 +139,7 @@ class CrossSiteEvalClientController(ClientSideController):
             name=self.ask_for_model_task_name,
             data=req,
             timeout=int(self.get_model_timeout),
+            secure=self.is_task_secure(fl_ctx),
         )
 
         resp = self.broadcast_and_wait(

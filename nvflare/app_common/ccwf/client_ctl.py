@@ -133,6 +133,7 @@ class ClientSideController(Executor, TaskController):
         return self.config.get(name, default)
 
     def start_run(self, fl_ctx: FLContext):
+        self.start_controller(fl_ctx)
         self.engine = fl_ctx.get_engine()
         if not self.engine:
             self.system_panic("no engine", fl_ctx)
@@ -307,6 +308,7 @@ class ClientSideController(Executor, TaskController):
             name=self.report_final_result_task_name,
             data=shareable,
             timeout=int(self.final_result_ack_timeout),
+            secure=self.is_task_secure(fl_ctx),
         )
 
         resp = self.broadcast_and_wait(
@@ -572,6 +574,7 @@ class ClientSideController(Executor, TaskController):
             name=self.do_learn_task_name,
             data=request,
             timeout=int(self.learn_task_ack_timeout),
+            secure=self.is_task_secure(fl_ctx),
         )
 
         resp = self.broadcast_and_wait(
@@ -631,3 +634,12 @@ class ClientSideController(Executor, TaskController):
         if self.persistor:
             self.log_info(fl_ctx, f"Saving result of round {round_num}")
             self.persistor.save(result, fl_ctx)
+
+    def is_task_secure(self, fl_ctx: FLContext) -> bool:
+        """
+        Determine whether the task should be secure. A secure task requires encrypted communication between the peers.
+        The task is secure only when the training is in secure mode AND private_p2p is set to True.
+        """
+        private_p2p = self.get_config_prop(Constant.PRIVATE_P2P)
+        secure_train = fl_ctx.get_prop(FLContextKey.SECURE_MODE, False)
+        return private_p2p and secure_train

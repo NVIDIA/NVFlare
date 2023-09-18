@@ -533,15 +533,20 @@ class ClientRunner(FLComponent):
             self.fire_event(EventType.END_RUN, fl_ctx)
             self.log_info(fl_ctx, "END_RUN fired")
 
-    def abort(self):
+    def abort(self, msg: str = ""):
         """To Abort the current run.
 
         Returns: N/A
 
         """
-        # This is caused by the abort_job command.
+        # This is called when:
+        # 1. abort_job command is issued by the user
+        # 2. when the job is ended by the server when error conditions occur
+        # 3. when the job is ended normally at the end of the workflow
+        if not msg:
+            msg = "Client is stopping ..."
         with self.engine.new_context() as fl_ctx:
-            self.log_info(fl_ctx, "ABORT (RUN) command received")
+            self.log_info(fl_ctx, msg)
         self.run_abort_signal.trigger(True)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):

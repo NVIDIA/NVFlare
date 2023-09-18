@@ -31,6 +31,7 @@ class CyclicServerController(ServerSideController):
         starting_client: str = "",
         max_status_report_interval: float = Constant.PER_CLIENT_STATUS_REPORT_TIMEOUT,
         progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
+        private_p2p: bool = True,
         cyclic_order: str = CyclicOrder.FIXED,
     ):
         result_clients = normalize_config_arg(result_clients)
@@ -52,6 +53,7 @@ class CyclicServerController(ServerSideController):
             starting_client_policy=DefaultValuePolicy.ANY,
             max_status_report_interval=max_status_report_interval,
             progress_timeout=progress_timeout,
+            private_p2p=private_p2p,
         )
         check_str("cyclic_order", cyclic_order)
         if cyclic_order not in [CyclicOrder.FIXED, CyclicOrder.RANDOM]:
