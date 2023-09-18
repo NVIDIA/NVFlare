@@ -27,39 +27,43 @@ class TestJobCLI:
         assert r == result
 
     def test__update_client_app_config_script(self):
-        with patch("nvflare.fuel.utils.config_factory.ConfigFactory.load_config") as mock2:
-            conf = CF.parse_string(
-                """ 
-                    {
-                      format_version = 2
-                      app_script = "python custom/cifar10.py"
-                      app_config = ""
-                      executors = [
+        with patch("nvflare.tool.job.job_cli.has_client_config_file") as mock:
+            mock.return_value = True
+            with patch("nvflare.fuel.utils.config_factory.ConfigFactory.load_config") as mock2:
+                conf = CF.parse_string(
+                    """ 
                         {
-                          tasks = ["train"]
-                          executor {
-                            name = "PTFilePipeLauncherExecutor"
-                            args {
-                              launcher_id = "launcher"
-                              heartbeat_timeout = 60
+                          format_version = 2
+                          app_script = "python custom/cifar10.py"
+                          app_config = ""
+                          executors = [
+                            {
+                              tasks = ["train"]
+                              executor {
+                                name = "PTFilePipeLauncherExecutor"
+                                args {
+                                  launcher_id = "launcher"
+                                  heartbeat_timeout = 60
+                                }
+                              }
                             }
-                          }
+                          ],
+                          task_result_filters= []
+                          task_data_filters =  []
+                          components =  [
+                            {
+                              id = "launcher"
+                              name =  "SubprocessLauncher"
+                              args.script = "{app_script}  {app_config} "
+                            }
+                          ]
                         }
-                      ],
-                      task_result_filters= []
-                      task_data_filters =  []
-                      components =  [
-                        {
-                          id = "launcher"
-                          name =  "SubprocessLauncher"
-                          args.script = "{app_script}  {app_config} "
-                        }
-                      ]
-                    }
-                """
-            )
-            mock2.return_value = PyhoconConfig(conf, "/tmp/my_job/app/config/config_fed_client.conf")
+                    """
+                )
+                mock2.return_value = PyhoconConfig(conf, "/tmp/my_job/app/config/config_fed_client.conf")
 
-            app_config = ["trainer.batch_size=1024", "eval_iters=100", "lr=0.1"]
-            config, config_path = _update_client_app_config_script("/tmp/my_job/", app_config)
-            assert config.get("app_config") == "--trainer.batch_size 1024 --eval_iters 100 --lr 0.1"
+                cli_app_configs = [["trainer.batch_size=1024", "eval_iters=100", "lr=0.1"]]
+                app_names = ["app"]
+                app_configs = _update_client_app_config_script("/tmp/my_job/", app_names, cli_app_configs)
+                config, config_path = app_configs.get("app")
+                assert config.get("app_config") == "--trainer.batch_size 1024 --eval_iters 100 --lr 0.1"

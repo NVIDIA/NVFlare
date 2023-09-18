@@ -536,10 +536,10 @@ def update_client_app_script(cmd_args, app_names: List[str]):
 
 
 def _update_client_app_config_script(
-    job_folder, app_names: List[str], app_configs: List[str]
+    job_folder, app_names: List[str], cli_app_configs: List[List[str]]
 ) -> Dict[str, Tuple[ConfigTree, str]]:
     app_xs = {}
-    for arr in app_configs:
+    for arr in cli_app_configs:
         if not arr:
             continue
         xs = []
@@ -567,14 +567,11 @@ def _update_client_app_config_script(
             raise ValueError("when site-specific app configurations are used, expecting -a <app_name> k1=v1 k2=v2 ...")
 
     for app_name in app_names:
+        print("app_name=", app_name)
         app_config_dir = get_config_dir(job_folder, app_name)
+        print(f"{app_config_dir=}")
 
-        if (
-            os.path.exists(os.path.join(app_config_dir, "config_fed_client.conf"))
-            or os.path.exists(os.path.join(app_config_dir, "config_fed_client.json"))
-            or os.path.exists(os.path.join(app_config_dir, "config_fed_client.yml"))
-        ):
-
+        if has_client_config_file(app_config_dir):
             config = ConfigFactory.load_config(os.path.join(app_config_dir, "config_fed_client.xxx"))
             if config.format == ConfigFormat.JSON or config.format == ConfigFormat.OMEGACONF:
                 client_config = CF.from_dict(config.to_dict())
@@ -587,6 +584,14 @@ def _update_client_app_config_script(
             app_configs[app_name] = (client_config, config.file_path)
 
     return app_configs
+
+
+def has_client_config_file(app_config_dir):
+    return (
+        os.path.exists(os.path.join(app_config_dir, "config_fed_client.conf"))
+        or os.path.exists(os.path.join(app_config_dir, "config_fed_client.json"))
+        or os.path.exists(os.path.join(app_config_dir, "config_fed_client.yml"))
+    )
 
 
 def save_merged_configs(app_merged_conf, tmp_job_dir):
