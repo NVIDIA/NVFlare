@@ -33,22 +33,6 @@ def merge_configs_from_cli(cmd_args, app_names: List[str]) -> Tuple[Dict[str, Di
         return app_indices, config_modified
 
 
-def __not_used_copy_app_config_file_not_used__(app_cli_config_dict, cmd_args):
-    for app_name in app_cli_config_dict:
-        app_config_dir = os.path.join(cmd_args.job_folder, app_name, "config")
-        for cli_config_file in app_cli_config_dict.get(app_name):
-            base_config_filename = os.path.basename(cli_config_file)
-            if base_config_filename.startswith("meta."):
-                target_dir = cmd_args.job_folder
-            else:
-                target_dir = app_config_dir
-
-            target_file = os.path.join(target_dir, base_config_filename)
-            if not os.path.exists(target_file):
-                # this doesn't work
-                shutil.copyfile(cli_config_file, target_file)
-
-
 def extract_string_with_index(input_string):
     """
     Extract the string before '[', the index within '[', and the string after ']'.
