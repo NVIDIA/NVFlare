@@ -113,12 +113,9 @@ def get_app_dirs(job_folder_or_template):
 
 def create_job(cmd_args):
     try:
-        job_templates_dir = find_job_templates_location()
-        template_index_conf = build_job_template_indices(job_templates_dir)
-
-        target_template_name = cmd_args.template
-        check_template_exists(target_template_name, template_index_conf)
-        template_src = os.path.join(job_templates_dir, target_template_name)
+        template_src = get_src_template(cmd_args)
+        if not template_src:
+            template_src = get_src_template_by_name(cmd_args)
 
         app_dirs = get_app_dirs(template_src)
         app_names = [os.path.basename(f) for f in app_dirs]
@@ -163,6 +160,29 @@ def create_job(cmd_args):
         sub_cmd_parser = job_sub_cmd_parser[CMD_CREATE_JOB]
         if sub_cmd_parser:
             sub_cmd_parser.print_help()
+
+
+def get_src_template_by_name(cmd_args):
+    job_templates_dir = find_job_templates_location()
+    template_index_conf = build_job_template_indices(job_templates_dir)
+    target_template_name = cmd_args.template
+    check_template_exists(target_template_name, template_index_conf)
+    template_src = os.path.join(job_templates_dir, target_template_name)
+    return template_src
+
+
+def get_src_template(cmd_args) -> Optional[str]:
+    target_template = os.path.abspath(cmd_args.template)
+    target_config_files = set()
+    if os.path.isdir(target_template):
+        for root, _, files in os.walk(target_template):
+            for f in files:
+                if f.startswith("config_fed_client") or f.startswith("config_fed_server"):
+                    target_config_files.add(f)
+    if len(target_config_files) > 0:
+        return target_template
+    else:
+        return None
 
 
 def remove_extra_file(config_dir):
@@ -436,7 +456,7 @@ def define_list_templates_parser(job_subparser):
         nargs="?",
         default=None,
         help="Job template directory, if not specified, "
-        "will search from ./nvflare/config.conf and NVFLARE_HOME env. variables",
+        "will search from ~/.nvflare/config.conf and NVFLARE_HOME env. variables",
     )
     show_jobs_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     job_sub_cmd_parser[CMD_LIST_TEMPLATES] = show_jobs_parser
@@ -474,7 +494,10 @@ def define_create_job_parser(job_subparser):
         type=str,
         nargs="?",
         default="sag_pt",
-        help="""template name, use liste_templates to see available jobs from job templates """,
+        help="""template name or template folder. You can use list_templates to see available jobs from job templates, 
+                pick name such as 'sag_pt' as template name. 
+                Alternatively, you can use the path to the job template folder, such as job_templates/sag_pt 
+                """,
     )
     create_parser.add_argument("-s", "--script", type=str, nargs="?", help="""code script such as train.py""")
     create_parser.add_argument(
@@ -567,9 +590,7 @@ def _update_client_app_config_script(
             raise ValueError("when site-specific app configurations are used, expecting -a <app_name> k1=v1 k2=v2 ...")
 
     for app_name in app_names:
-        print("app_name=", app_name)
         app_config_dir = get_config_dir(job_folder, app_name)
-        print(f"{app_config_dir=}")
 
         if has_client_config_file(app_config_dir):
             config = ConfigFactory.load_config(os.path.join(app_config_dir, "config_fed_client.xxx"))
