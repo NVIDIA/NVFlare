@@ -198,7 +198,9 @@ def show_variables(cmd_args):
         if not os.path.isdir(cmd_args.job_folder):
             raise ValueError("required job folder is not specified.")
 
-        indices = build_config_file_indices(cmd_args.job_folder)
+        app_names = get_app_dirs(cmd_args.job_folder)
+
+        indices = build_config_file_indices(cmd_args.job_folder, app_names)
         variable_values = filter_indices(app_indices_configs=indices)
         display_template_variables(cmd_args.job_folder, variable_values)
 
@@ -617,11 +619,12 @@ def has_client_config_file(app_config_dir):
 
 def save_merged_configs(app_merged_conf, tmp_job_dir):
     for app_name, merged_conf in app_merged_conf.items():
-        config_dir = os.path.join(tmp_job_dir, app_name, "config")
         for file, (config, excluded_key_List, key_indices) in merged_conf.items():
             base_filename = os.path.basename(file)
             if base_filename.startswith("meta."):
                 config_dir = tmp_job_dir
+            else:
+                config_dir = os.path.join(tmp_job_dir, app_name, "config")
             dst_path = os.path.join(config_dir, base_filename)
             root_index = get_root_index(next(iter(key_indices.values()))[0])
             save_config(root_index.value, dst_path)

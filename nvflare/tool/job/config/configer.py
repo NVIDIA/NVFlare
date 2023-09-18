@@ -21,7 +21,7 @@ from nvflare.tool.job.config.config_indexer import KeyIndex, build_reverse_order
 
 
 def merge_configs_from_cli(cmd_args, app_names: List[str]) -> Tuple[Dict[str, Dict[str, tuple]], bool]:
-    app_indices: Dict[str, Dict[str, Tuple]] = build_config_file_indices(cmd_args.job_folder)
+    app_indices: Dict[str, Dict[str, Tuple]] = build_config_file_indices(cmd_args.job_folder, app_names)
 
     app_cli_config_dict: Dict[str, Dict[str, Dict[str, str]]] = get_cli_config(cmd_args, app_names)
     config_modified = False
@@ -52,8 +52,8 @@ def extract_string_with_index(input_string):
     closing_bracket_index = input_string.find("]")
     if opening_bracket_index > 0 and closing_bracket_index > 0:
         string_before = input_string[:opening_bracket_index]
-        index = int(input_string[opening_bracket_index + 1 : closing_bracket_index])
-        string_after = input_string[closing_bracket_index + 1 :].strip(". ")
+        index = int(input_string[opening_bracket_index + 1: closing_bracket_index])
+        string_after = input_string[closing_bracket_index + 1:].strip(". ")
         if string_after:
             r = (string_before.strip("."), index, extract_string_with_index(string_after.strip(".")))
             if r:
@@ -82,7 +82,7 @@ def filter_indices(app_indices_configs: Dict[str, Dict[str, Tuple]]) -> Dict[str
 
 
 def filter_config_name_and_values(
-    excluded_key_list: List[str], key_indices: Dict[str, List[KeyIndex]]
+        excluded_key_list: List[str], key_indices: Dict[str, List[KeyIndex]]
 ) -> Dict[str, KeyIndex]:
     temp_results = {}
     for key, key_index_list in key_indices.items():
@@ -95,7 +95,7 @@ def filter_config_name_and_values(
 
 
 def merge_configs(
-    app_indices_configs: Dict[str, Dict[str, tuple]], app_cli_file_configs: Dict[str, Dict[str, Dict]]
+        app_indices_configs: Dict[str, Dict[str, tuple]], app_cli_file_configs: Dict[str, Dict[str, Dict]]
 ) -> Dict[str, Dict[str, tuple]]:
     """
     Merge configurations from indices_configs and cli_file_configs.
@@ -190,7 +190,9 @@ def parse_cli_config(cli_configs: List[str], app_names: List[str], job_folder) -
         job_folder: job_folder
         app_names: application names
         cli_configs: Array of CLI config option in the format of
-           filename  key1=v1 key2=v2
+           -f filename.conf  key1=v1 key2=v2
+           or
+           -f app/filename.conf  key1=v1 key2=v2
         separated by space
     Returns:
         A dictionary containing the configurations extracted from the command-line arguments.
@@ -201,11 +203,11 @@ def parse_cli_config(cli_configs: List[str], app_names: List[str], job_folder) -
     if cli_configs:
         for arr in cli_configs:
             config_file = os.path.basename(arr[0])
-            # incase absolute name is used.
-            app_name = get_app_name_from_path(arr[0], job_folder)
+            app_name = get_app_name_from_path(arr[0])
             config_data = arr[1:]
             config_dict = {}
             app_name = "app" if not app_name else app_name
+
             if app_name not in app_names:
                 if app_name != "app":
                     raise ValueError(f"unknown application name '{app_name}'. Expected app names are {app_names} ")
@@ -226,56 +228,45 @@ def parse_cli_config(cli_configs: List[str], app_names: List[str], job_folder) -
     return app_cli_config_dict
 
 
-def build_config_file_indices(job_folder: str) -> Dict[str, Dict[str, Tuple]]:
-    excluded = ["info"]
-    included = ["config_fed_client", "config_fed_server", "meta"]
+def build_config_file_indices(job_folder: str, app_names: List[str]) -> Dict[str, Dict[str, Tuple]]:
+    config_included = ["config_fed_client", "config_fed_server"]
     config_extensions = ConfigFormat.extensions()
 
     app_config_file_index = {}
-    config_files = []
-    for root, _, files in os.walk(job_folder):
-        for f in files:
-            tokens = os.path.splitext(f)
-            name_wo_ext = tokens[0]
-            ext = tokens[1]
-            if (
-                ext in config_extensions
-                and not f.startswith("._")
-                and name_wo_ext in included
-                and name_wo_ext not in excluded
-            ):
-                config_files.append(f)
-        for f in config_files:
-            f = str(os.path.abspath(os.path.join(root, f)))
-            if os.path.isfile(f):
-                app_name = "app"
-                if root.endswith("config"):
-                    app_name = get_app_name_from_path(root, job_folder)
-                real_path, config, excluded_key_list, key_indices = build_reverse_order_index(str(f))
+    app_config_files = {}
 
-                config_file_index = app_config_file_index.get(app_name, {})
-                config_file_index[real_path] = (config, excluded_key_list, key_indices)
-                app_config_file_index[app_name] = config_file_index
+    for ext in config_extensions:
+        meta_file = os.path.join(job_folder, f"meta{ext}")
+        if os.path.isfile(meta_file):
+            app_config_files["app"] = [meta_file]
+            break
+
+    for app_name in app_names:
+        app_dir = os.path.join(job_folder, app_name)
+        for ext in config_extensions:
+            for base in config_included:
+                file = os.path.abspath(os.path.join(app_dir, "config", f"{base}{ext}"))
+                if os.path.isfile(file):
+                    config_files = app_config_files.get(app_name, [])
+                    config_files.append(file)
+                    app_config_files[app_name] = config_files
+
+    for app_name, config_files in app_config_files.items():
+        for f in config_files:
+            real_path, config, excluded_key_list, key_indices = build_reverse_order_index(str(f))
+            config_file_index = app_config_file_index.get(app_name, {})
+            config_file_index[real_path] = (config, excluded_key_list, key_indices)
+            app_config_file_index[app_name] = config_file_index
 
     return app_config_file_index
 
 
-def get_app_name_from_path(path, job_folder: str):
-    index = path.find(job_folder)
-    app_name = None
-    if index >= 0:
-        # <job_folder>/app/config/xxx.conf
-        rest = path[index + len(job_folder) + 1 :]
-        app_name = os.path.dirname(rest)
-    elif not path.startswith("/"):
-        # path has no job_folder, such as app1/config/xxx.conf
-        # path app1/xxx.conf
-        # xxx.conf
-        app_name = os.path.dirname(path)
-    else:
-        app_name = None
-
+def get_app_name_from_path(path):
+    # path is in the format of as app1/xxx.conf
+    # path app1/xxx.conf
+    # xxx.conf
+    app_name = os.path.dirname(path)
     index = app_name.find("/")
     if index > 0:
-        app_name = app_name[0:index]
+        raise ValueError(f"Expecting <app_name>/<config file>, but '{path}' is given.")
     return app_name if app_name else "app"
