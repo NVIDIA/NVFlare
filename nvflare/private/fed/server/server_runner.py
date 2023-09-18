@@ -100,6 +100,14 @@ class ServerRunner(FLComponent):
         self.status = "init"
         self.turn_to_cold = False
 
+        engine.register_aux_message_handler(
+            topic=ReservedTopic.SYNC_RUNNER, message_handle_func=self._handle_sync_runner
+        )
+
+    def _handle_sync_runner(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
+        # simply ack
+        return make_reply(ReturnCode.OK)
+
     def _execute_run(self):
         while self.current_wf_index < len(self.config.workflows):
             wf = self.config.workflows[self.current_wf_index]
@@ -183,6 +191,7 @@ class ServerRunner(FLComponent):
                             timeout=0.0,
                             fl_ctx=fl_ctx,
                             optional=True,
+                            secure=False,
                         )
 
                         self.engine.persist_components(fl_ctx, completed=True)

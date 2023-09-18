@@ -1,0 +1,36 @@
+{
+  "format_version": 2,
+  "model_file": "/workspace/Models/nemo-megatron-gpt-1.3B/nemo_gpt1.3B_fp16.nemo",
+  "train_ds_files": "/workspace/Data/Processed/alpaca/training.jsonl",
+  "validation_ds_files": "/workspace/Data/Processed/alpaca/validation.jsonl",
+  "executors": [
+    {
+      "tasks": [
+        "train",
+        "validate",
+        "share_config"
+      ],
+      "executor": {
+        "id": "learner_executor",
+        "path": "nemo_nvflare.NemoLearnerExecutor",
+        "args": {
+          "learner_id": "learner"
+        }
+      }
+    }
+  ],
+  "task_result_filters": [],
+  "task_data_filters": [],
+  "components": [
+    {
+      "id": "learner",
+      "path": "nemo_nvflare.SFTLearner",
+      "args": {
+        "base_model_file_path": "{model_file}",
+        "train_ds_files": "{train_ds_files}",
+        "validation_ds_files": "{validation_ds_files}",
+        "aggregation_epochs": 1
+      }
+    }
+  ]
+}

@@ -15,6 +15,14 @@
 from abc import ABC, abstractmethod
 from typing import List, Tuple
 
+DATA = "data"
+JOB_ZIP = "job.zip"
+META = "meta"
+META_JSON = "meta.json"
+WORKSPACE = "workspace"
+WORKSPACE_ZIP = "workspace.zip"
+MANIFEST = "manifest.json"
+
 
 class StorageException(Exception):
     """Base class for Storage exceptions."""
@@ -34,7 +42,7 @@ class StorageSpec(ABC):
     """
 
     @abstractmethod
-    def create_object(self, uri: str, data: bytes, meta: dict, overwrite_existing: bool):
+    def create_object(self, uri: str, data, meta: dict, overwrite_existing: bool):
         """Creates an object.
 
         Examples of URI:
@@ -58,6 +66,20 @@ class StorageSpec(ABC):
         pass
 
     @abstractmethod
+    def update_object(self, uri: str, data, component_name: str):
+        """Update the object
+
+        Args:
+            uri: URI of the object
+            data: content data of the component, or the content file location
+            component_name: component name
+
+        Raises StorageException when the object does not exit.
+
+        """
+        pass
+
+    @abstractmethod
     def update_meta(self, uri: str, meta: dict, replace: bool):
         """Updates the meta info of the specified object.
 
@@ -65,22 +87,6 @@ class StorageSpec(ABC):
             uri: URI of the object
             meta: value of new meta info
             replace: whether to replace the current meta completely or partial update
-
-        Raises StorageException when:
-            - invalid args
-            - no such object
-            - error updating the object
-
-        """
-        pass
-
-    @abstractmethod
-    def update_data(self, uri: str, data: bytes):
-        """Updates the data of the specified object.
-
-        Args:
-            uri: URI of the object
-            data: value of new data
 
         Raises StorageException when:
             - invalid args
@@ -121,15 +127,31 @@ class StorageSpec(ABC):
         pass
 
     @abstractmethod
-    def get_data(self, uri: str) -> bytes:
+    def get_data(self, uri: str, component_name: str = DATA) -> bytes:
         """Gets data of the specified object.
 
         Args:
             uri: URI of the object
+            component_name: storage component name
 
         Returns:
             data of the object.
             if object does not exist, return None
+
+        Raises StorageException when:
+            - invalid args
+
+        """
+        pass
+
+    @abstractmethod
+    def get_data_for_download(self, uri: str, component_name: str = DATA, download_file: str = None):
+        """Gets data of the specified object.
+
+        Args:
+            uri: URI of the object
+            component_name: storage component name
+            download_file: component file_name for download
 
         Raises StorageException when:
             - invalid args
@@ -163,3 +185,7 @@ class StorageSpec(ABC):
 
         """
         pass
+
+    @staticmethod
+    def is_valid_component(component_name):
+        return component_name in [DATA, META, WORKSPACE, MANIFEST]

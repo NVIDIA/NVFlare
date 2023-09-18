@@ -99,6 +99,9 @@ class RxStream(Stream):
 
         with self.task.task_lock:
             last_chunk, buf = self.task.buffers.popleft()
+            if buf is None:
+                buf = bytes(0)
+
             if 0 < chunk_size < len(buf):
                 result = buf[0:chunk_size]
                 # Put leftover to the head of the queue
@@ -176,6 +179,8 @@ class ByteReceiver:
         seq = message.get_header(StreamHeaderKey.SEQUENCE)
         error = message.get_header(StreamHeaderKey.ERROR_MSG, None)
 
+        payload = message.payload
+
         with self.map_lock:
             task = self.rx_task_map.get(sid, None)
             if not task:
@@ -215,7 +220,7 @@ class ByteReceiver:
                 task.last_chunk_received = True
 
             if seq == task.next_seq:
-                self._append(task, (last_chunk, message.payload))
+                self._append(task, (last_chunk, payload))
                 task.next_seq += 1
 
                 # Try to reassemble out-of-seq buffers
@@ -230,7 +235,7 @@ class ByteReceiver:
                     self.stop_task(task, StreamError(f"Too many out-of-sequence chunks: {len(task.out_seq_buffers)}"))
                     return
                 else:
-                    task.out_seq_buffers[seq] = last_chunk, message.payload
+                    task.out_seq_buffers[seq] = last_chunk, payload
 
             # If all chunks are lined up, the task can be deleted
             if not task.out_seq_buffers and task.buffers:

@@ -119,6 +119,17 @@ def zip_directory_to_bytes(root_dir: str, folder_name: str) -> bytes:
     return bio.getvalue()
 
 
+def zip_directory_to_file(root_dir: str, folder_name: str, output_file):
+    """Compresses a directory and return the bytes value of it.
+
+    Args:
+        root_dir: root path that contains the folder to be zipped
+        folder_name: path to the folder to be zipped, relative to root_dir
+        output_file: path of the output file
+    """
+    _zip_directory(root_dir, folder_name, output_file)
+
+
 def ls_zip_from_bytes(zip_data: bytes):
     """Returns info of a zip.
 
@@ -164,4 +175,21 @@ def unzip_all_from_bytes(zip_data: bytes, output_dir_name: str):
         raise NotADirectoryError(f'"{output_dir_name}" is not a valid directory')
 
     with ZipFile(io.BytesIO(zip_data), "r") as z:
+        z.extractall(output_dir_name)
+
+
+def unzip_all_from_file(zip_file_path: str, output_dir_name: str):
+    if not os.path.exists(output_dir_name):
+        raise FileNotFoundError(f'output directory "{output_dir_name}" does not exist')
+
+    if not os.path.isdir(output_dir_name):
+        raise NotADirectoryError(f'"{output_dir_name}" is not a valid directory')
+
+    if not os.path.exists(zip_file_path):
+        raise FileNotFoundError(f'zip file "{zip_file_path}" does not exist')
+
+    if not os.path.isfile(zip_file_path):
+        raise ValueError(f'zip file "{zip_file_path}" is not a valid file')
+
+    with ZipFile(zip_file_path, "r") as z:
         z.extractall(output_dir_name)

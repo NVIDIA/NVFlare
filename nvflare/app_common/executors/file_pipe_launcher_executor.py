@@ -19,7 +19,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.app_common.decomposers import common_decomposers
 from nvflare.app_common.executors.launcher_executor import LauncherExecutor
-from nvflare.client.config import ConfigKey
 from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.pipe.file_pipe import FilePipe
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler
@@ -49,7 +48,7 @@ class FilePipeLauncherExecutor(LauncherExecutor):
         """Initializes the FilePipeLauncherExecutor.
 
         Args:
-            data_exchange_path (Optional[str]): Path used for data exchange. If None, "app_dir" will be used.
+            data_exchange_path (Optional[str]): Path used for data exchange. If None, the "app_dir" of the running job will be used.
                 If pipe_id is provided, will use the Pipe gets from pipe_id.
             pipe_id (Optional[str]): Identifier used to get the Pipe from NVFlare components.
             pipe_name (str): Name of the pipe. Defaults to "pipe".
@@ -102,9 +101,11 @@ class FilePipeLauncherExecutor(LauncherExecutor):
             self._data_exchange_path = pipe.root_path
         else:
             # gets data_exchange_path
-            if self._data_exchange_path is None:
+            if self._data_exchange_path is None or self._data_exchange_path == "":
                 app_dir = engine.get_workspace().get_app_dir(fl_ctx.get_job_id())
-                self._data_exchange_path = app_dir
+                self._data_exchange_path = os.path.abspath(app_dir)
+            elif not os.path.isabs(self._data_exchange_path):
+                raise RuntimeError("data exchange path needs to be absolute.")
             pipe = FilePipe(mode=Mode.ACTIVE, root_path=self._data_exchange_path)
 
         # init pipe
@@ -118,8 +119,3 @@ class FilePipeLauncherExecutor(LauncherExecutor):
             heartbeat_timeout=self._heartbeat_timeout,
         )
         self.pipe_handler.start()
-        self._update_config_exchange(fl_ctx)
-
-    def _update_config_exchange_dict(self, config: dict):
-        super()._update_config_exchange_dict(config)
-        config[ConfigKey.EXCHANGE_PATH] = os.path.abspath(self._data_exchange_path)

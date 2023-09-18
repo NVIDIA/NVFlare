@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
@@ -26,8 +25,6 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.launcher import Launcher, LauncherCompleteStatus
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils, ParamsConverter
-from nvflare.client.config import ClientConfig, ConfigKey, from_file
-from nvflare.client.constants import CONFIG_EXCHANGE
 from nvflare.fuel.utils.pipe.pipe import Message, Pipe
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler, Topic
 from nvflare.fuel.utils.validation_utils import check_object_type
@@ -124,11 +121,11 @@ class LauncherExecutor(Executor):
             heartbeat_timeout=self._heartbeat_timeout,
         )
         self.pipe_handler.start()
-        self._update_config_exchange(fl_ctx)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext) -> None:
         if event_type == EventType.START_RUN:
             self.initialize(fl_ctx)
+            self.prepare_config_for_launch(fl_ctx)
         elif event_type == EventType.END_RUN:
             if self.launcher:
                 self.launcher.finalize(fl_ctx)
@@ -184,20 +181,9 @@ class LauncherExecutor(Executor):
             check_object_type(self._to_nvflare_converter_id, to_nvflare_converter, ParamsConverter)
             self._to_nvflare_converter = to_nvflare_converter
 
-    def _update_config_exchange(self, fl_ctx: FLContext):
-        workspace = fl_ctx.get_engine().get_workspace()
-        app_dir = workspace.get_app_dir(fl_ctx.get_job_id())
-        config_file = os.path.join(app_dir, workspace.config_folder, CONFIG_EXCHANGE)
-        if os.path.exists(config_file):
-            client_config = from_file(config_file=config_file)
-        else:
-            client_config = ClientConfig({})
-        self._update_config_exchange_dict(client_config.config)
-        client_config.to_json(config_file)
-
-    def _update_config_exchange_dict(self, config: dict):
-        config[ConfigKey.GLOBAL_EVAL] = self._global_evaluation
-        config[ConfigKey.TRAINING] = self._training
+    def prepare_config_for_launch(self, fl_ctx: FLContext):
+        """Prepares any configuration for the process to be launched."""
+        pass
 
     def _launch(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> bool:
         if self.launcher:

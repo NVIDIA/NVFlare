@@ -23,6 +23,7 @@ from typing import Dict, List, Tuple, Union
 from urllib.parse import urlparse
 
 from nvflare.fuel.f3.cellnet.connector_manager import ConnectorManager
+from nvflare.fuel.f3.cellnet.credential_manager import CredentialManager
 from nvflare.fuel.f3.cellnet.defs import (
     AbortRun,
     AuthenticationError,
@@ -52,6 +53,8 @@ from nvflare.security.logging import secure_format_exception, secure_format_trac
 _CHANNEL = "cellnet.channel"
 _TOPIC_BULK = "bulk"
 _TOPIC_BYE = "bye"
+_SM_CHANNEL = "credential_manager"
+_SM_TOPIC = "key_exchange"
 
 _ONE_MB = 1024 * 1024
 
@@ -143,17 +146,23 @@ def log_messaging_error(
 
 
 class _BulkSender:
-    def __init__(self, cell, target: str, max_queue_size):
+    def __init__(self, cell, target: str, max_queue_size, secure=False):
         self.cell = cell
         self.target = target
         self.max_queue_size = max_queue_size
+        self.secure = secure
         self.messages = []
         self.last_send_time = 0
         self.lock = threading.Lock()
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def queue_message(self, channel: str, topic: str, message: Message):
+        if self.secure:
+            message.add_headers({MessageHeaderKey.SECURE, True})
+
         encode_payload(message)
+        self.cell.encrypt_payload(message)
+
         with self.lock:
             tm = TargetMessage(target=self.target, channel=channel, topic=topic, message=message)
             self.messages.append(tm)
@@ -214,6 +223,44 @@ class _CounterName:
     REPLY_NOT_EXPECTED = "no_reply_expected"
     REQ_FILTER_ERROR = "req_filter_error"
     REP_FILTER_ERROR = "rep_filter_error"
+
+
+class CertificateExchanger:
+    """This class handles cert-exchange messages"""
+
+    def __init__(self, core_cell, credential_manager: CredentialManager):
+
+        self.core_cell = core_cell
+        self.credential_manager = credential_manager
+        self.core_cell.register_request_cb(_SM_CHANNEL, _SM_TOPIC, self._handle_cert_request)
+
+    def get_certificate(self, target: str) -> bytes:
+
+        cert = self.credential_manager.get_certificate(target)
+        if cert:
+            return cert
+
+        cert = self.exchange_certificate(target)
+        self.credential_manager.save_certificate(target, cert)
+
+        return cert
+
+    def exchange_certificate(self, target: str) -> bytes:
+        root = FQCN.get_root(target)
+        req = self.credential_manager.create_request(root)
+        response = self.core_cell.send_request(_SM_CHANNEL, _SM_TOPIC, root, Message(None, req))
+        reply = response.payload
+
+        if not reply:
+            error_code = response.get_header(MessageHeaderKey.RETURN_CODE)
+            raise RuntimeError(f"Cert exchanged to {root} failed: {error_code}")
+
+        return self.credential_manager.process_response(reply)
+
+    def _handle_cert_request(self, request: Message):
+
+        reply = self.credential_manager.process_request(request.payload)
+        return Message(None, reply)
 
 
 class CoreCell(MessageReceiver, EndpointMonitor):
@@ -432,6 +479,9 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             scope=self.my_info.fqcn,
         )
         self.ALL_CELLS[fqcn] = self
+
+        self.credential_manager = CredentialManager(self.endpoint)
+        self.cert_ex = CertificateExchanger(self, self.credential_manager)
 
     def log_error(self, log_text: str, msg: Union[None, Message], log_except=False):
         log_messaging_error(
@@ -868,6 +918,58 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             raise ValueError(f"specified request_cb {type(cb)} is not callable")
         self.req_reg.set(channel, topic, Callback(cb, args, kwargs))
 
+    def encrypt_payload(self, message: Message):
+
+        if not message.get_header(MessageHeaderKey.SECURE, False):
+            return
+
+        encrypted = message.get_header(MessageHeaderKey.ENCRYPTED, False)
+        if encrypted:
+            # Prevent double encryption
+            return
+
+        target = message.get_header(MessageHeaderKey.DESTINATION)
+
+        if not target:
+            raise RuntimeError("Message destination missing")
+
+        if message.payload is None:
+            message.payload = bytes(0)
+
+        payload_len = len(message.payload)
+        message.add_headers(
+            {
+                MessageHeaderKey.PAYLOAD_LEN: payload_len,
+                MessageHeaderKey.ENCRYPTED: True,
+            }
+        )
+
+        target_cert = self.cert_ex.get_certificate(target)
+        message.payload = self.credential_manager.encrypt(target_cert, message.payload)
+        self.logger.debug(f"Payload ({payload_len} bytes) is encrypted ({len(message.payload)} bytes)")
+
+    def decrypt_payload(self, message: Message):
+
+        if not message.get_header(MessageHeaderKey.SECURE, False):
+            return
+
+        encrypted = message.get_header(MessageHeaderKey.ENCRYPTED, False)
+        if not encrypted:
+            # Message is already decrypted
+            return
+
+        message.remove_header(MessageHeaderKey.ENCRYPTED)
+
+        origin = message.get_header(MessageHeaderKey.ORIGIN)
+        if not origin:
+            raise RuntimeError("Message origin missing")
+
+        payload_len = message.get_header(MessageHeaderKey.PAYLOAD_LEN)
+        origin_cert = self.cert_ex.get_certificate(origin)
+        message.payload = self.credential_manager.decrypt(origin_cert, message.payload)
+        if len(message.payload) != payload_len:
+            raise RuntimeError(f"Payload size changed after decryption {len(message.payload)} <> {payload_len}")
+
     def add_incoming_request_filter(self, channel: str, topic: str, cb, *args, **kwargs):
         if not callable(cb):
             raise ValueError(f"specified incoming_request_filter {type(cb)} is not callable")
@@ -1004,6 +1106,8 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         err = ""
         try:
             encode_payload(message)
+            self.encrypt_payload(message)
+
             message.set_header(MessageHeaderKey.SEND_TIME, time.time())
             if not message.payload:
                 msg_size = 0
@@ -1121,15 +1225,15 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         return self._send_target_messages(target_msgs)
 
     def send_request(
-        self, channel: str, topic: str, target: str, request: Message, timeout=None, optional=False
+        self, channel: str, topic: str, target: str, request: Message, timeout=None, secure=False, optional=False
     ) -> Message:
         self.logger.debug(f"{self.my_info.fqcn}: sending request {channel}:{topic} to {target}")
-        result = self.broadcast_request(channel, topic, [target], request, timeout, optional)
+        result = self.broadcast_request(channel, topic, [target], request, timeout, secure, optional)
         assert isinstance(result, dict)
         return result.get(target)
 
     def broadcast_multi_requests(
-        self, target_msgs: Dict[str, TargetMessage], timeout=None, optional=False
+        self, target_msgs: Dict[str, TargetMessage], timeout=None, secure=False, optional=False
     ) -> Dict[str, Message]:
         """
         This is the core of the request/response handling. Be extremely careful when making any changes!
@@ -1153,6 +1257,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         Args:
             target_msgs: messages to be sent
             timeout: timeout value
+            secure: End-end encryption
             optional: whether the message is optional
 
         Returns: a dict of: target name => reply message
@@ -1175,6 +1280,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                     {
                         MessageHeaderKey.REQ_ID: waiter.id,
                         MessageHeaderKey.REPLY_EXPECTED: True,
+                        MessageHeaderKey.SECURE: secure,
                         MessageHeaderKey.OPTIONAL: optional,
                     }
                 )
@@ -1228,7 +1334,14 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         return result
 
     def broadcast_request(
-        self, channel: str, topic: str, targets: Union[str, List[str]], request: Message, timeout=None, optional=False
+        self,
+        channel: str,
+        topic: str,
+        targets: Union[str, List[str]],
+        request: Message,
+        timeout=None,
+        secure=False,
+        optional=False,
     ) -> Dict[str, Message]:
         """
         Send a message over a channel to specified destination cell(s), and wait for reply
@@ -1239,6 +1352,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             targets: FQCN of the destination cell(s)
             request: message to be sent
             timeout: how long to wait for replies
+            secure: End-end encryption
             optional: whether the message is optional
 
         Returns: a dict of: cell_id => reply message
@@ -1249,10 +1363,10 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         target_msgs = {}
         for t in targets:
             target_msgs[t] = TargetMessage(t, channel, topic, request)
-        return self.broadcast_multi_requests(target_msgs, timeout, optional=optional)
+        return self.broadcast_multi_requests(target_msgs, timeout, secure=secure, optional=optional)
 
     def fire_and_forget(
-        self, channel: str, topic: str, targets: Union[str, List[str]], message: Message, optional=False
+        self, channel: str, topic: str, targets: Union[str, List[str]], message: Message, secure=False, optional=False
     ) -> Dict[str, str]:
         """
         Send a message over a channel to specified destination cell(s), and do not wait for replies.
@@ -1262,12 +1376,19 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             topic: topic of the message
             targets: one or more destination cell IDs. None means all.
             message: message to be sent
+            secure: End-end encryption of the message
             optional: whether the message is optional
 
         Returns: None
 
         """
-        message.add_headers({MessageHeaderKey.REPLY_EXPECTED: False, MessageHeaderKey.OPTIONAL: optional})
+        message.add_headers(
+            {
+                MessageHeaderKey.REPLY_EXPECTED: False,
+                MessageHeaderKey.OPTIONAL: optional,
+                MessageHeaderKey.SECURE: secure,
+            }
+        )
         return self._send_to_targets(channel, topic, targets, message)
 
     def queue_message(self, channel: str, topic: str, targets: Union[str, List[str]], message: Message, optional=False):
@@ -1360,7 +1481,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             request.add_headers({MessageHeaderKey.REPLY_EXPECTED: False, MessageHeaderKey.OPTIONAL: optional})
         return self._send_target_messages(target_msgs)
 
-    def send_reply(self, reply: Message, to_cell: str, for_req_ids: List[str], optional=False) -> str:
+    def send_reply(self, reply: Message, to_cell: str, for_req_ids: List[str], secure=False, optional=False) -> str:
         """Send a reply to respond to one or more requests.
 
         This is useful if the request receiver needs to delay its reply as follows:
@@ -1373,6 +1494,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             reply: the reply message
             to_cell: the target cell
             for_req_ids: the list of req IDs that the reply is for
+            secure: End-end encryption
             optional: whether the message is optional
 
         Returns: an error message if any
@@ -1386,6 +1508,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 MessageHeaderKey.DESTINATION: to_cell,
                 MessageHeaderKey.REQ_ID: for_req_ids,
                 MessageHeaderKey.MSG_TYPE: MessageType.REPLY,
+                MessageHeaderKey.SECURE: secure,
                 MessageHeaderKey.OPTIONAL: optional,
             }
         )
@@ -1427,6 +1550,8 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
     def _process_request(self, origin: str, message: Message) -> Union[None, Message]:
         self.logger.debug(f"{self.my_info.fqcn}: processing incoming request")
+
+        self.decrypt_payload(message)
         decode_payload(message)
         # this is a request for me - dispatch to the right CB
         channel = message.get_header(MessageHeaderKey.CHANNEL, "")
@@ -1464,6 +1589,10 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 msg=message,
             )
             reply = make_reply(ReturnCode.PROCESS_EXCEPTION, error="bad cb result")
+
+        # Reply must be secure if request is
+        reply.add_headers({MessageHeaderKey.SECURE: message.get_header(MessageHeaderKey.SECURE, False)})
+
         return reply
 
     def _add_to_route(self, message: Message):
@@ -1551,6 +1680,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         topic = message.get_header(MessageHeaderKey.TOPIC, "")
         now = time.time()
         self.logger.debug(f"{self.my_info.fqcn}: processing reply from {origin} for type {msg_type}")
+        self.decrypt_payload(message)
         decode_payload(message)
 
         req_ids = message.get_header(MessageHeaderKey.REQ_ID)
