@@ -14,7 +14,7 @@
 import os
 import pathlib
 from pathlib import Path
-from typing import List, Optional, Dict, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree, HOCONConverter

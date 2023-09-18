@@ -16,7 +16,7 @@ import shutil
 import traceback
 from distutils.dir_util import copy_tree
 from tempfile import mkdtemp
-from typing import List, Optional, Tuple, Dict
+from typing import Dict, List, Optional, Tuple
 
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree
@@ -54,7 +54,8 @@ from nvflare.utils.cli_utils import (
     get_curr_dir,
     get_hidden_nvflare_dir,
     get_startup_kit_dir,
-    save_config, save_configs,
+    save_config,
+    save_configs,
 )
 
 CMD_LIST_TEMPLATES = "list_templates"
@@ -435,7 +436,7 @@ def define_list_templates_parser(job_subparser):
         nargs="?",
         default=None,
         help="Job template directory, if not specified, "
-             "will search from ./nvflare/config.conf and NVFLARE_HOME env. variables",
+        "will search from ./nvflare/config.conf and NVFLARE_HOME env. variables",
     )
     show_jobs_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     job_sub_cmd_parser[CMD_LIST_TEMPLATES] = show_jobs_parser
@@ -530,14 +531,13 @@ def prepare_job_config(cmd_args, app_names: List[str], tmp_job_dir: Optional[str
 
 def update_client_app_script(cmd_args, app_names: List[str]):
     if cmd_args.app_config:
-        app_configs = \
-            _update_client_app_config_script(cmd_args.job_folder, app_names, cmd_args.app_config)
+        app_configs = _update_client_app_config_script(cmd_args.job_folder, app_names, cmd_args.app_config)
         save_configs(app_configs)
 
 
-def _update_client_app_config_script(job_folder,
-                                     app_names: List[str],
-                                     app_configs: List[str]) -> Dict[str, Tuple[ConfigTree, str]]:
+def _update_client_app_config_script(
+    job_folder, app_names: List[str], app_configs: List[str]
+) -> Dict[str, Tuple[ConfigTree, str]]:
     app_xs = {}
     for arr in app_configs:
         if not arr:
@@ -569,9 +569,11 @@ def _update_client_app_config_script(job_folder,
     for app_name in app_names:
         app_config_dir = get_config_dir(job_folder, app_name)
 
-        if os.path.exists(os.path.join(app_config_dir, "config_fed_client.conf")) or \
-                os.path.exists(os.path.join(app_config_dir, "config_fed_client.json")) or \
-                os.path.exists(os.path.join(app_config_dir, "config_fed_client.yml")):
+        if (
+            os.path.exists(os.path.join(app_config_dir, "config_fed_client.conf"))
+            or os.path.exists(os.path.join(app_config_dir, "config_fed_client.json"))
+            or os.path.exists(os.path.join(app_config_dir, "config_fed_client.yml"))
+        ):
 
             config = ConfigFactory.load_config(os.path.join(app_config_dir, "config_fed_client.xxx"))
             if config.format == ConfigFormat.JSON or config.format == ConfigFormat.OMEGACONF:
@@ -707,7 +709,7 @@ def prepare_job_folder(cmd_args):
             shutil.rmtree(app_folder)
         else:
             print(
-                f"""\nwarning: app directory already exists.
+                """\nwarning: app directory already exists.
                 \nIf you would like to overwrite, use -force option"""
             )
 

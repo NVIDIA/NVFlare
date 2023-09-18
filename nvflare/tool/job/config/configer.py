@@ -69,8 +69,8 @@ def extract_string_with_index(input_string):
     closing_bracket_index = input_string.find("]")
     if opening_bracket_index > 0 and closing_bracket_index > 0:
         string_before = input_string[:opening_bracket_index]
-        index = int(input_string[opening_bracket_index + 1: closing_bracket_index])
-        string_after = input_string[closing_bracket_index + 1:].strip(". ")
+        index = int(input_string[opening_bracket_index + 1 : closing_bracket_index])
+        string_after = input_string[closing_bracket_index + 1 :].strip(". ")
         if string_after:
             r = (string_before.strip("."), index, extract_string_with_index(string_after.strip(".")))
             if r:
@@ -98,8 +98,9 @@ def filter_indices(app_indices_configs: Dict[str, Dict[str, Tuple]]) -> Dict[str
     return app_results
 
 
-def filter_config_name_and_values(excluded_key_list: List[str],
-                                  key_indices: Dict[str, List[KeyIndex]]) -> Dict[str, KeyIndex]:
+def filter_config_name_and_values(
+    excluded_key_list: List[str], key_indices: Dict[str, List[KeyIndex]]
+) -> Dict[str, KeyIndex]:
     temp_results = {}
     for key, key_index_list in key_indices.items():
         for key_index in key_index_list:
@@ -110,8 +111,9 @@ def filter_config_name_and_values(excluded_key_list: List[str],
     return temp_results
 
 
-def merge_configs(app_indices_configs: Dict[str, Dict[str, tuple]],
-                  app_cli_file_configs: Dict[str, Dict[str, Dict]]) -> Dict[str, Dict[str, tuple]]:
+def merge_configs(
+    app_indices_configs: Dict[str, Dict[str, tuple]], app_cli_file_configs: Dict[str, Dict[str, Dict]]
+) -> Dict[str, Dict[str, tuple]]:
     """
     Merge configurations from indices_configs and cli_file_configs.
 
@@ -226,7 +228,8 @@ def parse_cli_config(cli_configs: List[str], app_names: List[str], job_folder) -
                     raise ValueError(f"unknown application name '{app_name}'. Expected app names are {app_names} ")
                 else:
                     raise ValueError(
-                        f"Please specify one of the app names {app_names}. For example '<app_name>/xxx.conf k1=v1 k2=v2...'")
+                        f"Please specify one of the app names {app_names}. For example '<app_name>/xxx.conf k1=v1 k2=v2...'"
+                    )
 
             for conf in config_data:
                 conf_key_value = conf.split("=")
@@ -253,10 +256,10 @@ def build_config_file_indices(job_folder: str) -> Dict[str, Dict[str, Tuple]]:
             name_wo_ext = tokens[0]
             ext = tokens[1]
             if (
-                    ext in config_extensions
-                    and not f.startswith("._")
-                    and name_wo_ext in included
-                    and name_wo_ext not in excluded
+                ext in config_extensions
+                and not f.startswith("._")
+                and name_wo_ext in included
+                and name_wo_ext not in excluded
             ):
                 config_files.append(f)
         for f in config_files:
@@ -279,7 +282,7 @@ def get_app_name_from_path(path, job_folder: str):
     app_name = None
     if index >= 0:
         # <job_folder>/app/config/xxx.conf
-        rest = path[index + len(job_folder) + 1:]
+        rest = path[index + len(job_folder) + 1 :]
         app_name = os.path.dirname(rest)
     elif not path.startswith("/"):
         # path has no job_folder, such as app1/config/xxx.conf
