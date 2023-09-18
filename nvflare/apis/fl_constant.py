@@ -173,6 +173,7 @@ class AdminCommandNames(object):
     LIST_JOBS = "list_jobs"
     GET_JOB_META = "get_job_meta"
     DOWNLOAD_JOB = "download_job"
+    DOWNLOAD_JOB_FILE = "download_job_file"
     ABORT_JOB = "abort_job"
     DELETE_JOB = "delete_job"
     CLONE_JOB = "clone_job"

@@ -144,6 +144,7 @@ class CellChannel:
     CLIENT_SUB_WORKER_COMMAND = "client_sub_worker_command"
     MULTI_PROCESS_EXECUTOR = "multi_process_executor"
     SIMULATOR_RUNNER = "simulator_runner"
+    RETURN_ONLY = "return_only"
 
 
 class CellChannelTopic:

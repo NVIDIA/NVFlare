@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
@@ -213,12 +213,12 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def save_workspace(self, jid: str, data: bytes, fl_ctx: FLContext):
+    def save_workspace(self, jid: str, data: Union[bytes, str], fl_ctx: FLContext):
         """Save the job workspace to the job storage.
 
         Args:
             jid (str): Job ID
-            data: Job workspace data
+            data: Job workspace data or name of data file
             fl_ctx (FLContext): FLContext information
 
         """

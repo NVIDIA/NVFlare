@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 from typing import Optional
 
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
@@ -52,7 +53,7 @@ class ModelRegistry:
     def get_model(self):
         if not self.cache_loaded:
             self.receive()
-        return self.cached_model
+        return copy.deepcopy(self.cached_model)
 
     def get_sys_info(self):
         if not self.cache_loaded:

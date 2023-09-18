@@ -15,21 +15,18 @@
 import os
 from typing import Dict, Union
 
-from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.app_common.abstract.fl_model import FLModel, MetaKey
+from nvflare.app_common.model_exchange.constants import ModelExchangeFormat
 from nvflare.app_common.model_exchange.file_pipe_model_exchanger import FilePipeModelExchanger
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.import_utils import optional_import
 
 from .config import ClientConfig, from_file
-from .constants import CONFIG_EXCHANGE, ModelExchangeFormat
+from .constants import CONFIG_EXCHANGE
 from .model_registry import ModelRegistry
 from .utils import DIFF_FUNCS
 
 PROCESS_MODEL_REGISTRY: Dict[int, ModelRegistry] = {}
-
-# TODO: some other helper methods:
-#   - get_total_rounds()
-#   - get_job_id()
 
 
 def init(config: Union[str, Dict] = f"config/{CONFIG_EXCHANGE}"):
@@ -133,3 +130,18 @@ def get_config() -> Dict:
         raise RuntimeError("needs to call init method first")
     model_registry = PROCESS_MODEL_REGISTRY[pid]
     return model_registry.config.config
+
+
+def get_job_id() -> str:
+    sys_info = system_info()
+    return sys_info.get(MetaKey.JOB_ID, "")
+
+
+def get_total_rounds() -> int:
+    sys_info = system_info()
+    return sys_info.get(MetaKey.TOTAL_ROUNDS, 0)
+
+
+def get_site_name() -> str:
+    sys_info = system_info()
+    return sys_info.get(MetaKey.SITE_NAME, "")
