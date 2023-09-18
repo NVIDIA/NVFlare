@@ -1,6 +1,6 @@
 # Job Template Information Card
 
-## sag_pt
+## sag_pt_deploy_map
     name = "sag_pt"
     description = "Scatter and Gather Workflow using pytorch" 
     class_name  =  "ScatterAndGather"
