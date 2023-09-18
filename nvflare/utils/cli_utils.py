@@ -14,7 +14,7 @@
 import os
 import pathlib
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree, HOCONConverter
@@ -226,6 +226,11 @@ def hocon_to_string(target_fmt: ConfigFormat, dst_config: ConfigTree):
         dst_dict_config = PyhoconConfig(dst_config).to_dict()
         omega_conf = loader.load_config_from_dict(dst_dict_config)
         return omega_conf.to_str()
+
+
+def save_configs(app_configs: Dict[str, Tuple], keep_origin_format: bool = True):
+    for app_name, (dst_config, dst_path) in app_configs.items():
+        save_config(dst_config, dst_path, keep_origin_format)
 
 
 def save_config(dst_config, dst_path, keep_origin_format: bool = True):
