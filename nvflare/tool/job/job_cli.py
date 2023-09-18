@@ -279,7 +279,7 @@ def display_available_templates(template_index_conf):
     total_length = 120
     left_margin = 1
     print("-" * total_length)
-    name_fix_length = 15
+    name_fix_length = 20
     description_fix_length = 60
     controller_type_fix_length = 20
     client_category_fix_length = 20
