@@ -169,10 +169,9 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         """
         Args: cmd_name tx_id job_id file_name [end]
         """
-        if len(args) < 3:
-            conn.append_error(
-                "syntax error: missing job_id", meta=make_meta(MetaStatusValue.SYNTAX_ERROR, "missing job_id")
-            )
+        if len(args) < 4:
+            cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY)
+            conn.append_error(f"Usage: {cmd_entry.usage}", meta=make_meta(MetaStatusValue.SYNTAX_ERROR))
             return PreAuthzReturnCode.ERROR
         job_id = args[2]
         args_for_authz = [args[0], job_id]
@@ -650,6 +649,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         Args: cmd_name tx_id folder_name file_name [end]
         """
         if len(args) < 4:
+            # NOTE: this should never happen since args have been validated by authorize_job_file!
             self.logger.error("syntax error: missing tx_id folder_name file name")
             return
 

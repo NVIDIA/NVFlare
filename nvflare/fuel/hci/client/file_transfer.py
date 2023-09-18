@@ -429,27 +429,29 @@ class FileTransferModule(CommandModule):
         if not error:
             tx_path = self._tx_path(tx_id, folder_name)
             destination_path = os.path.join(self.download_dir, destination_name)
-            try:
-                os.rename(tx_path, destination_path)
-                location = destination_path
-            except:
-                if destination_name != folder_name:
-                    # try to use alt_destination_path
-                    alt_destination_path = os.path.join(
-                        self.download_dir,
-                        f"{destination_name}__{tx_id}",
-                    )
-                    try:
-                        os.rename(tx_path, alt_destination_path)
-                        location = alt_destination_path
-                    except:
-                        location = tx_path
-                else:
-                    location = tx_path
+            location = self._rename_folder(tx_path, destination_path)
             reply = {ProtoKey.STATUS: APIStatus.SUCCESS, ProtoKey.DETAILS: f"content downloaded to {location}"}
         else:
             reply = error
         return reply
+
+    @staticmethod
+    def _rename_folder(src: str, destination: str):
+        max_tries = 1000
+        for i in range(max_tries):
+            if i == 0:
+                d = destination
+            else:
+                d = f"{destination}__{i}"
+            try:
+                os.rename(src, d)
+                return d
+            except:
+                # try next
+                pass
+
+        # all rename attempts have failed - keep the original destination name
+        return destination
 
     def upload_folder(self, args, ctx: CommandContext):
         cmd_entry = ctx.get_command_entry()
