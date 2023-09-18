@@ -32,6 +32,7 @@ from nvflare.app_common.ccwf.common import (
 from nvflare.fuel.utils.validation_utils import (
     DefaultValuePolicy,
     check_number_range,
+    check_object_type,
     check_positive_int,
     check_positive_number,
     check_str,
@@ -69,24 +70,53 @@ class ServerSideController(Controller):
         result_clients_policy: str = DefaultValuePolicy.ALL,
         max_status_report_interval: float = Constant.PER_CLIENT_STATUS_REPORT_TIMEOUT,
         progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
+        private_p2p: bool = True,
     ):
         """
         Constructor
 
         Args:
-            num_rounds:
-            start_round:
-            task_name_prefix:
-            configure_task_timeout:
-            end_workflow_timeout:
-            start_task_timeout:
-            task_check_period:
-            job_status_check_interval:
-            starting_client:
-            participating_clients:
-            result_clients: clients to receive final results
-            max_status_report_interval:
-            progress_timeout:
+            num_rounds - the number of rounds to be performed. This is a workflow config parameter.
+            start_round - the starting round number. This is a workflow config parameter.
+            task_name_prefix - the prefix for task names of this workflow.
+                The workflow requires multiple tasks (e.g. config and start) between the server controller and the client.
+                The full names of these tasks are <prefix>_config and <prefix>_start.
+                Subclasses may send additional tasks. Naming these tasks with a common prefix can make it easier to
+                configure task executors for FL clients.
+            participating_clients - the names of the clients that will participate in the job. None means all clients.
+            result_clients - names of the clients that will receive final learning results.
+            result_clients_policy - how to determine result_clients if their names are not explicitly specified.
+                Possible values are:
+                    ALL - all participating clients
+                    ANY - any one of the participating clients
+                    EMPTY - no result_clients
+                    DISALLOW - does not allow implicit - result_clients must be explicitly specified
+            configure_task_timeout - time to wait for clients’ responses to the config task before timeout.
+            starting_client - name of the starting client.
+            starting_client_policy - how to determine the starting client if the name is not explicitly specified.
+                Possible values are:
+                    ANY - any one of the participating clients (randomly chosen)
+                    EMPTY - no starting client
+                    DISALLOW - does not allow implicit - starting_client must be explicitly specified
+            start_task_timeout - how long to wait for the starting client to finish the “start” task.
+                If timed out, the job will be aborted.
+                If the starting_client is not specified, then no start task will be sent.
+                max_status_report_interval - the maximum amount of time allowed for a client to miss a status report.
+                In other words, if a client fails to report its status for this much time, the client will be considered in
+                trouble and the job will be aborted.
+            progress_timeout- the maximum amount of time allowed for the workflow to not make any progress.
+                In other words, at least one participating client must have made progress during this time.
+                Otherwise, the workflow will be considered to be in trouble and the job will be aborted.
+            end_workflow_timeout - timeout for ending workflow message.
+            private_p2p - whether to make peer-to-peer communications private.
+                When set to True, P2P communications will be encrypted.
+                Private P2P communication is an additional level of protection on basic communication security
+                (such as SSL). Each pair of peers have their own encryption keys to ensure that only they themselves
+                can understand their messages, even if the messages may be relayed through other sites (e.g. server).
+                Different pairs of peers have different keys.
+                Currently, private P2P is enabled only when the system is in secure mode. This is because key exchange
+                between peers requires both sides to have PKI certificates and keys, which requires the project
+                to be provisioned in secure mode.
         """
         Controller.__init__(self, task_check_period)
         participating_clients = normalize_config_arg(participating_clients)
@@ -109,6 +139,11 @@ class ServerSideController(Controller):
         self.participating_clients = participating_clients
         self.result_clients = result_clients
         self.result_clients_policy = result_clients_policy
+
+        # make private_p2p bool
+        check_object_type("private_p2p", private_p2p, bool)
+        self.private_p2p = private_p2p
+
         self.client_statuses = {}  # client name => ClientStatus
         self.cw_started = False
         self.asked_to_stop = False
@@ -178,6 +213,7 @@ class ServerSideController(Controller):
         self.log_info(fl_ctx, f"Configuring clients {self.participating_clients} for workflow {self.workflow_id}")
 
         learn_config = {
+            Constant.PRIVATE_P2P: self.private_p2p,
             Constant.TASK_NAME_PREFIX: self.task_name_prefix,
             Constant.CLIENTS: self.participating_clients,
             Constant.START_CLIENT: self.starting_client,
