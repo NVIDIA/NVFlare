@@ -2,7 +2,7 @@
   "format_version": 2,
 
   "min_clients": 2,
-  "num_rounds": 2,
+  "num_rounds": 100,
 
   "task_data_filters": [],
   "task_result_filters": [],
@@ -48,13 +48,13 @@
       "path": "nvflare.app_opt.tracking.mlflow.mlflow_receiver.MLflowReceiver",
       "args": {
         "kwargs": {
-          "experiment_name": "hello-pt-experiment",
-          "run_name": "hello-pt-with-mlflow",
+          "experiment_name": "monai-spleen-experiment",
+          "run_name": "monai-spleen-with-mlflow",
           "experiment_tags": {
-            "mlflow.note.content": "## **Hello PyTorch experiment with MLflow**"
+            "mlflow.note.content": "## **MONAI experiment with spleen bundle with MLflow**"
           },
           "run_tags": {
-            "mlflow.note.content": "## Federated Experiment tracking with MLflow \n### Example of using **[NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html)** to train an image classifier using federated averaging ([FedAvg]([FedAvg](https://arxiv.org/abs/1602.05629))) and [PyTorch](https://pytorch.org/) as the deep learning training framework. This example also highlights the Flare streaming capability from the clients to the server for server delivery to MLflow.\n\n> **_NOTE:_** \n This example uses the *[CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html)* dataset and will load its data within the trainer code.\n"
+            "mlflow.note.content": "## Federated Experiment tracking with MLflow \n### Example of using **[NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html)** to train and run MONAI-bundle using federated averaging ([FedAvg]([FedAvg](https://arxiv.org/abs/1602.05629))) and [PyTorch](https://pytorch.org/) as the deep learning training framework. This example also highlights the FLARE streaming capability from the clients to the server for server delivery to MLflow.\n"
           }
         },
         "artifact_location": "artifacts"
