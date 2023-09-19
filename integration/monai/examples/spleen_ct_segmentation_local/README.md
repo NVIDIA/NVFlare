@@ -71,9 +71,9 @@ Download the spleen CT data from the [MSD challenge](http://medicaldecathlon.com
 the dataset will be downloaded to in this directory.
 
 ```
-JOB_NAME=job
+JOB_NAME=spleen_ct_segmentation_local
 python3 download_spleen_dataset.py
-sed -i "s|/workspace/data/Task09_Spleen|${PWD}/data/Task09_Spleen|g" ${JOB_NAME}/app/config/spleen_ct_segmentation/configs/train.json
+sed -i "s|/workspace/data/Task09_Spleen|${PWD}/data/Task09_Spleen|g" ./jobs/${JOB_NAME}/app/config/spleen_ct_segmentation/configs/train.json
 ```
 
 
@@ -109,7 +109,7 @@ nvflare poc start
 
 ### 4.1 (Optional) Secure FL workspace
 
-The project file for creating the secure workspace used in this example is shown at
+The project file for creating a secure workspace with homomorphic encryption used in this example is shown at
 [./workspaces/secure_project.yml](./workspaces/secure_project.yml).
 
 If you want to run the homomorphic encryption job, please install [TenSEAL](https://github.com/OpenMined/TenSEAL):
@@ -128,7 +128,11 @@ nvflare provision -p ./secure_project.yml
 cp -r ./workspace/secure_project/prod_00 ./secure_workspace
 cd ..
 ```
-For more information about secure provisioning see the [documentation](https://nvflare.readthedocs.io/en/latest/programming_guide/provisioning_system.html).
+
+Starting from NVFlare version 2.4, POC also uses secure provisioning and can support homomorphic encryption if set up with:
+```
+nvflare poc prepare -he
+```
 
 ### 4.2 (Optional) Start FL system
 
@@ -170,11 +174,6 @@ To run FedAvg using with the Job CLI, submit the job with:
 nvflare job submit -j jobs/spleen_ct_segmentation_local
 ```
 
-You can also submit the job with the script:
-```
-./submit_job.sh jobs/spleen_ct_segmentation_local
-```
-
 > **_NOTE:_** You can always use the admin console to manually abort a running job.
   using `abort_job [JOB_ID]`.
 > For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/main/real_world_fl/operation.html).
@@ -207,9 +206,9 @@ Next we run FedAvg using homomorphic encryption (HE) for secure aggregation on t
 > It will also take longer due to the additional encryption, decryption, encrypted aggregation,
 > and increased encrypted messages sizes involved.
 
-Follow the steps above for downloading the bundle and setting the data using `JOB_NAME=job_he`.
+Follow the steps above for downloading the bundle and setting the data using `JOB_NAME=spleen_ct_segementation_he`.
 
 Then, submit the job to run FedAvg with HE:
 ```
-./submit_job.sh jobs/spleen_ct_segementation_he
+nvflare job submit -j jobs/spleen_ct_segementation_he
 ```
