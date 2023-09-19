@@ -25,10 +25,3 @@ shows how `PTLearner` for Tensorboard can be used with `TBWriter` and still stre
 The `wandb` folder contains the [Hello PyTorch with Weights and Biases](./wandb/README.md) example
 showing how Weights and Biases can be used as a back end for the `WandBReceiver` to write to. This
 example uses a `PTLearner` with Weights and Biases syntax.
-
-## MetricsExchanger
-
-The `metrics-exchanger` folder contains examples swapping out the `LogWriters` for the
-`LogWritersForMetricsExchanger` versions.
-These are paired with `MetricsRetriever` which uses a `metrics_exchanger_id` to set up a Pipe for in-memory metrics
-exchange. The `MetricsRetriever` then sends the metrics as events to the Receiver.
