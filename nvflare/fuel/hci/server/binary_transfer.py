@@ -33,10 +33,10 @@ class BinaryTransfer:
     def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def download_file(self, conn: Connection, file_name):
-        download_dir = conn.get_prop(ConnProps.DOWNLOAD_DIR)
+    def download_file(self, conn: Connection, tx_id: str, folder_name: str, file_name: str):
         conn.binary_mode = True
-        full_path = os.path.join(download_dir, file_name)
+        tx_path = self.tx_path(conn, tx_id, folder_name)
+        full_path = os.path.join(tx_path, file_name)
         if not os.path.exists(full_path):
             self.logger.error(f"no such file: {full_path}")
             return
@@ -59,28 +59,45 @@ class BinaryTransfer:
             sender.close()
         self.logger.debug(f"finished sending {full_path}: {bytes_sent} bytes sent")
 
-    def download_folder(self, conn: Connection, folder_name: str, download_file_cmd_name: str, control_id: str):
+    @staticmethod
+    def tx_path(conn: Connection, tx_id: str, folder_name=None):
         download_dir = conn.get_prop(ConnProps.DOWNLOAD_DIR)
-        folder_path = os.path.join(download_dir, folder_name)
+        if not folder_name:
+            return os.path.join(download_dir, tx_id)
+        else:
+            return os.path.join(download_dir, tx_id, folder_name)
+
+    def download_folder(self, conn: Connection, tx_id: str, folder_name: str, download_file_cmd_name: str):
         self.logger.debug(f"download_folder called for {folder_name}")
+        tx_path = self.tx_path(conn, tx_id, folder_name)
 
         # return list of the files
         files = []
-        for (dir_path, dir_names, file_names) in os.walk(folder_path):
+        for (dir_path, dir_names, file_names) in os.walk(tx_path):
             for f in file_names:
                 p = os.path.join(dir_path, f)
-                p = os.path.relpath(p, folder_path)
-                p = os.path.join(folder_name, p)
+                p = os.path.relpath(p, tx_path)
                 files.append(p)
 
         self.logger.debug(f"files of the folder: {files}")
-        conn.append_string(
-            "OK",
-            meta=make_meta(
-                MetaStatusValue.OK,
-                extra={MetaKey.FILES: files, MetaKey.CONTROL_ID: control_id, MetaKey.CMD_NAME: download_file_cmd_name},
-            ),
-        )
-
-        user_name = conn.get_prop(ConnProps.USER_NAME, "?")
-        self.logger.info(f"downloaded {control_id} to user {user_name}")
+        if len(files) > 0:
+            conn.append_string(
+                "OK",
+                meta=make_meta(
+                    MetaStatusValue.OK,
+                    extra={
+                        MetaKey.FILES: files,
+                        MetaKey.TX_ID: tx_id,
+                        MetaKey.FOLDER_NAME: folder_name,
+                        MetaKey.CMD_NAME: download_file_cmd_name,
+                    },
+                ),
+            )
+        else:
+            conn.append_error(
+                "No data to download",
+                meta=make_meta(
+                    MetaStatusValue.ERROR,
+                    info="No data to download",
+                ),
+            )

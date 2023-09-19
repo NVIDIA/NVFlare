@@ -616,6 +616,7 @@ class SwarmClientController(ClientSideController):
                 name=self.report_learn_result_task_name,
                 data=result,
                 timeout=int(self.learn_task_ack_timeout),
+                secure=self.is_task_secure(fl_ctx),
             )
 
             resp = self.broadcast_and_wait(

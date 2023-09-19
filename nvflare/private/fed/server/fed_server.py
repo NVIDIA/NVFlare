@@ -191,9 +191,20 @@ class BaseServer(ABC):
         cleanup_thread.start()
 
     def client_cleanup(self):
+        last_remove_time = 0.0
+        remove_interval = 5.0
+        check_interval = 0.2
         while not self.shutdown:
-            self.remove_dead_clients()
-            time.sleep(15)
+            now = time.time()
+            if now - last_remove_time > remove_interval:
+                self.remove_dead_clients()
+                last_remove_time = now
+
+            # We want to sleep very little to check the self.shutdown quickly
+            # so that when self.shutdown is set we can return quickly.
+            # Without this, when the server parent cell ends, this thread will not end until 15 secs later.
+            # This will cause MPM's cleanup to fail!
+            time.sleep(check_interval)
 
     def set_admin_server(self, admin_server):
         self.admin_server = admin_server
