@@ -12,3 +12,5 @@ Please make sure you set up a virtual environment and install and configure Jupy
   * Goes through the different commands of the FLARE API.
 * [NVFLARE in POC Mode](./setup_poc.ipynb)
   * Shows how to use POC mode.
+* [Job CLI](./job_cli.ipynb)
+  * Shows how to use Job Cli commands
