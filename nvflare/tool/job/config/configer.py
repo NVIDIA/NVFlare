@@ -52,8 +52,8 @@ def extract_string_with_index(input_string):
     closing_bracket_index = input_string.find("]")
     if opening_bracket_index > 0 and closing_bracket_index > 0:
         string_before = input_string[:opening_bracket_index]
-        index = int(input_string[opening_bracket_index + 1: closing_bracket_index])
-        string_after = input_string[closing_bracket_index + 1:].strip(". ")
+        index = int(input_string[opening_bracket_index + 1 : closing_bracket_index])
+        string_after = input_string[closing_bracket_index + 1 :].strip(". ")
         if string_after:
             r = (string_before.strip("."), index, extract_string_with_index(string_after.strip(".")))
             if r:
@@ -82,7 +82,7 @@ def filter_indices(app_indices_configs: Dict[str, Dict[str, Tuple]]) -> Dict[str
 
 
 def filter_config_name_and_values(
-        excluded_key_list: List[str], key_indices: Dict[str, List[KeyIndex]]
+    excluded_key_list: List[str], key_indices: Dict[str, List[KeyIndex]]
 ) -> Dict[str, KeyIndex]:
     temp_results = {}
     for key, key_index_list in key_indices.items():
@@ -95,7 +95,7 @@ def filter_config_name_and_values(
 
 
 def merge_configs(
-        app_indices_configs: Dict[str, Dict[str, tuple]], app_cli_file_configs: Dict[str, Dict[str, Dict]]
+    app_indices_configs: Dict[str, Dict[str, tuple]], app_cli_file_configs: Dict[str, Dict[str, Dict]]
 ) -> Dict[str, Dict[str, tuple]]:
     """
     Merge configurations from indices_configs and cli_file_configs.
