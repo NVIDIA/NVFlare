@@ -18,8 +18,15 @@ from pyhocon import ConfigTree
 
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.tool.job.config.config_indexer import KeyIndex, build_reverse_order_index
-from nvflare.tool.job.job_client_const import APP_CONFIG_FILE_BASE_NAMES, JOB_META_BASE_NAME, DEFAULT_APP_NAME, \
-    APP_CONFIG_DIR, CONFIG_FED_CLIENT_CONF, APP_SCRIPT_KEY, APP_CONFIG_KEY
+from nvflare.tool.job.job_client_const import (
+    APP_CONFIG_DIR,
+    APP_CONFIG_FILE_BASE_NAMES,
+    APP_CONFIG_KEY,
+    APP_SCRIPT_KEY,
+    CONFIG_FED_CLIENT_CONF,
+    DEFAULT_APP_NAME,
+    JOB_META_BASE_NAME,
+)
 
 
 def merge_configs_from_cli(cmd_args, app_names: List[str]) -> Tuple[Dict[str, Dict[str, tuple]], bool]:

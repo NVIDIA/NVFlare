@@ -33,7 +33,9 @@ from nvflare.tool.job.config.configer import (
 )
 from nvflare.tool.job.job_client_const import (
     CONFIG_CONF,
+    CONFIG_FED_CLIENT_CONF,
     CONFIG_FILE_BASE_NAME_WO_EXTS,
+    DEFAULT_APP_NAME,
     JOB_CONFIG_COMP_NAME,
     JOB_CONFIG_FILE_NAME,
     JOB_CONFIG_VAR_NAME,
@@ -46,8 +48,10 @@ from nvflare.tool.job.job_client_const import (
     JOB_INFO_DESC,
     JOB_INFO_DESC_KEY,
     JOB_INFO_KEYS,
+    JOB_INFO_MD,
     JOB_TEMPLATE,
-    JOB_TEMPLATE_CONF, TEMPLATES_KEY, DEFAULT_APP_NAME, CONFIG_FED_CLIENT_CONF, JOB_INFO_MD,
+    JOB_TEMPLATE_CONF,
+    TEMPLATES_KEY,
 )
 from nvflare.utils.cli_utils import (
     find_job_templates_location,
@@ -182,7 +186,7 @@ def get_src_template(cmd_args) -> Optional[str]:
 
 
 def remove_extra_file(config_dir):
-    extra_file = [JOB_INFO_MD,JOB_INFO_CONF]
+    extra_file = [JOB_INFO_MD, JOB_INFO_CONF]
     for ef in extra_file:
         file_path = os.path.join(config_dir, ef)
         if os.path.isfile(file_path):

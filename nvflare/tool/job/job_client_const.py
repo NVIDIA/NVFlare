@@ -43,7 +43,7 @@ JOB_TEMPLATE_NAME = "name"
 CONFIG_CONF = "config.conf"
 
 DEFAULT_APP_NAME = "app"
-APP_CONFIG_DIR= "config"
+APP_CONFIG_DIR = "config"
 
 APP_SCRIPT_KEY = "app_script"
 APP_CONFIG_KEY = "app_config"
