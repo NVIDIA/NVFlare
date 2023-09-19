@@ -18,7 +18,7 @@ capability of streaming from the clients to the server.
 The `mlflow` folder contains [examples](./mlflow/README.md) showcasing the usage of the capability to stream from
 the clients to the server to write to an MLflow tracking server. The `hello-pt-mlflow` job demonstrates how a
 `PTLearner` with logging using MLflow syntax can be used with `MLflowWriter`, and the `hello-pt-tb-mlflow` job
-shows how `PTLearner` for Tensorboard can be used with `TBWriter` and still steam to `MLflowReceiver`.
+shows how `PTLearner` for Tensorboard can be used with `TBWriter` and still stream to `MLflowReceiver`.
 
 ## Weights and Biases
 
@@ -28,6 +28,7 @@ example uses a `PTLearner` with Weights and Biases syntax.
 
 ## MetricsExchanger
 
-The `metrics-exchanger` folder contains examples swapping out the LogWriters for the `ForMetricsExchanger` versions.
+The `metrics-exchanger` folder contains examples swapping out the `LogWriters` for the
+`LogWritersForMetricsExchanger` versions.
 These are paired with `MetricsRetriever` which uses a `metrics_exchanger_id` to set up a Pipe for in-memory metrics
 exchange. The `MetricsRetriever` then sends the metrics as events to the Receiver.

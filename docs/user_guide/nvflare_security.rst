@@ -69,12 +69,12 @@ This role is responsible for the management of the sites of his/her organization
 Lead Researcher Role
 ^^^^^^^^^^^^^^^^^^^^^^^
 This role can be configured for increased privileges for an organization for a scientist who works
-with other researchers to ensure the success of the study.
+with other researchers to ensure the success of the project.
 
 Member Researcher Role
 ^^^^^^^^^^^^^^^^^^^^^^^
 This role can be configured for another level of privileges a scientist who works with the Lead Researcher
-to make sure his/her site is properly prepared for the study.
+to make sure his/her site is properly prepared for the project.
 
 
 FLARE Console (previously called Admin Client)
