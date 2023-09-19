@@ -156,7 +156,7 @@ class NVFlareStatsHandler(LogWriterForMetricsExchanger):
             step: index of current step.
 
         """
-        self.log(key=tag, value=value, data_type=data_type, global_step=step)
+        self.send_log(key=tag, value=value, data_type=data_type, global_step=step)
 
     def _default_epoch_sender(self, engine: Engine) -> None:
         """

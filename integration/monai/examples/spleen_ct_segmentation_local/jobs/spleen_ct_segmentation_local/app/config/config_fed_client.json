@@ -23,10 +23,6 @@
   "task_data_filters": [
   ],
 
-  "tracking": "mlflow",
-  "experiment_name": "monai_nvflare",
-  "tracking_uri": "http://127.0.0.1:5000",
-
   "components": [
     {
       "id": "client_algo",

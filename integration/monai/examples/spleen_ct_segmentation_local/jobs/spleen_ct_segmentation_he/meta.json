@@ -1,5 +1,5 @@
 {
-  "name": "spleen-bundle-he",
+  "name": "spleen_ct_segmentation_he",
   "resource_spec": {},
   "min_clients" : 2,
   "deploy_map": {

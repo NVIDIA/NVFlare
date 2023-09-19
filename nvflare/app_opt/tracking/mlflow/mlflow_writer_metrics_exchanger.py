@@ -43,7 +43,7 @@ class MLflowWriterForMetricsExchanger(LogWriterForMetricsExchanger):
                 All backend stores support values up to length 500, but some
                 may support larger values.
         """
-        self.log(key=key, value=value, data_type=AnalyticsDataType.PARAMETER)
+        self.send_log(key=key, value=value, data_type=AnalyticsDataType.PARAMETER)
 
     def log_params(self, values: dict) -> None:
         """Log a batch of params for the current run.
@@ -51,7 +51,7 @@ class MLflowWriterForMetricsExchanger(LogWriterForMetricsExchanger):
         Args:
             values (dict): Dictionary of param_name: String -> value: (String, but will be string-ified if not)
         """
-        self.log(key="params", value=values, data_type=AnalyticsDataType.PARAMETERS)
+        self.send_log(key="params", value=values, data_type=AnalyticsDataType.PARAMETERS)
 
     def log_metric(self, key: str, value: float, step: Optional[int] = None) -> None:
         """Log a metric under the current run.
@@ -66,7 +66,7 @@ class MLflowWriterForMetricsExchanger(LogWriterForMetricsExchanger):
                 support larger values.
             step (int, optional): Metric step. Defaults to zero if unspecified.
         """
-        self.log(key=key, value=value, data_type=AnalyticsDataType.METRIC, global_step=step)
+        self.send_log(key=key, value=value, data_type=AnalyticsDataType.METRIC, global_step=step)
 
     def log_metrics(self, metrics: Dict[str, float], step: Optional[int] = None) -> None:
         """Log multiple metrics for the current run.
@@ -78,7 +78,7 @@ class MLflowWriterForMetricsExchanger(LogWriterForMetricsExchanger):
             step (int, optional): A single integer step at which to log the specified Metrics. If unspecified, each metric is
                 logged at step zero.
         """
-        self.log(key="metrics", value=metrics, data_type=AnalyticsDataType.METRICS, global_step=step)
+        self.send_log(key="metrics", value=metrics, data_type=AnalyticsDataType.METRICS, global_step=step)
 
     def log_text(self, text: str, artifact_file_path: str) -> None:
         """Log text as an artifact under the current run.
@@ -88,7 +88,7 @@ class MLflowWriterForMetricsExchanger(LogWriterForMetricsExchanger):
             artifact_file_path (str): The run-relative artifact file path in posixpath format
                 to which the text is saved (e.g. “dir/file.txt”).
         """
-        self.log(key="text", value=text, data_type=AnalyticsDataType.TEXT, path=artifact_file_path)
+        self.send_log(key="text", value=text, data_type=AnalyticsDataType.TEXT, path=artifact_file_path)
 
     def set_tag(self, key: str, tag: any) -> None:
         """Set a tag under the current run.
@@ -99,7 +99,7 @@ class MLflowWriterForMetricsExchanger(LogWriterForMetricsExchanger):
                 All backend stores will support values up to length 5000, but some
                 may support larger values.
         """
-        self.log(key=key, value=tag, data_type=AnalyticsDataType.TAG)
+        self.send_log(key=key, value=tag, data_type=AnalyticsDataType.TAG)
 
     def set_tags(self, tags: dict) -> None:
         """Log a batch of tags for the current run.
@@ -108,4 +108,4 @@ class MLflowWriterForMetricsExchanger(LogWriterForMetricsExchanger):
             tags (dict): Dictionary of tag_name: String -> value: (String, but will be string-ified if
                 not)
         """
-        self.log(key="tags", value=tags, data_type=AnalyticsDataType.TAGS)
+        self.send_log(key="tags", value=tags, data_type=AnalyticsDataType.TAGS)
