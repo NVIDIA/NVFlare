@@ -129,7 +129,7 @@ cp -r ./workspace/secure_project/prod_00 ./secure_workspace
 cd ..
 ```
 
-Starting from NVFlare version 2.4, POC also uses secure provisioning and can support homomorphic encryption if set up with:
+POC mode also uses secure provisioning now and can support homomorphic encryption if set up with:
 ```
 nvflare poc prepare -he
 ```
@@ -150,7 +150,7 @@ For details about resource management and consumption, please refer to the [docu
 > To speed up your experimentation, you can reduce the `num_rounds` value in `config_fed_server.json`, e.g. to 5 rounds.
 
 ### 5.1 Experiment tracking with MLflow
-Experiment tracking with MLflow in version 2.4.0 now uses `NVFlareStatsHandler` to stream events
+Experiment tracking with MLflow now uses `NVFlareStatsHandler` to stream events
 to the FL server to write to MLflow. The `spleen_ct_segmentation_local` job should be configured to automatically log
 metrics to MLflow through the FL server.
 
