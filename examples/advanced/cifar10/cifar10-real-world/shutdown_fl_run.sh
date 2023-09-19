@@ -21,11 +21,11 @@ n_clients=8
 
 echo "Attempting to shutdown server at ${workspace}/${SERVERNAME}"
 export CUDA_VISIBLE_DEVICES=1
-./workspaces/${workspace}/${SERVERNAME}/startup/stop_fl.sh &
+echo 'y' | ./workspaces/${workspace}/${SERVERNAME}/startup/stop_fl.sh &
 
 echo "Attempting to shutdown ${n_clients} clients"
 for id in $(eval echo "{1..$n_clients}")
 do
   export CUDA_VISIBLE_DEVICES=1
-  ./workspaces/${workspace}/${site_pre}${id}/startup/stop_fl.sh &
+  echo 'y' | ./workspaces/${workspace}/${site_pre}${id}/startup/stop_fl.sh &
 done
