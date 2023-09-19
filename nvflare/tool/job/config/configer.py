@@ -18,6 +18,8 @@ from pyhocon import ConfigTree
 
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.tool.job.config.config_indexer import KeyIndex, build_reverse_order_index
+from nvflare.tool.job.job_client_const import APP_CONFIG_FILE_BASE_NAMES, JOB_META_BASE_NAME, DEFAULT_APP_NAME, \
+    APP_CONFIG_DIR, CONFIG_FED_CLIENT_CONF, APP_SCRIPT_KEY, APP_CONFIG_KEY
 
 
 def merge_configs_from_cli(cmd_args, app_names: List[str]) -> Tuple[Dict[str, Dict[str, tuple]], bool]:
@@ -122,7 +124,7 @@ def merge_configs(
                         for key, cli_value in cli_configs.items():
                             if key not in key_indices:
                                 # not every client has app_config, app_script
-                                if key not in ["app_script", "app_config"]:
+                                if key not in [APP_SCRIPT_KEY, APP_CONFIG_KEY]:
                                     raise ValueError(f"Invalid config key: '{key}' for file '{file}'")
                             else:
                                 indices = key_indices.get(key)
@@ -173,12 +175,12 @@ def get_cli_config(cmd_args: Any, app_names: List[str]) -> Dict[str, Dict[str, D
 
     if "script" in cmd_args and cmd_args.script:
         script = os.path.basename(cmd_args.script)
-        key = "config_fed_client.conf"
+        key = CONFIG_FED_CLIENT_CONF
         for app_name, cli_config_dict in app_cli_config_dict.items():
             if key in cli_config_dict:
-                cli_config_dict[key].update({"app_script": script})
+                cli_config_dict[key].update({APP_SCRIPT_KEY: script})
             else:
-                cli_config_dict[key] = {"app_script": script}
+                cli_config_dict[key] = {APP_SCRIPT_KEY: script}
     return app_cli_config_dict
 
 
@@ -206,10 +208,10 @@ def parse_cli_config(cli_configs: List[str], app_names: List[str], job_folder) -
             app_name = get_app_name_from_path(arr[0])
             config_data = arr[1:]
             config_dict = {}
-            app_name = "app" if not app_name else app_name
+            app_name = DEFAULT_APP_NAME if not app_name else app_name
 
             if app_name not in app_names:
-                if app_name != "app":
+                if app_name != DEFAULT_APP_NAME:
                     raise ValueError(f"unknown application name '{app_name}'. Expected app names are {app_names} ")
                 else:
                     raise ValueError(
@@ -229,23 +231,24 @@ def parse_cli_config(cli_configs: List[str], app_names: List[str], job_folder) -
 
 
 def build_config_file_indices(job_folder: str, app_names: List[str]) -> Dict[str, Dict[str, Tuple]]:
-    config_included = ["config_fed_client", "config_fed_server"]
+    config_included = APP_CONFIG_FILE_BASE_NAMES
+    meta_base = JOB_META_BASE_NAME
     config_extensions = ConfigFormat.extensions()
 
     app_config_file_index = {}
     app_config_files = {}
 
     for ext in config_extensions:
-        meta_file = os.path.join(job_folder, f"meta{ext}")
+        meta_file = os.path.join(job_folder, f"{meta_base}{ext}")
         if os.path.isfile(meta_file):
-            app_config_files["app"] = [meta_file]
+            app_config_files[DEFAULT_APP_NAME] = [meta_file]
             break
 
     for app_name in app_names:
         app_dir = os.path.join(job_folder, app_name)
         for ext in config_extensions:
             for base in config_included:
-                file = os.path.abspath(os.path.join(app_dir, "config", f"{base}{ext}"))
+                file = os.path.abspath(os.path.join(app_dir, APP_CONFIG_DIR, f"{base}{ext}"))
                 if os.path.isfile(file):
                     config_files = app_config_files.get(app_name, [])
                     config_files.append(file)
@@ -269,4 +272,4 @@ def get_app_name_from_path(path):
     index = app_name.find("/")
     if index > 0:
         raise ValueError(f"Expecting <app_name>/<config file>, but '{path}' is given.")
-    return app_name if app_name else "app"
+    return app_name if app_name else DEFAULT_APP_NAME

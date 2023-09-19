@@ -47,7 +47,7 @@ from nvflare.tool.job.job_client_const import (
     JOB_INFO_DESC_KEY,
     JOB_INFO_KEYS,
     JOB_TEMPLATE,
-    JOB_TEMPLATE_CONF,
+    JOB_TEMPLATE_CONF, TEMPLATES_KEY, DEFAULT_APP_NAME, CONFIG_FED_CLIENT_CONF, JOB_INFO_MD,
 )
 from nvflare.utils.cli_utils import (
     find_job_templates_location,
@@ -75,7 +75,7 @@ def find_filename_basename(f: str):
 def build_job_template_indices(job_templates_dir: str) -> ConfigTree:
     conf = CF.parse_string("{ templates = {} }")
     config_file_base_names = CONFIG_FILE_BASE_NAME_WO_EXTS
-    template_conf = conf.get("templates")
+    template_conf = conf.get(TEMPLATES_KEY)
     keys = JOB_INFO_KEYS
 
     for f in os.listdir(job_templates_dir):
@@ -119,14 +119,14 @@ def create_job(cmd_args):
 
         app_dirs = get_app_dirs(template_src)
         app_names = [os.path.basename(f) for f in app_dirs]
-        app_names = app_names if app_names else ["app"]
+        app_names = app_names if app_names else [DEFAULT_APP_NAME]
         job_folder = cmd_args.job_folder
         prepare_job_folder(cmd_args)
         app_custom_dirs = prepare_app_dirs(job_folder, app_names)
         prepare_app_scripts(app_custom_dirs, cmd_args)
         config_dirs = get_config_dirs(job_folder, app_names)
 
-        fmt, real_config_path = ConfigFactory.search_config_format("config_fed_server.conf", config_dirs)
+        fmt, real_config_path = ConfigFactory.search_config_format(CONFIG_FED_CLIENT_CONF, config_dirs)
         if real_config_path and not cmd_args.force:
             print(
                 f"""\nwarning: configuration files:\n
@@ -173,20 +173,16 @@ def get_src_template_by_name(cmd_args):
 
 def get_src_template(cmd_args) -> Optional[str]:
     target_template = os.path.abspath(cmd_args.template)
-    target_config_files = set()
     if os.path.isdir(target_template):
-        for root, _, files in os.walk(target_template):
-            for f in files:
-                if f.startswith("config_fed_client") or f.startswith("config_fed_server"):
-                    target_config_files.add(f)
-    if len(target_config_files) > 0:
-        return target_template
-    else:
-        return None
+        info_file = os.path.join(target_template, JOB_INFO_CONF)
+        if os.path.isfile(info_file):
+            return target_template
+
+    return None
 
 
 def remove_extra_file(config_dir):
-    extra_file = ["info.md", "info.conf"]
+    extra_file = [JOB_INFO_MD,JOB_INFO_CONF]
     for ef in extra_file:
         file_path = os.path.join(config_dir, ef)
         if os.path.isfile(file_path):
@@ -245,7 +241,7 @@ def display_template_variables(job_folder, app_variable_values):
     print(" " * left_margin, file_name, var_name, var_value, var_comp)
     print("-" * total_length)
     for app_name, variable_values in app_variable_values.items():
-        if app_name != "app":
+        if app_name != DEFAULT_APP_NAME:
             app_header = fix_length_format(f"app: {app_name}", total_length)
             print(" " * left_margin, app_header)
             print(" " * total_length)
