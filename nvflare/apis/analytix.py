@@ -189,9 +189,9 @@ class AnalyticsData:
                 return AnalyticsDataType.SCALARS
             else:
                 return sender_data_type
-        
+
         if sender == LogWriterName.MLFLOW and receiver == LogWriterName.WANDB:
-                return sender_data_type
+            return sender_data_type
 
     def __str__(self) -> str:
         return f"AnalyticsData(tag: {self.tag}, value: {self.value}, data_type: {self.data_type}, kwargs: {self.kwargs}, step: {self.step})"
