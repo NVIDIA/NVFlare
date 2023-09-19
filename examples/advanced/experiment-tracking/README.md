@@ -9,7 +9,7 @@ train an image classifier using federated averaging ([FedAvg](https://arxiv.org/
 
 ## Tensorboard
 
-The `tensorboard` folder contains the [Hello PyTorch with TensorBoard Streaming](./tensorboard/README.md) example
+The `tensorboard` folder contains the [TensorBoard Streaming](./tensorboard/README.md) example
 showcasing the [TensorBoard streaming](https://nvflare.readthedocs.io/en/main/examples/tensorboard_streaming.html)
 capability of streaming from the clients to the server.
 

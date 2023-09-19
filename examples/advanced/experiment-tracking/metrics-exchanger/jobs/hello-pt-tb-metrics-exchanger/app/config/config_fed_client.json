@@ -33,10 +33,8 @@
     },
     {
       "id": "log_writer",
-      "path": "nvflare.app_opt.tracking.mlflow.mlflow_writer_metrics_exchanger.MLflowWriterForMetricsExchanger",
-      "args": {
-          "metrics_exchanger_id": "metrics_exchanger"
-      }
+      "path": "nvflare.app_opt.tracking.tb.tb_writer.TBWriterForMetricsExchanger",
+      "args": {"metrics_exchanger_id": "metrics_exchanger"}
     },
     {
         "id": "metrics_retriever",

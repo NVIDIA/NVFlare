@@ -1,9 +1,6 @@
 {
   "format_version": 2,
 
-  "server": {
-    "heart_beat_timeout": 600
-  },
   "task_data_filters": [],
   "task_result_filters": [],
   "components": [
@@ -41,20 +38,22 @@
       "args": {}
     },
     {
-      "id": "mlflow_receiver_with_tracking_uri",
-      "path": "nvflare.app_opt.tracking.mlflow.mlflow_receiver.MLflowReceiver",
+      "id": "wandb_receiver",
+      "path": "nvflare.app_opt.tracking.wandb.wandb_receiver.WandBReceiver",
       "args": {
-        "kwargs": {
-          "experiment_name": "hello-pt-experiment",
-          "run_name": "hello-pt-with-mlflow",
-          "experiment_tags": {
-            "mlflow.note.content": "## **Hello PyTorch experiment with MLflow**"
-          },
-          "run_tags": {
-            "mlflow.note.content": "## Federated Experiment tracking with MLflow \n### Example of using **[NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html)** to train an image classifier using federated averaging ([FedAvg]([FedAvg](https://arxiv.org/abs/1602.05629))) and [PyTorch](https://pytorch.org/) as the deep learning training framework. This example also highlights the Flare streaming capability from the clients to the server for server delivery to MLflow.\n\n> **_NOTE:_** \n This example uses the *[CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html)* dataset and will load its data within the trainer code.\n"
+          "mode": "online",
+          "kwargs" :  {
+            "project": "hello-pt-experiment",
+            "name": "hello-pt",
+            "notes": "Federated Experiment tracking with W&B \n Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) to train an image classifier using federated averaging ([FedAvg]([FedAvg](https://arxiv.org/abs/1602.05629))) and [PyTorch](https://pytorch.org/) as the deep learning training framework. This example also highlights the Flare streaming capability from the clients to the server and deliver to MLFLow.\\n\\n> **_NOTE:_** \\n This example uses the *[CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset and will load its data within the trainer code.\n",
+            "tags": ["baseline", "paper1"],
+            "job_type": "train-validate",
+            "config": {
+              "architecture": "CNN",
+              "dataset_id": "CIFAR10",
+              "optimizer": "SGD"
+            }
           }
-        },
-        "artifact_location": "artifacts"
       }
     }
   ],
