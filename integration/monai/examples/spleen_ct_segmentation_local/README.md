@@ -150,8 +150,9 @@ For details about resource management and consumption, please refer to the [docu
 > To speed up your experimentation, you can reduce the `num_rounds` value in `config_fed_server.json`, e.g. to 5 rounds.
 
 ### 5.1 Experiment tracking with MLflow
-Experiment tracking with MLflow in version 2.4.0 now uses MetricsExchanger through the `NVFlareStatsHandler` and `MetricsRetriever` components to stream events
-to the FL server to write to MLflow. The `spleen_ct_segmentation_local` job should be configured to automatically 
+Experiment tracking with MLflow in version 2.4.0 now uses `NVFlareStatsHandler` to stream events
+to the FL server to write to MLflow. The `spleen_ct_segmentation_local` job should be configured to automatically log
+metrics to MLflow through the FL server.
 
 The `spleen_ct_segmentation_loc_non_agg` job is the previous configuration that uses MONAI's experiment [tracking feature](https://github.com/Project-MONAI/tutorials/tree/main/experiment_management)
 with clients logging to the MLflow tracking server without going through the FL server.
