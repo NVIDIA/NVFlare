@@ -198,8 +198,9 @@ def show_variables(cmd_args):
         if not os.path.isdir(cmd_args.job_folder):
             raise ValueError("required job folder is not specified.")
 
-        app_names = get_app_dirs(cmd_args.job_folder)
-
+        app_dirs = get_app_dirs(cmd_args.job_folder)
+        app_names = [os.path.basename(f) for f in app_dirs]
+        app_names = app_names if app_names else [DEFAULT_APP_NAME]
         indices = build_config_file_indices(cmd_args.job_folder, app_names)
         variable_values = filter_indices(app_indices_configs=indices)
         display_template_variables(cmd_args.job_folder, variable_values)
@@ -337,7 +338,9 @@ def submit_job(cmd_args):
         temp_job_dir = mkdtemp()
         copy_tree(cmd_args.job_folder, temp_job_dir)
 
-        app_names = get_app_dirs(cmd_args.job_folder)
+        app_dirs = get_app_dirs(cmd_args.job_folder)
+        app_names = [os.path.basename(f) for f in app_dirs]
+        app_names = app_names if app_names else [DEFAULT_APP_NAME]
 
         prepare_job_config(cmd_args, app_names, temp_job_dir)
         admin_username, admin_user_dir = find_admin_user_and_dir()
@@ -578,15 +581,14 @@ def _update_client_app_config_script(
         else:
             app_config_kvs = arr
 
+        app_xs[app_name] = {}
         for cli_kv in app_config_kvs:
-            tokens = cli_kv.split("=")
-            k, v = tokens[0], tokens[1]
-            xs.append((k, v))
-        config_args = " ".join([f"--{k} {v}" for k, v in xs])
-        app_xs[app_name] = config_args
+            index = cli_kv.find("=")
+            k = cli_kv[0:index]
+            v = cli_kv[index + 1 :]
+            app_xs[app_name].update({k: v})
 
     app_configs = {}
-
     for app_name_from_app_config in app_xs:
         if app_name_from_app_config not in app_names:
             raise ValueError("when site-specific app configurations are used, expecting -a <app_name> k1=v1 k2=v2 ...")
@@ -602,7 +604,8 @@ def _update_client_app_config_script(
                 client_config = config.conf
 
             if app_name in app_xs:
-                client_config.put("app_config", app_xs[app_name])
+                for k, v in app_xs[app_name].items():
+                    client_config.put(k, v)
 
             app_configs[app_name] = (client_config, config.file_path)
 
