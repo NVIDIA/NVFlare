@@ -16,14 +16,13 @@ import shutil
 import traceback
 from distutils.dir_util import copy_tree
 from tempfile import mkdtemp
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree
 
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.fuel.flare_api.flare_api import new_secure_session
-from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.tool.job.config.configer import (
     build_config_file_indices,
@@ -59,7 +58,6 @@ from nvflare.utils.cli_utils import (
     get_hidden_nvflare_dir,
     get_startup_kit_dir,
     save_config,
-    save_configs,
 )
 
 CMD_LIST_TEMPLATES = "list_templates"
@@ -198,8 +196,9 @@ def show_variables(cmd_args):
         if not os.path.isdir(cmd_args.job_folder):
             raise ValueError("required job folder is not specified.")
 
-        app_names = get_app_dirs(cmd_args.job_folder)
-
+        app_dirs = get_app_dirs(cmd_args.job_folder)
+        app_names = [os.path.basename(f) for f in app_dirs]
+        app_names = app_names if app_names else [DEFAULT_APP_NAME]
         indices = build_config_file_indices(cmd_args.job_folder, app_names)
         variable_values = filter_indices(app_indices_configs=indices)
         display_template_variables(cmd_args.job_folder, variable_values)
@@ -337,7 +336,9 @@ def submit_job(cmd_args):
         temp_job_dir = mkdtemp()
         copy_tree(cmd_args.job_folder, temp_job_dir)
 
-        app_names = get_app_dirs(cmd_args.job_folder)
+        app_dirs = get_app_dirs(cmd_args.job_folder)
+        app_names = [os.path.basename(f) for f in app_dirs]
+        app_names = app_names if app_names else [DEFAULT_APP_NAME]
 
         prepare_job_config(cmd_args, app_names, temp_job_dir)
         admin_username, admin_user_dir = find_admin_user_and_dir()
@@ -436,14 +437,6 @@ def define_submit_job_parser(job_subparser):
                                        If key presents in the preceding config file, the value in the config
                                        file will be overwritten by the new value """,
     )
-    submit_parser.add_argument(
-        "-a",
-        "--app_config",
-        type=str,
-        action="append",
-        nargs="*",
-        help="""key=value options will be passed directly to script argument """,
-    )
 
     submit_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     job_sub_cmd_parser[CMD_SUBMIT_JOB] = submit_parser
@@ -521,14 +514,6 @@ def define_create_job_parser(job_subparser):
                                        If key presents in the preceding config file, the value in the config
                                        file will be overwritten by the new value """,
     )
-    create_parser.add_argument(
-        "-a",
-        "--app_config",
-        type=str,
-        action="append",
-        nargs="*",
-        help="""key=value options will be passed directly to script argument """,
-    )
     create_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     create_parser.add_argument(
         "-force",
@@ -541,7 +526,6 @@ def define_create_job_parser(job_subparser):
 
 
 def prepare_job_config(cmd_args, app_names: List[str], tmp_job_dir: Optional[str] = None):
-    update_client_app_script(cmd_args, app_names)
     merged_conf, config_modified = merge_configs_from_cli(cmd_args, app_names)
     need_save_config = config_modified is True or tmp_job_dir is not None
 
@@ -552,61 +536,6 @@ def prepare_job_config(cmd_args, app_names: List[str], tmp_job_dir: Optional[str
         save_merged_configs(merged_conf, tmp_job_dir)
     variable_values = filter_indices(merged_conf)
     return variable_values
-
-
-def update_client_app_script(cmd_args, app_names: List[str]):
-    if cmd_args.app_config:
-        app_configs = _update_client_app_config_script(cmd_args.job_folder, app_names, cmd_args.app_config)
-        save_configs(app_configs)
-
-
-def _update_client_app_config_script(
-    job_folder, app_names: List[str], cli_app_configs: List[List[str]]
-) -> Dict[str, Tuple[ConfigTree, str]]:
-    app_xs = {}
-    for arr in cli_app_configs:
-        if not arr:
-            continue
-        xs = []
-        app_name = "app"
-        if arr[0].find("=") == -1:
-            if arr[0] not in app_names:
-                raise ValueError(f"Unknown app name '{arr[0]}', expecting {app_names}.")
-            else:
-                app_name = arr[0]
-            app_config_kvs = arr[1:]
-        else:
-            app_config_kvs = arr
-
-        for cli_kv in app_config_kvs:
-            tokens = cli_kv.split("=")
-            k, v = tokens[0], tokens[1]
-            xs.append((k, v))
-        config_args = " ".join([f"--{k} {v}" for k, v in xs])
-        app_xs[app_name] = config_args
-
-    app_configs = {}
-
-    for app_name_from_app_config in app_xs:
-        if app_name_from_app_config not in app_names:
-            raise ValueError("when site-specific app configurations are used, expecting -a <app_name> k1=v1 k2=v2 ...")
-
-    for app_name in app_names:
-        app_config_dir = get_config_dir(job_folder, app_name)
-
-        if has_client_config_file(app_config_dir):
-            config = ConfigFactory.load_config(os.path.join(app_config_dir, "config_fed_client.xxx"))
-            if config.format == ConfigFormat.JSON or config.format == ConfigFormat.OMEGACONF:
-                client_config = CF.from_dict(config.to_dict())
-            else:
-                client_config = config.conf
-
-            if app_name in app_xs:
-                client_config.put("app_config", app_xs[app_name])
-
-            app_configs[app_name] = (client_config, config.file_path)
-
-    return app_configs
 
 
 def has_client_config_file(app_config_dir):
