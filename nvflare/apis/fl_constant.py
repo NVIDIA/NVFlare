@@ -162,6 +162,7 @@ class ReservedTopic(object):
     END_RUN = "__end_run__"
     ABORT_ASK = "__abort_task__"
     AUX_COMMAND = "__aux_command__"
+    JOB_HEART_BEAT = "__job_heartbeat__"
 
 
 class AdminCommandNames(object):
