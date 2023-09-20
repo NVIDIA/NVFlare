@@ -22,6 +22,7 @@ from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.private.fed.client.client_engine_executor_spec import ClientEngineExecutorSpec, TaskAssignment
 from nvflare.private.privacy_manager import Scope
@@ -409,9 +410,17 @@ class ClientRunner(FLComponent):
 
     def send_job_heartbeat(self, interval=30.0):
         wait_times = int(interval / 2)
+        request = Shareable()
         while not self.asked_to_stop:
             with self.engine.new_context() as fl_ctx:
-                self.engine.send_job_heartbeat(fl_ctx)
+                self.engine.send_aux_request(
+                    targets=[FQCN.ROOT_SERVER],
+                    topic=ReservedTopic.JOB_HEART_BEAT,
+                    request=request,
+                    timeout=0,
+                    fl_ctx=fl_ctx,
+                    optional=True,
+                )
 
                 for i in range(wait_times):
                     time.sleep(2)

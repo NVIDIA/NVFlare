@@ -153,7 +153,6 @@ class CellChannelTopic:
     GET_TASK = "get_task"
     SUBMIT_RESULT = "submit_result"
     HEART_BEAT = "heart_beat"
-    JOB_HEART_BEAT = "job_heart_beat"
     EXECUTE_RESULT = "execute_result"
     FIRE_EVENT = "fire_event"
     REPORT_JOB_FAILURE = "report_job_failure"

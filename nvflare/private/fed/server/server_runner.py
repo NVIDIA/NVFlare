@@ -99,6 +99,13 @@ class ServerRunner(FLComponent):
         self.status = "init"
         self.turn_to_cold = False
 
+        self._register_aux_message_handler(engine)
+
+    def _register_aux_message_handler(self, engine):
+        engine.register_aux_message_handler(
+            topic=ReservedTopic.JOB_HEART_BEAT, message_handle_func=self._handle_job_heartbeat
+        )
+
     def _execute_run(self):
         while self.current_wf_index < len(self.config.workflows):
             wf = self.config.workflows[self.current_wf_index]
@@ -488,6 +495,10 @@ class ServerRunner(FLComponent):
                     fl_ctx,
                     "Error processing client result by {}: {}".format(self.current_wf.id, secure_format_exception(e)),
                 )
+
+    def _handle_job_heartbeat(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
+        self.log_info(fl_ctx, "received client job_heartbeat aux request")
+        return make_reply(ReturnCode.OK)
 
     def abort(self, fl_ctx: FLContext, turn_to_cold: bool = False):
         self.status = "done"

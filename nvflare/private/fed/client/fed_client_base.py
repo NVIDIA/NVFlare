@@ -324,12 +324,6 @@ class FederatedClientBase:
         except FLCommunicationError:
             self.communicator.heartbeat_done = True
 
-    def send_job_heartbeat(self, project_name, fl_ctx: FLContext):
-        try:
-            self.communicator.send_job_heartbeat(self.token, self.ssid, self.client_name, fl_ctx)
-        except FLCommunicationError:
-            self.communicator.heartbeat_done = True
-
     def quit_remote(self, project_name, fl_ctx: FLContext):
         """Sending the last message to the server before leaving.
 
@@ -347,17 +341,6 @@ class FederatedClientBase:
         try:
             pool = ThreadPool(len(self.servers))
             return pool.map(partial(self.send_heartbeat, interval=interval), tuple(self.servers))
-        finally:
-            if pool:
-                pool.terminate()
-
-    def run_job_heartbeat(self, fl_ctx: FLContext):
-        """Periodically runs the job heartbeat."""
-        """Sends a heartbeat from the client job to the server."""
-        pool = None
-        try:
-            pool = ThreadPool(len(self.servers))
-            return pool.map(partial(self.send_job_heartbeat, fl_ctx=fl_ctx), tuple(self.servers))
         finally:
             if pool:
                 pool.terminate()
