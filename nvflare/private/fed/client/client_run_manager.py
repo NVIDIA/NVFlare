@@ -115,6 +115,9 @@ class ClientRunManager(ClientEngineExecutorSpec):
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
+    def send_job_heartbeat(self, fl_ctx: FLContext):
+        self.client.run_job_heartbeat(fl_ctx)
+
     def get_task_assignment(self, fl_ctx: FLContext) -> TaskAssignment:
         pull_success, task_name, return_shareable = self.client.fetch_task(fl_ctx)
         task = None

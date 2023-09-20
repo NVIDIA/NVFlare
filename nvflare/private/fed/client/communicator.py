@@ -367,6 +367,31 @@ class Communicator:
                 self.logger.info(f"Failed to send heartbeat. Will try again. Exception: {secure_format_exception(e)}")
                 time.sleep(5)
 
+    def send_job_heartbeat(self, token, ssid, client_name, fl_ctx: FLContext):
+        job_id = str(fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
+        heartbeat_message = new_cell_message(
+            {
+                CellMessageHeaderKeys.TOKEN: token,
+                CellMessageHeaderKeys.SSID: ssid,
+                CellMessageHeaderKeys.CLIENT_NAME: client_name,
+                CellMessageHeaderKeys.JOB_ID: job_id,
+            }
+        )
+
+        try:
+            result = self.cell.send_request(
+                target=FQCN.ROOT_SERVER,
+                channel=CellChannel.SERVER_MAIN,
+                topic=CellChannelTopic.JOB_HEART_BEAT,
+                request=heartbeat_message,
+                timeout=self.timeout,
+            )
+            return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
+            return return_code
+
+        except Exception as ex:
+            raise FLCommunicationError("error:send_job_heartbeat", ex)
+
     def _clean_up_runs(self, engine, abort_runs):
         # abort_runs = list(set(response.abort_jobs))
         display_runs = ",".join(abort_runs)

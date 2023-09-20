@@ -392,6 +392,9 @@ class ClientRunner(FLComponent):
         return False
 
     def _try_run(self):
+        heartbeat_thread = threading.Thread(target=self.send_job_heartbeat, args=[])
+        heartbeat_thread.start()
+
         while not self.asked_to_stop:
             with self.engine.new_context() as fl_ctx:
                 if self._check_stop_conditions(fl_ctx):
@@ -403,6 +406,17 @@ class ClientRunner(FLComponent):
                     break
 
                 time.sleep(task_fetch_interval)
+
+    def send_job_heartbeat(self, interval=30.):
+        wait_times = int(interval / 2)
+        while not self.asked_to_stop:
+            with self.engine.new_context() as fl_ctx:
+                self.engine.send_job_heartbeat(fl_ctx)
+
+                for i in range(wait_times):
+                    time.sleep(2)
+                    if self.asked_to_stop:
+                        break
 
     def fetch_and_run_one_task(self, fl_ctx) -> (float, bool):
         """Fetches and runs a task.

@@ -327,6 +327,11 @@ class FederatedServer(BaseServer):
             topic=CellChannelTopic.HEART_BEAT,
             cb=self.client_heartbeat,
         )
+        self.cell.register_request_cb(
+            channel=CellChannel.SERVER_MAIN,
+            topic=CellChannelTopic.JOB_HEART_BEAT,
+            cb=self.job_heartbeat,
+        )
 
         self.cell.register_request_cb(
             channel=CellChannel.SERVER_MAIN,
@@ -562,6 +567,22 @@ class FederatedServer(BaseServer):
                     f"Ask client: {client_name} to abort these runs."
                 )
             return reply
+
+    def job_heartbeat(self, request: Message) -> Message:
+        with self.engine.new_context() as fl_ctx:
+            self._before_service(fl_ctx)
+
+            state_check = self.server_state.heartbeat(fl_ctx)
+            error = self._handle_state_check(state_check, fl_ctx)
+            if error is not None:
+                return make_cellnet_reply(rc=F3ReturnCode.COMM_ERROR, error=error)
+
+            client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
+            job_id = request.get_header(CellMessageHeaderKeys.JOB_ID)
+            return self._generate_reply(
+                headers={CellMessageHeaderKeys.MESSAGE: f"Job heartbeat response for {client_name}:{job_id}"},
+                payload=None, fl_ctx=fl_ctx
+            )
 
     def _sync_client_jobs(self, request, client_token):
         # jobs that are running on client but not on server need to be aborted!
