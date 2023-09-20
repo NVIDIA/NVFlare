@@ -393,7 +393,7 @@ class ClientRunner(FLComponent):
         return False
 
     def _try_run(self):
-        heartbeat_thread = threading.Thread(target=self.send_job_heartbeat, args=[])
+        heartbeat_thread = threading.Thread(target=self.send_job_heartbeat, args=[], daemon=True)
         heartbeat_thread.start()
 
         while not self.asked_to_stop:
