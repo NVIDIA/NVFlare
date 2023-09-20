@@ -581,7 +581,8 @@ class FederatedServer(BaseServer):
             job_id = request.get_header(CellMessageHeaderKeys.JOB_ID)
             return self._generate_reply(
                 headers={CellMessageHeaderKeys.MESSAGE: f"Job heartbeat response for {client_name}:{job_id}"},
-                payload=None, fl_ctx=fl_ctx
+                payload=None,
+                fl_ctx=fl_ctx,
             )
 
     def _sync_client_jobs(self, request, client_token):

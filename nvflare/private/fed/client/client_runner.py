@@ -407,7 +407,7 @@ class ClientRunner(FLComponent):
 
                 time.sleep(task_fetch_interval)
 
-    def send_job_heartbeat(self, interval=30.):
+    def send_job_heartbeat(self, interval=30.0):
         wait_times = int(interval / 2)
         while not self.asked_to_stop:
             with self.engine.new_context() as fl_ctx:
