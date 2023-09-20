@@ -232,10 +232,11 @@ def parse_cli_config(cli_configs: List[str], app_names: List[str], job_folder) -
                     )
 
             for conf in config_data:
-                conf_key_value = conf.split("=")
-                if len(conf_key_value) != 2:
-                    raise ValueError(f"Invalid config data: {conf}")
-                conf_key, conf_value = conf_key_value
+                index = conf.find("=")
+                if index == -1:
+                    raise ValueError("Invalid config data, expecting key, value pair in the format key=value")
+                conf_key = conf[0:index]
+                conf_value = conf[index + 1 :]
                 config_dict[conf_key] = conf_value
             cli_config_dict[config_file] = config_dict
             app_cli_config_dict[app_name] = cli_config_dict

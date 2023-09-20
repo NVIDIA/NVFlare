@@ -23,16 +23,19 @@ import time
 from typing import Dict, List, Optional, OrderedDict, Tuple
 
 import yaml
+from pyhocon import ConfigFactory as CF
 
 from nvflare.cli_exception import CLIException
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.fuel.utils.class_utils import instantiate_class
+from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
 from nvflare.lighter.provision import gen_default_project_config, prepare_project
 from nvflare.lighter.service_constants import FlareServiceConstants as SC
 from nvflare.lighter.spec import Provisioner
 from nvflare.lighter.utils import load_yaml, update_project_server_name_config, update_storage_locations
 from nvflare.tool.api_utils import shutdown_system
+from nvflare.utils.cli_utils import hocon_to_string
 
 DEFAULT_WORKSPACE = "/tmp/nvflare/poc"
 DEFAULT_PROJECT_NAME = "example_project"
@@ -379,18 +382,31 @@ def prepare_clients(clients, number_of_clients):
 
 def save_startup_kit_dir_config(workspace, project_name):
     dst = get_hidden_nvflare_config_path()
+    config = None
+    if os.path.isfile(dst):
+        try:
+            config = CF.parse_file(dst)
+        except Exception as e:
+            config = None
+
     prod_dir = get_prod_dir(workspace, project_name)
     conf = f"""
-    startup_kit {{
-        path = {prod_dir}
-    }}
-
-    poc_workspace {{
-        path = {workspace}
-    }}
+        startup_kit {{
+            path = {prod_dir}
+        }}
+        poc_workspace {{
+            path = {workspace}
+        }}
     """
+    if config:
+        new_config = CF.parse_string(conf)
+        config = new_config.with_fallback(config)
+        config_str = hocon_to_string(ConfigFormat.PYHOCON, config)
+    else:
+        config_str = conf
+
     with open(dst, "w") as file:
-        file.write(conf)
+        file.write(f"{config_str}\n")
 
 
 def prepare_poc(cmd_args):
