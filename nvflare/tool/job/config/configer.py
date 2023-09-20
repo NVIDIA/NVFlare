@@ -182,12 +182,18 @@ def get_cli_config(cmd_args: Any, app_names: List[str]) -> Dict[str, Dict[str, D
 
     if "script" in cmd_args and cmd_args.script:
         script = os.path.basename(cmd_args.script)
-        key = CONFIG_FED_CLIENT_CONF
-        for app_name, cli_config_dict in app_cli_config_dict.items():
-            if key in cli_config_dict:
-                cli_config_dict[key].update({APP_SCRIPT_KEY: script})
-            else:
-                cli_config_dict[key] = {APP_SCRIPT_KEY: script}
+
+        if app_cli_config_dict:
+            key = CONFIG_FED_CLIENT_CONF
+            for app_name, cli_config_dict in app_cli_config_dict.items():
+
+                if key in cli_config_dict:
+                    cli_config_dict[key].update({APP_SCRIPT_KEY: script})
+                else:
+                    cli_config_dict[key] = {APP_SCRIPT_KEY: script}
+        else:
+            app_cli_config_dict = {DEFAULT_APP_NAME: {CONFIG_FED_CLIENT_CONF: {APP_SCRIPT_KEY: script}}}
+
     return app_cli_config_dict
 
 
