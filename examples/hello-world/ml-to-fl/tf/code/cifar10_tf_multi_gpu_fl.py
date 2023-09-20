@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import tensorflow as tf
 from tensorflow.keras import datasets
 from tf_net import TFNet
 
@@ -30,8 +31,13 @@ def main():
     # Normalize pixel values to be between 0 and 1
     train_images, test_images = train_images / 255.0, test_images / 255.0
 
-    model = TFNet(input_shape=(None, 32, 32, 3))
-    model.summary()
+    # Create a MirroredStrategy.
+    strategy = tf.distribute.MirroredStrategy()
+    print("Number of devices: {}".format(strategy.num_replicas_in_sync))
+
+    with strategy.scope():
+        model = TFNet(input_shape=(None, 32, 32, 3))
+        model.summary()
 
     # (3) initializes NVFlare client API
     flare.init()

@@ -15,9 +15,6 @@
 from tensorflow.keras import datasets
 from tf_net import TFNet
 
-# (optional) We change to use GPU to speed things up.
-# if you want to use CPU, change DEVICE="cpu"
-DEVICE = "cuda:0"
 PATH = "./tf_model.ckpt"
 
 
