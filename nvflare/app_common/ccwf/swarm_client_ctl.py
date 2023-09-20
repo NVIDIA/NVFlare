@@ -554,9 +554,6 @@ class SwarmClientController(ClientSideController):
 
         self.log_info(fl_ctx, f"Round {current_round} started.")
 
-        learnable = self.persistor.load(fl_ctx)
-        fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, learnable, private=True, sticky=True)
-
         # Some shareable generators assume the base model (GLOBAL_MODEL) is always available, which is true for
         # server-controlled fed-avg. But this is not true for swarm learning.
         # To make these generators happy, we create an empty global model here if not present.

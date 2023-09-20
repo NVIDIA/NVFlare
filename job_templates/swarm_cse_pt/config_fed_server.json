@@ -4,6 +4,15 @@
   "task_result_filters": [],
   "components": [
     {
+      "id": "data_splitter",
+      "path": "pt.utils.cifar10_data_splitter.Cifar10DataSplitter",
+      "args": {
+          "split_dir": "/tmp/cifar10_splits",
+          "num_sites": 2,
+          "alpha": 1.0
+      }
+    },
+    {
       "id": "json_generator",
       "name": "ValidationJsonGenerator",
       "args": {}

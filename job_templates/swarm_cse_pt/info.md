@@ -2,7 +2,7 @@
 
 ## swarm_cse_pt
     name = "swarm_cse_pt"
-    description = "Swarm Learning with Cross-Site Evaluation with PyTorch" 
+    description = "Swarm Learning with Cross-Site Evaluation with PyTorch"
     class_name  =  "SwarmClientController"
     controller_type = "client"
     executor_type = "ModelLearner"

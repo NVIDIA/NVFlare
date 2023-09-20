@@ -12,19 +12,19 @@
           "learner_id": "cifar10-learner"
         }
       }
-    }, 
+    },
     {
       "tasks": ["swarm_*"],
       "executor": {
         "path": "nvflare.app_common.ccwf.SwarmClientController",
         "args": {
           "learn_task_name": "train",
-          "learn_task_timeout": 120,
+          "learn_task_timeout": 600,
           "persistor_id": "persistor",
           "aggregator_id": "aggregator",
           "shareable_generator_id": "shareable_generator",
           "min_responses_required": 2,
-          "wait_time_after_min_resps_received": 120
+          "wait_time_after_min_resps_received": 30
         }
       }
     },
@@ -35,7 +35,8 @@
         "args": {
           "submit_model_task_name": "submit_model",
           "validation_task_name": "validate",
-          "persistor_id": "persistor"
+          "persistor_id": "persistor",
+          "get_model_timeout": 60
         }
       }
     }
@@ -45,7 +46,7 @@
   "components": [
     {
       "id": "cifar10-learner",
-      "path": "pt.cifar10_model_learner.CIFAR10ModelLearner",
+      "path": "pt.learners.cifar10_model_learner.CIFAR10ModelLearner",
       "args": {
         "train_idx_root": "/tmp/cifar10_splits",
         "aggregation_epochs": 3,
@@ -57,7 +58,7 @@
       "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
       "args": {
         "model": {
-          "path": "pt.cifar10_net.Net"
+          "path": "pt.networks.cifar10_nets.ModerateCNN"
         }
       }
     },
@@ -77,13 +78,6 @@
       "id": "model_selector",
       "name": "IntimeModelSelector",
       "args": {}
-    },
-    {
-      "id": "model_locator",
-      "name": "PTFileModelLocator",
-      "args": {
-        "pt_persistor_id": "persistor"
-      }
     },
     {
       "id": "result_printer",

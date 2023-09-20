@@ -175,6 +175,10 @@ class PTFileModelPersistor(ModelPersistor):
             )
             return
 
+        self.persistence_manager = PTModelPersistenceFormatManager(
+            OrderedDict(), default_train_conf=self.default_train_conf
+        )
+
         fl_ctx.sync_sticky()
 
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
@@ -226,10 +230,10 @@ class PTFileModelPersistor(ModelPersistor):
         if event == EventType.START_RUN:
             self._initialize(fl_ctx)
         elif event == AppEventType.GLOBAL_BEST_MODEL_AVAILABLE:
-            # save the current model as the best model!
-            model = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
-            if model:
-                self.persistence_manager.update(model)
+            # save the current model as the best model, or the global best model if available
+            ml = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
+            if ml:
+                self.persistence_manager.update(ml)
             self.save_model_file(self._best_ckpt_save_path)
 
     def save_model_file(self, save_path: str):
