@@ -26,7 +26,6 @@ from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey
 from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey, TopDir, is_valid_job_id
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.storage import DATA, JOB_ZIP, META, META_JSON, WORKSPACE, WORKSPACE_ZIP
-from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
 from nvflare.fuel.hci.base64_utils import b64str_to_bytes
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, make_meta
@@ -582,7 +581,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         folder_name = args[1]
         zip_b64str = args[2]
 
-        data_bytes = convert_legacy_zipped_app_to_job(b64str_to_bytes(zip_b64str))
+        data_bytes = b64str_to_bytes(zip_b64str)
         engine = conn.app_ctx
 
         try:
@@ -603,7 +602,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 meta[JobMetaKey.SUBMITTER_NAME.value] = conn.get_prop(ConnProps.USER_NAME, "")
                 meta[JobMetaKey.SUBMITTER_ORG.value] = conn.get_prop(ConnProps.USER_ORG, "")
                 meta[JobMetaKey.SUBMITTER_ROLE.value] = conn.get_prop(ConnProps.USER_ROLE, "")
-
+                meta[JobMetaKey.JOB_FOLDER_NAME.value] = folder_name
                 custom_props = conn.get_prop(ConnProps.CUSTOM_PROPS)
                 if custom_props:
                     meta[JobMetaKey.CUSTOM_PROPS.value] = custom_props
