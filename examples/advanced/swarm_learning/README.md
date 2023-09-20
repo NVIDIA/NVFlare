@@ -23,7 +23,7 @@ Their blockchain technology is used for secure onboarding, elections, and commun
 Additionally, a firewall secure service mesh is used between the swarm nodes as an additional layer of security.
 
 FLARE's secure peer-to-peer messaging is another layer of protection on top of basic communication security, such as SSL.
-When the system is in secure mode, each pair of peers have their own encryption keys to ensure that their messages can only be read by themselves, even if relayed through other sites.
+When the system is in secure mode, each pair of peers have their own encryption keys to ensure that their messages can only be read by themselves, even if relayed through the FL server.
 Other security concerns, such as firewall policies, must be handled by the site's IT security infrastructure rather than by FLARE.
 
 

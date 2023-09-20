@@ -175,10 +175,6 @@ class PTFileModelPersistor(ModelPersistor):
             )
             return
 
-        self.persistence_manager = PTModelPersistenceFormatManager(
-            OrderedDict(), default_train_conf=self.default_train_conf
-        )
-
         fl_ctx.sync_sticky()
 
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
