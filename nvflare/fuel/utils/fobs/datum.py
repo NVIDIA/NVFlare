@@ -30,6 +30,7 @@ class Datum:
         self.datum_id = str(uuid.uuid4())
         self.datum_type = datum_type
         self.value = value
+        self.app_data = None
 
     @staticmethod
     def blob_datum(blob: Union[bytes, bytearray, memoryview]):
@@ -52,16 +53,32 @@ class DatumRef:
 
 
 class DatumManager:
-    def __init__(self, threshold=TEN_MEGA):
+    def __init__(self, threshold=None):
+        if not threshold:
+            threshold = TEN_MEGA
+
+        if not isinstance(threshold, int):
+            raise TypeError(f"threshold must be int but got {type(threshold)}")
+
+        if threshold <= 0:
+            raise ValueError(f"threshold must > 0 but got {threshold}")
+
         self.threshold = threshold
         self.datums: Dict[str, Datum] = {}
 
     def get_datums(self):
         return self.datums
 
+    def get_datum(self, datum_id: str):
+        return self.datums.get(datum_id)
+
     def externalize(self, data: Any):
-        if not isinstance(data, (bytes, bytearray, memoryview)):
+        if not isinstance(data, (bytes, bytearray, memoryview, Datum)):
             return data
+
+        if isinstance(data, Datum):
+            self.datums[data.datum_id] = data
+            return DatumRef(data.datum_id, True)
 
         if len(data) >= self.threshold:
             # turn it to Datum
@@ -75,11 +92,13 @@ class DatumManager:
         if not isinstance(data, DatumRef):
             return data
 
-        d = self.datums.get(data.datum_id)
+        d = self.get_datum(data.datum_id)
         if not d:
-            raise ValueError(f"can't find datum for {data.datum_id}")
+            raise RuntimeError(f"can't find datum for {data.datum_id}")
 
-        if data.unwrap:
+        if d.datum_type == DatumType.FILE:
+            return d
+        elif data.unwrap:
             return d.value
         else:
             return d
