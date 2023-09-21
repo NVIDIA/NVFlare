@@ -157,12 +157,25 @@ The curves shown are:
 - yellow: oasst1 
 - green: dolly
 - blue: alpaca
-- magenta: three datasets combined, 'centralized' training
+- magenta: three datasets combined
 
 The light curves are for single site training, and the dark curves are for FedAvg
 
-As shown, the global model from FedAvg is able to generate a loss comparable to that of centralized training.
+As shown, the global model from FedAvg is able to generate a loss comparable to that of training with all three datasets combined.
 
+Loss curve is one indication of model performance, but we also want to see if the model is able to generate reasonable text. Hence, we benchmarked the trained models with standard language modeling tasks under zero-shot setting, including [HellaSwag](https://arxiv.org/pdf/1905.07830.pdf)(H), [PIQA](https://arxiv.org/pdf/1911.11641.pdf)(P), and [WinoGrande](https://arxiv.org/pdf/1907.10641.pdf)(W). 
+Below is the accuracy of the models on these tasks.
+
+|              | H_acc | H_acc_norm | P_acc | P_acc_norm | W_acc | Mean  |
+|:------------:|:-----:|:----------:|:-----:|:----------:|:-----:|:-----:|
+|  BaseModel   | 0.357 |   0.439    | 0.683 |   0.689    | 0.537 | 0.541 |
+|    Alpaca    | 0.372 |   0.451    | 0.675 |   0.687    | 0.550 | 0.547 |
+|    Dolly     | 0.376 |   0.474    | 0.671 |   0.667    | 0.529 | 0.543 |
+|    Oasst1    | 0.370 |   0.452    | 0.657 |   0.655    | 0.506 | 0.528 |
+|   Combined   | 0.370 |   0.453    | 0.685 |   0.690    | 0.548 | 0.549 |
+|    FedAvg    | 0.377 |   0.469    | 0.688 |   0.687    | 0.560 | 0.556 |
+
+As shown, FedAvg is able to generate a model with the best overall performance.    
 
 ## Inference
 We use NeMo's [inference script](https://github.com/NVIDIA/NeMo/blob/main/examples/nlp/language_modeling/megatron_gpt_eval.py) for generation task with models after SFT. 

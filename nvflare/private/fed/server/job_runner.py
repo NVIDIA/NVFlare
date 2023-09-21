@@ -389,7 +389,7 @@ class JobRunner(FLComponent):
             output_file = os.path.join(td, "workspace")
             zip_directory_to_file(run_dir, "", output_file)
             job_manager.save_workspace(job_id, output_file, fl_ctx)
-            self.log_info(fl_ctx, f"Workspace zipped to {output_file}")
+            self.log_debug(fl_ctx, f"Workspace zipped to {output_file}")
         shutil.rmtree(run_dir)
 
     def run(self, fl_ctx: FLContext):

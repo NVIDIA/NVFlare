@@ -94,7 +94,7 @@ class AbortCommand(CommandProcessor):
 
         """
         client_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
-        return client_runner.abort()
+        return client_runner.abort(msg="Received command to abort job")
 
 
 class AbortTaskCommand(CommandProcessor):
