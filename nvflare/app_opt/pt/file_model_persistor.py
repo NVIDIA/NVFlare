@@ -206,7 +206,7 @@ class PTFileModelPersistor(ModelPersistor):
             # note that, if set "determinism" in the config, the init model weights will always be the same
             self.log_info(
                 fl_ctx,
-                f"Unable to load model from {src_file_name}: Using default data instead.",
+                f"Both source_ckpt_file_full_name and {AppConstants.CKPT_PRELOAD_PATH} are not provided. Using the default model weights initialized on the persistor side.",
                 fire_event=False,
             )
             try:
