@@ -70,7 +70,6 @@ You can also mix and match any combination of LogWriter and Receiver so you can 
 but use any experiment tracking tool or tools (you can use multiple receivers for the same log data sent from one sender).
 
 .. image:: ../resources/experiment_tracking.jpg
-    :height: 300px
 
 *************************
 Experiment logs streaming
@@ -132,3 +131,12 @@ See :ref:`experiment_tracking_mlflow` for details.
 Under the `wandb <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/experiment-tracking/wandb>`_ directory, the
 "hello-pt-wandb" job shows how to use Weights and Biases for experiment tracking with
 the WandBWriter and WandBReceiver to log metrics.
+
+MONAI Integration
+=================
+
+`Integration with MONAI <https://github.com/NVIDIA/NVFlare/tree/main/integration/monai>`_ uses the `NVFlareStatsHandler`
+:class:`LogWriterForMetricsExchanger <nvflare.app_common.tracking.LogWriterForMetricsExchanger>` to connect to
+:class:`MetricsRetriever <nvflare.app_common.metrics_exchange.MetricsRetriever>`. See the job
+`spleen_ct_segmentation_local <https://github.com/NVIDIA/NVFlare/tree/main/integration/monai/examples/spleen_ct_segmentation_local/jobs/spleen_ct_segmentation_local>`_
+for more details on this configuration.

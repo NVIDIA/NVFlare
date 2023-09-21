@@ -182,12 +182,18 @@ def get_cli_config(cmd_args: Any, app_names: List[str]) -> Dict[str, Dict[str, D
 
     if "script" in cmd_args and cmd_args.script:
         script = os.path.basename(cmd_args.script)
-        key = CONFIG_FED_CLIENT_CONF
-        for app_name, cli_config_dict in app_cli_config_dict.items():
-            if key in cli_config_dict:
-                cli_config_dict[key].update({APP_SCRIPT_KEY: script})
-            else:
-                cli_config_dict[key] = {APP_SCRIPT_KEY: script}
+
+        if app_cli_config_dict:
+            key = CONFIG_FED_CLIENT_CONF
+            for app_name, cli_config_dict in app_cli_config_dict.items():
+
+                if key in cli_config_dict:
+                    cli_config_dict[key].update({APP_SCRIPT_KEY: script})
+                else:
+                    cli_config_dict[key] = {APP_SCRIPT_KEY: script}
+        else:
+            app_cli_config_dict = {DEFAULT_APP_NAME: {CONFIG_FED_CLIENT_CONF: {APP_SCRIPT_KEY: script}}}
+
     return app_cli_config_dict
 
 
@@ -226,10 +232,11 @@ def parse_cli_config(cli_configs: List[str], app_names: List[str], job_folder) -
                     )
 
             for conf in config_data:
-                conf_key_value = conf.split("=")
-                if len(conf_key_value) != 2:
-                    raise ValueError(f"Invalid config data: {conf}")
-                conf_key, conf_value = conf_key_value
+                index = conf.find("=")
+                if index == -1:
+                    raise ValueError("Invalid config data, expecting key, value pair in the format key=value")
+                conf_key = conf[0:index]
+                conf_value = conf[index + 1 :]
                 config_dict[conf_key] = conf_value
             cli_config_dict[config_file] = config_dict
             app_cli_config_dict[app_name] = cli_config_dict

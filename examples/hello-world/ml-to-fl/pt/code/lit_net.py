@@ -31,6 +31,8 @@ class LitNet(LightningModule):
         self.model = Net()
         self.train_acc = Accuracy(task="multiclass", num_classes=NUM_CLASSES)
         self.valid_acc = Accuracy(task="multiclass", num_classes=NUM_CLASSES)
+        # (optional) pass additional information via self.__fl_meta__
+        self.__fl_meta__ = {}
 
     def forward(self, x):
         out = self.model(x)

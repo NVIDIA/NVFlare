@@ -170,7 +170,7 @@ class AnalyticsData:
         cls, sender_data_type: AnalyticsDataType, sender: LogWriterName, receiver: LogWriterName
     ) -> AnalyticsDataType:
 
-        if sender == LogWriterName.TORCH_TB and receiver == LogWriterName.MLFLOW:
+        if sender == LogWriterName.TORCH_TB and (receiver == LogWriterName.MLFLOW or sender == LogWriterName.WANDB):
             if AnalyticsDataType.SCALAR == sender_data_type:
                 return AnalyticsDataType.METRIC
             elif AnalyticsDataType.SCALARS == sender_data_type:
@@ -189,6 +189,9 @@ class AnalyticsData:
                 return AnalyticsDataType.SCALARS
             else:
                 return sender_data_type
+
+        if sender == LogWriterName.MLFLOW and receiver == LogWriterName.WANDB:
+            return sender_data_type
 
     def __str__(self) -> str:
         return f"AnalyticsData(tag: {self.tag}, value: {self.value}, data_type: {self.data_type}, kwargs: {self.kwargs}, step: {self.step})"
