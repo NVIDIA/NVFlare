@@ -26,6 +26,7 @@ class TestLobs:
         flare_decomposers.register()
 
     def test_handle_bytes(self):
+        flare_decomposers.register()
         d = Shareable()
         d["x"] = os.urandom(200)
         d["y"] = b"123456789012345678901234567890123456789012345678901234567890"
@@ -38,6 +39,7 @@ class TestLobs:
         assert d == dd
 
     def test_handle_file(self):
+        flare_decomposers.register()
         d = Shareable()
         d["x"] = os.urandom(200)
         d["y"] = b"123456789012345678901234567890123456789012345678901234567890"
