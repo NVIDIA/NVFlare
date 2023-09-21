@@ -69,7 +69,7 @@ def main():
     model = LitNet()
     cifar10_dm = CIFAR10DataModule()
 
-    trainer = Trainer(max_epochs=1, devices=1 if torch.cuda.is_available() else None)
+    trainer = Trainer(max_epochs=1, strategy="ddp", devices=2 if torch.cuda.is_available() else None)
 
     # perform local training
     print("--- train new model ---")

@@ -19,6 +19,9 @@ from lit_net import LitNet
 from pytorch_lightning import LightningDataModule, Trainer, seed_everything
 from torch.utils.data import DataLoader, random_split
 
+# (1) import nvflare lightning client API
+import nvflare.client.lightning as flare
+
 seed_everything(7)
 
 
@@ -69,9 +72,15 @@ def main():
     model = LitNet()
     cifar10_dm = CIFAR10DataModule()
 
-    trainer = Trainer(max_epochs=1, devices=1 if torch.cuda.is_available() else None)
+    trainer = Trainer(max_epochs=1, strategy="ddp", devices=2 if torch.cuda.is_available() else None)
+    # (2) patch the lightning trainer
+    flare.patch(trainer)
 
-    # perform local training
+    # (3) evaluate the current global model to allow server-side model selection
+    print("--- validate global model ---")
+    trainer.validate(model, datamodule=cifar10_dm)
+
+    # perform local training starting with the received global model
     print("--- train new model ---")
     trainer.fit(model, datamodule=cifar10_dm)
 

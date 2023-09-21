@@ -7,6 +7,11 @@ We will demonstrate how to transform an existing DL code into an FL application 
   3. [How to modify a structured script using DL2FL decorator](#the-decorator-use-case)
   4. [How to modify a PyTorch Lightning script using DL2FL Lightning Client API](#transform-cifar10-pytorch-lightning-training-code-to-fl-with-nvflare-client-lightning-integration-api)
 
+If you have multi GPU please refer to the following examples:
+
+  1. [How to modify a PyTorch DDP training script using DL2FL Client API](#transform-cifar10-pytorch--ddp-training-code-to-fl-using-client-api)
+  2. [How to modify a PyTorch Lightning DDP training script using DL2FL Lightning Client API](#transform-cifar10-pytorch-lightning--ddp-training-code-to-fl-with-nvflare-client-lightning-integration-api)
+
 Please install the requirements first, it is suggested to install inside a virtual environment:
 
 ```bash
@@ -65,7 +70,7 @@ We made the following changes:
 7. Construct the FLModel to be returned to the NVFlare side: ```output_model = flare.FLModel(xxx)```
 8. Send the model back to NVFlare: ```flare.send(output_model)```
 
-Optional: Change the data path to an absolute path and use ```../prepare_data.sh``` to download data
+Optional: Change the data path to an absolute path and use ```./prepare_data.sh``` to download data
 
 The modified code can be found in [./code/cifar10_fl.py](./code/cifar10_fl.py)
 
@@ -78,13 +83,13 @@ We choose the [sag_pt job template](../../../../job_templates/sag_pt/) and run t
 ```bash
 nvflare config -jt ../../../../job_templates/
 nvflare job list_templates
-nvflare job create -force -j ./jobs/client_api -w sag_pt -sd ./code/ -s ./code/cifar10_fl.py
+nvflare job create -force -j ./jobs/client_api -w sag_pt -sd ./code/ -f config_fed_client.conf app_script=cifar10_fl.py
 ```
 
 Then we can run it using the NVFlare Simulator:
 
 ```bash
-bash ../prepare_data.sh
+bash ./prepare_data.sh
 nvflare simulator -n 2 -t 2 ./jobs/client_api -w client_api_workspace
 ```
 
@@ -121,7 +126,7 @@ We made the following changes:
     - Return a float number of metric
 5. Call ```fl_evaluate``` method before training to get metrics on the received aggregated/global model
 
-Optional: Change the data path to an absolute path and use ```../prepare_data.sh``` to download data
+Optional: Change the data path to an absolute path and use ```./prepare_data.sh``` to download data
 
 The modified code can be found in [./code/cifar10_structured_fl.py](./code/cifar10_structured_fl.py)
 
@@ -129,13 +134,13 @@ The modified code can be found in [./code/cifar10_structured_fl.py](./code/cifar
 We choose the [sag_pt job template](../../../../job_templates/sag_pt/) and run the following command to create the job:
 
 ```bash
-nvflare job create -force -j ./jobs/decorator -w sag_pt -sd ./code/ -s ./code/cifar10_structured_fl.py
+nvflare job create -force -j ./jobs/decorator -w sag_pt -sd ./code/ -f config_fed_client.conf app_script=cifar10_structured_fl.py
 ```
 
 Then we can run it using the NVFlare simulator:
 
 ```bash
-bash ../prepare_data.sh
+bash ./prepare_data.sh
 nvflare simulator -n 2 -t 2 ./jobs/decorator -w decorator_workspace
 ```
 
@@ -164,7 +169,7 @@ The modified code can be found in [./code/cifar10_lightning_fl.py](./code/cifar1
 Then we can create the job using sag_pt template:
 
 ```bash
-nvflare job create -force -j ./jobs/lightning -w sag_pt -sd ./code/ -s ./code/cifar10_lightning_fl.py
+nvflare job create -force -j ./jobs/lightning -w sag_pt -sd ./code/ -f config_fed_client.conf app_script=cifar10_lightning_fl.py
 ```
 
 We need to modify the "key_metric" in "config_fed_server.conf" from "accuracy" to "val_acc_epoch" (this name originates from the code [here](./code/lit_net.py#L56)) which means the validation accuracy for that epoch:
@@ -196,6 +201,116 @@ And we modify the model architecture to use the LitNet class:
 Then we run it using the NVFlare simulator:
 
 ```bash
-bash ../prepare_data.sh
+bash ./prepare_data.sh
 nvflare simulator -n 2 -t 2 ./jobs/lightning -w lightning_workspace
+```
+
+
+## Transform CIFAR10 PyTorch + DDP training code to FL using Client API
+
+We follow the official [PyTorch documentation](https://pytorch.org/tutorials/intermediate/ddp_tutorial.html#initialize-ddp-with-torch-distributed-run-torchrun) and write a [./code/cifar10_ddp_original.py](./code/cifar10_ddp_original.py).
+
+Note that we wrap the evaluation logic into a method for better reusability.
+
+It can be run using the torch distributed run:
+
+```bash
+python3 -m torch.distributed.run --nnodes=1 --nproc_per_node=2 --master_port=6666 ./code/cifar10_ddp_original.py
+```
+
+To modify this multi-GPU code to be used in FL.
+We made the following changes:
+
+1. Import NVFlare Client API: ```import nvflare.client as flare```
+2. Initialize NVFlare Client API: ```flare.init()```
+3. Receive aggregated/global FLModel from NVFlare side: ```input_model = flare.receive()```
+4. Load the received aggregated/global model weights into the model structure: ```net.load_state_dict(input_model.params)```
+5. Evaluate on received aggregated/global model to get the metrics for model selection
+6. Construct the FLModel to be returned to the NVFlare side: ```output_model = flare.FLModel(xxx)```
+7. Send the model back to NVFlare: ```flare.send(output_model)```
+
+Note that we only do flare receive and send on the first process (rank 0).
+Because all the worker processes launched by torch distributed will have the same model in the end, we don't need to send duplicate
+models back.
+
+The modified code can be found in [./code/cifar10_ddp_fl.py](./code/cifar10_ddp_fl.py)
+
+
+We can create the job using the following command:
+
+```bash
+nvflare job create -force -j ./jobs/client_api_ddp -w sag_pt_ddp -sd ./code/ \
+    -f app_1/config_fed_client.conf app_script=cifar10_ddp_fl.py \
+    -f app_2/config_fed_client.conf app_script=cifar10_ddp_fl.py
+```
+
+
+Then we run it using the NVFlare simulator:
+
+```bash
+bash ./prepare_data.sh
+nvflare simulator -n 2 -t 2 ./jobs/client_api_ddp -w client_api_ddp_workspace
+```
+
+
+This will starts 2 clients and each client will start 2 worker processes.
+
+Note that you might need to change the "master_port" in the "config_fed_client.conf"
+ if those ports are already taken on your machine.
+
+
+## Transform CIFAR10 PyTorch Lightning + ddp training code to FL with NVFLARE Client lightning integration API
+
+After we finish the [single GPU case](#transform-cifar10-pytorch-lightning-training-code-to-fl-with-nvflare-client-lightning-integration-api), we will
+show how to convert multi GPU training as well.
+
+We just need to change the Trainer initialize to add extra options: `strategy="ddp", devices=2` 
+
+The modified Lightning + DPP code can be found in [./code/cifar10_lightning_ddp_original.py](./code/cifar10_lightning_ddp_original.py)
+
+You can execute it using:
+
+```bash
+python3 ./code/cifar10_lightning_ddp_original.py
+```
+
+The modified FL code can be found in [./code/cifar10_lightning_ddp_fl.py](./code/cifar10_lightning_ddp_fl.py)
+
+Then we can create the job using sag_pt template:
+
+```bash
+nvflare job create -force -j ./jobs/lightning_ddp -w sag_pt -sd ./code/ -f config_fed_client.conf app_script=cifar10_lightning_ddp_fl.py
+```
+
+We need to modify the "key_metric" in "config_fed_server.conf" from "accuracy" to "val_acc_epoch" (this name originates from the code [here](./code/lit_net.py#L56)) which means the validation accuracy for that epoch:
+
+```
+{
+  id = "model_selector"
+  name = "IntimeModelSelector"
+  args {
+    key_metric = "val_acc_epoch"
+  }
+}
+```
+
+And we modify the model architecture to use the LitNet class:
+
+```
+{
+  id = "persistor"
+  path = "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor"
+  args {
+    model {
+      path = "lit_net.LitNet"
+    }
+  }
+}
+```
+
+Then we run it using the NVFlare simulator:
+
+```bash
+bash ./prepare_data.sh
+nvflare simulator -n 2 -t 2 ./jobs/lightning_ddp -w lightning_ddp_workspace
 ```

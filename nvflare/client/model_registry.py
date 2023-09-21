@@ -35,18 +35,24 @@ class ModelRegistry:
 
     """
 
-    def __init__(self, model_exchanger: ModelExchanger, config: ClientConfig):
+    def __init__(self, config: ClientConfig, model_exchanger: Optional[ModelExchanger] = None):
         self.model_exchanger = model_exchanger
         self.config = config
 
         self.cached_model: Optional[FLModel] = None
         self.cache_loaded = False
         self.metrics = None
-        self.sys_info = None
+        self.sys_info = {}
         self.output_meta = {}
 
     def receive(self):
-        self.cached_model = self.model_exchanger.receive_model()
+        if not self.model_exchanger:
+            return None
+        received_model = self.model_exchanger.receive_model()
+        self._set_model(received_model)
+
+    def _set_model(self, model: FLModel):
+        self.cached_model = model
         self.sys_info = get_meta_from_fl_model(self.cached_model, SYS_ATTRS)
         self.cache_loaded = True
 
@@ -55,12 +61,14 @@ class ModelRegistry:
             self.receive()
         return copy.deepcopy(self.cached_model)
 
-    def get_sys_info(self):
+    def get_sys_info(self) -> dict:
         if not self.cache_loaded:
             self.receive()
         return self.sys_info
 
     def send(self, model: FLModel) -> None:
+        if not self.model_exchanger:
+            return None
         if self.config.get_transfer_type() == "DIFF":
             exchange_format = self.config.get_exchange_format()
             diff_func = DIFF_FUNCS.get(exchange_format, None)
@@ -83,7 +91,8 @@ class ModelRegistry:
         self.cache_loaded = False
         self.sys_info = None
         self.metrics = None
-        self.model_exchanger.finalize(close_pipe=False)
+        if self.model_exchanger:
+            self.model_exchanger.finalize(close_pipe=False)
 
     def __str__(self):
         return f"{self.__class__.__name__}(config: {self.config.get_config()})"
