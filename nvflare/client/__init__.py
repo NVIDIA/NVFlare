@@ -24,6 +24,7 @@ from .api import get_job_id as get_job_id
 from .api import get_site_name as get_site_name
 from .api import get_total_rounds as get_total_rounds
 from .api import init as init
+from .api import model_receiver as model_receiver
 from .api import params_diff as params_diff
 from .api import receive as receive
 from .api import send as send

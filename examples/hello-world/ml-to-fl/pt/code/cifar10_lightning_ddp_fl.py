@@ -76,21 +76,23 @@ def main():
     # (2) patch the lightning trainer
     flare.patch(trainer)
 
-    # (3) evaluate the current global model to allow server-side model selection
-    print("--- validate global model ---")
-    trainer.validate(model, datamodule=cifar10_dm)
+    # (3) receives FLModel from NVFlare
+    for _ in flare.model_receiver():
+        # (3) evaluate the current global model to allow server-side model selection
+        print("--- validate global model ---")
+        trainer.validate(model, datamodule=cifar10_dm)
 
-    # perform local training starting with the received global model
-    print("--- train new model ---")
-    trainer.fit(model, datamodule=cifar10_dm)
+        # perform local training starting with the received global model
+        print("--- train new model ---")
+        trainer.fit(model, datamodule=cifar10_dm)
 
-    # test local model
-    print("--- test new model ---")
-    trainer.test(ckpt_path="best", datamodule=cifar10_dm)
+        # test local model
+        print("--- test new model ---")
+        trainer.test(ckpt_path="best", datamodule=cifar10_dm)
 
-    # get predictions
-    print("--- prediction with new best model ---")
-    trainer.predict(ckpt_path="best", datamodule=cifar10_dm)
+        # get predictions
+        print("--- prediction with new best model ---")
+        trainer.predict(ckpt_path="best", datamodule=cifar10_dm)
 
 
 if __name__ == "__main__":

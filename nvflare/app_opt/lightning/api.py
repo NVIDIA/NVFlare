@@ -67,6 +67,7 @@ class FLCallback(Callback):
             if MetaKey.NUM_STEPS_CURRENT_ROUND not in fl_meta:
                 fl_meta[MetaKey.NUM_STEPS_CURRENT_ROUND] = trainer.estimated_stepping_batches
             self._send_model(FLModel(params=pl_module.cpu().state_dict(), meta=fl_meta))
+            trainer.fit_loop.epoch_progress.reset()
             self.reset_state()
 
     def on_validation_start(self, trainer, pl_module):
