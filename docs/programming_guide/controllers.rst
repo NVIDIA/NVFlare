@@ -2,11 +2,14 @@
 
 Controllers and Controller API
 ==============================
-The Controller API makes it possible to create any client coordination logic in an FL workflow that is executed on the FL
+The :class:`Controller API <nvflare.apis.controller_spec.ControllerSpec>` makes it possible to create any client coordination logic in an FL workflow that is executed on the FL
 Server. A workflow has one or more controllers, each implementing a specific coordination strategy. For example, the ScatterAndGather
 (SAG) controller implements a popular strategy that is typically used for the fed-average type of federated training. The
 CrossSiteValidation controller implements a strategy to let every client site evaluate every other site's model. You can put together
 a workflow that uses any number of controllers.
+
+This section covers the server-side controller API for server-controlled workflows. See :ref:`client_controlled_workflows` for
+workflows that are controlled by the clients.
 
 Controller/Worker Interactions
 ------------------------------
