@@ -47,7 +47,7 @@ from nvflare.tool.job.job_client_const import (
     JOB_INFO_DESC_KEY,
     JOB_INFO_KEYS,
     JOB_INFO_MD,
-    TEMPLATES_KEY,
+    TEMPLATES_KEY, CONFIG_FED_SERVER_CONF,
 )
 from nvflare.utils.cli_utils import (
     create_job_template_config,
@@ -99,12 +99,12 @@ def get_template_info_config(template_dir):
 
 
 def get_app_dirs(job_folder_or_template):
-    root = os.path.abspath(job_folder_or_template)
-    app_dirs = [
-        os.path.join(root, f)
-        for f in os.listdir(root)
-        if f != "__pycache__" and f != "__init__.py" and os.path.isdir(os.path.join(root, f))
-    ]
+    app_dirs = []
+    for root, dirs, files in os.walk(job_folder_or_template):
+        if root != job_folder_or_template and \
+                (CONFIG_FED_SERVER_CONF in files or CONFIG_FED_CLIENT_CONF in files):
+            app_dirs.append(root)
+
     return app_dirs
 
 
@@ -455,7 +455,7 @@ def define_list_templates_parser(job_subparser):
         nargs="?",
         default=None,
         help="Job template directory, if not specified, "
-        "will search from ~/.nvflare/config.conf and NVFLARE_HOME env. variables",
+             "will search from ~/.nvflare/config.conf and NVFLARE_HOME env. variables",
     )
     show_jobs_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     job_sub_cmd_parser[CMD_LIST_TEMPLATES] = show_jobs_parser
@@ -543,9 +543,9 @@ def prepare_job_config(cmd_args, app_names: List[str], tmp_job_dir: Optional[str
 
 def has_client_config_file(app_config_dir):
     return (
-        os.path.exists(os.path.join(app_config_dir, "config_fed_client.conf"))
-        or os.path.exists(os.path.join(app_config_dir, "config_fed_client.json"))
-        or os.path.exists(os.path.join(app_config_dir, "config_fed_client.yml"))
+            os.path.exists(os.path.join(app_config_dir, "config_fed_client.conf"))
+            or os.path.exists(os.path.join(app_config_dir, "config_fed_client.json"))
+            or os.path.exists(os.path.join(app_config_dir, "config_fed_client.yml"))
     )
 
 
