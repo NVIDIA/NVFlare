@@ -17,7 +17,7 @@ from enum import Enum
 from typing import Any, Type, TypeVar
 
 # Generic type supported by the decomposer.
-from nvflare.fuel.utils.fobs.datum import DatumManager, DatumRef, DatumType
+from nvflare.fuel.utils.fobs.datum import DatumManager, DatumRef
 
 T = TypeVar("T")
 
