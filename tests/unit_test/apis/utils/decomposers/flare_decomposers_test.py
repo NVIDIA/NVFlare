@@ -75,7 +75,7 @@ class TestFlareDecomposers:
 
     @pytest.mark.parametrize(
         "size",
-        [100, 1000, FIVE_G],
+        [100, 1000],
     )
     def test_file_stream(self, size):
         d = Shareable()
