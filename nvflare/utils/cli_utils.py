@@ -21,7 +21,7 @@ from pyhocon import ConfigTree, HOCONConverter
 
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel_opt.utils.pyhocon_loader import PyhoconConfig
-from nvflare.tool.job.job_client_const import JOB_TEMPLATES
+from nvflare.tool.job.job_client_const import CONFIG_CONF, JOB_TEMPLATES
 
 
 def get_home_dir() -> Path:
@@ -36,7 +36,7 @@ def get_hidden_nvflare_config_path(hidden_nvflare_dir: str) -> str:
     Returns:
         str: The path to the hidden nvflare configuration file.
     """
-    hidden_nvflare_config_file = os.path.join(hidden_nvflare_dir, "config.conf")
+    hidden_nvflare_config_file = os.path.join(hidden_nvflare_dir, CONFIG_CONF)
     return str(hidden_nvflare_config_file)
 
 
@@ -195,6 +195,16 @@ def find_job_templates_location(job_templates_dir: Optional[str] = None):
 
     if job_templates_dir:
         check_job_templates_dir(job_templates_dir)
+
+    if not job_templates_dir:
+        # get default template from nvflare wheel if package installed
+        from nvflare.tool import job as job_module
+
+        template_path = os.path.join(os.path.dirname(job_module.__file__), "templates")
+        if os.path.isdir(template_path):
+            job_templates_dir = template_path
+        else:
+            job_templates_dir = None
 
     if not job_templates_dir:
         raise ValueError(
