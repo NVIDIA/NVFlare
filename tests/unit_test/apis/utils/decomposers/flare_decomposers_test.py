@@ -11,11 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import filecmp
 import os
 import tempfile
 import uuid
 from argparse import Namespace
 from typing import Any
+
+import pytest
 
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.client import Client
@@ -27,6 +30,9 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils.fobs.datum import Datum
+
+FIVE_G = 5 * 1024 * 1024 * 1024
 
 
 class TestFlareDecomposers:
@@ -51,10 +57,13 @@ class TestFlareDecomposers:
         new_shareable = new_command_shareable.get_header(ServerCommandKey.SHAREABLE)
         assert new_shareable[ReservedKey.TASK_ID] == TestFlareDecomposers.ID1
 
-    def test_handle_bytes(self):
-        flare_decomposers.register()
+    @pytest.mark.parametrize(
+        "size",
+        [100, 1000, FIVE_G],
+    )
+    def test_byte_stream(self, size):
         d = Shareable()
-        d["x"] = os.urandom(200)
+        d["x"] = os.urandom(size)
         d["y"] = b"123456789012345678901234567890123456789012345678901234567890"
         d["z"] = {
             "za": 12345,
@@ -64,10 +73,13 @@ class TestFlareDecomposers:
         dd = fobs.loads(ds)
         assert d == dd
 
-    def test_handle_file(self):
-        flare_decomposers.register()
+    @pytest.mark.parametrize(
+        "size",
+        [100, 1000, FIVE_G],
+    )
+    def test_file_stream(self, size):
         d = Shareable()
-        d["x"] = os.urandom(200)
+        d["x"] = os.urandom(size)
         d["y"] = b"123456789012345678901234567890123456789012345678901234567890"
         d["z"] = {
             "za": 12345,
@@ -79,6 +91,35 @@ class TestFlareDecomposers:
             fobs.dumpf(d, file_path, max_value_size=15)
             df = fobs.loadf(file_path)
             assert df == d
+
+    @pytest.mark.parametrize(
+        "file_size",
+        [100, 1000, FIVE_G],
+    )
+    def test_file_datum(self, file_size):
+        d = Shareable()
+        d["y"] = b"123456789012345678901234567890123456789012345678901234567890"
+        with tempfile.TemporaryDirectory() as td:
+            temp_file = os.path.join(td, str(uuid.uuid4()))
+            with open(temp_file, "wb") as f:
+                f.write(os.urandom(file_size))
+            d["z"] = Datum.file_datum(temp_file)
+
+            ds = fobs.dumps(d)
+            dd = fobs.loads(ds)
+
+            assert isinstance(dd, Shareable)
+            assert d["y"] == dd["y"]
+            datum = dd["z"]
+            assert isinstance(datum, Datum)
+            assert os.path.isfile(datum.value)
+            assert filecmp.cmp(datum.value, temp_file)
+
+    def test_large_dxo(self):
+        d = DXO(data_kind=DataKind.WEIGHTS, data={"x": os.urandom(FIVE_G)})
+        ds = fobs.dumps(d)
+        dd = fobs.loads(ds)
+        assert d.data_kind == dd.data_kind and d.data == dd.data and d.meta == dd.meta
 
     def test_fl_context(self):
 
