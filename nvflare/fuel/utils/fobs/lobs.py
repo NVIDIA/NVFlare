@@ -64,15 +64,22 @@ def _write_datum_header(stream: BinaryIO, marker, datum_id: str, value_size: int
 
 def dump_to_stream(obj: Any, stream: BinaryIO, max_value_size=None):
     """
-    Encode the specified object to a stream of bytes. If the object contains any datums, they will be included
+    Serialize the specified object to a stream of bytes. If the object contains any datums, they will be included
     into the result.
 
+    The result may contain multiple sections:
+    - the 1st section is the main body (serialized with fobs/msgpack) of the object
+    - if the object contains large binary data, they will be converted to datums, and each datum has one section
+
+    During serialization, the object may be altered (replace large value with datums). After serialization, the object
+    is restored to its original state.
+
     Args:
-        obj:
-        stream:
+        obj: the object to be serialized.
+        stream: the stream that serialized data will be written to.
         max_value_size: max size of bytes value allowed. If a value exceeds this, it will be converted to datum.
 
-    Returns:
+    Returns: None
 
     """
     mgr = DatumManager(max_value_size)
@@ -83,13 +90,13 @@ def dump_to_stream(obj: Any, stream: BinaryIO, max_value_size=None):
 
     datums = mgr.get_datums()
     for datum_id, datum in datums.items():
-        if datum.app_data:
-            c, p = datum.app_data
-            if datum.datum_type == DatumType.BLOB:
-                c[p] = datum.value
-            else:
-                # file datum - app provided
-                c[p] = datum
+        if datum.restore_func is not None:
+            # restore original object state
+            restore_func = datum.restore_func
+            func_data = datum.restore_func_data
+            datum.restore_func_data = None
+            datum.restore_func = None
+            restore_func(datum, func_data)
 
         if datum.datum_type == DatumType.BLOB:
             _write_datum_header(stream, MARKER_DATUM_BLOB, datum_id, len(datum.value))
@@ -114,6 +121,19 @@ def dump_to_stream(obj: Any, stream: BinaryIO, max_value_size=None):
 
 
 def _get_datum_id(stream: BinaryIO, header: _Header):
+    """Get datum ID from the stream:
+    - Read 16 bytes from the stream
+    - Get hex string of the bytes - this gives a UUID string without hyphens
+    - Make an uuid.UUID object from the hex string
+    - Convert it to string - this gives a UUID string with hyphens
+
+    Args:
+        stream: the stream that contains bytes to be deserialized
+        header: the header of the section
+
+    Returns: datum ID string
+
+    """
     # get datum_id:
     if header.size < DATUM_ID_LEN:
         raise RuntimeError(f"not enough data for datum ID: expect {DATUM_ID_LEN} bytes but got {header.size}")
@@ -131,6 +151,17 @@ def _get_datum_id(stream: BinaryIO, header: _Header):
 
 
 def _get_one_section(stream: BinaryIO, expect_datum: bool):
+    """
+    Get one data section from the stream. A section represents a complete item: the main body of the serialized object
+    or a Datum.
+
+    Args:
+        stream: the stream that contains the data
+        expect_datum: whether the section is expected to be a Datum.
+
+    Returns: a tuple of (header, datum_id, data_bytes)
+
+    """
     buf = stream.read(HEADER_LEN)
     if not buf:
         return None, None, None
@@ -164,6 +195,18 @@ def _get_one_section(stream: BinaryIO, expect_datum: bool):
 
 
 def _get_datum_dir():
+    """When a file datum is received, the data will be stored in a temporary file under a predefined Datum Directory.
+    This function returns this predefined Datum Directory. The function also tries to create the directory if
+    it does not exist.
+
+    The directory can be defined with a system environment variable: NVFLARE_DATUM_DIR.
+
+    Returns: name of the datum directory
+
+    Notes: temporary dir from tempfile must not be used! This is because the file must continue to exist after it is
+    closed.
+
+    """
     dir_name = ConfigService.get_str_var(name=DATUM_DIR_CONFIG_VAR, default=DEFAULT_DATUM_DIR)
     if not os.path.exists(dir_name):
         os.makedirs(dir_name, exist_ok=True)
@@ -171,6 +214,18 @@ def _get_datum_dir():
 
 
 def load_from_stream(stream: BinaryIO):
+    """Load/deserialize data from the specified stream into an object.
+
+    The data in the stream must be a well-formed serialized data. It has one or more sections:
+    - The 1st section contains the main body of the object (serialized with fobs/msgpack)
+    - Optionally, more datum sections follow, each representing a datum that is referenced in the main body.
+
+    Args:
+        stream: the stream that contains data to be serialized.
+
+    Returns: an object
+
+    """
     mgr = DatumManager()
 
     # get main body
@@ -201,20 +256,57 @@ def load_from_stream(stream: BinaryIO):
 
 
 def dump_to_bytes(obj: Any, max_value_size=None):
+    """Serialize an object to bytes
+
+    Args:
+        obj: object to be serialized
+        max_value_size: the max size allowed for bytes value in the object. If a value exceeds this, it will be
+        converted to datum.
+
+    Returns: a bytes object
+
+    """
     bio = io.BytesIO()
     dump_to_stream(obj, bio, max_value_size)
     return bio.getvalue()
 
 
 def load_from_bytes(data: bytes) -> Any:
+    """Deserialize the bytes into an object
+
+    Args:
+        data: the bytes to be deserialized
+
+    Returns: an object
+
+    """
     return load_from_stream(io.BytesIO(data))
 
 
 def dump_to_file(obj: Any, file_path: str, max_value_size=None):
+    """Serialize the object and save result to the specified file.
+
+    Args:
+        obj: object to be serialized
+        file_path: path of the file to store serialized data
+        max_value_size: the max size allowed for bytes value in the object. If a value exceeds this, it will be
+        converted to datum.
+
+    Returns: None
+
+    """
     with open(file_path, "wb") as f:
         dump_to_stream(obj, f, max_value_size)
 
 
 def load_from_file(file_path: str) -> Any:
+    """Deserialized data in the specified file into an object
+
+    Args:
+        file_path: the file that contains data to be serialized.
+
+    Returns: an object
+
+    """
     with open(file_path, "rb") as f:
         return load_from_stream(f)

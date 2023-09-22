@@ -30,7 +30,14 @@ class Datum:
         self.datum_id = str(uuid.uuid4())
         self.datum_type = datum_type
         self.value = value
-        self.app_data = None
+        self.restore_func = None
+        self.restore_func_data = None
+
+    def set_restore_func(self, func, func_data):
+        if not callable(func):
+            raise ValueError(f"func must be callable but got {type(func)}")
+        self.restore_func = func
+        self.restore_func_data = func_data
 
     @staticmethod
     def blob_datum(blob: Union[bytes, bytearray, memoryview]):

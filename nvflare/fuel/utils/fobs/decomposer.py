@@ -17,7 +17,7 @@ from enum import Enum
 from typing import Any, Type, TypeVar
 
 # Generic type supported by the decomposer.
-from nvflare.fuel.utils.fobs.datum import DatumManager, DatumRef
+from nvflare.fuel.utils.fobs.datum import Datum, DatumManager, DatumRef, DatumType
 
 T = TypeVar("T")
 
@@ -67,7 +67,31 @@ class Decomposer(ABC):
         pass
 
 
+def restore_position(datum: Datum, position):
+    """
+    This function is used for restoring object state at the specified position.
+
+    Args:
+        datum: the datum that contains the value of the original object at the position.
+        position: the position to be restored
+
+    Returns: None
+
+    """
+    target, key = position
+    if datum.datum_type == DatumType.BLOB:
+        target[key] = datum.value
+    else:
+        # file datum - app provided
+        target[key] = datum
+
+
 class Externalizer:
+    """
+    This class is used to help creating 'decompose' method of decomposers of arbitrary classes.
+
+    """
+
     def __init__(self, manager: DatumManager):
         self.manager = manager
 
@@ -75,9 +99,10 @@ class Externalizer:
         if isinstance(ext_result, DatumRef):
             datum = self.manager.get_datum(ext_result.datum_id)
             if datum:
-                datum.app_data = (target, key)
+                datum.set_restore_func(restore_position, (target, key))
 
     def externalize(self, target: Any):
+        """Recursively go through object tree (dict or list) and externalize leaf nodes."""
         if not self.manager:
             return target
 
@@ -99,10 +124,16 @@ class Externalizer:
 
 
 class Internalizer:
+    """
+    This class is used to help creating 'recompose' method of decomposers of arbitrary classes.
+
+    """
+
     def __init__(self, manager: DatumManager):
         self.manager = manager
 
     def internalize(self, target) -> Any:
+        """Recursively go through object tree (dict or list) and internalize leaf nodes."""
         if not self.manager:
             return target
 

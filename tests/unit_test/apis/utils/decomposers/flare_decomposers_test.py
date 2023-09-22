@@ -112,8 +112,10 @@ class TestFlareDecomposers:
             assert d["y"] == dd["y"]
             datum = dd["z"]
             assert isinstance(datum, Datum)
-            assert os.path.isfile(datum.value)
-            assert filecmp.cmp(datum.value, temp_file)
+            received_file_name = datum.value
+            assert os.path.isfile(received_file_name)
+            assert filecmp.cmp(received_file_name, temp_file)
+            os.remove(received_file_name)
 
     def test_large_dxo(self):
         d = DXO(data_kind=DataKind.WEIGHTS, data={"x": os.urandom(FIVE_M)})
