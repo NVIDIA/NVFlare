@@ -357,6 +357,9 @@ class ClientSideController(Executor, TaskController):
                 message_handle_func=self._process_end_workflow,
             )
 
+            learnable = self.persistor.load(fl_ctx)
+            fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, learnable, private=True, sticky=True)
+
             if not reply:
                 reply = make_reply(ReturnCode.OK)
             return reply
@@ -364,8 +367,7 @@ class ClientSideController(Executor, TaskController):
         elif task_name == self.start_task_name:
             self.is_starting_client = True
 
-            learnable = self.persistor.load(fl_ctx)
-            fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, learnable, private=True, sticky=True)
+            learnable = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
             initial_model = self.shareable_generator.learnable_to_shareable(learnable, fl_ctx)
             return self.start_workflow(initial_model, fl_ctx, abort_signal)
 
