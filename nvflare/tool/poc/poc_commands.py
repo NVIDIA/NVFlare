@@ -831,6 +831,14 @@ def clean_poc(cmd_args):
     _clean_poc(poc_workspace)
 
 
+def is_poc_running(poc_workspace, service_config, project_config):
+    project_name = project_config.get("name") if project_config else DEFAULT_PROJECT_NAME
+    prod_dir = get_prod_dir(poc_workspace, project_name)
+    server_dir = os.path.join(prod_dir, service_config[SC.FLARE_SERVER])
+    pid_file = os.path.join(server_dir, "pid.fl")
+    return os.path.exists(pid_file)
+
+
 def _clean_poc(poc_workspace: str):
     import shutil
 
@@ -838,8 +846,11 @@ def _clean_poc(poc_workspace: str):
         project_config, service_config = setup_service_config(poc_workspace)
         if project_config is not None:
             if is_poc_ready(poc_workspace, service_config, project_config):
-                shutil.rmtree(poc_workspace, ignore_errors=True)
-                print(f"{poc_workspace} is removed")
+                if not is_poc_running(poc_workspace, service_config, project_config):
+                    shutil.rmtree(poc_workspace, ignore_errors=True)
+                    print(f"{poc_workspace} is removed")
+                else:
+                    print("system is still running, please stop the system first.")
             else:
                 raise CLIException(f"{poc_workspace} is not valid poc directory")
     else:
