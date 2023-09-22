@@ -204,6 +204,11 @@ class PTFileModelPersistor(ModelPersistor):
         else:
             # if no pretrained model provided, use the generated network weights from APP config
             # note that, if set "determinism" in the config, the init model weights will always be the same
+            self.log_info(
+                fl_ctx,
+                f"Both source_ckpt_file_full_name and {AppConstants.CKPT_PRELOAD_PATH} are not provided. Using the default model weights initialized on the persistor side.",
+                fire_event=False,
+            )
             try:
                 data = self.model.state_dict() if self.model is not None else OrderedDict()
             except Exception:
@@ -221,7 +226,10 @@ class PTFileModelPersistor(ModelPersistor):
         if event == EventType.START_RUN:
             self._initialize(fl_ctx)
         elif event == AppEventType.GLOBAL_BEST_MODEL_AVAILABLE:
-            # save the current model as the best model!
+            # save the current model as the best model, or the global best model if available
+            ml = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
+            if ml:
+                self.persistence_manager.update(ml)
             self.save_model_file(self._best_ckpt_save_path)
 
     def save_model_file(self, save_path: str):
@@ -233,11 +241,19 @@ class PTFileModelPersistor(ModelPersistor):
         self.save_model_file(self._ckpt_save_path)
 
     def get_model(self, model_file: str, fl_ctx: FLContext) -> ModelLearnable:
+        inventory = self.get_model_inventory(fl_ctx)
+        if not inventory:
+            return None
+
+        desc = inventory.get(model_file)
+        if not desc:
+            return None
+
+        location = desc.location
         try:
             # device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
             # Use the "cpu" to load the global model weights, avoid GPU out of memory
             device = "cpu"
-            location = os.path.join(self.log_dir, model_file)
             data = torch.load(location, map_location=device)
             persistence_manager = PTModelPersistenceFormatManager(data, default_train_conf=self.default_train_conf)
             return persistence_manager.to_model_learnable(self.exclude_vars)
