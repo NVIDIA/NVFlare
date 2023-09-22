@@ -21,9 +21,6 @@ import nvflare.client as flare
 # (2) import how to load / dump flat weights
 from nvflare.app_opt.tf.utils import get_flat_weights, load_flat_weights
 
-# (optional) We change to use GPU to speed things up.
-# if you want to use CPU, change DEVICE="cpu"
-DEVICE = "cuda:0"
 PATH = "./tf_model.ckpt"
 
 
