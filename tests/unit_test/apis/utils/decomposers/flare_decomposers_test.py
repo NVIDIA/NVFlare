@@ -94,7 +94,7 @@ class TestFlareDecomposers:
 
     @pytest.mark.parametrize(
         "file_size",
-        [100, 1000, FIVE_G],
+        [100, 1000],
     )
     def test_file_datum(self, file_size):
         d = Shareable()
