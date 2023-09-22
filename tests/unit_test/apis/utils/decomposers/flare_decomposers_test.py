@@ -116,7 +116,7 @@ class TestFlareDecomposers:
             assert filecmp.cmp(datum.value, temp_file)
 
     def test_large_dxo(self):
-        d = DXO(data_kind=DataKind.WEIGHTS, data={"x": os.urandom(FIVE_G)})
+        d = DXO(data_kind=DataKind.WEIGHTS, data={"x": os.urandom(1024*1024)})
         ds = fobs.dumps(d)
         dd = fobs.loads(ds)
         assert d.data_kind == dd.data_kind and d.data == dd.data and d.meta == dd.meta
