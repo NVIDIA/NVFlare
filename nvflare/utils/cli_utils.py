@@ -201,8 +201,10 @@ def find_job_templates_location(job_templates_dir: Optional[str] = None):
         from nvflare.tool import job as job_module
 
         template_path = os.path.join(os.path.dirname(job_module.__file__), "templates")
-        if not os.path.isdir(template_path):
+        if os.path.isdir(template_path):
             job_templates_dir = template_path
+        else:
+            job_templates_dir = None
 
     if not job_templates_dir:
         raise ValueError(
