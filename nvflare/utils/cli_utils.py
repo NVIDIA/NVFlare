@@ -20,7 +20,6 @@ from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree, HOCONConverter
 
 from nvflare.fuel.utils.config import ConfigFormat
-from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel_opt.utils.pyhocon_loader import PyhoconConfig
 from nvflare.tool.job.job_client_const import CONFIG_CONF, JOB_TEMPLATES
 
@@ -199,11 +198,11 @@ def find_job_templates_location(job_templates_dir: Optional[str] = None):
 
     if not job_templates_dir:
         # get default template from nvflare wheel if package installed
-        job_module, import_job_ok = optional_import("nvflare.tool", name="job")
-        if import_job_ok:
-            template_path = os.path.join(os.path.dirname(job_module.__file__), "templates")
-            if not os.path.isdir(template_path):
-                job_templates_dir = template_path
+        from nvflare.tool import job as job_module
+
+        template_path = os.path.join(os.path.dirname(job_module.__file__), "templates")
+        if not os.path.isdir(template_path):
+            job_templates_dir = template_path
 
     if not job_templates_dir:
         raise ValueError(
