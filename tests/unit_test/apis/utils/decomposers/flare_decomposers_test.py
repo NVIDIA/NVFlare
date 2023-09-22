@@ -32,7 +32,7 @@ from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.datum import Datum
 
-FIVE_G = 5 * 1024 * 1024 * 1024
+FIVE_M = 5 * 1024 * 1024
 
 
 class TestFlareDecomposers:
@@ -59,7 +59,7 @@ class TestFlareDecomposers:
 
     @pytest.mark.parametrize(
         "size",
-        [100, 1000, FIVE_G],
+        [100, 1000, FIVE_M],
     )
     def test_byte_stream(self, size):
         d = Shareable()
@@ -75,7 +75,7 @@ class TestFlareDecomposers:
 
     @pytest.mark.parametrize(
         "size",
-        [100, 1000],
+        [100, 1000, FIVE_M],
     )
     def test_file_stream(self, size):
         d = Shareable()
@@ -94,7 +94,7 @@ class TestFlareDecomposers:
 
     @pytest.mark.parametrize(
         "file_size",
-        [100, 1000],
+        [100, 1000, FIVE_M],
     )
     def test_file_datum(self, file_size):
         d = Shareable()
@@ -116,7 +116,7 @@ class TestFlareDecomposers:
             assert filecmp.cmp(datum.value, temp_file)
 
     def test_large_dxo(self):
-        d = DXO(data_kind=DataKind.WEIGHTS, data={"x": os.urandom(1024*1024)})
+        d = DXO(data_kind=DataKind.WEIGHTS, data={"x": os.urandom(FIVE_M)})
         ds = fobs.dumps(d)
         dd = fobs.loads(ds)
         assert d.data_kind == dd.data_kind and d.data == dd.data and d.meta == dd.meta

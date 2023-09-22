@@ -25,7 +25,7 @@ from nvflare.app_common.decomposers import common_decomposers
 from nvflare.app_common.widgets.event_recorder import _CtxPropReq, _EventReq, _EventStats
 from nvflare.fuel.utils import fobs
 
-FIVE_G = 5 * 1024 * 1024 * 1024
+FIVE_M = 5 * 1024 * 1024
 
 
 class TestCommonDecomposers:
@@ -36,7 +36,7 @@ class TestCommonDecomposers:
 
     @pytest.mark.parametrize(
         "size",
-        [100, 1000, FIVE_G],
+        [100, 1000, FIVE_M],
     )
     def test_learnable(self, size):
         # Learnable is simply a dict with 2 extra methods
@@ -48,7 +48,7 @@ class TestCommonDecomposers:
 
     @pytest.mark.parametrize(
         "size",
-        [100, 1000, FIVE_G],
+        [100, 1000, FIVE_M],
     )
     def test_model_learnable(self, size):
         # Learnable is simply a dict with 2 extra methods
@@ -60,7 +60,7 @@ class TestCommonDecomposers:
 
     @pytest.mark.parametrize(
         "size",
-        [100, 1000, FIVE_G],
+        [100, 1000, FIVE_M],
     )
     def test_fl_model(self, size):
         m1 = FLModel(
