@@ -88,6 +88,6 @@ class ClientConfig:
 def from_file(config_file: str):
     config = ConfigFactory.load_config(config_file)
     if config is None:
-        raise RuntimeError(f"Load config file {config} failed.")
+        raise RuntimeError(f"Load config file {config_file} failed")
 
     return ClientConfig(config=config.to_dict())

@@ -50,3 +50,6 @@ class MemoryPipe(Pipe):
             return self.get_queue.get(block=False, timeout=timeout)
         except Empty:
             return None
+
+    def can_resend(self) -> bool:
+        return False

@@ -143,3 +143,22 @@ Then we can run it using the NVFlare Simulator:
 ```bash
 nvflare simulator -n 2 -t 2 ./jobs/np_loop_cell_pipe -w np_loop_cell_pipe_workspace
 ```
+
+## Launch once for the whole job and with metrics streaming
+
+Sometimes we want to stream the training progress.
+We add flare.log to [./code/train_loop.py](./code/train_loop.py)
+
+Then we can create the job:
+
+```bash
+nvflare job create -force -j ./jobs/np_metrics -w sag_np_metrics -sd ./code/ \
+-f config_fed_client.conf app_script=train_metrics.py params_transfer_type=DIFF launch_once=true \
+-f config_fed_server.conf expected_data_kind=WEIGHT_DIFF
+```
+
+Then we can run it using the NVFlare Simulator:
+
+```bash
+nvflare simulator -n 2 -t 2 ./jobs/np_metrics -w np_metrics_workspace
+```

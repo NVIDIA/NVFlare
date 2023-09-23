@@ -82,6 +82,13 @@ def main():
                 running_loss += loss.item()
                 if i % 2000 == 1999:  # print every 2000 mini-batches
                     print(f"[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
+                    global_step = input_model.current_round * steps + epoch * len(trainloader) + i
+                    flare.log(
+                        key="loss_for_each_batch",
+                        value=running_loss,
+                        data_type=flare.AnalyticsDataType.SCALAR,
+                        global_step=global_step,
+                    )
                     running_loss = 0.0
 
         print("Finished Training")

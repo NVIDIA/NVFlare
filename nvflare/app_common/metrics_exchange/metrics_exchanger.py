@@ -15,16 +15,9 @@
 from typing import Any
 
 from nvflare.apis.analytix import AnalyticsDataType
+from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.fuel.utils.pipe.pipe import Message
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler
-
-
-class MetricData:
-    def __init__(self, key, value, data_type: AnalyticsDataType, additional_args=None):
-        self.key = key
-        self.value = value
-        self.data_type = data_type
-        self.additional_args = {} if additional_args is None else additional_args
 
 
 class MetricsExchanger:
@@ -33,10 +26,10 @@ class MetricsExchanger:
         pipe_handler: PipeHandler,
         topic: str = "metrics",
     ):
-        self._pipe_handler = pipe_handler
         self._topic = topic
+        self._pipe_handler = pipe_handler
 
     def log(self, key: str, value: Any, data_type: AnalyticsDataType, **kwargs):
-        data = MetricData(key=key, value=value, data_type=data_type, additional_args=kwargs)
+        data = create_analytic_dxo(tag=key, value=value, data_type=data_type, **kwargs)
         req = Message.new_request(topic=self._topic, data=data)
         self._pipe_handler.send_to_peer(req)
