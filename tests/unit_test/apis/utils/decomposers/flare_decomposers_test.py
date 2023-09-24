@@ -65,14 +65,14 @@ class TestFlareDecomposers:
         d = Shareable()
         d["x"] = os.urandom(size)
         d["y"] = "1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-        d["u"] = ":;.'[]{}`~\|<>!@#$%^&*()-_+="
+        d["u"] = ":;.'[]{}`~<>!@#$%^&*()-_+="
         d["v"] = "中文字母测试两岸猿声啼不住轻舟已过万重山"
         d["z"] = {
             "za": 12345,
             "zb": b"123456789012345678901234567890123456789012345678",
-            "zc": "中文字母测试两岸猿声啼不住轻舟已过万重山:;.'[]{}`~\|<>!@#$%^&*()-_+=",
+            "zc": "中文字母测试两岸猿声啼不住轻舟已过万重山:;.'[]{}`~<>!@#$%^&*()-_+=",
         }
-        ds = fobs.dumps(d, max_value_size=15)
+        ds = fobs.dumps(d, max_value_size=10)
         dd = fobs.loads(ds)
         assert d == dd
 
