@@ -17,6 +17,7 @@ from typing import Any
 import numpy as np
 import pytest
 
+from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.abstract.learnable import Learnable
@@ -57,6 +58,16 @@ class TestCommonDecomposers:
         model_learnable["B"] = 456
         new_learnable = self._run_fobs(model_learnable)
         assert new_learnable == model_learnable
+
+    def test_model_learnable_in_shareable(self):
+        model_learnable = ModelLearnable()
+        model_learnable["A"] = os.urandom(200)
+        model_learnable["B"] = 456
+        s = Shareable()
+        s["model"] = model_learnable
+        ds = fobs.dumps(s, max_value_size=20)
+        s2 = fobs.loads(ds)
+        assert s == s2
 
     @pytest.mark.parametrize(
         "size",

@@ -24,7 +24,8 @@ from nvflare.fuel.utils.fobs.fobs import deserialize, serialize
 HEADER_STRUCT = struct.Struct(">BQ")  # marker(1), size(8)
 HEADER_LEN = HEADER_STRUCT.size
 
-MARKER_MAIN = 101
+MARKER_MAIN = 100
+MARKER_DATUM_TEXT = 101
 MARKER_DATUM_BLOB = 102
 MARKER_DATUM_FILE = 103
 
@@ -32,6 +33,8 @@ DATUM_ID_LEN = 16
 MAX_BYTES_PER_READ = 1024 * 1024  # 1MB
 
 DATUM_DIR_CONFIG_VAR = "datum_dir"
+
+# this default is for linux systems. other systems must set NVFLARE_DATUM_DIR system environment variable.
 DEFAULT_DATUM_DIR = "/tmp/nvflare/datums"
 
 
@@ -57,7 +60,7 @@ def _write_datum_header(stream: BinaryIO, marker, datum_id: str, value_size: int
     datum_id_bytes = datum_uuid.bytes
     if len(datum_id_bytes) != DATUM_ID_LEN:
         raise RuntimeError(f"program error: datum ID length should be {DATUM_ID_LEN} but got {len(datum_id_bytes)}")
-    header = _Header(marker, len(datum_id_bytes) + value_size)
+    header = _Header(marker, DATUM_ID_LEN + value_size)
     stream.write(header.to_bytes())
     stream.write(datum_id_bytes)
 
@@ -77,7 +80,8 @@ def dump_to_stream(obj: Any, stream: BinaryIO, max_value_size=None):
     Args:
         obj: the object to be serialized.
         stream: the stream that serialized data will be written to.
-        max_value_size: max size of bytes value allowed. If a value exceeds this, it will be converted to datum.
+        max_value_size: max size of bytes/str value allowed. If a value exceeds this, it will be converted to datum.
+        If not specified, default is 10MB.
 
     Returns: None
 
@@ -96,9 +100,15 @@ def dump_to_stream(obj: Any, stream: BinaryIO, max_value_size=None):
             func_data = datum.restore_func_data
             datum.restore_func_data = None
             datum.restore_func = None
-            restore_func(datum, func_data)
+            restore_func(mgr, datum, func_data)
 
-        if datum.datum_type == DatumType.BLOB:
+        if datum.datum_type == DatumType.TEXT:
+            # text representation is platform specific.
+            # we convert it to utf-8 based bytes, which is platform independent.
+            data_bytes = datum.value.encode("utf-8")
+            _write_datum_header(stream, MARKER_DATUM_TEXT, datum_id, len(data_bytes))
+            stream.write(data_bytes)
+        elif datum.datum_type == DatumType.BLOB:
             _write_datum_header(stream, MARKER_DATUM_BLOB, datum_id, len(datum.value))
             stream.write(datum.value)
         else:
@@ -123,9 +133,9 @@ def dump_to_stream(obj: Any, stream: BinaryIO, max_value_size=None):
 def _get_datum_id(stream: BinaryIO, header: _Header):
     """Get datum ID from the stream:
     - Read 16 bytes from the stream
-    - Get hex string of the bytes - this gives a UUID string without hyphens
+    - Convert the bytes to hex string - this gives a UUID string without hyphens
     - Make an uuid.UUID object from the hex string
-    - Convert it to string - this gives a UUID string with hyphens
+    - Convert it to string - this gives a UUID string with hyphens. This version is what we need!
 
     Args:
         stream: the stream that contains bytes to be deserialized
@@ -145,7 +155,7 @@ def _get_datum_id(stream: BinaryIO, header: _Header):
     if len(uuid_bytes) != DATUM_ID_LEN:
         raise RuntimeError(f"expect {DATUM_ID_LEN} bytes for datum ID but got {len(uuid_bytes)}")
 
-    header.size -= DATUM_ID_LEN
+    header.size -= DATUM_ID_LEN  # adjust the size in header to be length of remaining data
     uuid_str = uuid_bytes.hex()  # this str version does not have "-" between parts
     return str(uuid.UUID(uuid_str))  # this str version has "-" between parts
 
@@ -174,7 +184,7 @@ def _get_one_section(stream: BinaryIO, expect_datum: bool):
         raise RuntimeError(f"invalid size {header.size}")
 
     if expect_datum:
-        if header.marker not in (MARKER_DATUM_BLOB, MARKER_DATUM_FILE):
+        if header.marker not in (MARKER_DATUM_BLOB, MARKER_DATUM_FILE, MARKER_DATUM_TEXT):
             raise RuntimeError(f"expect datum but got {header.marker}")
     else:
         if header.marker != MARKER_MAIN:
@@ -221,7 +231,7 @@ def load_from_stream(stream: BinaryIO):
     - Optionally, more datum sections follow, each representing a datum that is referenced in the main body.
 
     Args:
-        stream: the stream that contains data to be serialized.
+        stream: the stream that contains data to be deserialized.
 
     Returns: an object
 
@@ -240,12 +250,16 @@ def load_from_stream(stream: BinaryIO):
             # all done
             break
 
-        if header.marker == MARKER_DATUM_BLOB:
+        if header.marker == MARKER_DATUM_TEXT:
+            # the body is utf-8 encoded bytes
+            text = body.decode("utf-8")
+            datum = Datum.text_datum(text)
+        elif header.marker == MARKER_DATUM_BLOB:
             datum = Datum.blob_datum(body)
         else:
             # put the value in a file
             datum_dir = _get_datum_dir()
-            file_path = os.path.join(datum_dir, f"{datum_id}.bin")
+            file_path = os.path.join(datum_dir, f"{datum_id}.dat")
             with open(file_path, "wb") as f:
                 f.write(body)
             datum = Datum.file_datum(file_path)
@@ -260,8 +274,8 @@ def dump_to_bytes(obj: Any, max_value_size=None):
 
     Args:
         obj: object to be serialized
-        max_value_size: the max size allowed for bytes value in the object. If a value exceeds this, it will be
-        converted to datum.
+        max_value_size: the max size allowed for bytes/str value in the object. If a value exceeds this, it will be
+        converted to datum. If not specified, default is 10MB.
 
     Returns: a bytes object
 
@@ -289,8 +303,8 @@ def dump_to_file(obj: Any, file_path: str, max_value_size=None):
     Args:
         obj: object to be serialized
         file_path: path of the file to store serialized data
-        max_value_size: the max size allowed for bytes value in the object. If a value exceeds this, it will be
-        converted to datum.
+        max_value_size: the max size allowed for bytes/str value in the object. If a value exceeds this, it will be
+        converted to datum. If not specified, default is 10MB.
 
     Returns: None
 
@@ -303,7 +317,7 @@ def load_from_file(file_path: str) -> Any:
     """Deserialized data in the specified file into an object
 
     Args:
-        file_path: the file that contains data to be serialized.
+        file_path: the file that contains data to be deserialized.
 
     Returns: an object
 
