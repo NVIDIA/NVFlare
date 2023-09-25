@@ -21,7 +21,6 @@ which are explained in more detail in their own sections linked below.
    user_guide/nvflare_cli
    user_guide/dashboard_api
    user_guide/dashboard_ui
-   user_guide/dynamic_provisioning
    user_guide/nvflare_security
    user_guide/federated_authorization
    user_guide/site_policy_management
