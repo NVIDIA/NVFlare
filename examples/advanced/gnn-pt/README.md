@@ -42,7 +42,7 @@ nvflare simulator -w /tmp/nvflare/gnn_workspace -n 2 -t 2 gnn-pt/jobs/gnn-pt
 You can find the running logs and results inside the simulator's workspace
 
 ```bash
-$ ls //tmp/nvflare/gnn_workspace
+$ ls /tmp/nvflare/gnn_workspace
 app_server  app_site-1  app_site-2  log.txt
 
 ```
