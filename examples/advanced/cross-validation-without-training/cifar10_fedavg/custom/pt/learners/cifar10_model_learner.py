@@ -44,7 +44,7 @@ class CIFAR10ModelLearner(ModelLearner):  # does not support CIFAR10ScaffoldLear
         analytic_sender_id: str = "analytic_sender",
         batch_size: int = 64,
         num_workers: int = 0,
-        model_dir: str = None
+        model_dir: str = None,
     ):
         """Simple CIFAR-10 Trainer.
 
