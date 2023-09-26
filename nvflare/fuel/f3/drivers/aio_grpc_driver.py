@@ -34,7 +34,7 @@ from nvflare.security.logging import secure_format_exception, secure_format_trac
 from .base_driver import BaseDriver
 from .driver_params import DriverCap, DriverParams
 from .grpc.streamer_pb2 import Frame
-from .grpc.utils import get_grpc_client_credentials, get_grpc_server_credentials
+from .grpc.utils import get_grpc_client_credentials, get_grpc_server_credentials, use_aio_grpc
 from .net_utils import MAX_FRAME_SIZE, get_address, get_tcp_urls, ssl_required
 
 GRPC_DEFAULT_OPTIONS = [
@@ -69,11 +69,18 @@ class AioStreamSession(Connection):
     def get_conn_properties(self) -> dict:
         return self.conn_props
 
+    async def _abort(self):
+        try:
+            self.context.abort(grpc.StatusCode.CANCELLED, "service closed")
+        except:
+            # ignore exception (if any) when aborting
+            pass
+
     def close(self):
         self.closing = True
         with self.lock:
             if self.context:
-                self.aio_ctx.run_coro(self.context.abort(grpc.StatusCode.CANCELLED, "service closed"))
+                self.aio_ctx.run_coro(self._abort())
                 self.context = None
             if self.channel:
                 self.aio_ctx.run_coro(self.channel.close())
@@ -198,11 +205,7 @@ class Server:
         servicer = Servicer(self, aio_ctx)
         add_StreamerServicer_to_server(servicer, self.grpc_server)
         params = connector.params
-        host = params.get(DriverParams.HOST.value)
-        if not host:
-            host = "0.0.0.0"
-        port = int(params.get(DriverParams.PORT.value))
-        addr = f"{host}:{port}"
+        addr = get_address(params)
         try:
             self.logger.debug(f"SERVER: connector params: {params}")
 
@@ -210,8 +213,10 @@ class Server:
             if secure:
                 credentials = get_grpc_server_credentials(params)
                 self.grpc_server.add_secure_port(addr, server_credentials=credentials)
+                self.logger.info(f"added secure port at {addr}")
             else:
                 self.grpc_server.add_insecure_port(addr)
+                self.logger.info(f"added insecure port at {addr}")
         except Exception as ex:
             conn_ctx.error = f"cannot listen on {addr}: {type(ex)}: {secure_format_exception(ex)}"
             self.logger.debug(conn_ctx.error)
@@ -252,7 +257,10 @@ class AioGrpcDriver(BaseDriver):
 
     @staticmethod
     def supported_transports() -> List[str]:
-        return ["agrpc", "agrpcs"]
+        if use_aio_grpc():
+            return ["grpc", "grpcs"]
+        else:
+            return ["agrpc", "agrpcs"]
 
     @staticmethod
     def capabilities() -> Dict[str, Any]:
@@ -298,8 +306,10 @@ class AioGrpcDriver(BaseDriver):
                 grpc_channel = grpc.aio.secure_channel(
                     address, options=self.options, credentials=get_grpc_client_credentials(params)
                 )
+                self.logger.info(f"created secure channel at {address}")
             else:
                 grpc_channel = grpc.aio.insecure_channel(address, options=self.options)
+                self.logger.info(f"created insecure channel at {address}")
 
             async with grpc_channel as channel:
                 self.logger.debug(f"CLIENT: connected to {address}")
@@ -375,6 +385,9 @@ class AioGrpcDriver(BaseDriver):
     def get_urls(scheme: str, resources: dict) -> (str, str):
         secure = resources.get(DriverParams.SECURE)
         if secure:
-            scheme = "agrpcs"
+            if use_aio_grpc():
+                scheme = "grpcs"
+            else:
+                scheme = "agrpcs"
 
         return get_tcp_urls(scheme, resources)

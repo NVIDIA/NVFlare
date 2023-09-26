@@ -13,6 +13,13 @@
 # limitations under the License.
 import grpc
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.utils.config_service import ConfigService
+
+USE_AIO_GRPC_VAR_NAME = "use_aio_grpc"
+
+
+def use_aio_grpc():
+    return ConfigService.get_bool_var(name=USE_AIO_GRPC_VAR_NAME, default=False)
 
 
 def get_grpc_client_credentials(params: dict):

@@ -34,7 +34,7 @@ from nvflare.security.logging import secure_format_exception
 from .base_driver import BaseDriver
 from .driver_params import DriverCap, DriverParams
 from .grpc.qq import QQ
-from .grpc.utils import get_grpc_server_credentials, get_grpc_client_credentials
+from .grpc.utils import get_grpc_server_credentials, get_grpc_client_credentials, use_aio_grpc
 from .grpc.streamer_pb2 import Frame
 from .net_utils import MAX_FRAME_SIZE, get_address, get_tcp_urls, ssl_required
 
@@ -67,7 +67,11 @@ class StreamConnection(Connection):
         with self.lock:
             self.oq.close()
             if self.context:
-                self.context.abort(grpc.StatusCode.CANCELLED, "service closed")
+                try:
+                    self.context.abort(grpc.StatusCode.CANCELLED, "service closed")
+                except:
+                    # ignore any exception when aborting
+                    pass
                 self.context = None
             if self.channel:
                 self.channel.close()
@@ -176,12 +180,7 @@ class Server:
         add_StreamerServicer_to_server(servicer, self.grpc_server)
 
         params = connector.params
-        host = params.get(DriverParams.HOST.value)
-        port = int(params.get(DriverParams.PORT.value))
-        if not host:
-            host = "0.0.0.0"
-
-        addr = f"{host}:{port}"
+        addr = get_address(params)
         try:
             self.logger.debug(f"SERVER: connector params: {params}")
             secure = ssl_required(params)
@@ -223,7 +222,10 @@ class GrpcDriver(BaseDriver):
 
     @staticmethod
     def supported_transports() -> List[str]:
-        return ["grpc", "grpcs"]
+        if use_aio_grpc():
+            return ["nagrpc", "nagrpcs"]
+        else:
+            return ["grpc", "grpcs"]
 
     @staticmethod
     def capabilities() -> Dict[str, Any]:
@@ -242,13 +244,15 @@ class GrpcDriver(BaseDriver):
 
         secure = ssl_required(params)
         if secure:
-            self.logger.info("CLIENT: creating secure channel")
+            self.logger.debug("CLIENT: creating secure channel")
             channel = grpc.secure_channel(
                 address, options=self.options, credentials=get_grpc_client_credentials(params)
             )
+            self.logger.info(f"created secure channel at {address}")
         else:
             self.logger.info("CLIENT: creating insecure channel")
             channel = grpc.insecure_channel(address, options=self.options)
+            self.logger.info(f"created insecure channel at {address}")
 
         self.logger.debug("CLIENT: created channel")
         stub = StreamerStub(channel)
@@ -269,13 +273,16 @@ class GrpcDriver(BaseDriver):
     def get_urls(scheme: str, resources: dict) -> (str, str):
         secure = resources.get(DriverParams.SECURE)
         if secure:
-            scheme = "grpcs"
+            if use_aio_grpc():
+                scheme = "nagrpcs"
+            else:
+                scheme = "grpcs"
         return get_tcp_urls(scheme, resources)
 
     def shutdown(self):
         if self.closing:
             return
         self.closing = True
+        self.close_all()
         if self.server:
             self.server.shutdown()
-        self.close_all()
