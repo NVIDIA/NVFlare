@@ -155,7 +155,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id, private=True)
         fl_ctx.set_prop(FLContextKey.CLIENT_RESOURCE_SPECS, resource_reqs, private=True, sticky=False)
         fl_ctx.set_prop(FLContextKey.JOB_PARTICIPANTS, job_participants, private=True, sticky=False)
-        fl_ctx.set_prop(FLContextKey.JOB_META, job.meta, private=True)
+        fl_ctx.set_prop(FLContextKey.JOB_META, job.meta, private=True, sticky=False)
         self.fire_event(EventType.BEFORE_CHECK_CLIENT_RESOURCES, fl_ctx)
 
         block_reason = fl_ctx.get_prop(FLContextKey.JOB_BLOCK_REASON)
@@ -174,20 +174,21 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         required_sites_not_enough_resource = list(required_sites)
         num_sites_ok = 0
         sites_dispatch_info = {}
+        no_resource_message = ""
         for site_name, check_result in resource_check_results.items():
-            is_resource_enough, message = check_result
+            is_resource_enough, token = check_result
             if is_resource_enough:
                 sites_dispatch_info[site_name] = DispatchInfo(
                     app_name=sites_to_app[site_name],
                     resource_requirements=resource_reqs[site_name],
-                    token=message,
+                    token=token,
                 )
                 num_sites_ok += 1
                 if site_name in required_sites:
                     required_sites_not_enough_resource.remove(site_name)
             else:
                 if site_name in required_sites:
-                    return SCHEDULE_RESULT_NO_RESOURCE, None, site_name + ":" + message
+                    no_resource_message += site_name + ":" + token + ";"
 
         if num_sites_ok < job.min_sites:
             self.log_debug(fl_ctx, f"Job {job.job_id} can't be scheduled: not enough sites have enough resources.")
@@ -213,7 +214,8 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
             return (
                 SCHEDULE_RESULT_NO_RESOURCE,
                 None,
-                f"required sites: {required_sites_not_enough_resource} don't have enough resources",
+                f"required sites: {required_sites_not_enough_resource} don't have enough resources. "
+                f"Details: {no_resource_message}",
             )
 
         # add server dispatch info

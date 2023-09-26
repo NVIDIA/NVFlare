@@ -142,9 +142,6 @@ class FedAdminAgent(object):
                                 org=req.get_header(RequestHeader.SUBMITTER_ORG, ""),
                                 role=req.get_header(RequestHeader.SUBMITTER_ROLE, ""),
                             )
-                            custom_data = req.get_header(RequestHeader.CUSTOM_PROPS)
-                            if custom_data:
-                                fl_ctx.set_prop(FLContextKey.CUSTOM_PROPS, custom_data)
 
                             authz_ctx = AuthzContext(user=user, submitter=submitter, right=cmd)
                             authorized, err = AuthorizationService.authorize(authz_ctx)
@@ -154,7 +151,7 @@ class FedAdminAgent(object):
                                 reply = error_reply("not authorized")
 
                             site_security = SiteSecurity()
-                            self._set_security_data(self.app_ctx, req)
+                            self._set_security_data(req, fl_ctx)
                             authorized, messages = site_security.authorization_check(self.app_ctx, cmd, fl_ctx)
                             if not authorized:
                                 reply = error_reply(messages)
@@ -177,17 +174,16 @@ class FedAdminAgent(object):
             reply = error_reply("invalid_request")
         return new_cell_message({}, reply)
 
-    def _set_security_data(self, engine, req):
-        with engine.new_context() as fl_ctx:
-            security_items = fl_ctx.get_prop(FLContextKey.SECURITY_ITEMS, {})
+    def _set_security_data(self, req, fl_ctx: FLContext):
+        security_items = fl_ctx.get_prop(FLContextKey.SECURITY_ITEMS, {})
 
-            security_items[FLContextKey.USER_NAME] = req.get_header(RequestHeader.USER_NAME, "")
-            security_items[FLContextKey.USER_ORG] = req.get_header(RequestHeader.USER_ORG, "")
-            security_items[FLContextKey.USER_ROLE] = req.get_header(RequestHeader.USER_ROLE, "")
-            security_items[FLContextKey.SUBMITTER_NAME] = req.get_header(RequestHeader.SUBMITTER_NAME, "")
-            security_items[FLContextKey.SUBMITTER_ORG] = req.get_header(RequestHeader.SUBMITTER_ORG, "")
-            security_items[FLContextKey.SUBMITTER_ROLE] = req.get_header(RequestHeader.SUBMITTER_ROLE, "")
+        security_items[FLContextKey.USER_NAME] = req.get_header(RequestHeader.USER_NAME, "")
+        security_items[FLContextKey.USER_ORG] = req.get_header(RequestHeader.USER_ORG, "")
+        security_items[FLContextKey.USER_ROLE] = req.get_header(RequestHeader.USER_ROLE, "")
+        security_items[FLContextKey.SUBMITTER_NAME] = req.get_header(RequestHeader.SUBMITTER_NAME, "")
+        security_items[FLContextKey.SUBMITTER_ORG] = req.get_header(RequestHeader.SUBMITTER_ORG, "")
+        security_items[FLContextKey.SUBMITTER_ROLE] = req.get_header(RequestHeader.SUBMITTER_ROLE, "")
 
-            security_items[FLContextKey.JOB_META] = req.get_header(RequestHeader.JOB_META, {})
+        security_items[FLContextKey.JOB_META] = req.get_header(RequestHeader.JOB_META, {})
 
-            fl_ctx.set_prop(FLContextKey.SECURITY_ITEMS, security_items, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.SECURITY_ITEMS, security_items, private=True, sticky=False)

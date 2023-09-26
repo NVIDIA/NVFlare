@@ -93,7 +93,6 @@ class Communicator:
         Args:
             client_name: client name
             project_name: FL study project name
-            register_data: customer defined client register data (in a dict)
             fl_ctx: FLContext
 
         Returns:

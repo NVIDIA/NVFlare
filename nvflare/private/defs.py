@@ -81,7 +81,6 @@ class RequestHeader(object):
     SUBMITTER_ORG = ConnProps.SUBMITTER_ORG
     SUBMITTER_ROLE = ConnProps.SUBMITTER_ROLE
     REQUIRE_AUTHZ = "require_authz"
-    CUSTOM_PROPS = "custom_props"
 
 
 class SysCommandTopic(object):
@@ -177,7 +176,6 @@ class CellMessageHeaderKeys:
     JOB_IDS = "job_ids"
     MESSAGE = "message"
     ABORT_JOBS = "abort_jobs"
-    CLIENT_REGISTER_DATA = "client_register_data"
 
 
 class JobFailureMsgKey:

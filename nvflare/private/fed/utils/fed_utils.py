@@ -318,9 +318,6 @@ def set_message_security_data(request, job, fl_ctx):
     request.set_header(RequestHeader.USER_ROLE, job.meta.get(JobMetaKey.SUBMITTER_ROLE))
 
     request.set_header(RequestHeader.JOB_META, job.meta)
-    custom_data = fl_ctx.get_prop(FLContextKey.CUSTOM_PROPS)
-    if custom_data:
-        request.set_header(RequestHeader.CUSTOM_PROPS, custom_data)
 
 
 def get_target_names(targets):
