@@ -29,6 +29,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey, new_cell_message
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
+from ..utils.fed_utils import get_return_code
 from .client_status import ClientStatus, get_status_message
 
 
@@ -430,14 +431,7 @@ class ProcessExecutor(ClientExecutor):
         if child_process:
             child_process.wait()
 
-            run_dir = os.path.join(workspace, job_id)
-            rc_file = os.path.join(run_dir, FLMetaKey.PROCESS_RC_FILE)
-            if os.path.exists(rc_file):
-                with open(rc_file, "r") as f:
-                    return_code = int(f.readline())
-                os.remove(rc_file)
-            else:
-                return_code = child_process.returncode
+            return_code = get_return_code(child_process, job_id, workspace)
 
             self.logger.info(f"run ({job_id}): child worker process finished with RC {return_code}")
             if return_code in [ProcessExitCode.UNSAFE_COMPONENT, ProcessExitCode.CONFIG_ERROR]:
