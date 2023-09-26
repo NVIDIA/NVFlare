@@ -1,0 +1,18 @@
+{
+    "format_version": 2,
+    "executors": [
+        {
+          "tasks": ["get_weights", "train", "submit_model", "validate"],
+          "executor": {
+            "path": "fl.train_executor.CIFAR10Executor",
+            "args": {
+              "epochs": 2,
+              "lr": 0.001
+            }
+          }
+        }
+    ],
+    "task_result_filters": [],
+    "task_data_filters": [],
+    "components": []
+}
