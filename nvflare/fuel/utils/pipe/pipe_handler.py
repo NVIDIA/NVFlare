@@ -14,6 +14,7 @@
 
 import threading
 import time
+from collections import deque
 from typing import Optional
 
 from nvflare.fuel.utils.pipe.pipe import Message, Pipe
@@ -23,6 +24,7 @@ from nvflare.fuel.utils.validation_utils import (
     check_object_type,
     check_positive_number,
 )
+from nvflare.security.logging import secure_format_exception
 
 
 class Topic(object):
@@ -81,7 +83,7 @@ class PipeHandler(object):
         self.read_interval = read_interval
         self.heartbeat_interval = heartbeat_interval
         self.heartbeat_timeout = heartbeat_timeout
-        self.messages = []
+        self.messages = deque([])
         self.reader = threading.Thread(target=self._read)
         self.reader.daemon = True
         self.asked_to_stop = False
@@ -181,7 +183,7 @@ class PipeHandler(object):
         try:
             self._try_read()
         except Exception as e:
-            self._add_message(self._make_event_message(Topic.PEER_GONE, f"error: {e}"))
+            self._add_message(self._make_event_message(Topic.PEER_GONE, f"read error: {secure_format_exception(e)}"))
 
     def _try_read(self):
         last_heartbeat_received_time = time.time()
@@ -217,7 +219,7 @@ class PipeHandler(object):
             If the queue is empty, returns None.
         """
         with self.lock:
-            if len(self.messages) > 0:
-                return self.messages.pop(0)
+            if self.messages:
+                return self.messages.popleft()
             else:
                 return None
