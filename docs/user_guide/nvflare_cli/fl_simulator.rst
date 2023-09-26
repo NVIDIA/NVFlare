@@ -4,13 +4,14 @@
 NVIDIA FLARE FL Simulator
 #########################
 
-The NVIDIA FLARE FL Simulator was added in version 2.2 to help researchers
-accelerate the development of federated
-learning workflows.
+The NVIDIA FLARE FL Simulator can help researchers
+accelerate the development of federated learning workflows.
 
 The FL Simulator is a lightweight simulator of a running NVFLARE FL deployment,
 and it can allow researchers to test and debug their application without
-provisioning a real project. The FL jobs run on a server and 
+provisioning a real project.
+
+The FL jobs run on a server and 
 multiple clients in the same process but in a similar way to how it would run
 in a real deployment so researchers can more quickly build out new components
 and jobs that can then be directly used in a real production deployment.

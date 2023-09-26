@@ -105,7 +105,7 @@ but we can also define it in the client config to be passed into the constructor
 Now that our writer is set to ``MLflowWriter``,
 we can write and stream training metrics to the server in ``local_train()``:
 
-.. literalinclude:: ../../examples/advanced/experiment-tracking/tensorboard/pt/learner_with_mlflow.py
+.. literalinclude:: ../../examples/advanced/experiment-tracking/pt/learner_with_mlflow.py
    :language: python
    :lines: 148-182
    :lineno-start: 148
