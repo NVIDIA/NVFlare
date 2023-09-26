@@ -364,6 +364,8 @@ Cyclic Learning: config_fed_client.json
 **************
 Swarm Learning
 **************
+Swarm learning is a decentralized form of federated learning, wherein the responsibilities of aggregation and model training
+control are distributed to all peers rather than consolidated in a central server.
 
 With swarm learning, training is done in multiple rounds. In each round, an aggregator client is randomly chosen from all clients,
 and then all training clients perform the training task on the current global model params. Once completed, all clients send their

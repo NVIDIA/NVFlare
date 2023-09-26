@@ -15,6 +15,7 @@ controller API for server-controlled workflows. The second section covers :ref:`
 workflows that are controlled by the clients.
 
 .. toctree::
+   :maxdepth: 3
 
    controllers/controllers
    controllers/client_controlled_workflows
