@@ -2,16 +2,13 @@
 
 Controllers and Controller API
 ==============================
-The Controller API makes it possible to create any client coordination logic in an FL workflow that is executed on the FL
-Server. A workflow has one or more controllers, each implementing a specific coordination strategy. For example, the ScatterAndGather
-(SAG) controller implements a popular strategy that is typically used for the fed-average type of federated training. The
-CrossSiteValidation controller implements a strategy to let every client site evaluate every other site's model. You can put together
-a workflow that uses any number of controllers.
+The :class:`controller API <nvflare.apis.controller_spec.ControllerSpec>` makes it possible to create any client coordination logic
+in an FL workflow that is executed on the FL Server. 
 
 Controller/Worker Interactions
 ------------------------------
 
-NVIDIA FLARE 2.0's collaborative computing is achieved through the Controller/Worker interactions. The following diagram
+NVFlare's collaborative computing is achieved through the Controller/Worker interactions. The following diagram
 shows how the Controller and Worker interact.
 
 .. image:: ../resources/Controller.png
@@ -43,10 +40,10 @@ implementations of the following controller workflows:
 .. toctree::
    :maxdepth: 1
 
-   controllers/scatter_and_gather_workflow
-   controllers/cross_site_model_evaluation.rst
-   controllers/cyclic_workflow.rst
-   controllers/initialize_global_weights.rst
+   scatter_and_gather_workflow
+   cross_site_model_evaluation.rst
+   cyclic_workflow.rst
+   initialize_global_weights.rst
 
 You can study the source code and use it as a starting point to write your own controller workflows.
 
