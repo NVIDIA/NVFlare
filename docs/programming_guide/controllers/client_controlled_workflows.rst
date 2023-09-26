@@ -1,12 +1,8 @@
 .. _client_controlled_workflows:
 
-##########################################################
-Client Controlled Workflows for Peer-to-Peer Communication
-##########################################################
-
-Before version 2.4, all federating learning workflows (fed-average, cyclic controller, cross-site evaluation) were server controlled,
-implemented with the server-side controller API. In these workflows, FL clients get tasks assigned by the controller, execute the tasks,
-and submit results back to the server. It is up to the server when and how to assign tasks to clients.
+###########################
+Client Controlled Workflows
+###########################
 
 Server-based controlling usually assumes that the server is trusted by all clients since results submitted by the FL clients may contain
 sensitive information (e.g. trained model weights). The assumption that the server is always trusted may not be true. In case that the
@@ -21,7 +17,7 @@ by communicating with other clients without involving the FL server (peer-to-pee
 overall job status - in case any abnormal conditions occur (e.g. a client crashes or gets stuck), so the job can be aborted quickly instead
 of running forever.
 
-CCWF provides the implementation of:
+Client controlled workflows provide the implementation of:
 
     - A general framework for developing client controlled workflows
     - Three commonly used peer-to-peer workflows:
@@ -29,11 +25,11 @@ CCWF provides the implementation of:
         - Swarm learning
         - Cross site model evaluation
 
-**************************
-CCWF Development Framework
-**************************
+************************************************
+Client Controlled Workflow Development Framework
+************************************************
 NVFlare is a multi-job system. A job is submitted to the system. The server schedules and deploys the job to all relevant sites (server and
-clients). The framework captures the common patterns for all CCWF workflows:
+clients). The framework captures the common patterns for all client controlled workflows:
 
     - Configuration of the workflow
     - Synchronization of clients before starting the workflow
@@ -47,12 +43,12 @@ This framework is implemented with two base classes: :class:`nvflare.app_common.
 Server Side Controller
 ======================
 
-All FLARE jobs must have a server side controller. With CCWF, the :class:`nvflare.app_common.ccwf.server_ctl.ServerSideController` base class
+All FLARE jobs must have a server side controller. With client controlled workflows, the :class:`nvflare.app_common.ccwf.server_ctl.ServerSideController` base class
 implements the job lifecycle management that does not involve any sensitive training information. It is the
 :class:`nvflare.app_common.ccwf.client_ctl.ClientSideController` (and its subclasses) that controls the execution of training and
 sensitive data communications.
 
-All CCWF workflows must have a server side controller that extends this base class.
+All client controlled workflows must have a server side controller that extends this base class.
 
 .. code-block:: python
 
@@ -92,7 +88,7 @@ to the specified executor.
 ``participating_clients`` - the names of the clients that will participate in the job. If None, then all clients will be participants.
 
 ``result_clients`` - names of the clients that will receive final learning results. Unlike in server controlled workflows where the final results are sent
-to the server and kept by the server, with CCWF, results will only be kept by clients.
+to the server and kept by the server, with client controlled workflows, results will only be kept by clients.
 
 ``result_clients_policy`` - how to determine result_clients if their names are not explicitly specified. Possible values are:
   - ``ALL`` - all participating clients
@@ -159,9 +155,9 @@ needed by subclasses that implement concrete workflows.
 Init Args:
 ----------
 
-``task_name_prefix`` - the prefix for task names of this workflow. Unlike server-controlled workflows, with CCWF, clients send tasks to each other. All such tasks are named with this prefix.
+``task_name_prefix`` - the prefix for task names of this workflow. Unlike server-controlled workflows, with client controlled workflows, clients send tasks to each other. All such tasks are named with this prefix.
 
-``learn_task_name`` - this is the name of the task that is typically executed by a learning executor that may have already been implemented. You can use any existing learning executor with CCWF without having to change it. Simply tell the ClientSideController the name of the learning task.
+``learn_task_name`` - this is the name of the task that is typically executed by a learning executor that may have already been implemented. You can use any existing learning executor with client controlled workflows without having to change it. Simply tell the ClientSideController the name of the learning task.
 
 ``persistor_id`` - the ID of the persistor component. The persistor is used to load the initial model and save results (i.e. the best and/or the last model) during the training process. 
 
@@ -621,7 +617,7 @@ There are a few concepts in client-controlled CSE:
   - Evaluatees - clients that have local models to be evaluated
   - Global Model Client - the client that has global model(s) to be evaluated
 
-The CSE CCWF can be used for the evaluation of both local and/or global models. 
+The CSE client controlled workflow can be used for the evaluation of both local and/or global models. 
 
 Here is the detailed control logic:
 

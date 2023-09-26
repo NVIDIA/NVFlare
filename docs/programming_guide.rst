@@ -35,8 +35,7 @@ Please refer to :ref:`application` for more details.
 .. toctree::
    :maxdepth: 1
 
-   programming_guide/controllers
-   programming_guide/client_controlled_workflows
+   programming_guide/workflows_and_controllers
    programming_guide/executor
    programming_guide/shareable
    programming_guide/data_exchange_object
