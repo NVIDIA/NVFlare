@@ -2,7 +2,7 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd $DIR
 rm -rf workspace
-nvflare provision -p project.yml
+nvflare poc prepare -i project.yml -c site_a
 WORKSPACE="${DIR}/workspace/job-level-authorization/prod_00"
 cp -r security/site_a/* $WORKSPACE/site_a/local
 

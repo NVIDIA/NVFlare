@@ -34,8 +34,6 @@ System Requirements
 Setup
 _____
 
-The :code:`project.yml` file defines all the sites and users (called admin in NVFlare)
-used in the examples. The startup kits will be created by :code:`setup.sh`
 ::
     cd NVFlare/examples/advanced/job-level-authorization
     ./setup.sh
@@ -94,9 +92,3 @@ ____
 * job2: The job is called  :code:`FL Demo Job1`. site_a will block this job to run.
 
 
-
-Shutting down NVFlare
-_____________________
-All NVFlare server and clients can be stopped by using this script,
-::
-   ./stop.sh
