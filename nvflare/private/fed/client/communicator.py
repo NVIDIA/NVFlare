@@ -87,27 +87,30 @@ class Communicator:
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def client_registration(self, client_name, servers, project_name):
+    def client_registration(self, client_name, project_name, fl_ctx: FLContext):
         """Client's metadata used to authenticate and communicate.
 
         Args:
             client_name: client name
-            servers: FL servers
             project_name: FL study project name
+            fl_ctx: FLContext
 
         Returns:
             The client's token
 
         """
         local_ip = _get_client_ip()
+        shareable = Shareable()
+        shared_fl_ctx = FLContext()
+        shared_fl_ctx.set_public_props(get_serializable_data(fl_ctx).get_all_public_props())
+        shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
 
-        login_message = new_cell_message(
-            {
-                CellMessageHeaderKeys.CLIENT_NAME: client_name,
-                CellMessageHeaderKeys.CLIENT_IP: local_ip,
-                CellMessageHeaderKeys.PROJECT_NAME: project_name,
-            }
-        )
+        headers = {
+            CellMessageHeaderKeys.CLIENT_NAME: client_name,
+            CellMessageHeaderKeys.CLIENT_IP: local_ip,
+            CellMessageHeaderKeys.PROJECT_NAME: project_name,
+        }
+        login_message = new_cell_message(headers, shareable)
 
         start = time.time()
         while not self.cell:

@@ -74,11 +74,12 @@ class SimulatorDeployer(ServerDeployer):
         federated_client = deployer.create_fed_client(args)
 
         self._create_client_cell(client_config, client_name, federated_client)
-
-        federated_client.register()
-
-        client_engine = SimulatorParentClientEngine(federated_client, federated_client.token, args)
+        client_engine = SimulatorParentClientEngine(federated_client, args)
         federated_client.set_client_engine(client_engine)
+
+        with client_engine.new_context() as fl_ctx:
+            federated_client.register(register_data={}, fl_ctx=fl_ctx)
+
         # federated_client.start_heartbeat()
         federated_client.run_manager = None
 

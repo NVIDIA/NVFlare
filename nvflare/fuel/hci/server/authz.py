@@ -62,6 +62,7 @@ class AuthzFilter(CommandFilter):
             return True
 
         if return_code == PreAuthzReturnCode.ERROR:
+            conn.append_error("Authorization error")
             return False
 
         # authz required - the command name is the name of the right to be checked!

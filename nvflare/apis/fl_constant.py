@@ -141,6 +141,7 @@ class FLContextKey(object):
     CURRENT_JOB_ID = ReservedKey.CURRENT_JOB_ID
     JOB_RUN_NUMBER = ReservedKey.JOB_RUN_NUMBER
     JOB_DEPLOY_DETAIL = ReservedKey.JOB_DEPLOY_DETAIL
+    CUSTOM_PROPS = ReservedKey.CUSTOM_PROPS
     JOB_SCOPE_NAME = "__job_scope_name__"
     EFFECTIVE_JOB_SCOPE_NAME = "__effective_job_scope_name__"
     SCOPE_PROPERTIES = "__scope_props__"
@@ -152,6 +153,20 @@ class FLContextKey(object):
     JOB_PARTICIPANTS = "__job_participants"
     JOB_BLOCK_REASON = "__job_block_reason"  # why the job should be blocked from scheduling
     SSID = "__ssid__"
+    CLIENT_TOKEN = "__client_token"
+    AUTHORIZATION_RESULT = "_authorization_result"
+    AUTHORIZATION_REASON = "_authorization_reason"
+
+    CLIENT_REGISTER_DATA = "_client_register_data"
+    SECURITY_ITEMS = "_security_items"
+    COMMAND_NAME = "_command_name"
+    SITE_NAME = "__site_name"
+    USER_NAME = "__user_name"
+    USER_ORG = "__user_org"
+    USER_ROLE = "__user_role"
+    SUBMITTER_NAME = "_submitterName"
+    SUBMITTER_ORG = "_submitterOrg"
+    SUBMITTER_ROLE = "_submitterRole"
     COMPONENT_BUILD_ERROR = "__component_build_error__"
     COMPONENT_CONFIG = "__component_config__"
     COMPONENT_NODE = "__component_node__"
@@ -179,6 +194,7 @@ class AdminCommandNames(object):
     DELETE_JOB = "delete_job"
     CLONE_JOB = "clone_job"
     DELETE_WORKSPACE = "delete_workspace"
+    CHECK_RESOURCES = "check_resources"
     DEPLOY_APP = "deploy_app"
     START_APP = "start_app"
     CHECK_STATUS = "check_status"

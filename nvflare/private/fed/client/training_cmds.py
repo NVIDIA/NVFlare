@@ -112,7 +112,7 @@ class DeployProcessor(RequestProcessor):
         if not isinstance(engine, ClientEngineInternalSpec):
             raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
         job_id = req.get_header(RequestHeader.JOB_ID)
-        job_meta = json.loads(req.get_header(RequestHeader.JOB_META))
+        job_meta = req.get_header(RequestHeader.JOB_META)
         app_name = req.get_header(RequestHeader.APP_NAME)
         client_name = engine.get_client_name()
 

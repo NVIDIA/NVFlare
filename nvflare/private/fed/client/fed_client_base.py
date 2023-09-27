@@ -240,17 +240,18 @@ class FederatedClientBase:
         # self.register()
         self.logger.info(f"Primary SP switched to new SSID: {self.ssid}")
 
-    def client_register(self, project_name):
+    def client_register(self, project_name, fl_ctx: FLContext):
         """Register the client to the FL server.
 
         Args:
             project_name: FL study project name.
+            register_data: customer defined client register data (in a dict)
+            fl_ctx: FLContext
+
         """
         if not self.token:
             try:
-                self.token, self.ssid = self.communicator.client_registration(
-                    self.client_name, self.servers, project_name
-                )
+                self.token, self.ssid = self.communicator.client_registration(self.client_name, project_name, fl_ctx)
                 if self.token is not None:
                     self.fl_ctx.set_prop(FLContextKey.CLIENT_NAME, self.client_name, private=False)
                     self.fl_ctx.set_prop(EngineConstant.FL_TOKEN, self.token, private=False)
@@ -368,12 +369,18 @@ class FederatedClientBase:
             if pool:
                 pool.terminate()
 
-    def register(self):
-        """Push the local model to multiple servers."""
+    def register(self, fl_ctx: FLContext):
+        """Push the local model to multiple servers.
+
+        Args:
+            fl_ctx: FLContext
+
+        Returns: N/A
+        """
         pool = None
         try:
             pool = ThreadPool(len(self.servers))
-            return pool.map(self.client_register, tuple(self.servers))
+            return pool.map(partial(self.client_register, fl_ctx=fl_ctx), tuple(self.servers))
         finally:
             if pool:
                 pool.terminate()

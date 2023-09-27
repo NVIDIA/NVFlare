@@ -56,7 +56,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         self.lock = threading.Lock()
 
     def _check_client_resources(
-        self, job_id: str, resource_reqs: Dict[str, dict], fl_ctx: FLContext
+        self, job: Job, resource_reqs: Dict[str, dict], fl_ctx: FLContext
     ) -> Dict[str, Tuple[bool, str]]:
         """Checks resources on each site.
 
@@ -73,7 +73,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         if not isinstance(engine, ServerEngineSpec):
             raise RuntimeError(f"engine inside fl_ctx should be of type ServerEngineSpec, but got {type(engine)}.")
 
-        result = engine.check_client_resources(job_id, resource_reqs)
+        result = engine.check_client_resources(job, resource_reqs, fl_ctx)
         self.log_debug(fl_ctx, f"check client resources result: {result}")
 
         return result
@@ -155,6 +155,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id, private=True)
         fl_ctx.set_prop(FLContextKey.CLIENT_RESOURCE_SPECS, resource_reqs, private=True, sticky=False)
         fl_ctx.set_prop(FLContextKey.JOB_PARTICIPANTS, job_participants, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.JOB_META, job.meta, private=True, sticky=False)
         self.fire_event(EventType.BEFORE_CHECK_CLIENT_RESOURCES, fl_ctx)
 
         block_reason = fl_ctx.get_prop(FLContextKey.JOB_BLOCK_REASON)
@@ -163,9 +164,8 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
             self.log_info(fl_ctx, f"Job {job.job_id} can't be scheduled: {block_reason}")
             return SCHEDULE_RESULT_NO_RESOURCE, None, block_reason
 
-        resource_check_results = self._check_client_resources(
-            job_id=job.job_id, resource_reqs=resource_reqs, fl_ctx=fl_ctx
-        )
+        resource_check_results = self._check_client_resources(job=job, resource_reqs=resource_reqs, fl_ctx=fl_ctx)
+        self.fire_event(EventType.AFTER_CHECK_CLIENT_RESOURCES, fl_ctx)
 
         if not resource_check_results:
             self.log_debug(fl_ctx, f"Job {job.job_id} can't be scheduled: resource check results is None or empty.")
@@ -174,6 +174,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         required_sites_not_enough_resource = list(required_sites)
         num_sites_ok = 0
         sites_dispatch_info = {}
+        no_resource_message = ""
         for site_name, check_result in resource_check_results.items():
             is_resource_enough, token = check_result
             if is_resource_enough:
@@ -185,6 +186,9 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
                 num_sites_ok += 1
                 if site_name in required_sites:
                     required_sites_not_enough_resource.remove(site_name)
+            else:
+                if site_name in required_sites:
+                    no_resource_message += site_name + ":" + token + ";"
 
         if num_sites_ok < job.min_sites:
             self.log_debug(fl_ctx, f"Job {job.job_id} can't be scheduled: not enough sites have enough resources.")
@@ -194,7 +198,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
             return (
                 SCHEDULE_RESULT_NO_RESOURCE,
                 None,
-                f"not enough sites have enough resources (ok sites {num_sites_ok} < min sites {job.min_sites}",
+                f"not enough sites have enough resources (ok sites {num_sites_ok} < min sites {job.min_sites})",
             )
 
         if required_sites_not_enough_resource:
@@ -210,7 +214,8 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
             return (
                 SCHEDULE_RESULT_NO_RESOURCE,
                 None,
-                f"required sites: {required_sites_not_enough_resource} don't have enough resources",
+                f"required sites: {required_sites_not_enough_resource} don't have enough resources. "
+                f"Details: {no_resource_message}",
             )
 
         # add server dispatch info
