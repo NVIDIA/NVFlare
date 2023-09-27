@@ -78,7 +78,7 @@ class SimulatorDeployer(ServerDeployer):
         federated_client.set_client_engine(client_engine)
 
         with client_engine.new_context() as fl_ctx:
-            federated_client.register(register_data={}, fl_ctx=fl_ctx)
+            federated_client.register(fl_ctx=fl_ctx)
 
         # federated_client.start_heartbeat()
         federated_client.run_manager = None
