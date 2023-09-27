@@ -7,7 +7,7 @@ and a [MONAI Bundle](https://docs.monai.io/en/latest/mb_specification.html).
 
 This example will also guide you on using MONAI FL with FLARE to 
 collect client data statistics and visualize both global and local 
-intensity histograms using FLARE's [FL simulator](https://nvflare.readthedocs.io/en/main/user_guide/fl_simulator.html).
+intensity histograms using FLARE's [FL simulator](https://nvflare.readthedocs.io/en/main/user_guide/nvflare_cli/fl_simulator.html).
 
 The example can be extended to use additional FL [algorithms](https://nvflare.readthedocs.io/en/main/example_applications_algorithms.html) 
 available in NVIDIA FLARE.
