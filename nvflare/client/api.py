@@ -140,7 +140,7 @@ def get_site_name() -> str:
     return sys_info.get(ConfigKey.SITE_NAME, "")
 
 
-def model_receiver():
+def receive_global_model():
     """Yields model received from NVFlare server."""
     sys_info = system_info()
     total_rounds = sys_info["total_rounds"]

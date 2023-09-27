@@ -37,7 +37,7 @@ def main():
     flare.init()
 
     # (4) gets FLModel from NVFlare
-    for input_model in flare.model_receiver():
+    for input_model in flare.receive_global_model():
 
         # (optional) print system info
         system_info = flare.system_info()

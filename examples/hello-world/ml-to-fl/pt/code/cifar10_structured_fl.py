@@ -120,7 +120,7 @@ def main():
         return 100 * correct // total
 
     # (6) receives FLModel from NVFlare
-    for input_model in flare.model_receiver():
+    for input_model in flare.receive_global_model():
         # (7) call fl_evaluate method before training
         #       to evaluate on the received/aggregated model
         global_metric = fl_evaluate(input_model)

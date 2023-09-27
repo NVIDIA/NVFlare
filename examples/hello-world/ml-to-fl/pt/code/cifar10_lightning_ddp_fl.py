@@ -77,8 +77,13 @@ def main():
     flare.patch(trainer)
 
     # (3) receives FLModel from NVFlare
-    for _ in flare.model_receiver():
-        # (3) evaluate the current global model to allow server-side model selection
+    # Note that we don't need to pass this input_model to trainer
+    # because after flare.patch the trainer.fit/validate will get the
+    # global model internally
+    for input_model in flare.receive_global_model():
+        print(f"current_round={input_model.current_round}")
+
+        # (4) evaluate the current global model to allow server-side model selection
         print("--- validate global model ---")
         trainer.validate(model, datamodule=cifar10_dm)
 

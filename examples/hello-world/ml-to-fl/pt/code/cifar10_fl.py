@@ -47,8 +47,8 @@ def main():
     flare.init()
 
     # (3) receives FLModel from NVFlare
-    for input_model in flare.model_receiver():
-        print(f"Start training with current round: {input_model.current_round}")
+    for input_model in flare.receive_global_model():
+        print(f"current_round={input_model.current_round}")
 
         # (4) loads model from NVFlare
         net.load_state_dict(input_model.params)

@@ -25,6 +25,6 @@ if ok:
     from nvflare.client import get_job_id as get_job_id
     from nvflare.client import get_site_name as get_site_name
     from nvflare.client import get_total_rounds as get_total_rounds
-    from nvflare.client import model_receiver as model_receiver
     from nvflare.client import params_diff as params_diff
+    from nvflare.client import receive_global_model as receive_global_model
     from nvflare.client import system_info as system_info
