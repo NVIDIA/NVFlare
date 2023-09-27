@@ -25,7 +25,8 @@ MAX_CHUNK_SIZE = 1024 * 1024
 
 
 def get_slice(buf, start: int, length: int):
-    return buf[start : start + length]
+    view = memoryview(buf)
+    return view[start : start + length]
 
 
 class Header:

@@ -30,7 +30,7 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.datum import Datum, DatumManager, DatumRef
-from nvflare.fuel.utils.fobs.decomposer import Decomposer, DictDecomposer
+from nvflare.fuel.utils.fobs.decomposer import Decomposer, DictDecomposer, Externalizer, Internalizer
 
 
 # The __init__ initializes logger so generic decomposers can't be used
@@ -60,13 +60,30 @@ class WorkspaceDecomposer(Decomposer):
         return Workspace(data[0], data[1], data[2])
 
 
+class DXODecomposer(Decomposer):
+    def supported_type(self):
+        return DXO
+
+    def decompose(self, target: DXO, datum_manager=None) -> Any:
+        externalizer = Externalizer(datum_manager)
+        return (target.data_kind, externalizer.externalize(target.meta), externalizer.externalize(target.data))
+
+    def recompose(self, data: Any, datum_manager=None) -> DXO:
+        assert isinstance(data, tuple)
+        dk, m, d = data
+        internalizer = Internalizer(datum_manager)
+        return DXO(data_kind=dk, meta=internalizer.internalize(m), data=internalizer.internalize(d))
+
+
 def register():
     if register.registered:
         return
 
     fobs.register(DictDecomposer(Shareable))
 
-    fobs.register_data_classes(DXO, Client, RunSnapshot, Signal, Namespace, Datum, DatumRef)
+    fobs.register(DXODecomposer)
+
+    fobs.register_data_classes(Client, RunSnapshot, Signal, Namespace, Datum, DatumRef)
 
     fobs.register_folder(os.path.dirname(__file__), __package__)
 

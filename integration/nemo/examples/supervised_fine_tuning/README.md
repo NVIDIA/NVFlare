@@ -71,9 +71,46 @@ python utils/combine_jsonl.py --file_list Data/Processed/alpaca/testing.jsonl Da
 ```
 
 ## Federated learning simulations
-Next, we are using NVFlare's [POC mode](https://nvflare.readthedocs.io/en/main/getting_started.html#setting-up-poc) to simulate 
-each client training on their own dataset locally, centralized training with all three dataset combined, and all three clients training together using the 
+We can either use NVFlare's [FL Simulator](https://nvflare.readthedocs.io/en/main/getting_started.html#the-fl-simulator) or [POC mode](https://nvflare.readthedocs.io/en/main/getting_started.html#setting-up-poc) to simulate federated learning experiments.
+
+First, we create the configuration files and modify them to include the current directory path to access the dataset and pre-trained LLM.
+At this point, we also modify the data path and local number of clients.
+
+We perform 5 experiments in total: training on each client's own dataset, on combined dataset, and all three clients training together using the 
 [FedAvg](https://arxiv.org/abs/1602.05629) algorithm implemented in NVFlare.
+
+### Job configurations 
+For single-site trainings, in a standard terminal, run
+```
+python utils/create_configs.py --job_folder "jobs/gpt_sft_1.3B_alpaca" --num_clients 1 --devices 1 --train_ds_files /workspace/Data/Processed/alpaca/training.jsonl --validation_ds_files /workspace/Data/Processed/combined/validation.jsonl
+python utils/create_configs.py --job_folder "jobs/gpt_sft_1.3B_dolly" --num_clients 1 --devices 1 --train_ds_files /workspace/Data/Processed/dolly/training.jsonl --validation_ds_files /workspace/Data/Processed/combined/validation.jsonl
+python utils/create_configs.py --job_folder "jobs/gpt_sft_1.3B_oasst1" --num_clients 1 --devices 1 --train_ds_files /workspace/Data/Processed/oasst1/training.jsonl --validation_ds_files /workspace/Data/Processed/combined/validation.jsonl
+python utils/create_configs.py --job_folder "jobs/gpt_sft_1.3B_combined" --num_clients 1 --devices 1 --train_ds_files /workspace/Data/Processed/combined/training.jsonl --validation_ds_files /workspace/Data/Processed/combined/validation.jsonl
+```
+and for FedAvg:
+```
+python utils/create_configs.py --job_folder "jobs/gpt_sft_1.3B_fedavg" --num_clients 3 --devices 1 --train_ds_files /workspace/Data/Processed/alpaca/training.jsonl /workspace/Data/Processed/dolly/training.jsonl /workspace/Data/Processed/oasst1/training.jsonl --validation_ds_files /workspace/Data/Processed/combined/validation.jsonl  /workspace/Data/Processed/combined/validation.jsonl  /workspace/Data/Processed/combined/validation.jsonl
+```
+Here, each client performs SFT for one local epoch before sending their local model updates to the server for aggregation. 
+
+Note that we used the combined validation set for all experiments, allowing for a direct comparison across all training settings.
+
+### Use FL Simulator
+We use the NVFlare simulator to run the FL training experiments, using the following commands:
+For local training on each dataset separately and on the combined dataset:
+```
+nvflare simulator jobs/gpt_sft_1.3B_alpaca -w workspace_simulator_alpaca -n 1 -gpu 0
+nvflare simulator jobs/gpt_sft_1.3B_dolly -w workspace_simulator_dolly -n 1 -gpu 0
+nvflare simulator jobs/gpt_sft_1.3B_oasst1 -w workspace_simulator_oasst1 -n 1 -gpu 0
+nvflare simulator jobs/gpt_sft_1.3B_combined -w workspace_simulator_combined -n 1 -gpu 0
+```
+For FedAvg:
+```
+nvflare simulator jobs/gpt_sft_1.3B_fedavg -w workspace_simulator_fedavg -n 3 -gpu 0,0,0
+```
+
+### Use POC mode
+Alternatively, we can also NVFlare's [POC mode](https://nvflare.readthedocs.io/en/main/getting_started.html#setting-up-poc) to simulate 
 
 #### 1. Local and Centralized SFT
 For single-site and centralized training experiments, we create the poc workspaces:
@@ -89,17 +126,6 @@ For better usability, open a new terminal and start the [admin command prompt](h
 nvflare poc start -p admin@nvidia.com
 ```
 
-We create the configuration files and modify them to include the current directory path to access the dataset and pre-trained LLM.
-At this point, we also modify the data path and local number of clients.
-
-In a standard terminal, run
-```
-python utils/create_configs.py --job_folder "jobs/gpt_sft_1.3B_alpaca" --num_clients 1 --devices 1 --train_ds_files /workspace/Data/Processed/alpaca/training.jsonl --validation_ds_files /workspace/Data/Processed/combined/validation.jsonl
-python utils/create_configs.py --job_folder "jobs/gpt_sft_1.3B_dolly" --num_clients 1 --devices 1 --train_ds_files /workspace/Data/Processed/dolly/training.jsonl --validation_ds_files /workspace/Data/Processed/combined/validation.jsonl
-python utils/create_configs.py --job_folder "jobs/gpt_sft_1.3B_oasst1" --num_clients 1 --devices 1 --train_ds_files /workspace/Data/Processed/oasst1/training.jsonl --validation_ds_files /workspace/Data/Processed/combined/validation.jsonl
-python utils/create_configs.py --job_folder "jobs/gpt_sft_1.3B_combined" --num_clients 1 --devices 1 --train_ds_files /workspace/Data/Processed/combined/training.jsonl --validation_ds_files /workspace/Data/Processed/combined/validation.jsonl
-```
-Note that we used the combined validation set for all experiments, allowing for a direct comparison across all training settings.
 
 Next, copy the jobs to temp workspace.
 ```
@@ -130,16 +156,12 @@ For better usability, open a new terminal and start the [admin command prompt](h
 nvflare poc start -p admin@nvidia.com
 ```
 
-First, create and modify the configuration files again. 
-Here, each client performs SFT for one local epoch before sending their local model updates to the server for aggregation. 
-```
-python3 utils/create_configs.py --job_folder "jobs/gpt_sft_1.3B_fedavg" --num_clients 3 --devices 1 --train_ds_files /workspace/Data/Processed/alpaca/training.jsonl /workspace/Data/Processed/dolly/training.jsonl /workspace/Data/Processed/oasst1/training.jsonl --validation_ds_files /workspace/Data/Processed/combined/validation.jsonl  /workspace/Data/Processed/combined/validation.jsonl  /workspace/Data/Processed/combined/validation.jsonl
-```
+
 Next, simulate the federated SFT using FedAvg, similarly to single-client experiments
 ```
 cp -r jobs/gpt_sft_1.3B_fedavg /tmp/nvflare/poc/example_project/prod_00/admin\@nvidia.com/transfer/
 ```
-and
+and to submit the FedAvg job
 ```
 submit_job gpt_sft_1.3B_fedavg
 ```
@@ -157,12 +179,25 @@ The curves shown are:
 - yellow: oasst1 
 - green: dolly
 - blue: alpaca
-- magenta: three datasets combined, 'centralized' training
+- magenta: three datasets combined
 
 The light curves are for single site training, and the dark curves are for FedAvg
 
-As shown, the global model from FedAvg is able to generate a loss comparable to that of centralized training.
+As shown, the global model from FedAvg is able to generate a loss comparable to that of training with all three datasets combined.
 
+Loss curve is one indication of model performance, but we also want to see if the model is able to generate reasonable text. Hence, we benchmarked the trained models with standard language modeling tasks under zero-shot setting, including [HellaSwag](https://arxiv.org/pdf/1905.07830.pdf)(H), [PIQA](https://arxiv.org/pdf/1911.11641.pdf)(P), and [WinoGrande](https://arxiv.org/pdf/1907.10641.pdf)(W). 
+Below is the accuracy of the models on these tasks.
+
+|              | H_acc | H_acc_norm | P_acc | P_acc_norm | W_acc | Mean  |
+|:------------:|:-----:|:----------:|:-----:|:----------:|:-----:|:-----:|
+|  BaseModel   | 0.357 |   0.439    | 0.683 |   0.689    | 0.537 | 0.541 |
+|    Alpaca    | 0.372 |   0.451    | 0.675 |   0.687    | 0.550 | 0.547 |
+|    Dolly     | 0.376 |   0.474    | 0.671 |   0.667    | 0.529 | 0.543 |
+|    Oasst1    | 0.370 |   0.452    | 0.657 |   0.655    | 0.506 | 0.528 |
+|   Combined   | 0.370 |   0.453    | 0.685 |   0.690    | 0.548 | 0.549 |
+|    FedAvg    | 0.377 |   0.469    | 0.688 |   0.687    | 0.560 | 0.556 |
+
+As shown, FedAvg is able to generate a model with the best overall performance.    
 
 ## Inference
 We use NeMo's [inference script](https://github.com/NVIDIA/NeMo/blob/main/examples/nlp/language_modeling/megatron_gpt_eval.py) for generation task with models after SFT. 

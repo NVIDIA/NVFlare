@@ -52,11 +52,11 @@ Figure 1 is the loss for training GraphSAGE with Federated Learning. Figure 2 is
 
 <div align="center">
   <div style="display: inline-block; text-align: left;">
-    <img src=https://github.com/wangxiaoyunNV/NVFlare/blob/main/examples/advanced/gnn-pt/Loss_train_FL.svg width="600" alt="Image 1" />
+    <img src=./loss_train_fl.svg width="600" alt="FL train loss" />
     <p><strong>Figure 1:</strong> Loss for Training GraphSAGE with Federated Learning.</p>
   </div>
   <div style="display: inline-block; text-align: right;">
-    <img src=https://github.com/wangxiaoyunNV/NVFlare/blob/main/examples/advanced/gnn-pt/Loss_train_Graphsage.svg  width="600" alt="Image 2" />
+    <img src=./loss_train_graphsage.svg  width="600" alt="train loss" />
     <p><strong>Figure 2:</strong> Loss for Training GraphSAGE Locally.</p>
   </div>
 </div>

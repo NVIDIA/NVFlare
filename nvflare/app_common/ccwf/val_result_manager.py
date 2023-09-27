@@ -39,11 +39,9 @@ class EvalResultManager:
             self.results[evaluator][evaluatee] = file_path
             return file_path
 
-    def _save_validation_result(self, file_name, result):
+    def _save_validation_result(self, file_name, result: DXO):
         file_path = os.path.join(self.result_dir, file_name)
-        bytes_to_save = result.to_bytes()
-        with open(file_path, "wb") as f:
-            f.write(bytes_to_save)
+        result.to_file(file_path)
         return file_path
 
     def get_results(self):

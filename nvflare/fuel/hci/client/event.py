@@ -29,6 +29,8 @@ class EventType:
     SESSION_TIMEOUT = "session_timeout"  # server timed out current session
     BEFORE_LOGIN = "before_login"
     BEFORE_EXECUTE_CMD = "before_execute_cmd"
+    BEFORE_DOWNLOAD_FILE = "before_download_file"
+    AFTER_DOWNLOAD_FILE = "after_download_file"
 
 
 class EventPropKey:

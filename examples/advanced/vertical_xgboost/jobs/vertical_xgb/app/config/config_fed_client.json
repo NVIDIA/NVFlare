@@ -17,11 +17,12 @@
             "gamma": 1.0,
             "max_depth": 8,
             "min_child_weight": 100,
-            "tree_method": "approx",
+            "tree_method": "hist",
             "grow_policy": "depthwise",
             "eval_metric": "auc"
           },
-          "data_loader_id": "dataloader"
+          "data_loader_id": "dataloader",
+          "use_gpus": false
         }
       }
     }

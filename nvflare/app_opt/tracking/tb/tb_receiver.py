@@ -28,6 +28,10 @@ FUNCTION_MAPPING = {
     AnalyticsDataType.TEXT: "add_text",
     AnalyticsDataType.IMAGE: "add_image",
     AnalyticsDataType.SCALARS: "add_scalars",
+    AnalyticsDataType.PARAMETER: "add_scalar",
+    AnalyticsDataType.PARAMETERS: "add_scalars",
+    AnalyticsDataType.METRIC: "add_scalar",
+    AnalyticsDataType.METRICS: "add_scalars",
 }
 
 

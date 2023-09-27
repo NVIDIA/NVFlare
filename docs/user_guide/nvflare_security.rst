@@ -43,30 +43,38 @@ User
 -----
 A human that participates in the FL project.
 
+.. _nvflare_roles:
+
 Role
 ------
 A role defines a type of users that have certain privileges of system operations. Each user is assigned a role in the
-project. There are four defined roles: Project Admin, Org Admin, Lead Researcher, Member Researcher
+project. There are four defined roles: Project Admin, Org Admin, Lead Researcher, and Member Researcher.
+
+.. _project_admin_role:
 
 Project Admin Role
 ^^^^^^^^^^^^^^^^^^^^
-This role is responsible for provisioning the participants and coordinating personnel from all sites for the project.
+The Project Admin is responsible for provisioning the participants and coordinating personnel from all sites for the project.
+When using the Dashboard UI, the Project Admin is the administrator for the site and is responsible for inputting the
+values to set up the project in the beginning and then approving the users and client sites while making edits if necessary.
 
 The Project Admin is also responsible for the management of the FL Server.
 
 There is only one Project Admin for each project.
 
-Org Admin  Role
+Org Admin Role
 ^^^^^^^^^^^^^^^^^^^^
 This role is responsible for the management of the sites of his/her organization.
 
 Lead Researcher Role
 ^^^^^^^^^^^^^^^^^^^^^^^
-The scientist who works with other researchers to ensure the success of the study.
+This role can be configured for increased privileges for an organization for a scientist who works
+with other researchers to ensure the success of the project.
 
 Member Researcher Role
 ^^^^^^^^^^^^^^^^^^^^^^^
-The scientist who works with the Lead Researcher to make sure his/her site is properly prepared for the study.
+This role can be configured for another level of privileges a scientist who works with the Lead Researcher
+to make sure his/her site is properly prepared for the project.
 
 
 FLARE Console (previously called Admin Client)

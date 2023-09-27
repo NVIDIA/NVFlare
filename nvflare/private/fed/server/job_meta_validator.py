@@ -78,7 +78,9 @@ class JobMetaValidator(JobMetaValidatorSpec):
     def _validate_deploy_map(job_name: str, meta: dict) -> list:
 
         if not meta:
-            raise ValueError(f"{JobConstants.META}.[json|conf|yml] is empty for job {job_name}")
+            raise ValueError(
+                f"{JobConstants.META}.[json|conf|yml] not existing for job {job_name}, possible in legacy job format.  Please upgrade the job structure."
+            )
 
         deploy_map = meta.get(JobMetaKey.DEPLOY_MAP.value)
         if not deploy_map:
