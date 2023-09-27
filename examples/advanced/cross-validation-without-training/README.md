@@ -4,7 +4,7 @@
 
 This example shows how to re-run the NVFlare cross-site validation without the training workflow, making use of the previous run results. The example uses the cifar10_fedavg NVFlare job configuration.
 
-### How the example been built
+### How is the example built
 
 This example uses the exact same NVFlare job definition of cifar10_fedavg, which contains the training workflow, followed by the cross-site validation workflow. These are the steps of changes made to enable re-run the cross-site validation without the training.
 
