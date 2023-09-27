@@ -14,14 +14,14 @@
 import os
 import pathlib
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree, HOCONConverter
 
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel_opt.utils.pyhocon_loader import PyhoconConfig
-from nvflare.tool.job.job_client_const import JOB_TEMPLATES
+from nvflare.tool.job.job_client_const import CONFIG_CONF, JOB_TEMPLATES
 
 
 def get_home_dir() -> Path:
@@ -36,7 +36,7 @@ def get_hidden_nvflare_config_path(hidden_nvflare_dir: str) -> str:
     Returns:
         str: The path to the hidden nvflare configuration file.
     """
-    hidden_nvflare_config_file = os.path.join(hidden_nvflare_dir, "config.conf")
+    hidden_nvflare_config_file = os.path.join(hidden_nvflare_dir, CONFIG_CONF)
     return str(hidden_nvflare_config_file)
 
 
@@ -197,6 +197,16 @@ def find_job_templates_location(job_templates_dir: Optional[str] = None):
         check_job_templates_dir(job_templates_dir)
 
     if not job_templates_dir:
+        # get default template from nvflare wheel if package installed
+        from nvflare.tool import job as job_module
+
+        template_path = os.path.join(os.path.dirname(job_module.__file__), "templates")
+        if os.path.isdir(template_path):
+            job_templates_dir = template_path
+        else:
+            job_templates_dir = None
+
+    if not job_templates_dir:
         raise ValueError(
             "Required job_template directory is not specified. "
             "Please check ~/.nvflare/config.conf or set env variable NVFLARE_HOME "
@@ -226,6 +236,11 @@ def hocon_to_string(target_fmt: ConfigFormat, dst_config: ConfigTree):
         dst_dict_config = PyhoconConfig(dst_config).to_dict()
         omega_conf = loader.load_config_from_dict(dst_dict_config)
         return omega_conf.to_str()
+
+
+def save_configs(app_configs: Dict[str, Tuple], keep_origin_format: bool = True):
+    for app_name, (dst_config, dst_path) in app_configs.items():
+        save_config(dst_config, dst_path, keep_origin_format)
 
 
 def save_config(dst_config, dst_path, keep_origin_format: bool = True):

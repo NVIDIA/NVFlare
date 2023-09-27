@@ -415,7 +415,7 @@ class SwarmClientController(ClientSideController):
 
         # aggr_result could be just weight diffs, not full weights!
         # need to call shareable_to_learnable to get full weights.
-        self.log_info(fl_ctx, f"aggr result: {aggr_result}")
+        self.log_debug(fl_ctx, f"aggr result: {aggr_result}")
         global_weights = self.shareable_generator.shareable_to_learnable(aggr_result, fl_ctx)
         self.record_last_result(fl_ctx, gatherer.for_round, global_weights)
 
@@ -563,7 +563,7 @@ class SwarmClientController(ClientSideController):
             fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, base_model, private=True, sticky=True)
         global_weights = self.shareable_generator.shareable_to_learnable(task_data, fl_ctx)
 
-        self.log_info(fl_ctx, f"current global model: {global_weights}")
+        self.log_debug(fl_ctx, f"current global model: {global_weights}")
 
         fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, global_weights, private=True, sticky=True)
         fl_ctx.set_prop(AppConstants.CURRENT_ROUND, current_round, private=True, sticky=True)
@@ -616,6 +616,7 @@ class SwarmClientController(ClientSideController):
                 name=self.report_learn_result_task_name,
                 data=result,
                 timeout=int(self.learn_task_ack_timeout),
+                secure=self.is_task_secure(fl_ctx),
             )
 
             resp = self.broadcast_and_wait(

@@ -15,8 +15,6 @@ Each job template contains the following informations
 
 # Configuration format
 
-  The configuration is written as HOCON (human optimized object Notation). As a variant of JSON, .conf can also use json format.
-  But you can remove many of the double quotes replace ":" with "=" to make it cleaner.
-  You can find the details in [pyhoconb: HOCON Parser for python](https://github.com/chimpler/pyhocon), with pyhocon format, we can add comments in each line. 
-
-    
+Configurations are written in HOCON (human optimized object Notation). As a variant of JSON, .conf can also use json format.
+The pyhocon format allows for comments, and you can remove many of the double quotes as well as replace ":" with "=" to make the configurations look cleaner.
+You can find details in [pyhoconb: HOCON Parser for python](https://github.com/chimpler/pyhocon). 

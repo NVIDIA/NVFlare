@@ -1,0 +1,37 @@
+{
+  "format_version": 2,
+  "task_data_filters": [],
+  "task_result_filters": [],
+  "components": [
+    {
+      "id": "data_splitter",
+      "path": "pt.utils.cifar10_data_splitter.Cifar10DataSplitter",
+      "args": {
+          "split_dir": "/tmp/cifar10_splits",
+          "num_sites": 2,
+          "alpha": 1.0
+      }
+    },
+    {
+      "id": "json_generator",
+      "path": "nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator",
+      "args": {}
+    }
+  ],
+  "workflows": [
+    {
+      "id": "swarm_controller",
+      "path": "nvflare.app_common.ccwf.SwarmServerController",
+      "args": {
+        "num_rounds": 3
+      }
+    },
+    {
+      "id": "cross_site_eval",
+      "path": "nvflare.app_common.ccwf.CrossSiteEvalServerController",
+      "args": {
+        "eval_task_timeout": 300
+      }
+    }
+  ]
+}

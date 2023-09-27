@@ -523,7 +523,7 @@ class AdminAPI(AdminAPISpec):
     def _load_client_cmds_from_module_specs(self, cmd_module_specs):
         if cmd_module_specs:
             for m in cmd_module_specs:
-                self.client_cmd_reg.register_module_spec(m, include_invisible=False)
+                self.client_cmd_reg.register_module_spec(m, include_invisible=True)
 
     def register_command(self, cmd_entry):
         self.all_cmds.append(cmd_entry.name)
@@ -913,6 +913,7 @@ class AdminAPI(AdminAPISpec):
             ctx = cmd_ctx
         else:
             ctx = self._new_command_context(command, args, cmd_entry)
+        ctx.set_command(command)
         start = time.time()
         ctx.set_reply_processor(reply_processor)
         self._try_command(ctx)

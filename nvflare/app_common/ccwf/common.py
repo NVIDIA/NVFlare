@@ -32,6 +32,7 @@ class Constant:
     BASENAME_ASK_FOR_MODEL = "ask_for_model"
 
     TASK_NAME_PREFIX = "cwf.task_prefix"
+    PRIVATE_P2P = "cwf.private_p2p"
     ERROR = "cwf.error"
     ORDER = "cwf.order"
     CLIENTS = "cwf.clients"

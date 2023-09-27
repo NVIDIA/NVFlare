@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import shutil
+import uuid
 from typing import Dict, List
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
@@ -25,7 +26,6 @@ from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey
 from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey, TopDir, is_valid_job_id
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.storage import DATA, JOB_ZIP, META, META_JSON, WORKSPACE, WORKSPACE_ZIP
-from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
 from nvflare.fuel.hci.base64_utils import b64str_to_bytes
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, make_meta
@@ -147,7 +147,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 CommandSpec(
                     name=AdminCommandNames.DOWNLOAD_JOB,
                     description="download a specified job",
-                    usage=f"{AdminCommandNames.DOWNLOAD_JOB} job_id",
+                    usage=f"{AdminCommandNames.DOWNLOAD_JOB} job_id [destination]",
                     handler_func=self.download_job,
                     authz_func=self.authorize_job,
                     client_cmd=ftd.PULL_FOLDER_FQN,
@@ -165,12 +165,16 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         )
 
     def authorize_job_file(self, conn: Connection, args: List[str]):
-        if len(args) < 2:
-            conn.append_error(
-                "syntax error: missing job_id", meta=make_meta(MetaStatusValue.SYNTAX_ERROR, "missing job_id")
-            )
+        """
+        Args: cmd_name tx_id job_id file_name [end]
+        """
+        if len(args) < 4:
+            cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY)
+            conn.append_error(f"Usage: {cmd_entry.usage}", meta=make_meta(MetaStatusValue.SYNTAX_ERROR))
             return PreAuthzReturnCode.ERROR
-        return self.authorize_job(conn, args[0:2])
+        job_id = args[2]
+        args_for_authz = [args[0], job_id]
+        return self.authorize_job(conn, args_for_authz)
 
     def authorize_job(self, conn: Connection, args: List[str]):
         if len(args) < 2:
@@ -577,7 +581,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         folder_name = args[1]
         zip_b64str = args[2]
 
-        data_bytes = convert_legacy_zipped_app_to_job(b64str_to_bytes(zip_b64str))
+        data_bytes = b64str_to_bytes(zip_b64str)
         engine = conn.app_ctx
 
         try:
@@ -598,7 +602,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 meta[JobMetaKey.SUBMITTER_NAME.value] = conn.get_prop(ConnProps.USER_NAME, "")
                 meta[JobMetaKey.SUBMITTER_ORG.value] = conn.get_prop(ConnProps.USER_ORG, "")
                 meta[JobMetaKey.SUBMITTER_ROLE.value] = conn.get_prop(ConnProps.USER_ROLE, "")
-
+                meta[JobMetaKey.JOB_FOLDER_NAME.value] = folder_name
                 custom_props = conn.get_prop(ConnProps.CUSTOM_PROPS)
                 if custom_props:
                     meta[JobMetaKey.CUSTOM_PROPS.value] = custom_props
@@ -632,15 +636,38 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             unzip_all_from_bytes(workspace_bytes, workspace_dir)
         return job_id_dir
 
+    def _clean_up_download(self, conn: Connection, tx_id: str):
+        """
+        Remove the job download folder
+        """
+        job_download_dir = self.tx_path(conn, tx_id)
+        shutil.rmtree(job_download_dir, ignore_errors=True)
+
     def pull_file(self, conn: Connection, args: List[str]):
-        if len(args) != 3:
-            self.logger.error("syntax error: missing file name")
+        """
+        Args: cmd_name tx_id folder_name file_name [end]
+        """
+        if len(args) < 4:
+            # NOTE: this should never happen since args have been validated by authorize_job_file!
+            self.logger.error("syntax error: missing tx_id folder_name file name")
             return
-        self.download_file(conn, file_name=args[2])
+
+        tx_id = args[1]
+        folder_name = args[2]
+        file_name = args[3]
+        self.download_file(conn, tx_id, folder_name, file_name)
+        if len(args) > 4:
+            # this is the end of the download - remove the download dir
+            self._clean_up_download(conn, tx_id)
 
     def download_job(self, conn: Connection, args: List[str]):
+        """
+        Job download uses binary protocol for more efficient download.
+        - Retrieve job data from job store. This puts job files (meta, data, and workspace) in a transfer folder
+        - Returns job file names, a TX ID, and a command name for downloading files to the admin client
+        - Admin client downloads received file names one by one. It signals the end of download in the last command.
+        """
         job_id = args[1]
-        download_dir = conn.get_prop(ConnProps.DOWNLOAD_DIR)
         self.logger.debug(f"pull_job called for {job_id}")
 
         engine = conn.app_ctx
@@ -652,11 +679,26 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             conn.append_error("internal error", meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
             return
 
+        # It is possible that the same job is downloaded in multiple sessions at the same time.
+        # To allow this, we use a separate sub-folder in the download_dir for each download.
+        # This sub-folder is named with a transaction ID (tx_id), which is a UUID.
+        # The folder path for download the job is: <download_dir>/<tx_id>/<job_id>.
+        tx_id = str(uuid.uuid4())  # generate a new tx_id
+        job_download_dir = self.tx_path(conn, tx_id)  # absolute path of the job download dir.
         with engine.new_context() as fl_ctx:
-            job_def_manager.get_storage_for_download(job_id, download_dir, DATA, JOB_ZIP, fl_ctx)
-            job_def_manager.get_storage_for_download(job_id, download_dir, META, META_JSON, fl_ctx)
-            job_def_manager.get_storage_for_download(job_id, download_dir, WORKSPACE, WORKSPACE_ZIP, fl_ctx)
+            try:
+                job_def_manager.get_storage_for_download(job_id, job_download_dir, DATA, JOB_ZIP, fl_ctx)
+                job_def_manager.get_storage_for_download(job_id, job_download_dir, META, META_JSON, fl_ctx)
+                job_def_manager.get_storage_for_download(job_id, job_download_dir, WORKSPACE, WORKSPACE_ZIP, fl_ctx)
 
-            self.download_folder(
-                conn, job_id, download_file_cmd_name=AdminCommandNames.DOWNLOAD_JOB_FILE, control_id=job_id
-            )
+                self.download_folder(
+                    conn,
+                    tx_id=tx_id,
+                    folder_name=job_id,
+                    download_file_cmd_name=AdminCommandNames.DOWNLOAD_JOB_FILE,
+                )
+            except Exception as e:
+                secure_log_traceback()
+                self.logger.error(f"exception downloading job {job_id}: {secure_format_exception(e)}")
+                self._clean_up_download(conn, tx_id)
+                conn.append_error("internal error", meta=make_meta(MetaStatusValue.INTERNAL_ERROR))

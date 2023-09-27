@@ -64,7 +64,8 @@ class MetaKey(object):
     CUSTOM_PROPS = "custom_props"
     FILES = "files"
     CMD_NAME = "cmd_name"
-    CONTROL_ID = "control_id"
+    TX_ID = "tx_id"
+    FOLDER_NAME = "folder_name"
 
 
 class MetaStatusValue(object):

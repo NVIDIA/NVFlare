@@ -44,6 +44,7 @@ class CrossSiteEvalServerController(ServerSideController):
         task_check_period: float = Constant.TASK_CHECK_INTERVAL,
         job_status_check_interval: float = Constant.JOB_STATUS_CHECK_INTERVAL,
         progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
+        private_p2p: bool = True,
         participating_clients=None,
         evaluators=None,
         evaluatees=None,
@@ -71,6 +72,7 @@ class CrossSiteEvalServerController(ServerSideController):
             result_clients="",
             result_clients_policy=DefaultValuePolicy.EMPTY,
             progress_timeout=progress_timeout,
+            private_p2p=private_p2p,
         )
 
         check_str("eval_result_dir", eval_result_dir)

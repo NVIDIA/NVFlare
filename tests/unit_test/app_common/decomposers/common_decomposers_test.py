@@ -11,45 +11,86 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
 from typing import Any
 
 import numpy as np
+import pytest
 
+from nvflare.apis.shareable import Shareable
+from nvflare.apis.utils.decomposers import flare_decomposers
+from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.abstract.learnable import Learnable
 from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.decomposers import common_decomposers
 from nvflare.app_common.widgets.event_recorder import _CtxPropReq, _EventReq, _EventStats
 from nvflare.fuel.utils import fobs
 
+FIVE_M = 5 * 1024 * 1024
+
 
 class TestCommonDecomposers:
     @classmethod
     def setup_class(cls):
+        flare_decomposers.register()
         common_decomposers.register()
 
-    def test_learnable(self):
-
+    @pytest.mark.parametrize(
+        "size",
+        [100, 1000, FIVE_M],
+    )
+    def test_learnable(self, size):
         # Learnable is simply a dict with 2 extra methods
         learnable = Learnable()
-        learnable["A"] = "foo"
+        learnable["A"] = os.urandom(size)
         learnable["B"] = 123
-
         new_learnable = self._run_fobs(learnable)
+        assert new_learnable == learnable
 
-        assert new_learnable["A"] == learnable["A"]
-        assert new_learnable["B"] == learnable["B"]
-
-    def test_model_learnable(self):
-
+    @pytest.mark.parametrize(
+        "size",
+        [100, 1000, FIVE_M],
+    )
+    def test_model_learnable(self, size):
         # Learnable is simply a dict with 2 extra methods
         model_learnable = ModelLearnable()
-        model_learnable["A"] = "bar"
+        model_learnable["A"] = os.urandom(size)
         model_learnable["B"] = 456
-
         new_learnable = self._run_fobs(model_learnable)
+        assert new_learnable == model_learnable
 
-        assert new_learnable["A"] == model_learnable["A"]
-        assert new_learnable["B"] == model_learnable["B"]
+    def test_model_learnable_in_shareable(self):
+        model_learnable = ModelLearnable()
+        model_learnable["A"] = os.urandom(200)
+        model_learnable["B"] = 456
+        s = Shareable()
+        s["model"] = model_learnable
+        ds = fobs.dumps(s, max_value_size=20)
+        s2 = fobs.loads(ds)
+        assert s == s2
+
+    @pytest.mark.parametrize(
+        "size",
+        [100, 1000, FIVE_M],
+    )
+    def test_fl_model(self, size):
+        m1 = FLModel(
+            params_type=ParamsType.FULL,
+            params={
+                "x": os.urandom(size),
+                "y": "abc",
+            },
+            total_rounds=100,
+            current_round=0,
+            metrics={"metric": "accuracy", "value": 0.456},
+            meta={"algo": "sag"},
+        )
+
+        m2 = self._run_fobs(m1)
+        assert isinstance(m2, FLModel)
+        assert m1.params_type == m2.params_type and m1.params == m2.params and m1.meta == m2.meta
+        assert m1.metrics == m2.metrics and m1.optimizer_params == m2.optimizer_params
+        assert m1.current_round == m2.current_round and m1.total_rounds == m2.total_rounds
 
     def test_np_float64(self):
 

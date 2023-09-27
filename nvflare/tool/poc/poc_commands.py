@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,16 +23,19 @@ import time
 from typing import Dict, List, Optional, OrderedDict, Tuple
 
 import yaml
+from pyhocon import ConfigFactory as CF
 
 from nvflare.cli_exception import CLIException
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.fuel.utils.class_utils import instantiate_class
+from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
 from nvflare.lighter.provision import gen_default_project_config, prepare_project
 from nvflare.lighter.service_constants import FlareServiceConstants as SC
 from nvflare.lighter.spec import Provisioner
 from nvflare.lighter.utils import load_yaml, update_project_server_name_config, update_storage_locations
 from nvflare.tool.api_utils import shutdown_system
+from nvflare.utils.cli_utils import hocon_to_string
 
 DEFAULT_WORKSPACE = "/tmp/nvflare/poc"
 DEFAULT_PROJECT_NAME = "example_project"
@@ -379,18 +382,31 @@ def prepare_clients(clients, number_of_clients):
 
 def save_startup_kit_dir_config(workspace, project_name):
     dst = get_hidden_nvflare_config_path()
+    config = None
+    if os.path.isfile(dst):
+        try:
+            config = CF.parse_file(dst)
+        except Exception as e:
+            config = None
+
     prod_dir = get_prod_dir(workspace, project_name)
     conf = f"""
-    startup_kit {{
-        path = {prod_dir}
-    }}
-
-    poc_workspace {{
-        path = {workspace}
-    }}
+        startup_kit {{
+            path = {prod_dir}
+        }}
+        poc_workspace {{
+            path = {workspace}
+        }}
     """
+    if config:
+        new_config = CF.parse_string(conf)
+        config = new_config.with_fallback(config)
+        config_str = hocon_to_string(ConfigFormat.PYHOCON, config)
+    else:
+        config_str = conf
+
     with open(dst, "w") as file:
-        file.write(conf)
+        file.write(f"{config_str}\n")
 
 
 def prepare_poc(cmd_args):
@@ -807,12 +823,21 @@ def _run_poc(
         elif service_name == service_config[SC.FLARE_SERVER]:
             async_process(service_name, cmd_path, None, service_config)
         else:
+            time.sleep(1)
             async_process(service_name, cmd_path, gpu_assignments[service_name], service_config)
 
 
 def clean_poc(cmd_args):
     poc_workspace = get_poc_workspace()
     _clean_poc(poc_workspace)
+
+
+def is_poc_running(poc_workspace, service_config, project_config):
+    project_name = project_config.get("name") if project_config else DEFAULT_PROJECT_NAME
+    prod_dir = get_prod_dir(poc_workspace, project_name)
+    server_dir = os.path.join(prod_dir, service_config[SC.FLARE_SERVER])
+    pid_file = os.path.join(server_dir, "pid.fl")
+    return os.path.exists(pid_file)
 
 
 def _clean_poc(poc_workspace: str):
@@ -822,8 +847,11 @@ def _clean_poc(poc_workspace: str):
         project_config, service_config = setup_service_config(poc_workspace)
         if project_config is not None:
             if is_poc_ready(poc_workspace, service_config, project_config):
-                shutil.rmtree(poc_workspace, ignore_errors=True)
-                print(f"{poc_workspace} is removed")
+                if not is_poc_running(poc_workspace, service_config, project_config):
+                    shutil.rmtree(poc_workspace, ignore_errors=True)
+                    print(f"{poc_workspace} is removed")
+                else:
+                    print("system is still running, please stop the system first.")
             else:
                 raise CLIException(f"{poc_workspace} is not valid poc directory")
     else:

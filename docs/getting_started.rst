@@ -229,7 +229,7 @@ After installing the nvflare pip package, you have access to the NVFlare CLI inc
 The Simulator allows you to start a FLARE server and any number of connected clients on your local
 workstation or laptop, and to quickly deploy an application for testing and debugging.
 
-Basic usage for the FL Simulator is available with ``nvflare simulator -h``:
+Basic usage for the :ref:`FL Simulator <fl_simulator>` is available with ``nvflare simulator -h``:
 
 .. code-block:: shell
 

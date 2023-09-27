@@ -26,15 +26,17 @@ and using it in [JupyterLab](../../../../examples/README.md#Set-up-JupyterLab-fo
 
 ### 1. Download the Spleen Bundle
 
-Download the MONAI bundle as `./${JOB_NAME}/app/config/spleen_ct_segmentation`.
+Download the MONAI bundle as `./jobs/${JOB_NAME}/app/config/spleen_ct_segmentation`:
 
 ```
-JOB_NAME=job
+JOB_NAME=spleen_ct_segmentation_local
 python3 -m monai.bundle download --name "spleen_ct_segmentation" --version "0.4.6" --bundle_dir ./jobs/${JOB_NAME}/app/config
 ``` 
 
-In this example, `JOB_NAME` can be either `job` or `job_he`, depending on the configuration you would like to run (see below).
+In this example, `JOB_NAME` can be either `spleen_ct_segmentation_local` or `spleen_ct_segmentation_he`, depending on the configuration you would like to run (see below).
+
 The final folder structure under `JOB_NAME` will be:
+
 ```
 .
 ├── app
@@ -61,23 +63,53 @@ The final folder structure under `JOB_NAME` will be:
 ```
 
 ## 2. Download the data
+
 Download the spleen CT data from the [MSD challenge](http://medicaldecathlon.com/) and update data path.
 
-> **Note:** The dataset will be saved under `./data`.
+> **Note:** The dataset will be saved under `./data` by default with the `download_spleen_dataset.py` command. The
+`sed` command replaces the dataset path in the bundle of `/workspace/data/Task09_Spleen` with the default location
+the dataset will be downloaded to in this directory.
+
 ```
-JOB_NAME=job
+JOB_NAME=spleen_ct_segmentation_local
 python3 download_spleen_dataset.py
-sed -i "s|/workspace/data/Task09_Spleen|${PWD}/data/Task09_Spleen|g" ${JOB_NAME}/app/config/spleen_ct_segmentation/configs/train.json
+sed -i "s|/workspace/data/Task09_Spleen|${PWD}/data/Task09_Spleen|g" ./jobs/${JOB_NAME}/app/config/spleen_ct_segmentation/configs/train.json
 ```
 
 
 ## 3. Create your FL workspace and start FL system
 
-The next scripts will start the FL server and 2 clients automatically to run FL experiments on localhost.
+You can use a POC system or scripts that will start the FL server and 2 clients automatically to run FL experiments.
+Skip to 4.1 below for provisioning with homomorphic encryption and using the `start_fl_secure.sh` script.
 
-### 3.1 Secure FL workspace
+### 3.1 Experimenting with POC ("proof of concept") workspace
+To run FL experiments in POC mode, create your local FL workspace the below command.
+In the following experiments, we will be using 2 clients. Press y and enter when prompted.
 
-The project file for creating the secure workspace used in this example is shown at
+### 3.2 Crate POC workspace
+```
+nvflare poc prepare -n 2
+```
+By default, POC will create startup kits at `/tmp/nvflare/poc`.
+
+> **_NOTE:_** **POC** stands for "proof of concept" and is used for quick experimentation
+> with different amounts of clients.
+> It doesn't need any advanced configurations while provisioning the startup kits for the server and clients.
+> 
+> The **secure** workspace on the other hand is needed to run experiments that require encryption keys such as the
+> homomorphic encryption (HE) one shown below. These startup kits allow secure deployment of FL in real-world scenarios
+> using SSL certificated communication channels.
+
+### 3.3 Start FL system in POC mode
+
+Then, start the FL system with all provisioned clients by running
+```
+nvflare poc start
+```
+
+### 4.1 (Optional) Secure FL workspace
+
+The project file for creating a secure workspace with homomorphic encryption used in this example is shown at
 [./workspaces/secure_project.yml](./workspaces/secure_project.yml).
 
 If you want to run the homomorphic encryption job, please install [TenSEAL](https://github.com/OpenMined/TenSEAL):
@@ -96,38 +128,17 @@ nvflare provision -p ./secure_project.yml
 cp -r ./workspace/secure_project/prod_00 ./secure_workspace
 cd ..
 ```
-For more information about secure provisioning see the [documentation](https://nvflare.readthedocs.io/en/latest/programming_guide/provisioning_system.html).
 
-### 3.2 Start FL system
+POC mode also uses secure provisioning now and can support homomorphic encryption if set up with:
+```
+nvflare poc prepare -he
+```
+
+### 4.2 (Optional) Start FL system
 
 For starting the FL system with 2 clients in the secure workspace, run
 ```
 ./start_fl_secure.sh 2
-```
-
-## 4. (Optional) Experimenting with POC ("proof of concept") workspace
-To run FL experiments in POC mode, create your local FL workspace the below command.
-In the following experiments, we will be using 2 clients. Press y and enter when prompted.
-
-### 4.1 (Optional) Crate POC workspace
-```
-nvflare poc prepare -n 2
-```
-By default, POC will create startup kits at `/tmp/nvflare/poc`.
-
-> **_NOTE:_** **POC** stands for "proof of concept" and is used for quick experimentation
-> with different amounts of clients.
-> It doesn't need any advanced configurations while provisioning the startup kits for the server and clients.
-> 
-> The **secure** workspace on the other hand is needed to run experiments that require encryption keys such as the
-> homomorphic encryption (HE) one shown below. These startup kits allow secure deployment of FL in real-world scenarios
-> using SSL certificated communication channels.
-
-### 4.2 (Optional)  Start FL system in POC mode
-
-Then, start the FL system with all provisioned clients by running
-```
-nvflare poc start
 ```
 
 ## 5. Run experiments
@@ -139,36 +150,36 @@ For details about resource management and consumption, please refer to the [docu
 > To speed up your experimentation, you can reduce the `num_rounds` value in `config_fed_server.json`, e.g. to 5 rounds.
 
 ### 5.1 Experiment tracking with MLflow
-Using MONAI's experiment [tracking feature](https://github.com/Project-MONAI/tutorials/tree/main/experiment_management),
-we can use MLflow to track the model performance on the local clients.
+Experiment tracking with MLflow now uses `NVFlareStatsHandler` to stream events
+to the FL server to write to MLflow. The `spleen_ct_segmentation_local` job should be configured to automatically log
+metrics to MLflow through the FL server.
 
-In a new terminal, start the mlflow server:
+The `spleen_ct_segmentation_loc_non_agg` job is the previous configuration that uses MONAI's experiment [tracking feature](https://github.com/Project-MONAI/tutorials/tree/main/experiment_management)
+with clients logging to the MLflow tracking server without going through the FL server.
+
+For `spleen_ct_segmentation_loc_non_agg`, an MLflow server is expected, so in a new terminal, start the mlflow server with:
+
 ```
 mlflow server
 ```
 
 You can access the MLflow dashboard in your browser using the default tracking uri `http://127.0.0.1:5000`.
+
 Next, submit the job.
 
 ### 5.2 Federated averaging
 
-To run FedAvg using with local provisioning, submit the job using:
+To run FedAvg using with the Job CLI, submit the job with:
+
 ```
-./submit_job.sh job
-```
-(Optional) In POC mode, use
-```
-./submit_job.sh job --poc
+nvflare job submit -j jobs/spleen_ct_segmentation_local
 ```
 
 > **_NOTE:_** You can always use the admin console to manually abort a running job.
   using `abort_job [JOB_ID]`.
 > For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/main/real_world_fl/operation.html).
 >
-> To log into the POC workspace admin console no username is required
-> (use "admin" for commands requiring conformation with username).
->
-> For the secure workspace admin console, use username "admin@nvidia.com"
+> For the secure workspace admin console, use the username "admin@nvidia.com"
 
 After training, each client's best model will be used for cross-site validation.
 The results can be downloaded and shown with the admin console using
@@ -196,9 +207,9 @@ Next we run FedAvg using homomorphic encryption (HE) for secure aggregation on t
 > It will also take longer due to the additional encryption, decryption, encrypted aggregation,
 > and increased encrypted messages sizes involved.
 
-Follow the steps above for downloading the bundle and setting the data using `JOB_NAME=job_he`.
+Follow the steps above for downloading the bundle and setting the data using `JOB_NAME=spleen_ct_segementation_he`.
 
 Then, submit the job to run FedAvg with HE:
 ```
-./submit_job.sh job_he
+nvflare job submit -j jobs/spleen_ct_segementation_he
 ```

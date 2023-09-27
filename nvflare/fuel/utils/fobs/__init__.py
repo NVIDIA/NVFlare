@@ -25,9 +25,19 @@ from nvflare.fuel.utils.fobs.fobs import (
     serialize,
     serialize_stream,
 )
+from nvflare.fuel.utils.fobs.lobs import (
+    dump_to_bytes,
+    dump_to_file,
+    dump_to_stream,
+    load_from_bytes,
+    load_from_file,
+    load_from_stream,
+)
 
 # aliases for compatibility to Pickle/json
-load = deserialize_stream
-loads = deserialize
-dump = serialize_stream
-dumps = serialize
+load = load_from_stream
+dump = dump_to_stream
+loads = load_from_bytes
+dumps = dump_to_bytes
+loadf = load_from_file
+dumpf = dump_to_file
