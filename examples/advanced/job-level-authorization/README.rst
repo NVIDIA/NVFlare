@@ -50,7 +50,7 @@ ________________
 
 This script will start up the server and 2 clients,
 ::
-   ./start.sh
+   nvflare poc start
 
 Logging with Admin Console
 __________________________
@@ -76,14 +76,6 @@ ____
 * :code:`server1`: NVFlare server
 * :code:`site_a`: Site_a has a CustomSecurityHandler set up which does not allow the job "FL Demo Job1" to run. Any other named jobs will be able to deploy and run on site_a.
 
-
-Users
-_____
-* :code:`super@a.org`: Super user with role :code:`project_admin` who can do everything
-* :code:`admin@a.org`: Admin for a.org with role :code:`org_admin`
-* :code:`trainer@a.org`: Lead trainer for a.org with role :code:`lead`
-* :code:`trainer@b.org`: Lead trainer for b.org with role :code:`lead`
-* :code:`user@b.org`: Regular user for b.org with role :code:`member`
 
 Jobs
 ____
