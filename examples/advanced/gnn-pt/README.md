@@ -31,18 +31,18 @@ python3 -m pip install -r requirements.txt
 
 ###  Run the experiment
 
-Use nvflare simulator to run the hello-examples:
+Use nvflare simulator to run the example:
 
 ```
-nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 gnn-pt/jobs/gnn-pt
+nvflare simulator -w /tmp/nvflare/gnn_workspace -n 2 -t 2 gnn-pt/jobs/gnn-pt
 ```
 
 ###  Access the logs and results
 
-You can find the running logs and results inside the simulator's workspace/simulate_job
+You can find the running logs and results inside the simulator's workspace
 
 ```bash
-$ ls /tmp/nvflare/simulate_job/
+$ ls /tmp/nvflare/gnn_workspace
 app_server  app_site-1  app_site-2  log.txt
 
 ```
