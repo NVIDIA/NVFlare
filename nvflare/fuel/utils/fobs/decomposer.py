@@ -17,7 +17,7 @@ from enum import Enum
 from typing import Any, Type, TypeVar
 
 # Generic type supported by the decomposer.
-from nvflare.fuel.utils.fobs.datum import DatumManager
+from nvflare.fuel.utils.fobs.datum import Datum, DatumManager, DatumRef, DatumType
 
 T = TypeVar("T")
 
@@ -67,6 +67,94 @@ class Decomposer(ABC):
         pass
 
 
+def restore_position(manager: DatumManager, datum: Datum, position):
+    """
+    This function is used for restoring object state at the specified position.
+
+    Args:
+        manager: the datum manager
+        datum: the datum that contains the value of the original object at the position.
+        position: the position to be restored
+
+    Returns: None
+
+    """
+    target, key = position
+    original_obj = manager.get_original(target)  # also need to restore values in the original object if any
+    if datum.datum_type in (DatumType.BLOB, DatumType.TEXT):
+        target[key] = datum.value
+        if original_obj:
+            original_obj[key] = datum.value
+    else:
+        # file datum - app provided
+        target[key] = datum
+        if original_obj:
+            original_obj[key] = datum
+
+
+class Externalizer:
+    """
+    This class is used to help creating 'decompose' method of decomposers of arbitrary classes.
+
+    """
+
+    def __init__(self, manager: DatumManager):
+        self.manager = manager
+
+    def _set_position(self, ext_result: Any, target, key):
+        if isinstance(ext_result, DatumRef):
+            datum = self.manager.get_datum(ext_result.datum_id)
+            if datum:
+                datum.set_restore_func(restore_position, (target, key))
+
+    def externalize(self, target: Any):
+        """Recursively go through object tree (dict or list) and externalize leaf nodes."""
+        if not self.manager:
+            return target
+
+        if isinstance(target, dict):
+            for k, v in target.items():
+                d = self.externalize(v)
+                target[k] = d
+                self._set_position(d, target, k)  # remember the position so it can be restored
+        elif isinstance(target, list):  # note: tuple is not supported since it is immutable.
+            for i, v in enumerate(target):
+                d = self.externalize(v)
+                target[i] = d
+                self._set_position(d, target, i)
+        else:
+            # leaf node
+            target = self.manager.externalize(target)
+
+        return target
+
+
+class Internalizer:
+    """
+    This class is used to help creating 'recompose' method of decomposers of arbitrary classes.
+
+    """
+
+    def __init__(self, manager: DatumManager):
+        self.manager = manager
+
+    def internalize(self, target) -> Any:
+        """Recursively go through object tree (dict or list) and internalize leaf nodes."""
+        if not self.manager:
+            return target
+
+        if isinstance(target, dict):
+            for k, v in target.items():
+                target[k] = self.internalize(v)
+        elif isinstance(target, list):
+            for i, v in enumerate(target):
+                target[i] = self.internalize(v)
+        else:
+            target = self.manager.internalize(target)
+
+        return target
+
+
 class DictDecomposer(Decomposer):
     """Generic decomposer for subclasses of dict like Shareable"""
 
@@ -77,49 +165,19 @@ class DictDecomposer(Decomposer):
         return self.dict_type
 
     def decompose(self, target: dict, manager: DatumManager = None) -> Any:
-        result = target.copy()
-        if manager:
-            result = self._externalize(result, manager)
-        return result
+        # need to create a new object; otherwise msgpack will try to decompose this object endlessly.
+        tc = target.copy()
+        manager.register_copy(tc, target)
+        externalizer = Externalizer(manager)
+        return externalizer.externalize(tc)
 
     def recompose(self, data: dict, manager: DatumManager = None) -> dict:
-        if manager:
-            data = self._internalize(data, manager)
+        internalizer = Internalizer(manager)
+        data = internalizer.internalize(data)
         obj = self.dict_type()
         for k, v in data.items():
             obj[k] = v
         return obj
-
-    def _externalize(self, target: dict, manager: DatumManager) -> Any:
-        if not manager:
-            return target
-
-        if isinstance(target, dict):
-            for k, v in target.items():
-                target[k] = self._externalize(v, manager)
-        elif isinstance(target, list):
-            for i, v in enumerate(target):
-                target[i] = self._externalize(v, manager)
-        else:
-            # leaf node
-            target = manager.externalize(target)
-
-        return target
-
-    def _internalize(self, target, manager: DatumManager) -> Any:
-        if not manager:
-            return target
-
-        if isinstance(target, dict):
-            for k, v in target.items():
-                target[k] = self._internalize(v, manager)
-        elif isinstance(target, list):
-            for i, v in enumerate(target):
-                target[i] = self._internalize(v, manager)
-        else:
-            target = manager.internalize(target)
-
-        return target
 
 
 class DataClassDecomposer(Decomposer):

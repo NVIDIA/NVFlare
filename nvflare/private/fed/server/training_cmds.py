@@ -106,7 +106,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             return err
         else:
             conn.append_string("FL app has been shutdown.")
-            conn.append_shutdown("Bye bye")
+            conn.append_shutdown("Goodbye!")
             return ""
 
     def _shutdown_app_on_clients(self, conn: Connection) -> bool:

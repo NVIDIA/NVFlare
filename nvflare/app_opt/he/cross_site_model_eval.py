@@ -15,7 +15,7 @@
 import os
 from typing import Union
 
-from nvflare.apis.dxo import DXO, from_bytes
+from nvflare.apis.dxo import DXO, from_file
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
@@ -95,14 +95,7 @@ class HECrossSiteModelEval(CrossSiteModelEval):
 
         try:
             serialize_nested_dict(dxo.data)
-            bytes_to_save = dxo.to_bytes()
-        except Exception as e:
-            raise ValueError(f"Unable to extract shareable contents. Exception: {(secure_format_exception(e))}")
-
-        # Save contents to path
-        try:
-            with open(data_filename, "wb") as f:
-                f.write(bytes_to_save)
+            dxo.to_file(data_filename)
         except Exception as e:
             raise ValueError(f"Unable to save shareable contents: {secure_format_exception(e)}")
 
@@ -116,11 +109,7 @@ class HECrossSiteModelEval(CrossSiteModelEval):
 
         # load shareable
         try:
-            with open(shareable_filename, "rb") as f:
-                data = f.read()
-
-            dxo: DXO = from_bytes(data)
-
+            dxo: DXO = from_file(shareable_filename)
             self.log_debug(fl_ctx, f"Loading cross validation shareable content with name: {name}.")
         except Exception as e:
             raise ValueError(f"Exception in loading shareable content for {name}: {secure_format_exception(e)}")
