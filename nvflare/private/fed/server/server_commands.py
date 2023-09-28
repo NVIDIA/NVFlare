@@ -14,7 +14,6 @@
 
 """FL Admin commands."""
 
-import copy
 import logging
 import time
 from abc import ABC, abstractmethod
@@ -29,7 +28,7 @@ from nvflare.apis.fl_constant import (
 )
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.apis.utils.fl_context_utils import get_serializable_data
+from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.widgets.widget import WidgetID
 
@@ -180,8 +179,8 @@ class GetTaskCommand(CommandProcessor, ServerStateCheck):
         shareable.set_header(key=FLContextKey.TASK_ID, value=task_id)
 
         shareable.set_header(key=ServerCommandKey.TASK_NAME, value=taskname)
-        shared_fl_ctx = FLContext()
-        shared_fl_ctx.set_public_props(copy.deepcopy(get_serializable_data(fl_ctx).get_all_public_props()))
+
+        shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
         shareable.set_header(key=FLContextKey.PEER_CONTEXT, value=shared_fl_ctx)
 
         if taskname != SpecialTaskName.TRY_AGAIN:
