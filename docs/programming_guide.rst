@@ -35,7 +35,7 @@ Please refer to :ref:`application` for more details.
 .. toctree::
    :maxdepth: 1
 
-   programming_guide/controllers
+   programming_guide/workflows_and_controllers
    programming_guide/executor
    programming_guide/shareable
    programming_guide/data_exchange_object
@@ -63,8 +63,10 @@ this can be used in your own workflow.
 
     - :mod:`nvflare.apis` - the generic class definitions
     - :mod:`nvflare.app_common` - higher level controllers, workflows, and algorithms
+    - :mod:`nvflare.app_opt` - optional dependencies
     - :mod:`nvflare.fuel` - supporting components of the provisioning and admin systems
     - :mod:`nvflare.ha` - overseer and overseer agent to support :ref:`high_availability`
+    - :mod:`nvflare.integration` - integrations with other frameworks
     - :mod:`nvflare.lighter` - configuration, scripts, and Builders to support the provisioning tool
     - :mod:`nvflare.poc` - configurations for the poc tool
     - :mod:`nvflare.private` - low-level implementation of the platform and communication

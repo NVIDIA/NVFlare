@@ -31,6 +31,10 @@ class ConfigKey:
     TRANSFER_TYPE = "transfer_type"
     GLOBAL_EVAL = "global_eval"
     TRAINING = "training"
+    LAUNCH_ONCE = "launch_once"
+    TOTAL_ROUNDS = "total_rounds"
+    SITE_NAME = "site_name"
+    JOB_ID = "job_id"
 
 
 class ClientConfig:

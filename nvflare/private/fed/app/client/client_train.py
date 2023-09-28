@@ -20,7 +20,7 @@ import sys
 import time
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import JobConstants, SiteType, WorkspaceConstants
+from nvflare.apis.fl_constant import FLContextKey, JobConstants, SiteType, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
@@ -112,11 +112,19 @@ def main():
         federated_client.use_gpu = False
         federated_client.config_folder = config_folder
 
+        client_engine = ClientEngine(federated_client, args, rank)
+
         while federated_client.cell is None:
             print("Waiting client cell to be created ....")
             time.sleep(1.0)
 
-        federated_client.register()
+        with client_engine.new_context() as fl_ctx:
+            client_engine.fire_event(EventType.SYSTEM_BOOTSTRAP, fl_ctx)
+
+            client_engine.fire_event(EventType.BEFORE_CLIENT_REGISTER, fl_ctx)
+            federated_client.register(fl_ctx)
+            fl_ctx.set_prop(FLContextKey.CLIENT_TOKEN, federated_client.token)
+            client_engine.fire_event(EventType.AFTER_CLIENT_REGISTER, fl_ctx)
 
         if not federated_client.token:
             print("The client could not register to server. ")
@@ -124,12 +132,7 @@ def main():
 
         federated_client.start_heartbeat(interval=kv_list.get("heart_beat_interval", 10.0))
 
-        admin_agent = create_admin_agent(
-            deployer.req_processors,
-            federated_client,
-            args,
-            rank,
-        )
+        admin_agent = create_admin_agent(deployer.req_processors, federated_client, client_engine)
 
         while federated_client.status != ClientStatus.STOPPED:
             time.sleep(1.0)
@@ -140,24 +143,17 @@ def main():
         print(f"ConfigError: {secure_format_exception(e)}")
 
 
-def create_admin_agent(
-    req_processors,
-    federated_client: FederatedClient,
-    args,
-    rank,
-):
+def create_admin_agent(req_processors, federated_client: FederatedClient, client_engine: ClientEngine):
     """Creates an admin agent.
 
     Args:
         req_processors: request processors
         federated_client: FL client object
-        args: command args
-        rank: client rank process number
+        client_engine: ClientEngine
 
     Returns:
         A FedAdminAgent.
     """
-    client_engine = ClientEngine(federated_client, federated_client.token, args, rank)
     admin_agent = FedAdminAgent(
         client_name="admin_agent",
         cell=federated_client.cell,

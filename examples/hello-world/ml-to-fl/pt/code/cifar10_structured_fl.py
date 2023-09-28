@@ -58,7 +58,7 @@ def main():
         # (optional) use GPU to speed things up
         net.to(DEVICE)
         # (optional) calculate total steps
-        steps = 2 * len(trainloader)
+        steps = total_epochs * len(trainloader)
 
         for epoch in range(total_epochs):  # loop over the dataset multiple times
 
@@ -116,17 +116,22 @@ def main():
                 total += labels.size(0)
                 correct += (predicted == labels).sum().item()
 
-        print(f"Accuracy of the network on the 10000 test images: {100 * correct // total} %")
         # return evaluation metrics
         return 100 * correct // total
 
-    # (6) call fl_evaluate method before training
-    #       to evaluate on the received/aggregated model
-    fl_evaluate()
-    # call train method
-    train(total_epochs=2, lr=0.001)
-    # call evaluate method
-    evaluate(input_weights=torch.load(PATH))
+    # (6) receives FLModel from NVFlare
+    for input_model in flare.receive_global_model():
+        print(f"current_round={input_model.current_round}")
+
+        # (7) call fl_evaluate method before training
+        #       to evaluate on the received/aggregated model
+        global_metric = fl_evaluate(input_model)
+        print(f"Accuracy of the global model on the 10000 test images: {global_metric} %")
+        # call train method
+        train(input_model, total_epochs=2, lr=0.001)
+        # call evaluate method
+        metric = evaluate(input_weights=torch.load(PATH))
+        print(f"Accuracy of the trained model on the 10000 test images: {metric} %")
 
 
 if __name__ == "__main__":

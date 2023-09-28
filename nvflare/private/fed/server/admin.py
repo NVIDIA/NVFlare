@@ -11,11 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import copy
 import threading
 import time
 from typing import List, Optional
 
+from nvflare.apis.event_type import EventType
+from nvflare.apis.shareable import ReservedHeaderKey
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.cellnet.net_manager import NetManager
@@ -270,6 +272,11 @@ class FedAdminServer(AdminServer):
         Returns:
             A list of ClientReply
         """
+
+        for _, request in requests.items():
+            with self.sai.new_context() as fl_ctx:
+                self.sai.fire_event(EventType.BEFORE_SEND_ADMIN_COMMAND, fl_ctx)
+                request.set_header(ReservedHeaderKey.PEER_PROPS, copy.deepcopy(fl_ctx.get_all_public_props()))
 
         return send_requests(
             cell=self.cell,

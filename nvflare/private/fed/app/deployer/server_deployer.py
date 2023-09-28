@@ -116,12 +116,15 @@ class ServerDeployer:
 
         run_manager.add_handler(job_runner)
         run_manager.add_component(SystemComponents.JOB_RUNNER, job_runner)
-        fl_ctx = services.engine.new_context()
 
-        threading.Thread(target=self._start_job_runner, args=[job_runner, fl_ctx]).start()
+        with services.engine.new_context() as fl_ctx:
+            services.engine.fire_event(EventType.SYSTEM_BOOTSTRAP, fl_ctx)
 
-        services.engine.fire_event(EventType.SYSTEM_START, services.engine.new_context())
-        print("deployed FL server trainer.")
+            threading.Thread(target=self._start_job_runner, args=[job_runner, fl_ctx]).start()
+
+            services.engine.fire_event(EventType.SYSTEM_START, fl_ctx)
+            print("deployed FL server trainer.")
+
         return services
 
     def _start_job_runner(self, job_runner, fl_ctx):

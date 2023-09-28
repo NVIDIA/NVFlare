@@ -12,12 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import copy
 import logging
 
 from nvflare.apis.fl_constant import FLContextKey, ServerCommandKey
-from nvflare.apis.fl_context import FLContext
-from nvflare.apis.utils.fl_context_utils import get_serializable_data
+from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import MessageHeaderKey, ReturnCode, make_reply
 from nvflare.fuel.f3.message import Message as CellMessage
@@ -117,8 +115,9 @@ class ServerCommandAgent(object):
             engine = fl_ctx.get_engine()
             reply = engine.dispatch(topic=topic, request=data, fl_ctx=fl_ctx)
 
-            shared_fl_ctx = FLContext()
-            shared_fl_ctx.set_public_props(copy.deepcopy(get_serializable_data(fl_ctx).get_all_public_props()))
+            self.logger.debug("Before gen_new_peer_ctx")
+            shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
+            self.logger.debug("After gen_new_peer_ctx")
             reply.set_header(key=FLContextKey.PEER_CONTEXT, value=shared_fl_ctx)
 
             if reply is not None:

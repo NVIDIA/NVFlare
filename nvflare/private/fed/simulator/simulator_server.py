@@ -36,6 +36,10 @@ class SimulatorServerEngine(ServerEngine):
     def update_job_run_status(self):
         pass
 
+    def fire_event(self, event_type: str, fl_ctx: FLContext):
+        if self.run_manager:
+            self.run_manager.fire_event(event_type, fl_ctx)
+
     def send_aux_request(
         self,
         targets: [],
