@@ -117,7 +117,9 @@ class BlobStreamer:
         self.byte_streamer = byte_streamer
         self.byte_receiver = byte_receiver
 
-    def send(self, channel: str, topic: str, target: str, message: Message, secure: bool) -> StreamFuture:
+    def send(
+        self, channel: str, topic: str, target: str, message: Message, secure: bool, optional: bool
+    ) -> StreamFuture:
         if message.payload is None:
             message.payload = bytes(0)
 
@@ -125,7 +127,7 @@ class BlobStreamer:
             raise StreamError(f"BLOB is invalid type: {type(message.payload)}")
 
         blob_stream = BlobStream(message.payload, message.headers)
-        return self.byte_streamer.send(channel, topic, target, message.headers, blob_stream, secure)
+        return self.byte_streamer.send(channel, topic, target, message.headers, blob_stream, secure, optional)
 
     def register_blob_callback(self, channel, topic, blob_cb: Callable, *args, **kwargs):
         handler = BlobHandler(blob_cb)

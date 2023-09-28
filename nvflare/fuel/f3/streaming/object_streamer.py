@@ -25,7 +25,16 @@ log = logging.getLogger(__name__)
 
 
 class ObjectTxTask:
-    def __init__(self, channel: str, topic: str, target: str, headers: dict, iterator: ObjectIterator):
+    def __init__(
+        self,
+        channel: str,
+        topic: str,
+        target: str,
+        headers: dict,
+        iterator: ObjectIterator,
+        secure: bool,
+        optional: bool,
+    ):
         self.obj_sid = gen_stream_id()
         self.index = 0
         self.channel = channel
@@ -35,6 +44,8 @@ class ObjectTxTask:
         self.iterator = iterator
         self.object_future = None
         self.stop = False
+        self.secure = secure
+        self.optional = optional
 
     def __str__(self):
         return f"ObjTx[SID:{self.obj_sid}/{self.index} to {self.target} for {self.channel}/{self.topic}]"
@@ -93,9 +104,16 @@ class ObjectStreamer:
         self.obj_tasks = {}
 
     def stream_objects(
-        self, channel: str, topic: str, target: str, headers: dict, iterator: ObjectIterator
+        self,
+        channel: str,
+        topic: str,
+        target: str,
+        headers: dict,
+        iterator: ObjectIterator,
+        secure=False,
+        optional=False,
     ) -> ObjectStreamFuture:
-        tx_task = ObjectTxTask(channel, topic, target, headers, iterator)
+        tx_task = ObjectTxTask(channel, topic, target, headers, iterator, secure, optional)
         tx_task.object_future = ObjectStreamFuture(tx_task.obj_sid, headers)
         stream_thread_pool.submit(self._streaming_task, tx_task)
 

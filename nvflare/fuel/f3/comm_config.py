@@ -34,6 +34,12 @@ class VarName:
     SUBNET_TROUBLE_THRESHOLD = "subnet_trouble_threshold"
     COMM_DRIVER_PATH = "comm_driver_path"
     HEARTBEAT_INTERVAL = "heartbeat_interval"
+    STREAMING_CHUNK_SIZE = "streaming_chunk_size"
+    STREAMING_ACK_WAIT = "streaming_ack_wait"
+    STREAMING_WINDOW_SIZE = "streaming_window_size"
+    STREAMING_ACK_INTERVAL = "streaming_ack_interval"
+    STREAMING_MAX_OUT_SEQ_CHUNKS = "streaming_max_out_seq_chunks"
+    STREAMING_READ_TIMEOUT = "streaming_read_timeout"
 
 
 class CommConfigurator:
@@ -61,13 +67,31 @@ class CommConfigurator:
         return ConfigService.get_int_var(VarName.BACKBONE_CONN_GEN, self.config, default=default)
 
     def get_subnet_heartbeat_interval(self, default):
-        return ConfigService.get_int_var(VarName.SUBNET_HEARTBEAT_INTERVAL, self.config, default)
+        return ConfigService.get_int_var(VarName.SUBNET_HEARTBEAT_INTERVAL, self.config, default=default)
 
     def get_subnet_trouble_threshold(self, default):
-        return ConfigService.get_int_var(VarName.SUBNET_TROUBLE_THRESHOLD, self.config, default)
+        return ConfigService.get_int_var(VarName.SUBNET_TROUBLE_THRESHOLD, self.config, default=default)
 
     def get_comm_driver_path(self, default):
         return ConfigService.get_str_var(VarName.COMM_DRIVER_PATH, self.config, default=default)
 
     def get_heartbeat_interval(self, default):
-        return ConfigService.get_int_var(VarName.HEARTBEAT_INTERVAL, self.config, default)
+        return ConfigService.get_int_var(VarName.HEARTBEAT_INTERVAL, self.config, default=default)
+
+    def get_streaming_chunk_size(self, default):
+        return ConfigService.get_int_var(VarName.STREAMING_CHUNK_SIZE, self.config, default=default)
+
+    def get_streaming_ack_wait(self, default):
+        return ConfigService.get_int_var(VarName.STREAMING_ACK_WAIT, self.config, default=default)
+
+    def get_streaming_window_size(self, default):
+        return ConfigService.get_int_var(VarName.STREAMING_WINDOW_SIZE, self.config, default=default)
+
+    def get_streaming_ack_interval(self, default):
+        return ConfigService.get_int_var(VarName.STREAMING_ACK_INTERVAL, self.config, default=default)
+
+    def get_streaming_max_out_seq_chunks(self, default):
+        return ConfigService.get_int_var(VarName.STREAMING_MAX_OUT_SEQ_CHUNKS, self.config, default=default)
+
+    def get_streaming_read_timeout(self, default):
+        return ConfigService.get_int_var(VarName.STREAMING_READ_TIMEOUT, self.config, default)
