@@ -57,13 +57,13 @@ __________________________
 
 For example, this is how to login as :code:`super@a.org` user,
 ::
-    cd /tmp/nvflare/poc/job-level-authorization/prod_00/super@a.org
+    cd /tmp/nvflare/poc/custom_authentication/prod_00/super@a.org
     ./startup/fl_admin.sh
 At the prompt, enter the user email :code:`super@a.org`
 
 Start the server
 ________________
-    cd /tmp/nvflare/poc/job-level-authorization/prod_00/server1
+    cd /tmp/nvflare/poc/custom_authentication/prod_00/server1
     ./startup/start.sh
 
 
@@ -71,12 +71,12 @@ Participants
 ------------
 Site_a
 ____
-    cd /tmp/nvflare/poc/job-level-authorization/prod_00/site_a
+    cd /tmp/nvflare/poc/custom_authentication/prod_00/site_a
     ./startup/start.sh
 * site_a is able to start and register to the server.
 
 Site_b
 ____
-    cd /tmp/nvflare/poc/job-level-authorization/prod_00/site_a
+    cd /tmp/nvflare/poc/custom_authentication/prod_00/site_a
     ./startup/start.sh
 * site_b is NOT able to start and register to the server. It's blocked by the ServerCustomSecurityHandler logic.
