@@ -65,7 +65,8 @@ The setup.sh has copied the jobs folder to the workspace folder.
 So jobs can be submitted like this, type the following command in the admin console:
 
 ::
-   submit_job ../job1
+   submit_job ../../job1
+   submit_job ../../job2
 
 Participants
 ------------
@@ -73,7 +74,7 @@ Site
 ____
 * :code:`server1`: NVFlare server
 * :code:`site_a`: Site_a has a CustomSecurityHandler set up which does not allow the job "FL Demo Job1" to run. Any other named jobs will be able to deploy and run on site_a.
-
+* :code:`site_b`: Site_b does not have the extra security handling codes. It allows any job to be deployed and run.
 
 Jobs
 ____
