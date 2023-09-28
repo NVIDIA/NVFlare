@@ -5,10 +5,15 @@
     {
       "tasks": ["train"],
       "executor": {
-        "name": "PTFilePipeLauncherExecutor",
+        "path": "nvflare.app_opt.pt.client_api_launcher_executor.PTClientAPILauncherExecutor",
         "args": {
           "launcher_id": "launcher",
-          "heartbeat_timeout": 60
+          "heartbeat_timeout": 60,
+          "data_exchange_path": "",
+          "params_exchange_format":  "pytorch",
+          "params_transfer_type": "FULL",
+          "training": true,
+          "global_evaluation": true
         }
       }
     }
