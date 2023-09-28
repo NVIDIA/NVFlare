@@ -39,7 +39,7 @@ _____
     ./setup.sh
 All the startup kits will be generated in this folder,
 ::
-    workspace/fed_policy/prod_00
+    /tmp/nvflare/poc/job-level-authorization/prod_00
 
 .. note::
    :code:`workspace` folder is removed everytime :code:`setup.sh` is run. Please do not save customized
@@ -55,19 +55,17 @@ This script will start up the server and 2 clients,
 Logging with Admin Console
 __________________________
 
-For example, this is how to login as :code:`admin@a.org` user,
+For example, this is how to login as :code:`super@a.org` user,
 ::
-    cd workspace/fed_policy/prod_00/admin@a.org
+    cd /tmp/nvflare/poc/job-level-authorization/prod_00/super@a.org
     ./startup/fl_admin.sh
-At the prompt, enter the user email :code:`admin@a.org`
-
-Multiple users can login at the same time by using multiple terminals.
+At the prompt, enter the user email :code:`super@a.org`
 
 The setup.sh has copied the jobs folder to the workspace folder.
 So jobs can be submitted like this, type the following command in the admin console:
 
 ::
-   submit_job ../../job1
+   submit_job ../job1
 
 Participants
 ------------

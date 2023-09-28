@@ -19,22 +19,6 @@ participants:
     type: admin
     org: org_a
     role: project_admin
-  - name: admin@a.org
-    type: admin
-    org: org_a
-    role: org_admin
-  - name: trainer@a.org
-    type: admin
-    org: org_a
-    role: lead
-  - name: trainer@b.org
-    type: admin
-    org: org_b
-    role: lead
-  - name: user@b.org
-    type: admin
-    org: org_b
-    role: member 
 
 # The same methods in all builders are called in their order defined in builders section
 builders:
