@@ -14,6 +14,8 @@ help gather information to provision a project and distribute startup kits, see 
 For more details on what you can do with apps with custom components and
 the flexibility that the Controller and Worker APIs bring, see the :ref:`programming_guide`.
 
+For setting up authorization policies, see :ref:`federated authorization <federated_authorization>`.
+
 You can also see some `example applications <https://github.com/NVIDIA/NVFlare/tree/main/examples>`_ integrating with
 `Clara Train <https://docs.nvidia.com/clara/clara-train-sdk/>`_ and
 `MONAI <https://github.com/Project-MONAI/tutorials/tree/master/federated_learning/nvflare>`_
@@ -28,4 +30,3 @@ to see the capabilities of the system and how it can be operated.
    real_world_fl/job
    real_world_fl/workspace
    real_world_fl/cloud_deployment
-   user_guide/federated_authorization
