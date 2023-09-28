@@ -49,7 +49,7 @@ We choose the [tensorflow job template](../../../../job_templates/sag_tf/) and r
 
 ```bash
 nvflare config -jt ../../../../job_templates
-nvflare job create -force -j ./jobs/tensorflow -w sag_tf -sd ./code/ -s ./code/cifar10_tf_fl.py
+nvflare job create -force -j ./jobs/tensorflow -w sag_tf -sd ./code/ -f config_fed_client.conf app_script=cifar10_tf_fl.py
 ```
 
 Then we can run the job using the simulator:

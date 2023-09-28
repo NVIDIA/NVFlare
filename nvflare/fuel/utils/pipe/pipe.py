@@ -58,6 +58,9 @@ class Message:
     def new_reply(topic: str, data: Any, req_msg_id, msg_id=None):
         return Message(Message.REPLY, topic, data, msg_id, req_id=req_msg_id)
 
+    def __str__(self):
+        return f"Message(topic={self.topic}, msg_id={self.msg_id}, req_id={self.req_id}, msg_type={self.msg_type})"
+
 
 class Pipe(ABC):
     def __init__(self, mode: Mode):

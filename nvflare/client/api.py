@@ -15,13 +15,13 @@
 import os
 from typing import Dict, Optional, Union
 
-from nvflare.app_common.abstract.fl_model import FLModel, MetaKey
+from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.model_exchange.constants import ModelExchangeFormat
 from nvflare.app_common.model_exchange.file_pipe_model_exchanger import FilePipeModelExchanger
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.import_utils import optional_import
 
-from .config import ClientConfig, from_file
+from .config import ClientConfig, ConfigKey, from_file
 from .constants import CONFIG_EXCHANGE
 from .model_registry import ModelRegistry
 from .utils import DIFF_FUNCS
@@ -58,10 +58,10 @@ def init(config: Union[str, Dict] = f"config/{CONFIG_EXCHANGE}", rank: Optional[
             else:
                 raise RuntimeError(f"Can't import TensorDecomposer for format: {ModelExchangeFormat.PYTORCH}")
 
-        # TODO: make things configurable in config_exchange
+        # TODO: make Pipe configurable
         mdx = FilePipeModelExchanger(data_exchange_path=client_config.get_exchange_path())
 
-    PROCESS_MODEL_REGISTRY[pid] = ModelRegistry(client_config, mdx)
+    PROCESS_MODEL_REGISTRY[pid] = ModelRegistry(client_config, rank, mdx)
 
 
 def _get_model_registry() -> Optional[ModelRegistry]:
@@ -75,7 +75,7 @@ def receive() -> FLModel:
     """Receives model from NVFlare side.
 
     Returns:
-        A tuple of model, metadata received.
+        An FLModel received.
     """
     model_registry = _get_model_registry()
     return model_registry.get_model()
@@ -127,14 +127,33 @@ def get_config() -> Dict:
 
 def get_job_id() -> str:
     sys_info = system_info()
-    return sys_info.get(MetaKey.JOB_ID, "")
+    return sys_info.get(ConfigKey.JOB_ID, "")
 
 
 def get_total_rounds() -> int:
     sys_info = system_info()
-    return sys_info.get(MetaKey.TOTAL_ROUNDS, 0)
+    return sys_info.get(ConfigKey.TOTAL_ROUNDS, 0)
 
 
 def get_site_name() -> str:
     sys_info = system_info()
-    return sys_info.get(MetaKey.SITE_NAME, "")
+    return sys_info.get(ConfigKey.SITE_NAME, "")
+
+
+def receive_global_model():
+    """Yields model received from NVFlare server."""
+    sys_info = system_info()
+    total_rounds = sys_info["total_rounds"]
+    is_last_round = False
+    launch_once = get_config().get("launch_once", True)
+
+    while True:
+        input_model = receive()
+        current_round = input_model.current_round
+        yield input_model
+        is_last_round = current_round == total_rounds - 1
+        if launch_once and is_last_round:
+            break
+        elif not launch_once:
+            break
+        clear()
