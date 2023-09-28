@@ -93,14 +93,14 @@ def main():
                 total += labels.size(0)
                 correct += (predicted == labels).sum().item()
 
-        print(f"Accuracy of the network on the 10000 test images: {100 * correct // total} %")
         # return evaluation metrics
         return 100 * correct // total
 
     # call train method
     train(total_epochs=2, lr=0.001)
     # call evaluate method
-    evaluate(input_weights=torch.load(PATH))
+    metric = evaluate(input_weights=torch.load(PATH))
+    print(f"Accuracy of the trained model on the 10000 test images: {metric} %")
 
 
 if __name__ == "__main__":

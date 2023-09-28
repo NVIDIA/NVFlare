@@ -43,11 +43,40 @@ class FLCallback(Callback):
         init(rank=str(rank))
         self.has_global_eval = get_config().get(ConfigKey.GLOBAL_EVAL, False)
         self.has_training = get_config().get(ConfigKey.TRAINING, False)
+        self.current_round = None
         self.metrics = None
+        self.total_local_epochs = 0
+        self.total_local_steps = 0
+        self.max_epochs_per_round = None
+        self.max_steps_per_round = None
 
-    def reset_state(self):
-        # If the next round of federated training needs to reuse the same callback
-        # instance, the reset_state() needs to be called first
+    def reset_state(self, trainer):
+        """Resets the state.
+
+        If the next round of federated training needs to reuse the same callback
+        instance, the reset_state() needs to be called first
+        Not only resets the states, also sets states for next round
+        """
+        # set states for next round
+        if self.current_round is not None:
+            if self.current_round == 0:
+                if trainer.max_epochs and trainer.max_epochs > 0:
+                    self.max_epochs_per_round = trainer.max_epochs
+                if trainer.max_steps and trainer.max_steps > 0:
+                    self.max_steps_per_round = trainer.max_steps
+
+            # record total local epochs/steps
+            self.total_local_epochs = trainer.current_epoch
+            self.total_local_steps += trainer.estimated_stepping_batches
+
+            # for next round
+            trainer.num_sanity_val_steps = 0  # Turn off sanity validation steps in following rounds of FL
+            if self.total_local_epochs and self.max_epochs_per_round is not None:
+                trainer.fit_loop.max_epochs = self.max_epochs_per_round + self.total_local_epochs
+            if self.total_local_steps and self.max_steps_per_round is not None:
+                trainer.fit_loop.epoch_loop.max_steps = self.max_steps_per_round + self.total_local_steps
+
+        # resets attributes
         self.metrics = None
         clear()
 
@@ -67,7 +96,7 @@ class FLCallback(Callback):
             if MetaKey.NUM_STEPS_CURRENT_ROUND not in fl_meta:
                 fl_meta[MetaKey.NUM_STEPS_CURRENT_ROUND] = trainer.estimated_stepping_batches
             self._send_model(FLModel(params=pl_module.cpu().state_dict(), meta=fl_meta))
-            self.reset_state()
+            self.reset_state(trainer)
 
     def on_validation_start(self, trainer, pl_module):
         # receive the global model and update the local model with global model
@@ -88,6 +117,8 @@ class FLCallback(Callback):
         model = self._receive_model(trainer)
         if model and model.params:
             pl_module.load_state_dict(model.params)
+        if model and model.current_round is not None:
+            self.current_round = model.current_round
 
     def _receive_model(self, trainer) -> FLModel:
         """Receives model from NVFlare."""

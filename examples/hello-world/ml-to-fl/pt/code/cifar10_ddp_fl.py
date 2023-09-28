@@ -78,75 +78,75 @@ def main():
     # (2) initializes NVFlare client API
     flare.init(rank=f"{rank}")
 
-    if rank == 0:
-        # (3) gets FLModel from NVFlare
-        input_model = flare.receive()
+    # (3) gets FLModel from NVFlare
+    for input_model in flare.receive_global_model():
+        print(f"current_round={input_model.current_round}")
+        if rank == 0:
+            # (4) loads model from NVFlare
+            net.load_state_dict(input_model.params)
 
-        # (4) loads model from NVFlare
-        net.load_state_dict(input_model.params)
+        # (optional) use GPU to speed things up
+        net.to(device)
+        ddp_model = DDP(net, device_ids=[device])
 
-    # (optional) use GPU to speed things up
-    net.to(device)
-    ddp_model = DDP(net, device_ids=[device])
+        # From https://pytorch.org/tutorials/intermediate/ddp_tutorial.html#save-and-load-checkpoints
+        if rank == 0:
+            # All processes should see same parameters as they all start from same
+            # random parameters and gradients are synchronized in backward passes.
+            # Therefore, saving it in one process is sufficient.
+            torch.save(ddp_model.state_dict(), PATH)
 
-    # From https://pytorch.org/tutorials/intermediate/ddp_tutorial.html#save-and-load-checkpoints
-    if rank == 0:
-        # All processes should see same parameters as they all start from same
-        # random parameters and gradients are synchronized in backward passes.
-        # Therefore, saving it in one process is sufficient.
-        torch.save(ddp_model.state_dict(), PATH)
+        # Use a barrier() to make sure that process 1 loads the model after process
+        # 0 saves it.
+        dist.barrier()
+        # configure map_location properly
+        map_location = {"cuda:%d" % 0: "cuda:%d" % rank}
+        ddp_model.load_state_dict(torch.load(PATH, map_location=map_location))
 
-    # Use a barrier() to make sure that process 1 loads the model after process
-    # 0 saves it.
-    dist.barrier()
-    # configure map_location properly
-    map_location = {"cuda:%d" % 0: "cuda:%d" % rank}
-    ddp_model.load_state_dict(torch.load(PATH, map_location=map_location))
+        # (optional) calculate total steps
+        steps = epochs * len(trainloader)
+        for epoch in range(epochs):  # loop over the dataset multiple times
 
-    # (optional) calculate total steps
-    steps = epochs * len(trainloader)
-    for epoch in range(epochs):  # loop over the dataset multiple times
+            running_loss = 0.0
+            for i, data in enumerate(trainloader, 0):
+                # get the inputs; data is a list of [inputs, labels]
+                # (optional) use GPU to speed things up
+                inputs, labels = data[0].to(device), data[1].to(device)
 
-        running_loss = 0.0
-        for i, data in enumerate(trainloader, 0):
-            # get the inputs; data is a list of [inputs, labels]
-            # (optional) use GPU to speed things up
-            inputs, labels = data[0].to(device), data[1].to(device)
+                # zero the parameter gradients
+                optimizer.zero_grad()
 
-            # zero the parameter gradients
-            optimizer.zero_grad()
+                # forward + backward + optimize
+                outputs = ddp_model(inputs)
+                loss = criterion(outputs, labels)
+                loss.backward()
+                optimizer.step()
 
-            # forward + backward + optimize
-            outputs = ddp_model(inputs)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
+                # print statistics
+                running_loss += loss.item()
+                if rank == 0 and i % 2000 == 1999:  # print every 2000 mini-batches
+                    print(f"[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
+                    running_loss = 0.0
 
-            # print statistics
-            running_loss += loss.item()
-            if rank == 0 and i % 2000 == 1999:  # print every 2000 mini-batches
-                print(f"[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
-                running_loss = 0.0
+        print("Finished Training")
 
-    print("Finished Training")
+        if rank == 0:
+            # All processes should see same parameters as they all start from same
+            # random parameters and gradients are synchronized in backward passes.
+            # Therefore, saving it in one process is sufficient.
+            torch.save(ddp_model.state_dict(), PATH)
 
-    if rank == 0:
-        # All processes should see same parameters as they all start from same
-        # random parameters and gradients are synchronized in backward passes.
-        # Therefore, saving it in one process is sufficient.
-        torch.save(ddp_model.state_dict(), PATH)
+            # (5) evaluate on received model for model selection
+            accuracy = evaluate(input_model.params, device, testloader)
 
-        # (5) evaluate on received model for model selection
-        accuracy = evaluate(input_model.params, device, testloader)
-
-        # (6) construct trained FL model
-        output_model = flare.FLModel(
-            params=net.cpu().state_dict(),
-            metrics={"accuracy": accuracy},
-            meta={"NUM_STEPS_CURRENT_ROUND": steps},
-        )
-        # (7) send model back to NVFlare
-        flare.send(output_model)
+            # (6) construct trained FL model
+            output_model = flare.FLModel(
+                params=net.cpu().state_dict(),
+                metrics={"accuracy": accuracy},
+                meta={"NUM_STEPS_CURRENT_ROUND": steps},
+            )
+            # (7) send model back to NVFlare
+            flare.send(output_model)
     dist.destroy_process_group()
 
 
