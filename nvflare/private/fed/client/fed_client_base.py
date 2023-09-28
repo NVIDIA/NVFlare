@@ -229,17 +229,18 @@ class FederatedClientBase:
         # self.register()
         self.logger.info(f"Primary SP switched to new SSID: {self.ssid}")
 
-    def client_register(self, project_name):
+    def client_register(self, project_name, fl_ctx: FLContext):
         """Register the client to the FL server.
 
         Args:
             project_name: FL study project name.
+            register_data: customer defined client register data (in a dict)
+            fl_ctx: FLContext
+
         """
         if not self.token:
             try:
-                self.token, self.ssid = self.communicator.client_registration(
-                    self.client_name, self.servers, project_name
-                )
+                self.token, self.ssid = self.communicator.client_registration(self.client_name, project_name, fl_ctx)
                 if self.token is not None:
                     self.fl_ctx.set_prop(FLContextKey.CLIENT_NAME, self.client_name, private=False)
                     self.fl_ctx.set_prop(EngineConstant.FL_TOKEN, self.token, private=False)
@@ -350,9 +351,9 @@ class FederatedClientBase:
         """Push the local model to multiple servers."""
         return self.push_execute_result(self._get_project_name(), shareable, fl_ctx)
 
-    def register(self):
+    def register(self, fl_ctx: FLContext):
         """Push the local model to multiple servers."""
-        return self.client_register(self._get_project_name())
+        return self.client_register(self._get_project_name(), fl_ctx)
 
     def set_primary_sp(self, sp):
         return self.set_sp(self._get_project_name(), sp)

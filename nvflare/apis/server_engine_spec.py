@@ -22,6 +22,7 @@ from .client import Client
 from .engine_spec import EngineSpec
 from .fl_context import FLContext
 from .fl_snapshot import RunSnapshot
+from .job_def import Job
 from .workspace import Workspace
 
 
@@ -167,13 +168,14 @@ class ServerEngineSpec(EngineSpec, ABC):
 
     @abstractmethod
     def check_client_resources(
-        self, job_id: str, resource_reqs: Dict[str, dict]
+        self, job: Job, resource_reqs: Dict[str, dict], fl_ctx: FLContext
     ) -> Dict[str, Tuple[bool, Optional[str]]]:
         """Sends the check_client_resources requests to the clients.
 
         Args:
-            job_id: ID of the job
+            job: job object
             resource_reqs: A dict of {client_name: resource requirements dict}
+            fl_ctx: FLContext
 
         Returns:
             A dict of {client_name: client_check_result}.

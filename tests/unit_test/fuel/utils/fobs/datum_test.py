@@ -32,10 +32,10 @@ class TestDatum:
     def test_datum(self):
         flare_decomposers.register()
         manager = DatumManager(BLOB_SIZE)
-        buf = fobs.dumps(TestDatum.test_data, manager)
+        buf = fobs.serialize(TestDatum.test_data, manager)
         assert len(buf) < BLOB_SIZE
         datums = manager.get_datums()
         assert len(datums) == 2
 
-        data = fobs.loads(buf, manager)
+        data = fobs.deserialize(buf, manager)
         assert isinstance(data["data"]["blob1"], bytes)

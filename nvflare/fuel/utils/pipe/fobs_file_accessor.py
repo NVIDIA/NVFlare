@@ -28,9 +28,7 @@ class FobsFileAccessor(FileAccessor):
         Returns:
 
         """
-        with open(file_path, mode="rb") as file:  # b is important -> binary
-            data = file.read()
-        return fobs.loads(data)
+        return fobs.loadf(file_path)
 
     def write(self, data: Any, file_path) -> None:
         """Write the data as binary file.
@@ -42,6 +40,4 @@ class FobsFileAccessor(FileAccessor):
         Returns:
 
         """
-        data = fobs.dumps(data)
-        with open(file_path, "wb") as f:
-            f.write(data)
+        fobs.dumpf(data, file_path)

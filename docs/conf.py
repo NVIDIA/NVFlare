@@ -48,8 +48,8 @@ copyright = "2023, NVIDIA"
 author = "NVIDIA"
 
 # The full version, including alpha/beta/rc tags
-release = "2.3.0"
-version = "2.3.0"
+release = "2.4.0"
+version = "2.4.0"
 
 
 # -- General configuration ---------------------------------------------------

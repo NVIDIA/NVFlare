@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import os
 import shutil
 import tempfile
@@ -36,6 +35,7 @@ from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import check_client_replies
 from nvflare.private.fed.server.server_state import HotState
 from nvflare.private.fed.utils.app_deployer import AppDeployer
+from nvflare.private.fed.utils.fed_utils import set_message_security_data
 from nvflare.security.logging import secure_format_exception
 
 
@@ -93,7 +93,7 @@ class JobRunner(FLComponent):
             self.stop()
 
     @staticmethod
-    def _make_deploy_message(job: Job, app_data, app_name):
+    def _make_deploy_message(job: Job, app_data, app_name, fl_ctx):
         message = Message(topic=TrainingTopic.DEPLOY, body=app_data)
         message.set_header(RequestHeader.REQUIRE_AUTHZ, "true")
 
@@ -101,15 +101,7 @@ class JobRunner(FLComponent):
         message.set_header(RequestHeader.JOB_ID, job.job_id)
         message.set_header(RequestHeader.APP_NAME, app_name)
 
-        message.set_header(RequestHeader.SUBMITTER_NAME, job.meta.get(JobMetaKey.SUBMITTER_NAME))
-        message.set_header(RequestHeader.SUBMITTER_ORG, job.meta.get(JobMetaKey.SUBMITTER_ORG))
-        message.set_header(RequestHeader.SUBMITTER_ROLE, job.meta.get(JobMetaKey.SUBMITTER_ROLE))
-
-        message.set_header(RequestHeader.USER_NAME, job.meta.get(JobMetaKey.SUBMITTER_NAME))
-        message.set_header(RequestHeader.USER_ORG, job.meta.get(JobMetaKey.SUBMITTER_ORG))
-        message.set_header(RequestHeader.USER_ROLE, job.meta.get(JobMetaKey.SUBMITTER_ROLE))
-
-        message.set_header(RequestHeader.JOB_META, json.dumps(job.meta))
+        set_message_security_data(message, job, fl_ctx)
         return message
 
     def _deploy_job(self, job: Job, sites: dict, fl_ctx: FLContext) -> Tuple[str, list]:
@@ -146,6 +138,7 @@ class JobRunner(FLComponent):
             client_sites = []
             for p in participants:
                 if p == "server":
+                    self.fire_event(EventType.DEPLOY_JOB_TO_SERVER, fl_ctx)
                     app_deployer = AppDeployer()
                     err = app_deployer.deploy(
                         app_name=app_name,
@@ -179,7 +172,8 @@ class JobRunner(FLComponent):
                         client_sites.append(p)
 
             if client_sites:
-                message = self._make_deploy_message(job, app_data, app_name)
+                self.fire_event(EventType.DEPLOY_JOB_TO_CLIENT, fl_ctx)
+                message = self._make_deploy_message(job, app_data, app_name, fl_ctx)
                 clients, invalid_inputs = engine.validate_targets(client_sites)
 
                 if invalid_inputs:

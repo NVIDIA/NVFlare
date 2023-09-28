@@ -87,27 +87,36 @@ Run the following command to prepare the data splits:
 ./prepare_data.sh
 ```
 
-> **_NOTE:_** Change `num_sites` in `Cifar10DataSplitter` in the config if using more than 2 clients
+> **_NOTE:_** Change `num_sites` in `Cifar10DataSplitter` in the config if using more than 2 clients, and `alpha` to adjust the heterogeneity of the datasplits.
 
 ## Running Swarm Learning with Cross-Site Evaluation Job
 First we create the swarm learning with cross-site evaluation job using the predefined swarm_cse_pt template:
 ```
-nvflare job create -j ./jobs/swarm_cse_cifar10 -w swarm_cse_pt
+nvflare job create -j ./jobs/cifar10_swarm -w swarm_cse_pt
 ```
 
 Feel free to change job configuration parameters, and ensure that the components are set correctly as described above.
 Then run the job with the simulator:
 
 ```
-nvflare simulator ./jobs/swarm_cse_cifar10 -w /tmp/nvflare/swarm_cse_cifar10 -n 2 -t 2
+nvflare simulator ./jobs/cifar10_swarm -w /tmp/nvflare/cifar10_swarm -n 2 -t 2
 ```
 
 ## Results
 To view the cross validation results:
 ```
-python -m json.tool /tmp/nvflare/swarm_cse_cifar10/simulate_job/cross_site_val/cross_val_results.json
+python -m json.tool /tmp/nvflare/cifar10_swarm/simulate_job/cross_site_val/cross_val_results.json
 ```
 
-Models and results can found in `/tmp/nvflare/swarm_cse_cifar10/simulate_job/`, and we can confirm that the server in `/tmp/nvflare/swarm_cse_cifar10/simulate_job/app_server` does not contain any sensitive training data.
+Models and results can found in `/tmp/nvflare/cifar10_swarm/simulate_job/`, and we can confirm that the server in `/tmp/nvflare/cifar10_swarm/simulate_job/app_server` does not contain any sensitive training data.
 
-Lastly, since swarm learning and federated averaging are algorithmically the same, this can be proven experimentally by creating a CIFAR-10 SAG FedAvg job with the same data splits and training parameters, which will yield similar results.
+### Comparison to Centralized Training and Federated Averaging
+
+Since swarm learning and federated averaging are algorithmically the same, we can prove this experimentally by comparing CIFAR-10 swarm learning and FedAvg jobs with the same data splits and hyperparameters.
+
+- [cifar10_central](../cifar10/cifar10-sim/jobs/cifar10_central): For a baseline centralized training, we run 1 client for 1 round with 25 local epochs on the entire CIFAR-10 training dataset.
+- [cifar10_fedavg](../cifar10/cifar10-sim/jobs/cifar10_fedavg) and `cifar10_swarm`: For FedAvg and swarm learning, we run 8 clients for 50 rounds with 4 local epochs, and each client has a non-heterogeneous data split (alpha=1.0 in Dirichlet sampling) of 1/8th the CIFAR-10 training dataset.
+
+Here is the graph of the validation accuracies for the global models of swarm learning and FedAvg compared with the centralized baseline, and we can see the achieved performances are very similar:
+
+<img src="./figs/swarm_graph.png" alt="swarm learning, fedavg, centralized graph" width="500"/>
