@@ -44,6 +44,7 @@ def main():
 
     # (4) gets FLModel from NVFlare
     for input_model in flare.receive_global_model():
+        print(f"current_round={input_model.current_round}")
 
         # (optional) print system info
         system_info = flare.system_info()

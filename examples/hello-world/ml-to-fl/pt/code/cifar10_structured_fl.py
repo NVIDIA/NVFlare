@@ -121,6 +121,8 @@ def main():
 
     # (6) receives FLModel from NVFlare
     for input_model in flare.receive_global_model():
+        print(f"current_round={input_model.current_round}")
+
         # (7) call fl_evaluate method before training
         #       to evaluate on the received/aggregated model
         global_metric = fl_evaluate(input_model)
