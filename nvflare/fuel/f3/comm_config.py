@@ -11,8 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import logging
-
 from nvflare.fuel.f3.drivers.net_utils import MAX_PAYLOAD_SIZE
 from nvflare.fuel.utils.config import Config
 from nvflare.fuel.utils.config_service import ConfigService
@@ -34,13 +32,21 @@ class VarName:
     SUBNET_TROUBLE_THRESHOLD = "subnet_trouble_threshold"
     COMM_DRIVER_PATH = "comm_driver_path"
     HEARTBEAT_INTERVAL = "heartbeat_interval"
+    USE_AIO_GRPC_VAR_NAME = "use_aio_grpc"
 
 
 class CommConfigurator:
+
+    _config_loaded = False
+    _configuration = None
+
     def __init__(self):
-        self.logger = logging.getLogger(self.__class__.__name__)
-        config: Config = ConfigService.load_configuration(file_basename=_comm_config_files[0])
-        self.config = None if config is None else config.to_dict()
+        # only load once!
+        if not CommConfigurator._config_loaded:
+            config: Config = ConfigService.load_configuration(file_basename=_comm_config_files[0])
+            CommConfigurator._configuration = None if config is None else config.to_dict()
+            CommConfigurator._config_loaded = True
+        self.config = CommConfigurator._configuration
 
     def get_config(self):
         return self.config
@@ -71,3 +77,6 @@ class CommConfigurator:
 
     def get_heartbeat_interval(self, default):
         return ConfigService.get_int_var(VarName.HEARTBEAT_INTERVAL, self.config, default)
+
+    def use_aio_grpc(self, default):
+        return ConfigService.get_bool_var(VarName.USE_AIO_GRPC_VAR_NAME, self.config, default)

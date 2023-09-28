@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import threading
 from concurrent import futures
 from typing import Any, Dict, List, Union
@@ -34,8 +33,8 @@ from nvflare.security.logging import secure_format_exception
 from .base_driver import BaseDriver
 from .driver_params import DriverCap, DriverParams
 from .grpc.qq import QQ
-from .grpc.utils import get_grpc_server_credentials, get_grpc_client_credentials, use_aio_grpc
 from .grpc.streamer_pb2 import Frame
+from .grpc.utils import get_grpc_client_credentials, get_grpc_server_credentials, use_aio_grpc
 from .net_utils import MAX_FRAME_SIZE, get_address, get_tcp_urls, ssl_required
 
 GRPC_DEFAULT_OPTIONS = [
@@ -57,7 +56,7 @@ class StreamConnection(Connection):
         self.context = context  # for server side
         self.channel = channel  # for client side
         self.lock = threading.Lock()
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_logger(self)
 
     def get_conn_properties(self) -> dict:
         return self.conn_props
@@ -121,7 +120,7 @@ class StreamConnection(Connection):
 class Servicer(StreamerServicer):
     def __init__(self, server):
         self.server = server
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_logger(self)
 
     def Stream(self, request_iterator, context):
         connection = None
@@ -210,7 +209,7 @@ class GrpcDriver(BaseDriver):
         self.closing = False
         self.max_workers = 100
         self.options = GRPC_DEFAULT_OPTIONS
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_logger(self)
         configurator = CommConfigurator()
         config = configurator.get_config()
         if config:
@@ -265,9 +264,10 @@ class GrpcDriver(BaseDriver):
             received = stub.Stream(connection.generate_output())
             connection.read_loop(received, oq)
         except BaseException as ex:
-            self.logger.debug(f"CLIENT: connection done: {type(ex)}")
+            self.logger.info(f"CLIENT: connection done: {type(ex)}")
         connection.close()
-        self.logger.debug("CLIENT: finished connection")
+        self.close_connection(connection)
+        self.logger.info(f"CLIENT: finished connection {connection}")
 
     @staticmethod
     def get_urls(scheme: str, resources: dict) -> (str, str):
