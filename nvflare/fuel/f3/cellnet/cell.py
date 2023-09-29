@@ -65,6 +65,7 @@ class Adapter:
 
         req_id = request.get_header(MessageHeaderKey.REQ_ID, "")
         secure = request.get_header(MessageHeaderKey.SECURE, False)
+        optional = request.get_header(MessageHeaderKey.OPTIONAL, False)
         self.logger.debug(f"{stream_req_id=}: on {channel=}, {topic=}")
         response = self.cb(request)
         self.logger.debug(f"response available: {stream_req_id=}: on {channel=}, {topic=}")
@@ -84,7 +85,9 @@ class Adapter:
 
         encode_payload(response, StreamHeaderKey.PAYLOAD_ENCODING)
         self.logger.debug(f"sending: {stream_req_id=}: {response.headers=}, target={origin}")
-        reply_future = self.cell.send_blob(CellChannel.RETURN_ONLY, f"{channel}:{topic}", origin, response, secure)
+        reply_future = self.cell.send_blob(
+            CellChannel.RETURN_ONLY, f"{channel}:{topic}", origin, response, secure, optional
+        )
         self.logger.debug(f"Done sending: {stream_req_id=}: {reply_future=}")
 
 
@@ -201,7 +204,9 @@ class Cell(StreamCell):
 
         result = {}
         for target in targets:
-            self.send_blob(channel=channel, topic=topic, target=target, message=message, secure=secure)
+            self.send_blob(
+                channel=channel, topic=topic, target=target, message=message, secure=secure, optional=optional
+            )
             result[target] = ""
         return result
 
@@ -237,7 +242,9 @@ class Cell(StreamCell):
 
         # this future can be used to check sending progress, but not for checking return blob
         self.logger.debug(f"{req_id=}, {channel=}, {topic=}, {target=}, {timeout=}: send_request about to send_blob")
-        future = self.send_blob(channel=channel, topic=topic, target=target, message=request, secure=secure)
+        future = self.send_blob(
+            channel=channel, topic=topic, target=target, message=request, secure=secure, optional=optional
+        )
 
         waiter = SimpleWaiter(req_id=req_id, result=make_reply(ReturnCode.TIMEOUT))
         self.requests_dict[req_id] = waiter
