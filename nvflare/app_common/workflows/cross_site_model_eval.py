@@ -19,7 +19,7 @@ from typing import Union
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task
-from nvflare.apis.dxo import DXO, from_bytes, from_shareable, get_leaf_dxos
+from nvflare.apis.dxo import DXO, from_file, from_shareable, get_leaf_dxos
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
@@ -489,16 +489,9 @@ class CrossSiteModelEval(Controller):
         data_filename = os.path.join(save_dir, name)
 
         try:
-            bytes_to_save = dxo.to_bytes()
+            dxo.to_file(data_filename)
         except Exception as e:
-            raise ValueError(f"Unable to extract shareable contents. Exception: {(secure_format_exception(e))}")
-
-        # Save contents to path
-        try:
-            with open(data_filename, "wb") as f:
-                f.write(bytes_to_save)
-        except Exception as e:
-            raise ValueError(f"Unable to save DXO content: {secure_format_exception(e)}")
+            raise ValueError(f"Unable to save DXO to {data_filename}: {secure_format_exception(e)}")
 
         return data_filename
 
@@ -508,11 +501,7 @@ class CrossSiteModelEval(Controller):
 
         # load shareable
         try:
-            with open(shareable_filename, "rb") as f:
-                data = f.read()
-
-            dxo: DXO = from_bytes(data)
-
+            dxo: DXO = from_file(shareable_filename)
             self.log_debug(fl_ctx, f"Loading cross validation shareable content with name: {name}.")
         except Exception as e:
             raise ValueError(f"Exception in loading shareable content for {name}: {secure_format_exception(e)}")

@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-SYS_ATTRS = ("job_id", "site_name", "total_rounds")
-CONST_ATTRS = ("total_rounds",)
+from .config import ConfigKey
+
+SYS_ATTRS = (ConfigKey.JOB_ID, ConfigKey.SITE_NAME, ConfigKey.TOTAL_ROUNDS)
+CONST_ATTRS = (ConfigKey.TOTAL_ROUNDS,)
 CONFIG_EXCHANGE = "config_exchange.json"

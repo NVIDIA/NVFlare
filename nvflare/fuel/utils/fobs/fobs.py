@@ -274,6 +274,7 @@ def deserialize_stream(stream: BinaryIO, manager: DatumManager = None, **kwargs)
 
 def reset():
     """Reset FOBS to initial state. Used for unit test"""
-    global _decomposers, _decomposers_registered
-    _decomposers.clear()
-    _decomposers_registered = False
+    # global _decomposers, _decomposers_registered
+    # _decomposers.clear()
+    # _decomposers_registered = False
+    pass

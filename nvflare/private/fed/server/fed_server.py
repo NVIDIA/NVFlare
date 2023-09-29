@@ -35,12 +35,11 @@ from nvflare.apis.fl_constant import (
     WorkspaceConstants,
 )
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_exception import NotAuthenticated
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.cell import Cell
-
-# from nvflare.fuel.f3.cellnet.cell import Cell, Message
 from nvflare.fuel.f3.cellnet.core_cell import Message
 from nvflare.fuel.f3.cellnet.core_cell import make_reply as make_cellnet_reply
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
@@ -478,27 +477,43 @@ class FederatedServer(BaseServer):
         """
 
         with self.engine.new_context() as fl_ctx:
-            self._before_service(fl_ctx)
+            try:
+                self._before_service(fl_ctx)
 
-            state_check = self.server_state.register(fl_ctx)
+                state_check = self.server_state.register(fl_ctx)
 
-            error = self._handle_state_check(state_check, fl_ctx)
-            if error is not None:
-                return make_cellnet_reply(rc=F3ReturnCode.COMM_ERROR, error=error)
+                error = self._handle_state_check(state_check, fl_ctx)
+                if error is not None:
+                    return make_cellnet_reply(rc=F3ReturnCode.COMM_ERROR, error=error)
 
-            client = self.client_manager.authenticate(request, fl_ctx)
-            if client and client.token:
-                self.tokens[client.token] = self.task_meta_info(client.name)
-                if self.admin_server:
-                    self.admin_server.client_heartbeat(client.token, client.name)
+                data = request.payload
+                shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
+                fl_ctx.set_peer_context(shared_fl_ctx)
 
-                headers = {
-                    CellMessageHeaderKeys.TOKEN: client.token,
-                    CellMessageHeaderKeys.SSID: self.server_state.ssid,
-                }
-            else:
-                headers = {}
-            return self._generate_reply(headers=headers, payload=None, fl_ctx=fl_ctx)
+                self.engine.fire_event(EventType.CLIENT_REGISTERED, fl_ctx=fl_ctx)
+
+                exceptions = fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
+                if exceptions:
+                    for _, exception in exceptions.items():
+                        if isinstance(exception, NotAuthenticated):
+                            raise exception
+
+                client = self.client_manager.authenticate(request, fl_ctx)
+                if client and client.token:
+                    self.tokens[client.token] = self.task_meta_info(client.name)
+                    if self.admin_server:
+                        self.admin_server.client_heartbeat(client.token, client.name)
+
+                    headers = {
+                        CellMessageHeaderKeys.TOKEN: client.token,
+                        CellMessageHeaderKeys.SSID: self.server_state.ssid,
+                    }
+                else:
+                    headers = {}
+                return self._generate_reply(headers=headers, payload=None, fl_ctx=fl_ctx)
+            except NotAuthenticated as e:
+                self.logger.error(f"Failed to authenticate the register_client: {secure_format_exception(e)}")
+                return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error="register_client unauthenticated")
 
     def _handle_state_check(self, state_check, fl_ctx: FLContext):
         if state_check.get(ACTION) in [NIS, ABORT_RUN]:

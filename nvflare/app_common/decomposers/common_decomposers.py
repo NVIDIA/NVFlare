@@ -25,9 +25,8 @@ from nvflare.app_common.abstract.learnable import Learnable
 from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.widgets.event_recorder import _CtxPropReq, _EventReq, _EventStats
 from nvflare.fuel.utils import fobs
-from nvflare.fuel.utils.fobs import Decomposer
 from nvflare.fuel.utils.fobs.datum import DatumManager
-from nvflare.fuel.utils.fobs.decomposer import DictDecomposer
+from nvflare.fuel.utils.fobs.decomposer import Decomposer, DictDecomposer, Externalizer, Internalizer
 
 
 class FLModelDecomposer(fobs.Decomposer):
@@ -35,40 +34,30 @@ class FLModelDecomposer(fobs.Decomposer):
         return FLModel
 
     def decompose(self, b: FLModel, manager: DatumManager = None) -> Any:
-        return [
+        externalizer = Externalizer(manager)
+        return (
             b.params_type,
-            b.params,
-            b.optimizer_params,
-            b.metrics,
+            externalizer.externalize(b.params),
+            externalizer.externalize(b.optimizer_params),
+            externalizer.externalize(b.metrics),
             b.current_round,
             b.total_rounds,
-            b.meta,
-        ]
-
-    def recompose(self, data: list, manager: DatumManager = None) -> FLModel:
-        return FLModel(
-            params_type=data[0],
-            params=data[1],
-            optimizer_params=data[2],
-            metrics=data[3],
-            current_round=data[4],
-            total_rounds=data[5],
-            meta=data[6],
+            externalizer.externalize(b.meta),
         )
 
-
-class ModelLearnableDecomposer(fobs.Decomposer):
-    def supported_type(self):
-        return ModelLearnable
-
-    def decompose(self, target: ModelLearnable, manager: DatumManager = None) -> Any:
-        return target.copy()
-
-    def recompose(self, data: Any, manager: DatumManager = None) -> ModelLearnable:
-        obj = ModelLearnable()
-        for k, v in data.items():
-            obj[k] = v
-        return obj
+    def recompose(self, data: tuple, manager: DatumManager = None) -> FLModel:
+        assert isinstance(data, tuple)
+        pt, params, opt_params, metrics, cr, tr, meta = data
+        internalizer = Internalizer(manager)
+        return FLModel(
+            params_type=pt,
+            params=internalizer.internalize(params),
+            optimizer_params=internalizer.internalize(opt_params),
+            metrics=internalizer.internalize(metrics),
+            current_round=cr,
+            total_rounds=tr,
+            meta=internalizer.internalize(meta),
+        )
 
 
 class NumpyScalarDecomposer(fobs.Decomposer, ABC):

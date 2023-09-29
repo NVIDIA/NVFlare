@@ -823,6 +823,7 @@ def _run_poc(
         elif service_name == service_config[SC.FLARE_SERVER]:
             async_process(service_name, cmd_path, None, service_config)
         else:
+            time.sleep(1)
             async_process(service_name, cmd_path, gpu_assignments[service_name], service_config)
 
 

@@ -184,7 +184,7 @@ def remove_non_python_files(custom_dir):
                 os.remove(file_path)
         for d in dirs:
             if d == "__pycache__" or d.endswith(".pyc"):
-                shutil.rmtree(d)
+                shutil.rmtree(os.path.join(root, d))
 
 
 def remove_extra_files(config_dir):

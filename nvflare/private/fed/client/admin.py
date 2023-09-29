@@ -13,7 +13,9 @@
 # limitations under the License.
 
 """The FedAdmin to communicate with the Admin server."""
-
+from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import ReservedHeaderKey
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import Message as CellMessage
 from nvflare.fuel.hci.server.constants import ConnProps
@@ -21,6 +23,7 @@ from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person
 from nvflare.private.admin_defs import Message, error_reply, ok_reply
 from nvflare.private.defs import CellChannel, RequestHeader, new_cell_message
+from nvflare.private.fed.server.site_security import SiteSecurity
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 
@@ -112,47 +115,75 @@ class FedAdminAgent(object):
 
         processor: RequestProcessor = self.processors.get(topic)
         if processor:
-            try:
-                reply = None
+            with self.app_ctx.new_context() as fl_ctx:
+                peer_props = req.get_header(ReservedHeaderKey.PEER_PROPS)
+                if peer_props:
+                    peer_ctx = FLContext()
+                    peer_ctx.set_public_props(peer_props)
+                    fl_ctx.set_peer_context(peer_ctx)
 
-                # see whether pre-authorization is needed
-                authz_flag = req.get_header(RequestHeader.REQUIRE_AUTHZ)
-                require_authz = authz_flag == "true"
-                if require_authz:
-                    # authorize this command!
-                    cmd = req.get_header(RequestHeader.ADMIN_COMMAND, None)
-                    if cmd:
-                        user = Person(
-                            name=req.get_header(RequestHeader.USER_NAME, ""),
-                            org=req.get_header(RequestHeader.USER_ORG, ""),
-                            role=req.get_header(RequestHeader.USER_ROLE, ""),
-                        )
-                        submitter = Person(
-                            name=req.get_header(RequestHeader.SUBMITTER_NAME, ""),
-                            org=req.get_header(RequestHeader.SUBMITTER_ORG, ""),
-                            role=req.get_header(RequestHeader.SUBMITTER_ROLE, ""),
-                        )
+                try:
+                    reply = None
 
-                        authz_ctx = AuthzContext(user=user, submitter=submitter, right=cmd)
-                        authorized, err = AuthorizationService.authorize(authz_ctx)
-                        if err:
-                            reply = error_reply(err)
-                        elif not authorized:
-                            reply = error_reply("not authorized")
-                    else:
-                        reply = error_reply("requires authz but missing admin command")
+                    # see whether pre-authorization is needed
+                    authz_flag = req.get_header(RequestHeader.REQUIRE_AUTHZ)
+                    require_authz = authz_flag == "true"
+                    if require_authz:
+                        # authorize this command!
+                        cmd = req.get_header(RequestHeader.ADMIN_COMMAND, None)
+                        if cmd:
+                            user = Person(
+                                name=req.get_header(RequestHeader.USER_NAME, ""),
+                                org=req.get_header(RequestHeader.USER_ORG, ""),
+                                role=req.get_header(RequestHeader.USER_ROLE, ""),
+                            )
+                            submitter = Person(
+                                name=req.get_header(RequestHeader.SUBMITTER_NAME, ""),
+                                org=req.get_header(RequestHeader.SUBMITTER_ORG, ""),
+                                role=req.get_header(RequestHeader.SUBMITTER_ROLE, ""),
+                            )
 
-                if not reply:
-                    reply = processor.process(req, self.app_ctx)
-                    if reply is None:
-                        # simply ack
-                        reply = ok_reply()
-                    else:
-                        if not isinstance(reply, Message):
-                            raise RuntimeError(f"processor for topic {topic} failed to produce valid reply")
-            except Exception as e:
-                secure_log_traceback()
-                reply = error_reply(f"exception_occurred: {secure_format_exception(e)}")
+                            authz_ctx = AuthzContext(user=user, submitter=submitter, right=cmd)
+                            authorized, err = AuthorizationService.authorize(authz_ctx)
+                            if err:
+                                reply = error_reply(err)
+                            elif not authorized:
+                                reply = error_reply("not authorized")
+
+                            site_security = SiteSecurity()
+                            self._set_security_data(req, fl_ctx)
+                            authorized, messages = site_security.authorization_check(self.app_ctx, cmd, fl_ctx)
+                            if not authorized:
+                                reply = error_reply(messages)
+
+                        else:
+                            reply = error_reply("requires authz but missing admin command")
+
+                    if not reply:
+                        reply = processor.process(req, self.app_ctx)
+                        if reply is None:
+                            # simply ack
+                            reply = ok_reply()
+                        else:
+                            if not isinstance(reply, Message):
+                                raise RuntimeError(f"processor for topic {topic} failed to produce valid reply")
+                except Exception as e:
+                    secure_log_traceback()
+                    reply = error_reply(f"exception_occurred: {secure_format_exception(e)}")
         else:
             reply = error_reply("invalid_request")
         return new_cell_message({}, reply)
+
+    def _set_security_data(self, req, fl_ctx: FLContext):
+        security_items = fl_ctx.get_prop(FLContextKey.SECURITY_ITEMS, {})
+
+        security_items[FLContextKey.USER_NAME] = req.get_header(RequestHeader.USER_NAME, "")
+        security_items[FLContextKey.USER_ORG] = req.get_header(RequestHeader.USER_ORG, "")
+        security_items[FLContextKey.USER_ROLE] = req.get_header(RequestHeader.USER_ROLE, "")
+        security_items[FLContextKey.SUBMITTER_NAME] = req.get_header(RequestHeader.SUBMITTER_NAME, "")
+        security_items[FLContextKey.SUBMITTER_ORG] = req.get_header(RequestHeader.SUBMITTER_ORG, "")
+        security_items[FLContextKey.SUBMITTER_ROLE] = req.get_header(RequestHeader.SUBMITTER_ROLE, "")
+
+        security_items[FLContextKey.JOB_META] = req.get_header(RequestHeader.JOB_META, {})
+
+        fl_ctx.set_prop(FLContextKey.SECURITY_ITEMS, security_items, private=True, sticky=False)

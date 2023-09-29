@@ -103,6 +103,12 @@ class InternalCommands(object):
     CHECK_SESSION = "_check_session"
     LIST_SESSIONS = "list_sessions"
 
+    commands = [PWD_LOGIN, CERT_LOGIN, LOGOUT, GET_CMD_LIST, CHECK_SESSION, LIST_SESSIONS]
+
+    @classmethod
+    def contains_commmand(cls, command: str):
+        return command in InternalCommands.commands
+
 
 class ConfirmMethod(object):
 

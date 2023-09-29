@@ -56,7 +56,7 @@ from nvflare.private.admin_defs import Message, MsgHeader
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, RequestHeader, TrainingTopic, new_cell_message
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.private.fed.server.server_state import ServerState
-from nvflare.private.fed.utils.fed_utils import security_close
+from nvflare.private.fed.utils.fed_utils import security_close, set_message_security_data
 from nvflare.private.scheduler_constants import ShareableHeader
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import InfoCollector
@@ -720,14 +720,14 @@ class ServerEngine(ServerEngineInternalSpec):
     def _send_admin_requests(self, requests, timeout_secs=10) -> List[ClientReply]:
         return self.server.admin_server.send_requests(requests, timeout_secs=timeout_secs)
 
-    def check_client_resources(self, job_id: str, resource_reqs) -> Dict[str, Tuple[bool, str]]:
+    def check_client_resources(self, job: Job, resource_reqs, fl_ctx: FLContext) -> Dict[str, Tuple[bool, str]]:
         requests = {}
         for site_name, resource_requirements in resource_reqs.items():
             # assume server resource is unlimited
             if site_name == "server":
                 continue
-            request = Message(topic=TrainingTopic.CHECK_RESOURCE, body=resource_requirements)
-            request.set_header(RequestHeader.JOB_ID, job_id)
+            request = self._make_message_for_check_resource(job, resource_requirements, fl_ctx)
+
             client = self.get_client_from_name(site_name)
             if client:
                 requests.update({client.token: request})
@@ -739,11 +739,12 @@ class ServerEngine(ServerEngineInternalSpec):
             site_name = r.client_name
             if r.reply:
                 error_code = r.reply.get_header(MsgHeader.RETURN_CODE, ReturnCode.OK)
+                message = r.reply.body
                 if error_code != ReturnCode.OK:
-                    self.logger.error(f"Client reply error: {r.reply.body}")
-                    result[site_name] = (False, "")
+                    self.logger.error(f"Client reply error: {message}")
+                    result[site_name] = (False, message)
                 else:
-                    resp = r.reply.body
+                    resp = message
                     result[site_name] = (
                         resp.get_header(ShareableHeader.IS_RESOURCE_ENOUGH, False),
                         resp.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, ""),
@@ -752,6 +753,15 @@ class ServerEngine(ServerEngineInternalSpec):
                 result[site_name] = (False, "")
         return result
 
+    def _make_message_for_check_resource(self, job, resource_requirements, fl_ctx):
+        request = Message(topic=TrainingTopic.CHECK_RESOURCE, body=resource_requirements)
+        request.set_header(RequestHeader.JOB_ID, job.job_id)
+        request.set_header(RequestHeader.REQUIRE_AUTHZ, "true")
+        request.set_header(RequestHeader.ADMIN_COMMAND, AdminCommandNames.CHECK_RESOURCES)
+
+        set_message_security_data(request, job, fl_ctx)
+        return request
+
     def cancel_client_resources(
         self, resource_check_results: Dict[str, Tuple[bool, str]], resource_reqs: Dict[str, dict]
     ):
@@ -759,7 +769,7 @@ class ServerEngine(ServerEngineInternalSpec):
         for site_name, result in resource_check_results.items():
             is_resource_enough, token = result
             if is_resource_enough and token:
-                resource_requirements = resource_reqs[site_name]
+                resource_requirements = resource_reqs.get(site_name, {})
                 request = Message(topic=TrainingTopic.CANCEL_RESOURCE, body=resource_requirements)
                 request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
                 client = self.get_client_from_name(site_name)
