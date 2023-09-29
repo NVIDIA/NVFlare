@@ -182,8 +182,8 @@ Job management command authorization often evaluates the relationship between th
 
 .. _command_categories:
 
-Appendix One - Command Categories
----------------------------------
+Command Categories
+------------------
 
 .. code-block:: python
 
@@ -226,8 +226,8 @@ Appendix One - Command Categories
 
 .. _sample_auth_policy:
 
-Appendix Two - Sample Policy with Explanations
-----------------------------------------------
+Sample Policy with Explanations
+-------------------------------
 
 This is an example authorization.json (in the local folder of the workspace for a site).
 
@@ -269,3 +269,235 @@ This is an example authorization.json (in the local folder of the workspace for 
             }
         }
     }
+
+.. _site_specific_auth:
+
+Site-specific Authentication and Federated Job-level Authorization
+==================================================================
+Site-specific authentication and authorization allows the customers to inject their own authentication and
+authorization methods into the NVFlare system. This includes the FL server / clients registration, authentication,
+and the job deployment and run authorization.
+
+NVFlare provides a general purpose event based pluggable authentication and authorization framework to allow customers to expand functionality such as:
+
+    - exposing the app through a WAF (Web Application Firewall) or any other network element enforcing MTLS
+    - using a confidential certification authority to ensure the identity of each participating site and to ensure that they meet the computing requirements for confidential computing
+    - defining additional roles to manage who can submit which kind of jobs to execute within NVFlare, identify who submits jobs and which dataset can be accessed
+
+Customers can write their own :ref:`FLComponents <fl_component>`, listening to the NVFlare system events at different points of their workflow,
+then easily plug in their authentication and authorization logic as needed.
+
+Assumptions and Risks
+---------------------
+By enabling the customized site-specific authentication and authorization, NVFlare will make several security
+related data available to the external FL components, e.g. IDENTITY_NAME, PUBLIC_KEY, CERTIFICATE, etc. In order
+to protect them from being compromised, that data needs to be made read-only.
+
+Because of the external pluginable authentication and authorization processes, the results of the processes could
+potentially cause the jobs to not be able to be deployed or run. When configuring and using these functions, the customers
+need to be aware of the impact and know where to plug in the authentication and authorization check.
+
+Event based pluginable authentication and authorization
+-------------------------------------------------------
+We will use the NVFlare event based solution to support the site-specific authentication and federated job-level authorization
+from the NVFlare platform. We will identify the proper points when each individual sites about the start, register and connect
+to the server, admins upload and submit the jobs to the system, the job started to dispatch to the sites, etc, fire the
+specific system events which allow the users to build and plugin their FLcomponents, listen to the events and provide their
+own authentication and authorization functions. In this case, you will be able to provide and implement any sort of
+additional security checks. 
+
+.. code-block:: python
+
+    class EventType(object):
+        """Built-in system events."""
+
+        SYSTEM_START = "_system_start"
+        SYSTEM_END = "_system_end"
+        ABOUT_TO_START_RUN = "_about_to_start_run"
+        START_RUN = "_start_run"
+        ABOUT_TO_END_RUN = "_about_to_end_run"
+        END_RUN = "_end_run"
+        SWAP_IN = "_swap_in"
+        SWAP_OUT = "_swap_out"
+        START_WORKFLOW = "_start_workflow"
+        END_WORKFLOW = "_end_workflow"
+        ABORT_TASK = "_abort_task"
+        FATAL_SYSTEM_ERROR = "_fatal_system_error"
+        FATAL_TASK_ERROR = "_fatal_task_error"
+        JOB_DEPLOYED = "_job_deployed"
+        JOB_STARTED = "_job_started"
+        JOB_COMPLETED = "_job_completed"
+        JOB_ABORTED = "_job_aborted"
+        JOB_CANCELLED = "_job_cancelled"
+
+        BEFORE_PULL_TASK = "_before_pull_task"
+        AFTER_PULL_TASK = "_after_pull_task"
+        BEFORE_PROCESS_SUBMISSION = "_before_process_submission"
+        AFTER_PROCESS_SUBMISSION = "_after_process_submission"
+
+        BEFORE_TASK_DATA_FILTER = "_before_task_data_filter"
+        AFTER_TASK_DATA_FILTER = "_after_task_data_filter"
+        BEFORE_TASK_RESULT_FILTER = "_before_task_result_filter"
+        AFTER_TASK_RESULT_FILTER = "_after_task_result_filter"
+        BEFORE_TASK_EXECUTION = "_before_task_execution"
+        AFTER_TASK_EXECUTION = "_after_task_execution"
+        BEFORE_SEND_TASK_RESULT = "_before_send_task_result"
+        AFTER_SEND_TASK_RESULT = "_after_send_task_result"
+
+        CRITICAL_LOG_AVAILABLE = "_critical_log_available"
+        ERROR_LOG_AVAILABLE = "_error_log_available"
+        EXCEPTION_LOG_AVAILABLE = "_exception_log_available"
+        WARNING_LOG_AVAILABLE = "_warning_log_available"
+        INFO_LOG_AVAILABLE = "_info_log_available"
+        DEBUG_LOG_AVAILABLE = "_debug_log_available"
+
+        PRE_RUN_RESULT_AVAILABLE = "_pre_run_result_available"
+
+        # event types for job scheduling - server side
+        BEFORE_CHECK_CLIENT_RESOURCES = "_before_check_client_resources"
+
+        # event types for job scheduling - client side
+        BEFORE_CHECK_RESOURCE_MANAGER = "_before_check_resource_manager"
+
+Additional system events
+------------------------
+.. code-block:: python
+
+    AFTER_CHECK_CLIENT_RESOURCES = "_after_check_client_resources"
+    DEPLOY_JOB_TO_SERVER = "_deploy_job_to_server"
+    DEPLOY_JOB_TO_CLIENT = "_deploy_job_to_client"
+
+    BEFORE_SEND_ADMIN_COMMAND = "_before_send_admin_command"
+    
+    BEFORE_CLIENT_REGISTER = "_before_client_register"
+    AFTER_CLIENT_REGISTER = "_after_client_register"
+    CLIENT_REGISTERED = "_client_registered"
+    SYSTEM_BOOTSTRAP = "_system_bootstrap"
+
+    AUTHORIZE_COMMAND_CHECK = "_authorize_command_check"
+
+
+Security check Inputs
+---------------------
+Make a ``SECURITY_ITEMS`` dict available in the FLContext, which holds any security check related data.
+
+NVFlare standard data:
+
+.. code-block:: python
+
+    IDENTITY_NAME
+    SITE_NAME
+    SITE_ORG
+    USER_NAME
+    USER_ORG
+    USER_ROLE
+    JOB_META
+
+
+Security check Outputs
+----------------------
+
+.. code-block:: python
+
+    AUTHORIZATION_RESULT
+    AUTHORIZATION_REASON
+
+
+NVFlare will check the AUTHORIZATION_RESULT to determine if the operations have been authorized to perform. Before each
+operation, NVFLare platform removes any AUTHORIZATION_RESULT in the FLContext. After the authorization check process, it
+looks for if these results are presented in the FLContext or not. If it presents, it uses its TRUE/FALSE value to determine the action. If not present, it will be treated as TRUE.
+
+Each FLComponent listening and handling the event can use the security data to generate the necessary authorization check
+results as needed. The workflow will only continue when all the FLComponents pass the security check. Any one FLComponent
+that has the FALSE value will cause the workflow to stop execution.
+
+
+Admin tool event support
+------------------------
+In order to support additional security data for site-specific customized authentication, we need to add the support for
+event based solutions for the admin console / API tool. Using these events, the admin tool will be able to add in the custom
+SSL certificates, etc, security related data, sent along with the admin commands to the server for site-specific authentication check.
+
+.. code-block:: python
+
+    BEFORE_ADMIN_REGISTER
+    AFTER_ADMIN_REGISTER
+    BEFORE_SENDING_COMMAND
+    AFTER_SENDING_COMMAND
+    BEFORE_RECEIVING_ADMIN_RESULT
+    AFTER_RECEIVING_ADMIN_RESULT
+
+The site-specific authentication and authorization applies to both admin too and Admin APIs.
+
+Allow more data to be sent to the server for client registration
+----------------------------------------------------------------
+If the application needs to send additional data from the client to the server to perform the authentication check, the client
+can set the data into the FL_Context as public data. Then the server side can get access to the data through the PEER_FL_CONTEXT.
+The application can build the FLComponent to listen to the EventType.CLIENT_REGISTERED to perform the authentication check needed.
+
+
+Site-specific Security Example
+------------------------------
+To use the site-specific security functions, write a custom Security implementation in the ``local/custom/security_handler.py``,
+then configure it as a component in the site ``resources.json``.
+
+.. code-block:: python
+
+    from typing import Tuple
+
+    from nvflare.apis.event_type import EventType
+    from nvflare.apis.fl_component import FLComponent
+    from nvflare.apis.fl_constant import FLContextKey
+    from nvflare.apis.fl_context import FLContext
+    from nvflare.apis.job_def import JobMetaKey
+
+
+    class CustomSecurityHandler(FLComponent):
+
+        def handle_event(self, event_type: str, fl_ctx: FLContext):
+            if event_type == EventType.AUTHORIZE_COMMAND_CHECK:
+                result, reason = self.authorize(fl_ctx=fl_ctx)
+                if not result:
+                    fl_ctx.set_prop(FLContextKey.AUTHORIZATION_RESULT, False, sticky=False)
+                    fl_ctx.set_prop(FLContextKey.AUTHORIZATION_REASON, reason, sticky=False)
+
+        def authorize(self, fl_ctx: FLContext) -> Tuple[bool, str]:
+            command = fl_ctx.get_prop(FLContextKey.COMMAND_NAME)
+            if command in ["check_resources"]:
+                security_items = fl_ctx.get_prop(FLContextKey.SECURITY_ITEMS)
+                job_meta = security_items.get(FLContextKey.JOB_META)
+                if job_meta.get(JobMetaKey.JOB_NAME) == "FL Demo Job1":
+                    return False, f"Not authorized to execute: {command}"
+                else:
+                    return True, ""
+            else:
+                return True, ""
+
+In the ``local/resources.json``:
+
+.. code-block:: json
+
+    {
+        "format_version": 2,
+        ...
+        "components": [
+            {
+                "id": "resource_manager",
+                "path": "nvflare.app_common.resource_managers.gpu_resource_manager.GPUResourceManager",
+                "args": {
+                "num_of_gpus": 0,
+                "mem_per_gpu_in_GiB": 0
+                }
+            },
+            ...
+            {
+                "id": "security_handler",
+                "path": "security_handler.CustomSecurityHandler"
+            }
+        ]
+    }
+
+
+With the above example, when there is a job named "FL Demo Job1" scheduled to run on this client from the server,
+the client will throw the authorization error and prevent the job from running. Any other jobs will be able to execute
+on this client.
