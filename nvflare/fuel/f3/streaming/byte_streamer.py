@@ -108,7 +108,7 @@ class ByteStreamer:
             while window > window_size:
                 log.debug(f"{task} window size {window} exceeds limit: {window_size}")
                 task.ack_waiter.clear()
-                ack_wait = ByteStreamer.comm_config.get_streaming_ack_timeout(STREAM_ACK_WAIT)
+                ack_wait = ByteStreamer.comm_config.get_streaming_ack_wait(STREAM_ACK_WAIT)
                 if not task.ack_waiter.wait(timeout=ack_wait):
                     self._stop_task(task, StreamError(f"{task} ACK timeouts after {ack_wait} seconds"))
                     return
