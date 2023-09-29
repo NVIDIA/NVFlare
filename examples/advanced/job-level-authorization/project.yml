@@ -1,0 +1,40 @@
+api_version: 3
+name: job-level-authorization
+description: NVFlare example for federated policies
+
+participants:
+  - name: server1
+    type: server
+    org: org_a
+    fed_learn_port: 8002
+    admin_port: 8003
+  - name: site_a
+    type: client
+    org: org_a 
+  - name: site_b
+    type: client
+    org: org_b
+
+  - name: super@a.org
+    type: admin
+    org: org_a
+    role: project_admin
+
+# The same methods in all builders are called in their order defined in builders section
+builders:
+  - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+    args:
+      template_file: master_template.yml
+  - path: nvflare.lighter.impl.template.TemplateBuilder
+  - path: nvflare.lighter.impl.static_file.StaticFileBuilder
+    args:
+      # config_folder can be set to inform NVIDIA FLARE where to get configuration
+      config_folder: config
+      overseer_agent:
+        path: nvflare.ha.dummy_overseer_agent.DummyOverseerAgent
+        overseer_exists: false
+        args:
+           sp_end_point: server1:8002:8003
+
+  - path: nvflare.lighter.impl.cert.CertBuilder
+  - path: nvflare.lighter.impl.signature.SignatureBuilder
