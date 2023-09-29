@@ -127,7 +127,7 @@ def build_list_reverse_order_index(
                     # there are cases, this maybe not.
                     # user may have to modify configuration manually in those cases
                     last_dot_index = value.rindex(".")
-                    class_name = value[last_dot_index + 1:]
+                    class_name = value[last_dot_index + 1 :]
                     key_index.component_name = class_name
             elif key == "name":
                 # there are cases, where name is not component
@@ -192,7 +192,7 @@ def build_dict_reverse_order_index(
                     # there are cases, this maybe not.
                     # user may have to modify configuration manually in those cases
                     last_dot_index = value.rindex(".")
-                    class_name = value[last_dot_index + 1:]
+                    class_name = value[last_dot_index + 1 :]
                     key_index.component_name = class_name
                     parent_key.component_name = key_index.component_name if parent_key.index is not None else None
             elif key == "name":
