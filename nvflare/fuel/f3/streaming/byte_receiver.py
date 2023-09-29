@@ -21,6 +21,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.registry import Callback, Registry
 from nvflare.fuel.f3.connection import BytesAlike
 from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.streaming.byte_streamer import ByteStreamer
 from nvflare.fuel.f3.streaming.stream_const import (
     EOS,
     STREAM_ACK_TOPIC,
@@ -90,8 +91,9 @@ class RxStream(Stream):
                 log.debug(f"Read block is unblocked multiple times: {count}")
 
             self.task.waiter.clear()
-            if not self.task.waiter.wait(READ_TIMEOUT):
-                error = StreamError(f"{self.task} read timed out after {READ_TIMEOUT} seconds")
+            timeout = ByteStreamer.comm_config.get_streaming_read_timeout(READ_TIMEOUT)
+            if not self.task.waiter.wait(timeout):
+                error = StreamError(f"{self.task} read timed out after {timeout} seconds")
                 self.byte_receiver.stop_task(self.task, error)
                 raise error
 
@@ -112,7 +114,9 @@ class RxStream(Stream):
                     self.task.eos = True
 
             self.task.offset += len(result)
-            if not self.task.last_chunk_received and (self.task.offset - self.task.offset_ack > ACK_INTERVAL):
+
+            ack_interval = ByteStreamer.comm_config.get_streaming_ack_interval(ACK_INTERVAL)
+            if not self.task.last_chunk_received and (self.task.offset - self.task.offset_ack > ack_interval):
                 # Send ACK
                 message = Message()
                 message.add_headers(
@@ -231,7 +235,8 @@ class ByteReceiver:
 
             else:
                 # Out-of-seq chunk reassembly
-                if len(task.out_seq_buffers) >= MAX_OUT_SEQ_CHUNKS:
+                max_out_seq = ByteStreamer.comm_config.get_streaming_max_out_seq_chunks(MAX_OUT_SEQ_CHUNKS)
+                if len(task.out_seq_buffers) >= max_out_seq:
                     self.stop_task(task, StreamError(f"Too many out-of-sequence chunks: {len(task.out_seq_buffers)}"))
                     return
                 else:

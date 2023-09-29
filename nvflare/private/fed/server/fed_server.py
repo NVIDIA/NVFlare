@@ -492,6 +492,12 @@ class FederatedServer(BaseServer):
 
                 self.engine.fire_event(EventType.CLIENT_REGISTERED, fl_ctx=fl_ctx)
 
+                exceptions = fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
+                if exceptions:
+                    for _, exception in exceptions.items():
+                        if isinstance(exception, NotAuthenticated):
+                            raise exception
+
                 client = self.client_manager.authenticate(request, fl_ctx)
                 if client and client.token:
                     self.tokens[client.token] = self.task_meta_info(client.name)
