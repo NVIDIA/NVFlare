@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import logging
 
 from nvflare.apis.fl_constant import FLContextKey, NonSerializableKeys
@@ -36,6 +37,16 @@ def get_serializable_data(fl_ctx: FLContext):
                 logger.warning(generate_log_message(fl_ctx, msg))
 
     return new_fl_ctx
+
+
+def gen_new_peer_ctx(fl_ctx: FLContext, need_deep_copy=False):
+    tmp_ctx = FLContext()
+    pub_props = fl_ctx.get_all_public_props()
+    if need_deep_copy:
+        pub_props = copy.deepcopy(pub_props)
+    tmp_ctx.set_public_props(pub_props)
+    new_peer_ctx = get_serializable_data(tmp_ctx)
+    return new_peer_ctx
 
 
 def generate_log_message(fl_ctx: FLContext, msg: str):
