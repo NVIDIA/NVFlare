@@ -21,7 +21,6 @@ from zipfile import ZipFile
 import pytest
 
 from nvflare.apis.fl_constant import JobConstants
-from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
 from nvflare.fuel.utils.zip_utils import get_all_file_paths, normpath_for_zip, split_path
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 
@@ -52,7 +51,7 @@ def _zip_job_with_meta(folder_name: str, meta: str) -> bytes:
     bio = io.BytesIO()
     _zip_directory_with_meta(job_path, folder_name, meta, bio)
     zip_data = bio.getvalue()
-    return convert_legacy_zipped_app_to_job(zip_data)
+    return zip_data
 
 
 META_WITH_VALID_DEPLOY_MAP = [
@@ -78,7 +77,7 @@ META_WITH_INVALID_DEPLOY_MAP = [
 VALID_JOBS = [
     pytest.param("valid_job", id="valid_job"),
     pytest.param("valid_job_deployment_all_idle", id="valid_job_deployment_all_idle"),
-    pytest.param("valid_app_as_job", id="valid_app_wo_meta"),
+    pytest.param("valid_job_wo_job_name", id="valid_job_wo_job_name"),
 ]
 
 
@@ -93,6 +92,7 @@ INVALID_JOBS = [
     pytest.param("missing_server_in_deployment", id="missing_server_in_deploy_map"),
     pytest.param("no_deployment", id="no_deployment"),
     pytest.param("not_enough_clients", id="not_enough_clients"),
+    pytest.param("old_app", id="old_app"),
 ]
 
 
@@ -139,29 +139,8 @@ class TestJobMetaValidator:
         """
         self._assert_invalid(job_name, meta)
 
-    def test_deploy_map_config_non_exists_app(self):
-        job_name = "valid_job"
-        # valid_job folder contains sag app, not hello-pt app
-        meta = """
-            { 
-              "resource_spec": { "site-a": {"gpu": 1}, "site-b": {"gpu": 1}}, 
-              "deploy_map": {"hello-pt": ["server","site-a", "site-b"]}
-            }
-        """
-        self._assert_invalid(job_name, meta)
-
-    def test_meta_missing_job_folder_name(self):
-        job_name = "valid_job"
-        meta = """
-            { 
-              "resource_spec": { "site-a": {"gpu": 1}, "site-b": {"gpu": 1}}, 
-              "deploy_map": {"sag": ["server","site-a", "site-b"]}
-            }
-        """
-        self._assert_valid(job_name, meta)
-
-    def _assert_valid(self, job_name: str, meta: str = ""):
-        data = _zip_job_with_meta(job_name, meta)
+    def _assert_valid(self, job_name: str):
+        data = _zip_job_with_meta(job_name, "")
         valid, error, meta = self.validator.validate(job_name, data)
         assert valid
         assert error == ""
