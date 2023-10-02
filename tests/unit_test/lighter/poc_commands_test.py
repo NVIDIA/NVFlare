@@ -106,7 +106,6 @@ class TestPOCCommands:
         assert "/tmp/nvflare/poc/server/startup/docker.sh -d" == cmd
 
         cmd = get_service_command(SC.CMD_START, "/tmp/nvflare/poc", SC.FLARE_PROJ_ADMIN, global_packages)
-        print(f"{cmd=}")
         assert "/tmp/nvflare/poc/admin@nvidia.com/startup/fl_admin.sh" == cmd
 
         cmd = get_service_command(SC.CMD_START, "/tmp/nvflare/poc", "site-2000", global_packages)
