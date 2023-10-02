@@ -86,6 +86,7 @@ class TestPOCCommands:
             "participants": [
                 {"name": "server", "type": "server", "org": "nvidia", "fed_learn_port": 8002, "admin_port": 8003},
                 {"name": "admin@nvidia.com", "type": "admin", "org": "nvidia", "role": "project_admin"},
+                {"name": "lead@nvidia.com", "type": "admin", "org": "nvidia", "role": "lead"},
                 {"name": "site-1", "type": "client", "org": "nvidia"},
                 {"name": "site-2000", "type": "client", "org": "nvidia"},
             ],
@@ -100,10 +101,12 @@ class TestPOCCommands:
         project_config = collections.OrderedDict(project_config)
         global_packages = get_service_config(project_config)
         assert global_packages[SC.IS_DOCKER_RUN] is True
+
         cmd = get_service_command(SC.CMD_START, "/tmp/nvflare/poc", SC.FLARE_SERVER, global_packages)
         assert "/tmp/nvflare/poc/server/startup/docker.sh -d" == cmd
 
         cmd = get_service_command(SC.CMD_START, "/tmp/nvflare/poc", SC.FLARE_PROJ_ADMIN, global_packages)
+        print(f"{cmd=}")
         assert "/tmp/nvflare/poc/admin@nvidia.com/startup/fl_admin.sh" == cmd
 
         cmd = get_service_command(SC.CMD_START, "/tmp/nvflare/poc", "site-2000", global_packages)
