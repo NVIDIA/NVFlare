@@ -19,7 +19,7 @@ from nvflare.fuel.f3.drivers.driver_params import DriverParams
 
 def use_aio_grpc():
     configurator = CommConfigurator()
-    return configurator.use_aio_grpc(default=False)
+    return configurator.use_aio_grpc(default=True)
 
 
 def get_grpc_client_credentials(params: dict):
