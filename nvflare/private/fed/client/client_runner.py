@@ -111,7 +111,7 @@ class ClientRunner(FLComponent):
         self.task_lock = threading.Lock()
         self.end_run_fired = False
         self.end_run_lock = threading.Lock()
-        self.task_check_timeout = 2.0
+        self.task_check_timeout = 5.0
         self.task_check_interval = 5.0
         self._register_aux_message_handler(engine)
 
