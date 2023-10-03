@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
+import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -302,11 +303,13 @@ class ConnManager(ConnMonitor):
             state = connection.state
             connector = connection.connector
             if state == ConnState.CONNECTED:
+                log.info(f"Connection {connection} is created: PID: {os.getpid()}")
                 self.handle_new_connection(connection)
                 with self.lock:
                     connector.total_conns += 1
                     connector.curr_conns += 1
             elif state == ConnState.CLOSED:
+                log.info(f"Connection {connection} is closed PID: {os.getpid()}")
                 self.close_connection(connection)
                 with self.lock:
                     connector.curr_conns -= 1
