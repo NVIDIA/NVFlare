@@ -106,6 +106,8 @@ class ServerRunner(FLComponent):
             topic=ReservedTopic.JOB_HEART_BEAT, message_handle_func=self._handle_job_heartbeat
         )
 
+        engine.register_aux_message_handler(topic=ReservedTopic.TASK_CHECK, message_handle_func=self._handle_task_check)
+
     def _execute_run(self):
         while self.current_wf_index < len(self.config.workflows):
             wf = self.config.workflows[self.current_wf_index]
@@ -499,6 +501,28 @@ class ServerRunner(FLComponent):
     def _handle_job_heartbeat(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         self.log_info(fl_ctx, "received client job_heartbeat aux request")
         return make_reply(ReturnCode.OK)
+
+    def _handle_task_check(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
+        task_id = request.get_header(ReservedHeaderKey.TASK_ID)
+        if not task_id:
+            self.log_error(fl_ctx, f"missing {ReservedHeaderKey.TASK_ID} in task_check request")
+            return make_reply(ReturnCode.BAD_REQUEST_DATA)
+
+        self.log_info(fl_ctx, f"received task_check on task {task_id}")
+
+        with self.wf_lock:
+            if self.current_wf is None or self.current_wf.responder is None:
+                self.log_info(fl_ctx, "no current workflow - dropped task_check.")
+                return make_reply(ReturnCode.TASK_UNKNOWN)
+
+            # filter task result
+            task = self.current_wf.responder.process_task_check(task_id=task_id, fl_ctx=fl_ctx)
+            if task:
+                self.log_info(fl_ctx, f"task {task_id} is still good")
+                return make_reply(ReturnCode.OK)
+            else:
+                self.log_info(fl_ctx, f"task {task_id} is not found")
+                return make_reply(ReturnCode.TASK_UNKNOWN)
 
     def abort(self, fl_ctx: FLContext, turn_to_cold: bool = False):
         self.status = "done"

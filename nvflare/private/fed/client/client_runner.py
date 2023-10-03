@@ -29,6 +29,10 @@ from nvflare.private.privacy_manager import Scope
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
+_TASK_CHECK_RESULT_OK = 0
+_TASK_CHECK_RESULT_TRY_AGAIN = 1
+_TASK_CHECK_RESULT_TASK_GONE = 2
+
 
 class ClientRunnerConfig(object):
     def __init__(
@@ -107,7 +111,8 @@ class ClientRunner(FLComponent):
         self.task_lock = threading.Lock()
         self.end_run_fired = False
         self.end_run_lock = threading.Lock()
-
+        self.task_check_timeout = 2.0
+        self.task_check_interval = 5.0
         self._register_aux_message_handler(engine)
 
     def _register_aux_message_handler(self, engine):
@@ -473,18 +478,107 @@ class ClientRunner(FLComponent):
         if cookie_jar:
             task_reply.set_cookie_jar(cookie_jar)
 
-        reply_sent = self.engine.send_task_result(task_reply, fl_ctx)
-        if reply_sent:
-            self.log_info(fl_ctx, "result sent to server for task: name={}, id={}".format(task.name, task.task_id))
-        else:
-            self.log_error(
-                fl_ctx,
-                "failed to send result to server for task: name={}, id={}".format(task.name, task.task_id),
-            )
+        self._send_task_result(task_reply, task.task_id, fl_ctx)
         self.log_debug(fl_ctx, "firing event EventType.AFTER_SEND_TASK_RESULT")
         self.fire_event(EventType.AFTER_SEND_TASK_RESULT, fl_ctx)
 
         return task_fetch_interval, True
+
+    def _send_task_result(self, result: Shareable, task_id: str, fl_ctx: FLContext):
+        try_count = 1
+        while True:
+            self.log_info(fl_ctx, f"try #{try_count}: sending task result to server")
+
+            if self.asked_to_stop:
+                self.log_info(fl_ctx, "job aborted: stopped trying to send result")
+                return False
+
+            try_count += 1
+            rc = self._try_send_result_once(result, task_id, fl_ctx)
+
+            if rc == _TASK_CHECK_RESULT_OK:
+                return True
+            elif rc == _TASK_CHECK_RESULT_TASK_GONE:
+                return False
+            else:
+                # retry
+                time.sleep(self.task_check_interval)
+
+    def _try_send_result_once(self, result: Shareable, task_id: str, fl_ctx: FLContext):
+        # wait until server is ready to receive
+        while True:
+            if self.asked_to_stop:
+                return _TASK_CHECK_RESULT_TASK_GONE
+
+            rc = self._check_task_once(task_id, fl_ctx)
+            if rc == _TASK_CHECK_RESULT_OK:
+                break
+            elif rc == _TASK_CHECK_RESULT_TASK_GONE:
+                return rc
+            else:
+                # try again
+                time.sleep(self.task_check_interval)
+
+        # try to send the result
+        self.log_info(fl_ctx, "start to send task result to server")
+        reply_sent = self.engine.send_task_result(result, fl_ctx)
+        if reply_sent:
+            self.log_info(fl_ctx, "task result sent to server")
+            return _TASK_CHECK_RESULT_OK
+        else:
+            self.log_error(fl_ctx, "failed to send task result to server - will try again")
+            return _TASK_CHECK_RESULT_TRY_AGAIN
+
+    def _check_task_once(self, task_id: str, fl_ctx: FLContext) -> int:
+        """This method checks whether the server is still waiting for the specified task.
+        The real reason for this method is to fight against unstable network connections.
+        We try to make sure that when we send task result to the server, the connection is available.
+        If the task check succeeds, then the network connection is likely to be available.
+        Otherwise, we keep retrying until task check succeeds or the server tells us that the task is gone (timed out).
+
+        Args:
+            task_id:
+            fl_ctx:
+
+        Returns:
+
+        """
+        self.log_info(fl_ctx, "checking task ...")
+        task_check_req = Shareable()
+        task_check_req.set_header(ReservedKey.TASK_ID, task_id)
+        resp = self.engine.send_aux_request(
+            targets=[FQCN.ROOT_SERVER],
+            topic=ReservedTopic.TASK_CHECK,
+            request=task_check_req,
+            timeout=self.task_check_timeout,
+            fl_ctx=fl_ctx,
+            optional=True,
+        )
+        if resp and isinstance(resp, dict):
+            reply = resp.get(FQCN.ROOT_SERVER)
+            if not isinstance(reply, Shareable):
+                self.log_error(fl_ctx, f"bad task_check reply from server: expect Shareable but got {type(reply)}")
+                return _TASK_CHECK_RESULT_TRY_AGAIN
+
+            rc = reply.get_return_code()
+            if rc == ReturnCode.OK:
+                return _TASK_CHECK_RESULT_OK
+            elif rc == ReturnCode.COMMUNICATION_ERROR:
+                self.log_error(fl_ctx, f"failed task_check: {rc}")
+                return _TASK_CHECK_RESULT_TRY_AGAIN
+            elif rc == ReturnCode.SERVER_NOT_READY:
+                self.log_error(fl_ctx, f"server rejected task_check: {rc}")
+                return _TASK_CHECK_RESULT_TRY_AGAIN
+            elif rc == ReturnCode.TASK_UNKNOWN:
+                self.log_error(fl_ctx, f"task no longer exists on server: {rc}")
+                return _TASK_CHECK_RESULT_TASK_GONE
+            else:
+                # this should never happen
+                self.log_error(fl_ctx, f"programming error: received {rc} from server")
+                return _TASK_CHECK_RESULT_OK  # try to push the result regardless
+        else:
+            self.log_error(fl_ctx, f"bad task_check reply from server: invalid resp {type(resp)}")
+            return _TASK_CHECK_RESULT_TRY_AGAIN
 
     def run(self, app_root, args):
         self.init_run(app_root, args)

@@ -65,6 +65,7 @@ class Communicator:
         cell: Cell = None,
         client_register_interval=2,
         timeout=5.0,
+        maint_msg_timeout=5.0,
     ):
         """To init the Communicator.
 
@@ -85,7 +86,7 @@ class Communicator:
         self.compression = compression
         self.client_register_interval = client_register_interval
         self.timeout = timeout
-
+        self.maint_msg_timeout = maint_msg_timeout
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def client_registration(self, client_name, servers, project_name):
@@ -129,7 +130,7 @@ class Communicator:
                     channel=CellChannel.SERVER_MAIN,
                     topic=CellChannelTopic.Register,
                     request=login_message,
-                    timeout=self.timeout,
+                    timeout=self.maint_msg_timeout,
                 )
                 return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
                 if return_code == ReturnCode.UNAUTHENTICATED:
@@ -297,7 +298,7 @@ class Communicator:
                 channel=CellChannel.SERVER_MAIN,
                 topic=CellChannelTopic.Quit,
                 request=quit_message,
-                timeout=self.timeout,
+                timeout=self.maint_msg_timeout,
             )
             return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
             if return_code == ReturnCode.UNAUTHENTICATED:
@@ -335,9 +336,13 @@ class Communicator:
                         channel=CellChannel.SERVER_MAIN,
                         topic=CellChannelTopic.HEART_BEAT,
                         request=heartbeat_message,
-                        timeout=self.timeout,
+                        timeout=self.maint_msg_timeout,
                     )
                     return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
+
+                    if return_code != ReturnCode.OK:
+                        self.logger.error(f"heartbeat error: {return_code}")
+
                     if return_code == ReturnCode.UNAUTHENTICATED:
                         unauthenticated = result.get_header(MessageHeaderKey.ERROR)
                         raise FLCommunicationError("error:client_quit " + unauthenticated)
