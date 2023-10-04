@@ -54,6 +54,15 @@ class CommConfigurator:
             CommConfigurator._config_loaded = True
         self.config = CommConfigurator._configuration
 
+    @staticmethod
+    def reset():
+        """Reset the configurator to allow reloading config files.
+
+        Returns:
+
+        """
+        CommConfigurator._config_loaded = False
+
     def get_config(self):
         return self.config
 
