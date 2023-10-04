@@ -33,7 +33,7 @@ def main():
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
     batch_size = 4
-    local_epochs = 2
+    epochs = 2
 
     trainset = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=True, download=True, transform=transform)
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=2)
@@ -59,8 +59,8 @@ def main():
         # (optional) use GPU to speed things up
         net.to(DEVICE)
         # (optional) calculate total steps
-        steps = local_epochs * len(trainloader)
-        for epoch in range(local_epochs):  # loop over the dataset multiple times
+        steps = epochs * len(trainloader)
+        for epoch in range(epochs):  # loop over the dataset multiple times
 
             running_loss = 0.0
             for i, data in enumerate(trainloader, 0):

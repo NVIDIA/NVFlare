@@ -33,7 +33,8 @@ You can run the baseline using
 python3 ./code/cifar10_original.py
 ```
 
-It will run for 2 epochs and you will see something like this:
+It will run for 2 epochs.
+Then we will see something like this:
 
 ```bash
 Extracting ./data/cifar-10-python.tar.gz to ./data
@@ -171,34 +172,15 @@ The modified code can be found in [./code/cifar10_lightning_fl.py](./code/cifar1
 Then we can create the job using sag_pt template:
 
 ```bash
-nvflare job create -force -j ./jobs/lightning -w sag_pt -sd ./code/ -f config_fed_client.conf app_script=cifar10_lightning_fl.py
+nvflare job create -force -j ./jobs/lightning -w sag_pt -sd ./code/ \
+    -f config_fed_client.conf app_script=cifar10_lightning_fl.py \
+    -f config_fed_server.conf key_metric=val_acc_epoch model_class_path="lit_net.LitNet"
 ```
 
-We need to modify the "key_metric" in "config_fed_server.conf" from "accuracy" to "val_acc_epoch" (this name originates from the code [here](./code/lit_net.py#L56)) which means the validation accuracy for that epoch:
+Note that we pass the "key_metric"="val_acc_epoch" (this name originates from the code [here](./code/lit_net.py#L56))
+which means the validation accuracy for that epoch.
 
-```
-{
-  id = "model_selector"
-  name = "IntimeModelSelector"
-  args {
-    key_metric = "val_acc_epoch"
-  }
-}
-```
-
-And we modify the model architecture to use the LitNet class:
-
-```
-{
-  id = "persistor"
-  path = "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor"
-  args {
-    model {
-      path = "lit_net.LitNet"
-    }
-  }
-}
-```
+And we use "lit_net.LitNet" instead of "net.Net" for model class.
 
 Then we run it using the NVFlare simulator:
 
@@ -257,7 +239,7 @@ nvflare simulator -n 2 -t 2 ./jobs/client_api_ddp -w client_api_ddp_workspace
 ```
 
 
-This will starts 2 clients and each client will start 2 worker processes.
+This will start 2 clients and each client will start 2 worker processes.
 
 Note that you might need to change the "master_port" in the "config_fed_client.conf"
  if those ports are already taken on your machine.
@@ -283,34 +265,15 @@ The modified FL code can be found in [./code/cifar10_lightning_ddp_fl.py](./code
 Then we can create the job using sag_pt template:
 
 ```bash
-nvflare job create -force -j ./jobs/lightning_ddp -w sag_pt -sd ./code/ -f config_fed_client.conf app_script=cifar10_lightning_ddp_fl.py
+nvflare job create -force -j ./jobs/lightning_ddp -w sag_pt -sd ./code/ \
+    -f config_fed_client.conf app_script=cifar10_lightning_ddp_fl.py \
+    -f config_fed_server.conf key_metric=val_acc_epoch model_class_path="lit_net.LitNet"
 ```
 
-We need to modify the "key_metric" in "config_fed_server.conf" from "accuracy" to "val_acc_epoch" (this name originates from the code [here](./code/lit_net.py#L56)) which means the validation accuracy for that epoch:
+Note that we pass the "key_metric"="val_acc_epoch" (this name originates from the code [here](./code/lit_net.py#L56))
+which means the validation accuracy for that epoch.
 
-```
-{
-  id = "model_selector"
-  name = "IntimeModelSelector"
-  args {
-    key_metric = "val_acc_epoch"
-  }
-}
-```
-
-And we modify the model architecture to use the LitNet class:
-
-```
-{
-  id = "persistor"
-  path = "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor"
-  args {
-    model {
-      path = "lit_net.LitNet"
-    }
-  }
-}
-```
+And we use "lit_net.LitNet" instead of "net.Net" for model class.
 
 Then we run it using the NVFlare simulator:
 
