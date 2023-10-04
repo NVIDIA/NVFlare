@@ -1157,7 +1157,7 @@ azure_start_svr_sh: |
     $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && \
     sudo apt-get update && \
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io
-    EOF
+  EOF
     )
     az vm run-command invoke \
       --output json \
@@ -1343,7 +1343,7 @@ azure_start_cln_sh: |
     $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && \
     sudo apt-get update && \
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io
-    EOF
+  EOF
     )
     az vm run-command invoke \
       --output json \
