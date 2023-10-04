@@ -19,9 +19,6 @@ from tf_net import TFNet
 # (1) import nvflare client API
 import nvflare.client as flare
 
-# (2) import how to load / dump flat weights
-from nvflare.app_opt.tf.utils import get_flat_weights, load_flat_weights
-
 PATH = "./tf_model.ckpt"
 
 
@@ -39,10 +36,10 @@ def main():
         model = TFNet(input_shape=(None, 32, 32, 3))
         model.summary()
 
-    # (3) initializes NVFlare client API
+    # (2) initializes NVFlare client API
     flare.init()
 
-    # (4) gets FLModel from NVFlare
+    # (3) gets FLModel from NVFlare
     for input_model in flare.receive_global_model():
         print(f"current_round={input_model.current_round}")
 
@@ -50,10 +47,12 @@ def main():
         system_info = flare.system_info()
         print(f"NVFlare system info: {system_info}")
 
-        # (5) loads model from NVFlare
-        load_flat_weights(model, input_model.params)
+        # (4) loads model from NVFlare
+        for k, v in input_model.params.items():
+            layer = model.get_layer(k)
+            layer.set_weights(v)
 
-        # (6) evaluate aggregated/received model
+        # (5) evaluate aggregated/received model
         _, test_global_acc = model.evaluate(test_images, test_labels, verbose=2)
         print(
             f"Accuracy of the received model on round {input_model.current_round} on the 10000 test images: {test_global_acc * 100} %"
@@ -68,9 +67,11 @@ def main():
         _, test_acc = model.evaluate(test_images, test_labels, verbose=2)
         print(f"Accuracy of the model on the 10000 test images: {test_acc * 100} %")
 
-        # (7) construct trained FL model
-        output_model = flare.FLModel(params=get_flat_weights(model), metrics={"accuracy": test_global_acc})
-        # (8) send model back to NVFlare
+        # layer weights from the keras model
+        layer_weights_dict = {layer.name: layer.get_weights() for layer in model.layers}
+        # (6) construct trained FL model
+        output_model = flare.FLModel(params=layer_weights_dict, metrics={"accuracy": test_global_acc})
+        # (7) send model back to NVFlare
         flare.send(output_model)
 
 
