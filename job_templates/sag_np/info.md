@@ -1,6 +1,6 @@
 # Job Template Information Card
 
-## sag_pt
+## sag_np
     name = "sag_np"
     description = "Scatter and Gather Workflow using NumPy" 
     class_name  =  "ScatterAndGather"

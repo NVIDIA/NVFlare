@@ -6,10 +6,13 @@ We will demonstrate how to send back model parameters or model parameters differ
   2. [Send model parameters differences back to the NVFlare server](#send-model-parameters-differences-back-to-the-nvflare-server)
 
 
-By default, our LauncherExecutor is going to launch the script to handle the task everytime the NVFlare Client receives a task.
+By default, our LauncherExecutor is going to launch the script once for a job.
 
-If your data setup is taking a long time, you don't want to launch the whole training script everytime
-(means the script need to do the data setup everytime).
+If your data setup is taking a long time, you don't want to launch the whole training script every round.
+(This implies that the dataset will be loaded again every round and all the cache will be lost for each round).
+
+On the other hand, if your system is very resource limited, and you don't want the training process to live throughout the whole
+job training, you can use "launch_once=False".
 
 We demonstrate how to launch training script once and have training script keeps exchanging training parameters with NVFlare LauncherExecutor:
 
@@ -19,8 +22,6 @@ We demonstrate how to launch training script once and have training script keeps
 ## Send model parameters back to the NVFlare server
 
 We use the mock training script in [./code/train_full.py](./code/train_full.py)
-
-Note that the mock training just do +1 and the mock evaluation just return 100.
 And we send back the FLModel with "params_type"="FULL" in [./code/train_full.py](./code/train_full.py)
 
 To send back the whole model parameters, we need to make sure the "params_transfer_type" is also "FULL".
@@ -31,7 +32,7 @@ Let reuse the job templates from [sag_np](../../../../job_templates/sag_np/):
 nvflare config -jt ../../../../job_templates/
 nvflare job list_templates
 nvflare job create -force -j ./jobs/np_param_full_transfer_full -w sag_np -sd ./code/ \
--f config_fed_client.conf app_script=train_full.py params_transfer_type=FULL
+-f config_fed_client.conf app_script=train_full.py params_transfer_type=FULL launch_once=false
 ```
 
 Then we can run it using the NVFlare Simulator:
@@ -53,7 +54,7 @@ But we need to pass different parameters when creating job:
 
 ```bash
 nvflare job create -force -j ./jobs/np_param_full_transfer_diff -w sag_np -sd ./code/ \
--f config_fed_client.conf app_script=train_full.py params_transfer_type=DIFF \
+-f config_fed_client.conf app_script=train_full.py params_transfer_type=DIFF launch_once=false \
 -f config_fed_server.conf expected_data_kind=WEIGHT_DIFF
 ```
 
@@ -73,7 +74,7 @@ Then we create the job using the following command:
 
 ```bash
 nvflare job create -force -j ./jobs/np_param_diff_transfer_full -w sag_np -sd ./code/ \
--f config_fed_client.conf app_script=train_diff.py \
+-f config_fed_client.conf app_script=train_diff.py launch_once=false \
 -f config_fed_server.conf expected_data_kind=WEIGHT_DIFF
 ```
 
@@ -88,11 +89,11 @@ nvflare simulator -n 2 -t 2 ./jobs/np_param_diff_transfer_full -w np_param_diff_
 ## Launch once for the whole job
 
 In some training scenarios, the data loading is taking a lot of time.
-And throughout the whole training job, we only want to load/setup the data once.
+And throughout the whole training job, we only want to load/set up the data once.
 
 In that case, we could use the "launch_once" option of "LauncherExecutor" and wraps our training script into a loop.
 
-We wraps the [./code/train_full.py](./code/train_full.py) into a loop: [./code/train_loop.py](./code/train_loop.py)
+We wrap the [./code/train_full.py](./code/train_full.py) into a loop: [./code/train_loop.py](./code/train_loop.py)
 
 Then we can create the job:
 
@@ -107,3 +108,4 @@ Then we can run it using the NVFlare Simulator:
 ```bash
 nvflare simulator -n 2 -t 2 ./jobs/np_loop -w np_loop_workspace
 ```
+

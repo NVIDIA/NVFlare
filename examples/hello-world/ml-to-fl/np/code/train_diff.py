@@ -12,15 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
+
 import nvflare.client as flare
 
 
 def train(input_arr):
+    output_arr = copy.deepcopy(input_arr)
     # mock training with plus 1
-    return input_arr + 1
+    return output_arr + 1
 
 
-def evaulate(input_arr):
+def evaluate(input_arr):
     # mock evaluation metrics
     return 100
 
@@ -43,7 +46,7 @@ def main():
     output_numpy_array = train(input_numpy_array)
 
     # evaluation
-    metrics = evaulate(input_numpy_array)
+    metrics = evaluate(input_numpy_array)
 
     # calculate difference here
     diff = output_numpy_array - input_numpy_array
