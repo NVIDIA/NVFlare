@@ -132,6 +132,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
             return True
         else:
             self.logger.error(f"failed to send task result: {push_result}")
+            return False
 
     def get_workspace(self) -> Workspace:
         return self.workspace

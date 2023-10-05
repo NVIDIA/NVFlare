@@ -415,7 +415,10 @@ class ClientRunner(FLComponent):
             time.sleep(task_fetch_interval)
 
     def _send_job_heartbeat(self, interval=30.0):
-        wait_times = int(interval / 2)
+        sleep_time = 1.0
+        wait_times = int(interval / sleep_time)
+        if wait_times == 0:
+            wait_times = 1
         request = Shareable()
         while not self.run_abort_signal.triggered:
             with self.engine.new_context() as fl_ctx:
@@ -427,8 +430,12 @@ class ClientRunner(FLComponent):
                     fl_ctx=fl_ctx,
                     optional=True,
                 )
+
+                # we want to send the HB every "interval" secs.
+                # but we don't want to sleep that long since it will block us from checking abort signal.
+                # hence we only sleep 1 sec, and check the abort signal.
                 for i in range(wait_times):
-                    time.sleep(2)
+                    time.sleep(sleep_time)
                     if self.run_abort_signal.triggered:
                         break
 
