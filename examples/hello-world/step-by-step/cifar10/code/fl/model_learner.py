@@ -18,7 +18,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torchvision
-from fl.net import Net
+from net import Net
 from torchvision import transforms
 
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
