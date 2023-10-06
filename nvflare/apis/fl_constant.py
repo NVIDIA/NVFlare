@@ -181,6 +181,8 @@ class ReservedTopic(object):
     DO_TASK = "__do_task__"
     AUX_COMMAND = "__aux_command__"
     SYNC_RUNNER = "__sync_runner__"
+    JOB_HEART_BEAT = "__job_heartbeat__"
+    TASK_CHECK = "__task_check__"
 
 
 class AdminCommandNames(object):
