@@ -161,7 +161,7 @@ class ServerJsonConfigurator(FedJsonConfigurator):
         )
 
         ConfigService.initialize(
-            section_files={SystemConfigs.APPLICATION_CONF: os.path.basename(self.config_files[0])},
+            section_files={},
             config_path=[self.args.workspace],
             parsed_args=self.args,
             var_dict=self.cmd_vars,
