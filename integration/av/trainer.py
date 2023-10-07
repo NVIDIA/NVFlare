@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,8 +15,8 @@
 import argparse
 import logging
 
-from integration.av.defs import RC, ModelMetaKey
-from integration.av.flare import FlareAgent
+from integration.av.defs import RC, MetaKey
+from integration.av.flare import AgentClosed, FlareAgent, TaskResult
 
 NUMPY_KEY = "numpy_key"
 
@@ -46,24 +46,23 @@ def main():
 
     while True:
         print("try to get a new task ...")
-        task = agent.get_task()
-        if not task:
-            # done
-            print("no more task - exit")
+        try:
+            task = agent.get_task()
+        except AgentClosed:
+            print("agent closed - exit")
             break
 
-        name, tid, meta, model = task
-        print(f"got task: {name=} {tid=}")
-        rc, meta, result = train(meta, model)
-        submitted = agent.submit_result(task_id=tid, model=result, meta=meta, rc=rc)
+        print(f"got task: {task}")
+        rc, meta, result = train(task.meta, task.data)
+        submitted = agent.submit_result(TaskResult(data=result, meta=meta, return_code=rc))
         print(f"result submitted: {submitted}")
 
     agent.stop()
 
 
 def train(meta, model):
-    current_round = meta.get(ModelMetaKey.CURRENT_ROUND)
-    total_rounds = meta.get(ModelMetaKey.TOTAL_ROUND)
+    current_round = meta.get(MetaKey.CURRENT_ROUND)
+    total_rounds = meta.get(MetaKey.TOTAL_ROUND)
 
     # Ensure that data is of type weights. Extract model data
     np_data = model
@@ -88,7 +87,7 @@ def train(meta, model):
     print(f"Model after training: {np_data}")
 
     # Prepare a DXO for our updated model. Create shareable and return
-    return RC.OK, {ModelMetaKey.NUM_STEPS_CURRENT_ROUND: 1}, np_data
+    return RC.OK, {MetaKey.NUM_STEPS_CURRENT_ROUND: 1}, np_data
 
 
 if __name__ == "__main__":

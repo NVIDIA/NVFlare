@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ from nvflare.fuel.f3.cellnet.cell import new_message
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 
 from . import defs
-from .defs import RC, ModelMetaKey, MsgHeader, PayloadKey
+from .defs import RC, MetaKey, MsgHeader, PayloadKey
 
 
 class _TaskContext:
@@ -43,9 +43,10 @@ class _TaskContext:
         self.result_error = None
         self.result = None
         self.result_received_time = None
+        self.waiter = threading.Event()
 
     def __str__(self):
-        return f"{self.task_name=} {self.task_id=}"
+        return f"'{self.task_name} {self.task_id}'"
 
 
 class Exchanger(Executor):
@@ -82,12 +83,29 @@ class Exchanger(Executor):
                 return
 
             client_name = fl_ctx.get_identity_name()
-            self.flare_agent_fqcn = f"{client_name}_{agent_id}"
+            self.flare_agent_fqcn = defs.agent_site_fqcn(client_name, agent_id)
             self.log_info(fl_ctx, f"Flare Agent FQCN: {self.flare_agent_fqcn}")
             t = threading.Thread(target=self._maintain, daemon=True)
             t.start()
         elif event_type == EventType.END_RUN:
             self.is_done = True
+            self._say_goodbye()
+
+    def _say_goodbye(self):
+        # say goodbye to agent
+        self.logger.info(f"job done - say goodbye to {self.flare_agent_fqcn}")
+        reply = self.cell.send_request(
+            channel=defs.CHANNEL,
+            topic=defs.TOPIC_BYE,
+            target=self.flare_agent_fqcn,
+            request=new_message(),
+            optional=True,
+            timeout=2.0,
+        )
+        if reply:
+            rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
+            if rc != CellReturnCode.OK:
+                self.logger.warning(f"return code from agent {self.flare_agent_fqcn} for bye: {rc}")
 
     def _maintain(self):
         # try to connect the flare agent
@@ -125,29 +143,24 @@ class Exchanger(Executor):
             time.sleep(1.0)
 
         # agent is now connected - heartbeats
+        last_hb_time = 0
+        hb_interval = 10.0
         while True:
             if self.is_done:
-                # say goodbye to agent
-                self.cell.fire_and_forget(
-                    channel=defs.CHANNEL,
-                    topic=defs.TOPIC_BYE,
-                    targets=[self.flare_agent_fqcn],
-                    message=new_message(),
-                    optional=True,
-                )
                 return
 
-            reply = self.cell.send_request(
-                channel=defs.CHANNEL,
-                topic=defs.TOPIC_HEARTBEAT,
-                target=self.flare_agent_fqcn,
-                request=new_message(),
-                timeout=2.0,
-            )
-
-            rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
-            if rc == CellReturnCode.OK:
-                self.last_agent_ack_time = time.time()
+            if time.time() - last_hb_time > hb_interval:
+                reply = self.cell.send_request(
+                    channel=defs.CHANNEL,
+                    topic=defs.TOPIC_HEARTBEAT,
+                    target=self.flare_agent_fqcn,
+                    request=new_message(),
+                    timeout=1.5,
+                )
+                last_hb_time = time.time()
+                rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
+                if rc == CellReturnCode.OK:
+                    self.last_agent_ack_time = time.time()
 
             if time.time() - self.last_agent_ack_time > self.agent_life_timeout:
                 with self.engine.new_context() as fl_ctx:
@@ -158,7 +171,8 @@ class Exchanger(Executor):
                 self.is_done = True
                 return
 
-            time.sleep(5.0)
+            # sleep only small amount of time, so we can check other conditions frequently
+            time.sleep(0.2)
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         task_id = shareable.get_header(key=FLContextKey.TASK_ID)
@@ -178,19 +192,19 @@ class Exchanger(Executor):
         fl_ctx = task_ctx.fl_ctx
         task_name = task_ctx.task_name
         task_id = task_ctx.task_id
-        self.log_info(fl_ctx, "sending task in thread ...")
         while True:
             if self.is_done or abort_signal.triggered:
                 self.log_info(fl_ctx, "task aborted - ask agent to abort the task")
 
                 # it's possible that the agent may have already received the task
+                # we ask it to abort the task.
                 self._ask_agent_to_abort_task(task_name, task_id)
-                task_ctx.send_rc = make_reply(ReturnCode.TASK_ABORTED)
+                task_ctx.send_rc = ReturnCode.TASK_ABORTED
                 return
 
             if task_ctx.result_received_time:
                 # the result has been received
-                # this could happen only when we thought the previous send didn't go through but it actually did!
+                # this could happen only when we thought the previous send didn't succeed, but it actually did!
                 return
 
             self.log_info(fl_ctx, f"try to send task to {self.flare_agent_fqcn}")
@@ -236,9 +250,9 @@ class Exchanger(Executor):
         # send to flare agent
         task_ctx = self.task_ctx
         task_id = task_ctx.task_id
-        model = dxo.data
-        if not model:
-            model = {}
+        data = dxo.data
+        if not data:
+            data = {}
         meta = dxo.meta
         if not meta:
             meta = {}
@@ -246,39 +260,42 @@ class Exchanger(Executor):
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
         total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS, None)
 
-        meta[ModelMetaKey.DATA_KIND] = dxo.data_kind
+        meta[MetaKey.DATA_KIND] = dxo.data_kind
         if current_round is not None:
-            meta[ModelMetaKey.CURRENT_ROUND] = current_round
+            meta[MetaKey.CURRENT_ROUND] = current_round
         if total_rounds is not None:
-            meta[ModelMetaKey.TOTAL_ROUND] = total_rounds
+            meta[MetaKey.TOTAL_ROUND] = total_rounds
 
         msg = new_message(
             headers={
                 MsgHeader.TASK_ID: task_id,
                 MsgHeader.TASK_NAME: task_name,
             },
-            payload={PayloadKey.MODEL: model, PayloadKey.MODEL_META: meta},
+            payload={PayloadKey.DATA: data, PayloadKey.META: meta},
         )
 
         # keep sending until done
         self._send_task(task_ctx, msg, abort_signal)
         if task_ctx.send_rc:
-            return task_ctx.send_rc
+            # send_task failed
+            return make_reply(task_ctx.send_rc)
 
         # wait for result
         self.log_info(fl_ctx, f"Waiting for result from {self.flare_agent_fqcn}")
+        waiter_timeout = 0.5
         while True:
-            if self.is_done or abort_signal.triggered:
-                self.log_info(fl_ctx, "task is aborted")
+            if not task_ctx.waiter.wait(timeout=waiter_timeout):
+                # timed out - check other conditions
+                if self.is_done or abort_signal.triggered:
+                    self.log_info(fl_ctx, "task is aborted")
 
-                # notify the agent
-                self._ask_agent_to_abort_task(task_name, task_id)
-                return make_reply(ReturnCode.TASK_ABORTED)
-
-            if task_ctx.result_received_time:
+                    # notify the agent
+                    self._ask_agent_to_abort_task(task_name, task_id)
+                    self.task_ctx = None
+                    return make_reply(ReturnCode.TASK_ABORTED)
+            else:
+                # result available
                 break
-
-            time.sleep(0.1)
 
         # convert the result
         if task_ctx.result_rc != RC.OK:
@@ -287,8 +304,8 @@ class Exchanger(Executor):
         result = task_ctx.result
         dxo = DXO(
             data_kind=DataKind.WEIGHTS,
-            data=result.get(PayloadKey.MODEL),
-            meta=result.get(PayloadKey.MODEL_META),
+            data=result.get(PayloadKey.DATA),
+            meta=result.get(PayloadKey.META),
         )
         return dxo.to_shareable()
 
@@ -308,10 +325,12 @@ class Exchanger(Executor):
             optional=True,
         )
 
-    def _finish_result(self, task_ctx, result_rc="", result=None, result_is_valid=True):
+    @staticmethod
+    def _finish_result(task_ctx: _TaskContext, result_rc="", result=None, result_is_valid=True):
         task_ctx.result_rc = result_rc
         task_ctx.result = result
         task_ctx.result_received_time = time.time()
+        task_ctx.waiter.set()
         if result_is_valid:
             return make_cell_reply(CellReturnCode.OK)
         else:
@@ -340,14 +359,14 @@ class Exchanger(Executor):
             self.log_error(fl_ctx, f"bad result from {sender}: expect dict but got {type(payload)}")
             return self._finish_result(task_ctx, result_is_valid=False, result_rc=ReturnCode.EXECUTION_EXCEPTION)
 
-        model = payload.get(PayloadKey.MODEL)
-        if model is None:
-            self.log_error(fl_ctx, f"bad result from {sender}: missing {PayloadKey.MODEL}")
+        data = payload.get(PayloadKey.DATA)
+        if data is None:
+            self.log_error(fl_ctx, f"bad result from {sender}: missing {PayloadKey.DATA}")
             return self._finish_result(task_ctx, result_is_valid=False, result_rc=ReturnCode.EXECUTION_EXCEPTION)
 
-        meta = payload.get(PayloadKey.MODEL_META)
+        meta = payload.get(PayloadKey.META)
         if meta is None:
-            self.log_error(fl_ctx, f"bad result from {sender}: missing {PayloadKey.MODEL_META}")
+            self.log_error(fl_ctx, f"bad result from {sender}: missing {PayloadKey.META}")
             return self._finish_result(task_ctx, result_is_valid=False, result_rc=ReturnCode.EXECUTION_EXCEPTION)
 
         self.log_info(fl_ctx, f"received result from {sender}")
