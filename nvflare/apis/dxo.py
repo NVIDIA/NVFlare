@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import copy
-from typing import List, Union
+from typing import List, Optional, Union
 
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
@@ -30,6 +30,7 @@ class DataKind(object):
     COLLECTION = "COLLECTION"  # Dict or List of DXO objects
     STATISTICS = "STATISTICS"
     PSI = "PSI"
+    META = "META"  # only contains meta
 
 
 class MetaKey(FLMetaKey):
@@ -43,7 +44,7 @@ _KEY_DXO = "DXO"
 
 
 class DXO(object):
-    def __init__(self, data_kind: str, data: dict, meta: dict = None):
+    def __init__(self, data_kind: str, data: Optional[dict] = None, meta: Optional[dict] = None):
         """Init the DXO.
 
         The Data Exchange Object standardizes the data passed between communicating parties.

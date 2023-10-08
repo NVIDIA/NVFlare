@@ -111,7 +111,7 @@ class FLModelUtils:
 
         if dxo.data_kind == DataKind.METRICS:
             metrics = dxo.data
-        else:
+        elif dxo.data_kind != DataKind.META:
             params_type = data_kind_to_params_type.get(dxo.data_kind)
             if params_type is None:
                 raise ValueError(f"Invalid shareable with dxo that has data kind: {dxo.data_kind}")

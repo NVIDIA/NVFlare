@@ -14,6 +14,7 @@
 import threading
 
 from nvflare.apis.controller_spec import Task
+from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
@@ -216,8 +217,10 @@ class CrossSiteEvalClientController(ClientSideController):
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
         if not self.local_model:
+            dxo = DXO(data_kind=DataKind.META)
             task_data = Shareable()
             task_data.set_header(AppConstants.SUBMIT_MODEL_NAME, model_name)
+            dxo.update_shareable(task_data)
 
             abort_signal = Signal()
             try:
