@@ -20,9 +20,7 @@ from sklearn.model_selection import train_test_split
 
 
 def data_split_args_parser():
-    parser = argparse.ArgumentParser(
-        description="Generate training/testing split for dataset"
-    )
+    parser = argparse.ArgumentParser(description="Generate training/testing split for dataset")
     parser.add_argument("--data_path", type=str, help="Path to data file")
     parser.add_argument("--test_ratio", type=float, help="Ratio of testing set")
     parser.add_argument(
@@ -43,9 +41,7 @@ def main():
     # Split data into training and testing sets
     X = df.drop("Class", axis=1)
     y = df.Class
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=args.test_ratio, random_state=77
-    )
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=args.test_ratio, random_state=77)
     df_train = pd.concat([y_train, X_train], axis=1)
     df_test = pd.concat([y_test, X_test], axis=1)
 

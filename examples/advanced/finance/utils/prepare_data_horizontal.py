@@ -23,13 +23,9 @@ import pandas as pd
 def data_split_args_parser():
     parser = argparse.ArgumentParser(description="Generate data split for dataset")
     parser.add_argument("--data_path", type=str, help="Path to data file")
-    parser.add_argument(
-        "--valid_ratio", type=float, default=0.1, help="Validation ratio"
-    )
+    parser.add_argument("--valid_ratio", type=float, default=0.1, help="Validation ratio")
     parser.add_argument("--site_num", type=int, help="Total number of sites")
-    parser.add_argument(
-        "--site_name_prefix", type=str, default="site-", help="Site name prefix"
-    )
+    parser.add_argument("--site_name_prefix", type=str, default="site-", help="Site name prefix")
     parser.add_argument(
         "--split_method",
         type=str,
@@ -37,9 +33,7 @@ def data_split_args_parser():
         choices=["uniform", "linear", "square", "exponential"],
         help="How to split the dataset",
     )
-    parser.add_argument(
-        "--out_path", type=str, help="Output path for the data split json file"
-    )
+    parser.add_argument("--out_path", type=str, help="Output path for the data split json file")
     return parser
 
 
@@ -79,9 +73,7 @@ def main():
         "data_index": {"valid": {"start": 0, "end": size_valid}},
     }
 
-    site_size = split_num_proportion(
-        size_total - size_valid, args.site_num, args.split_method
-    )
+    site_size = split_num_proportion(size_total - size_valid, args.site_num, args.split_method)
 
     for site in range(args.site_num):
         site_id = args.site_name_prefix + str(site + 1)
@@ -92,9 +84,7 @@ def main():
     if not os.path.exists(args.out_path):
         os.makedirs(args.out_path, exist_ok=True)
     for site in range(args.site_num):
-        output_file = os.path.join(
-            args.out_path, f"data_{args.site_name_prefix}{site + 1}.json"
-        )
+        output_file = os.path.join(args.out_path, f"data_{args.site_name_prefix}{site + 1}.json")
         with open(output_file, "w") as f:
             json.dump(json_data, f, indent=4)
 

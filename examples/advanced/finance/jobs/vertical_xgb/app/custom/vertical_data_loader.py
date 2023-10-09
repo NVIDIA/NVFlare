@@ -26,9 +26,7 @@ def _get_data_intersection(df, intersection_path, id_col):
 
     # Note: the order of the intersection must be maintained
     intersection_df = df[df[id_col].isin(intersection)].copy()
-    intersection_df["sort"] = pd.Categorical(
-        intersection_df[id_col], categories=intersection, ordered=True
-    )
+    intersection_df["sort"] = pd.Categorical(intersection_df[id_col], categories=intersection, ordered=True)
     intersection_df = intersection_df.sort_values("sort")
     intersection_df = intersection_df.drop([id_col, "sort"], axis=1)
 
@@ -47,9 +45,7 @@ def _split_train_val(df, train_proportion):
 
 
 class VerticalDataLoader(XGBDataLoader):
-    def __init__(
-        self, data_split_path, psi_path, id_col, label_owner, train_proportion
-    ):
+    def __init__(self, data_split_path, psi_path, id_col, label_owner, train_proportion):
         """Reads intersection of dataset and returns train and validation XGB data matrices with column split mode.
 
         Args:
@@ -76,9 +72,7 @@ class VerticalDataLoader(XGBDataLoader):
         if not (os.path.exists(train_path) and os.path.exists(valid_path)):
             df = pd.read_csv(client_data_split_path)
             intersection_df = _get_data_intersection(df, client_psi_path, self.id_col)
-            train_df, valid_df = _split_train_val(
-                intersection_df, self.train_proportion
-            )
+            train_df, valid_df = _split_train_val(intersection_df, self.train_proportion)
 
             train_df.to_csv(path_or_buf=train_path, header=False, index=False)
             valid_df.to_csv(path_or_buf=valid_path, header=False, index=False)

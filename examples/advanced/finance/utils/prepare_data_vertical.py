@@ -78,9 +78,7 @@ def main():
     print(
         f"dataset_num_rows: {dataset_rows_total}, rows_total_percentage: {args.rows_total_percentage}, rows_total: {rows_total}"
     )
-    print(
-        f"rows_overlap_percentage: {args.rows_overlap_percentage}, rows_overlap: {rows_overlap}"
-    )
+    print(f"rows_overlap_percentage: {args.rows_overlap_percentage}, rows_overlap: {rows_overlap}")
     print(f"cols_total: {cols_total}")
 
     df["uid"] = df.index.to_series().map(lambda x: "uid_" + str(x))
@@ -108,9 +106,7 @@ def main():
             ]
         )
         df_split = df_split.sample(frac=1)
-        print(
-            f"site-{site+1} split rows [{row_start}:{row_end}],[{rows_total - rows_overlap}:{rows_total}]"
-        )
+        print(f"site-{site+1} split rows [{row_start}:{row_end}],[{rows_total - rows_overlap}:{rows_total}]")
         print(f"site-{site+1} split cols [{col_start}:{col_end}]")
 
         data_path = os.path.join(args.out_path, f"site-{site + 1}")

@@ -22,9 +22,7 @@ from sklearn.model_selection import train_test_split
 
 
 def xgboost_args_parser():
-    parser = argparse.ArgumentParser(
-        description="Centralized XGBoost training with random forest option"
-    )
+    parser = argparse.ArgumentParser(description="Centralized XGBoost training with random forest option")
     parser.add_argument(
         "--train_data_path",
         type=str,
@@ -37,15 +35,9 @@ def xgboost_args_parser():
         default="./dataset/test.csv",
         help="folder to testing dataset file",
     )
-    parser.add_argument(
-        "--valid_ratio", type=float, default=0.1, help="ratio of validation split"
-    )
-    parser.add_argument(
-        "--num_rounds", type=int, default=100, help="number of boosting rounds"
-    )
-    parser.add_argument(
-        "--num_parallel_tree", type=int, default=1, help="number of parallel tree"
-    )
+    parser.add_argument("--valid_ratio", type=float, default=0.1, help="ratio of validation split")
+    parser.add_argument("--num_rounds", type=int, default=100, help="number of boosting rounds")
+    parser.add_argument("--num_parallel_tree", type=int, default=1, help="number of parallel tree")
     parser.add_argument(
         "--output_folder",
         type=str,
@@ -99,9 +91,7 @@ def main():
     X, y = prepare_data(train_data_path)
 
     # Split to training and validation
-    X_train, X_valid, y_train, y_valid = train_test_split(
-        X, y, test_size=valid_ratio, random_state=77
-    )
+    X_train, X_valid, y_train, y_valid = train_test_split(X, y, test_size=valid_ratio, random_state=77)
     print(
         f"TRAINING: X_train: {X_train.shape}, y_train: {y_train.shape}, Fraudulant transaction: {y_train.value_counts()[1]}"
     )
