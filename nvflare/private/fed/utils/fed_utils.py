@@ -18,7 +18,6 @@ import logging.config
 import os
 import sys
 from logging.handlers import RotatingFileHandler
-from multiprocessing.connection import Listener
 from typing import List
 
 from nvflare.apis.app_validation import AppValidator
@@ -39,7 +38,7 @@ from nvflare.private.defs import RequestHeader, SSLConstants
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.decomposers import private_decomposers
 from nvflare.private.privacy_manager import PrivacyManager, PrivacyService
-from nvflare.security.logging import secure_format_exception, secure_log_traceback
+from nvflare.security.logging import secure_format_exception
 from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
 
 from .app_authz import AppAuthzService
@@ -52,28 +51,6 @@ def add_logfile_handler(log_file):
     file_handler.setLevel(main_handler.level)
     file_handler.setFormatter(main_handler.formatter)
     root_logger.addHandler(file_handler)
-
-
-def listen_command(listen_port, engine, execute_func, logger):
-    conn = None
-    listener = None
-    try:
-        address = ("localhost", listen_port)
-        listener = Listener(address, authkey="client process secret password".encode())
-        conn = listener.accept()
-
-        execute_func(conn, engine)
-
-    except Exception as e:
-        logger.exception(
-            f"Could not create the listener for this process on port: {listen_port}: {secure_format_exception(e)}."
-        )
-        secure_log_traceback(logger)
-    finally:
-        if conn:
-            conn.close()
-        if listener:
-            listener.close()
 
 
 def _check_secure_content(site_type: str) -> List[str]:
