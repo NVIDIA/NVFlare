@@ -15,8 +15,6 @@
 import logging
 import threading
 import time
-from functools import partial
-from multiprocessing.dummy import Pool as ThreadPool
 from typing import List, Optional
 
 from nvflare.apis.filter import Filter
@@ -38,15 +36,6 @@ from nvflare.security.logging import secure_format_exception
 
 from .client_status import ClientStatus
 from .communicator import Communicator
-
-
-def _check_progress(remote_tasks):
-    if remote_tasks[0] is not None:
-        # shareable = fobs.loads(remote_tasks[0].payload)
-        shareable = remote_tasks[0].payload
-        return True, shareable.get_header(ServerCommandKey.TASK_NAME), shareable
-    else:
-        return False, None, None
 
 
 class FederatedClientBase:
@@ -104,6 +93,7 @@ class FederatedClientBase:
             cell=cell,
             client_register_interval=client_args.get("client_register_interval", 2.0),
             timeout=client_args.get("communication_timeout", 30.0),
+            maint_msg_timeout=client_args.get("maint_msg_timeout", 5.0),
         )
 
         self.secure_train = secure_train
@@ -336,63 +326,38 @@ class FederatedClientBase:
         """
         return self.communicator.quit_remote(self.servers, project_name, self.token, self.ssid, fl_ctx)
 
+    def _get_project_name(self):
+        """Get name of the project that the site is part of.
+
+        Returns:
+
+        """
+        s = tuple(self.servers)  # self.servers is a dict of project_name => server config
+        return s[0]
+
     def heartbeat(self, interval):
         """Sends a heartbeat from the client to the server."""
-        pool = None
-        try:
-            pool = ThreadPool(len(self.servers))
-            return pool.map(partial(self.send_heartbeat, interval=interval), tuple(self.servers))
-        finally:
-            if pool:
-                pool.terminate()
+        return self.send_heartbeat(self._get_project_name(), interval)
 
     def pull_task(self, fl_ctx: FLContext):
         """Fetch remote models and update the local client's session."""
-        pool = None
-        try:
-            pool = ThreadPool(len(self.servers))
-            self.remote_tasks = pool.map(partial(self.fetch_execute_task, fl_ctx=fl_ctx), tuple(self.servers))
-            pull_success, task_name, shareable = _check_progress(self.remote_tasks)
-            # TODO: if some of the servers failed
-            return pull_success, task_name, shareable
-        finally:
-            if pool:
-                pool.terminate()
+        result = self.fetch_execute_task(self._get_project_name(), fl_ctx)
+        if result:
+            shareable = result.payload
+            return True, shareable.get_header(ServerCommandKey.TASK_NAME), shareable
+        else:
+            return False, None, None
 
     def push_results(self, shareable: Shareable, fl_ctx: FLContext):
         """Push the local model to multiple servers."""
-        pool = None
-        try:
-            pool = ThreadPool(len(self.servers))
-            return pool.map(partial(self.push_execute_result, shareable=shareable, fl_ctx=fl_ctx), tuple(self.servers))
-        finally:
-            if pool:
-                pool.terminate()
+        return self.push_execute_result(self._get_project_name(), shareable, fl_ctx)
 
     def register(self, fl_ctx: FLContext):
-        """Push the local model to multiple servers.
-
-        Args:
-            fl_ctx: FLContext
-
-        Returns: N/A
-        """
-        pool = None
-        try:
-            pool = ThreadPool(len(self.servers))
-            return pool.map(partial(self.client_register, fl_ctx=fl_ctx), tuple(self.servers))
-        finally:
-            if pool:
-                pool.terminate()
+        """Push the local model to multiple servers."""
+        return self.client_register(self._get_project_name(), fl_ctx)
 
     def set_primary_sp(self, sp):
-        pool = None
-        try:
-            pool = ThreadPool(len(self.servers))
-            return pool.map(partial(self.set_sp, sp=sp), tuple(self.servers))
-        finally:
-            if pool:
-                pool.terminate()
+        return self.set_sp(self._get_project_name(), sp)
 
     def run_heartbeat(self, interval):
         """Periodically runs the heartbeat."""
@@ -403,6 +368,7 @@ class FederatedClientBase:
 
     def start_heartbeat(self, interval=30):
         heartbeat_thread = threading.Thread(target=self.run_heartbeat, args=[interval])
+        heartbeat_thread.daemon = True
         heartbeat_thread.start()
 
     def logout_client(self, fl_ctx: FLContext):
@@ -414,13 +380,7 @@ class FederatedClientBase:
         Returns: N/A
 
         """
-        pool = None
-        try:
-            pool = ThreadPool(len(self.servers))
-            return pool.map(partial(self.quit_remote, fl_ctx=fl_ctx), tuple(self.servers))
-        finally:
-            if pool:
-                pool.terminate()
+        return self.quit_remote(self._get_project_name(), fl_ctx)
 
     def set_client_engine(self, engine):
         self.engine = engine

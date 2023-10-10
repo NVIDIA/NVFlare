@@ -64,6 +64,16 @@ class Responder(FLComponent, ABC):
         pass
 
     @abstractmethod
+    def process_task_check(self, task_id: str, fl_ctx: FLContext):
+        """Called by the Engine to check whether a specified task still exists.
+        Args:
+            task_id: the id of the task
+            fl_ctx: the FLContext
+        Returns: the ClientTask object if exists; None otherwise
+        """
+        pass
+
+    @abstractmethod
     def handle_dead_job(self, client_name: str, fl_ctx: FLContext):
         """Called by the Engine to handle the case that the job on the client is dead.
 

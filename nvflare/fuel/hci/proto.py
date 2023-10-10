@@ -66,6 +66,7 @@ class MetaKey(object):
     CMD_NAME = "cmd_name"
     TX_ID = "tx_id"
     FOLDER_NAME = "folder_name"
+    LOCATION = "location"
 
 
 class MetaStatusValue(object):

@@ -358,12 +358,8 @@ class Session(SessionSpec):
         self._validate_job_id(job_id)
         result = self._do_command(AdminCommandNames.DOWNLOAD_JOB + " " + job_id)
         meta = result[ResultKey.META]
-        download_job_id = meta.get(MetaKey.JOB_ID, None)
-        job_download_url = meta.get(MetaKey.JOB_DOWNLOAD_URL, None)
-        if not job_download_url:
-            return os.path.join(self.download_dir, download_job_id)
-        else:
-            return job_download_url
+        location = meta.get(MetaKey.LOCATION)
+        return location
 
     def abort_job(self, job_id: str):
         """Abort the specified job.

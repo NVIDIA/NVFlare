@@ -344,6 +344,11 @@ class Controller(Responder, ControllerSpec, ABC):
             if not self._dead_client_reports.get(client_name):
                 self._dead_client_reports[client_name] = time.time()
 
+    def process_task_check(self, task_id: str, fl_ctx: FLContext):
+        with self._task_lock:
+            # task_id is the uuid associated with the client_task
+            return self._client_task_map.get(task_id, None)
+
     def process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):
         """Called to process a submission from one client.
 
