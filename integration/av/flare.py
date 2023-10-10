@@ -97,18 +97,18 @@ class _TaskContext:
 
 class FlareAgent:
     def __init__(
-            self,
-            root_url: str,
-            flare_site_name: str,
-            agent_id: str,
-            workspace_dir: str,
-            secure_mode=False,
-            submit_result_timeout=30.0,
-            flare_site_heartbeat_timeout=60.0,
-            job_id=None,
-            flare_site_url=None,
+        self,
+        root_url: str,
+        flare_site_name: str,
+        agent_id: str,
+        workspace_dir: str,
+        secure_mode=False,
+        submit_result_timeout=30.0,
+        flare_site_heartbeat_timeout=60.0,
+        job_id=None,
+        flare_site_url=None,
     ):
-        """ Constructor of Flare Agent. The agent is responsible for communicating with the Flare Client Job cell (CJ)
+        """Constructor of Flare Agent. The agent is responsible for communicating with the Flare Client Job cell (CJ)
         to get task and to submit task result.
 
         Args:
@@ -158,7 +158,9 @@ class FlareAgent:
                 # try client
                 cert_path = ConfigService.find_file(SSL_CLIENT_CERT)
                 if not cert_path:
-                    raise ValueError(f"cannot find {SSL_SERVER_CERT} or {SSL_CLIENT_CERT} from config path {workspace_dir}")
+                    raise ValueError(
+                        f"cannot find {SSL_SERVER_CERT} or {SSL_CLIENT_CERT} from config path {workspace_dir}"
+                    )
 
                 private_key_path = ConfigService.find_file(SSL_CLIENT_PRIVATE_KEY)
                 if not private_key_path:

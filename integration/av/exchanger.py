@@ -51,13 +51,13 @@ class _TaskContext:
 
 class Exchanger(Executor):
     def __init__(
-            self,
-            send_task_timeout=5.0,
-            agent_ready_timeout=60.0,
-            agent_heartbeat_timeout=600.0,
-            agent_is_child=False,
+        self,
+        send_task_timeout=5.0,
+        agent_ready_timeout=60.0,
+        agent_heartbeat_timeout=600.0,
+        agent_is_child=False,
     ):
-        """ Constructor of Exchanger
+        """Constructor of Exchanger
 
         Args:
             send_task_timeout: when sending task to Agent, how long to wait for response
