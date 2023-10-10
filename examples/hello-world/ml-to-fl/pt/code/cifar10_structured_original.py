@@ -19,6 +19,8 @@ import torchvision
 import torchvision.transforms as transforms
 from net import Net
 
+# (optional) set a fix place so we don't need to download everytime
+DATASET_PATH = "/tmp/nvflare/data"
 # (optional) We change to use GPU to speed things up.
 # if you want to use CPU, change DEVICE="cpu"
 DEVICE = "cuda:0"
@@ -30,10 +32,10 @@ def main():
 
     batch_size = 4
 
-    trainset = torchvision.datasets.CIFAR10(root="./data", train=True, download=True, transform=transform)
+    trainset = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=True, download=True, transform=transform)
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=2)
 
-    testset = torchvision.datasets.CIFAR10(root="./data", train=False, download=True, transform=transform)
+    testset = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=False, download=True, transform=transform)
     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=2)
 
     net = Net()
