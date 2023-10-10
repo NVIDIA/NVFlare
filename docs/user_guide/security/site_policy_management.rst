@@ -9,17 +9,12 @@ It is possible for each site to define its own policies in the following areas:
     - Authorization Policy: local authorization policy that determines what a user can or cannot do on the local site;
     - Privacy Policy: local policy that specifies what types of studies are allowed and how to add privacy protection to the learning results produced by the FL client on the local site.
     - Logging Configuration: each site can now define its own logging configuration for system generated log messages.
- 
-.. note::
-
-    Prior to NVFLARE 2.2, all policies (resource management, authorization and privacy protection, logging configurations) could only be defined by
-    the Project Admin during provision time; and authorization policies were centrally enforced by the FL Server.
 
 
 Workspace Structure
 ===================
 NVFLARE's policy files are stored in the workspace. To support local site policies, a new "local" folder is added to the workspace.
-Here is the complete workspace structure, with the addition os the "local" folder:
+Here is the complete workspace structure, with the addition of the "local" folder:
 
 .. code-block::
     :emphasize-lines: 2-11

@@ -66,7 +66,7 @@ possible, then you can include it in the FL site's ``<workspace_root>/local/cust
 
 Second, include this custom component in your site's ``job_resources.json``, as shown here:
 
-.. code-block:: python
+.. code-block:: json
 
     {
         "format_version": 2,
