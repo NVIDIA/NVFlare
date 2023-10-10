@@ -146,9 +146,8 @@ As a shorthand, if the control is the same for all rights for a role, you can sp
 Command Authorization Process
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 We know that users operate NVFLARE systems with admin commands via the FLARE Console. But when a user issues a command, how does authorization happen
-throughout the system? In NVFLARE 2.1 and before, the authorization policy was evaluated and enforced by the FL Server that processes the command.
+throughout the system?
 
-In NVFLARE 2.2 and after, the command is still received by the FL Server.
 If the command only involves the Server, then the server's authorization policy is evaluated and
 enforced. If the command involves FL clients, then the command will be sent to those clients without any authorization evaluation on the server.
 When a client receives the command, it will evaluate its own authorization policy. The client will execute the command only if it passes authorization.
@@ -274,17 +273,17 @@ This is an example authorization.json (in the local folder of the workspace for 
 
 Site-specific Authentication and Federated Job-level Authorization
 ==================================================================
-Site-specific authentication and authorization allows the customers to inject their own authentication and
+Site-specific authentication and authorization allows users to inject their own authentication and
 authorization methods into the NVFlare system. This includes the FL server / clients registration, authentication,
 and the job deployment and run authorization.
 
-NVFlare provides a general purpose event based pluggable authentication and authorization framework to allow customers to expand functionality such as:
+NVFlare provides a general purpose event based pluggable authentication and authorization framework to allow for expanding functionality such as:
 
-    - exposing the app through a WAF (Web Application Firewall) or any other network element enforcing MTLS
+    - exposing the app through a WAF (Web Application Firewall) or any other network element enforcing Mutual Transport Layer Security(mTLS)
     - using a confidential certification authority to ensure the identity of each participating site and to ensure that they meet the computing requirements for confidential computing
     - defining additional roles to manage who can submit which kind of jobs to execute within NVFlare, identify who submits jobs and which dataset can be accessed
 
-Customers can write their own :ref:`FLComponents <fl_component>`, listening to the NVFlare system events at different points of their workflow,
+Users can write their own :ref:`FLComponents <fl_component>`, listening to the NVFlare system events at different points of their workflow,
 then easily plug in their authentication and authorization logic as needed.
 
 Assumptions and Risks
@@ -294,17 +293,14 @@ related data available to the external FL components, e.g. IDENTITY_NAME, PUBLIC
 to protect them from being compromised, that data needs to be made read-only.
 
 Because of the external pluginable authentication and authorization processes, the results of the processes could
-potentially cause the jobs to not be able to be deployed or run. When configuring and using these functions, the customers
+potentially cause the jobs to not be able to be deployed or run. When configuring and using these functions, the users
 need to be aware of the impact and know where to plug in the authentication and authorization check.
 
 Event based pluginable authentication and authorization
 -------------------------------------------------------
-We will use the NVFlare event based solution to support the site-specific authentication and federated job-level authorization
-from the NVFlare platform. We will identify the proper points when each individual sites about the start, register and connect
-to the server, admins upload and submit the jobs to the system, the job started to dispatch to the sites, etc, fire the
-specific system events which allow the users to build and plugin their FLcomponents, listen to the events and provide their
-own authentication and authorization functions. In this case, you will be able to provide and implement any sort of
-additional security checks. 
+The NVFlare event based solution supports site-specific authentication and federated job-level authorization.
+Users can provide and implement any sort of additional security checks by building and plugging in FLcomponents which
+listen to the appropriate events and provide custom authentication and authorization functions.
 
 .. code-block:: python
 
@@ -360,7 +356,7 @@ additional security checks.
         BEFORE_CHECK_RESOURCE_MANAGER = "_before_check_resource_manager"
 
 Additional system events
-------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^
 .. code-block:: python
 
     AFTER_CHECK_CLIENT_RESOURCES = "_after_check_client_resources"
@@ -402,20 +398,19 @@ Security check Outputs
     AUTHORIZATION_RESULT
     AUTHORIZATION_REASON
 
-
-NVFlare will check the AUTHORIZATION_RESULT to determine if the operations have been authorized to perform. Before each
-operation, NVFLare platform removes any AUTHORIZATION_RESULT in the FLContext. After the authorization check process, it
-looks for if these results are presented in the FLContext or not. If it presents, it uses its TRUE/FALSE value to determine the action. If not present, it will be treated as TRUE.
+NVFlare will check the ``AUTHORIZATION_RESULT`` to determine if the operations have been authorized to be performed. Before each
+operation, the NVFLare platform removes any ``AUTHORIZATION_RESULT`` in the FLContext. After the authorization check process, it
+looks for if these results are present in the FLContext or not. If present, it uses its TRUE/FALSE value to determine the action.
+If not present, it will be treated as TRUE by default.
 
 Each FLComponent listening and handling the event can use the security data to generate the necessary authorization check
 results as needed. The workflow will only continue when all the FLComponents pass the security check. Any one FLComponent
 that has the FALSE value will cause the workflow to stop execution.
 
-
-Admin tool event support
-------------------------
+FLARE Console event support
+---------------------------
 In order to support additional security data for site-specific customized authentication, we need to add the support for
-event based solutions for the admin console / API tool. Using these events, the admin tool will be able to add in the custom
+event based solutions for the FLARE console. Using these events, the FLARE console will be able to add in the custom
 SSL certificates, etc, security related data, sent along with the admin commands to the server for site-specific authentication check.
 
 .. code-block:: python
@@ -427,7 +422,9 @@ SSL certificates, etc, security related data, sent along with the admin commands
     BEFORE_RECEIVING_ADMIN_RESULT
     AFTER_RECEIVING_ADMIN_RESULT
 
-The site-specific authentication and authorization applies to both admin too and Admin APIs.
+.. note::
+
+    The site-specific authentication and authorization applies to both FLARE console and :ref:`flare_api`.
 
 Allow more data to be sent to the server for client registration
 ----------------------------------------------------------------
