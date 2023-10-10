@@ -69,6 +69,9 @@ class Packer:
                 return obj
 
         decomposed = _decomposers[type_name].decompose(obj, self.manager)
+        if self.manager:
+            decomposed = self.manager.externalize(decomposed)
+
         return {FOBS_TYPE: type_name, FOBS_DATA: decomposed}
 
     def unpack(self, obj: Any) -> Any:
@@ -87,8 +90,12 @@ class Packer:
             if error:
                 raise TypeError(f"Unknown type {type_name}, caused by mismatching decomposers")
 
+        data = obj[FOBS_DATA]
+        if self.manager:
+            data = self.manager.internalize(data)
+
         decomposer = _decomposers[type_name]
-        return decomposer.recompose(obj[FOBS_DATA], self.manager)
+        return decomposer.recompose(data, self.manager)
 
     @staticmethod
     def _load_class(type_name: str):
