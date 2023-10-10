@@ -79,7 +79,8 @@ def get_ssl_context(params: dict, ssl_server: bool) -> Optional[SSLContext]:
 def get_address(params: dict) -> str:
     host = params.get(DriverParams.HOST.value, "0.0.0.0")
     port = params.get(DriverParams.PORT.value, 0)
-
+    if not host:
+        host = "0.0.0.0"
     return f"{host}:{port}"
 
 

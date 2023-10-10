@@ -90,6 +90,7 @@ class TestCommunicator:
         [
             ("tcp", "2000-3000"),
             ("grpc", "3000-4000"),
+            ("nagrpc", "4000-5000"),
             # ("http", "4000-5000"), TODO (YT): We disable this, as it is causing our jenkins hanging
             ("atcp", "5000-6000"),
         ],

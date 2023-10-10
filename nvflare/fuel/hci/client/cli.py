@@ -304,6 +304,13 @@ class AdminClient(cmd.Cmd, EventHandler):
             self.write_stdout(f"exception occurred: {secure_format_exception(e)}")
         self._close_output_file()
 
+    @staticmethod
+    def _user_input(prompt: str) -> str:
+        answer = input(prompt)
+
+        # remove leading and trailing spaces
+        return answer.strip()
+
     def _do_default(self, line):
         args = split_to_args(line)
         cmd_name = args[0]
@@ -360,14 +367,14 @@ class AdminClient(cmd.Cmd, EventHandler):
                 info = CommandInfo.CONFIRM_YN
 
         if info == CommandInfo.CONFIRM_YN:
-            answer = input("Are you sure (y/N): ")
+            answer = self._user_input("Are you sure (y/N): ")
             answer = answer.lower()
             if answer != "y" and answer != "yes":
                 return
         elif info == CommandInfo.CONFIRM_USER_NAME:
-            answer = input("Confirm with User Name: ")
+            answer = self._user_input("Confirm with User Name: ")
             if answer != self.user_name:
-                self.write_string("user name mismatch")
+                self.write_string(f"user name mismatch: {answer} != {self.user_name}")
                 return
         elif info == CommandInfo.CONFIRM_PWD:
             pwd = getpass.getpass("Enter password to confirm: ")
@@ -428,7 +435,7 @@ class AdminClient(cmd.Cmd, EventHandler):
                 else:
                     if self.use_rawinput:
                         try:
-                            line = input(self.prompt)
+                            line = self._user_input(self.prompt)
                         except (EOFError, ConnectionError):
                             line = "bye"
                         except KeyboardInterrupt:
@@ -477,7 +484,7 @@ class AdminClient(cmd.Cmd, EventHandler):
         elif self.credential_type == CredentialType.LOCAL_CERT:
             self.user_name = self.username
         else:
-            self.user_name = input("User Name: ")
+            self.user_name = self._user_input("User Name: ")
 
     def print_resp(self, resp: dict):
         """Prints the server response

@@ -128,9 +128,10 @@ class ClientRunManager(ClientEngineExecutorSpec):
 
     def send_task_result(self, result: Shareable, fl_ctx: FLContext) -> bool:
         push_result = self.client.push_results(result, fl_ctx)  # push task execution results
-        if push_result[0] == CellReturnCode.OK:
+        if push_result == CellReturnCode.OK:
             return True
         else:
+            self.logger.error(f"failed to send task result: {push_result}")
             return False
 
     def get_workspace(self) -> Workspace:
