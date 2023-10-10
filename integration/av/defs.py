@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 
 CHANNEL = "flare_agent"
 
@@ -53,5 +54,8 @@ class MetaKey:
     FILTER_HISTORY = "filter_history"
 
 
-def agent_site_fqcn(site_name: str, agent_id: str):
-    return f"{site_name}__{agent_id}"
+def agent_site_fqcn(site_name: str, agent_id: str, job_id=None):
+    if not job_id:
+        return f"{site_name}__{agent_id}"
+    else:
+        return FQCN.join([site_name, job_id, agent_id])

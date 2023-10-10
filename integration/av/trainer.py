@@ -30,6 +30,9 @@ def main():
     parser.add_argument("--workspace", "-w", type=str, help="workspace folder", required=False, default=".")
     parser.add_argument("--site_name", "-s", type=str, help="flare site name", required=True)
     parser.add_argument("--agent_id", "-a", type=str, help="agent id", required=True)
+    parser.add_argument("--job_id", "-j", type=str, help="flare job id", required=False, default="")
+    parser.add_argument("--site_url", "-u", type=str, help="flare site url", required=False, default="")
+
     args = parser.parse_args()
 
     agent = FlareAgent(
@@ -39,13 +42,15 @@ def main():
         workspace_dir=args.workspace,
         secure_mode=True,
         submit_result_timeout=2.0,
-        flare_site_ready_timeout=120.0,
+        flare_site_heartbeat_timeout=120.0,
+        job_id=args.job_id,
+        flare_site_url=args.site_url,
     )
 
     agent.start()
 
     while True:
-        print("try to get a new task ...")
+        print("getting task ...")
         try:
             task = agent.get_task()
         except AgentClosed:

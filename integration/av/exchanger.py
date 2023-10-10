@@ -43,20 +43,36 @@ class _TaskContext:
         self.result_error = None
         self.result = None
         self.result_received_time = None
-        self.waiter = threading.Event()
+        self.result_waiter = threading.Event()
 
     def __str__(self):
         return f"'{self.task_name} {self.task_id}'"
 
 
 class Exchanger(Executor):
-    def __init__(self, send_task_timeout=5.0, agent_ready_timeout=60.0, agent_life_timeout=600.0):
+    def __init__(
+            self,
+            send_task_timeout=5.0,
+            agent_ready_timeout=60.0,
+            agent_heartbeat_timeout=600.0,
+            agent_is_child=False,
+    ):
+        """ Constructor of Exchanger
+
+        Args:
+            send_task_timeout: when sending task to Agent, how long to wait for response
+            agent_ready_timeout: how long to wait for the agent to be connected
+            agent_heartbeat_timeout: max time allowed to miss heartbeats from the agent
+            agent_is_child: whether the agent will be a child cell.
+        """
         Executor.__init__(self)
         self.flare_agent_fqcn = None
-        self.flare_agent_ready = False
+        self.agent_ready_waiter = threading.Event()
         self.agent_ready_timeout = agent_ready_timeout
-        self.agent_life_timeout = agent_life_timeout
+        self.agent_heartbeat_timeout = agent_heartbeat_timeout
         self.send_task_timeout = send_task_timeout
+        self.agent_is_child = agent_is_child
+        self.internal_listener_url = None
         self.last_agent_ack_time = time.time()
         self.engine = None
         self.cell = None
@@ -84,6 +100,14 @@ class Exchanger(Executor):
 
             client_name = fl_ctx.get_identity_name()
             self.flare_agent_fqcn = defs.agent_site_fqcn(client_name, agent_id)
+
+            if self.agent_is_child:
+                job_id = fl_ctx.get_job_id()
+                self.flare_agent_fqcn = defs.agent_site_fqcn(client_name, agent_id, job_id)
+                self.cell.make_internal_listener()
+                self.internal_listener_url = self.cell.get_internal_listener_url()
+                self.logger.info(f"URL for Agent: {self.internal_listener_url}")
+
             self.log_info(fl_ctx, f"Flare Agent FQCN: {self.flare_agent_fqcn}")
             t = threading.Thread(target=self._maintain, daemon=True)
             t.start()
@@ -109,10 +133,10 @@ class Exchanger(Executor):
 
     def _maintain(self):
         # try to connect the flare agent
-        self.logger.info("started to maintain ...")
+        self.logger.info(f"waiting for flare agent {self.flare_agent_fqcn} ...")
         assert isinstance(self.cell, Cell)
         start_time = time.time()
-        while not self.flare_agent_ready and not self.is_done:
+        while not self.is_done:
             self.logger.info(f"ping {self.flare_agent_fqcn}")
             reply = self.cell.send_request(
                 channel=defs.CHANNEL,
@@ -126,7 +150,7 @@ class Exchanger(Executor):
             rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
             if rc == CellReturnCode.OK:
                 self.logger.info(f"connected to agent {self.flare_agent_fqcn}")
-                self.flare_agent_ready = True
+                self.agent_ready_waiter.set()
                 break
 
             self.logger.info(f"get reply: {reply.headers}")
@@ -139,8 +163,7 @@ class Exchanger(Executor):
                     )
                 self.is_done = True
                 return
-
-            time.sleep(1.0)
+            time.sleep(2.0)
 
         # agent is now connected - heartbeats
         last_hb_time = 0
@@ -162,10 +185,10 @@ class Exchanger(Executor):
                 if rc == CellReturnCode.OK:
                     self.last_agent_ack_time = time.time()
 
-            if time.time() - self.last_agent_ack_time > self.agent_life_timeout:
+            if time.time() - self.last_agent_ack_time > self.agent_heartbeat_timeout:
                 with self.engine.new_context() as fl_ctx:
                     self.system_panic(
-                        reason=f"agent dead: no heartbeat for {self.agent_life_timeout} secs",
+                        reason=f"agent dead: no heartbeat for {self.agent_heartbeat_timeout} secs",
                         fl_ctx=fl_ctx,
                     )
                 self.is_done = True
@@ -175,6 +198,16 @@ class Exchanger(Executor):
             time.sleep(0.2)
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+        # wait for flare agent
+        while True:
+            if self.is_done or abort_signal.triggered:
+                return make_reply(ReturnCode.TASK_ABORTED)
+
+            # wait for agent to be ready
+            # we only wait for short time, so we could check other conditions (is_done, abort_signal)
+            if self.agent_ready_waiter.wait(0.5):
+                break
+
         task_id = shareable.get_header(key=FLContextKey.TASK_ID)
         current_task = self.task_ctx
         if current_task:
@@ -228,14 +261,6 @@ class Exchanger(Executor):
             time.sleep(2.0)
 
     def _do_execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        # wait for flare agent
-        while True:
-            if self.is_done or abort_signal.triggered:
-                return make_reply(ReturnCode.TASK_ABORTED)
-            if self.flare_agent_ready:
-                break
-            time.sleep(0.1)
-
         try:
             dxo = from_shareable(shareable)
         except:
@@ -284,7 +309,10 @@ class Exchanger(Executor):
         self.log_info(fl_ctx, f"Waiting for result from {self.flare_agent_fqcn}")
         waiter_timeout = 0.5
         while True:
-            if not task_ctx.waiter.wait(timeout=waiter_timeout):
+            if task_ctx.result_waiter.wait(timeout=waiter_timeout):
+                # result available
+                break
+            else:
                 # timed out - check other conditions
                 if self.is_done or abort_signal.triggered:
                     self.log_info(fl_ctx, "task is aborted")
@@ -293,9 +321,6 @@ class Exchanger(Executor):
                     self._ask_agent_to_abort_task(task_name, task_id)
                     self.task_ctx = None
                     return make_reply(ReturnCode.TASK_ABORTED)
-            else:
-                # result available
-                break
 
         # convert the result
         if task_ctx.result_rc != RC.OK:
@@ -330,7 +355,7 @@ class Exchanger(Executor):
         task_ctx.result_rc = result_rc
         task_ctx.result = result
         task_ctx.result_received_time = time.time()
-        task_ctx.waiter.set()
+        task_ctx.result_waiter.set()
         if result_is_valid:
             return make_cell_reply(CellReturnCode.OK)
         else:

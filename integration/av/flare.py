@@ -29,8 +29,10 @@ from nvflare.fuel.utils.config_service import ConfigService
 from . import defs
 from .defs import RC, MsgHeader, PayloadKey
 
-SSL_PRIVATE_KEY = "client.key"
-SSL_CERT = "client.crt"
+SSL_SERVER_PRIVATE_KEY = "server.key"
+SSL_SERVER_CERT = "server.crt"
+SSL_CLIENT_PRIVATE_KEY = "client.key"
+SSL_CLIENT_CERT = "client.crt"
 SSL_ROOT_CERT = "rootCA.pem"
 
 
@@ -95,29 +97,50 @@ class _TaskContext:
 
 class FlareAgent:
     def __init__(
-        self,
-        root_url: str,
-        flare_site_name: str,
-        agent_id: str,
-        workspace_dir: str,
-        secure_mode=False,
-        submit_result_timeout=30.0,
-        flare_site_ready_timeout=60.0,
+            self,
+            root_url: str,
+            flare_site_name: str,
+            agent_id: str,
+            workspace_dir: str,
+            secure_mode=False,
+            submit_result_timeout=30.0,
+            flare_site_heartbeat_timeout=60.0,
+            job_id=None,
+            flare_site_url=None,
     ):
+        """ Constructor of Flare Agent. The agent is responsible for communicating with the Flare Client Job cell (CJ)
+        to get task and to submit task result.
+
+        Args:
+            root_url: the URL to the server parent cell (SP)
+            flare_site_name: the CJ's site name (client name)
+            agent_id: the unique ID of the agent
+            workspace_dir: directory that contains startup folder and comm_config.json
+            secure_mode: whether the connection is in secure mode or not
+            submit_result_timeout: when submitting task result, how long to wait for response from the CJ
+            flare_site_heartbeat_timeout: max time allowed for missing heartbeats from CJ
+            job_id: ID of the current Flare Job. Only needed for child-based communication with CJ
+            flare_site_url: URL for connection to CJ. Only needed for child-based communication with CJ
+        """
         ConfigService.initialize(section_files={}, config_path=[workspace_dir])
 
         self.logger = logging.getLogger("FlareAgent")
-        self.cell_name = defs.agent_site_fqcn(flare_site_name, agent_id)
+        self.cell_name = defs.agent_site_fqcn(flare_site_name, agent_id, job_id)
         self.workspace_dir = workspace_dir
         self.secure_mode = secure_mode
         self.root_url = root_url
         self.submit_result_timeout = submit_result_timeout
-        self.flare_site_ready_timeout = flare_site_ready_timeout
+        self.flare_site_heartbeat_timeout = flare_site_heartbeat_timeout
+        self.job_id = job_id
+        self.flare_site_url = flare_site_url
+        self.connect_waiter = threading.Event()
         self.current_task = None
         self.pending_task = None
         self.task_lock = threading.Lock()
         self.last_hb_time = time.time()
         self.is_done = False
+        self.is_started = False
+        self.is_stopped = False
         self.credentials = {}
 
         if secure_mode:
@@ -125,13 +148,21 @@ class FlareAgent:
             if not root_cert_path:
                 raise ValueError(f"cannot find {SSL_ROOT_CERT} from config path {workspace_dir}")
 
-            cert_path = ConfigService.find_file(SSL_CERT)
-            if not cert_path:
-                raise ValueError(f"cannot find {SSL_CERT} from config path {workspace_dir}")
+            # try server first
+            cert_path = ConfigService.find_file(SSL_SERVER_CERT)
+            if cert_path:
+                private_key_path = ConfigService.find_file(SSL_SERVER_PRIVATE_KEY)
+                if not private_key_path:
+                    raise ValueError(f"cannot find {SSL_SERVER_PRIVATE_KEY} from config path {workspace_dir}")
+            else:
+                # try client
+                cert_path = ConfigService.find_file(SSL_CLIENT_CERT)
+                if not cert_path:
+                    raise ValueError(f"cannot find {SSL_SERVER_CERT} or {SSL_CLIENT_CERT} from config path {workspace_dir}")
 
-            private_key_path = ConfigService.find_file(SSL_PRIVATE_KEY)
-            if not private_key_path:
-                raise ValueError(f"cannot find {SSL_PRIVATE_KEY} from config path {workspace_dir}")
+                private_key_path = ConfigService.find_file(SSL_CLIENT_PRIVATE_KEY)
+                if not private_key_path:
+                    raise ValueError(f"cannot find {SSL_CLIENT_PRIVATE_KEY} from config path {workspace_dir}")
 
             self.credentials = {
                 DriverParams.CA_CERT.value: root_cert_path,
@@ -145,6 +176,7 @@ class FlareAgent:
             secure=self.secure_mode,
             credentials=self.credentials,
             create_internal_listener=False,
+            parent_url=self.flare_site_url,
         )
         self.agent = NetAgent(self.cell)
 
@@ -157,21 +189,66 @@ class FlareAgent:
         common_decomposers.register()
 
     def start(self):
+        """Start the agent. This method must be called to enable CJ/Agent communication.
+
+        Returns: None
+
+        """
+        if self.is_started:
+            self.logger.warning("the agent is already started")
+            return
+
+        if self.is_stopped:
+            raise CallStateError("cannot start the agent since it is already stopped")
+
+        self.is_started = True
         self.logger.info(f"starting agent {self.cell_name} ...")
         self.cell.start()
         t = threading.Thread(target=self._maintain, daemon=True)
         t.start()
 
     def stop(self):
+        """Stop the agent. After this is called, there will be no more communications between CJ and agent.
+
+        Returns: None
+
+        """
+        if not self.is_started:
+            self.logger.warning("cannot stop the agent since it is not started")
+            return
+
+        if self.is_stopped:
+            self.logger.warning("agent is already stopped")
+            return
+
+        self.is_stopped = True
         self.cell.stop()
         self.agent.close()
 
     def _maintain(self):
-        self.logger.info("started to maintain ...")
+        self.logger.info("waiting for flare site to connect ...")
+        start = time.time()
         while True:
-            if time.time() - self.last_hb_time > self.flare_site_ready_timeout:
-                self.logger.info(
-                    f"closing agent {self.cell_name}: flare site not ready in {self.flare_site_ready_timeout} seconds"
+            if self.connect_waiter.wait(0.5):
+                # connected!
+                break
+            else:
+                if self.is_done or self.is_stopped:
+                    return
+
+                if time.time() - start > self.flare_site_heartbeat_timeout:
+                    self.logger.error(
+                        f"closing agent {self.cell_name}: flare site not connected "
+                        f"in {self.flare_site_heartbeat_timeout} seconds"
+                    )
+                    self.is_done = True
+                    return
+
+        while True:
+            if time.time() - self.last_hb_time > self.flare_site_heartbeat_timeout:
+                self.logger.error(
+                    f"closing agent {self.cell_name}: no heartbeat from flare site "
+                    f"for {self.flare_site_heartbeat_timeout} seconds"
                 )
                 self.is_done = True
                 return
@@ -179,8 +256,9 @@ class FlareAgent:
 
     def _handle_hello(self, request: Message) -> Union[None, Message]:
         sender = request.get_header(MessageHeaderKey.ORIGIN)
-        self.logger.info(f"got hello from {sender}")
+        self.logger.info(f"connected to the flare site {sender}")
         self.last_hb_time = time.time()
+        self.connect_waiter.set()
         return make_reply(ReturnCode.OK)
 
     def _handle_bye(self, request: Message) -> Union[None, Message]:
@@ -281,8 +359,12 @@ class FlareAgent:
 
     def get_task(self, timeout=None):
         """Get a task from FLARE. This is a blocking call.
+
         If timeout is specified, this call is blocked only for the specified amount of time.
         If timeout is not specified, this call is blocked forever until a task is received or agent is closed.
+
+        Args:
+            timeout: amount of time to block
 
         Returns: None if no task is available during before timeout; or a Task object if task is available.
         Raises:
@@ -301,8 +383,8 @@ class FlareAgent:
 
         start = time.time()
         while True:
-            if self.is_done:
-                self.logger.info("no task available - agent closed")
+            if self.is_done or self.is_stopped:
+                self.logger.info("no more tasks - agent closed")
                 raise AgentClosed("flare agent is closed")
 
             with self.task_lock:
@@ -391,7 +473,7 @@ class FlareAgent:
                     self.logger.warning(f"task {current_task} was marked already_received but has been sent!")
                 return True
 
-            if self.is_done:
+            if self.is_done or self.is_stopped:
                 self.logger.error(f"quit submitting result for task {current_task} since agent is closed")
                 return False
 
