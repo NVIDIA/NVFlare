@@ -35,10 +35,10 @@
       "path": "vertical_data_loader.VerticalDataLoader",
       "args": {
         "data_split_path": "/tmp/dataset/vertical_xgb_data/site-x/data.csv",
-        "psi_path": "/tmp/xgboost_vertical_xgb_psi/site-x/psi/intersection.txt",
+        "psi_path": "/tmp/xgboost_vertical_psi/site-x/psi/intersection.txt",
         "id_col": "uid",
         "label_owner": "site-1",
-        "train_proportion": 0.8
+        "train_proportion": 0.9
       }
     }
   ]

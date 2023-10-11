@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-echo "Testing baseline_xgboost.py"
+echo "Testing baseline_xgboost"
 python test_xgboost.py --model_path ./workspaces/xgboost_workspace_centralized/model_centralized.json
 echo "Testing xgboost_vertical"
 python test_xgboost.py --model_path ./workspaces/xgboost_workspace_vertical/simulate_job/test.model.json
