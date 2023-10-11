@@ -33,7 +33,7 @@ def data_split_args_parser():
     parser.add_argument(
         "--rows_overlap_percentage",
         type=float,
-        default=0.5,
+        default=1.0,
         help="Percentage of rows_total to use for rows_overlap between sites",
     )
     parser.add_argument(
