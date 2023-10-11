@@ -56,6 +56,6 @@ class MetaKey:
 
 def agent_site_fqcn(site_name: str, agent_id: str, job_id=None):
     if not job_id:
-        return f"{site_name}__{agent_id}"
+        return f"{site_name}--{agent_id}"
     else:
         return FQCN.join([site_name, job_id, agent_id])

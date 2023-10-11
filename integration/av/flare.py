@@ -29,10 +29,6 @@ from nvflare.fuel.utils.config_service import ConfigService
 from . import defs
 from .defs import RC, MsgHeader, PayloadKey
 
-SSL_SERVER_PRIVATE_KEY = "server.key"
-SSL_SERVER_CERT = "server.crt"
-SSL_CLIENT_PRIVATE_KEY = "client.key"
-SSL_CLIENT_CERT = "client.crt"
 SSL_ROOT_CERT = "rootCA.pem"
 
 
@@ -148,28 +144,8 @@ class FlareAgent:
             if not root_cert_path:
                 raise ValueError(f"cannot find {SSL_ROOT_CERT} from config path {workspace_dir}")
 
-            # try server first
-            cert_path = ConfigService.find_file(SSL_SERVER_CERT)
-            if cert_path:
-                private_key_path = ConfigService.find_file(SSL_SERVER_PRIVATE_KEY)
-                if not private_key_path:
-                    raise ValueError(f"cannot find {SSL_SERVER_PRIVATE_KEY} from config path {workspace_dir}")
-            else:
-                # try client
-                cert_path = ConfigService.find_file(SSL_CLIENT_CERT)
-                if not cert_path:
-                    raise ValueError(
-                        f"cannot find {SSL_SERVER_CERT} or {SSL_CLIENT_CERT} from config path {workspace_dir}"
-                    )
-
-                private_key_path = ConfigService.find_file(SSL_CLIENT_PRIVATE_KEY)
-                if not private_key_path:
-                    raise ValueError(f"cannot find {SSL_CLIENT_PRIVATE_KEY} from config path {workspace_dir}")
-
             self.credentials = {
                 DriverParams.CA_CERT.value: root_cert_path,
-                DriverParams.CLIENT_CERT.value: cert_path,
-                DriverParams.CLIENT_KEY.value: private_key_path,
             }
 
         self.cell = Cell(
@@ -257,6 +233,7 @@ class FlareAgent:
             time.sleep(1.0)
 
     def _handle_hello(self, request: Message) -> Union[None, Message]:
+        self.logger.info(f"got hello: {request.headers}")
         sender = request.get_header(MessageHeaderKey.ORIGIN)
         self.logger.info(f"connected to the flare site {sender}")
         self.last_hb_time = time.time()
