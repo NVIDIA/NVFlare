@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any
+from typing import Any, Optional
 
 
 class ExchangeTask:
-    def __init__(self, task_name: str, task_id: str, meta: dict, data: Any, return_code: str = "ok"):
+    def __init__(self, task_name: str, task_id: str, data: Any, meta: Optional[dict] = None, return_code: str = "ok"):
         self.task_name = task_name
         self.task_id = task_id
         self.meta = meta
