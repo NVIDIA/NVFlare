@@ -22,7 +22,7 @@ import pytest
 from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.decomposers import common_decomposers
-from nvflare.app_common.model_exchange.model_exchanger import ModelExchanger
+from nvflare.app_common.data_exchange.data_exchanger import DataExchanger
 from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.pipe.file_pipe import FilePipe
 from nvflare.fuel.utils.pipe.pipe import Message
@@ -56,8 +56,8 @@ class TestModelExchanger:
             _ = pipe_handler.send_to_peer(req)
 
             recv_pipe = FilePipe(Mode.PASSIVE, root_path=root_dir)
-            y_mdx = ModelExchanger(pipe=recv_pipe, pipe_name=test_pipe_name, topic=test_topic)
-            result_model = y_mdx.receive_model()
+            y_mdx = DataExchanger(pipe=recv_pipe, pipe_name=test_pipe_name, supported_topics=[test_topic])
+            _, result_model = y_mdx.receive_model()
 
             for k, v in result_model.params.items():
                 np.testing.assert_array_equal(weights[k], v)
