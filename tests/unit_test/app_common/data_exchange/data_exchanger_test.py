@@ -21,8 +21,8 @@ import pytest
 
 from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
-from nvflare.app_common.decomposers import common_decomposers
 from nvflare.app_common.data_exchange.data_exchanger import DataExchanger
+from nvflare.app_common.decomposers import common_decomposers
 from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.pipe.file_pipe import FilePipe
 from nvflare.fuel.utils.pipe.pipe import Message
