@@ -76,11 +76,12 @@ def main():
     # (2) patch the lightning trainer
     flare.patch(trainer)
 
-    # (3) receives FLModel from NVFlare
-    # Note that we don't need to pass this input_model to trainer
-    # because after flare.patch the trainer.fit/validate will get the
-    # global model internally
-    for input_model in flare.receive_global_model():
+    while flare.is_running():
+        # (3) receives FLModel from NVFlare
+        # Note that we don't need to pass this input_model to trainer
+        # because after flare.patch the trainer.fit/validate will get the
+        # global model internally
+        input_model = flare.receive()
         print(f"current_round={input_model.current_round}")
 
         # (4) evaluate the current global model to allow server-side model selection

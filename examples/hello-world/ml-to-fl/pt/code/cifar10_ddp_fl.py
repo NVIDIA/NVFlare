@@ -79,7 +79,8 @@ def main():
     flare.init(rank=f"{rank}")
 
     # (3) gets FLModel from NVFlare
-    for input_model in flare.receive_global_model():
+    while flare.is_running():
+        input_model = flare.receive()
         print(f"current_round={input_model.current_round}")
         if rank == 0:
             # (4) loads model from NVFlare
