@@ -261,7 +261,7 @@ class IPCAgent(defs.FlareAgent):
             if task_id == self.pending_task.task_id:
                 return make_reply(ReturnCode.OK)
             else:
-                self.logger.error(f"got a new task while already have a pending task!")
+                self.logger.error("got a new task while already have a pending task!")
                 return make_reply(ReturnCode.INVALID_REQUEST)
 
         current_task = self.current_task
