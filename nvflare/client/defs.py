@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from abc import ABC, abstractmethod
+
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 
 CHANNEL = "flare_agent"
@@ -94,7 +95,6 @@ class CallStateError(Exception):
 
 
 class FlareAgent(ABC):
-
     @abstractmethod
     def start(self):
         pass

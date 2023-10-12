@@ -24,12 +24,11 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.client import defs
 from nvflare.fuel.f3.cellnet.cell import Cell, Message, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.cell import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.cell import new_message
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
-
-from nvflare.client import defs
 
 
 class _TaskContext:

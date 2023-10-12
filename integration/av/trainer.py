@@ -15,7 +15,7 @@
 import argparse
 import logging
 
-from nvflare.client.defs import RC, MetaKey, AgentClosed, TaskResult
+from nvflare.client.defs import RC, AgentClosed, MetaKey, TaskResult
 from nvflare.client.ipc_agent import IPCAgent
 
 NUMPY_KEY = "numpy_key"

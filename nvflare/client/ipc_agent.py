@@ -19,14 +19,13 @@ import traceback
 from typing import Union
 
 from nvflare.app_common.decomposers import common_decomposers
+from nvflare.client import defs
 from nvflare.fuel.f3.cellnet.cell import Cell, Message
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_message
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.utils.config_service import ConfigService
-
-from nvflare.client import defs
 
 SSL_ROOT_CERT = "rootCA.pem"
 
@@ -336,10 +335,8 @@ class IPCAgent(defs.FlareAgent):
                     elif current_task.status == _TaskContext.NEW:
                         current_task.status = _TaskContext.FETCHED
                         return defs.Task(
-                            current_task.task_name,
-                            current_task.task_id,
-                            current_task.meta,
-                            current_task.data)
+                            current_task.task_name, current_task.task_id, current_task.meta, current_task.data
+                        )
                     else:
                         raise defs.CallStateError(
                             f"application called get_task while the current task is in status {current_task.status}"
