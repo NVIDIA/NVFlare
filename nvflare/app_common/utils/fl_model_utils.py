@@ -18,7 +18,7 @@ from typing import Any, Dict, Optional
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
+from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.app_common.abstract.fl_model import FLModel, FLModelConst, MetaKey, ParamsType
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.fuel.utils.validation_utils import check_object_type
@@ -104,14 +104,22 @@ class FLModelUtils:
         In the future, we should be using the to_dxo, from_dxo directly.
         And all the components should be changed to accept the standard DXO.
         """
-        dxo = from_shareable(shareable)
+        try:
+            dxo = from_shareable(shareable)
+        except ValueError:
+            # if the shareable is NOT a DXO, for example submit_model task
+            dxo = DXO(data_kind=DataKind.NONE)
+            dxo.update_shareable(shareable)
+
         metrics = None
         params_type = None
         params = None
 
-        if dxo.data_kind == DataKind.METRICS:
+        if dxo.data_kind == DataKind.NONE:
+            pass
+        elif dxo.data_kind == DataKind.METRICS:
             metrics = dxo.data
-        elif dxo.data_kind != DataKind.META:
+        else:
             params_type = data_kind_to_params_type.get(dxo.data_kind)
             if params_type is None:
                 raise ValueError(f"Invalid shareable with dxo that has data kind: {dxo.data_kind}")
@@ -131,6 +139,9 @@ class FLModelUtils:
         if fl_ctx is not None:
             meta[MetaKey.JOB_ID] = fl_ctx.get_job_id()
             meta[MetaKey.SITE_NAME] = fl_ctx.get_identity_name()
+
+        for k in shareable[ReservedHeaderKey.HEADERS].keys():
+            meta[k] = shareable.get_header(k)
 
         result = FLModel(
             params_type=params_type,

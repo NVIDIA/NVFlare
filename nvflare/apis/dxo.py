@@ -30,7 +30,7 @@ class DataKind(object):
     COLLECTION = "COLLECTION"  # Dict or List of DXO objects
     STATISTICS = "STATISTICS"
     PSI = "PSI"
-    META = "META"  # only contains meta
+    NONE = "NONE"  # only contains meta
 
 
 class MetaKey(FLMetaKey):
