@@ -29,8 +29,7 @@ from nvflare.fuel.f3.cellnet.cell import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.cell import new_message
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 
-from . import defs
-from .defs import RC, MetaKey, MsgHeader, PayloadKey
+from nvflare.client import defs
 
 
 class _TaskContext:
@@ -49,7 +48,7 @@ class _TaskContext:
         return f"'{self.task_name} {self.task_id}'"
 
 
-class Exchanger(Executor):
+class IPCExchanger(Executor):
     def __init__(
         self,
         send_task_timeout=5.0,
@@ -57,7 +56,7 @@ class Exchanger(Executor):
         agent_heartbeat_timeout=600.0,
         agent_is_child=False,
     ):
-        """Constructor of Exchanger
+        """Constructor of IPCExchanger
 
         Args:
             send_task_timeout: when sending task to Agent, how long to wait for response
@@ -285,18 +284,18 @@ class Exchanger(Executor):
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
         total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS, None)
 
-        meta[MetaKey.DATA_KIND] = dxo.data_kind
+        meta[defs.MetaKey.DATA_KIND] = dxo.data_kind
         if current_round is not None:
-            meta[MetaKey.CURRENT_ROUND] = current_round
+            meta[defs.MetaKey.CURRENT_ROUND] = current_round
         if total_rounds is not None:
-            meta[MetaKey.TOTAL_ROUND] = total_rounds
+            meta[defs.MetaKey.TOTAL_ROUND] = total_rounds
 
         msg = new_message(
             headers={
-                MsgHeader.TASK_ID: task_id,
-                MsgHeader.TASK_NAME: task_name,
+                defs.MsgHeader.TASK_ID: task_id,
+                defs.MsgHeader.TASK_NAME: task_name,
             },
-            payload={PayloadKey.DATA: data, PayloadKey.META: meta},
+            payload={defs.PayloadKey.DATA: data, defs.PayloadKey.META: meta},
         )
 
         # keep sending until done
@@ -323,22 +322,22 @@ class Exchanger(Executor):
                     return make_reply(ReturnCode.TASK_ABORTED)
 
         # convert the result
-        if task_ctx.result_rc != RC.OK:
+        if task_ctx.result_rc != defs.RC.OK:
             return make_reply(task_ctx.result_rc)
 
         result = task_ctx.result
         dxo = DXO(
             data_kind=DataKind.WEIGHTS,
-            data=result.get(PayloadKey.DATA),
-            meta=result.get(PayloadKey.META),
+            data=result.get(defs.PayloadKey.DATA),
+            meta=result.get(defs.PayloadKey.META),
         )
         return dxo.to_shareable()
 
     def _ask_agent_to_abort_task(self, task_name, task_id):
         msg = new_message(
             headers={
-                MsgHeader.TASK_ID: task_id,
-                MsgHeader.TASK_NAME: task_name,
+                defs.MsgHeader.TASK_ID: task_id,
+                defs.MsgHeader.TASK_NAME: task_name,
             }
         )
 
@@ -363,7 +362,7 @@ class Exchanger(Executor):
 
     def _receive_result(self, request: Message) -> Union[None, Message]:
         sender = request.get_header(MessageHeaderKey.ORIGIN)
-        task_id = request.get_header(MsgHeader.TASK_ID)
+        task_id = request.get_header(defs.MsgHeader.TASK_ID)
         task_ctx = self.task_ctx
         if not task_ctx:
             self.logger.error(f"received result from {sender} for task {task_id} while not waiting for result!")
@@ -384,20 +383,20 @@ class Exchanger(Executor):
             self.log_error(fl_ctx, f"bad result from {sender}: expect dict but got {type(payload)}")
             return self._finish_result(task_ctx, result_is_valid=False, result_rc=ReturnCode.EXECUTION_EXCEPTION)
 
-        data = payload.get(PayloadKey.DATA)
+        data = payload.get(defs.PayloadKey.DATA)
         if data is None:
-            self.log_error(fl_ctx, f"bad result from {sender}: missing {PayloadKey.DATA}")
+            self.log_error(fl_ctx, f"bad result from {sender}: missing {defs.PayloadKey.DATA}")
             return self._finish_result(task_ctx, result_is_valid=False, result_rc=ReturnCode.EXECUTION_EXCEPTION)
 
-        meta = payload.get(PayloadKey.META)
+        meta = payload.get(defs.PayloadKey.META)
         if meta is None:
-            self.log_error(fl_ctx, f"bad result from {sender}: missing {PayloadKey.META}")
+            self.log_error(fl_ctx, f"bad result from {sender}: missing {defs.PayloadKey.META}")
             return self._finish_result(task_ctx, result_is_valid=False, result_rc=ReturnCode.EXECUTION_EXCEPTION)
 
         self.log_info(fl_ctx, f"received result from {sender}")
         return self._finish_result(
             task_ctx,
             result_is_valid=True,
-            result_rc=request.get_header(MsgHeader.RC, RC.OK),
+            result_rc=request.get_header(defs.MsgHeader.RC, defs.RC.OK),
             result=payload,
         )

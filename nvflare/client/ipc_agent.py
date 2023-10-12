@@ -26,48 +26,9 @@ from nvflare.fuel.f3.cellnet.utils import make_reply, new_message
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.utils.config_service import ConfigService
 
-from . import defs
-from .defs import RC, MsgHeader, PayloadKey
+from nvflare.client import defs
 
 SSL_ROOT_CERT = "rootCA.pem"
-
-
-class Task:
-    def __init__(self, task_name: str, task_id: str, meta: dict, data):
-        self.task_name = task_name
-        self.task_id = task_id
-        self.meta = meta
-        self.data = data
-
-    def __str__(self):
-        return f"'{self.task_name} {self.task_id}'"
-
-
-class TaskResult:
-    def __init__(self, meta: dict, data, return_code=RC.OK):
-        if not meta:
-            meta = {}
-
-        if not isinstance(meta, dict):
-            raise TypeError(f"meta must be dict but got {type(meta)}")
-
-        if not data:
-            data = {}
-
-        if not isinstance(return_code, str):
-            raise TypeError(f"return_code must be str but got {type(return_code)}")
-
-        self.return_code = return_code
-        self.meta = meta
-        self.data = data
-
-
-class AgentClosed(Exception):
-    pass
-
-
-class CallStateError(Exception):
-    pass
 
 
 class _TaskContext:
@@ -91,7 +52,7 @@ class _TaskContext:
         return f"'{self.task_name} {self.task_id}'"
 
 
-class FlareAgent:
+class IPCAgent(defs.FlareAgent):
     def __init__(
         self,
         root_url: str,
@@ -120,7 +81,7 @@ class FlareAgent:
         """
         ConfigService.initialize(section_files={}, config_path=[workspace_dir])
 
-        self.logger = logging.getLogger("FlareAgent")
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.cell_name = defs.agent_site_fqcn(flare_site_name, agent_id, job_id)
         self.workspace_dir = workspace_dir
         self.secure_mode = secure_mode
@@ -156,7 +117,7 @@ class FlareAgent:
             create_internal_listener=False,
             parent_url=self.flare_site_url,
         )
-        self.agent = NetAgent(self.cell)
+        self.net_agent = NetAgent(self.cell)
 
         self.cell.register_request_cb(channel=defs.CHANNEL, topic=defs.TOPIC_GET_TASK, cb=self._receive_task)
         self.logger.info(f"registered task CB for {defs.CHANNEL} {defs.TOPIC_GET_TASK}")
@@ -177,7 +138,7 @@ class FlareAgent:
             return
 
         if self.is_stopped:
-            raise CallStateError("cannot start the agent since it is already stopped")
+            raise defs.CallStateError("cannot start the agent since it is already stopped")
 
         self.is_started = True
         self.logger.info(f"starting agent {self.cell_name} ...")
@@ -201,7 +162,7 @@ class FlareAgent:
 
         self.is_stopped = True
         self.cell.stop()
-        self.agent.close()
+        self.net_agent.close()
 
     def _maintain(self):
         self.logger.info("waiting for flare site to connect ...")
@@ -254,8 +215,8 @@ class FlareAgent:
 
     def _handle_abort_task(self, request: Message) -> Union[None, Message]:
         sender = request.get_header(MessageHeaderKey.ORIGIN)
-        task_id = request.get_header(MsgHeader.TASK_ID)
-        task_name = request.get_header(MsgHeader.TASK_NAME)
+        task_id = request.get_header(defs.MsgHeader.TASK_ID)
+        task_name = request.get_header(defs.MsgHeader.TASK_NAME)
         self.logger.warning(f"received from {sender} to abort {task_name=} {task_id=}")
         with self.task_lock:
             if self.current_task and task_id == self.current_task.task_id:
@@ -271,30 +232,30 @@ class FlareAgent:
 
     def _create_task(self, request: Message):
         sender = request.get_header(MessageHeaderKey.ORIGIN)
-        task_id = request.get_header(MsgHeader.TASK_ID)
-        task_name = request.get_header(MsgHeader.TASK_NAME)
+        task_id = request.get_header(defs.MsgHeader.TASK_ID)
+        task_name = request.get_header(defs.MsgHeader.TASK_NAME)
 
         task_data = request.payload
         if not isinstance(task_data, dict):
             self.logger.error(f"bad task data from {sender}: expect dict but got {type(task_data)}")
             return None
 
-        data = task_data.get(PayloadKey.DATA)
+        data = task_data.get(defs.PayloadKey.DATA)
         if not data:
-            self.logger.error(f"bad task data from {sender}: missing {PayloadKey.DATA}")
+            self.logger.error(f"bad task data from {sender}: missing {defs.PayloadKey.DATA}")
             return None
 
-        meta = task_data.get(PayloadKey.META)
+        meta = task_data.get(defs.PayloadKey.META)
         if not meta:
-            self.logger.error(f"bad task data from {sender}: missing {PayloadKey.META}")
+            self.logger.error(f"bad task data from {sender}: missing {defs.PayloadKey.META}")
             return None
 
         return _TaskContext(sender, task_name, task_id, meta, data)
 
     def _do_receive_task(self, request: Message) -> Union[None, Message]:
         sender = request.get_header(MessageHeaderKey.ORIGIN)
-        task_id = request.get_header(MsgHeader.TASK_ID)
-        task_name = request.get_header(MsgHeader.TASK_NAME)
+        task_id = request.get_header(defs.MsgHeader.TASK_ID)
+        task_name = request.get_header(defs.MsgHeader.TASK_NAME)
         self.logger.info(f"_do_receive_task from {sender}: {task_name=} {task_id=}")
 
         if self.pending_task:
@@ -364,7 +325,7 @@ class FlareAgent:
         while True:
             if self.is_done or self.is_stopped:
                 self.logger.info("no more tasks - agent closed")
-                raise AgentClosed("flare agent is closed")
+                raise defs.AgentClosed("flare agent is closed")
 
             with self.task_lock:
                 current_task = self.current_task
@@ -374,9 +335,13 @@ class FlareAgent:
                         pass
                     elif current_task.status == _TaskContext.NEW:
                         current_task.status = _TaskContext.FETCHED
-                        return Task(current_task.task_name, current_task.task_id, current_task.meta, current_task.data)
+                        return defs.Task(
+                            current_task.task_name,
+                            current_task.task_id,
+                            current_task.meta,
+                            current_task.data)
                     else:
-                        raise CallStateError(
+                        raise defs.CallStateError(
                             f"application called get_task while the current task is in status {current_task.status}"
                         )
             if timeout and time.time() - start > timeout:
@@ -385,7 +350,7 @@ class FlareAgent:
                 return None
             time.sleep(0.5)
 
-    def submit_result(self, result: TaskResult) -> bool:
+    def submit_result(self, result: defs.TaskResult) -> bool:
         """Submit the result of the current task.
         This is a blocking call. The agent will try to send the result to flare site until it is successfully sent or
         the task is aborted or the agent is closed.
@@ -400,7 +365,7 @@ class FlareAgent:
         made a single time regardless whether the submission is successful.
 
         """
-        if not isinstance(result, TaskResult):
+        if not isinstance(result, defs.TaskResult):
             raise TypeError(f"result must be TaskResult but got {type(result)}")
 
         with self.task_lock:
@@ -413,7 +378,9 @@ class FlareAgent:
             if current_task.aborted:
                 return False
             if current_task.status != _TaskContext.FETCHED:
-                raise CallStateError(f"submit_result is called while current task is in status {current_task.status}")
+                raise defs.CallStateError(
+                    f"submit_result is called while current task is in status {current_task.status}"
+                )
             current_task.status = _TaskContext.PROCESSED
         try:
             result = self._do_submit_result(current_task, result)
@@ -430,20 +397,20 @@ class FlareAgent:
                 self.pending_task = None
         return result
 
-    def _do_submit_result(self, current_task: _TaskContext, result: TaskResult):
+    def _do_submit_result(self, current_task: _TaskContext, result: defs.TaskResult):
         meta = result.meta
         rc = result.return_code
         data = result.data
 
         msg = new_message(
             headers={
-                MsgHeader.TASK_NAME: current_task.task_name,
-                MsgHeader.TASK_ID: current_task.task_id,
-                MsgHeader.RC: rc,
+                defs.MsgHeader.TASK_NAME: current_task.task_name,
+                defs.MsgHeader.TASK_ID: current_task.task_id,
+                defs.MsgHeader.RC: rc,
             },
             payload={
-                PayloadKey.META: meta,
-                PayloadKey.DATA: data,
+                defs.PayloadKey.META: meta,
+                defs.PayloadKey.DATA: data,
             },
         )
         while True:

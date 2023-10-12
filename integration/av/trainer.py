@@ -15,8 +15,8 @@
 import argparse
 import logging
 
-from integration.av.defs import RC, MetaKey
-from integration.av.flare import AgentClosed, FlareAgent, TaskResult
+from nvflare.client.defs import RC, MetaKey, AgentClosed, TaskResult
+from nvflare.client.ipc_agent import IPCAgent
 
 NUMPY_KEY = "numpy_key"
 
@@ -35,7 +35,7 @@ def main():
 
     args = parser.parse_args()
 
-    agent = FlareAgent(
+    agent = IPCAgent(
         root_url="grpc://server:8002",
         flare_site_name=args.site_name,
         agent_id=args.agent_id,
