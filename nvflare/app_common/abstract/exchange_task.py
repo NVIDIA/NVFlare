@@ -12,10 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from enum import Enum
+from typing import Any
 
 
-class ModelExchangeFormat(str, Enum):
-    RAW = "raw"
-    PYTORCH = "pytorch"
-    NUMPY = "numpy"
+class ExchangeTask:
+    def __init__(self, task_name: str, task_id: str, meta: dict, data: Any, return_code: str = "ok"):
+        self.task_name = task_name
+        self.task_id = task_id
+        self.meta = meta
+        self.data = data
+        self.return_code = return_code
+
+    def __str__(self):
+        return f"Task(name:{self.task_name},id:{self.task_id})"

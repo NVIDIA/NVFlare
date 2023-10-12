@@ -13,11 +13,12 @@
 # limitations under the License.
 
 import os
-from typing import Dict, Optional, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 from nvflare.app_common.abstract.fl_model import FLModel
-from nvflare.app_common.model_exchange.constants import ModelExchangeFormat
-from nvflare.app_common.model_exchange.file_pipe_model_exchanger import FilePipeModelExchanger
+from nvflare.app_common.data_exchange.constants import ExchangeFormat
+from nvflare.app_common.data_exchange.data_exchanger import DataExchangeException
+from nvflare.app_common.data_exchange.file_pipe_data_exchanger import FilePipeDataExchanger
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.import_utils import optional_import
 
@@ -34,7 +35,8 @@ def init(config: Union[str, Dict] = f"config/{CONFIG_EXCHANGE}", rank: Optional[
 
     Args:
         config (str or dict): configuration file or config dictionary.
-        rank (str): local rank of the process. It is only useful when the training script has multiple worker processes. (for example multi GPU)
+        rank (str): local rank of the process.
+            It is only useful when the training script has multiple worker processes. (for example multi GPU)
     """
     if rank is None:
         rank = os.environ.get("RANK", "0")
@@ -49,46 +51,65 @@ def init(config: Union[str, Dict] = f"config/{CONFIG_EXCHANGE}", rank: Optional[
     else:
         raise ValueError("config should be either a string or dictionary.")
 
-    mdx = None
+    dx = None
     if rank == "0":
-        if client_config.get_exchange_format() == ModelExchangeFormat.PYTORCH:
+        if client_config.get_exchange_format() == ExchangeFormat.PYTORCH:
             tensor_decomposer, ok = optional_import(module="nvflare.app_opt.pt.decomposers", name="TensorDecomposer")
             if ok:
                 fobs.register(tensor_decomposer)
             else:
-                raise RuntimeError(f"Can't import TensorDecomposer for format: {ModelExchangeFormat.PYTORCH}")
+                raise RuntimeError(f"Can't import TensorDecomposer for format: {ExchangeFormat.PYTORCH}")
 
         # TODO: make Pipe configurable
-        mdx = FilePipeModelExchanger(data_exchange_path=client_config.get_exchange_path())
+        dx = FilePipeDataExchanger(
+            supported_topics=client_config.get_supported_topics(),
+            data_exchange_path=client_config.get_exchange_path(),
+            pipe_name=client_config.get_pipe_name(),
+        )
 
-    PROCESS_MODEL_REGISTRY[pid] = ModelRegistry(client_config, rank, mdx)
+    PROCESS_MODEL_REGISTRY[pid] = ModelRegistry(client_config, rank, dx)
 
 
-def _get_model_registry() -> Optional[ModelRegistry]:
+def _get_model_registry() -> ModelRegistry:
     pid = os.getpid()
     if pid not in PROCESS_MODEL_REGISTRY:
         raise RuntimeError("needs to call init method first")
     return PROCESS_MODEL_REGISTRY[pid]
 
 
-def receive() -> FLModel:
+def receive_task(timeout: Optional[float] = None) -> Tuple[str, Any, dict]:
+    """Receives a task from NVFlare side."""
+    model_registry = _get_model_registry()
+    task = model_registry.get_task(timeout)
+    if task is None:
+        return "", None, {}
+    return model_registry.task_name, task.data, task.meta
+
+
+def send_task_result(data: dict, meta: dict, return_code: str):
+    model_registry = _get_model_registry()
+    model_registry.send_task(data, meta, return_code)
+
+
+def receive(timeout: Optional[float] = None) -> Optional[FLModel]:
     """Receives model from NVFlare side.
 
     Returns:
         An FLModel received.
     """
     model_registry = _get_model_registry()
-    return model_registry.get_model()
+    return model_registry.get_model(timeout)
 
 
 def send(fl_model: FLModel, clear_registry: bool = True) -> None:
     """Sends the model to NVFlare side.
 
     Args:
+        fl_model (FLModel): Sends a FLModel object.
         clear_registry (bool): To clear the registry or not.
     """
     model_registry = _get_model_registry()
-    model_registry.send(model=fl_model)
+    model_registry.send_model(model=fl_model)
     if clear_registry:
         clear()
 
@@ -142,18 +163,33 @@ def get_site_name() -> str:
 
 def receive_global_model():
     """Yields model received from NVFlare server."""
-    sys_info = system_info()
-    total_rounds = sys_info["total_rounds"]
-    is_last_round = False
-    launch_once = get_config().get("launch_once", True)
-
     while True:
-        input_model = receive()
-        current_round = input_model.current_round
-        yield input_model
-        is_last_round = current_round == total_rounds - 1
-        if launch_once and is_last_round:
+        try:
+            input_model = receive()
+            yield input_model
+            clear()
+        except DataExchangeException:
             break
-        elif not launch_once:
-            break
-        clear()
+
+
+def is_running() -> bool:
+    try:
+        receive()
+        return True
+    except DataExchangeException:
+        return False
+
+
+def is_train() -> bool:
+    model_registry = _get_model_registry()
+    return model_registry.task_name == model_registry.config.config[ConfigKey.TRAIN_TASK_NAME]
+
+
+def is_evaluate() -> bool:
+    model_registry = _get_model_registry()
+    return model_registry.task_name == model_registry.config.config[ConfigKey.EVAL_TASK_NAME]
+
+
+def is_submit_model() -> bool:
+    model_registry = _get_model_registry()
+    return model_registry.task_name == model_registry.config.config[ConfigKey.SUBMIT_MODEL_TASK_NAME]
