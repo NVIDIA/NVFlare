@@ -133,9 +133,10 @@ class ConnectorManager:
             return False
 
         # we only allow gen2 (or above) cells to directly connect
-        if c1.gen >= 2 and c2.gen >= 2:
-            return True
-        return False
+        # if c1.gen >= 2 and c2.gen >= 2:
+        #     return True
+        # return False
+        return True
 
     @staticmethod
     def _validate_conn_config(config: dict, key: str) -> Union[None, dict]:
