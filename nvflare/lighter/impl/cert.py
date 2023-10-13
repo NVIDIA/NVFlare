@@ -22,7 +22,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
-from nvflare.lighter.spec import Builder
+from nvflare.lighter.spec import Builder, Participant
 
 
 def serialize_pri_key(pri_key):
@@ -97,6 +97,14 @@ class CertBuilder(Builder):
             f.write(serialize_cert(cert))
         with open(os.path.join(dest_dir, f"{base_name}.key"), "wb") as f:
             f.write(serialize_pri_key(pri_key))
+        if base_name == "client" and (listening_host := participant.props.get("listening_host")):
+            tmp_participant = Participant("server", listening_host, participant.org)
+            tmp_pri_key, tmp_cert = self.get_pri_key_cert(tmp_participant)
+            with open(os.path.join(dest_dir, "server.crt"), "wb") as f:
+                f.write(serialize_cert(tmp_cert))
+            with open(os.path.join(dest_dir, "server.key"), "wb") as f:
+                f.write(serialize_pri_key(tmp_pri_key))
+
         pkcs12 = serialization.pkcs12.serialize_key_and_certificates(
             subject.encode("ascii"), pri_key, cert, None, serialization.BestAvailableEncryption(subject.encode("ascii"))
         )
