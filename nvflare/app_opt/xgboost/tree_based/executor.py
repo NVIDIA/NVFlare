@@ -195,7 +195,6 @@ class FedXGBTreeExecutor(Executor):
         fl_ctx: FLContext,
         abort_signal: Signal,
     ) -> Shareable:
-
         if abort_signal.triggered:
             self.finalize(fl_ctx)
             return make_reply(ReturnCode.TASK_ABORTED)
