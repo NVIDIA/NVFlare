@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import os
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Dict, Optional, Union
 
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.data_exchange.constants import ExchangeFormat
@@ -27,7 +27,7 @@ from .constants import CONFIG_EXCHANGE
 from .model_registry import ModelRegistry
 from .utils import DIFF_FUNCS
 
-PROCESS_MODEL_REGISTRY: Dict[int, ModelRegistry] = {}
+PROCESS_MODEL_REGISTRY = None
 
 
 def init(config: Union[str, Dict] = f"config/{CONFIG_EXCHANGE}", rank: Optional[str] = None):
@@ -38,10 +38,12 @@ def init(config: Union[str, Dict] = f"config/{CONFIG_EXCHANGE}", rank: Optional[
         rank (str): local rank of the process.
             It is only useful when the training script has multiple worker processes. (for example multi GPU)
     """
+    global PROCESS_MODEL_REGISTRY  # Declare PROCESS_MODEL_REGISTRY as global
+
     if rank is None:
         rank = os.environ.get("RANK", "0")
-    pid = os.getpid()
-    if pid in PROCESS_MODEL_REGISTRY:
+
+    if PROCESS_MODEL_REGISTRY:
         raise RuntimeError("Can't call init twice.")
 
     if isinstance(config, str):
@@ -67,28 +69,13 @@ def init(config: Union[str, Dict] = f"config/{CONFIG_EXCHANGE}", rank: Optional[
             pipe_name=client_config.get_pipe_name(),
         )
 
-    PROCESS_MODEL_REGISTRY[pid] = ModelRegistry(client_config, rank, dx)
+    PROCESS_MODEL_REGISTRY = ModelRegistry(client_config, rank, dx)
 
 
 def _get_model_registry() -> ModelRegistry:
-    pid = os.getpid()
-    if pid not in PROCESS_MODEL_REGISTRY:
+    if PROCESS_MODEL_REGISTRY is None:
         raise RuntimeError("needs to call init method first")
-    return PROCESS_MODEL_REGISTRY[pid]
-
-
-def receive_task(timeout: Optional[float] = None) -> Tuple[str, Any, dict]:
-    """Receives a task from NVFlare side."""
-    model_registry = _get_model_registry()
-    task = model_registry.get_task(timeout)
-    if task is None:
-        return "", None, {}
-    return model_registry.task_name, task.data, task.meta
-
-
-def send_task_result(data: dict, meta: dict, return_code: str):
-    model_registry = _get_model_registry()
-    model_registry.send_task(data, meta, return_code)
+    return PROCESS_MODEL_REGISTRY
 
 
 def receive(timeout: Optional[float] = None) -> Optional[FLModel]:
