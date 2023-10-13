@@ -60,6 +60,15 @@ By default, CPU based training is used.
 In order to enable GPU accelerated training, first ensure that your machine has CUDA installed and has at least one GPU.
 In `config_fed_client.json` set `"use_gpus": true` and  `"tree_method": "hist"` in `xgb_params`. Then, in `FedXGBHistogramExecutor` we use the `device` parameter to map each rank to a GPU device ordinal in `xgb_params`. If using multiple GPUs, we can map each rank to a different GPU device, however you can also map each rank to the same GPU device if using a single GPU.
 
+We can create a GPU enabled job using the job CLI:
+```
+nvflare job create -j ./jobs/vertical_xgb_gpu -w vertical_xgb \
+-f config_fed_client.conf use_gpus=true tree_method=hist \
+-f config_fed_server.conf \
+-sd ./code/vertical_xgb \
+-force
+```
+
 ## Run the Example
 Create the vertical xgboost job using the predefined vertical_xgb template:
 ```
