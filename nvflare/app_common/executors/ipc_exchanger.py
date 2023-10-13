@@ -223,6 +223,7 @@ class IPCExchanger(Executor):
         fl_ctx = task_ctx.fl_ctx
         task_name = task_ctx.task_name
         task_id = task_ctx.task_id
+        task_ctx.send_rc = ReturnCode.OK
         while True:
             if self.is_done or abort_signal.triggered:
                 self.log_info(fl_ctx, "task aborted - ask agent to abort the task")
@@ -253,7 +254,9 @@ class IPCExchanger(Executor):
                 self.log_info(fl_ctx, f"Sent task to {self.flare_agent_fqcn} in {time.time() - start} secs")
                 return
             elif rc == CellReturnCode.INVALID_REQUEST:
-                return make_reply(ReturnCode.BAD_REQUEST_DATA)
+                self.log_error(fl_ctx, f"Task rejected by {self.flare_agent_fqcn}: {rc}")
+                task_ctx.send_rc = ReturnCode.BAD_REQUEST_DATA
+                return
             else:
                 self.log_error(fl_ctx, f"Failed to send task to {self.flare_agent_fqcn}: {rc}. Will keep trying.")
             time.sleep(2.0)
@@ -299,7 +302,7 @@ class IPCExchanger(Executor):
 
         # keep sending until done
         self._send_task(task_ctx, msg, abort_signal)
-        if task_ctx.send_rc:
+        if task_ctx.send_rc != ReturnCode.OK:
             # send_task failed
             return make_reply(task_ctx.send_rc)
 
@@ -325,10 +328,12 @@ class IPCExchanger(Executor):
             return make_reply(task_ctx.result_rc)
 
         result = task_ctx.result
+        meta = result.get(defs.PayloadKey.META)
+        data_kind = meta.get(defs.MetaKey.DATA_KIND, DataKind.WEIGHTS)
         dxo = DXO(
-            data_kind=DataKind.WEIGHTS,
+            data_kind=data_kind,
             data=result.get(defs.PayloadKey.DATA),
-            meta=result.get(defs.PayloadKey.META),
+            meta=meta,
         )
         return dxo.to_shareable()
 
