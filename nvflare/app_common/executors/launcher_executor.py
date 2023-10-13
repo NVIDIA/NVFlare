@@ -360,13 +360,16 @@ class LauncherExecutor(Executor):
                 )
             else:
                 self.log_info(fl_ctx, f"got result '{reply}' for task '{task_name}'")
-                if not isinstance(reply.data, FLModel):
-                    self.log_error(fl_ctx, "reply data is not of type FLModel.")
+                if not isinstance(reply.data, ExchangeTask):
+                    self.log_error(fl_ctx, "reply data is not of type ExchangeTask.")
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-                if reply.data.params is not None:
-                    self._result_fl_model = reply.data
-                if reply.data.metrics is not None:
-                    self._result_metrics = reply.data
+                if not isinstance(reply.data.data, FLModel):
+                    self.log_error(fl_ctx, "reply.data.data is not of type FLModel.")
+                    return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+                if reply.data.data.params is not None:
+                    self._result_fl_model = reply.data.data
+                if reply.data.data.metrics is not None:
+                    self._result_metrics = reply.data.data
 
             if self._check_exchange_exit(task_name=task_name) == "":
                 break
