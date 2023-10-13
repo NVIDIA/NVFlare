@@ -33,24 +33,42 @@ class VarName:
     SUBNET_HEARTBEAT_INTERVAL = "subnet_heartbeat_interval"
     SUBNET_TROUBLE_THRESHOLD = "subnet_trouble_threshold"
     COMM_DRIVER_PATH = "comm_driver_path"
+    USE_AIO_GRPC_VAR_NAME = "use_aio_grpc"
 
 
 class CommConfigurator:
+    _config_loaded = False
+    _configuration = None
+
     def __init__(self):
+        # only load once!
         self.logger = logging.getLogger(self.__class__.__name__)
-        config = None
-        for file_name in _comm_config_files:
-            try:
-                config = ConfigService.load_json(file_name)
-                if config:
-                    break
-            except FileNotFoundError:
-                self.logger.debug(f"config file {file_name} not found from config path")
-                config = None
-            except Exception as ex:
-                self.logger.error(f"failed to load config file {file_name}: {secure_format_exception(ex)}")
-                config = None
-        self.config = config
+        if not CommConfigurator._config_loaded:
+            config = None
+            for file_name in _comm_config_files:
+                try:
+                    config = ConfigService.load_json(file_name)
+                    if config:
+                        break
+                except FileNotFoundError:
+                    self.logger.debug(f"config file {file_name} not found from config path")
+                    config = None
+                except Exception as ex:
+                    self.logger.error(f"failed to load config file {file_name}: {secure_format_exception(ex)}")
+                    config = None
+
+            CommConfigurator._configuration = config
+            CommConfigurator._config_loaded = True
+        self.config = CommConfigurator._configuration
+
+    @staticmethod
+    def reset():
+        """Reset the configurator to allow reloading config files.
+
+        Returns:
+
+        """
+        CommConfigurator._config_loaded = False
 
     def get_config(self):
         return self.config
@@ -78,3 +96,18 @@ class CommConfigurator:
 
     def get_comm_driver_path(self, default):
         return ConfigService.get_str_var(VarName.COMM_DRIVER_PATH, self.config, default=default)
+
+    def use_aio_grpc(self, default):
+        return ConfigService.get_bool_var(VarName.USE_AIO_GRPC_VAR_NAME, self.config, default)
+
+    def get_int_var(self, name: str, default=None):
+        return ConfigService.get_int_var(name, self.config, default=default)
+
+    def get_float_var(self, name: str, default=None):
+        return ConfigService.get_float_var(name, self.config, default=default)
+
+    def get_bool_var(self, name: str, default=None):
+        return ConfigService.get_bool_var(name, self.config, default=default)
+
+    def get_str_var(self, name: str, default=None):
+        return ConfigService.get_str_var(name, self.config, default=default)

@@ -200,6 +200,8 @@ class ConfigService:
 
         if isinstance(conf, dict):
             return conf.get(name)
+        else:
+            return None
 
     @classmethod
     def _int_var(cls, name: str, conf=None, default=None):
