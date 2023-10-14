@@ -50,6 +50,7 @@ class FedXGBTreeExecutor(Executor):
         nthread: int = 16,
         tree_method: str = "hist",
         train_task_name: str = AppConstants.TASK_TRAIN,
+        use_gpus=False,
     ):
         super().__init__()
         self.client_id = None
@@ -71,6 +72,7 @@ class FedXGBTreeExecutor(Executor):
         self.nthread = nthread
         self.tree_method = tree_method
         self.train_task_name = train_task_name
+        self.use_gpus = use_gpus
         self.num_local_round = 1
 
         self.bst = None
@@ -101,6 +103,7 @@ class FedXGBTreeExecutor(Executor):
             fl_ctx,
             f"Client {self.client_id} initialized with args: \n {fl_args}",
         )
+        self.rank = int(self.client_id.split("-")[1]) - 1
 
         # set local tensorboard writer for local training info of current model
         tensorboard, flag = optional_import(module="torch.utils.tensorboard")
@@ -205,6 +208,11 @@ class FedXGBTreeExecutor(Executor):
 
         # xgboost parameters
         params = self._get_xgb_train_params()
+
+        if self.use_gpus:
+            # mapping each rank to a GPU (can set to cuda:0 if simulating with only one gpu)
+            self.log_info(fl_ctx, f"Training with GPU {self.rank}")
+            params["device"] = f"cuda:{self.rank}"
 
         if not self.bst:
             # First round
