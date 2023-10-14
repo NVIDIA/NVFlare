@@ -64,7 +64,7 @@ class TaskRegistry:
     def get_sys_info(self) -> Dict:
         return self.sys_info
 
-    def send_task(self, data: Any, meta: dict, return_code: str) -> None:
+    def submit_task(self, data: Any, meta: dict, return_code: str) -> None:
         if not self.data_exchanger or not self.task_name or self.received_task is None:
             return None
         task = ExchangeTask(

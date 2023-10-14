@@ -96,7 +96,7 @@ def send(fl_model: FLModel, clear_registry: bool = True) -> None:
         clear_registry (bool): To clear the registry or not.
     """
     model_registry = _get_model_registry()
-    model_registry.send_model(model=fl_model)
+    model_registry.submit_model(model=fl_model)
     if clear_registry:
         clear()
 

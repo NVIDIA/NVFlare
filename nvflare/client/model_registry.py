@@ -46,7 +46,7 @@ class ModelRegistry(TaskRegistry):
             return task.data
         return None
 
-    def send_model(self, model: FLModel) -> None:
+    def submit_model(self, model: FLModel) -> None:
         if not self.data_exchanger:
             return None
         if self.config.get_transfer_type() == "DIFF":
@@ -69,7 +69,7 @@ class ModelRegistry(TaskRegistry):
                         raise RuntimeError(f"params diff function failed: {e}")
             elif model.metrics is None:
                 raise RuntimeError("the model to send does not have either params or metrics")
-        self.send_task(model, {}, "ok")
+        self.submit_task(model, {}, "ok")
 
     def clear(self):
         super().clear()

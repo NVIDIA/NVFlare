@@ -48,7 +48,7 @@ def train(
             if model_registry.metrics is not None:
                 return_value.metrics = model_registry.metrics
 
-            model_registry.send_model(model=return_value)
+            model_registry.submit_model(model=return_value)
             model_registry.clear()
 
             return return_value
@@ -80,7 +80,7 @@ def evaluate(
             if is_train():
                 model_registry.metrics = return_value
             else:
-                model_registry.send_model(model=FLModel(metrics=return_value))
+                model_registry.submit_model(model=FLModel(metrics=return_value))
                 model_registry.clear()
 
             return return_value
