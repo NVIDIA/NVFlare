@@ -152,7 +152,7 @@ class Servicer(StreamerServicer):
             if connection:
                 self.logger.debug(f"SERVER: closing connection {connection.name}")
                 self.server.driver.close_connection(connection)
-            self.logger.debug(f"SERVER: cleanly finished Stream CB in thread {ct.name}")
+            self.logger.info("SERVER: finished Stream CB")
 
 
 class Server:

@@ -187,7 +187,7 @@ class Servicer(StreamerServicer):
                 connection.close()
                 self.logger.info(f"SERVER: closed connection {connection.name}")
                 self.server.driver.close_connection(connection)
-            self.logger.info(f"SERVER: finished Stream CB")
+            self.logger.info("SERVER: finished Stream CB")
 
 
 class Server:
