@@ -85,7 +85,7 @@ class StreamConnection(Connection):
         except BaseException as ex:
             raise CommError(CommError.ERROR, f"Error sending frame: {ex}")
 
-    def read_loop(self, msg_iter, q: QQ):
+    def read_loop(self, msg_iter):
         ct = threading.current_thread()
         self.logger.debug(f"{self.side}: started read_loop in thread {ct.name}")
         try:
@@ -102,9 +102,9 @@ class StreamConnection(Connection):
         except Exception as ex:
             if not self.closing:
                 self.logger.debug(f"{self.side}: exception {type(ex)} in read_loop")
-        if q:
+        if self.oq:
             self.logger.debug(f"{self.side}: closing queue")
-            q.close()
+            self.oq.close()
         self.logger.debug(f"{self.side} in {ct.name}: done read_loop")
 
     def generate_output(self):
@@ -141,17 +141,9 @@ class Servicer(StreamerServicer):
             self.logger.debug(f"SERVER created connection in thread {ct.name}")
             self.server.driver.add_connection(connection)
             self.logger.debug(f"SERVER created read_loop thread in thread {ct.name}")
-            t = threading.Thread(target=connection.read_loop, args=(request_iterator, oq))
+            t = threading.Thread(target=connection.read_loop, args=(request_iterator,))
             t.start()
-
-            # DO NOT use connection.generate_output()!
-            self.logger.debug(f"SERVER: generate_output in thread {ct.name}")
-            for i in oq:
-                assert isinstance(i, Frame)
-                self.logger.debug(f"SERVER: outgoing frame #{i.seq}")
-                yield i
-            self.logger.debug(f"SERVER: done generate_output in thread {ct.name}")
-
+            yield from connection.generate_output()
         except BaseException as ex:
             self.logger.error(f"Connection closed due to error: {ex}")
         finally:
@@ -254,18 +246,24 @@ class GrpcDriver(BaseDriver):
             channel = grpc.insecure_channel(address, options=self.options)
             self.logger.info(f"created insecure channel at {address}")
 
-        self.logger.debug("CLIENT: created channel")
-        stub = StreamerStub(channel)
-        self.logger.debug("CLIENT: got stub")
-        oq = QQ()
-        connection = StreamConnection(oq, connector, conn_props, "CLIENT", channel=channel)
-        self.add_connection(connection)
-        self.logger.debug("CLIENT: added connection")
-        try:
-            received = stub.Stream(connection.generate_output())
-            connection.read_loop(received, oq)
-        except BaseException as ex:
-            self.logger.info(f"CLIENT: connection done: {type(ex)}")
+        with channel:
+            stub = StreamerStub(channel)
+            self.logger.debug("CLIENT: got stub")
+            oq = QQ()
+            connection = StreamConnection(oq, connector, conn_props, "CLIENT", channel=channel)
+            self.add_connection(connection)
+            self.logger.debug("CLIENT: added connection")
+            try:
+                received = stub.Stream(connection.generate_output())
+                connection.read_loop(received)
+
+            except BaseException as ex:
+                self.logger.info(f"CLIENT: connection done: {type(ex)}")
+
+        with connection.lock:
+            # when we get here the channel is already closed
+            # set connection.channel to None to prevent closing channel again in connection.close().
+            connection.channel = None
         connection.close()
         self.close_connection(connection)
         self.logger.info(f"CLIENT: finished connection {connection}")
