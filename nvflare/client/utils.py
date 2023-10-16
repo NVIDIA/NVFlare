@@ -14,7 +14,7 @@
 
 from typing import Dict
 
-from nvflare.app_common.model_exchange.constants import ModelExchangeFormat
+from nvflare.app_common.data_exchange.constants import ExchangeFormat
 
 
 def numerical_params_diff(original: Dict, new: Dict) -> Dict:
@@ -41,4 +41,4 @@ def numerical_params_diff(original: Dict, new: Dict) -> Dict:
     return diff_dict
 
 
-DIFF_FUNCS = {ModelExchangeFormat.PYTORCH: numerical_params_diff, ModelExchangeFormat.NUMPY: numerical_params_diff}
+DIFF_FUNCS = {ExchangeFormat.PYTORCH: numerical_params_diff, ExchangeFormat.NUMPY: numerical_params_diff}

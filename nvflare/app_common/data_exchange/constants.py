@@ -15,7 +15,7 @@
 from enum import Enum
 
 
-class ModelExchangeFormat(str, Enum):
+class ExchangeFormat(str, Enum):
     RAW = "raw"
     PYTORCH = "pytorch"
     NUMPY = "numpy"
