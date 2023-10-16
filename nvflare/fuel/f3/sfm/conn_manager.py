@@ -285,7 +285,17 @@ class ConnManager(ConnMonitor):
             else:
                 log.info(reconnect_msg)
 
-            time.sleep(wait)
+            # Do not sleep(wait) since 'wait' could be long and the connector.stopping could be set while sleep.
+            # To return as soon as connector.stopping is set, we need to check it frequently.
+            # We sleep very short period of time (0.1 sec).
+            wait_start = time.time()
+            while True:
+                if connector.stopping:
+                    return
+                elif time.time() - wait_start >= wait:
+                    break
+                time.sleep(0.1)
+
             # Exponential backoff
             wait *= 2
             if wait > MAX_WAIT:
