@@ -17,7 +17,7 @@ from inspect import signature
 
 from nvflare.app_common.abstract.fl_model import FLModel
 
-from .api import _get_model_registry
+from .api import _get_model_registry, is_train
 
 
 def _replace_func_args(func, kwargs, model: FLModel):
@@ -48,7 +48,8 @@ def train(
             if model_registry.metrics is not None:
                 return_value.metrics = model_registry.metrics
 
-            model_registry.send(model=return_value)
+            model_registry.submit_model(model=return_value)
+            model_registry.clear()
 
             return return_value
 
@@ -76,7 +77,11 @@ def evaluate(
             if return_value is None:
                 raise RuntimeError("return value is None!")
 
-            model_registry.metrics = return_value
+            if is_train():
+                model_registry.metrics = return_value
+            else:
+                model_registry.submit_model(model=FLModel(metrics=return_value))
+                model_registry.clear()
 
             return return_value
 
