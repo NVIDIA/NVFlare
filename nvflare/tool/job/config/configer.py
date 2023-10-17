@@ -122,11 +122,12 @@ def merge_configs(
     """Merges configurations from indices_configs and cli_file_configs.
 
     Args:
-        app_indices_configs (Dict[str,Dict[str, tuple]]): A dictionary containing indices and configurations.
+        app_indices_configs (Dict[str, Dict[str, tuple]]): A dictionary containing indices and configurations.
         app_cli_file_configs (Dict[str, Dict[str, Dict]]): A dictionary containing CLI configurations.
 
     Returns:
-        Dict[str, Dict[str, Tuple]]: A dictionary containing merged configurations.
+        Dict[str, Dict[str, Tuple]]: A dictionary of {app_name: merged configurations}.
+            Each of the merged configurations can be expressed in a Tuple: config, excluded_key_List, key_indices
     """
     app_merged = {}
     for app_name in app_indices_configs:
