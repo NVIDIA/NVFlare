@@ -17,10 +17,8 @@ from typing import Dict, Optional
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.data_exchange.constants import ExchangeFormat
-from nvflare.app_common.decomposers import common_decomposers
 from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 from nvflare.client.config import ClientConfig, ConfigKey, TransferType
 from nvflare.client.constants import CONFIG_EXCHANGE
@@ -130,8 +128,6 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 raise RuntimeError("data exchange path needs to be absolute.")
             pipe = FilePipe(mode=Mode.ACTIVE, root_path=self._data_exchange_path)
 
-        flare_decomposers.register()
-        common_decomposers.register()
         self._pipe = pipe
 
     def prepare_config_for_launch(self, task_name: str, shareable: Shareable, fl_ctx: FLContext):
