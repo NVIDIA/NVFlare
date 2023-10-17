@@ -69,8 +69,10 @@ class AioStreamSession(Connection):
 
         conf = CommConfigurator()
         if conf.get_bool_var("simulate_unstable_network", default=False):
-            self.disconn = threading.Thread(target=self._disconnect, daemon=True)
-            self.disconn.start()
+            if context:
+                # only server side
+                self.disconn = threading.Thread(target=self._disconnect, daemon=True)
+                self.disconn.start()
 
     def _disconnect(self):
         t = random.randint(10, 60)
@@ -88,9 +90,11 @@ class AioStreamSession(Connection):
             if self.context:
                 self.aio_ctx.run_coro(self.context.abort(grpc.StatusCode.CANCELLED, "service closed"))
                 self.context = None
+                self.logger.info("Closed GRPC context")
             if self.channel:
                 self.aio_ctx.run_coro(self.channel.close())
                 self.channel = None
+                self.logger.info("Closed GRPC Channel")
 
     def send_frame(self, frame: BytesAlike):
         try:
@@ -298,57 +302,42 @@ class AioGrpcDriver(BaseDriver):
         address = get_address(params)
 
         self.logger.debug(f"CLIENT: trying to connect {address}")
+        connection = None
         try:
             secure = ssl_required(params)
             if secure:
-                grpc_channel = grpc.aio.secure_channel(
+                channel = grpc.aio.secure_channel(
                     address, options=self.options, credentials=get_grpc_client_credentials(params)
                 )
                 self.logger.info(f"created secure channel at {address}")
             else:
-                grpc_channel = grpc.aio.insecure_channel(address, options=self.options)
+                channel = grpc.aio.insecure_channel(address, options=self.options)
                 self.logger.info(f"created insecure channel at {address}")
+            stub = StreamerStub(channel)
 
-            async with grpc_channel as channel:
-                self.logger.debug(f"CLIENT: connected to {address}")
-                stub = StreamerStub(channel)
-                conn_props = {DriverParams.PEER_ADDR.value: address}
+            self.logger.debug(f"CLIENT: connected to {address}")
+            conn_props = {DriverParams.PEER_ADDR.value: address}
 
-                if secure:
-                    conn_props[DriverParams.PEER_CN.value] = "N/A"
+            if secure:
+                conn_props[DriverParams.PEER_CN.value] = "N/A"
 
-                connection = AioStreamSession(
-                    aio_ctx=aio_ctx, connector=connector, conn_props=conn_props, channel=channel
-                )
+            connection = AioStreamSession(aio_ctx=aio_ctx, connector=connector, conn_props=conn_props, channel=channel)
 
-                try:
-                    self.logger.debug(f"CLIENT: start streaming on connection {connection}")
-                    msg_iter = stub.Stream(connection.generate_output())
-                    conn_ctx.conn = connection
-                    await connection.read_loop(msg_iter)
-                except asyncio.CancelledError as error:
-                    self.logger.debug(f"CLIENT: RPC cancelled: {error}")
-                except Exception as ex:
-                    if self.closing:
-                        self.logger.debug(
-                            f"Connection {connection} closed by {type(ex)}: {secure_format_exception(ex)}"
-                        )
-                    else:
-                        self.logger.debug(
-                            f"Connection {connection} client read exception {type(ex)}: {secure_format_exception(ex)}"
-                        )
-                    self.logger.debug(secure_format_traceback())
-
-            with connection.lock:
-                connection.channel = None
-            connection.close()
+            self.logger.debug(f"CLIENT: start streaming on connection {connection}")
+            msg_iter = stub.Stream(connection.generate_output())
+            conn_ctx.conn = connection
+            await connection.read_loop(msg_iter)
         except asyncio.CancelledError:
             self.logger.debug("CLIENT: RPC cancelled")
+        except grpc.FutureCancelledError:
+            self.logger.info("CLIENT: Future cancelled")
         except Exception as ex:
             conn_ctx.error = f"connection {connection} error: {type(ex)}: {secure_format_exception(ex)}"
             self.logger.debug(conn_ctx.error)
             self.logger.debug(secure_format_traceback())
-
+        finally:
+            if connection:
+                connection.close()
         conn_ctx.waiter.set()
 
     def connect(self, connector: ConnectorInfo):

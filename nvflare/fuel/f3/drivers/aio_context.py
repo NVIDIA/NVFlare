@@ -42,10 +42,19 @@ class AioContext:
 
         return self.loop
 
+    def _handle_exception(self, loop, context):
+        try:
+            msg = context.get("exception", context["message"])
+            self.logger.debug(f"AIO Exception: {msg}")
+        except Exception as ex:
+            # ignore exception in the exception handler
+            self.logger.debug(f"exception in aio exception handler: {ex}")
+
     def run_aio_loop(self):
         self.logger.debug(f"{self.name}: started AioContext in thread {threading.current_thread().name}")
         # self.loop = asyncio.get_event_loop()
         self.loop = asyncio.new_event_loop()
+        self.loop.set_exception_handler(self._handle_exception)
         asyncio.set_event_loop(self.loop)
         self.logger.debug(f"{self.name}: got loop: {id(self.loop)}")
         self.ready.set()

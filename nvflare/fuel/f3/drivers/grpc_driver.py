@@ -68,13 +68,18 @@ class StreamConnection(Connection):
             if self.context:
                 try:
                     self.context.abort(grpc.StatusCode.CANCELLED, "service closed")
-                except:
+                except Exception as ex:
                     # ignore any exception when aborting
-                    pass
+                    self.logger.debug(f"exception aborting GRPC context: {secure_format_exception(ex)}")
                 self.context = None
+                self.logger.info("Closed GRPC context")
             if self.channel:
-                self.channel.close()
+                try:
+                    self.channel.close()
+                except Exception as ex:
+                    self.logger.debug(f"exception closing GRPC channel: {secure_format_exception(ex)}")
                 self.channel = None
+                self.logger.info("Closed GRPC Channel")
 
     def send_frame(self, frame: Union[bytes, bytearray, memoryview]):
         try:
@@ -233,39 +238,36 @@ class GrpcDriver(BaseDriver):
         params = connector.params
         address = get_address(params)
         conn_props = {DriverParams.PEER_ADDR.value: address}
+        connection = None
+        try:
+            secure = ssl_required(params)
+            if secure:
+                self.logger.debug("CLIENT: creating secure channel")
+                channel = grpc.secure_channel(
+                    address, options=self.options, credentials=get_grpc_client_credentials(params)
+                )
+                self.logger.info(f"created secure channel at {address}")
+            else:
+                self.logger.info("CLIENT: creating insecure channel")
+                channel = grpc.insecure_channel(address, options=self.options)
+                self.logger.info(f"created insecure channel at {address}")
 
-        secure = ssl_required(params)
-        if secure:
-            self.logger.debug("CLIENT: creating secure channel")
-            channel = grpc.secure_channel(
-                address, options=self.options, credentials=get_grpc_client_credentials(params)
-            )
-            self.logger.info(f"created secure channel at {address}")
-        else:
-            self.logger.info("CLIENT: creating insecure channel")
-            channel = grpc.insecure_channel(address, options=self.options)
-            self.logger.info(f"created insecure channel at {address}")
-
-        with channel:
             stub = StreamerStub(channel)
             self.logger.debug("CLIENT: got stub")
             oq = QQ()
             connection = StreamConnection(oq, connector, conn_props, "CLIENT", channel=channel)
             self.add_connection(connection)
             self.logger.debug("CLIENT: added connection")
-            try:
-                received = stub.Stream(connection.generate_output())
-                connection.read_loop(received)
-
-            except BaseException as ex:
-                self.logger.info(f"CLIENT: connection done: {type(ex)}")
-
-        with connection.lock:
-            # when we get here the channel is already closed
-            # set connection.channel to None to prevent closing channel again in connection.close().
-            connection.channel = None
-        connection.close()
-        self.close_connection(connection)
+            received = stub.Stream(connection.generate_output())
+            connection.read_loop(received)
+        except grpc.FutureCancelledError:
+            self.logger.debug("RPC Cancelled")
+        except Exception as ex:
+            self.logger.error(f"connection {connection} error: {type(ex)}: {secure_format_exception(ex)}")
+        finally:
+            if connection:
+                connection.close()
+                self.close_connection(connection)
         self.logger.info(f"CLIENT: finished connection {connection}")
 
     @staticmethod
