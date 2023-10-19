@@ -34,7 +34,9 @@ class ModelRegistry(TaskRegistry):
 
     """
 
-    def __init__(self, config: ClientConfig, rank, data_exchanger: Optional[DataExchanger] = None):
+    def __init__(
+        self, config: ClientConfig, rank: Optional[str] = None, data_exchanger: Optional[DataExchanger] = None
+    ):
         super().__init__(config, rank, data_exchanger)
         self.metrics = None
 
