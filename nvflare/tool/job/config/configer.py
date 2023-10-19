@@ -11,10 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
-from pyhocon import ConfigTree
+from pyhocon import ConfigFactory, ConfigTree
 
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.tool.job.config.config_indexer import KeyIndex, build_reverse_order_index
@@ -103,18 +104,30 @@ def filter_config_name_and_values(
     return temp_results
 
 
+def _cast_type(key_index, cli_value):
+    """Casts cli_value to correct type.
+
+    Since build_reverse_order_index is using pyhocon, we need to do the same here.
+    """
+    if key_index.value is None:
+        return cli_value
+
+    new_value = ConfigFactory.parse_string(f"{key_index.key}={cli_value}")[key_index.key]
+    return new_value
+
+
 def merge_configs(
     app_indices_configs: Dict[str, Dict[str, tuple]], app_cli_file_configs: Dict[str, Dict[str, Dict]]
 ) -> Dict[str, Dict[str, tuple]]:
-    """
-    Merge configurations from indices_configs and cli_file_configs.
+    """Merges configurations from indices_configs and cli_file_configs.
 
     Args:
-        app_indices_configs (Dict[str,Dict[str, tuple]]): A dictionary containing indices and configurations.
+        app_indices_configs (Dict[str, Dict[str, tuple]]): A dictionary containing indices and configurations.
         app_cli_file_configs (Dict[str, Dict[str, Dict]]): A dictionary containing CLI configurations.
 
     Returns:
-        Dict[str, Dict[str, Tuple]]: A dictionary containing merged configurations.
+        Dict[str, Dict[str, Tuple]]: A dictionary of {app_name: merged configurations}.
+            Each of the merged configurations can be expressed in a Tuple: config, excluded_key_List, key_indices
     """
     app_merged = {}
     for app_name in app_indices_configs:
@@ -136,8 +149,7 @@ def merge_configs(
                             else:
                                 indices = key_indices.get(key)
                                 for key_index in indices:
-                                    value_type = type(key_index.value)
-                                    new_value = value_type(cli_value) if key_index.value is not None else cli_value
+                                    new_value = _cast_type(key_index, cli_value)
                                     key_index.value = new_value
                                     parent_key = key_index.parent_key
                                     if parent_key and isinstance(parent_key.value, ConfigTree):
@@ -165,8 +177,7 @@ def get_root_index(key_index: KeyIndex) -> Optional[KeyIndex]:
 
 
 def get_cli_config(cmd_args: Any, app_names: List[str]) -> Dict[str, Dict[str, Dict[str, str]]]:
-    """
-    Extract configurations from command-line arguments and return them in a dictionary.
+    """Extracts configurations from command-line arguments and return them in a dictionary.
 
     Args:
         app_names: application names
@@ -178,14 +189,15 @@ def get_cli_config(cmd_args: Any, app_names: List[str]) -> Dict[str, Dict[str, D
     app_cli_config_dict = {}
     if cmd_args.config_file:
         cli_configs = cmd_args.config_file
-        app_cli_config_dict = parse_cli_config(cli_configs, app_names, cmd_args.job_folder)
+        app_cli_config_dict = _parse_cli_config(cli_configs, app_names)
 
+    # replace "script"
     if "script" in cmd_args and cmd_args.script:
         script = os.path.basename(cmd_args.script)
 
         if app_cli_config_dict:
             key = CONFIG_FED_CLIENT_CONF
-            for app_name, cli_config_dict in app_cli_config_dict.items():
+            for _, cli_config_dict in app_cli_config_dict.items():
 
                 if key in cli_config_dict:
                     cli_config_dict[key].update({APP_SCRIPT_KEY: script})
@@ -197,12 +209,10 @@ def get_cli_config(cmd_args: Any, app_names: List[str]) -> Dict[str, Dict[str, D
     return app_cli_config_dict
 
 
-def parse_cli_config(cli_configs: List[str], app_names: List[str], job_folder) -> Dict[str, Dict[str, Dict[str, str]]]:
-    """
-    Extract configurations from command-line arguments and return them in a dictionary.
+def _parse_cli_config(cli_configs: List[str], app_names: List[str]) -> Dict[str, Dict[str, Dict[str, str]]]:
+    """Extracts configurations from command-line arguments and return them in a dictionary.
 
     Args:
-        job_folder: job_folder
         app_names: application names
         cli_configs: Array of CLI config option in the format of
            -f filename.conf  key1=v1 key2=v2
