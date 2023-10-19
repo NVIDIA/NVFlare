@@ -1763,7 +1763,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                         )
                     )
             else:
-                self.log_error(f"no waiter for req {rid} - the reply is too late", None)
+                self.log_warning(f"no waiter for req {rid} - the reply is too late", None)
                 self.sent_msg_counter_pool.increment(
                     category=self._stats_category(message), counter_name=_CounterName.LATE
                 )
