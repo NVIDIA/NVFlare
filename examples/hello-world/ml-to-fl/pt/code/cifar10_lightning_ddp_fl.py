@@ -82,7 +82,8 @@ def main():
         # because after flare.patch the trainer.fit/validate will get the
         # global model internally
         input_model = flare.receive()
-        print(f"current_round={input_model.current_round}")
+        if input_model:
+            print(f"current_round={input_model.current_round}")
 
         # (4) evaluate the current global model to allow server-side model selection
         print("--- validate global model ---")
