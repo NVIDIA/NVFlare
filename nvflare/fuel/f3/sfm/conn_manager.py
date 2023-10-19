@@ -39,7 +39,7 @@ from nvflare.security.logging import secure_format_exception, secure_format_trac
 FRAME_THREAD_POOL_SIZE = 100
 CONN_THREAD_POOL_SIZE = 16
 INIT_WAIT = 1
-MAX_WAIT = 60
+MAX_WAIT = 10
 SILENT_RECONNECT_TIME = 5
 SELF_ADDR = "0.0.0.0:0"
 
