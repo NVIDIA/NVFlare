@@ -12,11 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import re
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import SystemConfigs
 from nvflare.apis.responder import Responder
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
