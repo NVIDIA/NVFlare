@@ -64,7 +64,7 @@ We made the following changes:
 
 1. Import NVFlare Client API: ```import nvflare.client as flare```
 2. Initialize NVFlare Client API: ```flare.init()```
-3. Receive aggregated/global FLModel from NVFlare side each round: ```for input_model in flare.receive_global_model()```
+3. Receive aggregated/global FLModel from NVFlare side each round: ```input_model = flare.receive()```
 4. Load the received aggregated/global model weights into the model structure: ```net.load_state_dict(input_model.params)```
 5. Wrap evaluation logic into a method to re-use for evaluation on both trained and received aggregated/global model
 6. Evaluate on received aggregated/global model to get the metrics for model selection
@@ -125,7 +125,7 @@ We made the following changes:
     - Decorate with ```@flare.evaluate```
     - The first argument is input FLModel
     - Return a float number of metric
-5. Receive aggregated/global FLModel from NVFlare side each round: ```for input_model in flare.receive_global_model()```
+5. Receive aggregated/global FLModel from NVFlare side each round: ```input_model = flare.receive()```
 6. Call ```fl_evaluate``` method before training to get metrics on the received aggregated/global model
 
 Optional: Change the data path to an absolute path and use ```./prepare_data.sh``` to download data
@@ -164,7 +164,7 @@ To transform the existing code to FL training code, we made the following change
 
 1. Import NVFlare Lightning Client API: ```import nvflare.client.lightning as flare```
 2. Patch the PyTorch Lightning trainer ```flare.patch(trainer)```
-3. Receive aggregated/global FLModel from NVFlare side each round: ```for input_model in flare.receive_global_model()```
+3. Receive aggregated/global FLModel from NVFlare side each round: ```input_model = flare.receive()```
 4. Call trainer.evaluate() method to evaluate newly received aggregated/global model. The resulting evaluation metric will be used for the best model selection
 
 The modified code can be found in [./code/cifar10_lightning_fl.py](./code/cifar10_lightning_fl.py)
@@ -174,7 +174,7 @@ Then we can create the job using sag_pt template:
 ```bash
 nvflare job create -force -j ./jobs/lightning -w sag_pt -sd ./code/ \
     -f config_fed_client.conf app_script=cifar10_lightning_fl.py \
-    -f config_fed_server.conf key_metric=val_acc_epoch model_class_path="lit_net.LitNet"
+    -f config_fed_server.conf key_metric=val_acc_epoch model_class_path=lit_net.LitNet
 ```
 
 Note that we pass the "key_metric"="val_acc_epoch" (this name originates from the code [here](./code/lit_net.py#L56))
@@ -209,7 +209,7 @@ We made the following changes:
 
 1. Import NVFlare Client API: ```import nvflare.client as flare```
 2. Initialize NVFlare Client API: ```flare.init()```
-3. Receive aggregated/global FLModel from NVFlare side each round: ```for input_model in flare.receive_global_model()```
+3. Receive aggregated/global FLModel from NVFlare side each round: ```input_model = flare.receive()```
 4. Load the received aggregated/global model weights into the model structure: ```net.load_state_dict(input_model.params)```
 5. Evaluate on received aggregated/global model to get the metrics for model selection
 6. Construct the FLModel to be returned to the NVFlare side: ```output_model = flare.FLModel(xxx)```
@@ -267,7 +267,7 @@ Then we can create the job using sag_pt template:
 ```bash
 nvflare job create -force -j ./jobs/lightning_ddp -w sag_pt -sd ./code/ \
     -f config_fed_client.conf app_script=cifar10_lightning_ddp_fl.py \
-    -f config_fed_server.conf key_metric=val_acc_epoch model_class_path="lit_net.LitNet"
+    -f config_fed_server.conf key_metric=val_acc_epoch model_class_path=lit_net.LitNet
 ```
 
 Note that we pass the "key_metric"="val_acc_epoch" (this name originates from the code [here](./code/lit_net.py#L56))

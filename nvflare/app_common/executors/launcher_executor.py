@@ -400,8 +400,9 @@ class LauncherExecutor(Executor):
             if self._result_fl_model is None:
                 return f"missing result FLModel for train_task: {self._train_task_name}."
 
-            if self._train_with_evaluation and self._result_metrics is None:
-                return f"missing result metrics for train_task: {self._train_task_name}."
+            if self._train_with_evaluation:
+                if self._result_fl_model.metrics is None and self._result_metrics is None:
+                    return f"missing result metrics for train_task: {self._train_task_name}."
         elif task_name == self._evaluate_task_name:
             if self._result_metrics is None:
                 return f"missing result metrics for evaluate_task: {self._evaluate_task_name}."
