@@ -236,33 +236,36 @@ class GrpcDriver(BaseDriver):
         params = connector.params
         address = get_address(params)
         conn_props = {DriverParams.PEER_ADDR.value: address}
-
-        secure = ssl_required(params)
-        if secure:
-            self.logger.debug("CLIENT: creating secure channel")
-            channel = grpc.secure_channel(
-                address, options=self.options, credentials=get_grpc_client_credentials(params)
-            )
-            self.logger.info(f"created secure channel at {address}")
-        else:
-            self.logger.info("CLIENT: creating insecure channel")
-            channel = grpc.insecure_channel(address, options=self.options)
-            self.logger.info(f"created insecure channel at {address}")
-
-        self.logger.debug("CLIENT: created channel")
-        stub = StreamerStub(channel)
-        self.logger.debug("CLIENT: got stub")
-        oq = QQ()
-        connection = StreamConnection(oq, connector, conn_props, "CLIENT", channel=channel)
-        self.add_connection(connection)
-        self.logger.debug("CLIENT: added connection")
+        connection = None
         try:
+            secure = ssl_required(params)
+            if secure:
+                self.logger.debug("CLIENT: creating secure channel")
+                channel = grpc.secure_channel(
+                    address, options=self.options, credentials=get_grpc_client_credentials(params)
+                )
+                self.logger.info(f"created secure channel at {address}")
+            else:
+                self.logger.info("CLIENT: creating insecure channel")
+                channel = grpc.insecure_channel(address, options=self.options)
+                self.logger.info(f"created insecure channel at {address}")
+
+            stub = StreamerStub(channel)
+            self.logger.debug("CLIENT: got stub")
+            oq = QQ()
+            connection = StreamConnection(oq, connector, conn_props, "CLIENT", channel=channel)
+            self.add_connection(connection)
+            self.logger.debug("CLIENT: added connection")
             received = stub.Stream(connection.generate_output())
             connection.read_loop(received)
+        except grpc.FutureCancelledError:
+            self.logger.debug("RPC Cancelled")
         except Exception as ex:
             self.logger.info(f"CLIENT: connection done: {secure_format_exception(ex)}")
-        connection.close()
-        self.close_connection(connection)
+        finally:
+            if connection:
+                connection.close()
+                self.close_connection(connection)
         self.logger.info(f"CLIENT: finished connection {connection}")
 
     @staticmethod

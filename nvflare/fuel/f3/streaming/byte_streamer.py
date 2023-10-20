@@ -64,8 +64,6 @@ class TxTask:
 
 
 class ByteStreamer:
-    comm_config = CommConfigurator()
-
     def __init__(self, cell: CoreCell):
         self.cell = cell
         self.cell.register_request_cb(channel=STREAM_CHANNEL, topic=STREAM_ACK_TOPIC, cb=self._ack_handler)
@@ -74,7 +72,7 @@ class ByteStreamer:
 
     @staticmethod
     def get_chunk_size():
-        return ByteStreamer.comm_config.get_streaming_chunk_size(STREAM_CHUNK_SIZE)
+        return CommConfigurator().get_streaming_chunk_size(STREAM_CHUNK_SIZE)
 
     def send(
         self, channel: str, topic: str, target: str, headers: dict, stream: Stream, secure=False, optional=False
@@ -104,11 +102,11 @@ class ByteStreamer:
             # Flow control
             window = task.offset - task.offset_ack
             # It may take several ACKs to clear up the window
-            window_size = ByteStreamer.comm_config.get_streaming_window_size(STREAM_WINDOW_SIZE)
+            window_size = CommConfigurator().get_streaming_window_size(STREAM_WINDOW_SIZE)
             while window > window_size:
                 log.debug(f"{task} window size {window} exceeds limit: {window_size}")
                 task.ack_waiter.clear()
-                ack_wait = ByteStreamer.comm_config.get_streaming_ack_wait(STREAM_ACK_WAIT)
+                ack_wait = CommConfigurator().get_streaming_ack_wait(STREAM_ACK_WAIT)
                 if not task.ack_waiter.wait(timeout=ack_wait):
                     self._stop_task(task, StreamError(f"{task} ACK timeouts after {ack_wait} seconds"))
                     return
