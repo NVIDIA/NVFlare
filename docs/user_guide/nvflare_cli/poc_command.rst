@@ -1,7 +1,7 @@
 .. _poc_command:
 
 *****************************************
-Commmand for Proof Of Concept (POC) Mode
+Command for Proof Of Concept (POC) Mode
 *****************************************
 
 Introduction to the POC Command
