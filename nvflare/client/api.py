@@ -25,7 +25,6 @@ from nvflare.fuel.utils.import_utils import optional_import
 from .config import ClientConfig, ConfigKey, from_file
 from .constants import CONFIG_EXCHANGE
 from .model_registry import ModelRegistry
-from .utils import DIFF_FUNCS
 
 PROCESS_MODEL_REGISTRY = None
 
@@ -120,14 +119,6 @@ def system_info() -> Dict:
     return model_registry.get_sys_info()
 
 
-def params_diff(original: Dict, new: Dict) -> Dict:
-    model_registry = _get_model_registry()
-    diff_func = DIFF_FUNCS.get(model_registry.config.get_exchange_format(), None)
-    if diff_func is None:
-        raise RuntimeError("no default params diff function")
-    return diff_func(original, new)
-
-
 def get_config() -> Dict:
     model_registry = _get_model_registry()
     return model_registry.config.config
@@ -169,14 +160,20 @@ def is_running() -> bool:
 
 def is_train() -> bool:
     model_registry = _get_model_registry()
+    if model_registry.rank != "0":
+        raise RuntimeError("only rank 0 can call is_train!")
     return model_registry.task_name == model_registry.config.config[ConfigKey.TRAIN_TASK_NAME]
 
 
 def is_evaluate() -> bool:
     model_registry = _get_model_registry()
+    if model_registry.rank != "0":
+        raise RuntimeError("only rank 0 can call is_evaluate!")
     return model_registry.task_name == model_registry.config.config[ConfigKey.EVAL_TASK_NAME]
 
 
 def is_submit_model() -> bool:
     model_registry = _get_model_registry()
+    if model_registry.rank != "0":
+        raise RuntimeError("only rank 0 can call is_submit_model!")
     return model_registry.task_name == model_registry.config.config[ConfigKey.SUBMIT_MODEL_TASK_NAME]

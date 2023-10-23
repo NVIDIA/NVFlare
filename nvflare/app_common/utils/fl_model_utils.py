@@ -104,27 +104,33 @@ class FLModelUtils:
         In the future, we should be using the to_dxo, from_dxo directly.
         And all the components should be changed to accept the standard DXO.
         """
-        dxo = from_shareable(shareable)
         metrics = None
         params_type = None
         params = None
+        meta = {}
 
-        if dxo.data_kind == DataKind.METRICS:
-            metrics = dxo.data
-        else:
-            params_type = data_kind_to_params_type.get(dxo.data_kind)
-            if params_type is None:
-                raise ValueError(f"Invalid shareable with dxo that has data kind: {dxo.data_kind}")
-            params_type = ParamsType(params_type)
-            if params_converter:
-                dxo.data = params_converter.convert(dxo.data)
-            params = dxo.data
+        try:
+            dxo = from_shareable(shareable)
+            meta = dict(dxo.meta)
+            if dxo.data_kind == DataKind.METRICS:
+                metrics = dxo.data
+            else:
+                params_type = data_kind_to_params_type.get(dxo.data_kind)
+                if params_type is None:
+                    raise ValueError(f"Invalid shareable with dxo that has data kind: {dxo.data_kind}")
+                params_type = ParamsType(params_type)
+                if params_converter:
+                    dxo.data = params_converter.convert(dxo.data)
+                params = dxo.data
+        except:
+            # this only happens in cross-site eval right now
+            submit_model_name = shareable.get_header(AppConstants.SUBMIT_MODEL_NAME)
+            meta[MetaKey.SUBMIT_MODEL_NAME] = submit_model_name
 
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
         total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS, None)
         validate_type = shareable.get_header(AppConstants.VALIDATE_TYPE, None)
 
-        meta = dict(dxo.meta)
         if validate_type is not None:
             meta[MetaKey.VALIDATE_TYPE] = validate_type
 

@@ -24,7 +24,9 @@ from .constants import SYS_ATTRS
 class TaskRegistry:
     """This class is used to remember attributes that need to share for a user code."""
 
-    def __init__(self, config: ClientConfig, rank, data_exchanger: Optional[DataExchanger] = None):
+    def __init__(
+        self, config: ClientConfig, rank: Optional[str] = None, data_exchanger: Optional[DataExchanger] = None
+    ):
         self.data_exchanger = data_exchanger
         self.config = config
 
@@ -37,11 +39,11 @@ class TaskRegistry:
                 self.sys_info[k] = v
         self.rank = rank
 
-    def receive(self, timeout: Optional[float] = None):
+    def _receive(self, timeout: Optional[float] = None):
         if not self.data_exchanger:
             return None
 
-        task_name, task = self.data_exchanger.receive_data(timeout)
+        _, task = self.data_exchanger.receive_data(timeout)
 
         if not isinstance(task, ExchangeTask):
             raise RuntimeError("received data is not an ExchangeTask")
@@ -50,13 +52,16 @@ class TaskRegistry:
             raise RuntimeError("no received task.data")
 
         self.received_task = task
-        self.task_name = task_name
+        self.task_name = task.task_name
         self.cache_loaded = True
+
+    def set_task_name(self, task_name: str):
+        self.task_name = task_name
 
     def get_task(self, timeout: Optional[float] = None) -> Optional[ExchangeTask]:
         try:
             if not self.cache_loaded:
-                self.receive()
+                self._receive()
             return self.received_task
         except:
             return None
