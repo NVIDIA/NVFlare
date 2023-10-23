@@ -5,7 +5,7 @@ Large Models
 As the federated learning tasks become more and more complex, their model sizes increase.  Some model sizes may go beyond 2GB and even reach hundreds of GB.  NVIDIA FLARE supports
 large models as long as the system memory of servers and clients is capable of handling it.  However, it requires special consideration on NVIDIA FLARE configuration and the system because
 the network bandwidth and thus the time to transmit such large amount of data during NVIDIA FLARE job runtime varies significantly.  Here we describe 128GB model training jobs to highlight
-the configuration and system that users should consider for sucessful large model federated learning jobs.
+the configuration and system that users should consider for successful large model federated learning jobs.
 
 System Deployment
 *****************
