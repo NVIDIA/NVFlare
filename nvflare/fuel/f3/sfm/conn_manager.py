@@ -34,6 +34,7 @@ from nvflare.fuel.f3.sfm.prefix import PREFIX_LEN, Prefix
 from nvflare.fuel.f3.sfm.sfm_conn import SfmConnection
 from nvflare.fuel.f3.sfm.sfm_endpoint import SfmEndpoint
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
+from nvflare.fuel.utils.buffer_list import BufferList
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 FRAME_THREAD_POOL_SIZE = 100
@@ -199,8 +200,14 @@ class ConnManager(ConnMonitor):
             CommError: If any error happens while sending the data
         """
 
+        # Flatten buffer list so drivers don't have to deal with it
+        if isinstance(payload, list):
+            flat_payload = BufferList(payload).flatten()
+        else:
+            flat_payload = payload
+
         if endpoint.name == self.local_endpoint.name:
-            self.send_loopback_message(endpoint, app_id, headers, payload)
+            self.send_loopback_message(endpoint, app_id, headers, flat_payload)
             return
 
         sfm_endpoint = self.sfm_endpoints.get(endpoint.name)
@@ -222,7 +229,7 @@ class ConnManager(ConnMonitor):
         # TODO: If multiple connections, should retry a diff connection on errors
         start = time.perf_counter()
 
-        sfm_conn.send_data(app_id, stream_id, headers, payload)
+        sfm_conn.send_data(app_id, stream_id, headers, flat_payload)
 
         self.send_frame_stats.record_value(
             category=sfm_conn.conn.connector.driver.get_name(), value=time.perf_counter() - start

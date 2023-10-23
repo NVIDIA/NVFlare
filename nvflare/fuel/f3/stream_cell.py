@@ -116,7 +116,7 @@ class StreamCell:
         if message.payload is None:
             message.payload = bytes(0)
 
-        if not isinstance(message.payload, (bytes, bytearray, memoryview)):
+        if not isinstance(message.payload, (bytes, bytearray, memoryview, list)):
             raise StreamError(f"Message payload is not a byte array: {type(message.payload)}")
 
         return self.blob_streamer.send(channel, topic, target, message, secure, optional)
