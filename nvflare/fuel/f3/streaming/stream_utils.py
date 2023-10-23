@@ -18,7 +18,6 @@ from concurrent.futures import ThreadPoolExecutor
 
 from nvflare.fuel.f3.connection import BytesAlike
 from nvflare.fuel.f3.mpm import MainProcessMonitor
-from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 
 STREAM_THREAD_POOL_SIZE = 128
 ONE_MB = 1024 * 1024

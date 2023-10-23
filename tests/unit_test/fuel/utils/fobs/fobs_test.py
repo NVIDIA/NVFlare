@@ -62,6 +62,11 @@ class TestFobs:
         new_class = fobs.loads(buf)
         assert new_class.number == TestFobs.NUMBER
 
+    def test_buffer_list(self):
+        buf = fobs.dumps(TestFobs.test_data, buffer_list=True)
+        data = fobs.loads(buf)
+        assert data["number"] == TestFobs.NUMBER
+
 
 class ExampleClass:
     def __init__(self, number):
