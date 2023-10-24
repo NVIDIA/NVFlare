@@ -16,7 +16,6 @@ import collections
 import pytest
 
 from nvflare.cli_exception import CLIException
-from nvflare.lighter.service_constants import FlareServiceConstants as SC
 from nvflare.lighter.spec import Participant
 from nvflare.lighter.utils import update_project_server_name_config
 from nvflare.tool.poc.poc_commands import (
@@ -27,6 +26,7 @@ from nvflare.tool.poc.poc_commands import (
     prepare_builders,
     update_clients,
 )
+from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
 
 
 class TestPOCCommands:

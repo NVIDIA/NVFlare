@@ -31,10 +31,10 @@ from nvflare.fuel.utils.class_utils import instantiate_class
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
 from nvflare.lighter.provision import gen_default_project_config, prepare_project
-from nvflare.lighter.service_constants import FlareServiceConstants as SC
 from nvflare.lighter.spec import Provisioner
 from nvflare.lighter.utils import load_yaml, update_project_server_name_config, update_storage_locations
 from nvflare.tool.api_utils import shutdown_system
+from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
 from nvflare.utils.cli_utils import hocon_to_string
 
 DEFAULT_WORKSPACE = "/tmp/nvflare/poc"
@@ -239,7 +239,7 @@ def get_proj_admin(project_config: OrderedDict):
     if len(admins) == 1:
         return admins[0]
     else:
-        raise CLIException(f"project should only have only one project admin, but {len(admins)} are provided: {admins}")
+        raise CLIException(f"project should have only one project admin, but {len(admins)} are provided: {admins}")
 
 
 def get_fl_client_names(project_config: OrderedDict) -> List[str]:

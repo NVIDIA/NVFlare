@@ -194,7 +194,7 @@ def print_help(prog_parser, sub_cmd, sub_cmd_parsers):
     if sub_cmd:
         sub_parser = sub_cmd_parsers[sub_cmd]
         if sub_parser:
-            print(sub_parser)
+            print(f"sub_parser is: {sub_parser}")
             sub_parser.print_help()
         else:
             prog_parser.print_help()
