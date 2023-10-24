@@ -22,6 +22,7 @@ from nvflare.fuel.f3.cellnet.registry import Callback, Registry
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.connection import BytesAlike
 from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.stats_pool import StatsPoolManager
 from nvflare.fuel.f3.streaming.stream_const import (
     EOS,
     STREAM_ACK_TOPIC,
@@ -31,7 +32,7 @@ from nvflare.fuel.f3.streaming.stream_const import (
     StreamHeaderKey,
 )
 from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture
-from nvflare.fuel.f3.streaming.stream_utils import stream_thread_pool
+from nvflare.fuel.f3.streaming.stream_utils import ONE_MB, stream_stats_category, stream_thread_pool
 
 log = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ MAX_OUT_SEQ_CHUNKS = 16
 # 1/4 of the window size
 ACK_INTERVAL = 1024 * 1024 * 4
 READ_TIMEOUT = 60
+COUNTER_NAME_RECEIVED = "received"
 
 
 class RxTask:
@@ -147,6 +149,17 @@ class ByteReceiver:
         self.rx_task_map = {}
         self.map_lock = threading.Lock()
 
+        self.received_stream_counter_pool = StatsPoolManager.add_counter_pool(
+            name="Received_Stream_Counters",
+            description="Counters of received streams",
+            counter_names=[COUNTER_NAME_RECEIVED],
+            scope=self.cell.my_info.fqcn,
+        )
+
+        self.received_stream_size_pool = StatsPoolManager.add_msg_size_pool(
+            "Received_Stream_Sizes", "Sizes of streams received (MBs)", scope=self.cell.my_info.fqcn
+        )
+
     def register_callback(self, channel: str, topic: str, stream_cb: Callable, *args, **kwargs):
         if not callable(stream_cb):
             raise StreamError(f"specified stream_cb {type(stream_cb)} is not callable")
@@ -214,6 +227,14 @@ class ByteReceiver:
             if not callback:
                 self.stop_task(task, StreamError(f"No callback is registered for {task.channel}/{task.topic}"))
                 return
+
+            self.received_stream_counter_pool.increment(
+                category=stream_stats_category(task.channel, task.topic, "stream"), counter_name=COUNTER_NAME_RECEIVED
+            )
+
+            self.received_stream_size_pool.record_value(
+                category=stream_stats_category(task.channel, task.topic, "stream"), value=task.size / ONE_MB
+            )
 
             stream_thread_pool.submit(self._callback_wrapper, task, callback)
 

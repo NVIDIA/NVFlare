@@ -18,8 +18,10 @@ from concurrent.futures import ThreadPoolExecutor
 
 from nvflare.fuel.f3.connection import BytesAlike
 from nvflare.fuel.f3.mpm import MainProcessMonitor
+from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 
 STREAM_THREAD_POOL_SIZE = 128
+ONE_MB = 1024 * 1024
 
 stream_thread_pool = ThreadPoolExecutor(STREAM_THREAD_POOL_SIZE, "stm")
 lock = threading.Lock()
@@ -92,6 +94,10 @@ class FastBuffer:
 
     def __len__(self):
         return self.size
+
+
+def stream_stats_category(channel: str, topic: str, stream_type: str = "byte"):
+    return f"{stream_type}:{channel}:{topic}"
 
 
 def stream_shutdown():
