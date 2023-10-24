@@ -460,7 +460,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         )
 
         self.sent_msg_size_pool = StatsPoolManager.add_msg_size_pool(
-            "Sent_Msg_sizes", "Sizes of messages sent (MBs)", scope=self.my_info.fqcn
+            "Sent_Msg_Sizes", "Sizes of messages sent (MBs)", scope=self.my_info.fqcn
         )
 
         self.received_msg_size_pool = StatsPoolManager.add_msg_size_pool(

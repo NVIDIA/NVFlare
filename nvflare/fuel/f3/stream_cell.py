@@ -18,7 +18,7 @@ from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.blob_streamer import BlobStreamer
 from nvflare.fuel.f3.streaming.byte_receiver import ByteReceiver
-from nvflare.fuel.f3.streaming.byte_streamer import ByteStreamer
+from nvflare.fuel.f3.streaming.byte_streamer import STREAM_TYPE_BYTE, ByteStreamer
 from nvflare.fuel.f3.streaming.file_streamer import FileStreamer
 from nvflare.fuel.f3.streaming.object_streamer import ObjectStreamer
 from nvflare.fuel.f3.streaming.stream_types import ObjectIterator, ObjectStreamFuture, Stream, StreamError, StreamFuture
@@ -63,7 +63,9 @@ class StreamCell:
         if not isinstance(message.payload, Stream):
             raise StreamError(f"Message payload is not a stream: {type(message.payload)}")
 
-        return self.byte_streamer.send(channel, topic, target, message.headers, message.payload, secure, optional)
+        return self.byte_streamer.send(
+            channel, topic, target, message.headers, message.payload, STREAM_TYPE_BYTE, secure, optional
+        )
 
     def register_stream_cb(self, channel: str, topic: str, stream_cb: Callable, *args, **kwargs):
         """

@@ -107,7 +107,7 @@ class ConnManager(ConnMonitor):
             )
 
         handle = get_handle()
-        connector = ConnectorInfo(handle, driver, params, mode, 0, 0, False, False)
+        connector = ConnectorInfo(handle, driver, params, mode, 0, 0, False, threading.Event())
         driver.register_conn_monitor(self)
         with self.lock:
             self.connectors[handle] = connector
@@ -123,7 +123,7 @@ class ConnManager(ConnMonitor):
         with self.lock:
             connector = self.connectors.pop(handle, None)
             if connector:
-                connector.stopping = True
+                connector.stopped.set()
                 connector.driver.shutdown()
                 log.debug(f"Connector {connector} is removed")
             else:
@@ -147,7 +147,7 @@ class ConnManager(ConnMonitor):
         with self.lock:
             for handle in sorted(self.connectors.keys()):
                 connector = self.connectors[handle]
-                connector.stopping = True
+                connector.stopped.set()
                 connector.driver.shutdown()
 
         self.conn_mgr_executor.shutdown(True)
@@ -262,7 +262,7 @@ class ConnManager(ConnMonitor):
             starter = connector.driver.listen
 
         wait = INIT_WAIT
-        while not connector.stopping:
+        while not connector.stopped.is_set():
             start_time = time.time()
             try:
                 starter(connector)
@@ -275,7 +275,7 @@ class ConnManager(ConnMonitor):
                 else:
                     log.error(fail_msg)
 
-            if connector.stopping:
+            if connector.stopped.is_set():
                 log.debug(f"Connector {connector} has stopped")
                 break
 
@@ -292,7 +292,8 @@ class ConnManager(ConnMonitor):
             else:
                 log.info(reconnect_msg)
 
-            time.sleep(wait)
+            connector.stopped.wait(wait)
+
             # Exponential backoff
             wait *= 2
             if wait > MAX_WAIT:
@@ -480,7 +481,7 @@ class NullConnection(Connection):
     """A mock connection used for loopback messages"""
 
     def __init__(self):
-        connector = ConnectorInfo("Null", None, {}, Mode.ACTIVE, 0, 0, False, False)
+        connector = ConnectorInfo("Null", None, {}, Mode.ACTIVE, 0, 0, False, threading.Event())
         super().__init__(connector)
 
     def get_conn_properties(self) -> dict:

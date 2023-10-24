@@ -17,7 +17,7 @@ from typing import Callable, Optional
 from nvflare.fuel.f3.connection import BytesAlike
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.byte_receiver import ByteReceiver
-from nvflare.fuel.f3.streaming.byte_streamer import ByteStreamer
+from nvflare.fuel.f3.streaming.byte_streamer import STREAM_TYPE_BLOB, ByteStreamer
 from nvflare.fuel.f3.streaming.stream_const import EOS
 from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture
 from nvflare.fuel.f3.streaming.stream_utils import FastBuffer, stream_thread_pool, wrap_view
@@ -127,7 +127,9 @@ class BlobStreamer:
             raise StreamError(f"BLOB is invalid type: {type(message.payload)}")
 
         blob_stream = BlobStream(message.payload, message.headers)
-        return self.byte_streamer.send(channel, topic, target, message.headers, blob_stream, secure, optional)
+        return self.byte_streamer.send(
+            channel, topic, target, message.headers, blob_stream, STREAM_TYPE_BLOB, secure, optional
+        )
 
     def register_blob_callback(self, channel, topic, blob_cb: Callable, *args, **kwargs):
         handler = BlobHandler(blob_cb)
