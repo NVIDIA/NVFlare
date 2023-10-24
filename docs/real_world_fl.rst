@@ -28,4 +28,5 @@ to see the capabilities of the system and how it can be operated.
    real_world_fl/job
    real_world_fl/workspace
    real_world_fl/cloud_deployment
+   real_world_fl/notes_on_large_models
    user_guide/federated_authorization

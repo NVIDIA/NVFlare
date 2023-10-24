@@ -44,6 +44,7 @@ from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.communicator import Communicator, MessageReceiver
 from nvflare.fuel.f3.connection import Connection
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.drivers.net_utils import enhance_credential_info
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.mpm import MainProcessMonitor
@@ -158,7 +159,7 @@ class _BulkSender:
 
     def queue_message(self, channel: str, topic: str, message: Message):
         if self.secure:
-            message.add_headers({MessageHeaderKey.SECURE, True})
+            message.add_headers({MessageHeaderKey.SECURE: True})
 
         encode_payload(message)
         self.cell.encrypt_payload(message)
@@ -370,6 +371,9 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         self.agent_lock = threading.Lock()
 
         self.logger.debug(f"Creating Cell: {self.my_info.fqcn}")
+
+        if credentials:
+            enhance_credential_info(credentials)
 
         ep = Endpoint(
             name=fqcn,
@@ -1763,7 +1767,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                         )
                     )
             else:
-                self.log_error(f"no waiter for req {rid} - the reply is too late", None)
+                self.log_warning(f"no waiter for req {rid} - the reply is too late", None)
                 self.sent_msg_counter_pool.increment(
                     category=self._stats_category(message), counter_name=_CounterName.LATE
                 )

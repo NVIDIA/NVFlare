@@ -43,7 +43,7 @@ from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.fl_snapshot import RunSnapshot
 from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
 from nvflare.apis.job_def import Job
-from nvflare.apis.shareable import Shareable
+from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.core_cell import FQCN, CoreCell
@@ -672,7 +672,11 @@ class ServerEngine(ServerEngineInternalSpec):
         fl_ctx.props.update(snapshot.get_component_snapshot(component_id=SnapshotKey.FL_CONTEXT))
 
     def dispatch(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
-        return self.run_manager.aux_runner.dispatch(topic=topic, request=request, fl_ctx=fl_ctx)
+        if self.run_manager and self.run_manager.aux_runner:
+            return self.run_manager.aux_runner.dispatch(topic=topic, request=request, fl_ctx=fl_ctx)
+        else:
+            self.logger.warning("Server is not ready")
+            return make_reply(ReturnCode.SERVER_NOT_READY)
 
     def show_stats(self, job_id) -> dict:
         stats = None

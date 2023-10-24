@@ -19,9 +19,9 @@ from typing import Callable, Dict, Tuple
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.registry import Callback, Registry
+from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.connection import BytesAlike
 from nvflare.fuel.f3.message import Message
-from nvflare.fuel.f3.streaming.byte_streamer import ByteStreamer
 from nvflare.fuel.f3.streaming.stream_const import (
     EOS,
     STREAM_ACK_TOPIC,
@@ -91,7 +91,7 @@ class RxStream(Stream):
                 log.debug(f"Read block is unblocked multiple times: {count}")
 
             self.task.waiter.clear()
-            timeout = ByteStreamer.comm_config.get_streaming_read_timeout(READ_TIMEOUT)
+            timeout = CommConfigurator().get_streaming_read_timeout(READ_TIMEOUT)
             if not self.task.waiter.wait(timeout):
                 error = StreamError(f"{self.task} read timed out after {timeout} seconds")
                 self.byte_receiver.stop_task(self.task, error)
@@ -115,7 +115,7 @@ class RxStream(Stream):
 
             self.task.offset += len(result)
 
-            ack_interval = ByteStreamer.comm_config.get_streaming_ack_interval(ACK_INTERVAL)
+            ack_interval = CommConfigurator().get_streaming_ack_interval(ACK_INTERVAL)
             if not self.task.last_chunk_received and (self.task.offset - self.task.offset_ack > ack_interval):
                 # Send ACK
                 message = Message()
@@ -235,7 +235,7 @@ class ByteReceiver:
 
             else:
                 # Out-of-seq chunk reassembly
-                max_out_seq = ByteStreamer.comm_config.get_streaming_max_out_seq_chunks(MAX_OUT_SEQ_CHUNKS)
+                max_out_seq = CommConfigurator().get_streaming_max_out_seq_chunks(MAX_OUT_SEQ_CHUNKS)
                 if len(task.out_seq_buffers) >= max_out_seq:
                     self.stop_task(task, StreamError(f"Too many out-of-sequence chunks: {len(task.out_seq_buffers)}"))
                     return

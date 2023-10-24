@@ -28,7 +28,7 @@ Running ``nvflare dashboard -h`` shows all available options.
                             folder containing necessary info (default: current working directory)
     --passphrase PASSPHRASE
                             Passphrase to encrypt/decrypt root CA private key. !!! Do not share it with others. !!!
-    -e ENV, --env ENV     additonal environment variables: var1=value1
+    -e ENV, --env ENV     additional environment variables: var1=value1
     --cred CRED           set credential directly in the form of USER_EMAIL:PASSWORD
     -i IMAGE, --image IMAGE
                             set the container image name

@@ -95,7 +95,7 @@ class SfmConnection:
             return
 
         if not self.sfm_endpoint:
-            log.error("Trying to send heartbeat before SFM Endpoint is established")
+            log.debug("Trying to send heartbeat before SFM Endpoint is established")
             return
 
         stream_id = self.sfm_endpoint.next_stream_id()

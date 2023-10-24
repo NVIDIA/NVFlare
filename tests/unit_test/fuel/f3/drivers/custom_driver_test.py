@@ -18,12 +18,14 @@ import pytest
 from nvflare.fuel.f3 import communicator
 
 # Setup custom driver path before communicator module initialization
+from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.utils.config_service import ConfigService
 
 
 class TestCustomDriver:
     @pytest.fixture
     def manager(self):
+        CommConfigurator.reset()
         rel_path = "../../../data/custom_drivers/config"
         config_path = os.path.normpath(os.path.join(os.path.dirname(__file__), rel_path))
         ConfigService.initialize({}, [config_path])

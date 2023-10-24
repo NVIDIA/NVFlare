@@ -12,12 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import re
 
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import SystemConfigs
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
@@ -141,7 +139,7 @@ class ClientJsonConfigurator(FedJsonConfigurator):
         )
 
         ConfigService.initialize(
-            section_files={SystemConfigs.APPLICATION_CONF: os.path.basename(self.config_files[0])},
+            section_files={},
             config_path=[self.app_root],
             parsed_args=self.args,
             var_dict=self.cmd_vars,

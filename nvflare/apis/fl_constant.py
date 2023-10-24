@@ -181,6 +181,8 @@ class ReservedTopic(object):
     DO_TASK = "__do_task__"
     AUX_COMMAND = "__aux_command__"
     SYNC_RUNNER = "__sync_runner__"
+    JOB_HEART_BEAT = "__job_heartbeat__"
+    TASK_CHECK = "__task_check__"
 
 
 class AdminCommandNames(object):
@@ -411,6 +413,7 @@ class FLMetaKey:
     TOTAL_ROUNDS = "total_rounds"
     JOB_ID = "job_id"
     SITE_NAME = "site_name"
+    SUBMIT_MODEL_NAME = "submit_model_name"
 
 
 class FilterKey:
