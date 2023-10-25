@@ -14,9 +14,9 @@
 
 import json
 from enum import Enum
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
-from nvflare.app_common.model_exchange.constants import ModelExchangeFormat
+from nvflare.app_common.data_exchange.constants import ExchangeFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
 
 
@@ -30,7 +30,11 @@ class ConfigKey:
     EXCHANGE_FORMAT = "exchange_format"
     TRANSFER_TYPE = "transfer_type"
     GLOBAL_EVAL = "global_eval"
-    TRAINING = "training"
+    TRAIN_WITH_EVAL = "train_with_eval"
+    TRAIN_TASK_NAME = "train_task_name"
+    EVAL_TASK_NAME = "eval_task_name"
+    SUBMIT_MODEL_TASK_NAME = "submit_model_task_name"
+    PIPE_NAME = "pipe_name"
     LAUNCH_ONCE = "launch_once"
     TOTAL_ROUNDS = "total_rounds"
     SITE_NAME = "site_name"
@@ -53,15 +57,24 @@ class ClientConfig:
             config = {}
         self.config = config
         if ConfigKey.EXCHANGE_FORMAT in self.config:
-            self.config[ConfigKey.EXCHANGE_FORMAT] = ModelExchangeFormat(self.config[ConfigKey.EXCHANGE_FORMAT])
+            self.config[ConfigKey.EXCHANGE_FORMAT] = ExchangeFormat(self.config[ConfigKey.EXCHANGE_FORMAT])
 
     def get_config(self):
         return self.config
 
-    def get_exchange_path(self):
+    def get_exchange_path(self) -> str:
         return self.config[ConfigKey.EXCHANGE_PATH]
 
-    def get_exchange_format(self) -> ModelExchangeFormat:
+    def get_supported_topics(self) -> List[str]:
+        return [
+            self.config[k]
+            for k in [ConfigKey.TRAIN_TASK_NAME, ConfigKey.EVAL_TASK_NAME, ConfigKey.SUBMIT_MODEL_TASK_NAME]
+        ]
+
+    def get_pipe_name(self) -> str:
+        return self.config[ConfigKey.PIPE_NAME]
+
+    def get_exchange_format(self) -> ExchangeFormat:
         return self.config[ConfigKey.EXCHANGE_FORMAT]
 
     def get_transfer_type(self):

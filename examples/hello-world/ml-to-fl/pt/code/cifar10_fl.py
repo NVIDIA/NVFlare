@@ -46,8 +46,9 @@ def main():
     # (2) initializes NVFlare client API
     flare.init()
 
-    # (3) receives FLModel from NVFlare
-    for input_model in flare.receive_global_model():
+    while flare.is_running():
+        # (3) receives FLModel from NVFlare
+        input_model = flare.receive()
         print(f"current_round={input_model.current_round}")
 
         # (4) loads model from NVFlare

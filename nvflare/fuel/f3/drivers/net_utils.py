@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
+import os
 import random
 import socket
 import ssl
@@ -37,6 +38,12 @@ SECURE_SCHEMES = {"https", "wss", "grpcs", "stcp", "satcp"}
 MAX_FRAME_SIZE = 2 * 1024 * 1024 * 1024 - (2 * 1024 * 1024)
 MAX_HEADER_SIZE = 1024 * 1024
 MAX_PAYLOAD_SIZE = MAX_FRAME_SIZE - 16 - MAX_HEADER_SIZE
+
+SSL_SERVER_PRIVATE_KEY = "server.key"
+SSL_SERVER_CERT = "server.crt"
+SSL_CLIENT_PRIVATE_KEY = "client.key"
+SSL_CLIENT_CERT = "client.crt"
+SSL_ROOT_CERT = "rootCA.pem"
 
 
 def ssl_required(params: dict) -> bool:
@@ -259,3 +266,41 @@ def get_tcp_urls(scheme: str, resources: dict) -> (str, str):
     connect_url = f"{scheme}://{host}:{port}"
 
     return connect_url, listening_url
+
+
+def enhance_credential_info(params: dict):
+    # must have CA
+    ca_path = params.get(DriverParams.CA_CERT.value)
+    if not ca_path:
+        return params
+
+    # assume all SSL credential files are in the same folder with CA cert
+    cred_folder = os.path.dirname(ca_path)
+
+    client_cert_path = params.get(DriverParams.CLIENT_CERT.value)
+    if not client_cert_path:
+        # see whether the file client cert file exists
+        client_cert_path = os.path.join(cred_folder, SSL_CLIENT_CERT)
+        if os.path.exists(client_cert_path):
+            params[DriverParams.CLIENT_CERT.value] = client_cert_path
+
+    client_key_path = params.get(DriverParams.CLIENT_KEY.value)
+    if not client_key_path:
+        # see whether the file client key file exists
+        client_key_path = os.path.join(cred_folder, SSL_CLIENT_PRIVATE_KEY)
+        if os.path.exists(client_key_path):
+            params[DriverParams.CLIENT_KEY.value] = client_key_path
+
+    server_cert_path = params.get(DriverParams.SERVER_CERT.value)
+    if not server_cert_path:
+        # see whether the file client cert file exists
+        server_cert_path = os.path.join(cred_folder, SSL_SERVER_CERT)
+        if os.path.exists(server_cert_path):
+            params[DriverParams.SERVER_CERT.value] = server_cert_path
+
+    server_key_path = params.get(DriverParams.SERVER_KEY.value)
+    if not server_key_path:
+        # see whether the file client key file exists
+        server_key_path = os.path.join(cred_folder, SSL_SERVER_PRIVATE_KEY)
+        if os.path.exists(server_key_path):
+            params[DriverParams.SERVER_KEY.value] = server_key_path

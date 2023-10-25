@@ -32,6 +32,11 @@ Since not every site will have the same set of data samples (rows), we can use P
 
 > **_NOTE:_** The uid can be a composition of multiple variabes with a transformation, however in this example we use indices for simplicity. PSI can also be used for computing the intersection of overlapping features, but here we give each site unique features.
 
+Create the psi job using the predefined psi_csv template:
+```
+nvflare job create -j ./jobs/vertical_xgb_psi -w psi_csv -sd ./code/psi -force
+```
+
 Run the psi job to calculate the dataset intersection of the clients at `psi/intersection.txt` inside the psi workspace:
 ```
 nvflare simulator ./jobs/vertical_xgb_psi -w /tmp/nvflare/vertical_xgb_psi -n 2 -t 2
@@ -55,7 +60,21 @@ By default, CPU based training is used.
 In order to enable GPU accelerated training, first ensure that your machine has CUDA installed and has at least one GPU.
 In `config_fed_client.json` set `"use_gpus": true` and  `"tree_method": "hist"` in `xgb_params`. Then, in `FedXGBHistogramExecutor` we use the `device` parameter to map each rank to a GPU device ordinal in `xgb_params`. If using multiple GPUs, we can map each rank to a different GPU device, however you can also map each rank to the same GPU device if using a single GPU.
 
+We can create a GPU enabled job using the job CLI:
+```
+nvflare job create -j ./jobs/vertical_xgb_gpu -w vertical_xgb \
+-f config_fed_client.conf use_gpus=true tree_method=hist \
+-f config_fed_server.conf \
+-sd ./code/vertical_xgb \
+-force
+```
+
 ## Run the Example
+Create the vertical xgboost job using the predefined vertical_xgb template:
+```
+nvflare job create -j ./jobs/vertical_xgb -w vertical_xgb -sd ./code/vertical_xgb -force
+```
+
 Run the vertical xgboost job:
 ```
 nvflare simulator ./jobs/vertical_xgb -w /tmp/nvflare/vertical_xgb -n 2 -t 2

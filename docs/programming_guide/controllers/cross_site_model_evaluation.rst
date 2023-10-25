@@ -26,4 +26,4 @@ example that implements the :class:`cross site model evaluation workflow<nvflare
 Example with Cross Site Model Evaluation / Federated Evaluation Workflow
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 See the `Hello Numpy Cross-Site Validation <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-numpy-cross-val>`_ for an example application with
-the cross site model evaulation / federated evaluation workflow.
+the cross site model evaluation / federated evaluation workflow.

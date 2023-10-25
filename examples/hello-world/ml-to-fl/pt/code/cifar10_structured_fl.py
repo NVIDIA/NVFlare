@@ -119,8 +119,9 @@ def main():
         # return evaluation metrics
         return 100 * correct // total
 
-    # (6) receives FLModel from NVFlare
-    for input_model in flare.receive_global_model():
+    while flare.is_running():
+        # (6) receives FLModel from NVFlare
+        input_model = flare.receive()
         print(f"current_round={input_model.current_round}")
 
         # (7) call fl_evaluate method before training
