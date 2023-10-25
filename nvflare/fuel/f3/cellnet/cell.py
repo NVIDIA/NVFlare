@@ -242,12 +242,13 @@ class Cell(StreamCell):
 
         # this future can be used to check sending progress, but not for checking return blob
         self.logger.debug(f"{req_id=}, {channel=}, {topic=}, {target=}, {timeout=}: send_request about to send_blob")
+
+        waiter = SimpleWaiter(req_id=req_id, result=make_reply(ReturnCode.TIMEOUT))
+        self.requests_dict[req_id] = waiter
         future = self.send_blob(
             channel=channel, topic=topic, target=target, message=request, secure=secure, optional=optional
         )
 
-        waiter = SimpleWaiter(req_id=req_id, result=make_reply(ReturnCode.TIMEOUT))
-        self.requests_dict[req_id] = waiter
         self.logger.debug(f"{req_id=}: Waiting starts")
 
         # Three stages, sending, waiting for receiving first byte, receiving
