@@ -27,7 +27,6 @@ class LocalStaticFileBuilder(StaticFileBuilder):
         snapshot_persistor="",
         overseer_agent="",
         components="",
-        username="",
     ):
         """Build all static files from template.
 
@@ -56,7 +55,6 @@ class LocalStaticFileBuilder(StaticFileBuilder):
             overseer_agent,
             components,
         )
-        self.username = username
 
     def get_server_name(self, server):
         return "localhost"
@@ -66,6 +64,6 @@ class LocalStaticFileBuilder(StaticFileBuilder):
 
     def prepare_admin_config(self, admin, ctx):
         config = super().prepare_admin_config(admin, ctx)
-        config["admin"]["username"] = self.username
+        config["admin"]["username"] = admin.name
         config["admin"]["cred_type"] = "local_cert"
         return config
