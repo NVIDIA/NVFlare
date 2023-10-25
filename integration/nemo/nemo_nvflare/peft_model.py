@@ -15,12 +15,12 @@
 
 import logging
 import os
-import torch
-from omegaconf import OmegaConf
 
+import torch
 from nemo.collections.nlp.models.language_modeling.megatron_gpt_sft_model import MegatronGPTSFTModel
 from nemo.collections.nlp.parts.megatron_trainer_builder import MegatronLMPPTrainerBuilder
 from nemo.collections.nlp.parts.peft_config import PEFT_CONFIG_MAP
+from omegaconf import OmegaConf
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
@@ -36,7 +36,7 @@ class PEFTmodel(torch.nn.Module, FLComponent):
         self,
         config_path: str = "custom/megatron_gpt_peft_tuning_config.yaml",
         restore_from_path: str = "/home/hroth/Code2/nvflare/nemo_peft_example/integration/nemo/examples/peft/megatron_gpt_345m.nemo",
-        peft_restore_from_path: str = None
+        peft_restore_from_path: str = None,
     ):
         """
         Initializes the PEFT model or full model on the server.
