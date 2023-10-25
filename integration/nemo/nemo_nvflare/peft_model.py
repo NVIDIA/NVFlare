@@ -35,21 +35,22 @@ class PEFTmodel(torch.nn.Module, FLComponent):
     def __init__(
         self,
         config_path: str = "custom/megatron_gpt_peft_tuning_config.yaml",
-        restore_from_path: str = "/home/hroth/Code2/nvflare/nemo_peft_example/integration/nemo/examples/peft/megatron_gpt_345m.nemo"
+        restore_from_path: str = "/home/hroth/Code2/nvflare/nemo_peft_example/integration/nemo/examples/peft/megatron_gpt_345m.nemo",
+        peft_restore_from_path: str = None
     ):
         """
-        Initializes the PromptEncoder module on the server.
+        Initializes the PEFT model or full model on the server.
         Args:
-            total_virtual_tokens: the total number of virtual tokens
-            hidden_size: hidden dimension
-            taskname: prompt learning task name.
             config_path: NeMo model config file
-            gpt_file_name: Pre-trained nemo model file.
-            devices: number devices for cluster environment.
+            restore_from_path: Pre-trained nemo model file.
+            peft_restore_from_path: Pre-trained peft model file.
         """
 
         self.config_path = config_path
         self.restore_from_path = restore_from_path
+        self.peft_restore_from_path = peft_restore_from_path
+
+        self.use_sft = False
 
         torch.nn.Module.__init__(self)
         FLComponent.__init__(self)
@@ -64,10 +65,12 @@ class PEFTmodel(torch.nn.Module, FLComponent):
         # Build trainer
         trainer = MegatronLMPPTrainerBuilder(cfg).create_trainer()
 
-        # Set restore from path with pre-trained model
+        # Set restore from paths with pre-trained model(s)
         cfg.model.restore_from_path = os.path.join(app_root, self.restore_from_path)
+        if self.peft_restore_from_path is not None:
+            cfg.model.peft.restore_from_path = os.path.join(app_root, self.peft_restore_from_path)
 
-        # Set some dummy data files (which will not be used)
+        # Set some dummy data file names (which will not be used and do not need to exist)
         cfg.model.data.train_ds.file_names = ["dummy.jsonl"]
         cfg.model.data.validation_ds.file_names = ["dummy.jsonl"]
 
@@ -75,15 +78,23 @@ class PEFTmodel(torch.nn.Module, FLComponent):
         self.model = MegatronGPTSFTModel.restore_from(cfg.model.restore_from_path, model_cfg, trainer=trainer)
         peft_cfg_cls = PEFT_CONFIG_MAP[cfg.model.peft.peft_scheme]
 
-        logging.info("Adding adapter weights to the model for PEFT")
-        self.model.add_adapter(peft_cfg_cls(model_cfg))
+        if cfg.model.peft.restore_from_path is not None:
+            # initialize peft weights from a checkpoint instead of randomly
+            # This is not the same as resume training because optimizer states are not restored.
+            logging.info("PEFT Weights will be loaded from", cfg.model.peft.restore_from_path)
+            self.model.load_adapters(cfg.model.peft.restore_from_path, peft_cfg_cls(model_cfg))
+        elif peft_cfg_cls is not None:
+            logging.info("Adding adapter weights to the model for PEFT")
+            self.model.add_adapter(peft_cfg_cls(model_cfg))
+        else:
+            self.use_sft = True
+            logging.info(f"Running full finetuning since no peft scheme is given.\n{self.model.summarize()}")
 
     def state_dict(self):
-        _peft_state_dict = self.model.get_peft_state_dict()
-
-        print("###### SERVER _peft_state_dict", _peft_state_dict.keys())
-
-        return _peft_state_dict
+        if self.use_sft:  # return the full model state dict
+            return self.model.state_dict()
+        else:  # only return the trainable peft parameters
+            return self.model.get_peft_state_dict()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
