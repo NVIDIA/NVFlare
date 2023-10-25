@@ -12,7 +12,7 @@ Allow HuggingFace models to be trained and adapted with NVFlare.
 n/a
 
 ## Background
-HuggingFace is widely used platform, especially for LLM training. It hosts lots of models and enables easy training via their standardized APIs.
+To support LLaMA-2 via HuggingFace
 
 ## Description
 NVFlare utilizes features from HuggingFace trainer, such as SFT with PEFT options training to run LLM tasks in federated environments.
