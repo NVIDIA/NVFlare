@@ -55,14 +55,14 @@ def def_provision_parser(sub_cmd):
     cmd = CMD_PROVISION
     provision_parser = sub_cmd.add_parser(cmd)
     define_provision_parser(provision_parser)
-    return {cmd: [provision_parser]}
+    return {cmd: provision_parser}
 
 
 def def_dashboard_parser(sub_cmd):
     cmd = CMD_DASHBOARD
     dashboard_parser = sub_cmd.add_parser(cmd)
     define_dashboard_parser(dashboard_parser)
-    return {cmd: [dashboard_parser]}
+    return {cmd: dashboard_parser}
 
 
 def def_preflight_check_parser(sub_cmd):
@@ -183,8 +183,9 @@ def run(prog_name):
         sys.exit(1)
     except Exception as e:
         print(f"\nUnable to handle command: {sub_cmd} due to: {e} \n")
-        if prog_args.debug:
-            print(traceback.format_exc())
+        if hasattr(prog_args, "debug"):
+            if prog_args.debug:
+                print(traceback.format_exc())
         else:
             print_help(prog_parser, sub_cmd, sub_cmd_parsers)
 
@@ -193,6 +194,7 @@ def print_help(prog_parser, sub_cmd, sub_cmd_parsers):
     if sub_cmd:
         sub_parser = sub_cmd_parsers[sub_cmd]
         if sub_parser:
+            print(f"sub_parser is: {sub_parser}")
             sub_parser.print_help()
         else:
             prog_parser.print_help()
