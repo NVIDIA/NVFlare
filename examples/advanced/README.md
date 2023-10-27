@@ -1,8 +1,8 @@
 # NVFlare advanced examples
 
-We introduce advanced examples in this folder.
+This folder contains advanced examples for NVFlare.
 
-Please make sure you set up virtual environment and Jupyterlab follows [example root readme](../README.md)
+Please make sure you set up a virtual environment and install JupyterLab following the [example root readme](../README.md).
 
 Please also install "./requirements.txt" in each example folder.
 
@@ -36,6 +36,20 @@ Please also install "./requirements.txt" in each example folder.
 * [Federated Learning for Prostate Segmentation from Multi-source Data](./prostate/README.md)
   * Example of training a multi-institutional prostate segmentation model using [FedAvg](https://arxiv.org/abs/1602.05629), [FedProx](https://arxiv.org/abs/1812.06127), and [Ditto](https://arxiv.org/abs/2012.04221).
 
+## Finance
+* [Financial Application with Federated XGBoost Methods](./finance/README.md)
+   * Illustrates the use of NVFlare on a financial application using XGBoost to train a model in a federated manner.
+
+## Swarm Learning
+* [Swarm Learning](./swarm_learning/README.md)
+   * Example of swarm learning with NVIDIA FLARE using PyTorch with the CIFAR-10 dataset.
+
+## Vertical Federated Learning
+* [Vertical Federated Learning](./vertical_federated_learning/README.md)
+   * Example of running split learning using the CIFAR-10 dataset.
+* [Vertical Federated XGBoost](./vertical_xgboost/README.md)
+   * Example of vertical federated learning with NVIDIA FLARE on tabular data.
+
 ## Federated Statistics
 * [Federated Statistic Overview](./federated-statistics/README.md)
   * Discuss the overall federated statistics features 
@@ -48,9 +62,19 @@ Please also install "./requirements.txt" in each example folder.
 * [Federated Policies](./federated-policies/README.rst) 
   * Discuss the federated site policies for authorization, resource and data privacy management
 
+## Custom Authentication
+* [Custom Authentication](./custom_authentication/README.rst) 
+  * Example demonstrating custom authentication policy
+
+## Job-level Authorization
+* [Job-level Authorization](./job-level-authorization/README.md) 
+  * Example demonstrating job-level authorization policy
+
 ## Experiment tracking
 * [Hello PyTorch with TensorBoard Streaming](./experiment-tracking/tensorboard/README.md)
   * Example building upon [Hello PyTorch](../hello-world/hello-pt/README.md) showcasing the [TensorBoard](https://tensorflow.org/tensorboard) streaming capability from the clients to the server.
+* [Experiment Tracking with MLflow and Weights and Biases](./experiment-tracking/README.md)
+  * Example showing the use of the Writers and Receivers in NVFlare to write to different experiment tracking systems.
 
 ## Federated Learning Hub
 

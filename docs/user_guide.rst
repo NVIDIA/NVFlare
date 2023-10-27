@@ -22,10 +22,9 @@ which are explained in more detail in their own sections linked below.
    user_guide/dashboard_api
    user_guide/dashboard_ui
    user_guide/nvflare_security
-   user_guide/federated_authorization
    user_guide/site_policy_management
-   user_guide/authorization_policy_previewer
    user_guide/docker_compose
    user_guide/helm_chart
    user_guide/logging_configuration
    user_guide/confidential_computing
+   user_guide/hierarchy_unification_bridge
