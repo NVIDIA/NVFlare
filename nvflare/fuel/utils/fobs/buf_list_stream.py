@@ -11,28 +11,27 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-from dataclasses import dataclass
-from threading import Event
-
-from nvflare.fuel.f3.drivers.net_utils import short_url
-from nvflare.fuel.utils.constants import Mode
+from nvflare.fuel.utils.buffer_list import BufferList
 
 
-@dataclass
-class ConnectorInfo:
-    """Connector information"""
+class BufListStream:
+    def __init__(self, buf_list: list = None):
+        self.buffer_list = BufferList(buf_list)
+        self.pos = 0
+        self.size = self.buffer_list.get_size()
 
-    handle: str
-    # noinspection PyUnresolvedReferences
-    driver: "Driver"
-    params: dict
-    mode: Mode
-    total_conns: int
-    curr_conns: int
-    started: bool
-    stopped: Event
+    def getvalue(self):
+        return self.buffer_list.get_list()
 
-    def __str__(self):
-        url = short_url(self.params)
-        return f"[{self.handle} {self.mode.name} {url}]"
+    def write(self, buf: bytes):
+        self.buffer_list.append(buf)
+
+    def read(self, n: int):
+        end = self.pos + n
+        if end > self.size:
+            end = self.size
+
+        result = self.buffer_list.read(self.pos, end)
+        self.pos = end
+
+        return result
