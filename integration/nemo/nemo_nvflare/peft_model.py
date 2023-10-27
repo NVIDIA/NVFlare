@@ -92,9 +92,17 @@ class PEFTmodel(torch.nn.Module, FLComponent):
 
     def state_dict(self):
         if self.use_sft:  # return the full model state dict
-            return self.model.state_dict()
+            state_dict = self.model.state_dict()
         else:  # only return the trainable peft parameters
-            return self.model.get_peft_state_dict()
+            state_dict = self.model.get_peft_state_dict()
+
+        # Fill any tensors that are not initialized.
+        # This is sometimes needed for buffer tensors such as 'inference_table'
+        for k, v in state_dict.items():
+            if torch.any(torch.isnan(v)):
+                state_dict[k] = state_dict[k].fill_(0.0)
+
+        return state_dict
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
