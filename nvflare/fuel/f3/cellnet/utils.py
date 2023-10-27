@@ -76,7 +76,7 @@ def encode_payload(message: Message, encoding_key=MessageHeaderKey.PAYLOAD_ENCOD
             encoding = Encoding.BYTES
         else:
             encoding = Encoding.FOBS
-            message.payload = fobs.dumps(message.payload)
+            message.payload = fobs.dumps(message.payload, buffer_list=True)
         message.set_header(encoding_key, encoding)
 
 
