@@ -32,12 +32,7 @@ class FilePipe(Pipe):
             root_path: root path
         """
         super().__init__(mode=mode)
-        check_str("root_path", root_path)
         check_positive_number("file_check_interval", file_check_interval)
-
-        if not os.path.exists(root_path):
-            # create the root path
-            os.makedirs(root_path)
 
         self.root_path = root_path
         self.file_check_interval = file_check_interval
@@ -76,6 +71,12 @@ class FilePipe(Pipe):
     def open(self, name: str):
         if not self.accessor:
             raise RuntimeError("File accessor is not set. Make sure to set a FileAccessor before opening the pipe")
+
+        check_str("root_path", self.root_path)
+
+        if not os.path.exists(self.root_path):
+            # create the root path
+            os.makedirs(self.root_path)
 
         pipe_path = os.path.join(self.root_path, name)
 
