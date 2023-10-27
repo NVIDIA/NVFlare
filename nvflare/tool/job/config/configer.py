@@ -303,7 +303,7 @@ def get_app_name_from_path(path: str):
     # path is in the format of as app1/xxx.conf
     # path app1/xxx.conf
     # xxx.conf
-    if _is_meta_file(path):
+    if _is_meta_file(os.path.basename(path)):
         return META_APP_NAME
     app_name = os.path.dirname(path)
     index = app_name.find("/")

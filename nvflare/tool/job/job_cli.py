@@ -37,7 +37,6 @@ from nvflare.tool.job.job_client_const import (
     CONFIG_FED_SERVER_CONF,
     CONFIG_FILE_BASE_NAME_WO_EXTS,
     DEFAULT_APP_NAME,
-    FILE_POSTFIX,
     JOB_CONFIG_COMP_NAME,
     JOB_CONFIG_FILE_NAME,
     JOB_CONFIG_VAR_NAME,
@@ -181,12 +180,8 @@ def get_src_template(cmd_args) -> Optional[str]:
     return None
 
 
-def remove_non_supported_files(custom_dir, supported_postfix=FILE_POSTFIX):
+def remove_pycache_files(custom_dir):
     for root, dirs, files in os.walk(custom_dir):
-        for f in files:
-            file_path = os.path.join(root, f)
-            if not any([f.endswith(postfix) for postfix in supported_postfix]) and os.path.exists(file_path):
-                os.remove(file_path)
         # remove pycache and pyc files
         for d in dirs:
             if d == "__pycache__" or d.endswith(".pyc"):
@@ -685,7 +680,7 @@ def prepare_app_scripts(app_custom_dirs, cmd_args):
         if cmd_args.script_dir and len(cmd_args.script_dir.strip()) > 0:
             if os.path.exists(cmd_args.script_dir):
                 copy_tree(cmd_args.script_dir, app_custom_dir)
-                remove_non_supported_files(app_custom_dir)
+                remove_pycache_files(app_custom_dir)
             else:
                 raise ValueError(f"{cmd_args.script_dir} doesn't exists")
 

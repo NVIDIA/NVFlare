@@ -50,5 +50,3 @@ APP_CONFIG_DIR = "config"
 APP_SCRIPT_KEY = "app_script"
 APP_CONFIG_KEY = "app_config"
 TEMPLATES_KEY = "templates"
-
-FILE_POSTFIX = [".py", ".json", ".jsonl", ".yml", ".yaml", ".conf"]
