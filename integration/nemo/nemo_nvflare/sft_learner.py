@@ -36,9 +36,9 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.learner_spec import Learner
 from nvflare.app_common.app_constant import AppConstants, ValidateType
+from nvflare.app_opt.lightning.callbacks import RestoreOptimizers
 from nvflare.fuel.utils.network_utils import get_open_ports
 
-from .callbacks import RestoreOptimizers
 from .constants import NemoDataKind
 from .utils_sft import compute_model_diff, load_weights
 
