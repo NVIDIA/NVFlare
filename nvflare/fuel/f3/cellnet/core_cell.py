@@ -1124,6 +1124,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 err = ReturnCode.MSG_TOO_BIG
             else:
                 direct_cell = self.ALL_CELLS.get(to_endpoint.name)
+                msg_size_mbs = self._msg_size_mbs(message)
                 if direct_cell:
                     # create a thread and fire the cell's process_message!
                     # self.DIRECT_MSG_EXECUTOR.submit(self._send_direct_message, direct_cell, message)
@@ -1131,9 +1132,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
                 else:
                     self.communicator.send(to_endpoint, CoreCell.APP_ID, message)
-                self.sent_msg_size_pool.record_value(
-                    category=self._stats_category(message), value=self._msg_size_mbs(message)
-                )
+                self.sent_msg_size_pool.record_value(category=self._stats_category(message), value=msg_size_mbs)
         except Exception as ex:
             err_text = f"Failed to send message to {to_endpoint.name}: {secure_format_exception(ex)}"
             self.log_error(err_text, message)
