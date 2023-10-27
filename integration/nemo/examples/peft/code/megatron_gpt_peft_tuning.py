@@ -27,6 +27,7 @@ mp.set_start_method("spawn", force=True)
 
 # (0): import nvflare _lightning api
 import nvflare.client.lightning as flare
+from nemo_nvflare.callbacks import RestoreOptimizers
 
 """
 This is the script to finetuning a GPT Model with any PEFT method.
@@ -78,7 +79,10 @@ def main(cfg) -> None:
         logging.info(f"Running full finetuning since no peft scheme is given.\n{model.summarize()}")
 
     # (1): flare patch
-    flare.patch(trainer)        
+    flare.patch(trainer)
+
+    # (optional): Attach callback to restore optimizer and lr scheduler states
+    trainer.callbacks.append(RestoreOptimizers())
 
     # Receive the FLModel from NVFlare
     # Note that we don't need to pass this input_model to trainer
@@ -97,7 +101,6 @@ def main(cfg) -> None:
         # (3) Perform local training starting with the received global model
         print("--- train new model ---")      
         trainer.fit(model)
-
 
 if __name__ == '__main__':
     main()
