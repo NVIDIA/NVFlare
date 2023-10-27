@@ -22,11 +22,3 @@ fi
 
 # start POC FL server and FL clients
 nvflare poc start -ex admin@nvidia.com
-
-# # Check if the FL system is ready until 2 clients are active
-# python <<END
-# from nvflare.tool.api_utils import wait_for_system_start
-# wait_for_system_start(username = "admin@nvidia.com", num_clients = 2,  prod_dir = "${NVFLARE_POC_WORKSPACE}/example_project/prod_00")
-
-# END
-
