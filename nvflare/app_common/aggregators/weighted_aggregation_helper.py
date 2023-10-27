@@ -15,7 +15,6 @@
 import re
 import threading
 from typing import Optional
-import numpy as np
 
 
 class WeightedAggregationHelper(object):
@@ -52,8 +51,6 @@ class WeightedAggregationHelper(object):
                 if self.exclude_vars is not None and self.exclude_vars.search(k):
                     continue
                 if self.weigh_by_local_iter:
-                    print("$$$$ weight", weight, type(weight))
-                    print("$$$$ v", v, v.dtype, np.min(v), np.max(v))
                     weighted_value = v * weight
                 else:
                     weighted_value = v  # used in homomorphic encryption to reduce computations on ciphertext

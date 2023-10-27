@@ -15,8 +15,6 @@
 from typing import Dict
 
 from nvflare.app_common.data_exchange.constants import ExchangeFormat
-import numpy as np
-import torch
 
 
 def numerical_params_diff(original: Dict, new: Dict) -> Dict:
@@ -34,16 +32,11 @@ def numerical_params_diff(original: Dict, new: Dict) -> Dict:
     for k in original:
         if k not in new:
             continue
-        print("#### new", k, type(new[k]))
-        print("#### original", k, type(original[k]))
-        print("#### new", k, torch.min(new[k]), torch.max(new[k]), torch.any(torch.isnan(new[k])))
-        print("#### original", k, torch.min(original[k]), torch.max(original[k]), torch.any(torch.isnan(original[k])))
         if isinstance(new[k], list) and isinstance(original[k], list):
             diff = [new[k][i] - original[k][i] for i in range(len(new[k]))]
         else:
             diff = new[k] - original[k]
 
-        print("#### diff", k, torch.min(diff), torch.max(diff), torch.any(torch.isnan(diff)))
         diff_dict[k] = diff
     return diff_dict
 
