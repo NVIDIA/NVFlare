@@ -48,7 +48,7 @@ class ImageStatistics(Statistics):
     def initialize(self, fl_ctx: FLContext):
         self.fl_ctx = fl_ctx
         self.client_name = fl_ctx.get_identity_name()
-        self.loader = LoadImage()
+        self.loader = LoadImage(image_only=True)
         self.loader.register(ITKReader())
         self._load_data_list(self.client_name, fl_ctx)
 
@@ -101,7 +101,7 @@ class ImageStatistics(Statistics):
         for i, entry in enumerate(self.data_list[dataset_name]):
             file = entry.get("image")
             try:
-                img, meta = self.loader(file)
+                img = self.loader(file)
                 curr_histogram, bin_edges = np.histogram(
                     img, bins=num_of_bins, range=(global_min_value, global_max_value)
                 )

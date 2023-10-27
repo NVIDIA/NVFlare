@@ -15,6 +15,7 @@
 
 class FlareServiceConstants(object):
     FLARE_PROJ_ADMIN = "admin@nvidia.com"
+    FLARE_OTHER_ADMINS = "other_admins"
     FLARE_SERVER = "server"
     FLARE_CLIENTS = "clients"
     FLARE_OVERSEER = "overseer"

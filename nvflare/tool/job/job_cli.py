@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import os
 import shutil
 import traceback
@@ -23,6 +24,7 @@ from pyhocon import ConfigTree
 
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.fuel.flare_api.flare_api import new_secure_session
+from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.tool.job.config.configer import (
     build_config_file_indices,
@@ -48,6 +50,8 @@ from nvflare.tool.job.job_client_const import (
     JOB_INFO_DESC_KEY,
     JOB_INFO_KEYS,
     JOB_INFO_MD,
+    JOB_META_BASE_NAME,
+    META_APP_NAME,
     TEMPLATES_KEY,
 )
 from nvflare.utils.cli_utils import (
@@ -133,7 +137,7 @@ def create_job(cmd_args):
 
         template_srcs = {}
         if not app_dirs:
-            template_srcs["app"] = template_src
+            template_srcs[DEFAULT_APP_NAME] = template_src
         else:
             for app_dir in app_dirs:
                 app_name = os.path.basename(app_dir)
@@ -176,12 +180,9 @@ def get_src_template(cmd_args) -> Optional[str]:
     return None
 
 
-def remove_non_python_files(custom_dir):
+def remove_pycache_files(custom_dir):
     for root, dirs, files in os.walk(custom_dir):
-        for f in files:
-            file_path = os.path.join(root, f)
-            if not f.endswith(".py") and os.path.exists(file_path):
-                os.remove(file_path)
+        # remove pycache and pyc files
         for d in dirs:
             if d == "__pycache__" or d.endswith(".pyc"):
                 shutil.rmtree(os.path.join(root, d))
@@ -250,7 +251,7 @@ def display_template_variables(job_folder, app_variable_values):
     print(" " * left_margin, file_name, var_name, var_value, var_comp)
     print("-" * total_length)
     for app_name, variable_values in app_variable_values.items():
-        if app_name != DEFAULT_APP_NAME:
+        if app_name != DEFAULT_APP_NAME and app_name != META_APP_NAME:
             app_header = fix_length_format(f"app: {app_name}", total_length)
             print(" " * left_margin, app_header)
             print(" " * total_length)
@@ -367,8 +368,6 @@ def find_admin_user_and_dir() -> Tuple[str, str]:
     startup_kit_dir = get_startup_kit_dir()
     fed_admin_config = ConfigFactory.load_config("fed_admin.json", [startup_kit_dir])
 
-    admin_user_dir = None
-    admin_username = None
     if fed_admin_config:
         admin_user_dir = os.path.dirname(os.path.dirname(fed_admin_config.file_path))
         config_dict = fed_admin_config.to_dict()
@@ -542,10 +541,11 @@ def prepare_job_config(cmd_args, app_names: List[str], tmp_job_dir: Optional[str
 
 
 def has_client_config_file(app_config_dir):
-    return (
-        os.path.exists(os.path.join(app_config_dir, "config_fed_client.conf"))
-        or os.path.exists(os.path.join(app_config_dir, "config_fed_client.json"))
-        or os.path.exists(os.path.join(app_config_dir, "config_fed_client.yml"))
+    return any(
+        [
+            os.path.exists(os.path.join(app_config_dir, f"config_fed_client{postfix}"))
+            for postfix in ConfigFormat.extensions()
+        ]
     )
 
 
@@ -553,7 +553,7 @@ def save_merged_configs(app_merged_conf, tmp_job_dir):
     for app_name, merged_conf in app_merged_conf.items():
         for file, (config, excluded_key_List, key_indices) in merged_conf.items():
             base_filename = os.path.basename(file)
-            if base_filename.startswith("meta."):
+            if base_filename.startswith(f"{JOB_META_BASE_NAME}."):
                 config_dir = tmp_job_dir
             else:
                 config_dir = os.path.join(tmp_job_dir, app_name, "config")
@@ -567,7 +567,7 @@ def prepare_meta_config(cmd_args, target_template_dir, app_names):
     job_folder = job_folder[:-1] if job_folder.endswith("/") else job_folder
 
     job_name = os.path.basename(job_folder)
-    meta_files = ["meta.json", "meta.conf", "meta.yml"]
+    meta_files = [f"{JOB_META_BASE_NAME}{postfix}" for postfix in ConfigFormat.extensions()]
     dst_path = None
     for mf in meta_files:
         meta_path = os.path.join(job_folder, mf)
@@ -575,20 +575,20 @@ def prepare_meta_config(cmd_args, target_template_dir, app_names):
             dst_path = meta_path
             break
 
-    src_meta_path = os.path.join(target_template_dir, "meta.conf")
+    src_meta_path = os.path.join(target_template_dir, f"{JOB_META_BASE_NAME}.conf")
     if not os.path.isfile(src_meta_path):
-        dst_config = load_default_config_template("meta.conf")
+        dst_config = load_default_config_template(f"{JOB_META_BASE_NAME}.conf")
     else:
         dst_config = CF.parse_file(src_meta_path)
 
     # Use existing meta.conf if user already defined it.
     if not dst_path or (dst_path and cmd_args.force):
         dst_config.put("name", job_name)
-        dst_path = os.path.join(job_folder, "meta.conf")
+        dst_path = os.path.join(job_folder, f"{JOB_META_BASE_NAME}.conf")
         save_config(dst_config, dst_path)
 
     # clean up
-    app_names = ["app"] if not app_names else app_names
+    app_names = [DEFAULT_APP_NAME] if not app_names else app_names
     for app_name in app_names:
         config_dir = get_config_dir(job_folder, app_name)
         for mf in meta_files:
@@ -680,7 +680,7 @@ def prepare_app_scripts(app_custom_dirs, cmd_args):
         if cmd_args.script_dir and len(cmd_args.script_dir.strip()) > 0:
             if os.path.exists(cmd_args.script_dir):
                 copy_tree(cmd_args.script_dir, app_custom_dir)
-                remove_non_python_files(app_custom_dir)
+                remove_pycache_files(app_custom_dir)
             else:
                 raise ValueError(f"{cmd_args.script_dir} doesn't exists")
 

@@ -17,18 +17,54 @@ builders:
 description: health_project project yaml file
 name: health_project
 participants:
+
 - admin_port: 8003
   fed_learn_port: 8002
   name: general-hospital-server
   org: nonprofit_health
   type: server
-- name: admin@nvidia.com
+
+- name: us_hospital
+  org: us_hospital
+  type: client
+
+- name: europe-hospital
+  org: eu_hospital
+  type: client
+
+
+- name: admin@nonprofit.org
   org: nonprofit_health
   role: project_admin
   type: admin
-- name: us-hospital
-  org: nonprofit_health
-  type: client
-- name: europe-hospital
-  org: nonprofit_health
-  type: client
+
+
+- name: admin@hospital.org.us
+  type: admin
+  org:  us_hospital
+  role: org_admin
+
+- name: lead@hospital.org.us
+  type: admin
+  org: us_hospital
+  role: lead
+
+- name: member@hospital.org.us
+  type: admin
+  org: us_hospital
+  role: member
+
+- name: admin@hospital.org.eu
+  type: admin
+  org:  eu_hospital
+  role: org_admin
+
+- name: lead@hospital.org.eu
+  type: admin
+  org: eu_hospital
+  role: lead
+
+- name: member@hospital.org.eu
+  type: admin
+  org: eu_hospital
+  role: member

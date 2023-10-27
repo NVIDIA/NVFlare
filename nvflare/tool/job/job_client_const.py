@@ -43,6 +43,8 @@ JOB_TEMPLATE_NAME = "name"
 CONFIG_CONF = "config.conf"
 
 DEFAULT_APP_NAME = "app"
+# for consistency, meta config have a dummy app name
+META_APP_NAME = "__meta__app__"
 APP_CONFIG_DIR = "config"
 
 APP_SCRIPT_KEY = "app_script"

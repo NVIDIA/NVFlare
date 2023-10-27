@@ -15,9 +15,10 @@ import io
 import os.path
 import struct
 import uuid
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, Union
 
 from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.utils.fobs.buf_list_stream import BufListStream
 from nvflare.fuel.utils.fobs.datum import Datum, DatumManager, DatumType
 from nvflare.fuel.utils.fobs.fobs import deserialize, serialize
 
@@ -134,7 +135,7 @@ def _get_datum_id(stream: BinaryIO, header: _Header):
     """Get datum ID from the stream:
     - Read 16 bytes from the stream
     - Convert the bytes to hex string - this gives a UUID string without hyphens
-    - Make an uuid.UUID object from the hex string
+    - Make a UUID object from the hex string
     - Convert it to string - this gives a UUID string with hyphens. This version is what we need!
 
     Args:
@@ -269,23 +270,27 @@ def load_from_stream(stream: BinaryIO):
     return deserialize(main_body, mgr)
 
 
-def dump_to_bytes(obj: Any, max_value_size=None):
+def dump_to_bytes(obj: Any, buffer_list=False, max_value_size=None):
     """Serialize an object to bytes
 
     Args:
         obj: object to be serialized
         max_value_size: the max size allowed for bytes/str value in the object. If a value exceeds this, it will be
         converted to datum. If not specified, default is 10MB.
+        buffer_list: If true, returns buffer list to save memory
 
     Returns: a bytes object
 
     """
-    bio = io.BytesIO()
+    if buffer_list:
+        bio = BufListStream()
+    else:
+        bio = io.BytesIO()
     dump_to_stream(obj, bio, max_value_size)
     return bio.getvalue()
 
 
-def load_from_bytes(data: bytes) -> Any:
+def load_from_bytes(data: Union[bytes, list]) -> Any:
     """Deserialize the bytes into an object
 
     Args:
@@ -294,7 +299,12 @@ def load_from_bytes(data: bytes) -> Any:
     Returns: an object
 
     """
-    return load_from_stream(io.BytesIO(data))
+    if isinstance(data, list):
+        stream = BufListStream(data)
+    else:
+        stream = io.BytesIO(data)
+
+    return load_from_stream(stream)
 
 
 def dump_to_file(obj: Any, file_path: str, max_value_size=None):

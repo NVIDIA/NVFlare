@@ -113,3 +113,15 @@ class CommConfigurator:
 
     def get_streaming_read_timeout(self, default):
         return ConfigService.get_int_var(VarName.STREAMING_READ_TIMEOUT, self.config, default)
+
+    def get_int_var(self, name: str, default=None):
+        return ConfigService.get_int_var(name, self.config, default=default)
+
+    def get_float_var(self, name: str, default=None):
+        return ConfigService.get_float_var(name, self.config, default=default)
+
+    def get_bool_var(self, name: str, default=None):
+        return ConfigService.get_bool_var(name, self.config, default=default)
+
+    def get_str_var(self, name: str, default=None):
+        return ConfigService.get_str_var(name, self.config, default=default)
