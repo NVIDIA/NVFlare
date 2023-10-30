@@ -50,7 +50,7 @@ INVALID_WRITE_TEST_CASES = [
         2,
         AnalyticsDataType.SCALAR,
         TypeError,
-        f"expect 'tag' value to be an instance of float, but got '{type(list())}'",
+        f"expect 'tag' value to be an instance of float or int, but got '{type(list())}'",
     ),
     (
         list(),
