@@ -36,7 +36,7 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.learner_spec import Learner
 from nvflare.app_common.app_constant import AppConstants, ValidateType
-from nvflare.app_opt.lightning.callbacks import RestoreOptimizers
+from nvflare.app_opt.lightning.callbacks import RestoreState
 from nvflare.fuel.utils.network_utils import get_open_ports
 
 from .constants import NemoDataKind
@@ -275,7 +275,7 @@ class SFTLearner(Learner):
         self.config.exp_manager.explicit_log_dir = self.app_root
 
         self.trainer = Trainer(
-            plugins=plugins, strategy=strategy, callbacks=[RestoreOptimizers()], **self.config.trainer
+            plugins=plugins, strategy=strategy, callbacks=[RestoreState()], **self.config.trainer
         )
         exp_manager(self.trainer, self.config.exp_manager)
         self.log_info(fl_ctx, f"Model config - {OmegaConf.to_yaml(self.config.model)}")
