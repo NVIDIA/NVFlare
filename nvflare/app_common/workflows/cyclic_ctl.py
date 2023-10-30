@@ -157,6 +157,7 @@ class CyclicController(Controller):
         # prepare task shareable data for next client
         task.data = self.shareable_generator.learnable_to_shareable(self._last_learnable, fl_ctx)
         task.data.set_header(AppConstants.CURRENT_ROUND, self._current_round)
+        task.data.set_header(AppConstants.NUM_ROUNDS, self._num_rounds)
         task.data.add_cookie(AppConstants.CONTRIBUTION_ROUND, self._current_round)
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
@@ -177,6 +178,7 @@ class CyclicController(Controller):
 
                 shareable = self.shareable_generator.learnable_to_shareable(self._last_learnable, fl_ctx)
                 shareable.set_header(AppConstants.CURRENT_ROUND, self._current_round)
+                shareable.set_header(AppConstants.NUM_ROUNDS, self._num_rounds)
                 shareable.add_cookie(AppConstants.CONTRIBUTION_ROUND, self._current_round)
 
                 task = Task(
