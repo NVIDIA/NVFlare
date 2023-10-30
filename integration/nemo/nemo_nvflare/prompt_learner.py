@@ -261,9 +261,7 @@ class PromptLearner(Learner):
         self.config.trainer.logger = True
         self.config.trainer.default_root_dir = self.app_root
 
-        self.trainer = pl.Trainer(
-            plugins=plugins, strategy=strategy, callbacks=[RestoreState()], **self.config.trainer
-        )
+        self.trainer = pl.Trainer(plugins=plugins, strategy=strategy, callbacks=[RestoreState()], **self.config.trainer)
         self.config.model.precision = self.config.trainer.precision
 
         # Set name of the experiment

@@ -274,9 +274,7 @@ class SFTLearner(Learner):
         # Add TensorBoard logger
         self.config.exp_manager.explicit_log_dir = self.app_root
 
-        self.trainer = Trainer(
-            plugins=plugins, strategy=strategy, callbacks=[RestoreState()], **self.config.trainer
-        )
+        self.trainer = Trainer(plugins=plugins, strategy=strategy, callbacks=[RestoreState()], **self.config.trainer)
         exp_manager(self.trainer, self.config.exp_manager)
         self.log_info(fl_ctx, f"Model config - {OmegaConf.to_yaml(self.config.model)}")
         self.log_info(fl_ctx, f"Trainer config - {OmegaConf.to_yaml(self.config.trainer)}")
