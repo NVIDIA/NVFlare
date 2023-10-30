@@ -19,6 +19,7 @@ from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.stats_pool import StatsPoolManager
 from nvflare.fuel.f3.streaming.stream_const import (
     STREAM_ACK_TOPIC,
     STREAM_CHANNEL,
@@ -27,11 +28,23 @@ from nvflare.fuel.f3.streaming.stream_const import (
     StreamHeaderKey,
 )
 from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture
-from nvflare.fuel.f3.streaming.stream_utils import gen_stream_id, stream_thread_pool, wrap_view
+from nvflare.fuel.f3.streaming.stream_utils import (
+    ONE_MB,
+    gen_stream_id,
+    stream_stats_category,
+    stream_thread_pool,
+    wrap_view,
+)
 
 STREAM_CHUNK_SIZE = 1024 * 1024
 STREAM_WINDOW_SIZE = 16 * STREAM_CHUNK_SIZE
 STREAM_ACK_WAIT = 10
+
+STREAM_TYPE_BYTE = "byte"
+STREAM_TYPE_BLOB = "blob"
+STREAM_TYPE_FILE = "file"
+
+COUNTER_NAME_SENT = "sent"
 
 log = logging.getLogger(__name__)
 
@@ -70,12 +83,31 @@ class ByteStreamer:
         self.tx_task_map = {}
         self.map_lock = threading.Lock()
 
+        self.sent_stream_counter_pool = StatsPoolManager.add_counter_pool(
+            name="Sent_Stream_Counters",
+            description="Counters of sent streams",
+            counter_names=[COUNTER_NAME_SENT],
+            scope=self.cell.my_info.fqcn,
+        )
+
+        self.sent_stream_size_pool = StatsPoolManager.add_msg_size_pool(
+            "Sent_Stream_Sizes", "Sizes of streams sent (MBs)", scope=self.cell.my_info.fqcn
+        )
+
     @staticmethod
     def get_chunk_size():
         return CommConfigurator().get_streaming_chunk_size(STREAM_CHUNK_SIZE)
 
     def send(
-        self, channel: str, topic: str, target: str, headers: dict, stream: Stream, secure=False, optional=False
+        self,
+        channel: str,
+        topic: str,
+        target: str,
+        headers: dict,
+        stream: Stream,
+        stream_type=STREAM_TYPE_BYTE,
+        secure=False,
+        optional=False,
     ) -> StreamFuture:
         tx_task = TxTask(channel, topic, target, headers, stream, secure, optional)
         with self.map_lock:
@@ -85,6 +117,14 @@ class ByteStreamer:
         future.set_size(stream.get_size())
         tx_task.stream_future = future
         tx_task.task_future = stream_thread_pool.submit(self._transmit_task, tx_task)
+
+        self.sent_stream_counter_pool.increment(
+            category=stream_stats_category(channel, topic, stream_type), counter_name=COUNTER_NAME_SENT
+        )
+
+        self.sent_stream_size_pool.record_value(
+            category=stream_stats_category(channel, topic, stream_type), value=stream.get_size() / ONE_MB
+        )
 
         return future
 
