@@ -37,7 +37,7 @@ def main():
     parser.add_argument(
         "--data_path",
         type=str,
-        default="/media/ziyuexu/Research/Experiment/nvflare_gnn_update/examples/advanced/gnn/data",
+        default="./data",
     )
     parser.add_argument(
         "--epochs",

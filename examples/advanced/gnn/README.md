@@ -13,7 +13,7 @@ The aim is to classify protein roles based on their cellular functions from gene
 2. **Financial Transaction Classification**:
 The aim is to classify whether a given transaction is licit or illicit. For this financial application, we use the [Elliptic++](https://github.com/git-disl/EllipticPlusPlus) dataset. It consists of 203k Bitcoin transactions and 822k wallet addresses to enable both the detection of fraudulent transactions and the detection of illicit addresses (actors) in the Bitcoin network by leveraging graph data. For more details, please refer to this [paper](https://arxiv.org/pdf/2306.06108.pdf).
 
-### Algiorithm
+### Algorithm
 Both tasks are for node classification. We used the inductive representation learning method [GraphSAGE](https://arxiv.org/pdf/1706.02216.pdf) based on [Pytorch Geometric](https://github.com/pyg-team/pytorch_geometric)'s examples. 
 [Pytorch Geometric](https://pytorch-geometric.readthedocs.io/en/latest/)  is  a library built upon PyTorch to easily write and train Graph Neural Networks (GNNs) for a wide range of applications related to structured data.
 
@@ -43,7 +43,7 @@ nvflare simulator -w /tmp/nvflare/gnn/protein_fl_workspace -n 2 -t 2 ./jobs/gnn_
 ```
 
 #### Financial Transaction Classification
-We first download the Elliptic++ dataset to `data/elliptic` folder. In this example, we will use the following three files:
+We first download the Elliptic++ dataset to `data` folder. In this example, we will use the following three files:
 - `txs_classes.csv`: transaction id and its class (licit or illicit)
 - `txs_edgelist.csv`: connections for transaction ids 
 - `txs_features.csv`: transaction id and its features
