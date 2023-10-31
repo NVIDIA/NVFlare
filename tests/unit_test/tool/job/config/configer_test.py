@@ -16,7 +16,52 @@ import argparse
 import os
 from typing import List
 
-from nvflare.tool.job.config.configer import DEFAULT_APP_NAME, build_config_file_indices, get_cli_config, merge_configs
+import pytest
+
+from nvflare.tool.job.config.configer import build_config_file_indices, get_cli_config, merge_configs
+from nvflare.tool.job.job_client_const import DEFAULT_APP_NAME, META_APP_NAME
+
+MERGE_CONFIG_TEST_CASES = [
+    (
+        "launch_once",
+        [
+            ["app/config_fed_client.conf", "app_script=cifar10_fl.py", "launch_once=False"],
+            ["meta.conf", "min_clients=3"],
+        ],
+        "launch_everytime",
+        [["app/config_fed_client.conf"], ["meta.conf"]],
+    ),
+    (
+        "launch_once",
+        [
+            ["app/config_fed_client.conf", "app_script=cifar10_fl.py", "launch_once=false"],
+            ["meta.conf", "min_clients=3"],
+        ],
+        "launch_everytime",
+        [["app/config_fed_client.conf"], ["meta.conf"]],
+    ),
+    (
+        "launch_once",
+        [["app/config_fed_client.conf", "app_script=cifar10_fl.py", "launch_once=False"]],
+        "launch_everytime",
+        [["app/config_fed_client.conf"], ["meta.conf", "min_clients=2"]],
+    ),
+    (
+        "launch_once",
+        [["app/config_fed_client.conf", "app_script=cifar10_fl.py", "launch_once=false"]],
+        "launch_everytime",
+        [["app/config_fed_client.conf"], ["meta.conf", "min_clients=2"]],
+    ),
+]
+
+GET_CLI_USE_CASES = [
+    (
+        "launch_once",
+        [["config_fed_client.conf", "app_script=cifar10_fl.py", "launch_once=False"]],
+        {DEFAULT_APP_NAME: {"config_fed_client.conf": {"app_script": "cifar10_fl.py", "launch_once": "False"}}},
+    ),
+    ("launch_once", [["meta.conf", "min_clients=3"]], {META_APP_NAME: {"meta.conf": {"min_clients": "3"}}}),
+]
 
 
 def _create_test_args(config_file: List, job_name: str = "launch_once"):
@@ -38,36 +83,24 @@ def _get_merged_configs(args):
 
 
 class TestConfiger:
-    def test_get_cli_config(self):
+    @pytest.mark.parametrize("job_name, config_file, expected", GET_CLI_USE_CASES)
+    def test_get_cli_config(self, job_name, config_file, expected):
         args = _create_test_args(
-            config_file=[["config_fed_client.conf", "app_script=cifar10_fl.py", "launch_once=False"]],
-            job_name="launch_once",
+            config_file=config_file,
+            job_name=job_name,
         )
         result = get_cli_config(args, [DEFAULT_APP_NAME])
-        assert result == {
-            DEFAULT_APP_NAME: {"config_fed_client.conf": {"app_script": "cifar10_fl.py", "launch_once": "False"}}
-        }
+        assert result == expected
 
-    def test_merge_configs(self):
+    @pytest.mark.parametrize("origin_job, origin_config, expect_job, expect_config", MERGE_CONFIG_TEST_CASES)
+    def test_merge_configs(self, origin_job, origin_config, expect_job, expect_config):
         args = _create_test_args(
-            config_file=[["config_fed_client.conf", "app_script=cifar10_fl.py", "launch_once=False"]],
-            job_name="launch_once",
+            config_file=origin_config,
+            job_name=origin_job,
         )
         result_merged = _get_merged_configs(args)
 
-        args = _create_test_args(config_file=[["config_fed_client.conf"]], job_name="launch_everytime")
-        expected_merged = _get_merged_configs(args)
-
-        assert result_merged == expected_merged
-
-    def test_merge_configs_lower_case_false(self):
-        args = _create_test_args(
-            config_file=[["config_fed_client.conf", "app_script=cifar10_fl.py", "launch_once=false"]],
-            job_name="launch_once",
-        )
-        result_merged = _get_merged_configs(args)
-
-        args = _create_test_args(config_file=[["config_fed_client.conf"]], job_name="launch_everytime")
+        args = _create_test_args(config_file=expect_config, job_name=expect_job)
         expected_merged = _get_merged_configs(args)
 
         assert result_merged == expected_merged
