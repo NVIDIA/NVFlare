@@ -150,8 +150,10 @@ class AnalyticsData:
         path = kwargs.get(TrackConst.PATH_KEY, None)
         if path and not isinstance(path, str):
             raise TypeError("expect path to be an instance of str, but got {}.".format(type(step)))
-        if data_type in [AnalyticsDataType.SCALAR, AnalyticsDataType.METRIC] and not isinstance(value, float):
-            raise TypeError(f"expect '{key}' value to be an instance of float, but got '{type(value)}'.")
+        if data_type in [AnalyticsDataType.SCALAR, AnalyticsDataType.METRIC] and not (
+            isinstance(value, float) or isinstance(value, int)
+        ):
+            raise TypeError(f"expect '{key}' value to be an instance of float or int, but got '{type(value)}'.")
         elif data_type in [
             AnalyticsDataType.METRICS,
             AnalyticsDataType.PARAMETERS,

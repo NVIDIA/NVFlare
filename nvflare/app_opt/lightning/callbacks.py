@@ -18,8 +18,8 @@ from copy import deepcopy
 from pytorch_lightning import Callback
 
 
-class RestoreOptimizers(Callback):
-    """Callback to restore the optimizer and learning rate scheduler states at each round of FL"""
+class RestoreState(Callback):
+    """Callback to restore the local optimizer and learning rate scheduler states at each round of FL"""
 
     def __init__(self):
         super().__init__()

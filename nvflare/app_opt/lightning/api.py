@@ -22,10 +22,12 @@ from nvflare.app_common.abstract.fl_model import FLModel, MetaKey
 from nvflare.client.api import _get_model_registry, clear, get_config, init, receive, send
 from nvflare.client.config import ConfigKey
 
+from .callbacks import RestoreState
+
 FL_META_KEY = "__fl_meta__"
 
 
-def patch(trainer: pl.Trainer):
+def patch(trainer: pl.Trainer, restore_optimizers: bool = True):
     fl_callback = FLCallback(rank=trainer.global_rank)
     callbacks = trainer.callbacks
     if isinstance(callbacks, list):
@@ -34,6 +36,10 @@ def patch(trainer: pl.Trainer):
         callbacks = [callbacks, fl_callback]
     else:
         callbacks = [fl_callback]
+
+    if restore_optimizers:
+        callbacks.append(RestoreState())
+
     trainer.callbacks = callbacks
 
 

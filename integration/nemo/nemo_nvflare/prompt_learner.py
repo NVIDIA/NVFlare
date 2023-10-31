@@ -31,9 +31,9 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.learner_spec import Learner
 from nvflare.app_common.app_constant import AppConstants, ValidateType
+from nvflare.app_opt.lightning.callbacks import RestoreState
 from nvflare.fuel.utils.network_utils import get_open_ports
 
-from .callbacks import RestoreOptimizers
 from .constants import NemoDataKind
 from .fed_megatron_gpt_prompt_learning_model import FedMegatronGPTPromptLearningModel
 from .utils import compute_model_diff, load_weights
@@ -261,9 +261,7 @@ class PromptLearner(Learner):
         self.config.trainer.logger = True
         self.config.trainer.default_root_dir = self.app_root
 
-        self.trainer = pl.Trainer(
-            plugins=plugins, strategy=strategy, callbacks=[RestoreOptimizers()], **self.config.trainer
-        )
+        self.trainer = pl.Trainer(plugins=plugins, strategy=strategy, callbacks=[RestoreState()], **self.config.trainer)
         self.config.model.precision = self.config.trainer.precision
 
         # Set name of the experiment
