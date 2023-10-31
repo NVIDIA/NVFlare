@@ -151,7 +151,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--alpha",
         type=float,
-        help="Alpha value to control the Dirichlet sampling strategy for creating a heterogeneous partition. Smaller values of alpha cause higher heterogenity.",
+        help="Alpha value to control the Dirichlet sampling strategy for creating a heterogeneous partition. "
+             "Smaller values of alpha cause higher heterogeneity.",
         default=10.0,
     )
     args = parser.parse_args()
