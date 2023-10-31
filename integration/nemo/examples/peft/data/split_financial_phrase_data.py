@@ -41,6 +41,7 @@ import argparse
 import json
 import os
 from pprint import pprint
+
 import numpy as np
 import pandas as pd
 
@@ -70,9 +71,7 @@ def partition_data(train_labels, label_names, num_sites, alpha, sum_file_name: s
             np.random.shuffle(idx_k)
             proportions = np.random.dirichlet(np.repeat(alpha, num_sites))
             # Balance
-            proportions = np.array(
-                [p * (len(idx_j) < N / num_sites) for p, idx_j in zip(proportions, idx_batch)]
-            )
+            proportions = np.array([p * (len(idx_j) < N / num_sites) for p, idx_j in zip(proportions, idx_batch)])
             proportions = proportions / proportions.sum()
             proportions = (np.cumsum(proportions) * len(idx_k)).astype(int)[:-1]
             idx_batch = [idx_j + idx.tolist() for idx_j, idx in zip(idx_batch, np.split(idx_k, proportions))]
@@ -149,7 +148,12 @@ if __name__ == "__main__":
     parser.add_argument("--num_clients", type=int, help="Total number of clients", default=3)
     parser.add_argument("--random_seed", type=int, help="Random seed", default=0)
     parser.add_argument("--site_name_prefix", type=str, help="Site name prefix", default="site-")
-    parser.add_argument("--alpha", type=float, help="Alpha value to control the Dirichlet sampling strategy for creating a heterogeneous partition. Smaller values of alpha cause higher heterogenity.", default=10.0)
+    parser.add_argument(
+        "--alpha",
+        type=float,
+        help="Alpha value to control the Dirichlet sampling strategy for creating a heterogeneous partition. Smaller values of alpha cause higher heterogenity.",
+        default=10.0,
+    )
     args = parser.parse_args()
 
     split_data(
@@ -158,5 +162,5 @@ if __name__ == "__main__":
         num_clients=args.num_clients,
         site_name_prefix=args.site_name_prefix,
         seed=args.random_seed,
-        alpha=args.alpha
+        alpha=args.alpha,
     )
