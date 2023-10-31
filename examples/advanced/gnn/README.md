@@ -37,7 +37,14 @@ python3 code/graphsage_protein_local.py --client_id 0
 python3 code/graphsage_protein_local.py --client_id 1
 python3 code/graphsage_protein_local.py --client_id 2 
 ```
-Then, we run the federated training on both clients via FedAvg using NVFlare Simulator.
+Then, we create NVFlare job based on GNN template for unsupervised learning
+```
+nvflare job create -force -j "./jobs/gnn_protein" -w "sag_pt_gnn_unsupervised" -sd "code" \
+  -f app_1/config_fed_client.conf app_script="graphsage_protein_fl.py" app_config="--client_id 1 --epochs 10" \
+  -f app_2/config_fed_client.conf app_script="graphsage_protein_fl.py" app_config="--client_id 2 --epochs 10" \
+  -f app_server/config_fed_server.conf num_rounds=7 key_metric="validation_f1"
+```
+With the produced job, we run the federated training on both clients via FedAvg using NVFlare Simulator.
 ```
 nvflare simulator -w /tmp/nvflare/gnn/protein_fl_workspace -n 2 -t 2 ./jobs/gnn_protein
 ```
@@ -53,7 +60,14 @@ python3 code/graphsage_finance_local.py --client_id 0
 python3 code/graphsage_finance_local.py --client_id 1
 python3 code/graphsage_finance_local.py --client_id 2 
 ```
-And similarly, we run the federated training on both clients via FedAvg using NVFlare Simulator.
+Similarly, we create NVFlare job based on GNN template for supervised learning
+```
+nvflare job create -force -j "./jobs/gnn_finance" -w "sag_pt_gnn_supervised" -sd "code" \
+  -f app_1/config_fed_client.conf app_script="graphsage_finance_fl.py" app_config="--client_id 1 --epochs 10" \
+  -f app_2/config_fed_client.conf app_script="graphsage_finance_fl.py" app_config="--client_id 2 --epochs 10" \
+  -f app_server/config_fed_server.conf num_rounds=7 key_metric="validation_auc"
+```
+And with the produced job, we run the federated training on both clients via FedAvg using NVFlare Simulator.
 ```
 nvflare simulator -w /tmp/nvflare/gnn/finance_fl_workspace -n 2 -t 2 ./jobs/gnn_finance
 ```
