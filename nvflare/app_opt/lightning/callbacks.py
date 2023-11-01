@@ -15,7 +15,8 @@
 import logging
 from copy import deepcopy
 
-from pytorch_lightning import Callback
+import pytorch_lightning as pl
+from pytorch_lightning.callbacks import Callback
 
 
 class RestoreState(Callback):
@@ -47,5 +48,6 @@ class RestoreState(Callback):
 
     def on_fit_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"):
         self.optimizer_states = [deepcopy(opt.state_dict()) for opt in trainer.optimizers]
-        self.scaler_states = [deepcopy(trainer.scaler.state_dict())]
+        if trainer.scaler:
+            self.scaler_states = [deepcopy(trainer.scaler.state_dict())]
         self.lr_scheduler_states = [deepcopy(config.scheduler.state_dict()) for config in trainer.lr_scheduler_configs]
