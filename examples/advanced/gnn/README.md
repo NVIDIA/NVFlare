@@ -29,9 +29,9 @@ Install additional requirements:
 ```
 python3 -m pip install -r requirements.txt
 ```
-To further support PyTorch Geometric, we need to install in the following manner, please check the torch version and perform the installation accordingly:
+To support functions of PyTorch Geometric necessary for this example, we need extra dependencies. Please refer to [installation guide](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html) and install accordingly:
 ```
-pip install torch-scatter torch-sparse torch-cluster torch-spline-conv torch-geometric -f https://data.pyg.org/whl/torch-2.1.0+cpu.html
+pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.1.0+cpu.html
 ```
 
 #### Protein Classification
