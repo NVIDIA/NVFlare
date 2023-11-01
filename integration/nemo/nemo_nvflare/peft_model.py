@@ -35,14 +35,14 @@ class PEFTmodel(torch.nn.Module, FLComponent):
     def __init__(
         self,
         config_path: str = "custom/megatron_gpt_peft_tuning_config.yaml",
-        restore_from_path: str = "/home/hroth/Code2/nvflare/nemo_peft_example/integration/nemo/examples/peft/megatron_gpt_345m.nemo",
+        restore_from_path: str = "/models/megatron_gpt_345m.nemo",
         peft_restore_from_path: str = None,
     ):
         """
         Initializes the PEFT model or full model on the server.
         Args:
             config_path: NeMo model config file
-            restore_from_path: Pre-trained nemo model file.
+            restore_from_path: Pre-trained NeMo model file.
             peft_restore_from_path: Pre-trained peft model file.
         """
 

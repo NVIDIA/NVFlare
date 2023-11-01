@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,9 +25,8 @@ from nemo.utils.exp_manager import exp_manager
 
 mp.set_start_method("spawn", force=True)
 
-# (0): import nvflare _lightning api
+# (0): import nvflare lightning api
 import nvflare.client.lightning as flare
-from nemo_nvflare.callbacks import RestoreOptimizers
 
 """
 This is the script to finetuning a GPT Model with any PEFT method.
@@ -81,26 +80,23 @@ def main(cfg) -> None:
     # (1): flare patch
     flare.patch(trainer)
 
-    # (optional): Attach callback to restore optimizer and lr scheduler states
-    trainer.callbacks.append(RestoreOptimizers())
-
-    # Receive the FLModel from NVFlare
-    # Note that we don't need to pass this input_model to trainer
-    # because after flare.patch the trainer.fit/validate will get the
-    # global model internally
-    for input_model in flare.receive_global_model():
+    # (2): Add while loop to keep receiving the FLModel in each FL round.
+    # Note, after flare.patch the trainer.fit/validate will get the
+    # global model internally at each round.
+    while flare.is_running():
         # (optional): get the FL system info
         fl_sys_info = flare.system_info()
         print("--- fl_sys_info ---")
         print(fl_sys_info)            
 
-        # (2) evaluate the current global model to allow server-side model selection
+        # (3) evaluate the current global model to allow server-side model selection.
         print("--- validate global model ---")
         trainer.validate(model)
 
-        # (3) Perform local training starting with the received global model
+        # (4) Perform local training starting with the received global model.
         print("--- train new model ---")      
         trainer.fit(model)
+
 
 if __name__ == '__main__':
     main()
