@@ -120,13 +120,8 @@ Here is the graph of the validation accuracies for the global models of swarm le
 
 ### Runtime Performance
 
-Swarm learning and FedAvg perform the same amount of training, as seen in the graph above with the same number of steps taken to achieve the same accuracy.
-Therefore, the only difference in runtime is the communication time.
+In our setup, swarm learning and FedAvg perform the same amount of training, as seen in the graph above with the same number of steps taken to achieve the same accuracy.
 
-Since swarm learning peer-to-peer messaging actually passes through the server, the communication time is roughly double that of FedAvg. (Swarm learning: client <-> server <-> client vs. FedAvg: server <-> client)
-This can be confirmed by analyzing the pool cell communication stats for these jobs, which show that swarm learning has roughly 2.4x the number of data messages streamed compared to FedAvg.
+Since swarm learning peer-to-peer messaging actually passes through the server, the communication time is roughly double that of FedAvg. (Swarm learning: client <-> server <-> client vs. FedAvg: server <-> client). FLARE does support a mechanism of ad-hoc connections to allow clients to directly communicate with each other, and in the case that this is enabled in comm_config.json, communication time would be roughly the same.
 
-> **_NOTE:_** For more details see the admin commands `list_pools` and `show_pool` to try out for yourself
-
-However, for these CIFAR-10 jobs with clients and server running on different Azure VMs, the communication runtime is still not significant compared to the training and validation time due to the relatively small size of the model compared to the amount of training.
-Some factors that would affect communication time would be the size of the data transferred in the messages (e.g. size of the model), network speed, and location of the clients with respect to the server. As such when using swarm learning, the tradeoffs in communication time must be properly assessed depending on the specifics of the job.
+> **_NOTE:_** For more details about cell communication stats see the admin commands `list_pools` and `show_pool` to try yourself
