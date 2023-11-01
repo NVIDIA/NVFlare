@@ -782,6 +782,13 @@ application run.
 
 .. code-block:: python
 
+    import argparse
+    import sys
+    from sys import platform
+
+    from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
+
+
     def define_simulator_parser(simulator_parser):
         simulator_parser.add_argument("job_folder")
         simulator_parser.add_argument("-w", "--workspace", type=str, help="WORKSPACE folder")

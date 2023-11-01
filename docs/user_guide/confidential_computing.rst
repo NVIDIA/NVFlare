@@ -8,7 +8,7 @@ Data used in NVFlare are encrypted during transmission between participants, whi
 data in transit is well protected.  Users can also utilize existing infrastructure, such as storage encryption, to protect data at rest.  With confidential computing, NVFlare can protect data in use
 and thus completes securing the entire lifecycle of data.
 
-Confidential computing in NVFlare is designed to explicitly establish the trust between participants.  Each participant must first capture the evidences related to the hardware (such as GPU), the software (GPU driver and VBIOS) and other componenets in its own platform.  The evidences will
+Confidential computing in NVFlare is designed to explicitly establish the trust between participants.  Each participant must first capture the evidences related to the hardware (such as GPU), the software (GPU driver and VBIOS) and other components in its own platform.  The evidences will
 be validated and signed to ensure its validity and authenticity.  The owner of signed evidence, called confidential computing token (CC token), can demonstrate the information about its computing environment to other
 participants by providing the CC token.  Upon receiving CC token, the participant (the relying party) can verify the claims inside the CC token against it own security policy on whether the CC token owner is
 using required hardware/software/components for security.  If the relying party finds the CC token does not meet its security policy, the relying party can inform the system that it chooses not to join the job deployment
@@ -99,4 +99,4 @@ After a submitted job is schedule to be deployed, the server verifies CC tokens 
  all tokens from clients in the deployment map are verified successfully, those tokens will be sent to clients in deployment map for client side verification.  The client can determine whether it
  wants to join this job or not based on the result of verifying others' CC tokens against its own result policy.  If one client decides not to join the job, server will not deploy that job to that client.
 
-The server job scheduler will determine if the job has enough resources to be deployed and will determine the job's final status based on resource availablity and retry policy.
+The server job scheduler will determine if the job has enough resources to be deployed and will determine the job's final status based on resource availability and retry policy.

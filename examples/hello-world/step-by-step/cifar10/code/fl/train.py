@@ -57,88 +57,92 @@ def _main(args):
 
     # (2) initializes NVFlare client API
     flare.init()
-    # (3) gets FLModel from NVFlare
-    input_model = flare.receive()
-    print(
-        f" current_round={input_model.current_round},"
-        f" total_round={input_model.total_rounds},"
-        f" client={flare.system_info().get('site_name', None)}"
-    )
 
-    # (4) loads model from NVFlare
-    net.load_state_dict(input_model.params)
+    while flare.is_running():
+        # (3) gets FLModel from NVFlare
+        input_model = flare.receive()
 
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+        if flare.is_train():
+            print(
+                f" current_round={input_model.current_round},"
+                f" total_round={input_model.total_rounds},"
+                f" client={flare.system_info().get('site_name', None)}"
+            )
 
-    # (optional) use GPU to speed things up
-    net.to(DEVICE)
-    # (optional) calculate total steps
-    steps = 2 * len(trainloader)
-    for epoch in range(2):  # loop over the dataset multiple times
+            # (4) loads model from NVFlare
+            net.load_state_dict(input_model.params)
 
-        running_loss = 0.0
-        for i, data in enumerate(trainloader, 0):
-            # get the inputs; data is a list of [inputs, labels]
+            criterion = nn.CrossEntropyLoss()
+            optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+
             # (optional) use GPU to speed things up
-            inputs, labels = data[0].to(DEVICE), data[1].to(DEVICE)
+            net.to(DEVICE)
+            # (optional) calculate total steps
+            steps = 2 * len(trainloader)
+            for epoch in range(2):  # loop over the dataset multiple times
 
-            # zero the parameter gradients
-            optimizer.zero_grad()
-
-            # forward + backward + optimize
-            outputs = net(inputs)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
-
-            # print statistics
-            running_loss += loss.item()
-            if i % 2000 == 1999:  # print every 2000 mini-batches
-                print(f"[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
                 running_loss = 0.0
+                for i, data in enumerate(trainloader, 0):
+                    # get the inputs; data is a list of [inputs, labels]
+                    # (optional) use GPU to speed things up
+                    inputs, labels = data[0].to(DEVICE), data[1].to(DEVICE)
 
-    print("Finished Training")
+                    # zero the parameter gradients
+                    optimizer.zero_grad()
 
-    torch.save(net.state_dict(), model_path)
+                    # forward + backward + optimize
+                    outputs = net(inputs)
+                    loss = criterion(outputs, labels)
+                    loss.backward()
+                    optimizer.step()
 
-    # wraps evaluation logic into a method to re-use for
-    #       evaluation on both trained and received model
-    def evaluate(input_weights):
-        net = Net()
-        net.load_state_dict(input_weights)
-        # (optional) use GPU to speed things up
-        net.to(DEVICE)
+                    # print statistics
+                    running_loss += loss.item()
+                    if i % 2000 == 1999:  # print every 2000 mini-batches
+                        print(f"[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
+                        running_loss = 0.0
 
-        correct = 0
-        total = 0
-        # since we're not training, we don't need to calculate the gradients for our outputs
-        with torch.no_grad():
-            for data in testloader:
+            print("Finished Training")
+
+            torch.save(net.state_dict(), model_path)
+
+            # wraps evaluation logic into a method to re-use for
+            #       evaluation on both trained and received model
+            def evaluate(input_weights):
+                net = Net()
+                net.load_state_dict(input_weights)
                 # (optional) use GPU to speed things up
-                images, labels = data[0].to(DEVICE), data[1].to(DEVICE)
-                # calculate outputs by running images through the network
-                outputs = net(images)
-                # the class with the highest energy is what we choose as prediction
-                _, predicted = torch.max(outputs.data, 1)
-                total += labels.size(0)
-                correct += (predicted == labels).sum().item()
+                net.to(DEVICE)
 
-        print(f"Accuracy of the network on the 10000 test images: {100 * correct // total} %")
-        return 100 * correct // total
+                correct = 0
+                total = 0
+                # since we're not training, we don't need to calculate the gradients for our outputs
+                with torch.no_grad():
+                    for data in testloader:
+                        # (optional) use GPU to speed things up
+                        images, labels = data[0].to(DEVICE), data[1].to(DEVICE)
+                        # calculate outputs by running images through the network
+                        outputs = net(images)
+                        # the class with the highest energy is what we choose as prediction
+                        _, predicted = torch.max(outputs.data, 1)
+                        total += labels.size(0)
+                        correct += (predicted == labels).sum().item()
 
-    # evaluation on local trained model
-    local_accuracy = evaluate(torch.load(model_path))
-    # (5) evaluate on received model
-    accuracy = evaluate(input_model.params)
-    # (6) construct trained FL model
-    output_model = flare.FLModel(
-        params=net.cpu().state_dict(),
-        metrics={"accuracy": accuracy},
-        meta={"NUM_STEPS_CURRENT_ROUND": steps},
-    )
-    # (7) send model back to NVFlare
-    flare.send(output_model)
+                print(f"Accuracy of the network on the 10000 test images: {100 * correct // total} %")
+                return 100 * correct // total
+
+            # evaluation on local trained model
+            local_accuracy = evaluate(torch.load(model_path))
+            # (5) evaluate on received model
+            accuracy = evaluate(input_model.params)
+            # (6) construct trained FL model
+            output_model = flare.FLModel(
+                params=net.cpu().state_dict(),
+                metrics={"accuracy": accuracy},
+                meta={"NUM_STEPS_CURRENT_ROUND": steps},
+            )
+            # (7) send model back to NVFlare
+            flare.send(output_model)
 
 
 def main():

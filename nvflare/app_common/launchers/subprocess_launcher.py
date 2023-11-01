@@ -56,7 +56,6 @@ class SubprocessLauncher(Launcher):
     def wait_task(self, task_name: str, fl_ctx: FLContext, timeout: Optional[float] = None) -> LauncherCompleteStatus:
         if self._process:
             return_code = self._process.wait(timeout)
-            self.stop_task(task_name, fl_ctx)
             if return_code == 0:
                 return LauncherCompleteStatus.SUCCESS
             return LauncherCompleteStatus.FAILED

@@ -33,6 +33,7 @@ class KeyIndex:
 
 
 def build_reverse_order_index(config_file_path: str) -> Tuple:
+    # use pyhocon to load config
     config, config_file_path = load_pyhocon_conf(config_file_path)
 
     components: list = config.get("components", None)
@@ -64,6 +65,7 @@ def build_reverse_order_index(config_file_path: str) -> Tuple:
 
 
 def load_pyhocon_conf(config_file_path) -> Tuple[ConfigTree, str]:
+    """Loads config using pyhocon."""
     try:
         temp_conf: Config = ConfigFactory.load_config(config_file_path)
         if temp_conf:
@@ -141,7 +143,13 @@ def build_list_reverse_order_index(
 
 
 def is_primitive(value):
-    return isinstance(value, int) or isinstance(value, float) or isinstance(value, str) or isinstance(value, bool)
+    return (
+        isinstance(value, int)
+        or isinstance(value, float)
+        or isinstance(value, str)
+        or isinstance(value, bool)
+        or value is None
+    )
 
 
 def has_none_primitives_in_list(values: List):

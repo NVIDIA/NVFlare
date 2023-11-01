@@ -116,7 +116,7 @@ server to connect to. This is only applicable in HA mode.
 
 Peer Context
 ============
-The :ref:`Peer Context <peer_context>` is the contextual information of the message sender that is sent in addtion to the
+The :ref:`Peer Context <peer_context>` is the contextual information of the message sender that is sent in addition to the
 regular payload of the message when the FL parties communicate with each other.
 
 Persistor

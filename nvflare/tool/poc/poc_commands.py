@@ -31,17 +31,17 @@ from nvflare.fuel.utils.class_utils import instantiate_class
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
 from nvflare.lighter.provision import gen_default_project_config, prepare_project
-from nvflare.lighter.service_constants import FlareServiceConstants as SC
 from nvflare.lighter.spec import Provisioner
 from nvflare.lighter.utils import load_yaml, update_project_server_name_config, update_storage_locations
 from nvflare.tool.api_utils import shutdown_system
+from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
 from nvflare.utils.cli_utils import hocon_to_string
 
 DEFAULT_WORKSPACE = "/tmp/nvflare/poc"
 DEFAULT_PROJECT_NAME = "example_project"
 
 CMD_PREPARE_POC = "prepare"
-CMD_PREPARE_EXAMPLES = "prepare-examples"
+CMD_PREPARE_JOBS_DIR = "prepare-jobs-dir"
 CMD_START_POC = "start"
 CMD_STOP_POC = "stop"
 CMD_CLEAN_POC = "clean"
@@ -75,15 +75,18 @@ def client_gpu_assignments(clients: List[str], gpu_ids: List[int]) -> Dict[str, 
 
 def get_service_command(cmd_type: str, prod_dir: str, service_dir, service_config: Dict) -> str:
     cmd = ""
-    admin_dir_name = service_config.get(SC.FLARE_PROJ_ADMIN, SC.FLARE_PROJ_ADMIN)
+    proj_admin_dir_name = service_config.get(SC.FLARE_PROJ_ADMIN, SC.FLARE_PROJ_ADMIN)
+    admin_dirs = service_config.get(SC.FLARE_OTHER_ADMINS, [])
+    admin_dirs.append(proj_admin_dir_name)
+
     if cmd_type == SC.CMD_START:
         if not service_config.get(SC.IS_DOCKER_RUN):
-            if service_dir == admin_dir_name:
+            if service_dir in admin_dirs:
                 cmd = get_cmd_path(prod_dir, service_dir, "fl_admin.sh")
             else:
                 cmd = get_cmd_path(prod_dir, service_dir, "start.sh")
         else:
-            if service_dir == admin_dir_name:
+            if service_dir in admin_dirs:
                 cmd = get_cmd_path(prod_dir, service_dir, "fl_admin.sh")
             else:
                 cmd = get_cmd_path(prod_dir, service_dir, "docker.sh -d")
@@ -92,7 +95,7 @@ def get_service_command(cmd_type: str, prod_dir: str, service_dir, service_confi
         if not service_config.get(SC.IS_DOCKER_RUN):
             cmd = get_stop_cmd(prod_dir, service_dir)
         else:
-            if service_dir == admin_dir_name:
+            if service_dir in admin_dirs:
                 cmd = get_stop_cmd(prod_dir, service_dir)
             else:
                 cmd = f"docker stop {service_dir}"
@@ -136,19 +139,19 @@ def is_dir_empty(path: str):
     return len(targe_dir) == 0
 
 
-def prepare_examples(cmd_args):
+def prepare_jobs_dir(cmd_args):
     poc_workspace = get_poc_workspace()
-    _prepare_examples(cmd_args.examples, poc_workspace)
+    _prepare_jobs_dir(cmd_args.jobs_dir, poc_workspace)
 
 
-def _prepare_examples(example_dir: str, workspace: str, config_packages: Optional[Tuple] = None):
+def _prepare_jobs_dir(jobs_dir: str, workspace: str, config_packages: Optional[Tuple] = None):
     project_config, service_config = config_packages if config_packages else setup_service_config(workspace)
     project_name = project_config.get("name")
-    if example_dir is None or example_dir == "":
-        raise CLIException("example_dir is required")
-    src = os.path.abspath(example_dir)
+    if jobs_dir is None or jobs_dir == "":
+        raise CLIException("jobs_dir is required")
+    src = os.path.abspath(jobs_dir)
     if not os.path.isdir(src):
-        raise CLIException(f"example_dir '{example_dir}' is not valid directory")
+        raise CLIException(f"jobs_dir '{jobs_dir}' is not valid directory")
 
     prod_dir = get_prod_dir(workspace, project_name)
     if not os.path.exists(prod_dir):
@@ -218,14 +221,25 @@ def get_fl_server_name(project_config: OrderedDict) -> str:
         raise CLIException(f"project should only have one server, but {len(servers)} are provided: {servers}")
 
 
-def get_proj_admin(project_config: OrderedDict):
+def get_fl_admins(project_config: OrderedDict, is_project_admin: bool):
     participants: List[dict] = project_config["participants"]
-    admins = [p["name"] for p in participants if p["type"] == "admin"]
+    return [
+        p["name"]
+        for p in participants
+        if p["type"] == "admin" and (p["role"] == "project_admin" if is_project_admin else p["role"] != "project_admin")
+    ]
 
+
+def get_other_admins(project_config: OrderedDict):
+    return get_fl_admins(project_config, is_project_admin=False)
+
+
+def get_proj_admin(project_config: OrderedDict):
+    admins = get_fl_admins(project_config, is_project_admin=True)
     if len(admins) == 1:
         return admins[0]
     else:
-        raise CLIException(f"project should only have only one project admin, but {len(admins)} are provided: {admins}")
+        raise CLIException(f"project should have only one project admin, but {len(admins)} are provided: {admins}")
 
 
 def get_fl_client_names(project_config: OrderedDict) -> List[str]:
@@ -236,7 +250,6 @@ def get_fl_client_names(project_config: OrderedDict) -> List[str]:
 
 def prepare_builders(project_dict: OrderedDict) -> List:
     builders = list()
-    admin_name = [p["name"] for p in project_dict["participants"] if p["type"] == "admin"][0]
     for b in project_dict.get("builders"):
         path = b.get("path")
         args = b.get("args")
@@ -244,7 +257,6 @@ def prepare_builders(project_dict: OrderedDict) -> List:
         if b.get("path") == "nvflare.lighter.impl.static_file.StaticFileBuilder":
             path = "nvflare.lighter.impl.local_static_file.LocalStaticFileBuilder"
             args["overseer_agent"]["args"]["sp_end_point"] = "localhost:8002:8003"
-            args["username"] = admin_name
 
         elif b.get("path") == "nvflare.lighter.impl.cert.CertBuilder":
             path = "nvflare.lighter.impl.local_cert.LocalCertBuilder"
@@ -295,6 +307,7 @@ def get_service_config(project_config):
     service_config = {
         SC.FLARE_SERVER: get_fl_server_name(project_config),
         SC.FLARE_PROJ_ADMIN: get_proj_admin(project_config),
+        SC.FLARE_OTHER_ADMINS: get_other_admins(project_config),
         SC.FLARE_CLIENTS: get_fl_client_names(project_config),
         SC.IS_DOCKER_RUN: is_docker_run(project_config),
     }
@@ -524,7 +537,7 @@ def prepare_poc_provision(
         update_storage_locations(local_dir=f"{prod_dir}/{server_name}/local", workspace=workspace)
     examples_dir = get_examples_dir(examples_dir)
     if examples_dir is not None:
-        _prepare_examples(examples_dir, workspace, None)
+        _prepare_jobs_dir(examples_dir, workspace, None)
 
     return project_config
 
@@ -636,7 +649,11 @@ def _start_poc(poc_workspace: str, gpu_ids: List[int], excluded=None, services_l
         services_list = []
     if excluded is None:
         excluded = []
-    print(f"start_poc at {poc_workspace}, gpu_ids={gpu_ids}, excluded = {excluded}, services_list={services_list}")
+    other_admins = service_config.get(SC.FLARE_OTHER_ADMINS, [])
+    for admin_dir in other_admins:
+        if admin_dir not in services_list:
+            excluded.append(admin_dir)
+
     validate_services(project_config, services_list, excluded)
     validate_poc_workspace(poc_workspace, service_config, project_config)
     _run_poc(
@@ -720,6 +737,7 @@ def _get_clients(service_commands: list, service_config) -> List[str]:
         service_dir_name
         for service_dir_name, _ in service_commands
         if service_dir_name != service_config[SC.FLARE_PROJ_ADMIN]
+        and service_dir_name not in service_config.get(SC.FLARE_OTHER_ADMINS, [])
         and service_dir_name != service_config[SC.FLARE_SERVER]
     ]
     return clients
@@ -744,6 +762,7 @@ def _build_commands(
     def is_fl_service_dir(p_dir_name: str) -> bool:
         fl_service = (
             p_dir_name == service_config[SC.FLARE_PROJ_ADMIN]
+            or p_dir_name in service_config[SC.FLARE_OTHER_ADMINS]
             or p_dir_name == service_config[SC.FLARE_SERVER]
             or p_dir_name in service_config[SC.FLARE_CLIENTS]
         )
@@ -824,7 +843,8 @@ def _run_poc(
             async_process(service_name, cmd_path, None, service_config)
         else:
             time.sleep(1)
-            async_process(service_name, cmd_path, gpu_assignments[service_name], service_config)
+            gpu_ids = gpu_assignments[service_name] if service_name in clients else None
+            async_process(service_name, cmd_path, gpu_ids, service_config)
 
 
 def clean_poc(cmd_args):
@@ -860,7 +880,7 @@ def _clean_poc(poc_workspace: str):
 
 poc_sub_cmd_handlers = {
     CMD_PREPARE_POC: prepare_poc,
-    CMD_PREPARE_EXAMPLES: prepare_examples,
+    CMD_PREPARE_JOBS_DIR: prepare_jobs_dir,
     CMD_START_POC: start_poc,
     CMD_STOP_POC: stop_poc,
     CMD_CLEAN_POC: clean_poc,
@@ -874,7 +894,7 @@ def def_poc_parser(sub_cmd):
 
     poc_parser = parser.add_subparsers(title=cmd, dest="poc_sub_cmd", help="poc subcommand")
     define_prepare_parser(poc_parser)
-    define_prepare_example_parser(poc_parser)
+    define_prepare_jobs_parser(poc_parser)
     define_start_parser(poc_parser)
     define_stop_parser(poc_parser)
     define_clean_parser(poc_parser)
@@ -973,12 +993,10 @@ def define_prepare_parser(poc_parser, cmd: Optional[str] = None, help_str: Optio
     prepare_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
 
 
-def define_prepare_example_parser(poc_parser):
-    prepare_example_parser = poc_parser.add_parser(CMD_PREPARE_EXAMPLES, help="prepare examples")
-    prepare_example_parser.add_argument(
-        "-e", "--examples", type=str, nargs="?", default=None, help="examples directory"
-    )
-    prepare_example_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
+def define_prepare_jobs_parser(poc_parser):
+    prepare_jobs_dir_parser = poc_parser.add_parser(CMD_PREPARE_JOBS_DIR, help="prepare jobs directory")
+    prepare_jobs_dir_parser.add_argument("-j", "--jobs_dir", type=str, nargs="?", default=None, help="jobs directory")
+    prepare_jobs_dir_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
 
 
 def define_clean_parser(poc_parser):
@@ -1047,7 +1065,6 @@ def get_local_host_gpu_ids():
 
 
 def handle_poc_cmd(cmd_args):
-
     if cmd_args.poc_sub_cmd:
         poc_cmd_handler = poc_sub_cmd_handlers.get(cmd_args.poc_sub_cmd, None)
         poc_cmd_handler(cmd_args)
