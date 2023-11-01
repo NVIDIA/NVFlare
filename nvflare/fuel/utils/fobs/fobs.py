@@ -21,6 +21,7 @@ from typing import Any, BinaryIO, Dict, Type, TypeVar, Union
 
 import msgpack
 
+from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.decomposer import DataClassDecomposer, Decomposer, EnumTypeDecomposer
 
 __all__ = [
@@ -49,6 +50,64 @@ log = logging.getLogger(__name__)
 _decomposers: Dict[str, Decomposer] = {}
 _decomposers_registered = False
 _enum_auto_register = True
+
+
+class Packer:
+    def __init__(self, manager: DatumManager):
+        self.manager = manager
+
+    def pack(self, obj: Any) -> dict:
+
+        if type(obj) in MSGPACK_TYPES:
+            return obj
+
+        type_name = _get_type_name(obj.__class__)
+        if type_name not in _decomposers:
+            if _enum_auto_register and isinstance(obj, Enum):
+                register_enum_types(type(obj))
+            else:
+                return obj
+
+        decomposed = _decomposers[type_name].decompose(obj, self.manager)
+        if self.manager:
+            decomposed = self.manager.externalize(decomposed)
+
+        return {FOBS_TYPE: type_name, FOBS_DATA: decomposed}
+
+    def unpack(self, obj: Any) -> Any:
+
+        if type(obj) is not dict or FOBS_TYPE not in obj:
+            return obj
+
+        type_name = obj[FOBS_TYPE]
+        if type_name not in _decomposers:
+            error = True
+            if _enum_auto_register:
+                cls = self._load_class(type_name)
+                if issubclass(cls, Enum):
+                    register_enum_types(cls)
+                    error = False
+            if error:
+                raise TypeError(f"Unknown type {type_name}, caused by mismatching decomposers")
+
+        data = obj[FOBS_DATA]
+        if self.manager:
+            data = self.manager.internalize(data)
+
+        decomposer = _decomposers[type_name]
+        return decomposer.recompose(data, self.manager)
+
+    @staticmethod
+    def _load_class(type_name: str):
+        parts = type_name.split(".")
+        if len(parts) == 1:
+            parts = ["builtins", type_name]
+
+        mod = __import__(parts[0])
+        for comp in parts[1:]:
+            mod = getattr(mod, comp)
+
+        return mod
 
 
 def _get_type_name(cls: Type) -> str:
@@ -157,66 +216,20 @@ def num_decomposers() -> int:
     return len(_decomposers)
 
 
-def _fobs_packer(obj: Any) -> dict:
-
-    if type(obj) in MSGPACK_TYPES:
-        return obj
-
-    type_name = _get_type_name(obj.__class__)
-    if type_name not in _decomposers:
-        if _enum_auto_register and isinstance(obj, Enum):
-            register_enum_types(type(obj))
-        else:
-            return obj
-
-    decomposed = _decomposers[type_name].decompose(obj)
-    return {FOBS_TYPE: type_name, FOBS_DATA: decomposed}
-
-
-def _load_class(type_name: str):
-    parts = type_name.split(".")
-    if len(parts) == 1:
-        parts = ["builtins", type_name]
-
-    mod = __import__(parts[0])
-    for comp in parts[1:]:
-        mod = getattr(mod, comp)
-
-    return mod
-
-
-def _fobs_unpacker(obj: Any) -> Any:
-
-    if type(obj) is not dict or FOBS_TYPE not in obj:
-        return obj
-
-    type_name = obj[FOBS_TYPE]
-    if type_name not in _decomposers:
-        error = True
-        if _enum_auto_register:
-            cls = _load_class(type_name)
-            if issubclass(cls, Enum):
-                register_enum_types(cls)
-                error = False
-        if error:
-            raise TypeError(f"Unknown type {type_name}, caused by mismatching decomposers")
-
-    decomposer = _decomposers[type_name]
-    return decomposer.recompose(obj[FOBS_DATA])
-
-
-def serialize(obj: Any, **kwargs) -> bytes:
+def serialize(obj: Any, manager: DatumManager = None, **kwargs) -> bytes:
     """Serialize object into bytes.
 
     Args:
         obj: Object to be serialized
+        manager: Datum manager used to externalize datum
         kwargs: Arguments passed to msgpack.packb
     Returns:
         Serialized data
     """
     _register_decomposers()
+    packer = Packer(manager)
     try:
-        return msgpack.packb(obj, default=_fobs_packer, strict_types=True, **kwargs)
+        return msgpack.packb(obj, default=packer.pack, strict_types=True, **kwargs)
     except ValueError as ex:
         content = str(obj)
         if len(content) > MAX_CONTENT_LEN:
@@ -224,46 +237,51 @@ def serialize(obj: Any, **kwargs) -> bytes:
         raise ValueError(f"Object {type(obj)} is not serializable: {secure_format_exception(ex)}: {content}")
 
 
-def serialize_stream(obj: Any, stream: BinaryIO, **kwargs):
+def serialize_stream(obj: Any, stream: BinaryIO, manager: DatumManager = None, **kwargs):
     """Serialize object and write the data to a stream.
 
     Args:
         obj: Object to be serialized
         stream: Stream to write the result to
+        manager: Datum manager to externalize datum
         kwargs: Arguments passed to msgpack.packb
     """
-    data = serialize(obj, **kwargs)
+    data = serialize(obj, manager, **kwargs)
     stream.write(data)
 
 
-def deserialize(data: bytes, **kwargs) -> Any:
+def deserialize(data: bytes, manager: DatumManager = None, **kwargs) -> Any:
     """Deserialize bytes into an object.
 
     Args:
         data: Serialized data
+        manager: Datum manager to internalize datum
         kwargs: Arguments passed to msgpack.unpackb
     Returns:
         Deserialized object
     """
     _register_decomposers()
-    return msgpack.unpackb(data, strict_map_key=False, object_hook=_fobs_unpacker, **kwargs)
+    packer = Packer(manager)
+    return msgpack.unpackb(data, strict_map_key=False, object_hook=packer.unpack, **kwargs)
 
 
-def deserialize_stream(stream: BinaryIO, **kwargs) -> Any:
+def deserialize_stream(stream: BinaryIO, manager: DatumManager = None, **kwargs) -> Any:
     """Deserialize bytes from stream into an object.
 
     Args:
         stream: Stream to write serialized data to
+        manager: Datum manager to internalize datum
         kwargs: Arguments passed to msgpack.unpackb
     Returns:
         Deserialized object
     """
     data = stream.read()
-    return deserialize(data, **kwargs)
+    return deserialize(data, manager, **kwargs)
 
 
 def reset():
     """Reset FOBS to initial state. Used for unit test"""
-    global _decomposers, _decomposers_registered
-    _decomposers.clear()
-    _decomposers_registered = False
+    # global _decomposers, _decomposers_registered
+    # _decomposers.clear()
+    # _decomposers_registered = False
+    pass

@@ -19,7 +19,7 @@ from typing import Callable, Optional
 from nvflare.fuel.f3.connection import BytesAlike
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.byte_receiver import ByteReceiver
-from nvflare.fuel.f3.streaming.byte_streamer import ByteStreamer
+from nvflare.fuel.f3.streaming.byte_streamer import STREAM_TYPE_FILE, ByteStreamer
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import Stream, StreamFuture
 from nvflare.fuel.f3.streaming.stream_utils import stream_thread_pool
@@ -87,7 +87,9 @@ class FileStreamer:
         self.byte_streamer = byte_streamer
         self.byte_receiver = byte_receiver
 
-    def send(self, channel: str, topic: str, target: str, message: Message) -> StreamFuture:
+    def send(
+        self, channel: str, topic: str, target: str, message: Message, secure=False, optional=False
+    ) -> StreamFuture:
         file_name = Path(message.payload).name
         file_stream = FileStream(message.payload, message.headers)
 
@@ -98,7 +100,9 @@ class FileStreamer:
             }
         )
 
-        return self.byte_streamer.send(channel, topic, target, message.headers, file_stream)
+        return self.byte_streamer.send(
+            channel, topic, target, message.headers, file_stream, STREAM_TYPE_FILE, secure, optional
+        )
 
     def register_file_callback(self, channel, topic, file_cb: Callable, *args, **kwargs):
         handler = FileHandler(file_cb)

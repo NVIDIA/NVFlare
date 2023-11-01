@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import os
 import shutil
+import tempfile
 import threading
 import time
 from typing import Dict, List, Tuple
@@ -28,13 +28,14 @@ from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
 from nvflare.apis.job_scheduler_spec import DispatchInfo
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.argument_utils import parse_vars
-from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
+from nvflare.fuel.utils.zip_utils import zip_directory_to_file
 from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import check_client_replies
 from nvflare.private.fed.server.server_state import HotState
 from nvflare.private.fed.utils.app_deployer import AppDeployer
+from nvflare.private.fed.utils.fed_utils import set_message_security_data
 from nvflare.security.logging import secure_format_exception
 
 
@@ -92,7 +93,7 @@ class JobRunner(FLComponent):
             self.stop()
 
     @staticmethod
-    def _make_deploy_message(job: Job, app_data, app_name):
+    def _make_deploy_message(job: Job, app_data, app_name, fl_ctx):
         message = Message(topic=TrainingTopic.DEPLOY, body=app_data)
         message.set_header(RequestHeader.REQUIRE_AUTHZ, "true")
 
@@ -100,15 +101,7 @@ class JobRunner(FLComponent):
         message.set_header(RequestHeader.JOB_ID, job.job_id)
         message.set_header(RequestHeader.APP_NAME, app_name)
 
-        message.set_header(RequestHeader.SUBMITTER_NAME, job.meta.get(JobMetaKey.SUBMITTER_NAME))
-        message.set_header(RequestHeader.SUBMITTER_ORG, job.meta.get(JobMetaKey.SUBMITTER_ORG))
-        message.set_header(RequestHeader.SUBMITTER_ROLE, job.meta.get(JobMetaKey.SUBMITTER_ROLE))
-
-        message.set_header(RequestHeader.USER_NAME, job.meta.get(JobMetaKey.SUBMITTER_NAME))
-        message.set_header(RequestHeader.USER_ORG, job.meta.get(JobMetaKey.SUBMITTER_ORG))
-        message.set_header(RequestHeader.USER_ROLE, job.meta.get(JobMetaKey.SUBMITTER_ROLE))
-
-        message.set_header(RequestHeader.JOB_META, json.dumps(job.meta))
+        set_message_security_data(message, job, fl_ctx)
         return message
 
     def _deploy_job(self, job: Job, sites: dict, fl_ctx: FLContext) -> Tuple[str, list]:
@@ -145,6 +138,7 @@ class JobRunner(FLComponent):
             client_sites = []
             for p in participants:
                 if p == "server":
+                    self.fire_event(EventType.DEPLOY_JOB_TO_SERVER, fl_ctx)
                     app_deployer = AppDeployer()
                     err = app_deployer.deploy(
                         app_name=app_name,
@@ -178,7 +172,8 @@ class JobRunner(FLComponent):
                         client_sites.append(p)
 
             if client_sites:
-                message = self._make_deploy_message(job, app_data, app_name)
+                self.fire_event(EventType.DEPLOY_JOB_TO_CLIENT, fl_ctx)
+                message = self._make_deploy_message(job, app_data, app_name, fl_ctx)
                 clients, invalid_inputs = engine.validate_targets(client_sites)
 
                 if invalid_inputs:
@@ -382,11 +377,13 @@ class JobRunner(FLComponent):
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
         workspace = Workspace(root_dir=self.workspace_root)
         run_dir = workspace.get_run_dir(job_id)
-        workspace_data = zip_directory_to_bytes(run_dir, "")
         engine = fl_ctx.get_engine()
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
-
-        job_manager.save_workspace(job_id, workspace_data, fl_ctx)
+        with tempfile.TemporaryDirectory() as td:
+            output_file = os.path.join(td, "workspace")
+            zip_directory_to_file(run_dir, "", output_file)
+            job_manager.save_workspace(job_id, output_file, fl_ctx)
+            self.log_debug(fl_ctx, f"Workspace zipped to {output_file}")
         shutil.rmtree(run_dir)
 
     def run(self, fl_ctx: FLContext):

@@ -18,7 +18,7 @@ from typing import Any, Dict
 import numpy as np
 import torch
 
-from nvflare.apis.dxo import DataKind, from_bytes
+from nvflare.apis.dxo import DataKind, from_file
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.formatter import Formatter
 from nvflare.app_common.app_constant import AppConstants
@@ -49,20 +49,19 @@ class SimpleFormatter(Formatter):
             for data_client in validation_shareables_dict.keys():
                 validation_dict = validation_shareables_dict[data_client]
                 if validation_dict:
-                    res[data_client] = {}
+                    result[data_client] = {}
                     for model_name in validation_dict.keys():
                         dxo_path = validation_dict[model_name]
 
                         # Load the shareable
-                        with open(dxo_path, "rb") as f:
-                            metric_dxo = from_bytes(f.read())
+                        metric_dxo = from_file(dxo_path)
 
                         # Get metrics from shareable
                         if metric_dxo and metric_dxo.data_kind == DataKind.METRICS:
                             metrics = simplify_metrics(metric_dxo.data)
-                            res[data_client][model_name] = metrics
+                            result[data_client][model_name] = metrics
             # add any results
-            self.results.update(res)
+            self.results.update(result)
         except Exception as e:
             traceback.print_exc()
 

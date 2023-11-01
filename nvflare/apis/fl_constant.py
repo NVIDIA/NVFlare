@@ -141,6 +141,7 @@ class FLContextKey(object):
     CURRENT_JOB_ID = ReservedKey.CURRENT_JOB_ID
     JOB_RUN_NUMBER = ReservedKey.JOB_RUN_NUMBER
     JOB_DEPLOY_DETAIL = ReservedKey.JOB_DEPLOY_DETAIL
+    CUSTOM_PROPS = ReservedKey.CUSTOM_PROPS
     JOB_SCOPE_NAME = "__job_scope_name__"
     EFFECTIVE_JOB_SCOPE_NAME = "__effective_job_scope_name__"
     SCOPE_PROPERTIES = "__scope_props__"
@@ -152,10 +153,25 @@ class FLContextKey(object):
     JOB_PARTICIPANTS = "__job_participants"
     JOB_BLOCK_REASON = "__job_block_reason"  # why the job should be blocked from scheduling
     SSID = "__ssid__"
+    CLIENT_TOKEN = "__client_token"
+    AUTHORIZATION_RESULT = "_authorization_result"
+    AUTHORIZATION_REASON = "_authorization_reason"
+
+    CLIENT_REGISTER_DATA = "_client_register_data"
+    SECURITY_ITEMS = "_security_items"
+    COMMAND_NAME = "_command_name"
+    SITE_NAME = "__site_name"
+    USER_NAME = "__user_name"
+    USER_ORG = "__user_org"
+    USER_ROLE = "__user_role"
+    SUBMITTER_NAME = "_submitterName"
+    SUBMITTER_ORG = "_submitterOrg"
+    SUBMITTER_ROLE = "_submitterRole"
     COMPONENT_BUILD_ERROR = "__component_build_error__"
     COMPONENT_CONFIG = "__component_config__"
     COMPONENT_NODE = "__component_node__"
     CONFIG_CTX = "__config_ctx__"
+    FILTER_DIRECTION = "__filter_dir__"
 
 
 class ReservedTopic(object):
@@ -164,6 +180,9 @@ class ReservedTopic(object):
     ABORT_ASK = "__abort_task__"
     DO_TASK = "__do_task__"
     AUX_COMMAND = "__aux_command__"
+    SYNC_RUNNER = "__sync_runner__"
+    JOB_HEART_BEAT = "__job_heartbeat__"
+    TASK_CHECK = "__task_check__"
 
 
 class AdminCommandNames(object):
@@ -172,10 +191,12 @@ class AdminCommandNames(object):
     LIST_JOBS = "list_jobs"
     GET_JOB_META = "get_job_meta"
     DOWNLOAD_JOB = "download_job"
+    DOWNLOAD_JOB_FILE = "download_job_file"
     ABORT_JOB = "abort_job"
     DELETE_JOB = "delete_job"
     CLONE_JOB = "clone_job"
     DELETE_WORKSPACE = "delete_workspace"
+    CHECK_RESOURCES = "check_resources"
     DEPLOY_APP = "deploy_app"
     START_APP = "start_app"
     CHECK_STATUS = "check_status"
@@ -393,6 +414,7 @@ class FLMetaKey:
     JOB_ID = "job_id"
     SITE_NAME = "site_name"
     PROCESS_RC_FILE = "_process_rc.txt"
+    SUBMIT_MODEL_NAME = "submit_model_name"
 
 
 class FilterKey:
@@ -400,3 +422,9 @@ class FilterKey:
     OUT = "out"
     INOUT = "inout"
     DELIMITER = "/"
+
+
+class ConfigVarName:
+
+    RUNNER_SYNC_TIMEOUT = "runner_sync_timeout"
+    MAX_RUNNER_SYNC_TRIES = "max_runner_sync_tries"

@@ -19,8 +19,10 @@ from typing import Callable, Dict, Tuple
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.registry import Callback, Registry
+from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.connection import BytesAlike
 from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.stats_pool import StatsPoolManager
 from nvflare.fuel.f3.streaming.stream_const import (
     EOS,
     STREAM_ACK_TOPIC,
@@ -30,7 +32,7 @@ from nvflare.fuel.f3.streaming.stream_const import (
     StreamHeaderKey,
 )
 from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture
-from nvflare.fuel.f3.streaming.stream_utils import stream_thread_pool
+from nvflare.fuel.f3.streaming.stream_utils import ONE_MB, stream_stats_category, stream_thread_pool
 
 log = logging.getLogger(__name__)
 
@@ -38,6 +40,7 @@ MAX_OUT_SEQ_CHUNKS = 16
 # 1/4 of the window size
 ACK_INTERVAL = 1024 * 1024 * 4
 READ_TIMEOUT = 60
+COUNTER_NAME_RECEIVED = "received"
 
 
 class RxTask:
@@ -90,8 +93,9 @@ class RxStream(Stream):
                 log.debug(f"Read block is unblocked multiple times: {count}")
 
             self.task.waiter.clear()
-            if not self.task.waiter.wait(READ_TIMEOUT):
-                error = StreamError(f"{self.task} read timed out after {READ_TIMEOUT} seconds")
+            timeout = CommConfigurator().get_streaming_read_timeout(READ_TIMEOUT)
+            if not self.task.waiter.wait(timeout):
+                error = StreamError(f"{self.task} read timed out after {timeout} seconds")
                 self.byte_receiver.stop_task(self.task, error)
                 raise error
 
@@ -99,6 +103,9 @@ class RxStream(Stream):
 
         with self.task.task_lock:
             last_chunk, buf = self.task.buffers.popleft()
+            if buf is None:
+                buf = bytes(0)
+
             if 0 < chunk_size < len(buf):
                 result = buf[0:chunk_size]
                 # Put leftover to the head of the queue
@@ -109,7 +116,9 @@ class RxStream(Stream):
                     self.task.eos = True
 
             self.task.offset += len(result)
-            if not self.task.last_chunk_received and (self.task.offset - self.task.offset_ack > ACK_INTERVAL):
+
+            ack_interval = CommConfigurator().get_streaming_ack_interval(ACK_INTERVAL)
+            if not self.task.last_chunk_received and (self.task.offset - self.task.offset_ack > ack_interval):
                 # Send ACK
                 message = Message()
                 message.add_headers(
@@ -139,6 +148,17 @@ class ByteReceiver:
         self.registry = Registry()
         self.rx_task_map = {}
         self.map_lock = threading.Lock()
+
+        self.received_stream_counter_pool = StatsPoolManager.add_counter_pool(
+            name="Received_Stream_Counters",
+            description="Counters of received streams",
+            counter_names=[COUNTER_NAME_RECEIVED],
+            scope=self.cell.my_info.fqcn,
+        )
+
+        self.received_stream_size_pool = StatsPoolManager.add_msg_size_pool(
+            "Received_Stream_Sizes", "Sizes of streams received (MBs)", scope=self.cell.my_info.fqcn
+        )
 
     def register_callback(self, channel: str, topic: str, stream_cb: Callable, *args, **kwargs):
         if not callable(stream_cb):
@@ -176,6 +196,8 @@ class ByteReceiver:
         seq = message.get_header(StreamHeaderKey.SEQUENCE)
         error = message.get_header(StreamHeaderKey.ERROR_MSG, None)
 
+        payload = message.payload
+
         with self.map_lock:
             task = self.rx_task_map.get(sid, None)
             if not task:
@@ -206,6 +228,14 @@ class ByteReceiver:
                 self.stop_task(task, StreamError(f"No callback is registered for {task.channel}/{task.topic}"))
                 return
 
+            self.received_stream_counter_pool.increment(
+                category=stream_stats_category(task.channel, task.topic, "stream"), counter_name=COUNTER_NAME_RECEIVED
+            )
+
+            self.received_stream_size_pool.record_value(
+                category=stream_stats_category(task.channel, task.topic, "stream"), value=task.size / ONE_MB
+            )
+
             stream_thread_pool.submit(self._callback_wrapper, task, callback)
 
         with task.task_lock:
@@ -215,7 +245,7 @@ class ByteReceiver:
                 task.last_chunk_received = True
 
             if seq == task.next_seq:
-                self._append(task, (last_chunk, message.payload))
+                self._append(task, (last_chunk, payload))
                 task.next_seq += 1
 
                 # Try to reassemble out-of-seq buffers
@@ -226,11 +256,12 @@ class ByteReceiver:
 
             else:
                 # Out-of-seq chunk reassembly
-                if len(task.out_seq_buffers) >= MAX_OUT_SEQ_CHUNKS:
+                max_out_seq = CommConfigurator().get_streaming_max_out_seq_chunks(MAX_OUT_SEQ_CHUNKS)
+                if len(task.out_seq_buffers) >= max_out_seq:
                     self.stop_task(task, StreamError(f"Too many out-of-sequence chunks: {len(task.out_seq_buffers)}"))
                     return
                 else:
-                    task.out_seq_buffers[seq] = last_chunk, message.payload
+                    task.out_seq_buffers[seq] = last_chunk, payload
 
             # If all chunks are lined up, the task can be deleted
             if not task.out_seq_buffers and task.buffers:

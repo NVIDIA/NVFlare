@@ -13,12 +13,14 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import List, Tuple, Union
+from typing import List, Tuple
 
 DATA = "data"
-JOB = "job"
+JOB_ZIP = "job.zip"
 META = "meta"
+META_JSON = "meta.json"
 WORKSPACE = "workspace"
+WORKSPACE_ZIP = "workspace.zip"
 MANIFEST = "manifest.json"
 
 
@@ -40,7 +42,7 @@ class StorageSpec(ABC):
     """
 
     @abstractmethod
-    def create_object(self, uri: str, data: bytes, meta: dict, overwrite_existing: bool):
+    def create_object(self, uri: str, data, meta: dict, overwrite_existing: bool):
         """Creates an object.
 
         Examples of URI:
@@ -64,7 +66,7 @@ class StorageSpec(ABC):
         pass
 
     @abstractmethod
-    def update_object(self, uri: str, data: Union[bytes, str], component_name: str):
+    def update_object(self, uri: str, data, component_name: str):
         """Update the object
 
         Args:
@@ -135,6 +137,21 @@ class StorageSpec(ABC):
         Returns:
             data of the object.
             if object does not exist, return None
+
+        Raises StorageException when:
+            - invalid args
+
+        """
+        pass
+
+    @abstractmethod
+    def get_data_for_download(self, uri: str, component_name: str = DATA, download_file: str = None):
+        """Gets data of the specified object.
+
+        Args:
+            uri: URI of the object
+            component_name: storage component name
+            download_file: component file_name for download
 
         Raises StorageException when:
             - invalid args

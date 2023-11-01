@@ -17,10 +17,11 @@ from typing import Callable, Optional
 from nvflare.fuel.f3.connection import BytesAlike
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.byte_receiver import ByteReceiver
-from nvflare.fuel.f3.streaming.byte_streamer import ByteStreamer
+from nvflare.fuel.f3.streaming.byte_streamer import STREAM_TYPE_BLOB, ByteStreamer
 from nvflare.fuel.f3.streaming.stream_const import EOS
-from nvflare.fuel.f3.streaming.stream_types import Stream, StreamFuture
+from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture
 from nvflare.fuel.f3.streaming.stream_utils import FastBuffer, stream_thread_pool, wrap_view
+from nvflare.fuel.utils.buffer_list import BufferList
 from nvflare.security.logging import secure_format_traceback
 
 log = logging.getLogger(__name__)
@@ -28,8 +29,15 @@ log = logging.getLogger(__name__)
 
 class BlobStream(Stream):
     def __init__(self, blob: BytesAlike, headers: Optional[dict]):
-        super().__init__(len(blob), headers)
-        self.blob_view = wrap_view(blob)
+        size = self.buffer_len(blob)
+        super().__init__(size, headers)
+
+        if not isinstance(blob, list):
+            self.blob_view = wrap_view(blob)
+            self.buffer_list = None
+        else:
+            self.blob_view = [wrap_view(b) for b in blob]
+            self.buffer_list = BufferList(self.blob_view)
 
     def read(self, chunk_size: int) -> BytesAlike:
 
@@ -39,9 +47,22 @@ class BlobStream(Stream):
         next_pos = self.pos + chunk_size
         if next_pos > self.get_size():
             next_pos = self.get_size()
-        buf = self.blob_view[self.pos : next_pos]
+
+        if self.buffer_list:
+            buf = self.buffer_list.read(self.pos, next_pos)
+        else:
+            buf = self.blob_view[self.pos : next_pos]
+
         self.pos = next_pos
+
         return buf
+
+    @staticmethod
+    def buffer_len(buffer: BytesAlike):
+        if not isinstance(buffer, list):
+            return len(buffer)
+
+        return sum(len(buf) for buf in buffer)
 
 
 class BlobTask:
@@ -117,9 +138,19 @@ class BlobStreamer:
         self.byte_streamer = byte_streamer
         self.byte_receiver = byte_receiver
 
-    def send(self, channel: str, topic: str, target: str, message: Message) -> StreamFuture:
+    def send(
+        self, channel: str, topic: str, target: str, message: Message, secure: bool, optional: bool
+    ) -> StreamFuture:
+        if message.payload is None:
+            message.payload = bytes(0)
+
+        if not isinstance(message.payload, (bytes, bytearray, memoryview, list)):
+            raise StreamError(f"BLOB is invalid type: {type(message.payload)}")
+
         blob_stream = BlobStream(message.payload, message.headers)
-        return self.byte_streamer.send(channel, topic, target, message.headers, blob_stream)
+        return self.byte_streamer.send(
+            channel, topic, target, message.headers, blob_stream, STREAM_TYPE_BLOB, secure, optional
+        )
 
     def register_blob_callback(self, channel, topic, blob_cb: Callable, *args, **kwargs):
         handler = BlobHandler(blob_cb)

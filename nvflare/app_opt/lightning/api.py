@@ -18,13 +18,17 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import Callback
 from torch import Tensor
 
-from nvflare.app_common.abstract.fl_model import FLModel
-from nvflare.client.api import clear, get_config, init, receive, send
+from nvflare.app_common.abstract.fl_model import FLModel, MetaKey
+from nvflare.client.api import _get_model_registry, clear, get_config, init, receive, send
 from nvflare.client.config import ConfigKey
 
+from .callbacks import RestoreState
 
-def patch(trainer: pl.Trainer):
-    fl_callback = FLCallback()
+FL_META_KEY = "__fl_meta__"
+
+
+def patch(trainer: pl.Trainer, restore_optimizers: bool = True):
+    fl_callback = FLCallback(rank=trainer.global_rank)
     callbacks = trainer.callbacks
     if isinstance(callbacks, list):
         callbacks.append(fl_callback)
@@ -32,62 +36,100 @@ def patch(trainer: pl.Trainer):
         callbacks = [callbacks, fl_callback]
     else:
         callbacks = [fl_callback]
+
+    if restore_optimizers:
+        callbacks.append(RestoreState())
+
     trainer.callbacks = callbacks
 
 
 class FLCallback(Callback):
-    def __init__(self):
+    def __init__(self, rank: int = 0):
         super(FLCallback, self).__init__()
-        init()
-        self.has_global_eval = get_config().get(ConfigKey.GLOBAL_EVAL, False)
-        self.has_training = get_config().get(ConfigKey.TRAINING, False)
-        self.input_fl_model = None
-        self._receive_model()
-
+        init(rank=str(rank))
+        self.train_with_evaluation = get_config().get(ConfigKey.TRAIN_WITH_EVAL, False)
+        self.current_round = None
         self.metrics = None
+        self.total_local_epochs = 0
+        self.total_local_steps = 0
+        self.max_epochs_per_round = None
+        self.max_steps_per_round = None
 
-    def reset_state(self):
-        # If the next round of federated training needs to reuse the same callback
-        # instance, the reset_state() needs to be called first
-        self.input_fl_model = None
+    def reset_state(self, trainer):
+        """Resets the state.
+
+        If the next round of federated training needs to reuse the same callback
+        instance, the reset_state() needs to be called first
+        Not only resets the states, also sets states for next round
+        """
+        # set states for next round
+        if self.current_round is not None:
+            if self.max_epochs_per_round is None:
+                if trainer.max_epochs and trainer.max_epochs > 0:
+                    self.max_epochs_per_round = trainer.max_epochs
+                if trainer.max_steps and trainer.max_steps > 0:
+                    self.max_steps_per_round = trainer.max_steps
+
+            # record total local epochs/steps
+            self.total_local_epochs = trainer.current_epoch
+            self.total_local_steps = trainer.estimated_stepping_batches
+
+            # for next round
+            trainer.num_sanity_val_steps = 0  # Turn off sanity validation steps in following rounds of FL
+            if self.total_local_epochs and self.max_epochs_per_round is not None:
+                trainer.fit_loop.max_epochs = self.max_epochs_per_round + self.total_local_epochs
+            if self.total_local_steps and self.max_steps_per_round is not None:
+                trainer.fit_loop.epoch_loop.max_steps = self.max_steps_per_round + self.total_local_steps
+
+        # resets attributes
         self.metrics = None
         clear()
 
     def on_train_start(self, trainer, pl_module):
         # receive the global model and update the local model with global model
-        if self.has_training:
-            self._receive_and_update_model(pl_module)
+        self._receive_and_update_model(trainer, pl_module)
 
     def on_train_end(self, trainer, pl_module):
-        if self.has_training:
-            self._send_model(FLModel(params=pl_module.cpu().state_dict()))
-            self.reset_state()
+        if hasattr(pl_module, FL_META_KEY):
+            fl_meta = getattr(pl_module, FL_META_KEY)
+            if not isinstance(fl_meta, dict):
+                raise RuntimeError(f"The {FL_META_KEY} needs to be a dictionary")
+        else:
+            fl_meta = {}
+        if MetaKey.NUM_STEPS_CURRENT_ROUND not in fl_meta:
+            fl_meta[MetaKey.NUM_STEPS_CURRENT_ROUND] = trainer.estimated_stepping_batches
+        self._send_model(FLModel(params=pl_module.cpu().state_dict(), meta=fl_meta))
+        self.reset_state(trainer)
 
     def on_validation_start(self, trainer, pl_module):
         # receive the global model and update the local model with global model
         # the 1st time validate() or train() is called.
         # expect user will validate the global model first (i.e. validate()), once that's done.
         # the metrics will be set.
-        # The subsequence validate() calls will not trigger the receive update model.
+        # The subsequent validate() calls will not trigger the receive update model.
         # Hence the validate() will be validating the local model.
-        if pl_module and self.has_global_eval and self.metrics is None:
-            self._receive_and_update_model(pl_module)
+        if pl_module and self.metrics is None:
+            self._receive_and_update_model(trainer, pl_module)
 
     def on_validation_end(self, trainer, pl_module):
-        if pl_module and self.has_global_eval and self.metrics is None:
+        if pl_module and self.metrics is None:
             self.metrics = _extract_metrics(trainer.callback_metrics)
             self._send_model(FLModel(metrics=self.metrics))
 
-    def _receive_and_update_model(self, pl_module):
-        self._receive_model()
-        if self.input_fl_model and self.input_fl_model.params:
-            pl_module.load_state_dict(self.input_fl_model.params)
+    def _receive_and_update_model(self, trainer, pl_module):
+        model = self._receive_model(trainer)
+        if model and model.params:
+            pl_module.load_state_dict(model.params)
+        if model and model.current_round is not None:
+            self.current_round = model.current_round
 
-    def _receive_model(self) -> FLModel:
+    def _receive_model(self, trainer) -> FLModel:
         """Receives model from NVFlare."""
         model = receive()
-        if model:
-            self.input_fl_model = model
+        registry = _get_model_registry()
+        model = trainer.strategy.broadcast(model, src=0)
+        task_name = trainer.strategy.broadcast(registry.task_name, src=0)
+        registry.set_task_name(task_name)
         return model
 
     def _send_model(self, output_model: FLModel):
@@ -95,9 +137,6 @@ class FLCallback(Callback):
             send(output_model, clear_registry=False)
         except Exception as e:
             raise RuntimeError("failed to send FL model", e)
-
-    def __del__(self):
-        clear()
 
 
 def _extract_metrics(metrics: Dict[str, Tensor]):

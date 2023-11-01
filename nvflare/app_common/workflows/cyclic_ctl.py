@@ -131,8 +131,10 @@ class CyclicController(Controller):
             self.system_panic("Not enough client sites.", fl_ctx)
         self._last_client = None
 
-    def _get_relay_orders(self):
+    def _get_relay_orders(self, fl_ctx: FLContext):
         targets = list(self._participating_clients)
+        if len(targets) <= 1:
+            self.system_panic("Not enough client sites.", fl_ctx)
         if self._order == RelayOrder.RANDOM:
             random.shuffle(targets)
         elif self._order == RelayOrder.RANDOM_WITHOUT_SAME_IN_A_ROW:
@@ -155,6 +157,7 @@ class CyclicController(Controller):
         # prepare task shareable data for next client
         task.data = self.shareable_generator.learnable_to_shareable(self._last_learnable, fl_ctx)
         task.data.set_header(AppConstants.CURRENT_ROUND, self._current_round)
+        task.data.set_header(AppConstants.NUM_ROUNDS, self._num_rounds)
         task.data.add_cookie(AppConstants.CONTRIBUTION_ROUND, self._current_round)
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
@@ -169,12 +172,13 @@ class CyclicController(Controller):
                 fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=True)
 
                 # Task for one cyclic
-                targets = self._get_relay_orders()
+                targets = self._get_relay_orders(fl_ctx)
                 targets_names = [t.name for t in targets]
                 self.log_debug(fl_ctx, f"Relay on {targets_names}")
 
                 shareable = self.shareable_generator.learnable_to_shareable(self._last_learnable, fl_ctx)
                 shareable.set_header(AppConstants.CURRENT_ROUND, self._current_round)
+                shareable.set_header(AppConstants.NUM_ROUNDS, self._num_rounds)
                 shareable.add_cookie(AppConstants.CONTRIBUTION_ROUND, self._current_round)
 
                 task = Task(
@@ -244,3 +248,12 @@ class CyclicController(Controller):
             self._start_round = self._current_round
         finally:
             pass
+
+    def handle_dead_job(self, client_name: str, fl_ctx: FLContext):
+        super().handle_dead_job(client_name, fl_ctx)
+
+        new_client_list = []
+        for client in self._participating_clients:
+            if client_name != client.name:
+                new_client_list.append(client)
+        self._participating_clients = new_client_list

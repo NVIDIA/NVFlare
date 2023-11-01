@@ -1,9 +1,9 @@
 #  Step-by-Step Examples
 
-When give a machine learning problem, we probably wonder, where do we start to formulate the federated learning problem. 
+When given a machine learning problem, we probably wonder, where do we start to formulate the federated learning problem. 
 
-* What does the data look like ?
-* How do we compare global statistics with the site's local data statistics ? 
+* What does the data look like?
+* How do we compare global statistics with the site's local data statistics? 
 * How to formulate the federated algorithms
   * https://developer.download.nvidia.com/healthcare/clara/docs/federated_traditional_machine_learning_algorithms.pdf
 * Given the formulation, how to convert the existing machine learning or deep learning code to Federated learning code.
@@ -22,8 +22,8 @@ The images in CIFAR-10 are of size 3x32x32, i.e. 3-channel color images of 32x32
  
 ![image](cifar10/data/cifar10.png)
 
-We will use using [pytorch](https://pytorch.org/) deep learning framework to illustrate how to formulate, and convert the deep learning training
-program to federated learning training program. The example will include
+We will use the [pytorch](https://pytorch.org/) deep learning framework to illustrate how to formulate and convert the deep learning training
+program to a federated learning training program. The example will include:
 
 * Federated Histogram analysis with Federated Statistics
 * Scatter and Gather (SAG) workflow with NVFLARE Client APIs 
@@ -35,17 +35,11 @@ program to federated learning training program. The example will include
 
 ## Tabular HIGGs dataset  
 
-With HIGGs Dataset, we like to demonstrate traditional machine learning techniques in federated learning.
-These include: 
+With the HIGGs Dataset, we like to demonstrate traditional machine learning techniques in federated learning.
+These include:
 
 * Federated Statistics for tabular data
 * Federated Linear and Logistics Regression
 * Federated Kmeans
 * Federated SVM with non-learner kernel
 * Federated (Horizontal) XGBoost
- 
-
-
-
-
-

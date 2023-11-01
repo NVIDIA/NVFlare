@@ -36,11 +36,22 @@ class SimulatorServerEngine(ServerEngine):
     def update_job_run_status(self):
         pass
 
+    def fire_event(self, event_type: str, fl_ctx: FLContext):
+        if self.run_manager:
+            self.run_manager.fire_event(event_type, fl_ctx)
+
     def send_aux_request(
-        self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext, optional=False
+        self,
+        targets: [],
+        topic: str,
+        request: Shareable,
+        timeout: float,
+        fl_ctx: FLContext,
+        optional=False,
+        secure=False,
     ) -> dict:
         if topic != ReservedTopic.END_RUN:
-            return super().send_aux_request(targets, topic, request, timeout, fl_ctx, optional)
+            return super().send_aux_request(targets, topic, request, timeout, fl_ctx, optional, secure=secure)
         else:
             return {}
 

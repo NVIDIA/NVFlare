@@ -1,0 +1,42 @@
+{
+  "format_version": 2,
+  "executors": [
+    {
+      "tasks": [
+        "train"
+      ],
+      "executor": {
+        "id": "xgb_hist_executor",
+        "name": "FedXGBHistogramExecutor",
+        "args": {
+          "data_loader_id": "dataloader",
+          "num_rounds": 100,
+          "early_stopping_rounds": 2,
+          "xgb_params": {
+            "max_depth": 8,
+            "eta": 0.1,
+            "objective": "binary:logistic",
+            "eval_metric": "auc",
+            "tree_method": "hist",
+            "nthread": 16
+          }
+        }
+      }
+    }
+  ],
+  "task_result_filters": [],
+  "task_data_filters": [],
+  "components": [
+    {
+      "id": "dataloader",
+      "path": "vertical_data_loader.VerticalDataLoader",
+      "args": {
+        "data_split_path": "/tmp/dataset/vertical_xgb_data/site-x/data.csv",
+        "psi_path": "/tmp/xgboost_vertical_psi/site-x/psi/intersection.txt",
+        "id_col": "uid",
+        "label_owner": "site-1",
+        "train_proportion": 0.9
+      }
+    }
+  ]
+}

@@ -181,22 +181,22 @@ Operational
 
 #. What is the difference between the Admin client and the FL client?
 
-    The :ref:`Admin client <operating_nvflare>` is used to control the state of the server's controller workflow and only interacts with the
+    The :ref:`FLARE Console <operating_nvflare>` is used to control the state of the server's controller workflow and only interacts with the
     server.  FL clients poll the server and perform tasks based on the state of the server.  The Admin client does not
     interact directly with FL client.
 
 #. Where does the Admin client run?
 
-    The :ref:`Admin client <operating_nvflare>` runs as a standalone process, typically on a researcher's workstation or laptop.
+    The :ref:`FLARE Console <operating_nvflare>` runs as a standalone process, typically on a researcher's workstation or laptop.
 
 #. What can you do with the Admin client?
 
-    The :ref:`Admin client <operating_nvflare>` is used to orchestrate the FL study, including starting and stopping server
+    The :ref:`FLARE Console <operating_nvflare>` is used to orchestrate the FL study, including starting and stopping server
     and clients, deploying applications, and managing FL experiments.
 
 #. How can I get the global model at the end of training? What can I do to resolve keys not matching with the model defined?
 
-    You can use the download_job command with the :ref:`Admin client <operating_nvflare>` to get the job result into the admin
+    You can use the download_job command with the :ref:`FLARE Console <operating_nvflare>` to get the job result into the admin
     transfer folder. The model is saved in a dict depending on the persistor you used, so you might need to access it with
     ``model.load_state_dict(torch.load(path_to_model)["model"])`` if you used PTFileModelPersistor because
     PTModelPersistenceFormatManager saves the model under the key "model".

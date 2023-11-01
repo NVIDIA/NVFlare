@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .callbacks import RestoreOptimizers
 from .config_sharer import ConfigSharer
 from .config_sharer_sft import ConfigSharerSFT
 from .fed_megatron_gpt_prompt_learning_model import FedMegatronGPTPromptLearningModel

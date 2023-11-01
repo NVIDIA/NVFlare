@@ -35,6 +35,12 @@ class UnsafeJobError(Exception):
     pass
 
 
+class NotAuthenticated(Exception):
+    """Raised when client registration is not authenticated."""
+
+    pass
+
+
 class NotAuthorized(Exception):
     """Raised when a job is not authorized"""
 

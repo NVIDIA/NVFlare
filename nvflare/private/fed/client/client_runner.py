@@ -11,29 +11,68 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import fnmatch
 import threading
 import time
 
 from nvflare.apis.event_type import EventType
+from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode
+from nvflare.apis.fl_constant import ConfigVarName, FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.apis.utils.task_utils import apply_filters
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.private.fed.client.client_engine_executor_spec import ClientEngineExecutorSpec, TaskAssignment
+from nvflare.private.json_configer import ConfigError
 from nvflare.private.privacy_manager import Scope
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
+
+_TASK_CHECK_RESULT_OK = 0
+_TASK_CHECK_RESULT_TRY_AGAIN = 1
+_TASK_CHECK_RESULT_TASK_GONE = 2
+
+
+class TaskRouter:
+    def __init__(self):
+        self.task_table = {}
+        self.patterns = []
+
+    @staticmethod
+    def _is_pattern(p: str):
+        return "*" in p
+
+    def add_executor(self, tasks: list, executor: Executor):
+        for t in tasks:
+            assert isinstance(t, str)
+            if t in self.task_table:
+                raise ConfigError(f'multiple executors defined for task "{t}"')
+            self.task_table[t] = executor
+            if self._is_pattern(t):
+                self.patterns.append((t, executor))
+
+    def route(self, task_name: str):
+        e = self.task_table.get(task_name)
+        if e:
+            return e
+
+        # check patterns
+        for p, e in self.patterns:
+            if fnmatch.fnmatch(task_name, p):
+                return e
+        return None
 
 
 class ClientRunnerConfig(object):
     def __init__(
         self,
-        task_table: dict,  # task_name => Executor
+        task_router: TaskRouter,
         task_data_filters: dict,  # task_name => list of filters
         task_result_filters: dict,  # task_name => list of filters
         handlers=None,  # list of event handlers
@@ -43,7 +82,7 @@ class ClientRunnerConfig(object):
         """To init ClientRunnerConfig.
 
         Args:
-            task_table: task_name: Executor dict
+            task_router: TaskRouter object to find executor for a task
             task_data_filters: task_name => list of data filters
             task_result_filters: task_name => list of result filters
             handlers: list of event handlers
@@ -51,7 +90,7 @@ class ClientRunnerConfig(object):
             default_task_fetch_interval: default task fetch interval before getting the correct value from server.
                 default is set to 0.5.
         """
-        self.task_table = task_table
+        self.task_router = task_router
         self.task_data_filters = task_data_filters
         self.task_result_filters = task_result_filters
         self.handlers = handlers
@@ -92,7 +131,7 @@ class ClientRunner(FLComponent):
         """
 
         FLComponent.__init__(self)
-        self.task_table = config.task_table
+        self.task_router = config.task_router
         self.task_data_filters = config.task_data_filters
         self.task_result_filters = config.task_result_filters
         self.default_task_fetch_interval = config.default_task_fetch_interval
@@ -102,7 +141,13 @@ class ClientRunner(FLComponent):
         self.run_abort_signal = Signal()
         self.task_lock = threading.Lock()
         self.running_tasks = {}  # task_id => TaskAssignment
+
+        self.task_check_timeout = 5.0
+        self.task_check_interval = 5.0
         self._register_aux_message_handlers(engine)
+
+    def find_executor(self, task_name):
+        return self.task_router.route(task_name)
 
     def _register_aux_message_handlers(self, engine):
         engine.register_aux_message_handler(topic=ReservedTopic.END_RUN, message_handle_func=self._handle_end_run)
@@ -186,11 +231,7 @@ class ClientRunner(FLComponent):
                 msg=f"submit result: {ReturnCode.RUN_MISMATCH}",
             )
 
-        executor = self.task_table.get(task.name)
-        if not executor:
-            # try default
-            executor = self.task_table.get("*")
-
+        executor = self.find_executor(task.name)
         if not executor:
             self.log_error(fl_ctx, f"bad task assignment: no executor available for task {task.name}")
             return self._reply_and_audit(
@@ -221,7 +262,7 @@ class ClientRunner(FLComponent):
                 msg=f"submit result: {ReturnCode.UNSAFE_JOB}",
             )
         except Exception as e:
-            self.log_exception(fl_ctx, "Processing error from Task Data Filters : {secure_format_exception(e)}")
+            self.log_exception(fl_ctx, f"Processing error from Task Data Filters : {secure_format_exception(e)}")
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.TASK_DATA_FILTER_ERROR),
                 ref=server_audit_event_id,
@@ -365,10 +406,38 @@ class ClientRunner(FLComponent):
         return self._reply_and_audit(reply=reply, ref=server_audit_event_id, fl_ctx=fl_ctx, msg="submit result OK")
 
     def _try_run(self):
+        heartbeat_thread = threading.Thread(target=self._send_job_heartbeat, args=[], daemon=True)
+        heartbeat_thread.start()
+
         while not self.run_abort_signal.triggered:
             with self.engine.new_context() as fl_ctx:
                 task_fetch_interval, _ = self.fetch_and_run_one_task(fl_ctx)
             time.sleep(task_fetch_interval)
+
+    def _send_job_heartbeat(self, interval=30.0):
+        sleep_time = 1.0
+        wait_times = int(interval / sleep_time)
+        if wait_times == 0:
+            wait_times = 1
+        request = Shareable()
+        while not self.run_abort_signal.triggered:
+            with self.engine.new_context() as fl_ctx:
+                self.engine.send_aux_request(
+                    targets=[FQCN.ROOT_SERVER],
+                    topic=ReservedTopic.JOB_HEART_BEAT,
+                    request=request,
+                    timeout=0,
+                    fl_ctx=fl_ctx,
+                    optional=True,
+                )
+
+                # we want to send the HB every "interval" secs.
+                # but we don't want to sleep that long since it will block us from checking abort signal.
+                # hence we only sleep 1 sec, and check the abort signal.
+                for i in range(wait_times):
+                    time.sleep(sleep_time)
+                    if self.run_abort_signal.triggered:
+                        break
 
     def fetch_and_run_one_task(self, fl_ctx) -> (float, bool):
         """Fetches and runs a task.
@@ -406,18 +475,104 @@ class ClientRunner(FLComponent):
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_SEND_TASK_RESULT")
         self.fire_event(EventType.BEFORE_SEND_TASK_RESULT, fl_ctx)
 
-        reply_sent = self.engine.send_task_result(task_reply, fl_ctx)
-        if reply_sent:
-            self.log_info(fl_ctx, "result sent to server for task: name={}, id={}".format(task.name, task.task_id))
-        else:
-            self.log_error(
-                fl_ctx,
-                "failed to send result to server for task: name={}, id={}".format(task.name, task.task_id),
-            )
+        self._send_task_result(task_reply, task.task_id, fl_ctx)
         self.log_debug(fl_ctx, "firing event EventType.AFTER_SEND_TASK_RESULT")
         self.fire_event(EventType.AFTER_SEND_TASK_RESULT, fl_ctx)
 
         return task_fetch_interval, True
+
+    def _send_task_result(self, result: Shareable, task_id: str, fl_ctx: FLContext):
+        try_count = 1
+        while True:
+            self.log_info(fl_ctx, f"try #{try_count}: sending task result to server")
+
+            if self.run_abort_signal.triggered:
+                self.log_info(fl_ctx, "job aborted: stopped trying to send result")
+                return False
+
+            try_count += 1
+            rc = self._try_send_result_once(result, task_id, fl_ctx)
+
+            if rc == _TASK_CHECK_RESULT_OK:
+                return True
+            elif rc == _TASK_CHECK_RESULT_TASK_GONE:
+                return False
+            else:
+                # retry
+                time.sleep(self.task_check_interval)
+
+    def _try_send_result_once(self, result: Shareable, task_id: str, fl_ctx: FLContext):
+        # wait until server is ready to receive
+        while True:
+            if self.run_abort_signal.triggered:
+                return _TASK_CHECK_RESULT_TASK_GONE
+
+            rc = self._check_task_once(task_id, fl_ctx)
+            if rc == _TASK_CHECK_RESULT_OK:
+                break
+            elif rc == _TASK_CHECK_RESULT_TASK_GONE:
+                return rc
+            else:
+                # try again
+                time.sleep(self.task_check_interval)
+
+        # try to send the result
+        self.log_info(fl_ctx, "start to send task result to server")
+        reply_sent = self.engine.send_task_result(result, fl_ctx)
+        if reply_sent:
+            self.log_info(fl_ctx, "task result sent to server")
+            return _TASK_CHECK_RESULT_OK
+        else:
+            self.log_error(fl_ctx, "failed to send task result to server - will try again")
+            return _TASK_CHECK_RESULT_TRY_AGAIN
+
+    def _check_task_once(self, task_id: str, fl_ctx: FLContext) -> int:
+        """This method checks whether the server is still waiting for the specified task.
+        The real reason for this method is to fight against unstable network connections.
+        We try to make sure that when we send task result to the server, the connection is available.
+        If the task check succeeds, then the network connection is likely to be available.
+        Otherwise, we keep retrying until task check succeeds or the server tells us that the task is gone (timed out).
+        Args:
+            task_id:
+            fl_ctx:
+        Returns:
+        """
+        self.log_info(fl_ctx, "checking task ...")
+        task_check_req = Shareable()
+        task_check_req.set_header(ReservedKey.TASK_ID, task_id)
+        resp = self.engine.send_aux_request(
+            targets=[FQCN.ROOT_SERVER],
+            topic=ReservedTopic.TASK_CHECK,
+            request=task_check_req,
+            timeout=self.task_check_timeout,
+            fl_ctx=fl_ctx,
+            optional=True,
+        )
+        if resp and isinstance(resp, dict):
+            reply = resp.get(FQCN.ROOT_SERVER)
+            if not isinstance(reply, Shareable):
+                self.log_error(fl_ctx, f"bad task_check reply from server: expect Shareable but got {type(reply)}")
+                return _TASK_CHECK_RESULT_TRY_AGAIN
+
+            rc = reply.get_return_code()
+            if rc == ReturnCode.OK:
+                return _TASK_CHECK_RESULT_OK
+            elif rc == ReturnCode.COMMUNICATION_ERROR:
+                self.log_error(fl_ctx, f"failed task_check: {rc}")
+                return _TASK_CHECK_RESULT_TRY_AGAIN
+            elif rc == ReturnCode.SERVER_NOT_READY:
+                self.log_error(fl_ctx, f"server rejected task_check: {rc}")
+                return _TASK_CHECK_RESULT_TRY_AGAIN
+            elif rc == ReturnCode.TASK_UNKNOWN:
+                self.log_error(fl_ctx, f"task no longer exists on server: {rc}")
+                return _TASK_CHECK_RESULT_TASK_GONE
+            else:
+                # this should never happen
+                self.log_error(fl_ctx, f"programming error: received {rc} from server")
+                return _TASK_CHECK_RESULT_OK  # try to push the result regardless
+        else:
+            self.log_error(fl_ctx, f"bad task_check reply from server: invalid resp {type(resp)}")
+            return _TASK_CHECK_RESULT_TRY_AGAIN
 
     def run(self, app_root, args):
         self.init_run(app_root, args)
@@ -433,7 +588,49 @@ class ClientRunner(FLComponent):
                 self.running_tasks = {}
 
     def init_run(self, app_root, args):
+        sync_timeout = ConfigService.get_float_var(
+            name=ConfigVarName.RUNNER_SYNC_TIMEOUT,
+            default=2.0,
+        )
+        max_sync_tries = ConfigService.get_int_var(
+            name=ConfigVarName.MAX_RUNNER_SYNC_TRIES,
+            default=30,
+        )
+        target = "server"
+        synced = False
+        sync_start = time.time()
         with self.engine.new_context() as fl_ctx:
+            for i in range(max_sync_tries):
+                # sync with server runner before starting
+                time.sleep(0.5)
+                resp = self.engine.send_aux_request(
+                    targets=[target],
+                    topic=ReservedTopic.SYNC_RUNNER,
+                    request=Shareable(),
+                    timeout=sync_timeout,
+                    fl_ctx=fl_ctx,
+                    optional=True,
+                    secure=False,
+                )
+
+                if not resp:
+                    continue
+
+                reply = resp.get(target)
+                if not reply:
+                    continue
+
+                assert isinstance(reply, Shareable)
+                rc = reply.get_return_code()
+                if rc == ReturnCode.OK:
+                    synced = True
+                    break
+
+            if not synced:
+                raise RuntimeError(f"cannot sync with Server Runner after {max_sync_tries} tries")
+
+            self.log_info(fl_ctx, f"synced to Server Runner in {time.time()-sync_start} seconds")
+
             self.fire_event(EventType.ABOUT_TO_START_RUN, fl_ctx)
             fl_ctx.set_prop(FLContextKey.APP_ROOT, app_root, sticky=True)
             fl_ctx.set_prop(FLContextKey.ARGS, args, sticky=True)
@@ -458,15 +655,20 @@ class ClientRunner(FLComponent):
             self.fire_event(EventType.END_RUN, fl_ctx)
             self.log_info(fl_ctx, "END_RUN fired")
 
-    def abort(self):
+    def abort(self, msg: str = ""):
         """To Abort the current run.
 
         Returns: N/A
 
         """
-        # This is caused by the abort_job command.
+        # This is called when:
+        # 1. abort_job command is issued by the user
+        # 2. when the job is ended by the server when error conditions occur
+        # 3. when the job is ended normally at the end of the workflow
+        if not msg:
+            msg = "Client is stopping ..."
         with self.engine.new_context() as fl_ctx:
-            self.log_info(fl_ctx, "ABORT (RUN) command received")
+            self.log_info(fl_ctx, msg)
         self.run_abort_signal.trigger(True)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):

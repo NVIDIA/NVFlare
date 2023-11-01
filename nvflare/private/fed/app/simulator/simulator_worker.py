@@ -47,7 +47,7 @@ FETCH_TASK_RUN_RETRY = 3
 
 class ClientTaskWorker(FLComponent):
     def create_client_engine(self, federated_client: FederatedClient, args, rank=0):
-        client_engine = ClientEngine(federated_client, federated_client.token, args, rank)
+        client_engine = ClientEngine(federated_client, args, rank)
         federated_client.set_client_engine(client_engine)
         federated_client.run_manager = None
 

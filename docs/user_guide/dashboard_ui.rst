@@ -4,18 +4,18 @@
 NVFLARE Dashboard UI
 ######################################################
 
-The NVFlare Dashboard is a new optional addition to NVIDIA FLARE in version 2.2.1 that allows for the project administrator
+The NVFlare Dashboard is an optional addition to NVIDIA FLARE that helps the project administrator
 to deploy a website to gather information about the sites and distribute startup kits.
 
 This simplifies the process of data collection and provisioning with users registering to join the project and provide
 their own information then downloading their own startup kits once the project admin has approved the registration.
 All the project information can be managed online with provisioning done on the fly.
 
-As of version 2.2.1, users with role ``Member`` or ``Lead`` can register a user account and then download the startup kit
-for the FLARE console once the account is approved.
+Users with :ref:`role <nvflare_roles>` ``Member`` or ``Lead`` can register a user account and then
+download the startup kit for the FLARE console once the account is approved.
 
-Users of the role ``Org Admin`` have the additional ability to specify the name and resource specifications for client sites
-and then download startup kits for each client site after it is approved.
+Users of the :ref:`role <nvflare_roles>` ``Org Admin`` have the additional ability to specify the name and resource specifications
+for client sites and then download startup kits for each client site after it is approved.
 
 Finally, the ``Project Admin`` or project administrator is responsible for overall site management from setting up the project
 to approving the users and client sites after inviting users to sign up (for details on how the project administrator can set up

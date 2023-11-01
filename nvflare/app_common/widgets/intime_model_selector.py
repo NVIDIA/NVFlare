@@ -83,6 +83,7 @@ class IntimeModelSelector(Widget):
             self.log_exception(
                 fl_ctx, f"shareable data is not a valid DXO. Received Exception: {secure_format_exception(e)}"
             )
+            return False
 
         if dxo.data_kind not in (DataKind.WEIGHT_DIFF, DataKind.WEIGHTS, DataKind.COLLECTION):
             self.log_debug(fl_ctx, "cannot handle {}".format(dxo.data_kind))
@@ -154,6 +155,7 @@ class IntimeModelSelector(Widget):
             self.log_info(fl_ctx, f"new best validation metric at round {current_round}: {self.best_val_metric}")
 
             # Fire event to notify that the current global model is a new best
+            fl_ctx.set_prop(AppConstants.VALIDATION_RESULT, self.best_val_metric, private=True, sticky=False)
             self.fire_event(AppEventType.GLOBAL_BEST_MODEL_AVAILABLE, fl_ctx)
 
         self._reset_stats()

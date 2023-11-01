@@ -29,7 +29,8 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils import fobs
-from nvflare.fuel.utils.fobs.decomposer import Decomposer, DictDecomposer
+from nvflare.fuel.utils.fobs.datum import Datum, DatumManager, DatumRef
+from nvflare.fuel.utils.fobs.decomposer import Decomposer, DictDecomposer, Externalizer, Internalizer
 
 
 # The __init__ initializes logger so generic decomposers can't be used
@@ -37,10 +38,10 @@ class ContextDecomposer(Decomposer):
     def supported_type(self):
         return FLContext
 
-    def decompose(self, target: FLContext) -> Any:
+    def decompose(self, target: FLContext, manager: DatumManager = None) -> Any:
         return [target.model, target.props]
 
-    def recompose(self, data: Any) -> FLContext:
+    def recompose(self, data: Any, manager: DatumManager = None) -> FLContext:
         obj = FLContext()
         obj.model = data[0]
         obj.props = data[1]
@@ -52,11 +53,26 @@ class WorkspaceDecomposer(Decomposer):
     def supported_type(self):
         return Workspace
 
-    def decompose(self, target: Workspace) -> Any:
+    def decompose(self, target: Workspace, manager: DatumManager = None) -> Any:
         return [target.root_dir, target.site_name, target.config_folder]
 
-    def recompose(self, data: Any) -> Workspace:
+    def recompose(self, data: Any, manager: DatumManager = None) -> Workspace:
         return Workspace(data[0], data[1], data[2])
+
+
+class DXODecomposer(Decomposer):
+    def supported_type(self):
+        return DXO
+
+    def decompose(self, target: DXO, datum_manager=None) -> Any:
+        externalizer = Externalizer(datum_manager)
+        return (target.data_kind, externalizer.externalize(target.meta), externalizer.externalize(target.data))
+
+    def recompose(self, data: Any, datum_manager=None) -> DXO:
+        assert isinstance(data, tuple)
+        dk, m, d = data
+        internalizer = Internalizer(datum_manager)
+        return DXO(data_kind=dk, meta=internalizer.internalize(m), data=internalizer.internalize(d))
 
 
 def register():
@@ -65,7 +81,9 @@ def register():
 
     fobs.register(DictDecomposer(Shareable))
 
-    fobs.register_data_classes(DXO, Client, RunSnapshot, Signal, Namespace)
+    fobs.register(DXODecomposer)
+
+    fobs.register_data_classes(Client, RunSnapshot, Signal, Namespace, Datum, DatumRef)
 
     fobs.register_folder(os.path.dirname(__file__), __package__)
 

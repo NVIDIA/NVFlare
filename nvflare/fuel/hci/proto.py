@@ -62,6 +62,11 @@ class MetaKey(object):
     DURATION = "duration"
     CMD_TIMEOUT = "cmd_timeout"
     CUSTOM_PROPS = "custom_props"
+    FILES = "files"
+    CMD_NAME = "cmd_name"
+    TX_ID = "tx_id"
+    FOLDER_NAME = "folder_name"
+    LOCATION = "location"
 
 
 class MetaStatusValue(object):
@@ -98,6 +103,12 @@ class InternalCommands(object):
     GET_CMD_LIST = "_commands"
     CHECK_SESSION = "_check_session"
     LIST_SESSIONS = "list_sessions"
+
+    commands = [PWD_LOGIN, CERT_LOGIN, LOGOUT, GET_CMD_LIST, CHECK_SESSION, LIST_SESSIONS]
+
+    @classmethod
+    def contains_commmand(cls, command: str):
+        return command in InternalCommands.commands
 
 
 class ConfirmMethod(object):

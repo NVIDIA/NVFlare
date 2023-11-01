@@ -33,9 +33,16 @@ class CommandCtxKey(object):
     JSON_PROCESSOR = "json_processor"
     META = "meta"
     CUSTOM_PROPS = "custom_props"
+    BYTES_RECEIVER = "bytes_receiver"
 
 
 class CommandContext(SimpleContext):
+    def set_bytes_receiver(self, r):
+        self.set_prop(CommandCtxKey.BYTES_RECEIVER, r)
+
+    def get_bytes_receiver(self):
+        return self.get_prop(CommandCtxKey.BYTES_RECEIVER)
+
     def set_command_result(self, result):
         self.set_prop(CommandCtxKey.RESULT, result)
 
@@ -118,7 +125,7 @@ class ReplyProcessor:
     def reply_start(self, ctx: CommandContext, reply_json):
         pass
 
-    def process_string(self, ctx: CommandContext, item: str, meta: {}):
+    def process_string(self, ctx: CommandContext, item: str):
         pass
 
     def process_success(self, ctx: CommandContext, item: str):
@@ -145,6 +152,9 @@ class ReplyProcessor:
     def reply_done(self, ctx: CommandContext):
         pass
 
+    def process_bytes(self, ctx: CommandContext):
+        pass
+
 
 class AdminAPISpec(ABC):
     @abstractmethod
@@ -163,12 +173,13 @@ class AdminAPISpec(ABC):
         pass
 
     @abstractmethod
-    def server_execute(self, command: str, reply_processor=None):
+    def server_execute(self, command: str, reply_processor=None, cmd_ctx=None):
         """Executes a command on server side.
 
         Args:
             command: The command to be executed.
             reply_processor: processor to process reply from server
+            cmd_ctx: command context
         """
         pass
 

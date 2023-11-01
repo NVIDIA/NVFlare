@@ -70,7 +70,7 @@ preferred-citation:
   - family-names: Feng
     given-names:  Andrew
   doi: "https://doi.org/10.48550/arXiv.2210.13291"
-  journal: "International Workshop on Federated Learning, NeurIPS 2022, New Orleans, USA"
-  month: 10
+  journal: "IEEE Data Eng. Bull., Vol. 46, No. 1"
+  month: 3
   title: "NVIDIA FLARE: Federated Learning from Simulation to Real-World"
-  year: 2022
+  year: 2023

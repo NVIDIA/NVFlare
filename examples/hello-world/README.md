@@ -19,15 +19,20 @@ Before you run the notebook, the following preparation work must be done:
 
 ## Hello World Examples
 ### Easier ML/DL to FL transition
-* [ML to FL](./ml-to-fl/README.md): Showcase how to convert existing ML/DL codes to a NVFlare job.
+* [ML to FL](./ml-to-fl/README.md): Showcases how to convert existing ML/DL code to an NVFlare job.
+
+### Step by step examples
+* [Step by step examples](./step-by-step/readme.md): Shows specific techniques and workflows and what needs to be changed for each.
 
 ### Workflows
 * [Hello Scatter and Gather](./hello-numpy-sag/README.md)
-    * Example using "[ScatterAndGather](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.scatter_and_gather.html)" controller workflow.
+    * Example using [ScatterAndGather](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.scatter_and_gather.html) controller workflow.
 * [Hello Cross-Site Validation](./hello-numpy-cross-val/README.md)
     * Example using [CrossSiteModelEval](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.cross_site_model_eval.html) controller workflow.
 * [Hello Cyclic Weight Transfer](./hello-cyclic/README.md)
     * Example using [CyclicController](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.cyclic_ctl.html) controller workflow to implement [Cyclic Weight Transfer](https://pubmed.ncbi.nlm.nih.gov/29617797/).
+* [Hello Client Controlled Workflows](./hello-ccwf/README.md)
+    * Example using [Client Controlled Workflows](https://nvflare.readthedocs.io/en/main/programming_guide/controllers/client_controlled_workflows.html).
 
 ### Deep Learning
 * [Hello PyTorch](./hello-pt/README.md)

@@ -23,7 +23,7 @@ from net import Net
 # default dataset path
 CIFAR10_ROOT = "/tmp/nvflare/data/cifar10"
 # (optional) We change to use GPU to speed things up.
-# if you want to use CPU, change DEVICE=“cpu”
+# if you want to use CPU, change DEVICE="cpu"
 DEVICE = "cuda:0"
 
 
@@ -57,8 +57,6 @@ def _main(args):
 
     # (optional) use GPU to speed things up
     net.to(DEVICE)
-    # (optional) calculate total steps
-    steps = 2 * len(trainloader)
     for epoch in range(2):  # loop over the dataset multiple times
 
         running_loss = 0.0
@@ -86,7 +84,7 @@ def _main(args):
 
     torch.save(net.state_dict(), model_path)
 
-    # (2.0) wraps evaluation logic into a method to re-use for
+    # wraps evaluation logic into a method to re-use for
     #       evaluation on both trained and received model
     def evaluate(input_weights):
         net = Net()
@@ -111,6 +109,7 @@ def _main(args):
         print(f"Accuracy of the network on the 10000 test images: {100 * correct // total} %")
         return 100 * correct // total
 
+    # evaluation on local trained model
     local_accuracy = evaluate(torch.load(model_path))
 
 

@@ -24,7 +24,7 @@ from nvflare.apis.fl_constant import ServerCommandKey, ServerCommandNames
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.shareable import Shareable
-from nvflare.apis.utils.fl_context_utils import get_serializable_data
+from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.fuel.f3.cellnet.core_cell import FQCN, CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, SpecialTaskName, new_cell_message
@@ -64,6 +64,7 @@ class Communicator:
         cell: CoreCell = None,
         client_register_interval=2,
         timeout=5.0,
+        maint_msg_timeout=5.0,
     ):
         """To init the Communicator.
 
@@ -84,30 +85,33 @@ class Communicator:
         self.compression = compression
         self.client_register_interval = client_register_interval
         self.timeout = timeout
+        self.maint_msg_timeout = maint_msg_timeout
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def client_registration(self, client_name, servers, project_name):
+    def client_registration(self, client_name, project_name, fl_ctx: FLContext):
         """Client's metadata used to authenticate and communicate.
 
         Args:
             client_name: client name
-            servers: FL servers
             project_name: FL study project name
+            fl_ctx: FLContext
 
         Returns:
             The client's token
 
         """
         local_ip = _get_client_ip()
+        shareable = Shareable()
+        shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
+        shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
 
-        login_message = new_cell_message(
-            {
-                CellMessageHeaderKeys.CLIENT_NAME: client_name,
-                CellMessageHeaderKeys.CLIENT_IP: local_ip,
-                CellMessageHeaderKeys.PROJECT_NAME: project_name,
-            }
-        )
+        headers = {
+            CellMessageHeaderKeys.CLIENT_NAME: client_name,
+            CellMessageHeaderKeys.CLIENT_IP: local_ip,
+            CellMessageHeaderKeys.PROJECT_NAME: project_name,
+        }
+        login_message = new_cell_message(headers, shareable)
 
         start = time.time()
         while not self.cell:
@@ -128,7 +132,7 @@ class Communicator:
                     channel=CellChannel.SERVER_MAIN,
                     topic=CellChannelTopic.Register,
                     request=login_message,
-                    timeout=self.timeout,
+                    timeout=self.maint_msg_timeout,
                 )
                 return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
                 if return_code == ReturnCode.UNAUTHENTICATED:
@@ -163,8 +167,7 @@ class Communicator:
         """
         start_time = time.time()
         shareable = Shareable()
-        shared_fl_ctx = FLContext()
-        shared_fl_ctx.set_public_props(get_serializable_data(fl_ctx).get_all_public_props())
+        shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
         shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
         client_name = fl_ctx.get_identity_name()
         task_message = new_cell_message(
@@ -229,8 +232,7 @@ class Communicator:
             ReturnCode
         """
         start_time = time.time()
-        shared_fl_ctx = FLContext()
-        shared_fl_ctx.set_public_props(get_serializable_data(fl_ctx).get_all_public_props())
+        shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
         shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
 
         # shareable.add_cookie(name=FLContextKey.TASK_ID, data=task_id)
@@ -298,7 +300,7 @@ class Communicator:
                 channel=CellChannel.SERVER_MAIN,
                 topic=CellChannelTopic.Quit,
                 request=quit_message,
-                timeout=self.timeout,
+                timeout=self.maint_msg_timeout,
             )
             return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
             if return_code == ReturnCode.UNAUTHENTICATED:
@@ -336,7 +338,7 @@ class Communicator:
                         channel=CellChannel.SERVER_MAIN,
                         topic=CellChannelTopic.HEART_BEAT,
                         request=heartbeat_message,
-                        timeout=self.timeout,
+                        timeout=self.maint_msg_timeout,
                     )
                     return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
                     if return_code == ReturnCode.UNAUTHENTICATED:
@@ -345,7 +347,7 @@ class Communicator:
 
                     num_heartbeats_sent += 1
                     if num_heartbeats_sent % heartbeats_log_interval == 0:
-                        self.logger.info(f"Client: {client_name} has sent {num_heartbeats_sent} heartbeats.")
+                        self.logger.debug(f"Client: {client_name} has sent {num_heartbeats_sent} heartbeats.")
 
                     if not simulate_mode:
                         # server_message = result.get_header(CellMessageHeaderKeys.MESSAGE)

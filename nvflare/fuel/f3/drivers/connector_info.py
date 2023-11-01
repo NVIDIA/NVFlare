@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from dataclasses import dataclass
+from threading import Event
 
 from nvflare.fuel.f3.drivers.net_utils import short_url
 from nvflare.fuel.utils.constants import Mode
@@ -30,7 +31,7 @@ class ConnectorInfo:
     total_conns: int
     curr_conns: int
     started: bool
-    stopping: bool
+    stopped: Event
 
     def __str__(self):
         url = short_url(self.params)

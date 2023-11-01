@@ -33,6 +33,7 @@ class KeyIndex:
 
 
 def build_reverse_order_index(config_file_path: str) -> Tuple:
+    # use pyhocon to load config
     config, config_file_path = load_pyhocon_conf(config_file_path)
 
     components: list = config.get("components", None)
@@ -64,6 +65,7 @@ def build_reverse_order_index(config_file_path: str) -> Tuple:
 
 
 def load_pyhocon_conf(config_file_path) -> Tuple[ConfigTree, str]:
+    """Loads config using pyhocon."""
     try:
         temp_conf: Config = ConfigFactory.load_config(config_file_path)
         if temp_conf:
@@ -99,6 +101,9 @@ def build_list_reverse_order_index(
         elmt_key = f"{key}[{index}]"
         key_index = KeyIndex(key=elmt_key, value=value, parent_key=root_index, index=index)
 
+        if value is None:
+            continue
+
         if isinstance(value, list):
             if len(value) > 0:
                 key_indices = build_list_reverse_order_index(
@@ -118,10 +123,17 @@ def build_list_reverse_order_index(
             )
         elif is_primitive(value):
             if key == "path":
-                last_dot_index = value.rindex(".")
-                class_name = value[last_dot_index + 1 :]
-                key_index.component_name = class_name
+                has_dot = value.find(".") > 0
+                if has_dot:
+                    # we assume the path's pass value is class name
+                    # there are cases, this maybe not.
+                    # user may have to modify configuration manually in those cases
+                    last_dot_index = value.rindex(".")
+                    class_name = value[last_dot_index + 1 :]
+                    key_index.component_name = class_name
             elif key == "name":
+                # there are cases, where name is not component
+                # user may have to modify configuration manually in those cases
                 key_index.component_name = value
 
             add_to_indices(elmt_key, key_index, key_indices)
@@ -131,7 +143,13 @@ def build_list_reverse_order_index(
 
 
 def is_primitive(value):
-    return isinstance(value, int) or isinstance(value, float) or isinstance(value, str) or isinstance(value, bool)
+    return (
+        isinstance(value, int)
+        or isinstance(value, float)
+        or isinstance(value, str)
+        or isinstance(value, bool)
+        or value is None
+    )
 
 
 def has_none_primitives_in_list(values: List):
@@ -176,11 +194,17 @@ def build_dict_reverse_order_index(
         elif is_primitive(value):
             parent_key = key_index.parent_key
             if key == "path":
-                last_dot_index = value.rindex(".")
-                class_name = value[last_dot_index + 1 :]
-                key_index.component_name = class_name
-                parent_key.component_name = key_index.component_name if parent_key.index is not None else None
+                has_dot = value.find(".") > 0
+                if has_dot:
+                    # we assume the path's pass value is class name
+                    # there are cases, this maybe not.
+                    # user may have to modify configuration manually in those cases
+                    last_dot_index = value.rindex(".")
+                    class_name = value[last_dot_index + 1 :]
+                    key_index.component_name = class_name
+                    parent_key.component_name = key_index.component_name if parent_key.index is not None else None
             elif key == "name":
+                # what if the name is not component ?
                 key_index.component_name = value
                 parent_key.component_name = key_index.component_name if parent_key.index else None
 
@@ -204,10 +228,15 @@ def add_class_defaults_to_key(excluded_keys, key_index, key_indices, results):
 
     parent_key: KeyIndex = key_index.parent_key
     value = key_index.value
+    has_dot = value.find(".") > 0
+    if not has_dot:
+        return
+    # we assume the path's pass value is class name
+    # there are cases, this maybe not.
+    # user may have to modify configuration manually in those cases
     last_dot_index = value.rindex(".")
     class_path = value[:last_dot_index]
     class_name = value[last_dot_index + 1 :]
-
     module, import_flag = optional_import(module=class_path, name=class_name)
     if import_flag:
         params = inspect.signature(module.__init__).parameters

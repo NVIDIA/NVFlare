@@ -12,16 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import concurrent.futures
+import copy
 import logging
 import threading
+import uuid
 from typing import Dict, List, Union
 
-from nvflare.fuel.f3.cellnet.core_cell import CoreCell
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessageType
+from nvflare.fuel.f3.cellnet.core_cell import CoreCell, TargetMessage
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessageType, ReturnCode
+from nvflare.fuel.f3.cellnet.utils import decode_payload, encode_payload, make_reply
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stream_cell import StreamCell
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import StreamFuture
+from nvflare.private.defs import CellChannel
+
+CHANNELS_TO_HANDLE = (CellChannel.SERVER_COMMAND, CellChannel.AUX_COMMUNICATION)
 
 
 class SimpleWaiter:
@@ -29,15 +36,15 @@ class SimpleWaiter:
         super().__init__()
         self.req_id = req_id
         self.result = result
-        self.receiving_futre = None
+        self.receiving_future = None
         self.in_receiving = threading.Event()
 
 
 class Adapter:
-    def __init__(self, cb, my_info, nice_cell):
+    def __init__(self, cb, my_info, cell):
         self.cb = cb
         self.my_info = my_info
-        self.nice_cell = nice_cell
+        self.cell = cell
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def call(self, future):  # this will be called by StreamCell upon receiving the first byte of blob
@@ -45,13 +52,29 @@ class Adapter:
         stream_req_id = headers.get(StreamHeaderKey.STREAM_REQ_ID, "")
         origin = headers.get(MessageHeaderKey.ORIGIN, None)
         result = future.result()
+        self.logger.debug(f"{stream_req_id=}: {headers=}, incoming data={result}")
         request = Message(headers, result)
+
+        decode_payload(request, StreamHeaderKey.PAYLOAD_ENCODING)
+
         channel = request.get_header(StreamHeaderKey.CHANNEL)
         request.set_header(MessageHeaderKey.CHANNEL, channel)
         topic = request.get_header(StreamHeaderKey.TOPIC)
         request.set_header(MessageHeaderKey.TOPIC, topic)
+        self.logger.debug(f"Call back on {stream_req_id=}: {channel=}, {topic=}")
+
         req_id = request.get_header(MessageHeaderKey.REQ_ID, "")
+        secure = request.get_header(MessageHeaderKey.SECURE, False)
+        optional = request.get_header(MessageHeaderKey.OPTIONAL, False)
+        self.logger.debug(f"{stream_req_id=}: on {channel=}, {topic=}")
         response = self.cb(request)
+        self.logger.debug(f"response available: {stream_req_id=}: on {channel=}, {topic=}")
+
+        if not stream_req_id:
+            # no need to reply!
+            self.logger.debug("Do not send reply because there is no stream_req_id!")
+            return
+
         response.add_headers(
             {
                 MessageHeaderKey.REQ_ID: req_id,
@@ -59,7 +82,13 @@ class Adapter:
                 StreamHeaderKey.STREAM_REQ_ID: stream_req_id,
             }
         )
-        messagesend_future = self.nice_cell.send_blob(channel, topic, origin, response)
+
+        encode_payload(response, StreamHeaderKey.PAYLOAD_ENCODING)
+        self.logger.debug(f"sending: {stream_req_id=}: {response.headers=}, target={origin}")
+        reply_future = self.cell.send_blob(
+            CellChannel.RETURN_ONLY, f"{channel}:{topic}", origin, response, secure, optional
+        )
+        self.logger.debug(f"Done sending: {stream_req_id=}: {reply_future=}")
 
 
 class Cell(StreamCell):
@@ -68,18 +97,92 @@ class Cell(StreamCell):
         super().__init__(self.core_cell)
         self.requests_dict = dict()
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.register_blob_cb("*", "*", self._process_reply)  # this should be one-time registration
+        self.register_blob_cb(CellChannel.RETURN_ONLY, "*", self._process_reply)  # this should be one-time registration
 
     def __getattr__(self, func):
+        """
+        This method is called when Python cannot find an invoked method "x" of this class.
+        Method "x" is one of the message sending methods (send_request, broadcast_request, etc.)
+        In this method, we decide which method should be used instead, based on the "channel" of the message.
+        - If the channel is in CHANNELS_TO_HANDLE, use the method "_x" of this class.
+        - Otherwise, user the method "x" of the core_cell.
+        """
+
         def method(*args, **kwargs):
+            self.logger.debug(f"__getattr__: {args=}, {kwargs=}")
+            if kwargs.get("channel") in CHANNELS_TO_HANDLE:
+                self.logger.debug(f"calling cell {func}")
+                return getattr(self, f"_{func}")(*args, **kwargs)
             if not hasattr(self.core_cell, func):
                 raise AttributeError(f"'{func}' not in core_cell.")
+            self.logger.debug(f"calling core_cell {func}")
             return getattr(self.core_cell, func)(*args, **kwargs)
 
         return method
 
-    def fire_and_forget(
-        self, channel: str, topic: str, targets: Union[str, List[str]], message: Message, optional=False
+    def _broadcast_request(
+        self,
+        channel: str,
+        topic: str,
+        targets: Union[str, List[str]],
+        request: Message,
+        timeout=None,
+        secure=False,
+        optional=False,
+    ) -> Dict[str, Message]:
+        """
+        Send a message over a channel to specified destination cell(s), and wait for reply
+
+        Args:
+            channel: channel for the message
+            topic: topic of the message
+            targets: FQCN of the destination cell(s)
+            request: message to be sent
+            timeout: how long to wait for replies
+            secure: End-end encryption
+            optional: whether the message is optional
+
+        Returns: a dict of: cell_id => reply message
+
+        """
+        self.logger.info(f"broadcast: {channel=}, {topic=}, {targets=}, {timeout=}")
+
+        if isinstance(targets, str):
+            targets = [targets]
+        target_argument = {}
+        fixed_dict = dict(channel=channel, topic=topic, timeout=timeout, secure=secure, optional=optional)
+        results = dict()
+        future_to_target = {}
+
+        # encode the request now so each target thread won't need to do it again.
+        self._encode_message(request)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(targets)) as executor:
+            self.logger.debug(f"broadcast to {targets=}")
+            for t in targets:
+                req = Message(copy.deepcopy(request.headers), request.payload)
+                target_argument["request"] = TargetMessage(t, channel, topic, req).message
+                target_argument["target"] = t
+                target_argument.update(fixed_dict)
+                f = executor.submit(self._send_one_request, **target_argument)
+                future_to_target[f] = t
+                self.logger.debug(f"submitted to {t} with {target_argument.keys()=}")
+            for future in concurrent.futures.as_completed(future_to_target):
+                target = future_to_target[future]
+                self.logger.debug(f"{target} completed")
+                try:
+                    data = future.result()
+                except Exception as exc:
+                    self.logger.warning(f"{target} raises {exc}")
+                    results[target] = make_reply(ReturnCode.TIMEOUT)
+                else:
+                    results[target] = data
+                    self.logger.debug(f"{target=}: {data=}")
+        self.logger.debug("About to return from broadcast_request")
+        return results
+
+    def _fire_and_forget(
+        self, channel: str, topic: str, targets: Union[str, List[str]], message: Message, secure=False, optional=False
     ) -> Dict[str, str]:
         """
         Send a message over a channel to specified destination cell(s), and do not wait for replies.
@@ -89,25 +192,23 @@ class Cell(StreamCell):
             topic: topic of the message
             targets: one or more destination cell IDs. None means all.
             message: message to be sent
+            secure: End-end encryption if True
             optional: whether the message is optional
 
         Returns: None
 
         """
-        # if channel == CellChannel.SERVER_COMMAND and topic == ServerCommandNames.HANDLE_DEAD_JOB:
-        #     if isinstance(targets, list):
-        #         for target in targets:
-        #             self.send_blob(channel=channel, topic=topic, target=target, message=message)
-        #     else:
-        #         self.send_blob(channel=channel, topic=topic, target=targets, message=message)
-        # else:
-        #     self.core_cell.fire_and_forget(
-        #         channel=channel, topic=topic, targets=targets, message=message, optional=optional
-        #     )
+        encode_payload(message, encoding_key=StreamHeaderKey.PAYLOAD_ENCODING)
+        if isinstance(targets, str):
+            targets = [targets]
 
-        self.core_cell.fire_and_forget(
-            channel=channel, topic=topic, targets=targets, message=message, optional=optional
-        )
+        result = {}
+        for target in targets:
+            self.send_blob(
+                channel=channel, topic=topic, target=target, message=message, secure=secure, optional=optional
+            )
+            result[target] = ""
+        return result
 
     def _get_result(self, req_id):
         waiter = self.requests_dict.pop(req_id)
@@ -124,68 +225,76 @@ class Cell(StreamCell):
                 last_progress = current_progress
         return True
 
-    def send_request(self, channel, target, topic, request, timeout=10.0, optional=False):
-        self.logger.debug(f"send_request: {channel=}, {topic=}, {target=}, {timeout=}")
-        # if channel != CellChannel.SERVER_COMMAND:
-        #     return self.core_cell.send_request(
-        #         channel=channel, target=target, topic=topic, request=request, timeout=timeout, optional=optional
-        #     )
-        #
-        # request.payload = fobs.dumps(request.payload)
-        #
-        # req_id = str(uuid.uuid4())
-        # request.add_headers({StreamHeaderKey.STREAM_REQ_ID: req_id})
-        #
-        # # this future can be used to check sending progress, but not for checking return blob
-        # future = self.send_blob(channel, topic, target, request)
-        #
-        # waiter = SimpleWaiter(req_id=req_id, result=make_reply(ReturnCode.TIMEOUT))
-        # self.requests_dict[req_id] = waiter
-        #
-        # # Three stages, sending, waiting for receiving first byte, receiving
-        #
-        # # sending with progress timeout
-        # self.logger.debug(f"{req_id=}: entering sending wait {timeout=}")
-        # sending_complete = self._future_wait(future, timeout)
-        # if not sending_complete:
-        #     self.logger.debug(f"{req_id=}: sending timeout")
-        #     return self._get_result(req_id)
-        # self.logger.debug(f"{req_id=}: sending complete")
-        #
-        # # waiting for receiving first byte
-        # self.logger.debug(f"{req_id=}: entering remote process wait {timeout=}")
-        # if not waiter.in_receiving.wait(timeout):
-        #     self.logger.debug(f"{req_id=}: remote processing timeout")
-        #     return self._get_result(req_id)
-        # self.logger.debug(f"{req_id=}: in receiving")
-        #
-        # # receiving with progress timeout
-        # r_future = waiter.receiving_future
-        # self.logger.debug(f"{req_id=}: entering receiving wait {timeout=}")
-        # receiving_complete = self._future_wait(r_future, timeout)
-        # if not receiving_complete:
-        #     self.logger.debug(f"{req_id=}: receiving timeout")
-        #     return self._get_result(req_id)
-        # self.logger.debug(f"{req_id=}: receiving complete")
-        # waiter.result = Message(r_future.headers, r_future.result())
-        # return self._get_result(req_id)
+    def _encode_message(self, msg: Message):
+        try:
+            encode_payload(msg, StreamHeaderKey.PAYLOAD_ENCODING)
+        except BaseException as exc:
+            self.logger.error(f"Can't encode {msg=} {exc=}")
+            raise exc
 
-        return self.core_cell.send_request(
-            channel=channel, target=target, topic=topic, request=request, timeout=timeout, optional=optional
+    def _send_request(self, channel, target, topic, request, timeout=10.0, secure=False, optional=False):
+        self._encode_message(request)
+        return self._send_one_request(channel, target, topic, request, timeout, secure, optional)
+
+    def _send_one_request(self, channel, target, topic, request, timeout=10.0, secure=False, optional=False):
+        req_id = str(uuid.uuid4())
+        request.add_headers({StreamHeaderKey.STREAM_REQ_ID: req_id})
+
+        # this future can be used to check sending progress, but not for checking return blob
+        self.logger.debug(f"{req_id=}, {channel=}, {topic=}, {target=}, {timeout=}: send_request about to send_blob")
+
+        waiter = SimpleWaiter(req_id=req_id, result=make_reply(ReturnCode.TIMEOUT))
+        self.requests_dict[req_id] = waiter
+        future = self.send_blob(
+            channel=channel, topic=topic, target=target, message=request, secure=secure, optional=optional
         )
+
+        self.logger.debug(f"{req_id=}: Waiting starts")
+
+        # Three stages, sending, waiting for receiving first byte, receiving
+
+        # sending with progress timeout
+        self.logger.debug(f"{req_id=}: entering sending wait {timeout=}")
+        sending_complete = self._future_wait(future, timeout)
+        if not sending_complete:
+            self.logger.info(f"{req_id=}: sending timeout {timeout=}")
+            return self._get_result(req_id)
+        self.logger.debug(f"{req_id=}: sending complete")
+
+        # waiting for receiving first byte
+        self.logger.debug(f"{req_id=}: entering remote process wait {timeout=}")
+        if not waiter.in_receiving.wait(timeout):
+            self.logger.info(f"{req_id=}: remote processing timeout {timeout=}")
+            return self._get_result(req_id)
+        self.logger.debug(f"{req_id=}: in receiving")
+
+        # receiving with progress timeout
+        r_future = waiter.receiving_future
+        self.logger.debug(f"{req_id=}: entering receiving wait {timeout=}")
+        receiving_complete = self._future_wait(r_future, timeout)
+        if not receiving_complete:
+            self.logger.info(f"{req_id=}: receiving timeout {timeout=}")
+            return self._get_result(req_id)
+        self.logger.debug(f"{req_id=}: receiving complete")
+        waiter.result = Message(r_future.headers, r_future.result())
+        decode_payload(waiter.result, encoding_key=StreamHeaderKey.PAYLOAD_ENCODING)
+        self.logger.debug(f"{req_id=}: return result {waiter.result=}")
+        result = self._get_result(req_id)
+        return result
 
     def _process_reply(self, future: StreamFuture):
         headers = future.headers
         req_id = headers.get(StreamHeaderKey.STREAM_REQ_ID, -1)
+        self.logger.debug(f"{req_id=}: _process_reply")
         try:
             waiter = self.requests_dict[req_id]
         except KeyError as e:
-            self.logger.warning(f"Receiving unknown {req_id=}, discarded")
+            self.logger.warning(f"Receiving unknown {req_id=}, discarded: {e}")
             return
         waiter.receiving_future = future
         waiter.in_receiving.set()
 
-    def register_request_cb(self, channel: str, topic: str, cb, *args, **kwargs):
+    def _register_request_cb(self, channel: str, topic: str, cb, *args, **kwargs):
         """
         Register a callback for handling request. The CB must follow request_cb_signature.
 
@@ -199,19 +308,13 @@ class Cell(StreamCell):
         Returns:
 
         """
+
         if not callable(cb):
             raise ValueError(f"specified request_cb {type(cb)} is not callable")
-        # if channel == CellChannel.SERVER_COMMAND and topic in [
-        #     "*",
-        #     ServerCommandNames.GET_TASK,
-        #     ServerCommandNames.SUBMIT_UPDATE,
-        # ]:
-        #     self.logger.debug(f"Register blob CB for {channel=}, {topic=}")
-        #     adapter = Adapter(cb, self.core_cell.my_info, self)
-        #     self.register_blob_cb(channel, topic, adapter.call, *args, **kwargs)
-        # else:
-        #     self.logger.debug(f"Register regular CB for {channel=}, {topic=}")
-        #     self.core_cell.register_request_cb(channel, topic, cb, *args, **kwargs)
-
-        self.logger.debug(f"Register regular CB for {channel=}, {topic=}")
-        self.core_cell.register_request_cb(channel, topic, cb, *args, **kwargs)
+        if channel in CHANNELS_TO_HANDLE:
+            self.logger.info(f"Register blob CB for {channel=}, {topic=}")
+            adapter = Adapter(cb, self.core_cell.my_info, self)
+            self.register_blob_cb(channel, topic, adapter.call, *args, **kwargs)
+        else:
+            self.logger.info(f"Register regular CB for {channel=}, {topic=}")
+            self.core_cell.register_request_cb(channel, topic, cb, *args, **kwargs)

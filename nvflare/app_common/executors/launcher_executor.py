@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
@@ -20,15 +19,15 @@ from typing import Optional
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
-from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
+from nvflare.app_common.abstract.exchange_task import ExchangeTask
+from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.launcher import Launcher, LauncherCompleteStatus
+from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils, ParamsConverter
-from nvflare.client.config import ClientConfig, ConfigKey
-from nvflare.client.constants import CONFIG_EXCHANGE
-from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.fuel.utils.pipe.pipe import Message, Pipe
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler, Topic
 from nvflare.fuel.utils.validation_utils import check_object_type
@@ -39,66 +38,82 @@ class LauncherExecutor(Executor):
     def __init__(
         self,
         pipe_id: str,
-        pipe_name: str = "pipe",
         launcher_id: Optional[str] = None,
         launch_timeout: Optional[float] = None,
-        task_wait_time: Optional[float] = None,
-        task_read_wait_time: Optional[float] = None,
-        result_poll_interval: float = 0.1,
-        read_interval: float = 0.1,
+        wait_timeout: Optional[float] = None,
+        result_timeout: Optional[float] = None,
+        last_result_transfer_timeout: float = 5.0,
+        peer_read_timeout: Optional[float] = None,
+        result_poll_interval: float = 0.5,
+        read_interval: float = 0.5,
         heartbeat_interval: float = 5.0,
         heartbeat_timeout: float = 30.0,
         workers: int = 1,
-        training: bool = True,
-        global_evaluation: bool = True,
+        train_with_evaluation: bool = True,
+        train_task_name: str = "train",
+        evaluate_task_name: str = "evaluate",
+        submit_model_task_name: str = "submit_model",
         from_nvflare_converter_id: Optional[str] = None,
         to_nvflare_converter_id: Optional[str] = None,
+        launch_once: bool = True,
     ) -> None:
         """Initializes the LauncherExecutor.
 
         Args:
-            pipe_id (str): Identifier used to get the Pipe from NVFlare components.
-            pipe_name (str): Name of the pipe. Defaults to "pipe".
-            launcher_id (Optional[str]): Identifier used to get the Launcher from NVFlare components.
-            launch_timeout (Optional[float]): Timeout for the "launch" method to end. None means never timeout.
-            task_wait_time (Optional[float]): Time to wait for tasks to complete before exiting the executor. None means never timeout.
-            task_read_wait_time (Optional[float]): Time to wait for task results from the pipe. None means no wait.
-            result_poll_interval (float): Interval for polling task results from the pipe. Defaults to 0.1.
-            read_interval (float): Interval for reading from the pipe. Defaults to 0.1.
-            heartbeat_interval (float): Interval for sending heartbeat to the peer. Defaults to 5.0.
-            heartbeat_timeout (float): Timeout for waiting for a heartbeat from the peer. Defaults to 30.0.
-            workers (int): Number of worker threads needed.
-            training (bool): Whether to run training using global model. Defaults to True.
-            global_evaluation (bool): Whether to run evaluation on global model. Defaults to True.
+            pipe_id (str): Identifier for obtaining the Pipe from NVFlare components.
+            launcher_id (Optional[str]): Identifier for obtaining the Launcher from NVFlare components.
+            launch_timeout (Optional[float]): Timeout for the Launcher's "launch_task" method to complete (None for no timeout).
+            wait_timeout (Optional[float]): Timeout for the Launcher's "wait_task" method to complete (None for no timeout).
+            result_timeout (Optional[float]): Timeout for retrieving the result (None for no timeout).
+            last_result_transfer_timeout (float): Timeout for transmitting the last result from an external process (default: 5.0).
+                This value should be greater than the time needed for sending the whole result.
+            peer_read_timeout (Optional[float]): Timeout for waiting the task to be read by the peer from the pipe (None for no timeout).
+            result_poll_interval (float): Interval for polling task results from the pipe (default: 0.5).
+            read_interval (float): Interval for reading from the pipe (default: 0.5).
+            heartbeat_interval (float): Interval for sending heartbeat to the peer (default: 5.0).
+            heartbeat_timeout (float): Timeout for waiting for a heartbeat from the peer (default: 30.0).
+            workers (int): Number of worker threads needed (default: 4).
+            train_with_evaluation (bool): Whether to run training with global model evaluation (default: True).
+            train_task_name (str): Task name of traini mode (default: train).
+            evaluate_task_name (str): Task name of evaluate mode (default: evaluate).
+            submit_model_task_name (str): Task name of submit_model mode (default: submit_model).
             from_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
                 This converter will be called when model is sent from nvflare controller side to executor side.
             to_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
                 This converter will be called when model is sent from nvflare executor side to controller side.
+            launch_once (bool): Whether to launch just once for the whole job (default: True). True means only the first task
+                will trigger `launcher.launch_task`. Which is efficient when the data setup is taking a lot of time.
         """
         super().__init__()
-        self._launcher_id = launcher_id
-        self.launch_timeout = launch_timeout
         self.launcher: Optional[Launcher] = None
+        self._launcher_id = launcher_id
+        self._launch_timeout = launch_timeout
+        self._wait_timeout = wait_timeout
+        self._launch_once = launch_once
+        self._launched = False
         self._launcher_finish = Event()
         self._launcher_finish_status = None
+        self._launcher_finish_time = None
+        self._last_result_transfer_timeout = last_result_transfer_timeout
+        self._job_end = False
+
         self._thread_pool_executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix=self.__class__.__name__)
 
         self.pipe_handler: Optional[PipeHandler] = None
+        self._pipe: Optional[Pipe] = None
         self._pipe_id = pipe_id
-        self._pipe_name = pipe_name
-        self._topic = "data"
         self._read_interval = read_interval
         self._heartbeat_interval = heartbeat_interval
         self._heartbeat_timeout = heartbeat_timeout
-        self._task_wait_time = task_wait_time
+        self._result_timeout = result_timeout
         self._result_poll_interval = result_poll_interval
-        self._task_read_wait_time = task_read_wait_time
+        self._peer_read_timeout = peer_read_timeout
 
         # flags to indicate whether the launcher side will send back trained model and/or metrics
-        self._training = training
-        self._global_evaluation = global_evaluation
-        if self._training is False and self._global_evaluation is False:
-            raise RuntimeError("training and global_evaluation can't be both False.")
+        self._train_with_evaluation = train_with_evaluation
+        self._train_task_name = train_task_name
+        self._evaluate_task_name = evaluate_task_name
+        self._submit_model_task_name = submit_model_task_name
         self._result_fl_model = None
         self._result_metrics = None
 
@@ -110,68 +125,109 @@ class LauncherExecutor(Executor):
     def initialize(self, fl_ctx: FLContext) -> None:
         self._init_launcher(fl_ctx)
         self._init_converter(fl_ctx)
-
-        # gets pipe
-        engine = fl_ctx.get_engine()
-        pipe: Pipe = engine.get_component(self._pipe_id)
-        check_object_type(self._pipe_id, pipe, Pipe)
-
-        # init pipe
-        pipe.open(self._pipe_name)
-        self.pipe_handler = PipeHandler(
-            pipe,
-            read_interval=self._read_interval,
-            heartbeat_interval=self._heartbeat_interval,
-            heartbeat_timeout=self._heartbeat_timeout,
-        )
-        self.pipe_handler.start()
-        self._update_config_exchange(fl_ctx)
+        self._init_pipe(fl_ctx)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext) -> None:
         if event_type == EventType.START_RUN:
             self.initialize(fl_ctx)
         elif event_type == EventType.END_RUN:
-            if self.launcher:
-                self.launcher.finalize(fl_ctx)
-            self.log_info(fl_ctx, "END_RUN received - telling external to stop")
+            if self.launcher is None:
+                raise RuntimeError("Launcher is None.")
+            self._job_end = True
+            self.launcher.finalize(fl_ctx)
+            self.log_info(fl_ctx, "END_RUN event received - telling external to stop")
             if self.pipe_handler is not None:
-                self.pipe_handler.notify_end("END_RUN received")
+                self.pipe_handler.notify_end("END_RUN event received")
                 self.pipe_handler.stop(close_pipe=True)
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        future = self._launch_in_new_thread(task_name, shareable, fl_ctx, abort_signal)
+        self.log_info(fl_ctx, f"execute for task ({task_name})")
+        supported_tasks = [self._train_task_name, self._evaluate_task_name, self._submit_model_task_name]
+        if task_name not in supported_tasks:
+            self.log_error(fl_ctx, f"Task '{task_name}' is not in supported tasks: {supported_tasks}")
+            return make_reply(ReturnCode.BAD_TASK_DATA)
 
-        try:
-            launch_success = future.result(timeout=self.launch_timeout)
-        except TimeoutError:
-            self.log_error(fl_ctx, f"launch task: {task_name} exceeds {self.launch_timeout} seconds")
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-
-        if not launch_success:
-            self.log_error(fl_ctx, f"launch task: {task_name} failed")
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-
-        future = self._wait_in_new_thread(task_name, fl_ctx, self._task_wait_time)
-        result = self._exchange(task_name, shareable, fl_ctx, abort_signal)
-        try:
-            completion_status = future.result(timeout=self._task_wait_time)
-            if completion_status != LauncherCompleteStatus.SUCCESS:
-                self.log_error(fl_ctx, "launcher execution failed")
+        current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
+        total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS, None)
+        if task_name == self._train_task_name:
+            if current_round is None:
+                self.log_error(fl_ctx, "missing current round")
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-        except TimeoutError:
-            self.log_error(fl_ctx, f"wait task: {task_name} exceeds {self._task_wait_time} seconds")
+
+            if total_rounds is None:
+                self.log_error(fl_ctx, "missing total number of rounds")
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+
+        # if not launched yet
+        if not self._launch_once or not self._launched:
+            job_name = fl_ctx.get_job_id()
+            self.prepare_config_for_launch(job_name, shareable, fl_ctx)
+            self._init_pipe_handler(job_name)
+            launch_success = self._launch(task_name, shareable, fl_ctx, abort_signal)
+            if not launch_success:
+                self.log_error(fl_ctx, f"launch task ({task_name}): failed")
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+            self._launched = True
+            self.log_info(fl_ctx, f"External process for task ({task_name}) is launched.")
+
+        if self.pipe_handler is None:
+            self.log_error(fl_ctx, "pipe_handler is None")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-        self._clear()
+
+        # pipe handler starts checking for heartbeats only after the 3rd party code has been launched
+        self.pipe_handler.start()
+
+        result = self._exchange(task_name, shareable, fl_ctx, abort_signal)
+        self._result_fl_model = None
+        self._result_metrics = None
+
+        if not self._launch_once or self._job_end:
+            req = Message.new_request(topic=Topic.END, data="END")
+            has_been_read = self.pipe_handler.send_to_peer(req, timeout=self._peer_read_timeout)
+            if self._peer_read_timeout and not has_been_read:
+                self.log_warning(
+                    fl_ctx,
+                    f"3rd party does not get END msg in {self._peer_read_timeout} secs!",
+                )
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+            launch_finish = self._wait_launch_finish(task_name, shareable, fl_ctx, abort_signal)
+            if not launch_finish:
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+            self._clear_state()
+            self.log_info(fl_ctx, f"Launched external process for task ({task_name}) is finished.")
 
         return result
+
+    def prepare_config_for_launch(self, task_name: str, shareable: Shareable, fl_ctx: FLContext):
+        """Prepares any configuration for the process to be launched."""
+        pass
+
+    def _init_pipe(self, fl_ctx: FLContext) -> None:
+        engine = fl_ctx.get_engine()
+        pipe: Pipe = engine.get_component(self._pipe_id)
+        check_object_type(self._pipe_id, pipe, Pipe)
+        self._pipe = pipe
+
+    def _init_pipe_handler(self, task_name: str) -> None:
+        if self._pipe is None:
+            raise RuntimeError("Pipe is None")
+        # init pipe handler
+        self._pipe.open(task_name)
+        self.pipe_handler = PipeHandler(
+            self._pipe,
+            read_interval=self._read_interval,
+            heartbeat_interval=self._heartbeat_interval,
+            heartbeat_timeout=self._heartbeat_timeout,
+        )
 
     def _init_launcher(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
         launcher: Launcher = engine.get_component(self._launcher_id)
-        if launcher is not None:
-            check_object_type(self._launcher_id, launcher, Launcher)
-            launcher.initialize(fl_ctx)
-            self.launcher = launcher
+        if launcher is None:
+            raise RuntimeError(f"Launcher can not be found using {self._launcher_id}")
+        check_object_type(self._launcher_id, launcher, Launcher)
+        launcher.initialize(fl_ctx)
+        self.launcher = launcher
 
     def _init_converter(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
@@ -185,65 +241,77 @@ class LauncherExecutor(Executor):
             check_object_type(self._to_nvflare_converter_id, to_nvflare_converter, ParamsConverter)
             self._to_nvflare_converter = to_nvflare_converter
 
-    def _update_config_exchange(self, fl_ctx: FLContext):
-        workspace = fl_ctx.get_engine().get_workspace()
-        app_dir = workspace.get_app_dir(fl_ctx.get_job_id())
-        config_file = os.path.join(app_dir, workspace.config_folder, CONFIG_EXCHANGE)
-        config = ConfigFactory.load_config(config_file)
-        if config is None:
-            raise RuntimeError(f"Load config file {config} failed.")
-
-        client_config = ClientConfig(config=config.to_dict())
-        self._update_config_exchange_dict(client_config.config)
-        client_config.to_json(config_file)
-
-    def _update_config_exchange_dict(self, config: dict):
-        config[ConfigKey.GLOBAL_EVAL] = self._global_evaluation
-        config[ConfigKey.TRAINING] = self._training
-
     def _launch(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> bool:
-        if self.launcher:
-            return self.launcher.launch_task(task_name, shareable, fl_ctx, abort_signal)
-        return True
-
-    def _launch_in_new_thread(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal):
-        future = self._thread_pool_executor.submit(self._launch, task_name, shareable, fl_ctx, abort_signal)
-        return future
-
-    def _stop_launcher(self, task_name: str, fl_ctx: FLContext) -> None:
+        future = self._thread_pool_executor.submit(self._launch_task, task_name, shareable, fl_ctx, abort_signal)
         try:
-            if self.launcher:
-                self.launcher.stop_task(task_name=task_name, fl_ctx=fl_ctx)
+            launch_success = future.result(timeout=self._launch_timeout)
+            return launch_success
+        except TimeoutError:
+            self.log_error(fl_ctx, f"launch task ({task_name}) failed: exceeds {self._launch_timeout} seconds")
+            return False
         except Exception as e:
-            self.log_exception(fl_ctx, f"launcher stop exception: {secure_format_exception(e)}")
+            self.log_error(fl_ctx, f"launch task ({task_name}) failed: {secure_format_exception(e)}")
+            return False
+
+    def _launch_task(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> bool:
+        if self.launcher is None:
+            raise RuntimeError("Launcher is None.")
+        return self.launcher.launch_task(task_name, shareable, fl_ctx, abort_signal)
+
+    def _wait_launch_finish(
+        self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal
+    ) -> bool:
+        future = self._thread_pool_executor.submit(self._wait_launcher, task_name, fl_ctx, self._wait_timeout)
+        try:
+            completion_status = future.result(timeout=self._wait_timeout)
+            if completion_status != LauncherCompleteStatus.SUCCESS:
+                self.log_error(fl_ctx, f"launcher execution for task ({task_name}) failed")
+                return False
+        except TimeoutError:
+            self.log_error(
+                fl_ctx, f"launcher execution for task ({task_name}) timeout: exceeds {self._wait_timeout} seconds"
+            )
+            return False
+        except Exception as e:
+            self.log_error(fl_ctx, f"launcher execution for task ({task_name}) failed: {secure_format_exception(e)}")
+            return False
+        return True
 
     def _wait_launcher(self, task_name: str, fl_ctx: FLContext, timeout: Optional[float]) -> LauncherCompleteStatus:
         return_status = LauncherCompleteStatus.FAILED
         try:
-            if self.launcher:
-                return_status = self.launcher.wait_task(task_name=task_name, fl_ctx=fl_ctx, timeout=timeout)
+            if self.launcher is None:
+                raise RuntimeError("Launcher is None.")
+            return_status = self.launcher.wait_task(task_name=task_name, fl_ctx=fl_ctx, timeout=timeout)
         except Exception as e:
             self.log_exception(fl_ctx, f"launcher wait exception: {secure_format_exception(e)}")
-            self._stop_launcher(task_name=task_name, fl_ctx=fl_ctx)
+        self._stop_launcher(task_name=task_name, fl_ctx=fl_ctx)
         self._launcher_finish.set()
         self._launcher_finish_status = return_status
+        self._launcher_finish_time = time.time()
         return return_status
 
-    def _wait_in_new_thread(self, task_name: str, fl_ctx: FLContext, timeout: Optional[float]):
-        future = self._thread_pool_executor.submit(self._wait_launcher, task_name, fl_ctx, timeout)
-        return future
+    def _stop_launcher(self, task_name: str, fl_ctx: FLContext) -> None:
+        try:
+            if self.launcher is None:
+                raise RuntimeError("Launcher is None.")
+            self.launcher.stop_task(task_name=task_name, fl_ctx=fl_ctx)
+        except Exception as e:
+            self.log_exception(fl_ctx, f"launcher stop exception: {secure_format_exception(e)}")
 
     def _exchange(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if self.pipe_handler is None:
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
         model = FLModelUtils.from_shareable(shareable, self._from_nvflare_converter, fl_ctx)
-        req = Message.new_request(topic=self._topic, data=model)
-        has_been_read = self.pipe_handler.send_to_peer(req, timeout=self._task_read_wait_time)
-        if self._task_read_wait_time and not has_been_read:
+        task_id = shareable.get_header(key=FLContextKey.TASK_ID)
+        req = Message.new_request(topic=task_name, data=ExchangeTask(task_name, task_id, meta={}, data=model))
+        has_been_read = self.pipe_handler.send_to_peer(req, timeout=self._peer_read_timeout)
+        if self._peer_read_timeout and not has_been_read:
             self.log_error(
-                fl_ctx, f"failed to read task '{task_name}' in {self._task_read_wait_time} secs - aborting task!"
+                fl_ctx,
+                f"3rd party does not get req of task '{task_name}' in {self._peer_read_timeout} secs - aborting task!",
             )
-            return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
+            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
         # wait for result
         start = time.time()
@@ -256,68 +324,92 @@ class LauncherExecutor(Executor):
 
             reply: Optional[Message] = self.pipe_handler.get_next()
             if reply is None:
-                if self._task_wait_time and time.time() - start > self._task_wait_time:
-                    self.log_error(fl_ctx, f"task '{task_name}' timeout after {self._task_wait_time} secs")
+                if self._result_timeout and time.time() - start > self._result_timeout:
+                    self.log_error(fl_ctx, f"task '{task_name}' timeout after {self._result_timeout} secs")
                     self.pipe_handler.notify_abort(task_name)
                     self._stop_launcher(task_name, fl_ctx)
-                    self._log_result(fl_ctx)
+                    check_result = self._check_exchange_exit(task_name)
+                    self.log_error(fl_ctx, check_result)
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
             elif reply.topic == Topic.ABORT:
                 self.log_error(fl_ctx, f"the other end ask to abort task '{task_name}'")
                 self._stop_launcher(task_name, fl_ctx)
-                self._log_result(fl_ctx)
+                check_result = self._check_exchange_exit(task_name)
+                self.log_error(fl_ctx, check_result)
                 return make_reply(ReturnCode.TASK_ABORTED)
             elif reply.topic in [Topic.END, Topic.PEER_GONE]:
-                self.log_error(fl_ctx, f"received {reply.topic} while waiting for result for {task_name}")
+                self.log_error(fl_ctx, f"received reply: '{reply}' while waiting for the result of {task_name}")
                 self._stop_launcher(task_name, fl_ctx)
-                self._log_result(fl_ctx)
-                return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
+                check_result = self._check_exchange_exit(task_name)
+                self.log_error(fl_ctx, check_result)
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
             elif reply.msg_type != Message.REPLY:
                 self.log_warning(
-                    fl_ctx, f"ignored msg '{reply.topic}.{reply.req_id}' when waiting for '{req.topic}.{req.msg_id}'"
+                    fl_ctx, f"ignored reply: '{reply}' (wrong message type) while waiting for the result of {task_name}"
                 )
             elif req.topic != reply.topic:
-                # ignore wrong task name
-                self.log_warning(fl_ctx, f"ignored '{reply.topic}' when waiting for '{req.topic}'")
+                # ignore wrong topic
+                self.log_warning(
+                    fl_ctx,
+                    f"ignored reply: '{reply}' (reply topic does not match req: '{req}') while waiting for the result of {task_name}",
+                )
             elif req.msg_id != reply.req_id:
-                self.log_warning(fl_ctx, f"ignored '{reply.req_id}' when waiting for '{req.msg_id}'")
+                self.log_warning(
+                    fl_ctx,
+                    f"ignored reply: '{reply}' (reply req_id does not match req msg_id: '{req}') while waiting for the result of {task_name}",
+                )
             else:
-                self.log_info(fl_ctx, f"got result for task '{task_name}'")
-                if reply.data.params is not None:
-                    self._result_fl_model = reply.data
-                if reply.data.metrics is not None:
-                    self._result_metrics = reply.data
+                self.log_info(fl_ctx, f"got result '{reply}' for task '{task_name}'")
+                if not isinstance(reply.data, ExchangeTask):
+                    self.log_error(fl_ctx, "reply data is not of type ExchangeTask.")
+                    return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+                if not isinstance(reply.data.data, FLModel):
+                    self.log_error(fl_ctx, "reply.data.data is not of type FLModel.")
+                    return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+                if reply.data.data.params is not None:
+                    self._result_fl_model = reply.data.data
+                if reply.data.data.metrics is not None:
+                    self._result_metrics = reply.data.data
 
-            if self._check_exchange_exit():
+            if self._check_exchange_exit(task_name=task_name) == "":
                 break
 
-            if self._launcher_finish.is_set():
-                self.log_error(
-                    fl_ctx,
-                    f"Launcher already exited before exchange ended. Exit status is: '{self._launcher_finish_status}'",
-                )
-                self._log_result(fl_ctx)
-                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+            if self._launcher_finish.is_set() and self._launcher_finish_time:
+                # LauncherExecutor need to wait additional time after the Launcher finishes
+                # because it will take some time to communicate the result
+                # (from external process sends and LauncherExecutor receives this last result)
+                # If we don't wait after the Launcher finishes, then there is possibility
+                # that the result is still in transmission, but we mark it as failed.
+                if time.time() - self._launcher_finish_time > self._last_result_transfer_timeout:
+                    self.log_error(
+                        fl_ctx,
+                        "Launcher already exited and LauncherExecutor does not receive the last result within "
+                        f"{self._last_result_transfer_timeout} seconds. Exit status is: '{self._launcher_finish_status}'",
+                    )
+                    check_result = self._check_exchange_exit(task_name)
+                    self.log_error(fl_ctx, check_result)
+                    return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
             time.sleep(self._result_poll_interval)
         result_fl_model = self._create_result_fl_model()
         return FLModelUtils.to_shareable(result_fl_model, self._to_nvflare_converter)
 
-    def _log_result(self, fl_ctx):
-        if self._training and self._result_fl_model is None:
-            self.log_error(fl_ctx, "missing result FLModel with training flag True.")
+    def _check_exchange_exit(self, task_name: str) -> str:
+        """Checks if exchange should be exited."""
+        if task_name == self._train_task_name:
+            if self._result_fl_model is None:
+                return f"missing result FLModel for train_task: {self._train_task_name}."
 
-        if self._global_evaluation and self._result_metrics is None:
-            self.log_error(fl_ctx, "missing result metrics with global_evaluation flag True.")
-
-    def _check_exchange_exit(self):
-        if self._training and self._result_fl_model is None:
-            return False
-
-        if self._global_evaluation and self._result_metrics is None:
-            return False
-
-        return True
+            if self._train_with_evaluation:
+                if self._result_fl_model.metrics is None and self._result_metrics is None:
+                    return f"missing result metrics for train_task: {self._train_task_name}."
+        elif task_name == self._evaluate_task_name:
+            if self._result_metrics is None:
+                return f"missing result metrics for evaluate_task: {self._evaluate_task_name}."
+        elif task_name == self._submit_model_task_name:
+            if self._result_fl_model is None:
+                return f"missing result FLModel for submit_model_task: {self._submit_model_task_name}."
+        return ""
 
     def _create_result_fl_model(self):
         if self._result_fl_model is not None:
@@ -329,8 +421,11 @@ class LauncherExecutor(Executor):
         else:
             raise RuntimeError("Missing result fl model and result metrics")
 
-    def _clear(self):
-        self._result_fl_model = None
-        self._result_metrics = None
+    def _clear_state(self):
         self._launcher_finish_status = None
+        self._launcher_finish_time = None
         self._launcher_finish.clear()
+        if self.pipe_handler is not None:
+            self.pipe_handler.stop(close_pipe=True)
+            self.pipe_handler = None
+        self._launched = False

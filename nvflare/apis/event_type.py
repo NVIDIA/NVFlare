@@ -59,8 +59,19 @@ class EventType(object):
 
     # event types for job scheduling - server side
     BEFORE_CHECK_CLIENT_RESOURCES = "_before_check_client_resources"
+    AFTER_CHECK_CLIENT_RESOURCES = "_after_check_client_resources"
+    DEPLOY_JOB_TO_SERVER = "_deploy_job_to_server"
+    DEPLOY_JOB_TO_CLIENT = "_deploy_job_to_client"
 
     # event types for job scheduling - client side
     BEFORE_CHECK_RESOURCE_MANAGER = "_before_check_resource_manager"
 
+    BEFORE_SEND_ADMIN_COMMAND = "_before_send_admin_command"
+
+    BEFORE_CLIENT_REGISTER = "_before_client_register"
+    AFTER_CLIENT_REGISTER = "_after_client_register"
+    CLIENT_REGISTERED = "_client_registered"
+    SYSTEM_BOOTSTRAP = "_system_bootstrap"
+
+    AUTHORIZE_COMMAND_CHECK = "_authorize_command_check"
     BEFORE_BUILD_COMPONENT = "_before_build_component"

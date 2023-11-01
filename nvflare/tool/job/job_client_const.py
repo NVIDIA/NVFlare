@@ -26,7 +26,10 @@ JOB_INFO_CONF = "info.conf"
 JOB_INFO_MD = "info.md"
 
 JOB_INFO_KEYS = [JOB_INFO_DESC_KEY, JOB_INFO_CONTROLLER_TYPE_KEY, JOB_INFO_CLIENT_TYPE_KEY]
-CONFIG_FILE_BASE_NAME_WO_EXTS = ["config_fed_client", "config_fed_server", "config_exchange", "meta"]
+CONFIG_FILE_BASE_NAME_WO_EXTS = ["config_fed_client", "config_fed_server", "meta"]
+
+APP_CONFIG_FILE_BASE_NAMES = ["config_fed_client", "config_fed_server"]
+JOB_META_BASE_NAME = "meta"
 
 CONFIG_FED_SERVER_CONF = "config_fed_server.conf"
 CONFIG_FED_CLIENT_CONF = "config_fed_client.conf"
@@ -38,3 +41,12 @@ JOB_CONFIG_COMP_NAME = "component"
 JOB_TEMPLATE_NAME = "name"
 
 CONFIG_CONF = "config.conf"
+
+DEFAULT_APP_NAME = "app"
+# for consistency, meta config have a dummy app name
+META_APP_NAME = "__meta__app__"
+APP_CONFIG_DIR = "config"
+
+APP_SCRIPT_KEY = "app_script"
+APP_CONFIG_KEY = "app_config"
+TEMPLATES_KEY = "templates"

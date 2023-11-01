@@ -90,13 +90,6 @@ class FileTransferModule(CommandModule, CommandUtil):
                     visible=False,
                 ),
                 CommandSpec(
-                    name=ftd.SERVER_CMD_DOWNLOAD_JOB_SINGLE_FILE,
-                    description="download a single file from a completed job in the job store",
-                    usage="download_job_single_file job_id file_path",
-                    handler_func=self.download_job_single_file,
-                    visible=False,
-                ),
-                CommandSpec(
                     name=ftd.SERVER_CMD_INFO,
                     description="show info",
                     usage="info",

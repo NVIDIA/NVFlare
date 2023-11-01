@@ -16,7 +16,7 @@ tests:
           "data": [
             {
               "type": "error",
-              "data": "ValueError: Multiple apps to be deployed to following sites ['site-1'] for job duplicate_clients"
+              "data": "Multiple apps to be deployed to following sites ['site-1'] for job duplicate_clients"
             }
           ]
       - "trigger":
@@ -37,7 +37,7 @@ tests:
           "data": [
             {
               "type": "error",
-              "data": "ValueError: Multiple apps to be deployed to following sites ['server'] for job duplicate_server"
+              "data": "Multiple apps to be deployed to following sites ['server'] for job duplicate_server"
             }
           ]
       - "trigger":
@@ -58,7 +58,7 @@ tests:
           "data": [
             {
               "type": "error",
-              "data": "ValueError: value for key site-1 in resource spec is expecting a dictionary"
+              "data": "value for key site-1 in resource spec is expecting a dictionary"
             }
           ]
       - "trigger":
@@ -79,7 +79,7 @@ tests:
           "data": [
             {
               "type": "error",
-              "data": "ValueError: Mandatory clients {'site-1'} are not in the deploy_map for job mandatory_not_met"
+              "data": "Mandatory clients {'site-1'} are not in the deploy_map for job mandatory_not_met"
             }
           ]
       - "trigger":
@@ -100,7 +100,7 @@ tests:
           "data": [
             {
               "type": "error",
-              "data": "ValueError: min_clients -1 must be positive for job min_clients_value_range"
+              "data": "min_clients -1 must be positive for job min_clients_value_range"
             }
           ]
       - "trigger":
@@ -121,7 +121,7 @@ tests:
           "data": [
             {
               "type": "error",
-              "data": "ValueError: App 'sag2' in deploy_map doesn't exist for job missing_app"
+              "data": "App 'sag2' in deploy_map doesn't exist for job missing_app"
             }
           ]
       - "trigger":
@@ -142,7 +142,7 @@ tests:
           "data": [
             {
               "type": "error",
-              "data": "ValueError: App 'sag2' will be deployed to client but client config is missing"
+              "data": "App 'sag2' will be deployed to client but client config is missing"
             }
           ]
       - "trigger":
@@ -163,7 +163,7 @@ tests:
           "data": [
             {
               "type": "error",
-              "data": "ValueError: App 'sag1' will be deployed to server but server config is missing"
+              "data": "App 'sag1' will be deployed to server but server config is missing"
             }
           ]
       - "trigger":
@@ -184,7 +184,7 @@ tests:
           "data": [
             {
               "type": "error",
-              "data": "ValueError: No site is specified in deploy_map for job no_deployment"
+              "data": "No site is specified in deploy_map for job no_deployment"
             }
           ]
       - "trigger":
@@ -205,7 +205,7 @@ tests:
           "data": [
             {
               "type": "error",
-              "data": "ValueError: min 4 clients required for job not_enough_clients, found 2."
+              "data": "min 4 clients required for job not_enough_clients, found 2."
             }
           ]
       - "trigger":
@@ -215,21 +215,27 @@ tests:
         "result":
           "type": "run_state"
           "data": {}
-  - test_name: "submit valid_app_as_job"
+  - test_name: "submit old_app"
     event_sequence:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job valid_app_as_job" ]
+        "actions": [ "submit_job old_app" ]
         "result":
-          "type": "job_submit_success"
+          "type": "admin_api_response"
+          "data": [
+            {
+              "type": "error",
+              "data": "meta.[json|conf|yml] not existing for job old_app, possible in legacy job format.  Please upgrade the job structure."
+            }
+          ]
       - "trigger":
-          "type": "run_state"
-          "data": { "run_finished": True }
-        "actions": [ "ensure_current_job_done" ]
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "mark_test_done" ]
         "result":
           "type": "run_state"
-          "data": { "run_finished": True }
+          "data": {}
   - test_name: "submit valid_job"
     event_sequence:
       - "trigger":

@@ -13,12 +13,11 @@
 # limitations under the License.
 
 import functools
-import os
 from inspect import signature
 
 from nvflare.app_common.abstract.fl_model import FLModel
 
-from .api import PROCESS_MODEL_REGISTRY
+from .api import _get_model_registry, is_train
 
 
 def _replace_func_args(func, kwargs, model: FLModel):
@@ -34,15 +33,11 @@ def train(
     def decorator(train_fn):
         @functools.wraps(train_fn)
         def wrapper(*args, **kwargs):
-            pid = os.getpid()
-            if pid not in PROCESS_MODEL_REGISTRY:
-                raise RuntimeError("needs to call init method first")
-            cache = PROCESS_MODEL_REGISTRY[pid]
-            if cache.cached_model is None:
-                cache.get_model()
+            model_registry = _get_model_registry()
+            input_model = model_registry.get_model()
 
             # Replace func arguments
-            _replace_func_args(train_fn, kwargs, cache.cached_model)
+            _replace_func_args(train_fn, kwargs, input_model)
             return_value = train_fn(**kwargs)
 
             if return_value is None:
@@ -50,12 +45,11 @@ def train(
             elif not isinstance(return_value, FLModel):
                 raise RuntimeError("return value needs to be an FLModel.")
 
-            if cache.metrics is not None:
-                return_value.metrics = cache.metrics
+            if model_registry.metrics is not None:
+                return_value.metrics = model_registry.metrics
 
-            cache.send(model=return_value)
-            cache.model_exchanger.finalize(close_pipe=False)
-            PROCESS_MODEL_REGISTRY.pop(pid)
+            model_registry.submit_model(model=return_value)
+            model_registry.clear()
 
             return return_value
 
@@ -74,20 +68,20 @@ def evaluate(
     def decorator(eval_fn):
         @functools.wraps(eval_fn)
         def wrapper(*args, **kwargs):
-            pid = os.getpid()
-            if pid not in PROCESS_MODEL_REGISTRY:
-                raise RuntimeError("needs to call init method first")
-            cache = PROCESS_MODEL_REGISTRY[pid]
-            if cache.cached_model is None:
-                cache.get_model()
+            model_registry = _get_model_registry()
+            input_model = model_registry.get_model()
 
-            _replace_func_args(eval_fn, kwargs, cache.cached_model)
+            _replace_func_args(eval_fn, kwargs, input_model)
             return_value = eval_fn(**kwargs)
 
             if return_value is None:
                 raise RuntimeError("return value is None!")
 
-            cache.metrics = return_value
+            if is_train():
+                model_registry.metrics = return_value
+            else:
+                model_registry.submit_model(model=FLModel(metrics=return_value))
+                model_registry.clear()
 
             return return_value
 

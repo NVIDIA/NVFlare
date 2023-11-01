@@ -1,0 +1,38 @@
+{
+    "format_version": 2,
+    "executors": [
+        {
+            "tasks": [
+                "train"
+            ],
+            "executor": {
+                "id": "Executor",
+                "name": "FedXGBHistogramExecutor",
+                "args": {
+                    "data_loader_id": "dataloader",
+                    "num_rounds": 100,
+                    "early_stopping_rounds": 2,
+                    "xgb_params": {
+                        "max_depth": 8,
+                        "eta": 0.1,
+                        "objective": "binary:logistic",
+                        "eval_metric": "auc",
+                        "tree_method": "hist",
+                        "nthread": 16
+                    }
+                }
+            }
+        }
+    ],
+    "task_result_filters": [],
+    "task_data_filters": [],
+    "components": [
+        {
+            "id": "dataloader",
+            "path": "data_loader.DataLoader",
+            "args": {
+                "data_split_filename": "/tmp/dataset/horizontal_xgb_data/data_site-2.json"
+            }
+        }
+    ]
+}
