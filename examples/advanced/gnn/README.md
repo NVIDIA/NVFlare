@@ -29,6 +29,11 @@ Install additional requirements:
 ```
 python3 -m pip install -r requirements.txt
 ```
+To support functions of PyTorch Geometric necessary for this example, we need extra dependencies. Please refer to [installation guide](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html) and install accordingly:
+```
+pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.1.0+cpu.html
+```
+
 #### Protein Classification
 The PPI dataset is directly available via torch_geometric library, we randomly split the dataset to 2 subsets, one for each client.
 First, we run the local training on each client, as well as the whole dataset.
