@@ -1,3 +1,5 @@
+nvflare
+torch
+tensorboard
 scikit_learn
-torch_geometric
-torch_scatter
+tqdm
