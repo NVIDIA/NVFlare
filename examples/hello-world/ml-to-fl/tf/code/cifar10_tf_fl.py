@@ -34,7 +34,8 @@ def main():
     flare.init()
 
     # (3) gets FLModel from NVFlare
-    for input_model in flare.receive_global_model():
+    while flare.is_running():
+        input_model = flare.receive()
         print(f"current_round={input_model.current_round}")
 
         # (optional) print system info
@@ -43,8 +44,7 @@ def main():
 
         # (4) loads model from NVFlare
         for k, v in input_model.params.items():
-            layer = model.get_layer(k)
-            layer.set_weights(v)
+            model.get_layer(k).set_weights(v)
 
         # (5) evaluate aggregated/received model
         _, test_global_acc = model.evaluate(test_images, test_labels, verbose=2)
@@ -61,10 +61,8 @@ def main():
         _, test_acc = model.evaluate(test_images, test_labels, verbose=2)
         print(f"Accuracy of the model on the 10000 test images: {test_acc * 100} %")
 
-        # layer weights from the keras model
-        layer_weights_dict = {layer.name: layer.get_weights() for layer in model.layers}
-        # (6) construct trained FL model
-        output_model = flare.FLModel(params=layer_weights_dict, metrics={"accuracy": test_global_acc})
+        # (6) construct trained FL model (A dict of {layer name: layer weights} from the keras model)
+        output_model = flare.FLModel(params={layer.name: layer.get_weights() for layer in model.layers}, metrics={"accuracy": test_global_acc})
         # (7) send model back to NVFlare
         flare.send(output_model)
 
