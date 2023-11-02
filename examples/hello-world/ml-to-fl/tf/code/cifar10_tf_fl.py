@@ -62,7 +62,9 @@ def main():
         print(f"Accuracy of the model on the 10000 test images: {test_acc * 100} %")
 
         # (6) construct trained FL model (A dict of {layer name: layer weights} from the keras model)
-        output_model = flare.FLModel(params={layer.name: layer.get_weights() for layer in model.layers}, metrics={"accuracy": test_global_acc})
+        output_model = flare.FLModel(
+            params={layer.name: layer.get_weights() for layer in model.layers}, metrics={"accuracy": test_global_acc}
+        )
         # (7) send model back to NVFlare
         flare.send(output_model)
 
