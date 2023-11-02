@@ -122,7 +122,13 @@ def split_data(data_path, out_dir, num_clients, site_name_prefix, seed, alpha):
 
     label_names = [" negative", " neutral", " positive"]
 
-    site_idx, class_sum = partition_data(train_labels, label_names, num_clients, alpha=alpha)
+    site_idx, class_sum = partition_data(
+        train_labels,
+        label_names,
+        num_clients,
+        alpha=alpha,
+        sum_file_name=os.path.join(out_dir, f"summary_alpha{alpha}.txt"),
+    )
     print(f"After split Dirichlet sampling with alpha={alpha}")
     pprint(class_sum)
 
@@ -152,7 +158,7 @@ if __name__ == "__main__":
         "--alpha",
         type=float,
         help="Alpha value to control the Dirichlet sampling strategy for creating a heterogeneous partition. "
-             "Smaller values of alpha cause higher heterogeneity.",
+        "Smaller values of alpha cause higher heterogeneity.",
         default=10.0,
     )
     args = parser.parse_args()
