@@ -1,7 +1,7 @@
 # Job Template Information Card
 
-## sag_pt
-    name = "sag_pt_ddp"
+## sag_nemo
+    name = "sag_nemo"
     description = "Scatter and Gather Workflow for NeMo" 
     class_name  =  "ScatterAndGather"
     controller_type = "server"
