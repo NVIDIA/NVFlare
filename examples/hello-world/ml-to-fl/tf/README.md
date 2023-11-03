@@ -30,7 +30,7 @@ To transform the existing code to FL training code, we made the following change
 2. Initialize NVFlare Client API: ```flare.init()```
 3. Receive aggregated/global FLModel from NVFlare side: ```input_model = flare.receive()```
 4. Load the received aggregated/global model weights into the model structure: ```model.get_layer(k).set_weights(v)```
-5. Evaluate on received aggregated/global model to get the metrics for model selection
+5. Evaluate on the model with aggregated/global weights loaded to get the metrics for model selection: via regular ```evaluate()``` function
 6. Construct the FLModel to be returned to the NVFlare side: ```output_model = flare.FLModel(params={layer.name: layer.get_weights() for layer in model.layers}, xxx)```
 7. Send the model back to NVFlare: ```flare.send(output_model)```
 
@@ -70,17 +70,7 @@ You can run it using
 python3 ./code/cifar10_tf_multi_gpu_original.py
 ```
 
-To transform the existing code to FL training code, we made the following changes:
-
-1. Import NVFlare Client API: ```import nvflare.client as flare```
-2. Initialize NVFlare Client API: ```flare.init()```
-3. Receive aggregated/global FLModel from NVFlare side: ```input_model = flare.receive()```
-4. Load the received aggregated/global model weights into the model structure: ```model.get_layer(k).set_weights(v)```
-5. Evaluate on received aggregated/global model to get the metrics for model selection
-6. Construct the FLModel to be returned to the NVFlare side: ```output_model = flare.FLModel(params={layer.name: layer.get_weights() for layer in model.layers}, xxx)```
-7. Send the model back to NVFlare: ```flare.send(output_model)```
-
-Notice that we need to get / load the model weights as a ``dict`` of arrays because we want to reuse existing NVFlare components.
+To transform the existing multi-gpu code to FL training code, we can apply the same changes as in [single GPU case](#transform-cifar10-tensorflow-training-code-to-fl-with-nvflare-client-api).
 
 The modified code can be found here: [./code/cifar10_tf_multi_gpu_fl.py](./code/cifar10_tf_multi_gpu_fl.py).
 

@@ -19,10 +19,23 @@ from nvflare.app_opt.tf.utils import flat_layer_weights_dict, unflat_layer_weigh
 
 
 class NumpyToKerasModelParamsConverter(ParamsConverter):
+    """This class converts a flattened numpy dict back into a dict of {layer_name: layer_weights}.
+
+    The result can be used by ```keras_model.get_layer(layer_name).set_weights(layer_weights)```
+    """
+
     def convert(self, params: Any) -> Any:
+        """Unflattens layer weights dict."""
         return unflat_layer_weights_dict(params)
 
 
 class KerasModelToNumpyParamsConverter(ParamsConverter):
+    """This class converts the dict of {layer_name: layer_weights} to a flattened numpy dict.
+
+    The layer_name is from a keras ```layer.name```
+    The layer_weights is from ```layer.get_weights()```
+    """
+
     def convert(self, params: Any) -> Any:
+        """Flattens layer weights dict."""
         return flat_layer_weights_dict(params)
