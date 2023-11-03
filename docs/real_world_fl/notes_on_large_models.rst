@@ -20,27 +20,6 @@ Job of 128GB Models
 We slightly modified the hello-numpy example to generate a model, which was a dictionary of 64 keys.  Each key held a 2GB numpy array.  The local training task was to add a small number to
 those numpy arrays.  The aggregator on the server side was not changed.  This job required at least two clients and ran 3 rounds to finish.
 
-Please note if your model contains leaf nodes that are larger than 4GB, the type of those nodes must be bytes.  In that case, the outgoing model will need a conversion similar to the following:
-
-.. code:: python
-
-        for k in np_data:
-            self.log_info(fl_ctx, f"converting {k=}")
-            tmp_file = io.BytesIO()
-            np.save(tmp_file, np_data[k])
-            np_data[k] = tmp_file.getvalue()
-            tmp_file.close()
-            self.log_info(fl_ctx, f"done converting {k=}")
-        outgoing_dxo = DXO(data_kind=incoming_dxo.data_kind, data=np_data, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1})
-
-Additionally, the receiving side needs to convert the bytes back to numpy array with codes similar to the following:
-
-.. code:: python
-
-        for k in np_data:
-            self.log_info(fl_ctx, f"converting and adding delta for {k=}")
-            np_data[k] = np.load(io.BytesIO(np_data[k]))
-
 
 Configuration
 *******************
