@@ -1,5 +1,18 @@
 # PyTorch Deep Learning to Federated Learning transition with NVFlare
 
+Please install the requirements first, it is suggested to install inside a virtual environment:
+
+```bash
+pip install -r requirements.txt
+```
+
+Please also configure the job templates folder:
+
+```bash
+nvflare config -jt ../../../../job_templates/
+nvflare job list_templates
+```
+
 We will demonstrate how to transform an existing DL code into an FL application step-by-step:
 
   1. [Show a baseline training script](#the-baseline)
@@ -11,12 +24,6 @@ If you have multi GPU please refer to the following examples:
 
   1. [How to modify a PyTorch DDP training script using DL2FL Client API](#transform-cifar10-pytorch--ddp-training-code-to-fl-using-client-api)
   2. [How to modify a PyTorch Lightning DDP training script using DL2FL Lightning Client API](#transform-cifar10-pytorch-lightning--ddp-training-code-to-fl-with-nvflare-client-lightning-integration-api)
-
-Please install the requirements first, it is suggested to install inside a virtual environment:
-
-```bash
-pip install -r requirements.txt
-```
 
 ## The baseline
 
@@ -79,12 +86,11 @@ After we modify our training script, we need to put it into a [job structure](ht
 
 Please refer to [JOB CLI tutorial](../../../tutorials/job_cli.ipynb) on how to generate a job easily from our existing job templates.
 
-We choose the [sag_pt job template](../../../../job_templates/sag_pt/) and run the following command to create the job:
+We choose the [sag_pt job template](../../../../job_templates/sag_pt) and run the following command to create the job:
 
 ```bash
-nvflare config -jt ../../../../job_templates/
-nvflare job list_templates
-nvflare job create -force -j ./jobs/client_api -w sag_pt -sd ./code/ -f config_fed_client.conf app_script=cifar10_fl.py
+nvflare job create -force -j ./jobs/client_api -w sag_pt -sd ./code/ \
+    -f config_fed_client.conf app_script=cifar10_fl.py
 ```
 
 Then we can run it using the NVFlare Simulator:
@@ -100,7 +106,7 @@ Congratulations! You have finished an FL training!
 
 The above case shows how you can change an existing DL code to FL.
 
-Usually, people have already put their codes into "train", "evaluate", and "test" methods so they can reuse them.
+Usually, people have already put their codes into "train", "evaluate", and "test" methods, so they can reuse them.
 In that case, the NVFlare DL2FL decorator is the way to go.
 
 To structure the code, we make the following changes to [./code/cifar10_original.py](./code/cifar10_original.py):
@@ -133,7 +139,7 @@ Optional: Change the data path to an absolute path and use ```./prepare_data.sh`
 The modified code can be found in [./code/cifar10_structured_fl.py](./code/cifar10_structured_fl.py)
 
 
-We choose the [sag_pt job template](../../../../job_templates/sag_pt/) and run the following command to create the job:
+We choose the [sag_pt job template](../../../../job_templates/sag_pt) and run the following command to create the job:
 
 ```bash
 nvflare job create -force -j ./jobs/decorator -w sag_pt -sd ./code/ -f config_fed_client.conf app_script=cifar10_structured_fl.py
@@ -177,7 +183,7 @@ nvflare job create -force -j ./jobs/lightning -w sag_pt -sd ./code/ \
     -f config_fed_server.conf key_metric=val_acc_epoch model_class_path=lit_net.LitNet
 ```
 
-Note that we pass the "key_metric"="val_acc_epoch" (this name originates from the code [here](./code/lit_net.py#L56))
+Note that we pass the "key_metric"="val_acc_epoch" (this name originates from the code [here](./code/lit_net.py#L58))
 which means the validation accuracy for that epoch.
 
 And we use "lit_net.LitNet" instead of "net.Net" for model class.
@@ -196,7 +202,7 @@ We follow the official [PyTorch documentation](https://pytorch.org/tutorials/int
 
 Note that this example requires at least 2 GPUs on your machine.
 
-Note that we wrap the evaluation logic into a method for better reusability.
+Note that we wrap the evaluation logic into a method for better usability.
 
 It can be run using the torch distributed run:
 
@@ -225,9 +231,9 @@ The modified code can be found in [./code/cifar10_ddp_fl.py](./code/cifar10_ddp_
 We can create the job using the following command:
 
 ```bash
-nvflare job create -force -j ./jobs/client_api_ddp -w sag_pt_ddp -sd ./code/ \
-    -f app_1/config_fed_client.conf app_script=cifar10_ddp_fl.py \
-    -f app_2/config_fed_client.conf app_script=cifar10_ddp_fl.py
+nvflare job create -force -j ./jobs/client_api_ddp -w sag_pt_deploy_map -sd ./code/ \
+    -f app_1/config_fed_client.conf script="python3 -m torch.distributed.run --nnodes\=1 --nproc_per_node\=2 --master_port\=7777 custom/cifar10_ddp_fl.py" \
+    -f app_2/config_fed_client.conf script="python3 -m torch.distributed.run --nnodes\=1 --nproc_per_node\=2 --master_port\=8888 custom/cifar10_ddp_fl.py"
 ```
 
 
@@ -270,7 +276,7 @@ nvflare job create -force -j ./jobs/lightning_ddp -w sag_pt -sd ./code/ \
     -f config_fed_server.conf key_metric=val_acc_epoch model_class_path=lit_net.LitNet
 ```
 
-Note that we pass the "key_metric"="val_acc_epoch" (this name originates from the code [here](./code/lit_net.py#L56))
+Note that we pass the "key_metric"="val_acc_epoch" (this name originates from the code [here](./code/lit_net.py#L58))
 which means the validation accuracy for that epoch.
 
 And we use "lit_net.LitNet" instead of "net.Net" for model class.
