@@ -24,16 +24,6 @@ exp_manager:
     name: null
   resume_if_exists: False
   resume_ignore_no_checkpoint: True
-  create_checkpoint_callback: False
-  checkpoint_callback_params:
-    monitor: validation_${model.data.validation_ds.metric.name}
-    save_top_k: 1
-    mode: max
-    save_nemo_on_train_end: False
-    filename: '${name}--{${exp_manager.checkpoint_callback_params.monitor}:.3f}-{step}-{consumed_samples}'
-    model_parallel_size: ${model.tensor_model_parallel_size}
-    always_save_nemo: True
-    save_best_model: False
 
 model:
   seed: 1234
