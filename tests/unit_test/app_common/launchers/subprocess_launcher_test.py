@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import shutil
+import tempfile
+
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
@@ -20,22 +23,30 @@ from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
 
 class TestSubprocessLauncher:
     def test_launch(self):
-        task_name = "__test_task"
-        launcher = SubprocessLauncher("echo 'test'")
-        dxo = DXO(DataKind.WEIGHTS, {})
+        tempdir = tempfile.mkdtemp()
         fl_ctx = FLContext()
+        launcher = SubprocessLauncher("echo 'test'")
+        launcher._app_dir = tempdir
+
         signal = Signal()
+        task_name = "__test_task"
+        dxo = DXO(DataKind.WEIGHTS, {})
         status = launcher.launch_task(task_name, dxo.to_shareable(), fl_ctx, signal)
         assert status is True
+        shutil.rmtree(tempdir)
 
     def test_stop(self):
-        task_name = "__test_task"
-        launcher = SubprocessLauncher("python -c \"for i in range(1000000): print('cool')\"")
-        dxo = DXO(DataKind.WEIGHTS, {})
+        tempdir = tempfile.mkdtemp()
         fl_ctx = FLContext()
+        launcher = SubprocessLauncher("python -c \"for i in range(1000000): print('cool')\"")
+        launcher._app_dir = tempdir
+
         signal = Signal()
+        task_name = "__test_task"
+        dxo = DXO(DataKind.WEIGHTS, {})
         status = launcher.launch_task(task_name, dxo.to_shareable(), fl_ctx, signal)
         assert status is True
         launcher.stop_task(task_name, fl_ctx)
 
         assert launcher._process is None
+        shutil.rmtree(tempdir)
