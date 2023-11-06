@@ -27,7 +27,7 @@ from .callbacks import RestoreState
 FL_META_KEY = "__fl_meta__"
 
 
-def patch(trainer: pl.Trainer, restore_optimizers: bool = True):
+def patch(trainer: pl.Trainer, restore_state: bool = True):
     fl_callback = FLCallback(rank=trainer.global_rank)
     callbacks = trainer.callbacks
     if isinstance(callbacks, list):
@@ -37,7 +37,7 @@ def patch(trainer: pl.Trainer, restore_optimizers: bool = True):
     else:
         callbacks = [fl_callback]
 
-    if restore_optimizers:
+    if restore_state:
         callbacks.append(RestoreState())
 
     trainer.callbacks = callbacks

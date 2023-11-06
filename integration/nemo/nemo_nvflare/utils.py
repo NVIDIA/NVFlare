@@ -69,3 +69,20 @@ def compute_model_diff(model, global_weights):
         raise ValueError("No weight differences computed!")
 
     return model_diff
+
+
+def convert_global_to_ckpt(global_model_filepath: str, ckpt_path: str):
+    """Helper function to convert global models saved by NVFlare to NeMo ckpt format"""
+
+    nvflare_ckpt = torch.load(global_model_filepath)
+    if "train_conf" in nvflare_ckpt:
+        print("Loaded NVFlare global checkpoint with train_conf", nvflare_ckpt["train_conf"])
+
+    assert (
+        "model" in nvflare_ckpt
+    ), f"Expected global model to contain a 'model' key but it only had {list(nvflare_ckpt.keys())}"
+    global_weights = nvflare_ckpt["model"]
+
+    torch.save({"state_dict": global_weights}, ckpt_path)
+
+    print(f"Saved NeMo ckpt with {len(global_weights)} entries to {ckpt_path}")
