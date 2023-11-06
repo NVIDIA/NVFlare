@@ -16,6 +16,8 @@ In our federated implementation, the LLM parameters stay fixed. Prompt encoder p
 We assume you followed the instructions [here](../../README.md#requirements) 
 to install the NeMo, NVFlare, and the NeMo-NVFlare package. 
 
+The example was tested with the [NeMo 23.02 container](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/nemo).
+
 ## Examples
 ### 1. Federated p-tuning using a 345 million parameter GPT model
 This example requires a GPU with at least 16GB memory to run three clients in parallel on the same GPU.
