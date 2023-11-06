@@ -265,7 +265,8 @@ class PTFileModelPersistor(ModelPersistor):
         model_inventory = {}
         location = os.path.join(self.log_dir, self.global_model_file_name)
         if os.path.exists(location):
-            model_inventory[self.global_model_file_name] = ModelDescriptor(
+            _, tail = os.path.split(self.global_model_file_name)
+            model_inventory[tail] = ModelDescriptor(
                 name=self.global_model_file_name,
                 location=location,
                 model_format=self.persistence_manager.get_persist_model_format(),
@@ -274,7 +275,8 @@ class PTFileModelPersistor(ModelPersistor):
 
         location = os.path.join(self.log_dir, self.best_global_model_file_name)
         if os.path.exists(location):
-            model_inventory[self.best_global_model_file_name] = ModelDescriptor(
+            _, tail = os.path.split(self.best_global_model_file_name)
+            model_inventory[tail] = ModelDescriptor(
                 name=self.best_global_model_file_name,
                 location=location,
                 model_format=self.persistence_manager.get_persist_model_format(),

@@ -2,6 +2,7 @@
     "format_version": 2,
     "min_clients": 2,
     "num_rounds": 2,
+    "MODEL_DIR": "$SERVER_MODEL_DIR",
     "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits",
     "alpha": 1.0,
     "server": {
@@ -26,7 +27,9 @@
                 "model": {
                     "path": "pt.networks.cifar10_nets.ModerateCNN",
                     "args": {}
-                }
+                },
+                "global_model_file_name": "{MODEL_DIR}/FL_global_model.pt",
+                "best_global_model_file_name": "{MODEL_DIR}/best_FL_global_model.pt"
             }
         },
         {
