@@ -8,4 +8,4 @@
     executor_type = "launcher_executor"
     contributor = "NVIDIA"
     init_publish_date = "2023-09-11"
-    last_updated_date = "2023-11-02" # yyyy-mm-dd
+    last_updated_date = "2023-11-07" # yyyy-mm-dd

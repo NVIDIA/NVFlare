@@ -29,7 +29,11 @@ class FilePipe(Pipe):
         """Implementation of communication through the file system.
 
         Args:
-            root_path: root path
+            mode (Mode): Mode of the endpoint. A pipe has two endpoints.
+                An endpoint can be either the one that initiates communication or the one listening.
+            root_path (str): root path for this file pipe, folders and files will be created under this root_path
+                for communication.
+            file_check_interval (float): how often should to check the file exists.
         """
         super().__init__(mode=mode)
         check_positive_number("file_check_interval", file_check_interval)
