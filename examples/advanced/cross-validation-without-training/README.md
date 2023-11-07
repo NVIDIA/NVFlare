@@ -12,13 +12,11 @@ This example uses the exact same NVFlare job definition of cifar10_fedavg, which
 
 2.  In the PTFileModelLocator, add the following lines to initialize and create the persistence_manager instance in the model_persister. This is a NVFlare core codes change.
 
-        if not self.model_persistor.persistence_manager:
-            self.model_persistor.load_model(fl_ctx)
-3. In order to locate the global models, create an config/environment.json file, which contains the following lines to indicate where the global model and best global model exist on the server.
+        self.model_persistor.load_model(fl_ctx)
+3. Change the config_fed_server.json to add the "global_model_file_name" and "best_global_model_file_name" with the absolute paths to the global model and best global model locations. Also add  "model_dir" to the configuration. 
 ```
-    {
-      "APP_CKPT_DIR": "$SERVER_MODEL_DIR"
-    }
+                "global_model_file_name": "{MODEL_DIR}/FL_global_model.pt",
+                "best_global_model_file_name": "{MODEL_DIR}/best_FL_global_model.pt"
 ```
 
 4. In order to allow the client to locate the local model and local best model for cross-validation, modify the CIFAR10ModelLearner to add a "model_dir" optional argument. When this "model_dir" is provided, CIFAR10ModelLearner will locate the local models in this folder.
@@ -30,4 +28,4 @@ This example uses the exact same NVFlare job definition of cifar10_fedavg, which
 
 The previous run server global models and client local models are stored in the "models" folder. 
 
-run the ./setup.sh to set up the proper config_fed_client.json and environment.json. Then you can run this job for cross-site validation without training workflow.
+run the ./setup.sh to set up the proper config_fed_client.json and proper config_fed_server.json. Then you can run this job for cross-site validation without training workflow.
