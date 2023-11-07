@@ -170,6 +170,7 @@ def merge_configs(
                                     if not isinstance(parent_config_list, list):
                                         raise ValueError(f"invalid key '{key}' for file {file}")
                                     index_config = parent_config_list[index]
+
                                     index_config.put(key, cli_value)
                                     key_value = index_config.get(key)
                                 else:

@@ -106,14 +106,13 @@ class TestConfiger:
         assert result_merged == expected_merged
 
     def test_split_key(self):
-        assert split_array_key('components[1].args.model.path') == ("components", 1, "args.model.path")
-        assert split_array_key('args.model.path') == (None, None, "args.model.path")
+        assert split_array_key("components[1].args.model.path") == ("components", 1, "args.model.path")
+        assert split_array_key("args.model.path") == (None, None, "args.model.path")
         try:
-            assert split_array_key('components1].args.model.path')
+            assert split_array_key("components1].args.model.path")
         except ValueError:
             assert True
         try:
-            assert split_array_key('components[1.args.model.path')
+            assert split_array_key("components[1.args.model.path")
         except ValueError:
             assert True
-
