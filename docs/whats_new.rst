@@ -5,255 +5,282 @@ What's New
 ##########
 
 **************************
-What's New in FLARE v2.3.0
+What's New in FLARE v2.4.0
 **************************
 
-Cloud Deployment Support
-========================
-The Dashboard UI and FL entities have expanded support for :ref:`cloud_deployment` for both Azure and AWS.
-Simple CLI commands now exist to create the infrastructure, deploy, and start the Dashboard UI,
-FL Server, and FL Client(s):
-
-.. code-block:: bash
-
-    nvflare dashboard --cloud azure | aws
-    <server-startup-kit>/start.sh --cloud azure | aws
-    <client-startup-kit>/start.sh --cloud azure | aws
-
-These start scripts can automatically create the needed resources, VMs, networking, security groups, and deploy FLARE
-to the newly created infrastructure and start the FLARE system.
-
-Python Version Support
+Usability Improvements
 ======================
-FLARE is now supported for Python 3.9 and Python 3.10, so FLARE 2.3.0 will support Python versions 3.8, 3.9, 3.10.
-Python 3.7 is no longer actively supported and tested.
 
-New FLARE API to provide better user experience 
-===============================================
-The new FLARE API is an improved version of the FLAdminAPI with better ease of use. FLARE API currently supports selected commands. See
-:ref:`migrating_to_flare_api` for details on migrating to the new FLARE API. For now, the FLAdminAPI should still remain functional.
-For details on the FLARE API, you can see this notebook: https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/flare_api.ipynb.
-
-Job Signing for Improved Security
-=================================
-Before a job is submitted to the server, the submitter's private key is used to sign each file's digest to ensure that custom code is signed.
-Each folder has one signature file, which maps file names to the signatures of all files inside that folder. The signer's certificate is also
-included for signature verification. The verification is performed at deployment time, rather than submission time, as the clients do not receive
-the job until the job is deployed.
-
-Client-Side Model Initialization
-================================
-Prior to FLARE 2.3.0, model initialization was performed on the server-side.
-The model was either initialized from a model file or custom model initiation code. Pre-defining a model file required extra steps of pre-generating
-and saving the model file and then sending it over to the server. Running custom model initialization code on server could be a security risk.
-
-FLARE 2.3.0 introuduces another way to initialize the model on the client side. The FL Server can select
-the initial model based on a user-chosen strategy. Here is an example using client-side model initialization: https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-pt.
-You can read more about this feature in :ref:`initialize_global_weights_workflow`.
-
-Traditional Machine Learning Examples
-=====================================
-Several new examples have been added to support using traditional machine learning algorithms in federated learning:
-   - `Linear model <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/sklearn-linear>`_ using scikit-learn library via
-     `iterative SGD training <https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.SGDClassifier.html>`_.
-     Linear and logistic regressions can be implemented following this iterative example by adopting different loss functions.
-   - `SVM <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/sklearn-svm>`_ using scikit-learn library. In this two-step process, the server performs an additional round of SVM over the collected supporting vectors from clients.
-   - `K-Means <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/sklearn-kmeans>`_ using scikit-learn library via
-     `mini-batch K-Means method <https://scikit-learn.org/stable/modules/generated/sklearn.cluster.MiniBatchKMeans.html>`_.
-     In this iterative process, each client performs mini-batch K-Means and the server syncs the updates for the global model.
-   - `Random Forest <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/random_forest>`_ using XGBoost library with
-     `random forest functionality <https://xgboost.readthedocs.io/en/stable/tutorials/rf.html>`_. In this two-step process, clients
-     construct sub-forests on their local data, and the server ensembles all collected sub-forests to produce the global random forest.
-
-Vertical Learning
-=================
-
-Federated Private Set Intersection (PSI)
-----------------------------------------
-In order to support vertical learning use cases such as secure user-id matching and feature
-over-lapping discovery, we have developed a multi-party private set intersection (PSI) operator
-that allows for the secure discovery of data intersections. Our approach leverages OpenMined's two-party
-`Private Set Intersection Cardinality protocol <https://github.com/OpenMined/PSI>`_, which is basedon ECDH and Bloom Filters, and we have
-made this protocol available for multi-party use. More information on our approach and how to use the
-PSI operator can be found in the `PSI Example <https://github.com/NVIDIA/NVFlare/blob/main/examples/advanced/psi/README.md>`_.
-
-It is worth noting that PSI is used as a pre-processing step in the split learning example, which can be found in this
-`notebook <https://github.com/NVIDIA/NVFlare/blob/main/examples/advanced/vertical_federated_learning/cifar10-splitnn/README.md>`_.
-
-Split Learning
---------------
-Split Learning can allow the training of deep neural networks on vertically separated data. With this release, we include an [example](https://github.com/NVIDIA/NVFlare/blob/main/examples/advanced/vertical_federated_learning/cifar10-splitnn/README.md)
-on how to run [split learning](https://arxiv.org/abs/1810.06060) using the CIFAR-10 dataset assuming one client holds the images and the other client holds the labels to compute losses and accuracy metrics.
-
-Activations and corresponding gradients are being exchanged between the clients using FLARE's new communication API.
-
-New Example for NLP
-===================
-The new `NLP-NER Example <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/nlp-ner/README.md>`_ illustrates both `BERT <https://github.com/google-research/bert>`_ and
-`GPT-2 <https://github.com/openai/gpt-2>`__ models from `Hugging Face <https://huggingface.co/>`_ (`BERT-base-uncased <https://huggingface.co/bert-base-uncased>`_, `GPT-2 <https://huggingface.co/gpt2>`__)
-on a Named Entity Recognition (NER) task using the `NCBI disease dataset <https://pubmed.ncbi.nlm.nih.gov/24393765/>`_.
-
-Research Areas
-==============
-
-FedSM
------
-The `FedSM example <https://github.com/NVIDIA/NVFlare/blob/main/research/fed-sm/README.md>`_ illustrates the personalized federated learning algorithm `FedSM <https://arxiv.org/abs/2203.10144>`_
-accepted to CVPR 2022. It bridges the different data distributions across clients via a SoftPull mechanism and utilizes
-a Super Model. A model selector is trained to predict the belongings of a particular sample to any of the clients'
-personalized models or global model. The training of this model also illustrates a challenging federated learning scenario
-with extreme label-imbalance, where each local training is only based on a single label towards the optimization for
-classification of a number of classes equivalent to the number of clients. In this case, the higher-order moments of the
-Adam optimizer are also averaged and synced together with model updates.
-
-Auto-FedRL
+Client API
 ----------
-The `Auto-FedRL example <https://github.com/NVIDIA/NVFlare/blob/main/research/auto-fed-rl/README.md>`_ implements the automated machine learning solution described in
-`Auto-FedRL: Federated Hyperparameter Optimization for Multi-institutional Medical Image Segmentation <https://arxiv.org/abs/2203.06338>`_ accepted to ECCV 2022.
-Conventional hyperparameter optimization algorithms are often impractical in real-world FL applications as they involve numerous training trials,
-which are often not affordable with limited computing budgets.
-Auto-FedRL proposes an efficient reinforcement learning (RL)-based federated hyperparameter optimization algorithm,
-in which an online RL agent can dynamically adjust the hyperparameters of each client based on the current training progress.
+We introduce the new Client API, which streamlines the conversion process from centralized to federated deep learning code.
+Using the Client API only requires a few lines of code changes, without the need for a complete restructuring of the code base.
+Furthermore, the Client API significantly reduces the need for users to delve into FLARE specific concepts, simplying the overall user experience.
+Here is a brief example of a common pattern when using the Client API for a client trainer:
 
-Quantifying Data Leakage in Federated Learning
-----------------------------------------------
-This research `example <https://github.com/NVIDIA/NVFlare/blob/main/research/quantifying-data-leakage/README.md>`__ contains the tools necessary to recreate the chest X-ray experiments described in
-`Do Gradient Inversion Attacks Make Federated Learning Unsafe? <https://arxiv.org/abs/2202.06924>`_, accepted to IEEE Transactions on Medical Imaging.
-It presents new ways to measure and visualize potential data leakage in FL using a new FLARE filter
-that can quantify the data leakage for each client and visualize it as a function of the FL training rounds.
-Quantifying the data leakage in FL can help determine the optimal tradeoffs between privacy-preserving techniques, such as differential privacy, and model accuracy based on quantifiable metrics.
+.. code-block:: python
 
-Communication Framework Upgrades
+    # import nvflare client API
+    import nvflare.client as flare
+
+    # initialize NVFlare client API
+    flare.init()
+
+    # run continously when launching once
+    while flare.is_running():
+
+      # receive FLModel from NVFlare
+      input_model = flare.receive()
+
+      if flare.is_train():
+        # loads model from NVFlare
+        net.load_state_dict(input_model.params)
+
+        # perform local training and evaluation on received model
+        ...
+
+        # construct output FLModel
+        output_model = flare.FLModel(
+            params=net.cpu().state_dict(),
+            metrics={"accuracy": accuracy},
+            meta={"NUM_STEPS_CURRENT_ROUND": steps},
+        )
+
+        # send model back to NVFlare
+        flare.send(output_model)
+
+      elif flare.is_evaluate():
+        ...
+      elif flare.is_submit_model():
+        ...
+
+For more in-depth information on the Client API, refer to the :ref:`client_api` documentation and `examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/ml-to-fl>`_.
+
+Job Templates and CLI
+---------------------
+The newly added Job Templates serve as pre-defined Job configurations designed to improve the process of creating and adjusting Job configurations.
+Using the new Job CLI, users can easily leverage existing Job Templates, modify them according to their needs, and generate new ones.
+Furthermore, the Job CLI also offers users a convenient method for submitting jobs directly from the command line, without the need for starting the Admin console.
+
+``nvflare job list_templates|create|submit|show_variables``
+
+Also explore the continously growing `Job Template directory <https://github.com/NVIDIA/NVFlare/blob/main/job_templates>`_ we have created for commonly used configurations.
+For more in-depth information on Job Templates and the Job CLI, refer to the :ref:`job_cli` documentation and `tutorials <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/job_cli.ipynb>`_.
+
+ModelLearner
+------------
+The ModelLearner is introduced for a simplifed user experience in cases requiring a Learner-pattern.
+Users exclusively interact with the FLModel object, which includes weights, optimizer, metrics, and metadata, while FLARE-specific concepts remain hidden to users.
+The ModelLearner defines standard learning functions, such as ``train()``, ``validate()``, and ``submit_model()`` that can be subclassed for easy adaptation.
+
+See the API definitions of `ModelLearner <https://github.com/NVIDIA/NVFlare/blob/main/nvflare/app_common/abstract/model_learner.py>`_ and
+`FLModel <https://github.com/NVIDIA/NVFlare/blob/main/nvflare/app_common/abstract/fl_model.py>`_ for more detail.
+
+Step-by-Step Example Series
+---------------------------
+To help users quickly get started with FLARE, we've introduced a comprehensive `step-by-step example series <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/step-by-step>`_ using Jupyter Notebooks.
+Unlike traditional examples, each step-by-step example utilizes only two datasets for consistency— CIFAR10 for image data and the HIGGS dataset for tabular data.
+Each example will build upon previous ones to showcase different features, workflows, or APIs, allowing users to gain a comprehensive understanding of FLARE functionalities.
+
+**CIFAR10 Examples:**
+
+- stats: federated statistics (histograms) of CIFAR10.
+- sag: scatter and gather (SAG) workflow with PyTorch with Client API.
+- sag_with_deploy_map: scatter and gather workflow with deploy_map configuration, for deployment of apps to different sites using the Client API.
+- cse: cross-site evaluation using the Client API.
+- sag_model_learner: scatter and gather workflow illustrating how to write client code using the ModelLearner.
+- sag_executor: scatter and gather workflow demonstrating show to write client-side executors.
+- cyclic: cyclic weight transfer workflow with server-side controller.
+- cyclic_ccwf: client-controlled cyclic weight transfer workflow with client-side controller.
+- swarm: swarm learning and client-side cross-site evaluation with Client API.
+- sag_with_mlflow (coming soon): MLFlow experiment tracking logs with the Client API in scatter & gather workflows.
+- sag_with_he (coming soon): scatter and gather workflow with Client API and Homomorphic Encryption (HE)
+
+**HIGGS Examples (coming soon):**
+
+- stats
+- linear and logisitc regression
+- kmeans
+- svm
+- xgboost
+
+The 3rd-Party Integration Pattern
+=================================
+In certain scenarios, users face challenges when attempting to moving the training logic to the FLARE client side due to pre-existing ML/DL training system infrastructure.
+In the 2.4.0 release, we introduce the Third-Party Integration Pattern, which allows the FLARE system and a third-party external training system to seamlessly exchange model parameters without requiring a tightly integrated system.
+
+See the documentation (coming soon) for more details.
+
+Streaming APIs
+==============
+To support large language models (LLMs), the 2.4.0 release introduces the streaming API to facilitate the transfer of objects exceeding the 2 GB size limit imposed by gRPC.
+The addition of a new streaming layer designed to handle large objects allows us to divide the large model into 1M chunks and stream them to the target.
+We provide built-in streamers for Objects, Bytes, Files, and Blobs, providing a versatile solution for efficient object streaming between different endpoints.
+
+See the :ref:`notes_on_large_models` Experiment documentation for more insights on working with large models in FLARE.
+
+Expanding Federated Learning Workflows
+======================================
+In the 2.4.0 release, we introduce :ref:`client_controlled_workflows` as an alternative to the existing server-side controlled workflows.
+
+Server-side controlled workflow
+-------------------------------
+
+- Server is trusted by all clients to handle the training process, job management as well as final model weights
+- Server controller manages the job lifecycle (eg. health of client sites, monitoring of job status)
+- Server controller manages the training process (eg. task assignment, model initialization, aggregation, and obtaining the distributed final model)
+
+Client-side controlled workflow
+-------------------------------
+
+- Clients do not trust the server to handle the training process. Instead task assignment, model initialization, aggregation, and final model distribution are handled by clients.
+- Server controller still manages the job lifecycle (eg. health of client sites, monitoring of job status)
+- **Secure Messaging:** Peer-to-Peer clients exchange messages using TLS encryption where sender uses the public key of the receiver from certificates received, and encrypts messages with AES256 key.
+  Only the sender and client can view the message. In the case that there is no direction connection between clients and the message is routed via the server, the server will be unable to decrypt the message.
+
+Three commonly used types of client-side controlled workflows are provided:
+
+- **cyclic weight transfer:** the model is passed from client to client.
+- **swarm learning:** randomly select clients as client-side controller and aggregrators, where then Scatter and Gather with FedAvg is performed.
+- **cross-site evaluation:** allow clients to evaluate other sites' models.
+
+See `swarm learning <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/swarm_learning>`_ and `client-controlled cyclic <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/step-by-step/cifar10/cyclic_ccwf>`_ for examples using these client-controlled workflows.
+
+MLFlow and WandB Experiment Tracking Support
+============================================
+We expand our experiment tracking support with MLFLow and Weights & Biases systems.
+The detailed documentation on these features can be found in :ref:`experiment_tracking`, and examples can be found at FL Experiment Tracking with
+`MLFlow <https://nvflare.readthedocs.io/en/main/examples/fl_experiment_tracking_mlflow.html#experiment-tracking-mlflow>`_ and
+`wandb <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/experiment-tracking/wandb>`_.
+
+Multi Configuration File Formats
 ================================
-There should be no visible changes in terms of the configuration and usage patterns for the end user, but the underlying communication
-layer has been improved to allow for greater flexibility and performance. These new communication features will be made generally available in next release.
+In the 2.4.0 release, we have added support for multiple configuration formats.
+Prior to this release, the sole configuration file format was JSON, which although flexible, was lacking in useful features such as comments, variable substitution, and inheritance.
 
-**********************************
-Migration to 2.3.0: Notes and Tips
-**********************************
-2.3.0 introduces a few API and behavior changes. This migration guide will help you to migrate from the previous NVFLARE version to the current version.
+We added two new configuration formats:
 
-1. FLARE API
+- `Pyhocon <https://github.com/chimpler/pyhocon>`_ - a JSON variant and HOCON (Human-Optimized Config Object Notation) parser for Python, with many desired features
+- `OmegaConf <https://omegaconf.readthedocs.io/en/2.3_branch/>`_ - a YAML based hierarchical configuration
+
+Users have the flexibility to use a single format or combine several formats, as exemplified by config_fed_client.conf and config_fed_server.json.
+If multiple configuration formats coexist, then their usage will be prioritized based on the following search order: .json -> .conf -> .yml
+
+POC Command Upgrade
+===================
+We have expanded the POC command to bring users one step closer to the real deployment process.
+The changes allow users to experiment with deployment options locally, and use the same project.yaml file for both experimentation and in production.
+
+The POC command modes have been changed from "local, non-secure" to a more refined "local, secure, production" to better reflect the production environment simulation.
+Lastly, the POC command is now more aligned with common syntax,
+``nvflare poc -<action>`` => ``nvflare poc <action>``
+
+See more details in the :ref:`poc_command` documentation or `tutorial <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/setup_poc.ipynb>`_.
+
+Security Enhancements
+=====================
+
+Unsafe component detection
+--------------------------
+Users now have the capability to define and load an unsafe component checker.
+An event will be fired before building the component, and the checker is used to validate it.
+The presence of an Unsafe Component will result in the interruption of downstream tasks.
+
+Event-based security plug-in
+----------------------------
+We have introduced an event-based security plug-in that adds contextual information related to the job.
+This enhancement facilitates site-specific authentication and enables job-level authorization validation.
+
+For more details, refer to the :ref:`unsafe_component_detection` and :ref:`site_specific_auth` documentation as well as the
+`custom authentication example <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/custom_authentication>`_ for more details about these capabilites.
+
+FL HUB: Hierarchical Unification Bridge
+=======================================
+The FL HUB is a new experimental feature designed to support multiple FLARE systems working together in a hierarchical manner.
+In Federated Computing, the number of edge devices is usually large, with often just a single server, which can cause performance issues.
+A solution to this problem is to use a hierachical FL system, where tiered FL systems connecttogether to form a tree-like structure.
+Each leaf of clients (edge devices) only connect to its server, where this server also serves as the client for the parent tier fl system.
+
+One potential use case is with global studies, where the client machine may be located across different regions.
+Rather than requiring every region's client machines connect to only a single FL server in that region, the FL HUB could enable a more performant tiered multi-server setup.
+
+Learn more about the FL Hub in the :ref:`hierarchy_unification_bridge` documenation and the `code <https://github.com/NVIDIA/NVFlare/tree/main/nvflare/app_common/hub>`_.
+
+Misc. Features
+==============
+- FLARE API Parity
+
+  - FLARE API now has the same set of APIs as the Admin Client.
+  - Allows users to use almost all of the commands from python API or notebooks.
+
+- Docker Support
+
+  - NVFLARE cloud CSP startup scripts now support deployment with docker containers in addition to VM deployment.
+  - provision command now supports detached docker run, in addition to the interactive docker run.
+
+- Flare Dashboard
+
+  - Prior to the 2.4.0, the Flare dashboard can only run within a docker container.
+  - In the 2.4.0, the Flare dashboard can now run locally without docker for development.
+
+- Run Model Evaluation Without Training
+
+  - In the 2.4.0 release, users can now run cross-validation without having to re-run the training.
+  - `Enable re-run cross-validation without training workflow (WIP) <https://github.com/NVIDIA/NVFlare/pull/2035>`_.
+
+- Communication Enhancements
+
+  - We added the application layer ping between Client Job process and Server parent process to replace the gRPC timeout.
+    Previously, we noticed if the gRPC timeout is set too long, the cloud provider (eg. Azure Cloud) will kill the connection after 4 minutes.
+    If the timeout setup is too short (such as 2 mins), the underlying gRPC will report too many pings.
+    The application level ping will avoid both issues to make sure the server/client is aware of the status of the processes.
+  - gRPC Asynchronous communication vs synchronous communication: we noticed that in an unstable network environment, async communication may result in job crashes,
+    while sync communication results in more stable communication. We have changed the default settings to sync communication from asynchronous communication.
+
+New Examples
 ============
-FLARE API is the FLAdminAPI redesigned for a better user experience in version 2.3. To understand the FLARE API usage, the relationship to
-the FLAdmin API, and migration steps, please refer to :ref:`migrating_to_flare_api`.
 
-2. Enhancements to the ``list_jobs`` command
-============================================
-The ``list_jobs`` command now has an option ``-r`` to display the results in reverse chronological order by submitted time. A ``-m`` option
-has been added to limit the maximum number of jobs returned.
+Federated Large Language Model (LLM) examples
+---------------------------------------------
 
-3. Redesign of communication layer
-==================================
-NVFLARE 2.3.0 comes with a new communication layer. Although the full-fledged features will not be generally available until the next release, the
-underlying communication engine is already replaced, and you might see changes in logging.
+We've added several examples to demonstrate how to work with federated LLM:
 
-As such, we have to change a few communication related APIs in :class:`ClientEngineExecutorSpec<nvflare.private.fed.client.client_engine_executor_spec.ClientEngineExecutorSpec>`:
+- `Parameter Efficient Fine Turning <https://github.com/NVIDIA/NVFlare/tree/main/integration/nemo/examples/peft>`_ utilizing NeMo's PEFT methods to adapt a LLM to a downstream task.
+- `Prompt-Tuning Example <https://github.com/NVIDIA/NVFlare/tree/main/integration/nemo/examples/prompt_learning>`_ for using FLARE with NeMo for prompt learning.
+- `Supervised Fine Tuning (SFT) <https://github.com/NVIDIA/NVFlare/tree/main/integration/nemo/examples/supervised_fine_tuning>`_ to fine-tune all parameters of a LLM on supervised data.
+
+Vertical Federated XGBoost
+--------------------------
+With the 2.0 release of `XGBoost <https://github.com/dmlc/xgboost>`_, we are able to demonstrate the `vertical xgboost example <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/vertical_xgboost>`_.
+We use Private Set Intersection and XGBoost's new federated learning support to perform classification on vertically split HIGGS data (where sites share overlapping data samples but contain different features).
+
+GNN Examples
+------------
+We added two examples using GraphSage to demonstrate how to train `Federated GNN on
+Graph Dataset using Inductive Learning <https://github.com/NVIDIA/NVFlare/tree/399411e30b9add9e8a257a7a25b7e93f6d18f9a3/examples/advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning>`_.
+
+**Protein Classification:** to classify protein roles based on their cellular functions from gene ontology.
+The dataset we are using is PPI (`protein-protein interaction <http://snap.stanford.edu/graphsage/#code>`_) graphs, where each graph represents a specific human tissue.
+Protein-protein interaction (PPI) dataset is commonly used in graph-based machine-learning tasks, especially in the field of bioinformatics.
+This dataset represents interactions between proteins as graphs, where nodes represent proteins and edges represent interactions between them.
+
+**Financial Transaction Classification:** to classify whether a given transaction is licit or illicit.
+For this financial application, we use the `Elliptic++ <https://github.com/git-disl/EllipticPlusPlus>`_ dataset which
+consists of 203k Bitcoin transactions and 822k wallet addresses to enable both the detection of fraudulent transactions and the detection of illicit
+addresses (actors) in the Bitcoin network by leveraging graph data. For more details, please refer to this `paper <https://arxiv.org/pdf/2306.06108.pdf>`_.
+
+Finanical Application Examples
+------------------------------
+To demonstrate how to perform Fraud Detection in financial applications, we introduced an `example <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/finance>`_ illustrating how to use XGBoost in various ways
+to train a model in a federated manner with a `finance dataset <https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud>`_.
+We illustrate both vertical and horizontal federated learning with XGBoost, along with histogram and tree-based approaches.
 
 
-FLARE 2.2.x
+**********************************
+Migration to 2.4.0: Notes and Tips
+**********************************
 
-.. code-block:: python
-
-    @abstractmethod
-    def send_aux_request(self, topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> Shareable:
-      """Send a request to Server via the aux channel.
-
-      Implementation: simply calls the ClientAuxRunner's send_aux_request method.
-
-      Args:
-          topic: topic of the request
-          request: request to be sent
-          timeout: number of secs to wait for replies. 0 means fire-and-forget.
-          fl_ctx: FL context
-
-      Returns: a reply Shareable
-
-      """
-      pass
-
-FLARE 2.3.0
-
-.. code-block:: python
-
-    @abstractmethod
-    def send_aux_request(
-      self,
-      targets: Union[None, str, List[str]],
-      topic: str,
-      request: Shareable,
-      timeout: float,
-      fl_ctx: FLContext,
-      optional=False,
-    ) -> dict:
-      """Send a request to Server via the aux channel.
-
-      Implementation: simply calls the ClientAuxRunner's send_aux_request method.
-
-      Args:
-          targets: aux messages targets. None or empty list means the server.
-          topic: topic of the request
-          request: request to be sent
-          timeout: number of secs to wait for replies. 0 means fire-and-forget.
-          fl_ctx: FL context
-          optional: whether the request is optional
-
-      Returns:
-          a dict of reply Shareable in the format of:
-              { site_name: reply_shareable }
-
-      """
-
-4. Controller behavior changes
-==============================
-Inside :class:`ControllerSpec<nvflare.apis.controller_spec.ControllerSpec>`, the usage of ``wait_time_after_min_received``
-has been changed to no longer wait if all responses are received.
-
-.. code-block:: python
-
-    class ControllerSpec(ABC):
-
-        def broadcast(
-          self,
-          task: Task,
-          fl_ctx: FLContext,
-          targets: Union[List[Client], List[str], None] = None,
-          min_responses: int = 0,
-          wait_time_after_min_received: int = 0,
-        ):
-
-Prior to release 2.3.0,
-
-Wait_time_after_min_received: this means after min_response received, we will wait wait_time_after_min_received.
-
-In Release 2.3.0: 
-
-Wait_time_after_min_received: If min_response received, but not all responses are received, we will wait wait_time_after_min_received.
-If all responses are received, there is no wait.
-
-5. Behavior changes to POC ``–stop``
-====================================
-In 2.2.x version, the POC stop will try to kill the process directly regardless the system state. 
-
-In 2.3.0 version, the stop command will try with the following:
-
-  #. Connect to the server
-  #. If server can be connected, then list active jobs
-  #. Abort all active jobs
-  #. Call system shutdown, and wait for system to gradually shutdown
-  #. Wait for system to shut down with max_timeout of 30 seconds
-  #. After that, we try kill the process (this was the entirety of the 2.2.x behavior)
-
-6. Scatter and Gather Controller API changes
-============================================
-A new argument has been added to :class:`ScatterAndGather<nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather>`. ``allow_empty_global_weights`` is
-an optional boolean to determine whether or not to allow empty global weights and defaults to False.
-
-Some pipelines can have empty global weights at the first round, such that clients start training from scratch without any global info.
-
-7. Updates to the Job Scheduler Configuration
-=============================================
-See :ref:`job_scheduler_configuration` for information on how the Job Scheduler can be configured with different arguments.
+Coming Soon
 
 **************************
 Previous Releases of FLARE
@@ -262,5 +289,6 @@ Previous Releases of FLARE
 .. toctree::
    :maxdepth: 1
 
+   release_notes/flare_230
    release_notes/flare_220
    release_notes/flare_210
