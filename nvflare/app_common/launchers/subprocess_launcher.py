@@ -26,7 +26,7 @@ from nvflare.app_common.abstract.launcher import Launcher, LauncherCompleteStatu
 
 
 def log_subprocess_output(process, log_file):
-    with open(log_file, "wb") as f:
+    with open(log_file, "ab") as f:
         for c in iter(process.stdout.readline, b""):
             sys.stdout.buffer.write(c)
             sys.stdout.flush()
