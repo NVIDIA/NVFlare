@@ -36,7 +36,8 @@ def main():
     sys_info = flare.system_info()
     print(f"system info is: {sys_info}")
 
-    for input_model in flare.receive_global_model():
+    while flare.is_running():
+        input_model = flare.receive()
         print(f"received weights is: {input_model.params}")
 
         input_numpy_array = input_model.params["numpy_key"]
