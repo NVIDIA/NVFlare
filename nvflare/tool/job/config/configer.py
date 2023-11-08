@@ -132,6 +132,17 @@ def split_array_key(key: str) -> Tuple:
         return parent, index, key
 
 
+def convert_to_number(value: str):
+    if not value:
+        return value
+    if value.isdigit():
+        return int(value)
+    elif value.replace(".", "").isdigit():
+        return float(value)
+    else:
+        return value
+
+
 def merge_configs(
     app_indices_configs: Dict[str, Dict[str, tuple]], app_cli_file_configs: Dict[str, Dict[str, Dict]]
 ) -> Dict[str, Dict[str, tuple]]:
@@ -158,6 +169,7 @@ def merge_configs(
                     cli_configs = cli_file_configs.get(basename, None)
                     if cli_configs:
                         for key, cli_value in cli_configs.items():
+                            cli_value = convert_to_number(cli_value)
                             if key not in key_indices:
                                 # not every client has app_config, app_script
                                 if key not in [APP_SCRIPT_KEY, APP_CONFIG_KEY]:
