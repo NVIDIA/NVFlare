@@ -35,7 +35,7 @@ pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -
 ```
 
 #### Job Template
-We reuse the job templates from [sag_gnn](../../../../job_templates/sag_gnn/), let's set the job template path with the following command.
+We reuse the job templates from [sag_gnn](../../../job_templates/sag_gnn), let's set the job template path with the following command.
 ```bash
 nvflare config -jt ../../../job_templates/
 ```
