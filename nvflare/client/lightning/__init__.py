@@ -27,5 +27,4 @@ if ok:
     from nvflare.client import get_total_rounds as get_total_rounds
     from nvflare.client import is_running as is_running
     from nvflare.client import receive as receive
-    from nvflare.client import receive_global_model as receive_global_model
     from nvflare.client import system_info as system_info
