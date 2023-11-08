@@ -149,17 +149,6 @@ def get_site_name() -> str:
     return sys_info.get(ConfigKey.SITE_NAME, "")
 
 
-def receive_global_model():
-    """Yields model received from NVFlare server."""
-    while True:
-        try:
-            input_model = receive()
-            yield input_model
-            clear()
-        except DataExchangeException:
-            break
-
-
 def is_running() -> bool:
     try:
         receive()
