@@ -1,8 +1,8 @@
 # Job Template Information Card
 
 ## sag_pt_gnn
-    name = "sag_pt_gnn_unsupervised"
-    description = "Scatter and Gather Workflow using pytorch for unsupervised gnn learning" 
+    name = "sag_gnn"
+    description = "Scatter and Gather Workflow for GNN learning" 
     class_name  =  "ScatterAndGather"
     controller_type = "server"
     executor_type = "launcher_executor"
