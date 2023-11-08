@@ -34,6 +34,17 @@ To support functions of PyTorch Geometric necessary for this example, we need ex
 pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.1.0+cpu.html
 ```
 
+#### Job Template
+We reuse the job templates from [sag_gnn](../../../../job_templates/sag_gnn/), let's set the job template path with the following command.
+```bash
+nvflare config -jt ../../../job_templates/
+```
+Then we can check the available templates with the following command.
+```bash
+nvflare job list_templates
+```
+We can see the "sag_gnn" template is available
+
 #### Protein Classification
 The PPI dataset is directly available via torch_geometric library, we randomly split the dataset to 2 subsets, one for each client.
 First, we run the local training on each client, as well as the whole dataset.
@@ -42,13 +53,17 @@ python3 code/graphsage_protein_local.py --client_id 0
 python3 code/graphsage_protein_local.py --client_id 1
 python3 code/graphsage_protein_local.py --client_id 2 
 ```
-Then, we create NVFlare job based on GNN template for unsupervised learning
+Then, we create NVFlare job based on GNN template.
 ```
-nvflare job create -force -j "./jobs/gnn_protein" -w "sag_pt_gnn_unsupervised" -sd "code" \
+nvflare job create -force -j "./jobs/gnn_protein" -w "sag_gnn" -sd "code" \
   -f app_1/config_fed_client.conf app_script="graphsage_protein_fl.py" app_config="--client_id 1 --epochs 10" \
   -f app_2/config_fed_client.conf app_script="graphsage_protein_fl.py" app_config="--client_id 2 --epochs 10" \
-  -f app_server/config_fed_server.conf num_rounds=7 key_metric="validation_f1"
+  -f app_server/config_fed_server.conf num_rounds=7 key_metric="validation_f1" model_class_path="torch_geometric.nn.GraphSAGE" components[0].args.model.args.in_channels=50  components[0].args.model.args.hidden_channels=64 components[0].args.model.args.num_layers=2 components[0].args.model.args.out_channels=64  
 ```
+For client configs, we set client_ids for each client, and the number of local epochs per round for each client's local training. 
+
+For server configs, we set the number of rounds for federated training, the key metric for model selection, and the model class path with model hyperparameters.
+
 With the produced job, we run the federated training on both clients via FedAvg using NVFlare Simulator.
 ```
 nvflare simulator -w /tmp/nvflare/gnn/protein_fl_workspace -n 2 -t 2 ./jobs/gnn_protein
@@ -65,12 +80,12 @@ python3 code/graphsage_finance_local.py --client_id 0
 python3 code/graphsage_finance_local.py --client_id 1
 python3 code/graphsage_finance_local.py --client_id 2 
 ```
-Similarly, we create NVFlare job based on GNN template for supervised learning
+Similarly, we create NVFlare job based on GNN template.
 ```
-nvflare job create -force -j "./jobs/gnn_finance" -w "sag_pt_gnn_supervised" -sd "code" \
+nvflare job create -force -j "./jobs/gnn_finance" -w "sag_gnn" -sd "code" \
   -f app_1/config_fed_client.conf app_script="graphsage_finance_fl.py" app_config="--client_id 1 --epochs 10" \
   -f app_2/config_fed_client.conf app_script="graphsage_finance_fl.py" app_config="--client_id 2 --epochs 10" \
-  -f app_server/config_fed_server.conf num_rounds=7 key_metric="validation_auc"
+  -f app_server/config_fed_server.conf num_rounds=7 key_metric="validation_auc" model_class_path="pyg_sage.SAGE" components[0].args.model.args.in_channels=165  components[0].args.model.args.hidden_channels=256 components[0].args.model.args.num_layers=3 components[0].args.model.args.num_classes=2  
 ```
 And with the produced job, we run the federated training on both clients via FedAvg using NVFlare Simulator.
 ```
