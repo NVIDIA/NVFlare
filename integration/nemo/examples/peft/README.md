@@ -16,8 +16,8 @@ to install the NeMo, NVFlare, and the NeMo-NVFlare package.
 The example was tested with the main branch of [NeMo](https://github.com/NVIDIA/NeMo).
 
 ## Examples
-### 1. Federated p-tuning using a 345 million parameter GPT model
-This example requires a GPU with at least 16GB memory to run three clients in parallel on the same GPU.
+### 1. Federated PEFT using a 345 million parameter GPT model
+This example requires a GPU with at least 24GB memory to run three clients in parallel on the same GPU.
 We use [JupyterLab](https://jupyterlab.readthedocs.io) for this example.
 To start JupyterLab, run
 ```
