@@ -7,5 +7,5 @@
     controller_type = "server"
     executor_type = "launcher_executor"
     contributor = "NVIDIA"
-    init_publish_date = "202-11-06"
+    init_publish_date = "2023-11-06"
     last_updated_date = "2023-11-06"
