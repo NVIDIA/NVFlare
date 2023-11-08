@@ -18,7 +18,7 @@ from typing import List
 
 import pytest
 
-from nvflare.tool.job.config.configer import build_config_file_indices, get_cli_config, merge_configs
+from nvflare.tool.job.config.configer import build_config_file_indices, get_cli_config, merge_configs, split_array_key
 from nvflare.tool.job.job_client_const import DEFAULT_APP_NAME, META_APP_NAME
 
 MERGE_CONFIG_TEST_CASES = [
@@ -104,3 +104,15 @@ class TestConfiger:
         expected_merged = _get_merged_configs(args)
 
         assert result_merged == expected_merged
+
+    def test_split_key(self):
+        assert split_array_key("components[1].args.model.path") == ("components", 1, "args.model.path")
+        assert split_array_key("args.model.path") == (None, None, "args.model.path")
+        try:
+            assert split_array_key("components1].args.model.path")
+        except ValueError:
+            assert True
+        try:
+            assert split_array_key("components[1.args.model.path")
+        except ValueError:
+            assert True
