@@ -10,7 +10,6 @@ This example uses the exact same NVFlare job definition of cifar10_fedavg, which
 
 1. removed the scatter_gather_ctl workflow from the config_fed_server.json
 
-        self.model_persistor.load_model(fl_ctx)
 2. Change the config_fed_server.json to add the "global_model_file_name" and "best_global_model_file_name" with the absolute paths to the global model and best global model locations. Also add  "model_dir" to the configuration. 
 ```
                 "global_model_file_name": "{MODEL_DIR}/FL_global_model.pt",
