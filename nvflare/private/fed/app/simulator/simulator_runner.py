@@ -353,7 +353,8 @@ class SimulatorRunner(FLComponent):
             run_status = mpm.run(
                 main_func=self.simulator_run_main, run_dir=self.workspace, shutdown_grace_time=3, cleanup_grace_time=6
             )
-        except Exception:
+        except Exception as e:
+            self.logger.error(f"Simulator main run with exception: {secure_format_exception(e)}")
             run_status = ProcessExitCode.EXCEPTION
 
         return_dict["run_status"] = run_status
