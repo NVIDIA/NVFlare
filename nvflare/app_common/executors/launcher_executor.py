@@ -44,8 +44,8 @@ class LauncherExecutor(Executor):
         result_timeout: Optional[float] = None,
         last_result_transfer_timeout: float = 5.0,
         peer_read_timeout: Optional[float] = None,
-        result_poll_interval: float = 0.5,
-        read_interval: float = 0.5,
+        result_poll_interval: float = 0.001,
+        read_interval: float = 0.001,
         heartbeat_interval: float = 5.0,
         heartbeat_timeout: float = 30.0,
         workers: int = 1,
@@ -74,7 +74,7 @@ class LauncherExecutor(Executor):
             heartbeat_timeout (float): Timeout for waiting for a heartbeat from the peer (default: 30.0).
             workers (int): Number of worker threads needed (default: 4).
             train_with_evaluation (bool): Whether to run training with global model evaluation (default: True).
-            train_task_name (str): Task name of traini mode (default: train).
+            train_task_name (str): Task name of train mode (default: train).
             evaluate_task_name (str): Task name of evaluate mode (default: evaluate).
             submit_model_task_name (str): Task name of submit_model mode (default: submit_model).
             from_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
@@ -102,6 +102,7 @@ class LauncherExecutor(Executor):
         self.pipe_handler: Optional[PipeHandler] = None
         self._pipe: Optional[Pipe] = None
         self._pipe_id = pipe_id
+        self._pipe_name = None
         self._read_interval = read_interval
         self._heartbeat_interval = heartbeat_interval
         self._heartbeat_timeout = heartbeat_timeout
@@ -160,9 +161,8 @@ class LauncherExecutor(Executor):
 
         # if not launched yet
         if not self._launch_once or not self._launched:
-            job_name = fl_ctx.get_job_id()
-            self.prepare_config_for_launch(job_name, shareable, fl_ctx)
-            self._init_pipe_handler(job_name)
+            self._init_pipe_handler()
+            self.prepare_config_for_launch(shareable, fl_ctx)
             launch_success = self._launch(task_name, shareable, fl_ctx, abort_signal)
             if not launch_success:
                 self.log_error(fl_ctx, f"launch task ({task_name}): failed")
@@ -176,6 +176,7 @@ class LauncherExecutor(Executor):
 
         # pipe handler starts checking for heartbeats only after the 3rd party code has been launched
         self.pipe_handler.start()
+        self.pipe_handler.wait_for_other_end(timeout=self._launch_timeout)
 
         result = self._exchange(task_name, shareable, fl_ctx, abort_signal)
         self._result_fl_model = None
@@ -198,7 +199,7 @@ class LauncherExecutor(Executor):
 
         return result
 
-    def prepare_config_for_launch(self, task_name: str, shareable: Shareable, fl_ctx: FLContext):
+    def prepare_config_for_launch(self, shareable: Shareable, fl_ctx: FLContext):
         """Prepares any configuration for the process to be launched."""
         pass
 
@@ -207,12 +208,13 @@ class LauncherExecutor(Executor):
         pipe: Pipe = engine.get_component(self._pipe_id)
         check_object_type(self._pipe_id, pipe, Pipe)
         self._pipe = pipe
+        self._pipe_name = fl_ctx.get_job_id()
 
-    def _init_pipe_handler(self, task_name: str) -> None:
+    def _init_pipe_handler(self) -> None:
         if self._pipe is None:
             raise RuntimeError("Pipe is None")
+        self._pipe.open(name=self._pipe_name)
         # init pipe handler
-        self._pipe.open(task_name)
         self.pipe_handler = PipeHandler(
             self._pipe,
             read_interval=self._read_interval,
@@ -304,6 +306,7 @@ class LauncherExecutor(Executor):
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
         model = FLModelUtils.from_shareable(shareable, self._from_nvflare_converter, fl_ctx)
         task_id = shareable.get_header(key=FLContextKey.TASK_ID)
+
         req = Message.new_request(topic=task_name, data=ExchangeTask(task_name, task_id, meta={}, data=model))
         has_been_read = self.pipe_handler.send_to_peer(req, timeout=self._peer_read_timeout)
         if self._peer_read_timeout and not has_been_read:
@@ -363,13 +366,14 @@ class LauncherExecutor(Executor):
                 if not isinstance(reply.data, ExchangeTask):
                     self.log_error(fl_ctx, "reply data is not of type ExchangeTask.")
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-                if not isinstance(reply.data.data, FLModel):
-                    self.log_error(fl_ctx, "reply.data.data is not of type FLModel.")
+                if isinstance(reply.data.data, FLModel):
+                    if reply.data.data.params is not None:
+                        self._result_fl_model = reply.data.data
+                    if reply.data.data.metrics is not None:
+                        self._result_metrics = reply.data.data
+                else:
+                    self.log_error(fl_ctx, "reply.data.data is not of type FLModel or dict.")
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-                if reply.data.data.params is not None:
-                    self._result_fl_model = reply.data.data
-                if reply.data.data.metrics is not None:
-                    self._result_metrics = reply.data.data
 
             if self._check_exchange_exit(task_name=task_name) == "":
                 break

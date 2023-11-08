@@ -30,7 +30,6 @@ from .api import is_running as is_running
 from .api import is_submit_model as is_submit_model
 from .api import is_train as is_train
 from .api import receive as receive
-from .api import receive_global_model as receive_global_model
 from .api import send as send
 from .api import system_info as system_info
 from .decorator import evaluate as evaluate

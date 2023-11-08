@@ -91,6 +91,7 @@ class PipeHandler(object):
         self.status_cb = None
         self.cb_args = None
         self.cb_kwargs = None
+        self._other_end_is_up = threading.Event()
 
     def set_status_cb(self, cb, *args, **kwargs):
         """Set CB for status handling. When the peer status is changed (ABORT, END, GONE), this CB is called.
@@ -135,6 +136,7 @@ class PipeHandler(object):
             close_pipe: whether to close the monitored pipe.
         """
         self.asked_to_stop = True
+        self._other_end_is_up.clear()
         pipe = self.pipe
         self.pipe = None
         if pipe and close_pipe:
@@ -143,6 +145,9 @@ class PipeHandler(object):
     @staticmethod
     def _make_event_message(topic: str, data):
         return Message.new_request(topic, data)
+
+    def wait_for_other_end(self, timeout: Optional[float] = None):
+        self._other_end_is_up.wait(timeout)
 
     def send_to_peer(self, msg: Message, timeout=None) -> bool:
         """Sends a message to peer.
@@ -193,6 +198,7 @@ class PipeHandler(object):
             msg = self._receive_from_pipe()
             if msg:
                 last_heartbeat_received_time = now
+                self._other_end_is_up.set()
                 if msg.topic != Topic.HEARTBEAT:
                     self._add_message(msg)
                 if msg.topic in [Topic.END, Topic.ABORT]:

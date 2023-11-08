@@ -61,7 +61,7 @@ class TaskRegistry:
     def get_task(self, timeout: Optional[float] = None) -> Optional[ExchangeTask]:
         try:
             if not self.cache_loaded:
-                self._receive()
+                self._receive(timeout)
             return self.received_task
         except:
             return None
