@@ -117,6 +117,21 @@ def _cast_type(key_index, cli_value):
     return new_value
 
 
+def split_array_key(key: str) -> Tuple:
+    tokens = key.split("[")
+    if len(tokens) == 1:
+        return None, None, key
+    else:
+        # len(tokens) > 1
+        parent = tokens[0]
+        tokens = tokens[1].split("]")
+        if len(tokens) == 1:
+            raise ValueError(f"invalid key '{key}'")
+        index = int(tokens[0])
+        key = tokens[1].strip(".")
+        return parent, index, key
+
+
 def merge_configs(
     app_indices_configs: Dict[str, Dict[str, tuple]], app_cli_file_configs: Dict[str, Dict[str, Dict]]
 ) -> Dict[str, Dict[str, tuple]]:
@@ -146,7 +161,27 @@ def merge_configs(
                             if key not in key_indices:
                                 # not every client has app_config, app_script
                                 if key not in [APP_SCRIPT_KEY, APP_CONFIG_KEY]:
-                                    raise ValueError(f"Invalid config key: '{key}' for file '{file}'")
+                                    if key.startswith(".") or key.endswith("."):
+                                        raise ValueError(f"invalid key {key} for file {file}")
+
+                                parent, index, key = split_array_key(key)
+                                if parent is not None and index is not None:
+                                    parent_config_list = config.get(parent)
+                                    if not isinstance(parent_config_list, list):
+                                        raise ValueError(f"invalid key '{key}' for file {file}")
+                                    index_config = parent_config_list[index]
+
+                                    index_config.put(key, cli_value)
+                                    key_value = index_config.get(key)
+                                else:
+                                    config.put(key, cli_value)
+                                    key_value = config.get(key)
+
+                                tokens = key.split(".")
+                                if len(tokens) > 1:
+                                    key = tokens[-1]
+                                key_index = KeyIndex(key, key_value)
+                                key_indices[key] = [key_index]
                             else:
                                 indices = key_indices.get(key)
                                 for key_index in indices:
