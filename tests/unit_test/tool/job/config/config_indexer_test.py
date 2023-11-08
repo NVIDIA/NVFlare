@@ -42,7 +42,6 @@ class TestConfigIndex:
         )
 
         config = CF.from_dict(config_dict)
-        root_key = KeyIndex(key="", value=config, parent_key=None)
         x_key = KeyIndex(key="x", value=config.get("x"), parent_key=None)
 
         x1_key = KeyIndex(key="x1", value=config.get("x").get("x1"), parent_key=x_key)
@@ -149,6 +148,7 @@ class TestConfigIndex:
                               "path": "df_statistics.DFStatistics",
                               "args": {
                                 "data_path": "data.csv"
+                                "other_path": null
                               }
                             },
                             {
@@ -164,8 +164,9 @@ class TestConfigIndex:
                     """
         conf = CF.parse_string(config_str)
         key_indices = build_dict_reverse_order_index(config=conf)
-        result = {}
         exclude_key_list = []
         result = filter_config_name_and_values(exclude_key_list, key_indices)
         key_index = result["data_path"]
         assert key_index.value == "data.csv"
+        key_index = result["other_path"]
+        assert key_index.value is None

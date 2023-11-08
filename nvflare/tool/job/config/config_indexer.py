@@ -143,7 +143,13 @@ def build_list_reverse_order_index(
 
 
 def is_primitive(value):
-    return isinstance(value, int) or isinstance(value, float) or isinstance(value, str) or isinstance(value, bool)
+    return (
+        isinstance(value, int)
+        or isinstance(value, float)
+        or isinstance(value, str)
+        or isinstance(value, bool)
+        or value is None
+    )
 
 
 def has_none_primitives_in_list(values: List):

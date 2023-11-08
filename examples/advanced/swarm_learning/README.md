@@ -6,12 +6,6 @@ Before starting please make sure you set up a [virtual environment](../../../REA
 python3 -m pip install -r requirements.txt
 ```
 
-Run the following from the `swarm_learning` directory so we can access the code from the [PyTorch CIFAR-10 examples](../cifar10/README.md):
-
-```
-export PYTHONPATH=${PWD}/../cifar10
-```
-
 ## Introduction to Swarm Learning
 
 As introduced in the [Nature article](https://www.nature.com/articles/s41586-021-03583-3), swarm learning is essentially a decentralized form of federated learning, wherein the responsibilities of aggregation and model training control are distributed to all peers rather than consolidated in a central server. The main goal is to support data sovereignty, security, and confidentiality in the case that a central authority is not to be trusted.
@@ -90,9 +84,10 @@ Run the following command to prepare the data splits:
 > **_NOTE:_** Change `num_sites` in `Cifar10DataSplitter` in the config if using more than 2 clients, and `alpha` to adjust the heterogeneity of the datasplits.
 
 ## Running Swarm Learning with Cross-Site Evaluation Job
-First we create the swarm learning with cross-site evaluation job using the predefined swarm_cse_pt template:
+
+Run the following command from the `swarm_learning` directory to create the swarm learning with cross-site evaluation job using the predefined swarm_cse_pt template. We also use the code from the [PyTorch CIFAR-10 examples](../cifar10/README.md) via the script-dir (`-sd`) option:
 ```
-nvflare job create -j ./jobs/cifar10_swarm -w swarm_cse_pt
+nvflare job create -j ./jobs/cifar10_swarm -w swarm_cse_pt -sd ../cifar10 -force
 ```
 
 Feel free to change job configuration parameters, and ensure that the components are set correctly as described above.
@@ -110,7 +105,9 @@ python -m json.tool /tmp/nvflare/cifar10_swarm/simulate_job/cross_site_val/cross
 
 Models and results can found in `/tmp/nvflare/cifar10_swarm/simulate_job/`, and we can confirm that the server in `/tmp/nvflare/cifar10_swarm/simulate_job/app_server` does not contain any sensitive training data.
 
-### Comparison to Centralized Training and Federated Averaging
+## Comparison to Centralized Training and Federated Averaging
+
+### Accuracy Performance
 
 Since swarm learning and federated averaging are algorithmically the same, we can prove this experimentally by comparing CIFAR-10 swarm learning and FedAvg jobs with the same data splits and hyperparameters.
 
@@ -120,3 +117,11 @@ Since swarm learning and federated averaging are algorithmically the same, we ca
 Here is the graph of the validation accuracies for the global models of swarm learning and FedAvg compared with the centralized baseline, and we can see the achieved performances are very similar:
 
 <img src="./figs/swarm_graph.png" alt="swarm learning, fedavg, centralized graph" width="500"/>
+
+### Runtime Performance
+
+In our setup, swarm learning and FedAvg perform the same amount of training, as seen in the graph above with the same number of steps taken to achieve the same accuracy.
+
+Since swarm learning peer-to-peer messaging actually passes through the server, the communication time is roughly double that of FedAvg. (Swarm learning: client <-> server <-> client vs. FedAvg: server <-> client). FLARE does support a mechanism of ad-hoc connections to allow clients to directly communicate with each other, and in the case that this is enabled in comm_config.json, communication time would be roughly the same.
+
+> **_NOTE:_** For more details about cell communication stats see the admin commands `list_pools` and `show_pool` to try yourself

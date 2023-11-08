@@ -484,7 +484,7 @@ class ServerRunner(FLComponent):
                 )
 
     def _handle_job_heartbeat(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
-        self.log_info(fl_ctx, "received client job_heartbeat aux request")
+        self.log_debug(fl_ctx, "received client job_heartbeat")
         return make_reply(ReturnCode.OK)
 
     def _handle_task_check(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:

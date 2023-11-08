@@ -16,11 +16,9 @@ import os
 import pytest
 
 from nvflare.fuel.f3 import drivers
-from nvflare.fuel.f3.drivers.aio_grpc_driver import AioGrpcDriver
 from nvflare.fuel.f3.drivers.aio_http_driver import AioHttpDriver
 from nvflare.fuel.f3.drivers.aio_tcp_driver import AioTcpDriver
 from nvflare.fuel.f3.drivers.driver_manager import DriverManager
-from nvflare.fuel.f3.drivers.grpc_driver import GrpcDriver
 from nvflare.fuel.f3.drivers.tcp_driver import TcpDriver
 
 
@@ -36,10 +34,6 @@ class TestDriverManager:
         [
             ("tcp", TcpDriver),
             ("stcp", TcpDriver),
-            ("grpc", AioGrpcDriver),
-            ("grpcs", AioGrpcDriver),
-            ("nagrpc", GrpcDriver),
-            ("nagrpcs", GrpcDriver),
             ("http", AioHttpDriver),
             ("https", AioHttpDriver),
             ("ws", AioHttpDriver),

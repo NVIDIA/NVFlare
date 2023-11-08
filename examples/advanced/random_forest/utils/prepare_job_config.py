@@ -110,7 +110,6 @@ def _get_lr_scale_from_split_json(data_split: dict):
 def _update_client_config(config: dict, args, lr_scale, site_name: str):
     data_split_name = _get_data_split_name(args, site_name)
     # update client config
-    config["executors"][0]["executor"]["args"]["data_split_filename"] = data_split_name
     config["executors"][0]["executor"]["args"]["num_client_bagging"] = args.site_num
     config["executors"][0]["executor"]["args"]["num_local_parallel_tree"] = args.num_local_parallel_tree
     config["executors"][0]["executor"]["args"]["local_subsample"] = args.local_subsample
@@ -118,6 +117,7 @@ def _update_client_config(config: dict, args, lr_scale, site_name: str):
     config["executors"][0]["executor"]["args"]["lr_mode"] = args.lr_mode
     config["executors"][0]["executor"]["args"]["nthread"] = args.nthread
     config["executors"][0]["executor"]["args"]["tree_method"] = args.tree_method
+    config["components"][0]["args"]["data_split_filename"] = data_split_name
 
 
 def _update_server_config(config: dict, args):

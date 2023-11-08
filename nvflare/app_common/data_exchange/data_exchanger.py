@@ -16,6 +16,8 @@ import logging
 import time
 from typing import Any, List, Optional, Tuple
 
+from nvflare.apis.utils.decomposers import flare_decomposers
+from nvflare.app_common.decomposers import common_decomposers as app_common_decomposers
 from nvflare.fuel.utils.pipe.pipe import Message, Pipe
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler, Topic
 
@@ -68,6 +70,8 @@ class DataExchanger:
         self.current_topic: Optional[str] = None
         self._supported_topics = supported_topics
 
+        flare_decomposers.register()
+        app_common_decomposers.register()
         pipe.open(pipe_name)
         self.pipe_handler = PipeHandler(
             pipe,
@@ -76,6 +80,7 @@ class DataExchanger:
             heartbeat_timeout=heartbeat_timeout,
         )
         self.pipe_handler.start()
+        self.pipe_handler.wait_for_other_end()
         self._get_poll_interval = get_poll_interval
 
     def submit_data(self, data: Any) -> None:

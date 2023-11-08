@@ -14,7 +14,7 @@
 
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.fl_context import FLContext
@@ -45,7 +45,7 @@ class ParamsConverter(ABC):
     """This class converts params from one format to the other."""
 
     @abstractmethod
-    def convert(self, params: Dict) -> Dict:
+    def convert(self, params: Any) -> Any:
         pass
 
 

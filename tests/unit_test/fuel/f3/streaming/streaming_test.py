@@ -32,15 +32,15 @@ class State:
 
 
 class TestStreamCell:
-    @pytest.fixture
+    @pytest.fixture(scope="module")
     def port(self):
         return get_open_ports(1)[0]
 
-    @pytest.fixture
+    @pytest.fixture(scope="module")
     def state(self):
         return State()
 
-    @pytest.fixture
+    @pytest.fixture(scope="module")
     def server_cell(self, port, state):
         listening_url = f"tcp://localhost:{port}"
         cell = CoreCell(RX_CELL, listening_url, secure=False, credentials={})
@@ -50,7 +50,7 @@ class TestStreamCell:
 
         return stream_cell
 
-    @pytest.fixture
+    @pytest.fixture(scope="module")
     def client_cell(self, port, state):
         connect_url = f"tcp://localhost:{port}"
         cell = CoreCell(TX_CELL, connect_url, secure=False, credentials={})
@@ -65,6 +65,26 @@ class TestStreamCell:
         buffer = make_buffer(size)
 
         send_future = client_cell.send_blob(TEST_CHANNEL, TEST_TOPIC, RX_CELL, Message(None, buffer))
+        bytes_sent = send_future.result()
+        assert bytes_sent == len(buffer)
+
+        if not state.done.wait(timeout=30):
+            raise Exception("Data not received after 30 seconds")
+
+        assert buffer == state.result
+
+    def test_streaming_buffer_list(self, server_cell, client_cell, state):
+
+        size = 64 * 1024 * 1024 + 123
+        buffer = make_buffer(size)
+        buf_list = []
+        interval = int(size / 4)
+        buf_list.append(buffer[0:interval])
+        buf_list.append(buffer[interval : 2 * interval])
+        buf_list.append(buffer[2 * interval : 3 * interval])
+        buf_list.append(buffer[3 * interval : size])
+
+        send_future = client_cell.send_blob(TEST_CHANNEL, TEST_TOPIC, RX_CELL, Message(None, buf_list))
         bytes_sent = send_future.result()
         assert bytes_sent == len(buffer)
 

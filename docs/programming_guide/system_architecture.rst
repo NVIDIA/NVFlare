@@ -15,7 +15,7 @@ Concepts and System Components
 
 Spec-based Programming for System Service Objects
 =================================================
-NVIDIA FLARE 2.1.0 needs additional services to implement the HA feature:
+NVIDIA FLARE needs additional services to implement the HA feature:
 storage, overseer, job definition management, etc. There are many ways to implement such services. For example,
 storage could be implemented with a file system, AWS S3, or some database technologies. Similarly, job definition
 management could be done with simple file reading or a sophisticated solution with a database or search engine.
@@ -34,13 +34,13 @@ See the example :ref:`project_yml` for how these components are configured in St
 
 Overseer
 --------
-The Overseer is a system component newly introduced in 2.1.0 that determines the hot FL server at any time for high availability.
+The Overseer is a system component that determines the hot FL server at any time for high availability.
 The name of the Overseer must be unique and in the format of fully qualified domain names.  During
 provisioning time, if the name is specified incorrectly, either being duplicate or containing incompatible
 characters, the provision command will fail with an error message. It is possible to use a unique hostname rather than
 FQDN, with the IP mapped to the hostname by having it added to ``/etc/hosts``.
 
-NVIDIA FLARE 2.1.0 comes with HTTPS-based overseer.  Users are welcome to change the name and port arguments of the overseer
+NVIDIA FLARE comes with an HTTPS-based overseer.  Users are welcome to change the name and port arguments of the overseer
 in project.yml to fit their deployment environment.
 
 The Overseer will receive a Startup kit, which includes the start.sh shell script, its certificate and private key,
@@ -66,7 +66,7 @@ their own Overseer Agent.
 NVIDIA FLARE provides two implementations:
 
     - :class:`HttpOverseerAgent<nvflare.ha.overseer_agent.HttpOverseerAgent>` to work with the Overseer server. For NVIDIA
-      FLARE 2.1.0, the provisioning tool will automatically map parameters specified in Overseer into the arguments for
+      FLARE, the provisioning tool will automatically map parameters specified in Overseer into the arguments for
       the HttpOverseerAgent.
     - :class:`DummyOverseerAgent<nvflare.ha.dummy_overseer_agent.DummyOverseerAgent>` is a dummy agent that simply
       returns the configured endpoint as the hot FL server. The dummy agent is used when a single FL server is configured

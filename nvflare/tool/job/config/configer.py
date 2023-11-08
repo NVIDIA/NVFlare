@@ -27,6 +27,7 @@ from nvflare.tool.job.job_client_const import (
     CONFIG_FED_CLIENT_CONF,
     DEFAULT_APP_NAME,
     JOB_META_BASE_NAME,
+    META_APP_NAME,
 )
 
 
@@ -116,6 +117,32 @@ def _cast_type(key_index, cli_value):
     return new_value
 
 
+def split_array_key(key: str) -> Tuple:
+    tokens = key.split("[")
+    if len(tokens) == 1:
+        return None, None, key
+    else:
+        # len(tokens) > 1
+        parent = tokens[0]
+        tokens = tokens[1].split("]")
+        if len(tokens) == 1:
+            raise ValueError(f"invalid key '{key}'")
+        index = int(tokens[0])
+        key = tokens[1].strip(".")
+        return parent, index, key
+
+
+def convert_to_number(value: str):
+    if not value:
+        return value
+    if value.isdigit():
+        return int(value)
+    elif value.replace(".", "").isdigit():
+        return float(value)
+    else:
+        return value
+
+
 def merge_configs(
     app_indices_configs: Dict[str, Dict[str, tuple]], app_cli_file_configs: Dict[str, Dict[str, Dict]]
 ) -> Dict[str, Dict[str, tuple]]:
@@ -131,7 +158,7 @@ def merge_configs(
     """
     app_merged = {}
     for app_name in app_indices_configs:
-        indices_configs = app_indices_configs.get(app_name)
+        indices_configs = app_indices_configs[app_name]
 
         cli_file_configs = app_cli_file_configs.get(app_name, None)
         if cli_file_configs:
@@ -142,10 +169,31 @@ def merge_configs(
                     cli_configs = cli_file_configs.get(basename, None)
                     if cli_configs:
                         for key, cli_value in cli_configs.items():
+                            cli_value = convert_to_number(cli_value)
                             if key not in key_indices:
                                 # not every client has app_config, app_script
                                 if key not in [APP_SCRIPT_KEY, APP_CONFIG_KEY]:
-                                    raise ValueError(f"Invalid config key: '{key}' for file '{file}'")
+                                    if key.startswith(".") or key.endswith("."):
+                                        raise ValueError(f"invalid key {key} for file {file}")
+
+                                parent, index, key = split_array_key(key)
+                                if parent is not None and index is not None:
+                                    parent_config_list = config.get(parent)
+                                    if not isinstance(parent_config_list, list):
+                                        raise ValueError(f"invalid key '{key}' for file {file}")
+                                    index_config = parent_config_list[index]
+
+                                    index_config.put(key, cli_value)
+                                    key_value = index_config.get(key)
+                                else:
+                                    config.put(key, cli_value)
+                                    key_value = config.get(key)
+
+                                tokens = key.split(".")
+                                if len(tokens) > 1:
+                                    key = tokens[-1]
+                                key_index = KeyIndex(key, key_value)
+                                key_indices[key] = [key_index]
                             else:
                                 indices = key_indices.get(key)
                                 for key_index in indices:
@@ -157,6 +205,11 @@ def merge_configs(
 
                 merged[basename] = (config, excluded_key_list, key_indices)
             app_merged[app_name] = merged
+        elif app_name == META_APP_NAME:
+            new_indices_configs = {}
+            for k, v in indices_configs.items():
+                new_indices_configs[os.path.basename(k)] = v
+            app_merged[app_name] = new_indices_configs
         else:
             app_merged[app_name] = indices_configs
 
@@ -209,6 +262,13 @@ def get_cli_config(cmd_args: Any, app_names: List[str]) -> Dict[str, Dict[str, D
     return app_cli_config_dict
 
 
+def _is_meta_file(filename: str) -> bool:
+    for postfix in ConfigFormat.extensions():
+        if filename == f"{JOB_META_BASE_NAME}{postfix}":
+            return True
+    return False
+
+
 def _parse_cli_config(cli_configs: List[str], app_names: List[str]) -> Dict[str, Dict[str, Dict[str, str]]]:
     """Extracts configurations from command-line arguments and return them in a dictionary.
 
@@ -224,7 +284,6 @@ def _parse_cli_config(cli_configs: List[str], app_names: List[str]) -> Dict[str,
     """
 
     app_cli_config_dict = {}
-    cli_config_dict = {}
     if cli_configs:
         for arr in cli_configs:
             config_file = os.path.basename(arr[0])
@@ -233,13 +292,10 @@ def _parse_cli_config(cli_configs: List[str], app_names: List[str]) -> Dict[str,
             config_dict = {}
             app_name = DEFAULT_APP_NAME if not app_name else app_name
 
-            if app_name not in app_names:
-                if app_name != DEFAULT_APP_NAME:
-                    raise ValueError(f"unknown application name '{app_name}'. Expected app names are {app_names} ")
-                else:
-                    raise ValueError(
-                        f"Please specify one of the app names {app_names}. For example '<app_name>/xxx.conf k1=v1 k2=v2...'"
-                    )
+            if app_name not in app_names and app_name != DEFAULT_APP_NAME and app_name != META_APP_NAME:
+                raise ValueError(
+                    f"Please specify one of the app names {app_names}. For example '<app_name>/xxx.conf k1=v1 k2=v2...'"
+                )
 
             for conf in config_data:
                 index = conf.find("=")
@@ -248,8 +304,10 @@ def _parse_cli_config(cli_configs: List[str], app_names: List[str]) -> Dict[str,
                 conf_key = conf[0:index]
                 conf_value = conf[index + 1 :]
                 config_dict[conf_key] = conf_value
-            cli_config_dict[config_file] = config_dict
-            app_cli_config_dict[app_name] = cli_config_dict
+
+            if app_name not in app_cli_config_dict:
+                app_cli_config_dict[app_name] = {}
+            app_cli_config_dict[app_name][config_file] = config_dict
 
     return app_cli_config_dict
 
@@ -265,7 +323,7 @@ def build_config_file_indices(job_folder: str, app_names: List[str]) -> Dict[str
     for ext in config_extensions:
         meta_file = os.path.join(job_folder, f"{meta_base}{ext}")
         if os.path.isfile(meta_file):
-            app_config_files[DEFAULT_APP_NAME] = [meta_file]
+            app_config_files[META_APP_NAME] = [meta_file]
             break
 
     for app_name in app_names:
@@ -288,10 +346,12 @@ def build_config_file_indices(job_folder: str, app_names: List[str]) -> Dict[str
     return app_config_file_index
 
 
-def get_app_name_from_path(path):
+def get_app_name_from_path(path: str):
     # path is in the format of as app1/xxx.conf
     # path app1/xxx.conf
     # xxx.conf
+    if _is_meta_file(os.path.basename(path)):
+        return META_APP_NAME
     app_name = os.path.dirname(path)
     index = app_name.find("/")
     if index > 0:
