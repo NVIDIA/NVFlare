@@ -10,18 +10,16 @@ This example uses the exact same NVFlare job definition of cifar10_fedavg, which
 
 1. removed the scatter_gather_ctl workflow from the config_fed_server.json
 
-2.  In the PTFileModelLocator, add the following lines to initialize and create the persistence_manager instance in the model_persister. This is a NVFlare core codes change.
-
         self.model_persistor.load_model(fl_ctx)
-3. Change the config_fed_server.json to add the "global_model_file_name" and "best_global_model_file_name" with the absolute paths to the global model and best global model locations. Also add  "model_dir" to the configuration. 
+2. Change the config_fed_server.json to add the "global_model_file_name" and "best_global_model_file_name" with the absolute paths to the global model and best global model locations. Also add  "model_dir" to the configuration. 
 ```
                 "global_model_file_name": "{MODEL_DIR}/FL_global_model.pt",
                 "best_global_model_file_name": "{MODEL_DIR}/best_FL_global_model.pt"
 ```
 
-4. In order to allow the client to locate the local model and local best model for cross-validation, modify the CIFAR10ModelLearner to add a "model_dir" optional argument. When this "model_dir" is provided, CIFAR10ModelLearner will locate the local models in this folder.
+3. In order to allow the client to locate the local model and local best model for cross-validation, modify the CIFAR10ModelLearner to add a "model_dir" optional argument. When this "model_dir" is provided, CIFAR10ModelLearner will locate the local models in this folder.
 
-5. Change the config_fed_client.json to include the "model_dir" configuration.
+4. Change the config_fed_client.json to include the "model_dir" configuration.
 
 
 ## Instructions
