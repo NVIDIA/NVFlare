@@ -1,3 +1,5 @@
+.. _client_api:
+
 ##########
 Client API
 ##########
