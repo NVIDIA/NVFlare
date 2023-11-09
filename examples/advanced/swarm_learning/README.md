@@ -85,9 +85,9 @@ Run the following command to prepare the data splits:
 
 ## Running Swarm Learning with Cross-Site Evaluation Job
 
-Run the following command from the `swarm_learning` directory to create the swarm learning with cross-site evaluation job using the predefined swarm_cse_pt template. We also use the code from the [PyTorch CIFAR-10 examples](../cifar10/README.md) via the script-dir (`-sd`) option:
+Run the following command from the `swarm_learning` directory to create the swarm learning with cross-site evaluation job using the predefined swarm_cse_pt_model_learner template. We also use the code from the [PyTorch CIFAR-10 examples](../cifar10/README.md) via the script-dir (`-sd`) option:
 ```
-nvflare job create -j ./jobs/cifar10_swarm -w swarm_cse_pt -sd ../cifar10 -force
+nvflare job create -j ./jobs/cifar10_swarm -w swarm_cse_pt_model_learner -sd ../cifar10 -force
 ```
 
 Feel free to change job configuration parameters, and ensure that the components are set correctly as described above.

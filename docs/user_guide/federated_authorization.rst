@@ -1,1 +1,0 @@
-See :ref:`federated_authorization`.
