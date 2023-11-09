@@ -147,7 +147,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         config_dict[ConfigKey.PIPE_CLASS] = self._pipe.__class__.__name__
         config_dict[ConfigKey.PIPE_ARGS] = self._get_external_pipe_args()
         config_dict[ConfigKey.TOTAL_ROUNDS] = total_rounds
-        config_dict[ConfigKey.SITE_NAME] = fl_ctx.get_identity_name()
+        config_dict[ConfigKey.IDENTITY] = fl_ctx.get_identity_name()
         config_dict[ConfigKey.JOB_ID] = fl_ctx.get_job_id()
         client_config.to_json(config_file)
 

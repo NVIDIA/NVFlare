@@ -21,9 +21,8 @@ if ok:
     from nvflare.app_common.abstract.fl_model import ParamsType as ParamsType
     from nvflare.app_opt.lightning import FLCallback as FLCallback
     from nvflare.app_opt.lightning import patch as patch
-    from nvflare.client import get_config as get_config
+    from nvflare.client import get_identity as get_identity
     from nvflare.client import get_job_id as get_job_id
-    from nvflare.client import get_site_name as get_site_name
     from nvflare.client import get_total_rounds as get_total_rounds
     from nvflare.client import is_running as is_running
     from nvflare.client import receive as receive

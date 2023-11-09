@@ -19,7 +19,7 @@ from pytorch_lightning.callbacks import Callback
 from torch import Tensor
 
 from nvflare.app_common.abstract.fl_model import FLModel, MetaKey
-from nvflare.client.api import _get_model_registry, clear, get_config, init, receive, send
+from nvflare.client.api import _get_model_registry, clear, init, receive, send
 from nvflare.client.config import ConfigKey
 
 from .callbacks import RestoreState
@@ -47,7 +47,8 @@ class FLCallback(Callback):
     def __init__(self, rank: int = 0):
         super(FLCallback, self).__init__()
         init(rank=str(rank))
-        self.train_with_evaluation = get_config().get(ConfigKey.TRAIN_WITH_EVAL, False)
+        registry = _get_model_registry()
+        self.train_with_evaluation = registry.config.config.get(ConfigKey.TRAIN_WITH_EVAL, False)
         self.current_round = None
         self.metrics = None
         self.total_local_epochs = 0

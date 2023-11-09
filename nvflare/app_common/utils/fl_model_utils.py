@@ -136,7 +136,7 @@ class FLModelUtils:
 
         if fl_ctx is not None:
             meta[MetaKey.JOB_ID] = fl_ctx.get_job_id()
-            meta[MetaKey.SITE_NAME] = fl_ctx.get_identity_name()
+            meta[MetaKey.IDENTITY] = fl_ctx.get_identity_name()
 
         result = FLModel(
             params_type=params_type,

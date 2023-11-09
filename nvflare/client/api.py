@@ -36,6 +36,9 @@ def init(config: Union[str, Dict] = f"config/{CONFIG_EXCHANGE}", rank: Optional[
         config (str or dict): configuration file or config dictionary.
         rank (str): local rank of the process.
             It is only useful when the training script has multiple worker processes. (for example multi GPU)
+
+    Example:
+        ``init(config="./config.json")``
     """
     global PROCESS_MODEL_REGISTRY  # Declare PROCESS_MODEL_REGISTRY as global
 
@@ -90,8 +93,14 @@ def _get_model_registry() -> ModelRegistry:
 def receive(timeout: Optional[float] = None) -> Optional[FLModel]:
     """Receives model from NVFlare side.
 
+    Args:
+        timeout (float, optional): timeout to receive an FLModel
+
     Returns:
         An FLModel received.
+
+    Example:
+        ``input_model = receive()``
     """
     model_registry = _get_model_registry()
     return model_registry.get_model(timeout)
@@ -101,8 +110,11 @@ def send(fl_model: FLModel, clear_registry: bool = True) -> None:
     """Sends the model to NVFlare side.
 
     Args:
-        fl_model (FLModel): Sends a FLModel object.
-        clear_registry (bool): To clear the registry or not.
+        fl_model (FLModel): FLModel to be sent.
+        clear_registry (bool): whether to clear the model registry after send
+
+    Example:
+        ``send(model=FLModel(...))``
     """
     model_registry = _get_model_registry()
     model_registry.submit_model(model=fl_model)
@@ -124,32 +136,50 @@ def system_info() -> Dict:
 
     Returns:
        A dict of system information.
+
+    Example:
+        ``sys_info = system_info()``
     """
     model_registry = _get_model_registry()
     return model_registry.get_sys_info()
 
 
-def get_config() -> Dict:
-    model_registry = _get_model_registry()
-    return model_registry.config.config
-
-
 def get_job_id() -> str:
+    """Gets the NVFlare job id.
+
+    Returns:
+        The id of the job.
+    """
     sys_info = system_info()
     return sys_info.get(ConfigKey.JOB_ID, "")
 
 
 def get_total_rounds() -> int:
+    """Gets the total_rounds of the job.
+
+    Returns:
+        The total_rounds of the job.
+    """
     sys_info = system_info()
     return sys_info.get(ConfigKey.TOTAL_ROUNDS, 0)
 
 
-def get_site_name() -> str:
+def get_identity() -> str:
+    """Gets the identity of the site that this script is running on from NVFlare.
+
+    Returns:
+        The identity of the site that this script is running on.
+    """
     sys_info = system_info()
-    return sys_info.get(ConfigKey.SITE_NAME, "")
+    return sys_info.get(ConfigKey.IDENTITY, "")
 
 
 def is_running() -> bool:
+    """Checks if NVFlare job is running.
+
+    Returns:
+        If NVFlare job is running.
+    """
     try:
         receive()
         return True
@@ -158,6 +188,11 @@ def is_running() -> bool:
 
 
 def is_train() -> bool:
+    """Checks if the task received from NVFlare is a training task.
+
+    Returns:
+        If the task is a training task.
+    """
     model_registry = _get_model_registry()
     if model_registry.rank != "0":
         raise RuntimeError("only rank 0 can call is_train!")
@@ -165,6 +200,11 @@ def is_train() -> bool:
 
 
 def is_evaluate() -> bool:
+    """Checks if the task received from NVFlare is an evaluation task.
+
+    Returns:
+        If the task is an evaluation task.
+    """
     model_registry = _get_model_registry()
     if model_registry.rank != "0":
         raise RuntimeError("only rank 0 can call is_evaluate!")
@@ -172,6 +212,11 @@ def is_evaluate() -> bool:
 
 
 def is_submit_model() -> bool:
+    """Checks if the task received from NVFlare is a submit_model task.
+
+    Returns:
+        If the task is a submit_model task.
+    """
     model_registry = _get_model_registry()
     if model_registry.rank != "0":
         raise RuntimeError("only rank 0 can call is_submit_model!")

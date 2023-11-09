@@ -38,20 +38,12 @@ class ConfigKey:
     PIPE_ARGS = "pipe_args"
     LAUNCH_ONCE = "launch_once"
     TOTAL_ROUNDS = "total_rounds"
-    SITE_NAME = "site_name"
+    IDENTITY = "identity"
     JOB_ID = "job_id"
 
 
 class ClientConfig:
-    """Config class used in nvflare.client module.
-
-    Example:
-        {
-            "exchange_path": "./",
-            "exchange_format": "pytorch",
-            "transfer_type": "FULL"
-        }
-    """
+    """Config class used in nvflare.client module."""
 
     def __init__(self, config: Optional[Dict] = None):
         if config is None:
