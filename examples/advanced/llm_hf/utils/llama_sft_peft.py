@@ -22,22 +22,22 @@ def main():
     parser.add_argument(
         "--model_path",
         type=str,
-        default="/model/llama-2-7b-hf",
+        default="./model/Llama-2-7b-hf",
     )
     parser.add_argument(
         "--data_path_train",
         type=str,
-        default="/dataset/dolly/training.jsonl",
+        default="./dataset/dolly/training.jsonl",
     )
     parser.add_argument(
         "--data_path_valid",
         type=str,
-        default="/dataset/dolly/validation.jsonl",
+        default="./dataset/dolly/validation.jsonl",
     )
     parser.add_argument(
         "--output_path",
         type=str,
-        default="llama2-7b-dolly-sft",
+        default="./workspace_centralized/llama2-7b-dolly-sft",
     )
     parser.add_argument("--mode", type=int, default=0)
     args = parser.parse_args()
@@ -103,7 +103,7 @@ def main():
         num_train_epochs=3,
         per_device_train_batch_size=batch_size,
         gradient_accumulation_steps=gra_accu_steps,
-        gradient_checkpointing=True,
+        gradient_checkpointing=False,
         optim="paged_adamw_32bit",
         logging_steps=logging_steps,
         save_strategy="epoch",

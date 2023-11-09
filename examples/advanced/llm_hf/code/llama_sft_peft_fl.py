@@ -10,7 +10,7 @@ from trl import SFTTrainer
 
 import nvflare.client as flare
 
-use_flash_attention = True
+use_flash_attention = False
 
 
 def format_instruction(example):
@@ -26,24 +26,24 @@ def main():
     parser.add_argument(
         "--model_path",
         type=str,
-        default="/model/llama-2-7b-hf",
+        default="./model/Llama-2-7b-hf",
     )
     parser.add_argument(
         "--data_path_train",
         type=str,
-        default="/dataset/dolly/training.jsonl",
+        default="./dataset/dolly/training.jsonl",
     )
     parser.add_argument(
         "--data_path_valid",
         type=str,
-        default="/dataset/dolly/validation.jsonl",
+        default="./dataset/dolly/validation.jsonl",
     )
     parser.add_argument(
         "--output_path",
         type=str,
-        default="llama2-7b-dolly-peft",
+        default="./workspace_fl/llama2-7b-dolly-sft",
     )
-    parser.add_argument("--mode", type=int, default=1)
+    parser.add_argument("--mode", type=int, default=0)
     args = parser.parse_args()
 
     # Dataset
@@ -107,7 +107,7 @@ def main():
         num_train_epochs=1,
         per_device_train_batch_size=batch_size,
         gradient_accumulation_steps=gra_accu_steps,
-        gradient_checkpointing=True,
+        gradient_checkpointing=False,
         optim="paged_adamw_32bit",
         logging_steps=logging_steps,
         save_strategy="epoch",
@@ -149,18 +149,16 @@ def main():
     # initializes NVFlare client API
     flare.init()
 
-    # receives FLModel from NVFlare
-    for input_model in flare.receive_global_model():
+    while flare.is_running():
+        # receives FLModel from NVFlare
+        input_model = flare.receive()
         curr_round = input_model.current_round
         print(f"current_round={curr_round}")
 
-        if args.mode:
-            global_model = input_model.params
-        else:
-            # fix the key name received from global model if using model def file
-            global_model = copy.deepcopy(input_model.params)
-            for key in list(global_model.keys()):
-                global_model[key.replace("model.", "", 1)] = global_model.pop(key)
+        # fix the key name received from global model if using model def file
+        global_model = copy.deepcopy(input_model.params)
+        for key in list(global_model.keys()):
+            global_model[key.replace("model.", "", 1)] = global_model.pop(key)
 
         # wraps evaluation logic into a method to re-use for
         # evaluation on both trained and received model
