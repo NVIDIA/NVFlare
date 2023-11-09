@@ -77,7 +77,7 @@ model:
   ffn_dropout: 0.0
 
   peft:
-    peft_scheme: "ptuning"  # can be either adapter,ia3, or ptuning
+    peft_scheme: "lora"  # can be either lora, adapter, ia3, or ptuning
     restore_from_path: null
 
     # Used for adapter peft training
@@ -143,7 +143,7 @@ model:
       add_bos: False
       truncation_field: "sentence" # # Can be multiple keys separated with ',' Options: keys in prompt_template
       index_mapping_dir: null # Path to a directory to write index mapping files.
-      prompt_template: "{sentence} {label}" # fstring to use for assistant prompt. Example: "Q: {input}\nA: {output}"
+      prompt_template: "{sentence} sentiment: {label}" # fstring to use for assistant prompt. Example: "Q: {input}\nA: {output}"
       truncation_method: 'right' # Truncation from which position, Options: ['left', 'right'] 
     validation_ds:
       file_names: ??? # Path to a list of JSONL files corresponding to the source data. Data format is identical to train_ds.
@@ -214,3 +214,4 @@ model:
       constant_steps: 0 # Constant steps should also be 0 when min_lr=0
       monitor: val_loss
       reduce_on_plateau: false
+      max_steps: 2000

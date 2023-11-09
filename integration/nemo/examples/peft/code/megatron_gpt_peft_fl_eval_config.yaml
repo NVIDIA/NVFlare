@@ -59,7 +59,7 @@ model:
   ffn_dropout: 0.0
 
   peft:
-    peft_scheme: "ptuning"  # can be either adapter,ia3, or ptuning
+    peft_scheme: "lora"  # can be either lora, adapter, ia3, or ptuning
     restore_from_path: null
     restore_from_ckpt_name: null
     restore_from_hparams_path: null
@@ -105,7 +105,7 @@ model:
       #   - /path/to/boolq.jsonl
       # Example of how each dataset is formatted
       # {'input': 'John von Neumann\nVon Neumann made fundamental contributions .... Q: What did the math of artificial viscosity do?', 'output': 'smoothed the shock transition without sacrificing basic physics'}
-      file_names: ??? # Path to a list of JSONL files corresponding to the source data.
+      file_names: ["dummy.jsonl"] # Set some dummy data file names (which will not be used and do not need to exist)
       global_batch_size: ${model.global_batch_size}
       micro_batch_size: ${model.micro_batch_size}
       shuffle: True
@@ -127,10 +127,10 @@ model:
       add_bos: False
       truncation_field: "sentence" # # Can be multiple keys separated with ',' Options: keys in prompt_template
       index_mapping_dir: null # Path to a directory to write index mapping files.
-      prompt_template: "{sentence} {label}" # fstring to use for assistant prompt. Example: "Q: {input}\nA: {output}"
+      prompt_template: "{sentence} sentiment: {label}" # fstring to use for assistant prompt. Example: "Q: {input}\nA: {output}"
       truncation_method: 'right' # Truncation from which position, Options: ['left', 'right'] 
     validation_ds:
-      file_names: ??? # Path to a list of JSONL files corresponding to the source data. Data format is identical to train_ds.
+      file_names: ["dummy.jsonl"] # Set some dummy data file names (which will not be used and do not need to exist)
       names: null # Names of the corresponding datasets used to log metrics.
       global_batch_size: ${model.global_batch_size}
       micro_batch_size: ${model.micro_batch_size}
@@ -183,18 +183,3 @@ model:
         name: "exact_string_match" # Name of the evaluation metric to use. Options: ['exact_string_match', 'loss']
         average: null # Average the metric over the dataset. Options: ['macro', 'micro']. Works only for 'F1', 'accuracy' etc. Refer to torchmetrics for metrics where this is supported.
         num_classes: null
-
-  optim:
-    name: fused_adam
-    lr: 1e-4
-    weight_decay: 0.01 
-    betas: 
-    - 0.9
-    - 0.98
-    sched:
-      name: CosineAnnealing
-      warmup_steps: 50
-      min_lr: 1e-6 # min_lr must be 0.0 for prompt learning when pipeline parallel > 1
-      constant_steps: 0 # Constant steps should also be 0 when min_lr=0
-      monitor: val_loss
-      reduce_on_plateau: false
