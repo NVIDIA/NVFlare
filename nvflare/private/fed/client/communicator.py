@@ -17,6 +17,8 @@ import socket
 import time
 from typing import List, Optional
 
+from pympler import asizeof
+
 from nvflare.apis.filter import Filter
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_constant import ReturnCode as ShareableRC
@@ -194,8 +196,8 @@ class Communicator:
         return_code = task.get_header(MessageHeaderKey.RETURN_CODE)
 
         if return_code == ReturnCode.OK:
-            size = len(task.payload)
-            task.payload = task.payload
+            size = asizeof.asizeof(task.payload)
+
             task_name = task.payload.get_header(ServerCommandKey.TASK_NAME)
             fl_ctx.set_prop(FLContextKey.SSID, ssid, sticky=False)
             if task_name not in [SpecialTaskName.END_RUN, SpecialTaskName.TRY_AGAIN]:
@@ -267,7 +269,7 @@ class Communicator:
         end_time = time.time()
         return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
         self.logger.info(
-            f" SubmitUpdate size: {len(task_message.payload)} Bytes. time: {end_time - start_time} seconds"
+            f" SubmitUpdate size: {asizeof.asizeof(task_message.payload)} Bytes. time: {end_time - start_time} seconds"
         )
 
         return return_code
