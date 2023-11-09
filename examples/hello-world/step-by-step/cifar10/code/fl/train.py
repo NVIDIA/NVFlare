@@ -93,7 +93,7 @@ def main():
 
         # (4) receive FLModel from NVFlare
         input_model = flare.receive()
-        client_id = flare.system_info().get("site_name", None)
+        client_id = flare.system_info().get("identity", None)
 
         # (5) performing train task on received model
         if flare.is_train():
