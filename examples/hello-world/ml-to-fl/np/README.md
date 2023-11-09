@@ -99,8 +99,7 @@ Then we can create the job:
 
 ```bash
 nvflare job create -force -j ./jobs/np_loop -w sag_np -sd ./code/ \
--f config_fed_client.conf app_script=train_loop.py params_transfer_type=DIFF launch_once=true \
--f config_fed_server.conf expected_data_kind=WEIGHT_DIFF
+-f config_fed_client.conf app_script=train_loop.py params_transfer_type=FULL launch_once=true \
 ```
 
 Then we can run it using the NVFlare Simulator:
