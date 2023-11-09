@@ -56,7 +56,7 @@ from nvflare.private.admin_defs import Message, MsgHeader
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, RequestHeader, TrainingTopic, new_cell_message
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.private.fed.server.server_state import ServerState
-from nvflare.private.fed.utils.fed_utils import security_close, set_message_security_data
+from nvflare.private.fed.utils.fed_utils import get_return_code, security_close, set_message_security_data
 from nvflare.private.scheduler_constants import ShareableHeader
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import InfoCollector
@@ -195,7 +195,7 @@ class ServerEngine(ServerEngineInternalSpec):
             if job_id in self.exception_run_processes:
                 self.exception_run_processes.pop(job_id)
 
-    def wait_for_complete(self, job_id, process):
+    def wait_for_complete(self, workspace, job_id, process):
         process.wait()
         run_process_info = self.run_processes.get(job_id)
         if run_process_info:
@@ -211,7 +211,7 @@ class ServerEngine(ServerEngineInternalSpec):
                     break
                 time.sleep(0.1)
             with self.lock:
-                return_code = process.poll()
+                return_code = get_return_code(process, job_id, workspace)
                 # if process exit but with Execution exception
                 if return_code and return_code != 0:
                     self.logger.info(f"Job: {job_id} child process exit with return code {return_code}")
@@ -290,7 +290,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 RunProcessKey.PARTICIPANTS: job_clients,
             }
 
-        threading.Thread(target=self.wait_for_complete, args=[run_number, process]).start()
+        threading.Thread(target=self.wait_for_complete, args=[args.workspace, run_number, process]).start()
         return process
 
     def get_job_clients(self, client_sites):

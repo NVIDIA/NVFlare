@@ -24,7 +24,7 @@ from nvflare.apis.app_validation import AppValidator
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLContext
-from nvflare.apis.fl_constant import FLContextKey, SiteType, WorkspaceConstants
+from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, SiteType, WorkspaceConstants
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.utils.decomposers import flare_decomposers
@@ -315,3 +315,18 @@ def get_target_names(targets):
         if name not in target_names:
             target_names.append(t)
     return target_names
+
+
+def get_return_code(process, job_id, workspace):
+    run_dir = os.path.join(workspace, job_id)
+    rc_file = os.path.join(run_dir, FLMetaKey.PROCESS_RC_FILE)
+    try:
+        if os.path.exists(rc_file):
+            with open(rc_file, "r") as f:
+                return_code = int(f.readline())
+            os.remove(rc_file)
+        else:
+            return_code = process.poll()
+        return return_code
+    except Exception:
+        raise RuntimeError(f"Could not get the return_code of the {job_id} execution, process_id:{process.pid}")

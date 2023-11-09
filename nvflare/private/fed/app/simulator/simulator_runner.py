@@ -32,6 +32,7 @@ from nvflare.apis.fl_constant import JobConstants, MachineStatus, RunProcessKey,
 from nvflare.apis.job_def import ALL_SITES, JobMetaKey
 from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.common.multi_process_executor_constants import CommunicationMetaData
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
@@ -348,7 +349,13 @@ class SimulatorRunner(FLComponent):
 
     def run_processs(self, return_dict):
         # run_status = self.simulator_run_main()
-        run_status = mpm.run(main_func=self.simulator_run_main, shutdown_grace_time=3, cleanup_grace_time=6)
+        try:
+            run_status = mpm.run(
+                main_func=self.simulator_run_main, run_dir=self.workspace, shutdown_grace_time=3, cleanup_grace_time=6
+            )
+        except Exception as e:
+            self.logger.error(f"Simulator main run with exception: {secure_format_exception(e)}")
+            run_status = ProcessExitCode.EXCEPTION
 
         return_dict["run_status"] = run_status
 

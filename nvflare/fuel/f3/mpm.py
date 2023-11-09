@@ -17,6 +17,7 @@ import signal
 import threading
 import time
 
+from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.fuel.common.excepts import ComponentNotAuthorized, ConfigError
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.drivers.aio_context import AioContext
@@ -128,7 +129,7 @@ class MainProcessMonitor:
         waiter.set()
 
     @classmethod
-    def run(cls, main_func, shutdown_grace_time=1.5, cleanup_grace_time=1.5):
+    def run(cls, main_func, run_dir=None, shutdown_grace_time=1.5, cleanup_grace_time=1.5, **kwargs):
         if not callable(main_func):
             raise ValueError("main_func must be runnable")
 
@@ -139,11 +140,18 @@ class MainProcessMonitor:
                 f"{cls.name}: the mpm.run() method is called from {t.name}: it must be called from the MainThread"
             )
 
+        if not run_dir:
+            run_dir = os.getcwd()
+        rc_file = os.path.join(run_dir, FLMetaKey.PROCESS_RC_FILE)
+
         # call and wait for the main_func to complete
         logger = cls.logger()
         logger.debug(f"=========== {cls.name}: started to run forever")
         try:
-            rc = main_func()
+            if os.path.exists(rc_file):
+                os.remove(rc_file)
+
+            rc = main_func(**kwargs)
         except ConfigError as ex:
             # already handled
             rc = ProcessExitCode.CONFIG_ERROR
@@ -169,10 +177,12 @@ class MainProcessMonitor:
             if thread.name != "MainThread" and not thread.daemon:
                 logger.warning(f"#### {cls.name}: still running thread {thread.name}")
                 num_active_threads += 1
-
         logger.info(f"{cls.name}: Good Bye!")
         if num_active_threads > 0:
             try:
+                with open(rc_file, "w") as outfile:
+                    outfile.write(f"{rc}")
+
                 os.kill(os.getpid(), signal.SIGKILL)
             except Exception as ex:
                 logger.debug(f"Failed to kill process {os.getpid()}: {secure_format_exception(ex)}")
