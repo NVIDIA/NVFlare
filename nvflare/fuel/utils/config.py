@@ -51,7 +51,8 @@ class Config(ABC):
         self.file_path = file_path
 
     def get_format(self) -> ConfigFormat:
-        """returns the current config objects ConfigFormat
+        """Returns the current config objects ConfigFormat.
+
         Returns:
             return ConfigFormat
         """
@@ -61,49 +62,52 @@ class Config(ABC):
         return ConfigFormat.extensions(self.format)
 
     def get_native_conf(self):
-        """Return the original underline config object representation if you prefer to use it directly
+        """Returns the original underline config object representation if you prefer to use it directly.
            Pyhocon → ConfigTree
            JSON → Dict
            OMEGACONF → ConfigDict
 
-        Returns: Any,
-            return native config objects
+        Returns:
+            A native config object
         """
 
         return self.conf
 
     def get_location(self) -> Optional[str]:
-        """return the file path where this configuration is loaded from
+        """Returns the file path where this configuration is loaded from.
 
         Returns:
-            return None if the config is not from file else return file path
+            None if the config is not from file; else return file path
 
         """
         return self.file_path
 
     @abstractmethod
     def to_dict(self, resolve: Optional[bool] = True) -> Dict:
-        """convert underline config object to dictionary
+        """Converts underline config object to dictionary.
+
         Args:
             resolve: optional argument to indicate if the variable need to be resolved when convert to dictionary
                      not all underline configuration format support this.
                      If not supported, it is treated default valueTrue.
 
         Returns:
-            Returns: converted configuration as dict
+            A converted configuration as dict
 
         """
 
     @abstractmethod
     def to_str(self, element: Optional[Dict] = None) -> str:
-        """convert dict element to the str representation of the underline configuration, if element is not None
+        """Converts dict element to the str representation of the underline configuration, if element is not None
            For example, for JsonFormat, the method return json string
            for PyhoconFormat, the method return pyhocon string
            for OmegaconfFormat, the method returns YAML string representation
 
            If the element is None, return the underline config to string presentation
+
         Args:
             element: Optional[Dict]. default to None. dictionary representation of config
+
         Returns:
             string representation of the configuration in given format for the element or config
 
@@ -115,40 +119,48 @@ class ConfigLoader(ABC):
         self.format = fmt
 
     def get_format(self) -> ConfigFormat:
-        """returns the current configLoader's ConfigFormat
+        """Returns the current ConfigLoader's ConfigFormat.
+
         Returns:
-            return ConfigFormat
+            A ConfigFormat
+
         """
         return self.format
 
     @abstractmethod
     def load_config(self, file_path: str) -> Config:
-        """load configuration from config file: file_path
+        """Load configuration from config file.
+
         Args:
-            file_path: file path for configuration to be loaded
+            file_path (str): file path for configuration to be loaded
+
         Returns:
-            return Config
+            A Config
+
         """
 
     def load_config_from_str(self, config_str: str) -> Config:
-        """Load Configuration based on the string representation of the underline configuration
-            for example, Json String for Jsonformat. python conf string or yaml string presentation
+        """Load Configuration based on the string representation of the underline configuration.
+
+           For example, Json String for Jsonformat. python conf string or yaml string presentation
 
         Args:
-            config_str:
+            config_str (str): string for configuration to be loaded
+
         Returns:
-            return Config
+            A Config
 
         """
         raise NotImplementedError
 
     def load_config_from_dict(self, config_dict: dict) -> Config:
-        """Load Configuration based for given config dict.
+        """Load Configuration based on a given config dict.
 
         Args:
-            config_dict:
+            config_dict (dict): dict for configuration to be loaded
+
         Returns:
-            Config
+            A Config
 
         """
         raise NotImplementedError
