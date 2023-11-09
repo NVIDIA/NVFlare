@@ -21,8 +21,8 @@ body:
       required: true
   - type: input
     attributes:
-      label: NVFlare branch (if running examples, please use the corresponding branch, `git branch`)
-      description: NVFlare branch (if running examples, please use the corresponding branch, `git branch`)
+      label: NVFlare branch (if running examples, please use the branch that corresponds to the NVFlare version, `git branch`)
+      description: NVFlare branch (if running examples, please use the branch that corresponds to the NVFlare version, `git branch`)
       placeholder: "2.3"
   - type: input
     attributes:
