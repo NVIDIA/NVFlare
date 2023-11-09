@@ -38,12 +38,24 @@
 # SOFTWARE.
 
 import argparse
+import glob
 import json
 import os
 from pprint import pprint
 
 import numpy as np
 import pandas as pd
+
+
+def clean_files(data_root, ext):
+    files = glob.glob(os.path.join(data_root, "**", ext), recursive=True)
+    for file in files:
+        os.remove(file)
+
+
+def clean_memmap(data_root):
+    clean_files(data_root, "*.npy")
+    clean_files(data_root, "*.info")
 
 
 def get_site_class_summary(train_labels, site_idx):
@@ -122,6 +134,9 @@ def split_data(data_path, out_dir, num_clients, site_name_prefix, seed, alpha):
 
     label_names = [" negative", " neutral", " positive"]
 
+    # Clean NeMo memmap data before running a new data split
+    clean_memmap(out_dir)
+
     site_idx, class_sum = partition_data(
         train_labels,
         label_names,
@@ -141,7 +156,7 @@ def split_data(data_path, out_dir, num_clients, site_name_prefix, seed, alpha):
 
         if not os.path.isdir(out_dir):
             os.makedirs(out_dir)
-        out_file = os.path.join(out_dir, f"{site_name_prefix}{idx+1}.jsonl")
+        out_file = os.path.join(out_dir, f"alpha{alpha}_{site_name_prefix}{idx+1}.jsonl")
 
         df.to_json(out_file, orient="records", lines=True)
         print(f"Save split {idx+1} of {num_clients} with {len(split)} entries to {out_file}")
