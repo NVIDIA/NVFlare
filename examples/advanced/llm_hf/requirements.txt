@@ -1,8 +1,8 @@
+nvflare
 torch
 datasets
 tensorboard
 transformers
 peft
 trl
-bitsandbytes
 flash-attn

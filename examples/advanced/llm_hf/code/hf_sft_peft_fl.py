@@ -1,16 +1,30 @@
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import argparse
 import copy
 import os
 
 import datasets
 import torch
-from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training, set_peft_model_state_dict, utils
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, TrainingArguments, trainer_utils
+from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, set_peft_model_state_dict, utils
+from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments, trainer_utils
 from trl import SFTTrainer
 
 import nvflare.client as flare
 
-use_flash_attention = False
+use_flash_attention = True
 
 
 def format_instruction(example):
@@ -41,7 +55,7 @@ def main():
     parser.add_argument(
         "--output_path",
         type=str,
-        default="./workspace_fl/llama2-7b-dolly-sft",
+        default="llama2-7b-dolly-sft",
     )
     parser.add_argument("--mode", type=int, default=0)
     args = parser.parse_args()
@@ -60,14 +74,6 @@ def main():
     # Model configs
     model_path = args.model_path
     if args.mode:
-        # If PEFT, set quantization configuration to load large model with less GPU memory
-        # this requires the `bitsandbytes` library
-        bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_compute_dtype=torch.bfloat16,
-        )
         # PEFT configs
         peft_config = LoraConfig(
             lora_alpha=16,
@@ -79,13 +85,10 @@ def main():
         # Load model
         model = AutoModelForCausalLM.from_pretrained(
             model_path,
-            quantization_config=bnb_config,
             use_cache=False,
             use_flash_attention_2=use_flash_attention,
             device_map="auto",
         )
-        # prepare model for training
-        model = prepare_model_for_kbit_training(model)
         model = get_peft_model(model, peft_config)
     else:
         model = AutoModelForCausalLM.from_pretrained(
@@ -121,7 +124,7 @@ def main():
     )
 
     # Trainer
-    max_seq_length = 2048
+    max_seq_length = 1024
     if args.mode:
         trainer = SFTTrainer(
             model=model,
@@ -155,7 +158,7 @@ def main():
         curr_round = input_model.current_round
         print(f"current_round={curr_round}")
 
-        # fix the key name received from global model if using model def file
+        # Update the key name received from global model if using model def file
         global_model = copy.deepcopy(input_model.params)
         for key in list(global_model.keys()):
             global_model[key.replace("model.", "", 1)] = global_model.pop(key)
@@ -163,6 +166,7 @@ def main():
         # wraps evaluation logic into a method to re-use for
         # evaluation on both trained and received model
         def evaluate(input_weights, mode):
+            # Special load func for PEFT
             if mode:
                 set_peft_model_state_dict(trainer.model, input_weights)
             else:
@@ -197,16 +201,14 @@ def main():
             trainer.train(resume_from_checkpoint=True)
 
         # compose output model to send back to server
-        checkpoint_folder = trainer_utils.get_last_checkpoint(trainer.args.output_dir)
         if args.mode:
-            # PEFT, load PEFT part from current checkpointing folder
-            model_file_path = os.path.join(checkpoint_folder, utils.WEIGHTS_NAME)
-            out_param = torch.load(model_file_path, map_location="cpu")
+            # PEFT, load PEFT part from trainer model
+            out_param = get_peft_model_state_dict(trainer.model)
         else:
             # SFT, load whole model state_dict
             out_param = trainer.model.state_dict()
 
-        # fix the key name sent to global model
+        # update the key name sent to global model
         if not args.mode:
             for key in list(out_param.keys()):
                 out_param["model." + key] = out_param.pop(key).cpu()
