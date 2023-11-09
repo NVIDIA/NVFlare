@@ -33,7 +33,7 @@ body:
       required: true
   - type: checkboxes
     attributes:
-      label: Have you successfully run the following examples?
+      label: Have you successfully run any of the following examples?
       options:
         - label: hello-numpy-sag with simulator
         - label: hello-pt with simulator
