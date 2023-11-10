@@ -27,10 +27,10 @@ class ModelPersistor(LearnablePersistor, ABC):
         """Abstract class.
         Implementations will need to implement the `load_model()` and `save_model()`
         methods to persist & load the current ModelLearnable.
-            Args:
-                filter_id: Optional string that defines a filter component that is applied to prepare the model to be saved,
-                    e.g. for serialization of custom Python objects.
 
+        Args:
+            filter_id: Optional string that defines a filter component that is applied to prepare the model to be saved,
+                e.g. for serialization of custom Python objects.
         """
         super().__init__()
         self.filter_id = filter_id

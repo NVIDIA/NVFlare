@@ -17,8 +17,9 @@ To configure the workflow, one can reference the config we have here and the doc
 
 We cover the following use cases:
 
-  1. PyTorch and PyTorch Lightning: [pt](./pt/README.md)
-  2. TensorFlow: [tf](./tf/README.md)
+  1. Configurations of NVFlare Client API: [np](./np/README.md)
+  2. PyTorch and PyTorch Lightning: [pt](./pt/README.md)
+  3. TensorFlow: [tf](./tf/README.md)
 
 
 Note: Avoid install TensorFlow and PyTorch on the same virtual environment due to library conflicts.

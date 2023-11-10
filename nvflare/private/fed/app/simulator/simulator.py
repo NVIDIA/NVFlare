@@ -19,6 +19,7 @@ import sys
 from sys import platform
 
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
+from nvflare.private.fed.app.utils import version_check
 
 
 def define_simulator_parser(simulator_parser):
@@ -59,8 +60,7 @@ if __name__ == "__main__":
 
         multiprocessing.set_start_method("spawn")
 
-    if sys.version_info < (3, 8):
-        raise RuntimeError("Please use Python 3.8 or above.")
+    version_check()
 
     parser = argparse.ArgumentParser()
     define_simulator_parser(parser)

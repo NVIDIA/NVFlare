@@ -41,28 +41,7 @@ from nvflare.private.fed.utils.fed_utils import (
 from nvflare.security.logging import secure_format_exception
 
 
-def main():
-    """Worker process start program."""
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
-    parser.add_argument("--startup", "-w", type=str, help="startup folder", required=True)
-    parser.add_argument("--token", "-t", type=str, help="token", required=True)
-    parser.add_argument("--ssid", "-d", type=str, help="ssid", required=True)
-    parser.add_argument("--job_id", "-n", type=str, help="job_id", required=True)
-    parser.add_argument("--client_name", "-c", type=str, help="client name", required=True)
-    # parser.add_argument("--listen_port", "-p", type=str, help="listen port", required=True)
-    parser.add_argument("--sp_target", "-g", type=str, help="Sp target", required=True)
-    parser.add_argument("--parent_url", "-p", type=str, help="parent_url", required=True)
-
-    parser.add_argument(
-        "--fed_client", "-s", type=str, help="an aggregation server specification json file", required=True
-    )
-
-    parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
-
-    parser.add_argument("--local_rank", type=int, default=0)
-
-    args = parser.parse_args()
+def main(args):
     kv_list = parse_vars(args.set)
 
     # get parent process id
@@ -159,6 +138,27 @@ def main():
             logger.warning(err)
 
 
+def parse_arguments():
+    """Worker process start program."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
+    parser.add_argument("--startup", "-w", type=str, help="startup folder", required=True)
+    parser.add_argument("--token", "-t", type=str, help="token", required=True)
+    parser.add_argument("--ssid", "-d", type=str, help="ssid", required=True)
+    parser.add_argument("--job_id", "-n", type=str, help="job_id", required=True)
+    parser.add_argument("--client_name", "-c", type=str, help="client name", required=True)
+    # parser.add_argument("--listen_port", "-p", type=str, help="listen port", required=True)
+    parser.add_argument("--sp_target", "-g", type=str, help="Sp target", required=True)
+    parser.add_argument("--parent_url", "-p", type=str, help="parent_url", required=True)
+    parser.add_argument(
+        "--fed_client", "-s", type=str, help="an aggregation server specification json file", required=True
+    )
+    parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
+    parser.add_argument("--local_rank", type=int, default=0)
+    args = parser.parse_args()
+    return args
+
+
 def _create_sp(args):
     sp = SP()
     target = args.sp_target.split(":")
@@ -190,5 +190,7 @@ if __name__ == "__main__":
     """
 
     # main()
-    rc = mpm.run(main_func=main)
+    args = parse_arguments()
+    run_dir = os.path.join(args.workspace, args.job_id)
+    rc = mpm.run(main_func=main, run_dir=run_dir, args=args)
     sys.exit(rc)

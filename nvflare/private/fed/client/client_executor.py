@@ -27,6 +27,7 @@ from nvflare.fuel.common.exit_codes import PROCESS_EXIT_REASON, ProcessExitCode
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey, new_cell_message
+from nvflare.private.fed.utils.fed_utils import get_return_code
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .client_status import ClientStatus, get_status_message
@@ -204,7 +205,7 @@ class ProcessExecutor(ClientExecutor):
 
         thread = threading.Thread(
             target=self._wait_child_process_finish,
-            args=(client, job_id, allocated_resource, token, resource_manager),
+            args=(client, job_id, allocated_resource, token, resource_manager, args.workspace),
         )
         thread.start()
 
@@ -423,13 +424,15 @@ class ProcessExecutor(ClientExecutor):
                 )
                 self.logger.debug("abort_task sent")
 
-    def _wait_child_process_finish(self, client, job_id, allocated_resource, token, resource_manager):
+    def _wait_child_process_finish(self, client, job_id, allocated_resource, token, resource_manager, workspace):
         self.logger.info(f"run ({job_id}): waiting for child worker process to finish.")
         with self.lock:
             child_process = self.run_processes.get(job_id, {}).get(RunProcessKey.CHILD_PROCESS)
         if child_process:
             child_process.wait()
-            return_code = child_process.returncode
+
+            return_code = get_return_code(child_process, job_id, workspace)
+
             self.logger.info(f"run ({job_id}): child worker process finished with RC {return_code}")
             if return_code in [ProcessExitCode.UNSAFE_COMPONENT, ProcessExitCode.CONFIG_ERROR]:
                 request = new_cell_message(

@@ -413,6 +413,7 @@ class FLMetaKey:
     TOTAL_ROUNDS = "total_rounds"
     JOB_ID = "job_id"
     SITE_NAME = "site_name"
+    PROCESS_RC_FILE = "_process_rc.txt"
     SUBMIT_MODEL_NAME = "submit_model_name"
 
 
