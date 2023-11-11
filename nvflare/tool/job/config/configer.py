@@ -118,9 +118,12 @@ def _cast_type(key_index, cli_value):
 
 
 def split_array_key(key: str) -> Tuple:
+    if "[" not in key and "]" not in key:
+        return None, None, key
+
     tokens = key.split("[")
     if len(tokens) == 1:
-        return None, None, key
+        raise ValueError(f"invalid key '{key}'")
     else:
         # len(tokens) > 1
         parent = tokens[0]
@@ -442,23 +445,18 @@ def build_config_file_indices(job_folder: str, app_names: List[str]) -> Dict[str
 
 
 def get_app_name_from_path(path: str):
-    # path is in the format of as app1/xxx.conf
+    # path is in the format of the following:
     # path xxx.conf
     # path app1/xxx.conf
     # path app1/config/xxx.conf
     # path app1/custom/xxx.conf
-    # xxx.conf
     if _is_meta_file(os.path.basename(path)):
         return META_APP_NAME
-    app_name = os.path.dirname(path)
-    index = app_name.find("/")
-    if index == -1:
+    if path == os.path.sep:
+        raise ValueError(f"Expecting <config file> or <app_name>/<config file>, but '{path}' is given.")
+    segs = path.split(os.path.sep)
+    if len(segs) == 1:
         return DEFAULT_APP_NAME
     else:
-        app_name = os.path.dirname(app_name)
-        index = app_name.find("/")
-        if index > 0:
-            raise ValueError(
-                f"Expecting <app_name>/<config file> or <app_name>/custom/<config_file>, but '{path}' is given."
-            )
-    return app_name if app_name else DEFAULT_APP_NAME
+        return segs[0]
+
