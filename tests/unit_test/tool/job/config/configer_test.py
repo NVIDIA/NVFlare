@@ -18,7 +18,8 @@ from typing import List
 
 import pytest
 
-from nvflare.tool.job.config.configer import build_config_file_indices, get_cli_config, merge_configs, split_array_key
+from nvflare.tool.job.config.configer import build_config_file_indices, get_cli_config, merge_configs, split_array_key, \
+    convert_to_number
 from nvflare.tool.job.job_client_const import DEFAULT_APP_NAME, META_APP_NAME
 
 MERGE_CONFIG_TEST_CASES = [
@@ -145,3 +146,20 @@ class TestConfiger:
             assert split_array_key("components[1.args.model.path")
         except ValueError:
             assert True
+
+    def test_convert_to_number(self):
+        text = "I am a str"
+        assert text == convert_to_number(text)
+
+        text = "1"
+        assert 1 == convert_to_number(text)
+
+        text = "1.0"
+        assert 1.0 == convert_to_number(text)
+
+        text = "0.1"
+        assert 0.1 == convert_to_number(text)
+
+        text = "0.01"
+        assert 0.01 == convert_to_number(text)
+

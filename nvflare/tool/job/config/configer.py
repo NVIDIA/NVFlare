@@ -158,15 +158,14 @@ def merge_configs(
     """
     app_merged = {}
     for app_name in app_indices_configs:
-        print("app_name =", app_name)
         indices_configs = app_indices_configs[app_name]
-
         cli_file_configs = app_cli_file_configs.get(app_name, None)
         if cli_file_configs:
             merged = {}
             for file, (config, excluded_key_list, key_indices) in indices_configs.items():
                 if len(key_indices) > 0:
                     cli_configs = cli_file_configs.get(file, None)
+                    print(f"found cli config for {file=}, {cli_configs=}")
                     if cli_configs:
                         for key, cli_value in cli_configs.items():
                             cli_value = convert_to_number(cli_value)
@@ -302,8 +301,11 @@ def _parse_cli_config(
 
             app_name = get_app_name_from_path(arr[0])
             config_file = get_config_file_path(app_name, arr[0], job_folder)
+            print(f"{config_file=}")
 
             config_data = arr[1:]
+
+            print(f"{config_data=}")
             config_dict = {}
             app_name = DEFAULT_APP_NAME if not app_name else app_name
 
@@ -323,6 +325,7 @@ def _parse_cli_config(
             if app_name not in app_cli_config_dict:
                 app_cli_config_dict[app_name] = {}
 
+            print(f"{app_name=}, {config_file=}, {config_dict=}")
             app_cli_config_dict[app_name][config_file] = config_dict
 
     return app_cli_config_dict

@@ -103,13 +103,22 @@ def get_template_info_config(template_dir):
     return CF.parse_file(info_conf_path) if os.path.isfile(info_conf_path) else None
 
 
-def get_app_dirs(job_folder_or_template):
+def get_app_dirs_from_template(template_dir):
     app_dirs = []
-    print(f"{job_folder_or_template=}")
-    for root, dirs, files in os.walk(job_folder_or_template):
-        print(f"{root=}", files)
-        if root != job_folder_or_template and (CONFIG_FED_SERVER_CONF in files or CONFIG_FED_CLIENT_CONF in files):
+    for root, dirs, files in os.walk(template_dir):
+        if root != template_dir and (CONFIG_FED_SERVER_CONF in files or CONFIG_FED_CLIENT_CONF in files):
             app_dirs.append(root)
+
+    return app_dirs
+
+
+def get_app_dirs_from_job_folder(job_folder):
+    app_dirs = []
+    for root, dirs, files in os.walk(job_folder):
+        if root != job_folder and ( root.endswith("config") or root.endswith("customer")):
+            dir_name = os.path.dirname( os.path.relpath(root, job_folder))
+            if dir_name:
+                app_dirs.append(dir_name)
 
     return app_dirs
 
@@ -119,10 +128,8 @@ def create_job(cmd_args):
         template_src = get_src_template(cmd_args)
         if not template_src:
             template_src = get_src_template_by_name(cmd_args)
-        app_dirs = get_app_dirs(str(template_src).strip())
-        print(f"{app_dirs=}")
+        app_dirs = get_app_dirs_from_template(str(template_src).strip())
         app_names = [os.path.basename(f) for f in app_dirs]
-        print(f"{app_names=}")
         app_names = app_names if app_names else [DEFAULT_APP_NAME]
         job_folder = cmd_args.job_folder
         prepare_job_folder(cmd_args)
@@ -207,10 +214,8 @@ def show_variables(cmd_args):
         if not os.path.isdir(cmd_args.job_folder):
             raise ValueError("required job folder is not specified.")
 
-        app_dirs = get_app_dirs(cmd_args.job_folder)
-        print(f"{app_dirs=}")
+        app_dirs = get_app_dirs_from_job_folder(cmd_args.job_folder)
         app_names = [os.path.basename(f) for f in app_dirs]
-        print(f"{app_names=}")
         app_names = app_names if app_names else [DEFAULT_APP_NAME]
         indices = build_config_file_indices(cmd_args.job_folder, app_names)
         variable_values = filter_indices(app_indices_configs=indices)
@@ -347,7 +352,7 @@ def submit_job(cmd_args):
         temp_job_dir = mkdtemp()
         copy_tree(cmd_args.job_folder, temp_job_dir)
 
-        app_dirs = get_app_dirs(cmd_args.job_folder)
+        app_dirs = get_app_dirs_from_job_folder(cmd_args.job_folder)
         app_names = [os.path.basename(f) for f in app_dirs]
         app_names = app_names if app_names else [DEFAULT_APP_NAME]
 
@@ -565,12 +570,6 @@ def save_merged_configs(app_merged_conf, job_folder, tmp_job_dir):
                 dst_path = os.path.join(tmp_job_dir, rel_file_path)
 
             root_index = get_root_index(next(iter(key_indices.values()))[0])
-
-            print("save to file = ", dst_path)
-            if os.path.basename(file) == "meta.conf":
-                min_clients = root_index.value.get("min_clients")
-                print(f"{min_clients=}")
-
             save_config(root_index.value, dst_path)
 
 
