@@ -28,7 +28,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_dir", "-c", type=str, help="config folder", required=False, default=".")
     parser.add_argument(
-        "--config_files", "-f", type=str, help="config file name", required=False, default="net_config.json"
+        "--config_file", "-f", type=str, help="config file name", required=False, default="net_config.json"
     )
     args = parser.parse_args()
 
