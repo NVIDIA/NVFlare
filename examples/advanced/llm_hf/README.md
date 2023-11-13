@@ -55,11 +55,11 @@ Their differences are highlighted below:
 ![diff](./figs/diff_1.png)
 ![diff](./figs/diff_2.png)
 
-Note that the `trainer.train()` call is replaced by a `for` loop. At the beginning of each round (epoch in this case), we intentionally load a fixed model weights saved at the beginning, over-write the last round's record, then call `trainer.train(resume_from_checkpoint=True)` with `trainer.args.num_train_epochs` incremented by 1. 
+Note that the `trainer.train()` call is replaced by a `for` loop. At the beginning of each round (epoch in this case), we intentionally load a fixed model weights saved at the beginning, over-writing the previous round's saved model weights, then call `trainer.train(resume_from_checkpoint=True)` with `trainer.args.num_train_epochs` incremented by 1 so that previous logging results are not overwritten. 
 
 The purpose of doing so is to tell if the intended weights are succesfully loaded at each round. Without using a fixed starting model, even if the model weights are not properly loaded, the training loss curve will still follow the one-call result, which is not what we want to see. 
 
-If the intended model weights (serving as the starting point for each round, the "global model" for FL use case) is properly loaded, then we shall observe a "zig-zag" pattern in the training loss curve because the model weights are reset to the same starting point at the beginning of each round. In contrast to the one-shot centralized training, where the model weights are updated continuously, and the training loss curve should follow an overall decreasing trend.
+If the intended model weights (serving as the starting point for each round, the "global model" for FL use case) is properly loaded, then we shall observe a "zig-zag" pattern in the training loss curve. This is because the model weights are reset to the same starting point at the beginning of each round, in contrast to the one-shot centralized training, where the model weights are updated continuously, and the training loss curve should follow an overall decreasing trend.
 
 To run iterative training, we use the following command:
 ``` 

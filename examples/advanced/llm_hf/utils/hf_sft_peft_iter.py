@@ -88,6 +88,7 @@ def main():
         )
         model = get_peft_model(model, peft_config)
     else:
+        peft_config = None
         model = AutoModelForCausalLM.from_pretrained(
             model_path,
             use_flash_attention_2=use_flash_attention,
@@ -130,29 +131,17 @@ def main():
 
     # Trainer
     max_seq_length = 1024
-    if args.mode:
-        trainer = SFTTrainer(
-            model=model,
-            train_dataset=dataset_train,
-            eval_dataset=dataset_valid,
-            peft_config=peft_config,
-            max_seq_length=max_seq_length,
-            tokenizer=tokenizer,
-            packing=False,
-            formatting_func=format_instruction,
-            args=train_args,
-        )
-    else:
-        trainer = SFTTrainer(
-            model=model,
-            train_dataset=dataset_train,
-            eval_dataset=dataset_valid,
-            max_seq_length=max_seq_length,
-            tokenizer=tokenizer,
-            packing=False,
-            formatting_func=format_instruction,
-            args=train_args,
-        )
+    trainer = SFTTrainer(
+        model=model,
+        train_dataset=dataset_train,
+        eval_dataset=dataset_valid,
+        peft_config=peft_config,
+        max_seq_length=max_seq_length,
+        tokenizer=tokenizer,
+        packing=False,
+        formatting_func=format_instruction,
+        args=train_args,
+    )
 
     # Train iteratively by using "resume" functionality
     # and replace the resume weights every round
