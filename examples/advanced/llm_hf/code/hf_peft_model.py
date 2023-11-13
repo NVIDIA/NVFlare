@@ -20,7 +20,6 @@ from transformers import AutoModelForCausalLM
 class CausalLMPEFTModel(torch.nn.Module):
     def __init__(self, model_path):
         super(CausalLMPEFTModel, self).__init__()
-        self.model_path = model_path
         # PEFT configs
         peft_config = LoraConfig(
             lora_alpha=16,
@@ -30,7 +29,7 @@ class CausalLMPEFTModel(torch.nn.Module):
             task_type="CAUSAL_LM",
         )
         full_model = AutoModelForCausalLM.from_pretrained(
-            self.model_path,
+            model_path,
         )
         self.model = get_peft_model(full_model, peft_config)
 
