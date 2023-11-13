@@ -18,8 +18,13 @@ from typing import List
 
 import pytest
 
-from nvflare.tool.job.config.configer import build_config_file_indices, get_cli_config, merge_configs, split_array_key, \
-    convert_to_number
+from nvflare.tool.job.config.configer import (
+    build_config_file_indices,
+    convert_to_number,
+    get_cli_config,
+    merge_configs,
+    split_array_key,
+)
 from nvflare.tool.job.job_client_const import DEFAULT_APP_NAME, META_APP_NAME
 
 MERGE_CONFIG_TEST_CASES = [
@@ -162,4 +167,3 @@ class TestConfiger:
 
         text = "0.01"
         assert 0.01 == convert_to_number(text)
-

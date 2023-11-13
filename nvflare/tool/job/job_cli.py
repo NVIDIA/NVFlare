@@ -115,8 +115,8 @@ def get_app_dirs_from_template(template_dir):
 def get_app_dirs_from_job_folder(job_folder):
     app_dirs = []
     for root, dirs, files in os.walk(job_folder):
-        if root != job_folder and ( root.endswith("config") or root.endswith("customer")):
-            dir_name = os.path.dirname( os.path.relpath(root, job_folder))
+        if root != job_folder and (root.endswith("config") or root.endswith("customer")):
+            dir_name = os.path.dirname(os.path.relpath(root, job_folder))
             if dir_name:
                 app_dirs.append(dir_name)
 
