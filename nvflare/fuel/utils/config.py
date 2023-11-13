@@ -30,9 +30,11 @@ class ConfigFormat(Enum):
                 ".json": ConfigFormat.JSON,
                 ".conf": ConfigFormat.PYHOCON,
                 ".yml": ConfigFormat.OMEGACONF,
+                ".yaml": ConfigFormat.OMEGACONF,
                 ".json.default": ConfigFormat.JSON,
                 ".conf.default": ConfigFormat.PYHOCON,
                 ".yml.default": ConfigFormat.OMEGACONF,
+                ".yaml.default": ConfigFormat.OMEGACONF,
             }
         )
 

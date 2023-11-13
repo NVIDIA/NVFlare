@@ -19,7 +19,7 @@ import json
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--config_file",
+        "--config_files",
         type=str,
         default="./config_fed_client.json",
         help="config file in JSON format",

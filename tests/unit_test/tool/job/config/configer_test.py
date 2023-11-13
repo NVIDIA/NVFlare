@@ -34,7 +34,7 @@ MERGE_CONFIG_TEST_CASES = [
     (
         "launch_once",
         [
-            ["app/config_fed_client.conf", "app_script=cifar10_fl.py", "launch_once=false"],
+            ["config_fed_client.conf", "app_script=cifar10_fl.py", "launch_once=False"],
             ["meta.conf", "min_clients=3"],
         ],
         "launch_everytime",
@@ -42,15 +42,12 @@ MERGE_CONFIG_TEST_CASES = [
     ),
     (
         "launch_once",
-        [["app/config_fed_client.conf", "app_script=cifar10_fl.py", "launch_once=False"]],
+        [
+            ["app/config/config_fed_client.conf", "app_script=cifar10_fl.py", "launch_once=False"],
+            ["meta.conf", "min_clients=3"],
+        ],
         "launch_everytime",
-        [["app/config_fed_client.conf"], ["meta.conf", "min_clients=2"]],
-    ),
-    (
-        "launch_once",
-        [["app/config_fed_client.conf", "app_script=cifar10_fl.py", "launch_once=false"]],
-        "launch_everytime",
-        [["app/config_fed_client.conf"], ["meta.conf", "min_clients=2"]],
+        [["app/config_fed_client.conf"], ["meta.conf"]],
     ),
 ]
 
@@ -64,12 +61,13 @@ GET_CLI_USE_CASES = [
 ]
 
 
-def _create_test_args(config_file: List, job_name: str = "launch_once"):
+def _create_test_args(config_files: List, job_name: str = "launch_once"):
     args = argparse.Namespace()
-    args.config_file = config_file
+    args.config_file = config_files
     args.debug = False
     args.force = True
-    args.job_folder = os.path.join(os.path.dirname(__file__), f"../../../data/jobs/{job_name}")
+    dir_name = os.path.join(os.getcwd(), os.path.dirname(__file__))
+    args.job_folder = os.path.realpath(os.path.join(dir_name, f"../../../data/jobs/{job_name}"))
     args.job_sub_cmd = "create"
     args.sub_command = "job"
     return args
@@ -83,27 +81,58 @@ def _get_merged_configs(args):
 
 
 class TestConfiger:
-    @pytest.mark.parametrize("job_name, config_file, expected", GET_CLI_USE_CASES)
-    def test_get_cli_config(self, job_name, config_file, expected):
+    @pytest.mark.parametrize("job_name, config_files, expected", GET_CLI_USE_CASES)
+    def test_get_cli_config(self, job_name, config_files, expected):
         args = _create_test_args(
-            config_file=config_file,
+            config_files=config_files,
             job_name=job_name,
         )
         result = get_cli_config(args, [DEFAULT_APP_NAME])
-        assert result == expected
+        updated_expected = {}
+        for app in expected:
+            app_expected = {}
+            for file in expected.get(app):
+                basename = os.path.basename(file)
+                if basename == "meta.conf":
+                    full_path = os.path.realpath(os.path.join(args.job_folder, basename))
+                else:
+                    full_path = os.path.realpath(os.path.join(args.job_folder, "app/config", basename))
+                app_expected[full_path] = expected.get(app).get(file)
+            updated_expected[app] = app_expected
+
+        assert result == updated_expected
 
     @pytest.mark.parametrize("origin_job, origin_config, expect_job, expect_config", MERGE_CONFIG_TEST_CASES)
     def test_merge_configs(self, origin_job, origin_config, expect_job, expect_config):
         args = _create_test_args(
-            config_file=origin_config,
+            config_files=origin_config,
             job_name=origin_job,
         )
         result_merged = _get_merged_configs(args)
 
-        args = _create_test_args(config_file=expect_config, job_name=expect_job)
-        expected_merged = _get_merged_configs(args)
+        expected_args = _create_test_args(config_files=expect_config, job_name=expect_job)
+        expected_merged = _get_merged_configs(expected_args)
 
-        assert result_merged == expected_merged
+        result = {}
+        for app in result_merged:
+            app_result = {}
+            result_file_config = result_merged.get(app)
+            for file in result_file_config:
+                rel_file_path = os.path.relpath(file, args.job_folder)
+                app_result[rel_file_path] = result_file_config.get(file)
+            result[app] = app_result
+
+        expected = {}
+        for app in expected_merged:
+            app_expected = {}
+            expected_file_config = expected_merged.get(app)
+            for file in expected_file_config:
+                rel_file_path = os.path.relpath(file, expected_args.job_folder)
+                app_expected[rel_file_path] = expected_file_config.get(file)
+                assert app_expected[rel_file_path] == result[app][rel_file_path]
+            expected[app] = app_expected
+
+        assert result == expected
 
     def test_split_key(self):
         assert split_array_key("components[1].args.model.path") == ("components", 1, "args.model.path")

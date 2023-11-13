@@ -27,7 +27,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_dir", "-c", type=str, help="config folder", required=False, default=".")
     parser.add_argument(
-        "--config_file", "-f", type=str, help="config file name", required=False, default="net_config.json"
+        "--config_files", "-f", type=str, help="config file name", required=False, default="net_config.json"
     )
     parser.add_argument("--name", "-n", type=str, help="my cell name", required=True)
     parser.add_argument("--parent_fqcn", "-pn", type=str, help="parent cell name", required=False, default="")

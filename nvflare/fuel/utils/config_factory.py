@@ -75,7 +75,7 @@ class ConfigFactory:
         ext2fmt_map = ConfigFormat.config_ext_formats()
         extensions = target_exts if target_fmt else ext2fmt_map.keys()
         for search_dir in search_dirs:
-            logger.debug(f"search file basename:'{file_basename}', search dirs = {search_dirs}")
+            logger.debug(f"search file basename:'{file_basename}', search dir = {search_dir}")
             for ext in extensions:
                 fmt = ext2fmt_map[ext]
                 filename = f"{file_basename}{ext}"

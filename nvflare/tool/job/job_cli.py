@@ -105,7 +105,9 @@ def get_template_info_config(template_dir):
 
 def get_app_dirs(job_folder_or_template):
     app_dirs = []
+    print(f"{job_folder_or_template=}")
     for root, dirs, files in os.walk(job_folder_or_template):
+        print(f"{root=}", files)
         if root != job_folder_or_template and (CONFIG_FED_SERVER_CONF in files or CONFIG_FED_CLIENT_CONF in files):
             app_dirs.append(root)
 
@@ -118,7 +120,9 @@ def create_job(cmd_args):
         if not template_src:
             template_src = get_src_template_by_name(cmd_args)
         app_dirs = get_app_dirs(str(template_src).strip())
+        print(f"{app_dirs=}")
         app_names = [os.path.basename(f) for f in app_dirs]
+        print(f"{app_names=}")
         app_names = app_names if app_names else [DEFAULT_APP_NAME]
         job_folder = cmd_args.job_folder
         prepare_job_folder(cmd_args)
@@ -204,7 +208,9 @@ def show_variables(cmd_args):
             raise ValueError("required job folder is not specified.")
 
         app_dirs = get_app_dirs(cmd_args.job_folder)
+        print(f"{app_dirs=}")
         app_names = [os.path.basename(f) for f in app_dirs]
+        print(f"{app_names=}")
         app_names = app_names if app_names else [DEFAULT_APP_NAME]
         indices = build_config_file_indices(cmd_args.job_folder, app_names)
         variable_values = filter_indices(app_indices_configs=indices)
@@ -535,7 +541,7 @@ def prepare_job_config(cmd_args, app_names: List[str], tmp_job_dir: Optional[str
         tmp_job_dir = cmd_args.job_folder
 
     if need_save_config:
-        save_merged_configs(merged_conf, tmp_job_dir)
+        save_merged_configs(merged_conf, cmd_args.job_folder, tmp_job_dir)
     variable_values = filter_indices(merged_conf)
     return variable_values
 
@@ -549,16 +555,22 @@ def has_client_config_file(app_config_dir):
     )
 
 
-def save_merged_configs(app_merged_conf, tmp_job_dir):
+def save_merged_configs(app_merged_conf, job_folder, tmp_job_dir):
     for app_name, merged_conf in app_merged_conf.items():
         for file, (config, excluded_key_List, key_indices) in merged_conf.items():
-            base_filename = os.path.basename(file)
-            if base_filename.startswith(f"{JOB_META_BASE_NAME}."):
-                config_dir = tmp_job_dir
+            if job_folder == tmp_job_dir:
+                dst_path = file
             else:
-                config_dir = os.path.join(tmp_job_dir, app_name, "config")
-            dst_path = os.path.join(config_dir, base_filename)
+                rel_file_path = os.path.relpath(file, job_folder)
+                dst_path = os.path.join(tmp_job_dir, rel_file_path)
+
             root_index = get_root_index(next(iter(key_indices.values()))[0])
+
+            print("save to file = ", dst_path)
+            if os.path.basename(file) == "meta.conf":
+                min_clients = root_index.value.get("min_clients")
+                print(f"{min_clients=}")
+
             save_config(root_index.value, dst_path)
 
 
