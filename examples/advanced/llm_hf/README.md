@@ -3,12 +3,12 @@ This example shows how to use [NVIDIA FLARE](https://nvidia.github.io/NVFlare) f
 
 ## Introduction 
 This example illustrates both supervised fine-tuning (SFT) and parameter-efficient fine-tuning (PEFT) using the [SFT Trainer](https://huggingface.co/docs/trl/sft_trainer) from [HuggingFace](https://huggingface.co/).
-We used the [Llama-2-7b model](https://huggingface.co/meta-llama/Llama-2-7b) to showcase the functionality of federated SFT and PEFT, allowing HuggingFace models to be trained and adapted with NVFlare. 
+We used the [Llama-2-7b-hf model](https://huggingface.co/meta-llama/Llama-2-7b-hf) to showcase the functionality of federated SFT and PEFT, allowing HuggingFace models to be trained and adapted with NVFlare. 
 Mainly on two fronts:
-- Adapt local HF training scripts to federated application
-- Handling large model weights (~26 GB for Llama-2-7b model), this is supported by NVFlare infrastructure, and does not need any code change.
+- Adapt local HuggingFace training scripts to federated application
+- Handling large model weights (~26 GB for Llama-2-7b-hf model), this is supported by NVFlare infrastructure, and does not need any code change.
 
-We perform the following exeperiments on two 80GB A100 GPUs, PEFT only needs 1 GPU, while SFT needs both GPUs. Less computation resources will be needed if smaller models are used, simply replace Llama-2-7b-hf with other options from HuggingFace.
+We conducted these experiments on two 80GB A100 GPUs, PEFT only needs 1 GPU, while SFT needs both GPUs. Less computation resources will be needed if smaller models are used, simply replace Llama-2-7b-hf with other options from HuggingFace.
 
 ## Setup
 Please make sure you set up virtual environment following [example root readme](../../README.md).
@@ -44,16 +44,18 @@ python3 ./utils/hf_sft_peft.py --output_path ./workspace_centralized/llama2-7b-d
 python3 ./utils/hf_sft_peft.py --output_path ./workspace_centralized/llama2-7b-dolly-peft --mode 1
 ```
 ### Adaptation Step 1: iterative training
-To adapt the centralized training script to federated application, we first need to "break" the single call to `trainer.train()` into iterative calls, one for each round of training.
+To adapt the centralized training script to federated application, under ``launch_once'' setting, we first need to "break" the single call to `trainer.train()` into iterative calls, one for each round of training.
 For this purpose, we provided `utils/hf_sft_peft_iter.py` as an example, which is a modified version of `utils/hf_sft_peft.py`.
 Their differences are highlighted below:
 
 ![diff](./figs/diff_1.png)
 ![diff](./figs/diff_2.png)
 
-Note that the `trainer.train()` call is replaced by a `for` loop. At the beginning of each round (epoch in this case), we load a fixed model weights saved at the beginning, over-write the last round's record, then call `trainer.train(resume_from_checkpoint=True)` with `trainer.args.num_train_epochs` incremented by 1.
+Note that the `trainer.train()` call is replaced by a `for` loop. At the beginning of each round (epoch in this case), we intentionally load a fixed model weights saved at the beginning, over-write the last round's record, then call `trainer.train(resume_from_checkpoint=True)` with `trainer.args.num_train_epochs` incremented by 1. 
 
-So if the intended model weights (serving as the starting point for each round, the "global model" for FL use case) is properly loaded, then we shall observe a "zig-zag" pattern in the training loss curve because the model weights are reset to the same starting point at the beginning of each round. In contrast to the one-shot centralized training, where the model weights are updated continuously, and the training loss curve should follow an overall decreasing trend.
+The purpose of doing so is to tell if the intended weights are succesfully loaded at each round. Without using a fixed starting model, even if the model weights are not properly loaded, the training loss curve will still follow the one-call result, which is not what we want to see. 
+
+If the intended model weights (serving as the starting point for each round, the "global model" for FL use case) is properly loaded, then we shall observe a "zig-zag" pattern in the training loss curve because the model weights are reset to the same starting point at the beginning of each round. In contrast to the one-shot centralized training, where the model weights are updated continuously, and the training loss curve should follow an overall decreasing trend.
 
 To run iterative training, we use the following command:
 ``` 
