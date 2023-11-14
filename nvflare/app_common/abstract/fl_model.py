@@ -49,12 +49,12 @@ class FLModel:
         total_rounds: Optional[int] = None,
         meta: Optional[Dict] = None,
     ):
-        """
+        """FLModel is a standardize data structure for NVFlare to communicate with external systems.
+
         Args:
             params_type: type of the parameters. It only describes the "params".
                 If params_type is None, params need to be None.
-                If params is provided but params_type is not provided, then it will be treated
-                   as FULL.
+                If params is provided but params_type is not provided, then it will be treated as FULL.
             params: model parameters, for example: model weights for deep learning.
             optimizer_params: optimizer parameters.
                 For many cases, the optimizer parameters don't need to be transferred during FL training.

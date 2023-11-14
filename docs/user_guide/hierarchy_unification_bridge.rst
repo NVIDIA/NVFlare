@@ -30,7 +30,7 @@ The following diagram shows how this is done:
 
 In this diagram, green blocks represent components of the T1 system, and the blue blocks represent components of the T2 system.  Though T1 and T2
 systems are independent of each other, they belong to the same organization. Though they do not have to be on the same VM, they must be able to access
- shared file systems.
+shared file systems.
 
 Here is the general process flow:
 
@@ -323,7 +323,7 @@ Step 1: create a client for the T1 system
 This is the normal provision and setup process of the T1 system. Once completed, you should have the client configuration (workspace, startup kit, local folder, etc.) created.
 
 Step 2: Modify "<workspace>/local/resources.json"
-================================================
+=================================================
 
 .. code-block:: json
 

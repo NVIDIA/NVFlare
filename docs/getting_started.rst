@@ -160,7 +160,7 @@ Let's first create a folder called ``build`` and then create a file inside named
 
 Using any text editor to edit the Dockerfile and paste the following:
 
-.. literalinclude:: resources/Dockerfile.doc
+.. literalinclude:: resources/Dockerfile
     :language: dockerfile
 
 We can then build the new container by running docker build in the directory containing
@@ -269,6 +269,14 @@ First, we need to clone the NVFlare repo to get the source code for the examples
 .. code-block:: shell
 
   $ git clone https://github.com/NVIDIA/NVFlare.git
+
+
+Please make sure to switch to the correct branch that matches the NVFlare library version you installed.
+
+.. code-block:: shell
+
+  $ git switch [nvflare version]
+
 
 We can then copy the necessary files (the exercise code in the examples directory of the NVFlare repository)
 to a working directory:

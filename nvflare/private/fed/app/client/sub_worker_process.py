@@ -309,19 +309,7 @@ class SubWorkerExecutor(Runner):
         self.done = True
 
 
-def main():
-    """Sub_worker process program."""
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
-    parser.add_argument("--num_processes", type=str, help="Listen ports", required=True)
-    parser.add_argument("--job_id", "-n", type=str, help="job_id", required=True)
-    parser.add_argument("--client_name", "-c", type=str, help="client name", required=True)
-    parser.add_argument("--simulator_engine", "-s", type=str, help="simulator engine", required=True)
-    parser.add_argument("--parent_pid", type=int, help="parent process pid", required=True)
-    parser.add_argument("--root_url", type=str, help="root cell url", required=True)
-    parser.add_argument("--parent_url", type=str, help="parent cell url", required=True)
-
-    args = parser.parse_args()
+def main(args):
     workspace = Workspace(args.workspace, args.client_name)
     app_custom_folder = workspace.get_client_custom_dir()
     if os.path.isdir(app_custom_folder):
@@ -367,9 +355,26 @@ def main():
         logger.warning(err)
 
 
+def parse_arguments():
+    """Sub_worker process program."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
+    parser.add_argument("--num_processes", type=str, help="Listen ports", required=True)
+    parser.add_argument("--job_id", "-n", type=str, help="job_id", required=True)
+    parser.add_argument("--client_name", "-c", type=str, help="client name", required=True)
+    parser.add_argument("--simulator_engine", "-s", type=str, help="simulator engine", required=True)
+    parser.add_argument("--parent_pid", type=int, help="parent process pid", required=True)
+    parser.add_argument("--root_url", type=str, help="root cell url", required=True)
+    parser.add_argument("--parent_url", type=str, help="parent cell url", required=True)
+    args = parser.parse_args()
+    return args
+
+
 if __name__ == "__main__":
     """
     This is the program for running rank processes in multi-process mode.
     """
     # main()
-    mpm.run(main_func=main)
+    args = parse_arguments()
+    run_dir = os.path.join(args.workspace, args.job_id)
+    mpm.run(main_func=main, run_dir=run_dir, args=args)

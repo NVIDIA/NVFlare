@@ -27,6 +27,7 @@ from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger, create_privacy_manager
+from nvflare.private.fed.app.utils import version_check
 from nvflare.private.fed.client.admin import FedAdminAgent
 from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.client_status import ClientStatus
@@ -36,19 +37,7 @@ from nvflare.private.privacy_manager import PrivacyService
 from nvflare.security.logging import secure_format_exception
 
 
-def main():
-    if sys.version_info >= (3, 11):
-        raise RuntimeError("Python versions 3.11 and above are not yet supported. Please use Python 3.8, 3.9 or 3.10.")
-    if sys.version_info < (3, 8):
-        raise RuntimeError("Python versions 3.7 and below are not supported. Please use Python 3.8, 3.9 or 3.10")
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
-    parser.add_argument("--fed_client", "-s", type=str, help="client config json file", required=True)
-    parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
-    parser.add_argument("--local_rank", type=int, default=0)
-
-    args = parser.parse_args()
+def main(args):
     kv_list = parse_vars(args.set)
 
     config_folder = kv_list.get("config_folder", "")
@@ -143,6 +132,16 @@ def main():
         print(f"ConfigError: {secure_format_exception(e)}")
 
 
+def parse_arguments():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
+    parser.add_argument("--fed_client", "-s", type=str, help="client config json file", required=True)
+    parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
+    parser.add_argument("--local_rank", type=int, default=0)
+    args = parser.parse_args()
+    return args
+
+
 def create_admin_agent(req_processors, federated_client: FederatedClient, client_engine: ClientEngine):
     """Creates an admin agent.
 
@@ -182,5 +181,7 @@ if __name__ == "__main__":
     # multiprocessing.set_start_method('spawn')
 
     # main()
-    rc = mpm.run(main_func=main)
+    version_check()
+    args = parse_arguments()
+    rc = mpm.run(main_func=main, run_dir=args.workspace, args=args)
     sys.exit(rc)
