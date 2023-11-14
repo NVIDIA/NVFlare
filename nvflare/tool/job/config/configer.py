@@ -135,11 +135,15 @@ def split_array_key(key: str) -> Tuple:
 def convert_to_number(value: str):
     if not value:
         return value
-    if value.isdigit():
-        return int(value)
-    elif value.replace(".", "").isdigit():
-        return float(value)
-    else:
+
+    try:
+        if value.isdigit():
+            return int(value)
+        elif value.replace(".", "").isdigit():
+            return float(value)
+        else:
+            return value
+    except Exception as ex:
         return value
 
 

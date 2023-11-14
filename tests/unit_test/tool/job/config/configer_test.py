@@ -174,6 +174,15 @@ class TestConfiger:
             )
         assert str(excinfo.value) == "invalid config_file, /custom/my.conf"
 
+    def test_get_config_file_path2(self):
+        job_folder = "/tmp/nvflare/job_folder"
+
+        with pytest.raises(ValueError) as excinfo:
+            config_file_path = get_config_file_path(
+                app_name="app", input_file_path="/custom/my.conf", job_folder=job_folder
+            )
+        assert str(excinfo.value) == "invalid config_file, /custom/my.conf"
+
     def test_convert_to_number(self):
         text = "I am a str"
         assert text == convert_to_number(text)
@@ -189,3 +198,6 @@ class TestConfiger:
 
         text = "0.01"
         assert 0.01 == convert_to_number(text)
+
+        text = "0.0.1"
+        assert "0.0.1" == convert_to_number(text)
