@@ -335,6 +335,9 @@ def get_config_file_path(app_name, input_file_path, job_folder):
         # <app_name>/config/<config_file_name> -- including "config" directory
         # <app_name>/custom/<config_file_name> -- including "config" directory
         # We need to handle all cases
+        if input_file_path.strip().startswith("/"):
+            raise ValueError(f"invalid config_file, {input_file_path}")
+
         dirname = os.path.dirname(input_file_path)
         if dirname == "":
             # no dirname

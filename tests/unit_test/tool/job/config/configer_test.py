@@ -22,6 +22,7 @@ from nvflare.tool.job.config.configer import (
     build_config_file_indices,
     convert_to_number,
     get_cli_config,
+    get_config_file_path,
     merge_configs,
     split_array_key,
 )
@@ -40,7 +41,7 @@ MERGE_CONFIG_TEST_CASES = [
     (
         "launch_once",
         [
-            ["config_fed_client.conf", "app_script=cifar10_fl.py", "launch_once=False"],
+            ["config_fed_client.conf", "app_script=cifar10_fl.py", "launch_once=false"],
             ["meta.conf", "min_clients=3"],
         ],
         "launch_everytime",
@@ -66,6 +67,15 @@ GET_CLI_USE_CASES = [
     ("launch_once", [["meta.conf", "min_clients=3"]], {META_APP_NAME: {"meta.conf": {"min_clients": "3"}}}),
 ]
 
+GET_CONFIG_FILE_PATH_TEST_CASES = [
+    ("meta.conf", "meta.conf"),
+    ("config_fed_client.conf", "app/config/config_fed_client.conf"),
+    ("app/config/config_fed_client.conf", "app/config/config_fed_client.conf"),
+    ("app/custom/config.yaml", "app/custom/config.yaml"),
+    ("app/custom/config.yml", "app/custom/config.yml"),
+    ("app/custom/code/config.yml", "app/custom/code/config.yml"),
+]
+
 
 def _create_test_args(config_files: List, job_name: str = "launch_once"):
     args = argparse.Namespace()
@@ -87,10 +97,10 @@ def _get_merged_configs(args):
 
 
 class TestConfiger:
-    @pytest.mark.parametrize("job_name, config_files, expected", GET_CLI_USE_CASES)
-    def test_get_cli_config(self, job_name, config_files, expected):
+    @pytest.mark.parametrize("job_name, config_file, expected", GET_CLI_USE_CASES)
+    def test_get_cli_config(self, job_name, config_file, expected):
         args = _create_test_args(
-            config_files=config_files,
+            config_files=config_file,
             job_name=job_name,
         )
         result = get_cli_config(args, [DEFAULT_APP_NAME])
@@ -151,6 +161,18 @@ class TestConfiger:
             assert split_array_key("components[1.args.model.path")
         except ValueError:
             assert True
+
+    @pytest.mark.parametrize("input_file_path, expected_config_file_path", GET_CONFIG_FILE_PATH_TEST_CASES)
+    def test_get_config_file_path(self, input_file_path, expected_config_file_path):
+        job_folder = "/tmp/nvflare/job_folder"
+        config_file_path = get_config_file_path(app_name="app", input_file_path=input_file_path, job_folder=job_folder)
+        assert config_file_path == os.path.join(job_folder, expected_config_file_path)
+
+        with pytest.raises(ValueError) as excinfo:
+            config_file_path = get_config_file_path(
+                app_name="app", input_file_path="/custom/my.conf", job_folder=job_folder
+            )
+        assert str(excinfo.value) == "invalid config_file, /custom/my.conf"
 
     def test_convert_to_number(self):
         text = "I am a str"
