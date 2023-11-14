@@ -197,9 +197,9 @@ For more details, refer to the :ref:`unsafe_component_detection` and :ref:`site_
 FL HUB: Hierarchical Unification Bridge
 =======================================
 The FL HUB is a new experimental feature designed to support multiple FLARE systems working together in a hierarchical manner.
-In Federated Computing, the number of edge devices is usually large, with often just a single server, which can cause performance issues.
-A solution to this problem is to use a hierachical FL system, where tiered FL systems connecttogether to form a tree-like structure.
-Each leaf of clients (edge devices) only connect to its server, where this server also serves as the client for the parent tier fl system.
+In Federated Computing, the number of edge devices is usually large with often just a single server, which can cause performance issues.
+A solution to this problem is to use a hierachical FLARE system, where tiered FLARE systems connect together to form a tree-like structure.
+Each leaf of clients (edge devices) only connect to its server, where this server also serves as the client for the parent tier FLARE system.
 
 One potential use case is with global studies, where the client machine may be located across different regions.
 Rather than requiring every region's client machines connect to only a single FL server in that region, the FL HUB could enable a more performant tiered multi-server setup.
@@ -234,8 +234,13 @@ Misc. Features
     Previously, we noticed if the gRPC timeout is set too long, the cloud provider (eg. Azure Cloud) will kill the connection after 4 minutes.
     If the timeout setup is too short (such as 2 mins), the underlying gRPC will report too many pings.
     The application level ping will avoid both issues to make sure the server/client is aware of the status of the processes.
-  - gRPC Asynchronous communication vs synchronous communication: we noticed that in an unstable network environment, async communication may result in job crashes,
-    while sync communication results in more stable communication. We have changed the default settings to sync communication from asynchronous communication.
+  - FLARE provides two drivers for gRPC based communication- asyncio (AIO) and regular (non-AIO) versions of gRPC library.
+    One notable benefit of the AIO gRPC is its ability to handle many more concurrent connections on the server side.
+    However, the AIO gRPC may crash under challenging network conditions on the client side, whereas the non-AIO gRPC is more stable.
+    Hence in FLARE 2.4.0, the default configuration uses the non-AIO gRPC library version for better stability.
+
+    - In order to change the driver selection, users can update ``comm_config.json`` in the local directory of the workspace,
+      and set the ``use_aio_grpc`` config variable.
 
 New Examples
 ============
