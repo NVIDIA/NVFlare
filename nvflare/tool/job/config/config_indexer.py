@@ -13,6 +13,7 @@
 # limitations under the License.
 import dataclasses
 import inspect
+import os.path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from pyhocon import ConfigFactory as CF
@@ -32,9 +33,12 @@ class KeyIndex:
     component_name: Optional[str] = None
 
 
-def build_reverse_order_index(config_file_path: str) -> Tuple:
+def build_reverse_order_index(input_config_file_path: str) -> Tuple:
     # use pyhocon to load config
-    config, config_file_path = load_pyhocon_conf(config_file_path)
+    config_dir = os.path.dirname(input_config_file_path)
+    config_dir = None if not config_dir else config_dir
+    config_file_path = os.path.basename(input_config_file_path)
+    config, config_file_path = load_pyhocon_conf(config_file_path, config_dir)
 
     components: list = config.get("components", None)
     excluded_list = [comp.get("id") for comp in components] if components else []
@@ -64,10 +68,10 @@ def build_reverse_order_index(config_file_path: str) -> Tuple:
     return config_file_path, config, excluded_list, key_indices
 
 
-def load_pyhocon_conf(config_file_path) -> Tuple[ConfigTree, str]:
+def load_pyhocon_conf(config_file_path: str, search_dir: Optional[str]) -> Tuple[ConfigTree, str]:
     """Loads config using pyhocon."""
     try:
-        temp_conf: Config = ConfigFactory.load_config(config_file_path)
+        temp_conf: Config = ConfigFactory.load_config(config_file_path, [search_dir])
         if temp_conf:
             config_file_path = temp_conf.file_path
             if temp_conf.format == ConfigFormat.PYHOCON:
