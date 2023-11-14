@@ -135,11 +135,15 @@ def split_array_key(key: str) -> Tuple:
 def convert_to_number(value: str):
     if not value:
         return value
-    if value.isdigit():
-        return int(value)
-    elif value.replace(".", "").isdigit():
-        return float(value)
-    else:
+
+    try:
+        if value.isdigit():
+            return int(value)
+        elif value.replace(".", "").isdigit():
+            return float(value)
+        else:
+            return value
+    except Exception as ex:
         return value
 
 
@@ -159,14 +163,12 @@ def merge_configs(
     app_merged = {}
     for app_name in app_indices_configs:
         indices_configs = app_indices_configs[app_name]
-
         cli_file_configs = app_cli_file_configs.get(app_name, None)
         if cli_file_configs:
             merged = {}
             for file, (config, excluded_key_list, key_indices) in indices_configs.items():
-                basename = os.path.basename(file)
                 if len(key_indices) > 0:
-                    cli_configs = cli_file_configs.get(basename, None)
+                    cli_configs = cli_file_configs.get(file, None)
                     if cli_configs:
                         for key, cli_value in cli_configs.items():
                             cli_value = convert_to_number(cli_value)
@@ -203,12 +205,12 @@ def merge_configs(
                                     if parent_key and isinstance(parent_key.value, ConfigTree):
                                         parent_key.value.put(key_index.key, new_value)
 
-                merged[basename] = (config, excluded_key_list, key_indices)
+                merged[file] = (config, excluded_key_list, key_indices)
             app_merged[app_name] = merged
         elif app_name == META_APP_NAME:
             new_indices_configs = {}
             for k, v in indices_configs.items():
-                new_indices_configs[os.path.basename(k)] = v
+                new_indices_configs[k] = v
             app_merged[app_name] = new_indices_configs
         else:
             app_merged[app_name] = indices_configs
@@ -242,7 +244,7 @@ def get_cli_config(cmd_args: Any, app_names: List[str]) -> Dict[str, Dict[str, D
     app_cli_config_dict = {}
     if cmd_args.config_file:
         cli_configs = cmd_args.config_file
-        app_cli_config_dict = _parse_cli_config(cli_configs, app_names)
+        app_cli_config_dict = _parse_cli_config(cmd_args.job_folder, cli_configs, app_names)
 
     # replace "script"
     if "script" in cmd_args and cmd_args.script:
@@ -269,15 +271,27 @@ def _is_meta_file(filename: str) -> bool:
     return False
 
 
-def _parse_cli_config(cli_configs: List[str], app_names: List[str]) -> Dict[str, Dict[str, Dict[str, str]]]:
+def _parse_cli_config(
+    job_folder: str, cli_configs: List[str], app_names: List[str]
+) -> Dict[str, Dict[str, Dict[str, str]]]:
     """Extracts configurations from command-line arguments and return them in a dictionary.
 
     Args:
+        job_folder: job_folder directory
         app_names: application names
         cli_configs: Array of CLI config option in the format of
            -f filename.conf  key1=v1 key2=v2
+           where <app_name>/config is omitted, default to app/config
            or
-           -f app/filename.conf  key1=v1 key2=v2
+           -f <app_name>/filename.conf  key1=v1 key2=v2
+           where config is omitted, default to <app_name>/config/filename.conf
+           or
+           -f <app_name>/config/filename.conf  key1=v1 key2=v2
+           or
+           -f <app_name>/custom/filename.conf  key1=v1 key2=v2
+
+           if filename.conf  is meta.conf, the <app_name> = __meta_app__
+
         separated by space
     Returns:
         A dictionary containing the configurations extracted from the command-line arguments.
@@ -286,8 +300,10 @@ def _parse_cli_config(cli_configs: List[str], app_names: List[str]) -> Dict[str,
     app_cli_config_dict = {}
     if cli_configs:
         for arr in cli_configs:
-            config_file = os.path.basename(arr[0])
+
             app_name = get_app_name_from_path(arr[0])
+            config_file = get_config_file_path(app_name, arr[0], job_folder)
+
             config_data = arr[1:]
             config_dict = {}
             app_name = DEFAULT_APP_NAME if not app_name else app_name
@@ -310,6 +326,35 @@ def _parse_cli_config(cli_configs: List[str], app_names: List[str]) -> Dict[str,
             app_cli_config_dict[app_name][config_file] = config_dict
 
     return app_cli_config_dict
+
+
+def get_config_file_path(app_name, input_file_path, job_folder):
+    basename = os.path.basename(input_file_path)
+    if basename.startswith(f"{JOB_META_BASE_NAME}."):
+        config_file = os.path.abspath(os.path.join(job_folder, basename))
+    else:
+        # The input_file_path could be in one of the following format
+        # <config_file_name>  --> missing "app/config"
+        # <app_name>/<config_file_name> -- missing "config" directory
+        # <app_name>/config/<config_file_name> -- including "config" directory
+        # <app_name>/custom/<config_file_name> -- including "config" directory
+        # We need to handle all cases
+        if input_file_path.strip().startswith("/"):
+            raise ValueError(f"invalid config_file, {input_file_path}")
+
+        dirname = os.path.dirname(input_file_path)
+        if dirname == "":
+            # no dirname
+            config_file = os.path.abspath(os.path.join(job_folder, DEFAULT_APP_NAME, "config", basename))
+        else:
+            index = dirname.find("/")
+            if index == -1:
+                # no directory name, only app name
+                config_file = os.path.abspath(os.path.join(job_folder, app_name, "config", basename))
+            else:
+                # full path
+                config_file = os.path.abspath(os.path.join(job_folder, input_file_path))
+    return config_file
 
 
 def build_config_file_indices(job_folder: str, app_names: List[str]) -> Dict[str, Dict[str, Tuple]]:
@@ -336,6 +381,17 @@ def build_config_file_indices(job_folder: str, app_names: List[str]) -> Dict[str
                     config_files.append(file)
                     app_config_files[app_name] = config_files
 
+    for app_name in app_names:
+        custom_dir = os.path.join(job_folder, app_name, "custom")
+        for root, dirs, files in os.walk(custom_dir):
+            for f in files:
+                for ext in config_extensions:
+                    if f.endswith(ext):
+                        file = os.path.join(root, f)
+                        config_files = app_config_files.get(app_name, [])
+                        config_files.append(file)
+                        app_config_files[app_name] = config_files
+
     for app_name, config_files in app_config_files.items():
         for f in config_files:
             real_path, config, excluded_key_list, key_indices = build_reverse_order_index(str(f))
@@ -348,12 +404,22 @@ def build_config_file_indices(job_folder: str, app_names: List[str]) -> Dict[str
 
 def get_app_name_from_path(path: str):
     # path is in the format of as app1/xxx.conf
+    # path xxx.conf
     # path app1/xxx.conf
+    # path app1/config/xxx.conf
+    # path app1/custom/xxx.conf
     # xxx.conf
     if _is_meta_file(os.path.basename(path)):
         return META_APP_NAME
     app_name = os.path.dirname(path)
     index = app_name.find("/")
-    if index > 0:
-        raise ValueError(f"Expecting <app_name>/<config file>, but '{path}' is given.")
+    if index == -1:
+        return DEFAULT_APP_NAME
+    else:
+        app_name = os.path.dirname(app_name)
+        index = app_name.find("/")
+        if index > 0:
+            raise ValueError(
+                f"Expecting <app_name>/<config file> or <app_name>/custom/<config_file>, but '{path}' is given."
+            )
     return app_name if app_name else DEFAULT_APP_NAME
