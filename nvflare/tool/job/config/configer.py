@@ -148,7 +148,7 @@ def convert_to_number(value: str):
 
 
 def get_last_token(input_string):
-    tokens = input_string.split('.')
+    tokens = input_string.split(".")
     if len(tokens) > 1:
         last_token = tokens[-1]
         return last_token
@@ -342,7 +342,7 @@ def _parse_cli_config(
                     if index == -1:
                         raise ValueError("Invalid config data, expecting key, value pair in the format key=value")
                     conf_key = conf[0:index]
-                    conf_value = conf[index + 1:]
+                    conf_value = conf[index + 1 :]
                     if conf_key.endswith("-"):
                         conf_key = conf_key[:-1]
                         conf_value = None

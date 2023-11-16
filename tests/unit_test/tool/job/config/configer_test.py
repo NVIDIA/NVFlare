@@ -153,11 +153,13 @@ class TestConfiger:
     def test_add_and_remove_config_keys(self):
         # remove config executors[0].executor.args.training = true
         # add config executors[0].executor.args.evaluation = true
-        config_file = [["config_fed_client.conf",
-                        "executors[0].executor.args.training-",
-                        "executors[0].executor.args.evaluation=true"
-                        ]
-                       ]
+        config_file = [
+            [
+                "config_fed_client.conf",
+                "executors[0].executor.args.training-",
+                "executors[0].executor.args.evaluation=true",
+            ]
+        ]
         args = _create_test_args(
             config_file=config_file,
             job_name="launch_once",
@@ -170,7 +172,7 @@ class TestConfiger:
         assert config.get("executors")[0].get("executor.args.training", None) is None
         assert key_indices.get("training", None) is None
 
-        assert config.get("executors")[0].get("executor.args.evaluation", None) == 'true'
+        assert config.get("executors")[0].get("executor.args.evaluation", None) == "true"
         assert key_indices.get("evaluation", None) is not None
 
     def test_split_key(self):
