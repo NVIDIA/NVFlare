@@ -77,9 +77,9 @@ GET_CONFIG_FILE_PATH_TEST_CASES = [
 ]
 
 
-def _create_test_args(config_files: List, job_name: str = "launch_once"):
+def _create_test_args(config_file: List, job_name: str = "launch_once"):
     args = argparse.Namespace()
-    args.config_file = config_files
+    args.config_file = config_file
     args.debug = False
     args.force = True
     dir_name = os.path.join(os.getcwd(), os.path.dirname(__file__))
@@ -100,7 +100,7 @@ class TestConfiger:
     @pytest.mark.parametrize("job_name, config_file, expected", GET_CLI_USE_CASES)
     def test_get_cli_config(self, job_name, config_file, expected):
         args = _create_test_args(
-            config_files=config_file,
+            config_file=config_file,
             job_name=job_name,
         )
         result = get_cli_config(args, [DEFAULT_APP_NAME])
@@ -121,12 +121,12 @@ class TestConfiger:
     @pytest.mark.parametrize("origin_job, origin_config, expect_job, expect_config", MERGE_CONFIG_TEST_CASES)
     def test_merge_configs(self, origin_job, origin_config, expect_job, expect_config):
         args = _create_test_args(
-            config_files=origin_config,
+            config_file=origin_config,
             job_name=origin_job,
         )
         result_merged = _get_merged_configs(args)
 
-        expected_args = _create_test_args(config_files=expect_config, job_name=expect_job)
+        expected_args = _create_test_args(config_file=expect_config, job_name=expect_job)
         expected_merged = _get_merged_configs(expected_args)
 
         result = {}
@@ -149,6 +149,31 @@ class TestConfiger:
             expected[app] = app_expected
 
         assert result == expected
+
+    def test_add_and_remove_config_keys(self):
+        # remove config executors[0].executor.args.training = true
+        # add config executors[0].executor.args.evaluation = true
+        config_file = [
+            [
+                "config_fed_client.conf",
+                "executors[0].executor.args.training-",
+                "executors[0].executor.args.evaluation=true",
+            ]
+        ]
+        args = _create_test_args(
+            config_file=config_file,
+            job_name="launch_once",
+        )
+        result_merged = _get_merged_configs(args)
+        file_merged = result_merged.get("app")
+        file, merged = list(file_merged.items())[0]
+        config, excluded_key_list, key_indices = merged
+
+        assert config.get("executors")[0].get("executor.args.training", None) is None
+        assert key_indices.get("training", None) is None
+
+        assert config.get("executors")[0].get("executor.args.evaluation", None) == "true"
+        assert key_indices.get("evaluation", None) is not None
 
     def test_split_key(self):
         assert split_array_key("components[1].args.model.path") == ("components", 1, "args.model.path")
