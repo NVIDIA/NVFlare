@@ -14,8 +14,11 @@ Usability Improvements
 Client API
 ----------
 We introduce the new Client API, which streamlines the conversion process from centralized to federated deep learning code.
-Using the Client API only requires a few lines of code changes, without the need for a complete restructuring of the code base.
-Furthermore, the Client API significantly reduces the need for users to delve into FLARE specific concepts, simplying the overall user experience.
+Using the Client API only requires a few lines of code changes, without the need to restructure the code or implement a new class.
+Users can modify their pre-existing centralized deep learning code with these small changes to easily transform into federated learning code.
+For PyTorch-Lightning, we provide a tight integration which requires even fewer lines of code changes.
+Furthermore, the Client API significantly reduces the need for users to delve into FLARE specific concepts, helping to simplify the overall user experience.
+
 Here is a brief example of a common pattern when using the Client API for a client trainer:
 
 .. code-block:: python
@@ -37,7 +40,7 @@ Here is a brief example of a common pattern when using the Client API for a clie
         net.load_state_dict(input_model.params)
 
         # perform local training and evaluation on received model
-        ...
+        {existing centralized deep learning code} ...
 
         # construct output FLModel
         output_model = flare.FLModel(
@@ -164,7 +167,7 @@ We added two new configuration formats:
 - `OmegaConf <https://omegaconf.readthedocs.io/en/2.3_branch/>`_ - a YAML based hierarchical configuration
 
 Users have the flexibility to use a single format or combine several formats, as exemplified by config_fed_client.conf and config_fed_server.json.
-If multiple configuration formats coexist, then their usage will be prioritized based on the following search order: .json -> .conf -> .yml
+If multiple configuration formats coexist, then their usage will be prioritized based on the following search order: .json -> .conf -> .yml -> .yaml
 
 POC Command Upgrade
 ===================
