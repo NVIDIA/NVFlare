@@ -111,7 +111,7 @@ in which an online RL agent can dynamically adjust the hyperparameters of each c
 
 Quantifying Data Leakage in Federated Learning
 ----------------------------------------------
-This research :github_nvflare_link:`example <research/quantifying-data-leakage/README.md>`_ contains the tools necessary to recreate the chest X-ray experiments described in
+This research :github_nvflare_link:`example <research/quantifying-data-leakage/README.md>` contains the tools necessary to recreate the chest X-ray experiments described in
 `Do Gradient Inversion Attacks Make Federated Learning Unsafe? <https://arxiv.org/abs/2202.06924>`_, accepted to IEEE Transactions on Medical Imaging.
 It presents new ways to measure and visualize potential data leakage in FL using a new FLARE filter
 that can quantify the data leakage for each client and visualize it as a function of the FL training rounds.
