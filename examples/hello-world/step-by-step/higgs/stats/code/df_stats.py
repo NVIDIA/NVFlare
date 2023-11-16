@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import csv
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -24,18 +24,29 @@ from nvflare.app_common.statistics.numpy_utils import dtype_to_data_type, get_st
 
 
 class DFStatistics(Statistics):
-    def __init__(self, features: List, data_root_dir: str):
+    def __init__(self, data_root_dir: str):
         super().__init__()
         self.data_root_dir = data_root_dir
         self.data: Optional[Dict[str, pd.DataFrame]] = None
-        self.data_features = features
+        self.data_features = None
+
+    def load_features(self, fl_ctx: FLContext) -> List:
+        client_name = self.get_client_name(fl_ctx)
+        try:
+            data_path = f"{self.data_root_dir}/{client_name}_header.csv"
+
+            features = []
+            with open(data_path, "r") as file:
+                # Create a CSV reader object
+                csv_reader = csv.reader(file)
+                line_list = next(csv_reader)
+                features = line_list
+            return features
+        except Exception as e:
+            raise Exception(f"Load header for client {client_name} failed! {e}")
 
     def load_data(self, fl_ctx: FLContext) -> Dict[str, pd.DataFrame]:
-        client_name = fl_ctx.get_identity_name() if fl_ctx is not None else "site-1"
-        if fl_ctx:
-            self.log_info(fl_ctx, f"load data for client {client_name}")
-        else:
-            print(f"load data for client {client_name}")
+        client_name = self.get_client_name(fl_ctx)
         try:
             data_path = f"{self.data_root_dir}/{client_name}.csv"
             # example of load data from CSV
@@ -47,7 +58,16 @@ class DFStatistics(Statistics):
         except Exception as e:
             raise Exception(f"Load data for client {client_name} failed! {e}")
 
+    def get_client_name(self, fl_ctx):
+        client_name = fl_ctx.get_identity_name() if fl_ctx is not None else "site-1"
+        if fl_ctx:
+            self.log_info(fl_ctx, f"load data for client {client_name}")
+        else:
+            print(f"load data for client {client_name}")
+        return client_name
+
     def initialize(self, fl_ctx: FLContext):
+        self.data_features = self.load_features(fl_ctx)
         self.data = self.load_data(fl_ctx)
         if self.data is None:
             raise ValueError("data is not loaded. make sure the data is loaded")
