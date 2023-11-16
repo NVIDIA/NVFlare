@@ -147,6 +147,52 @@ def convert_to_number(value: str):
         return value
 
 
+def get_last_token(input_string):
+    if not input_string:
+        return input_string
+
+    tokens = input_string.split(".")
+    if len(tokens) > 1:
+        last_token = tokens[-1]
+        return last_token
+    else:
+        return input_string
+
+
+def handle_key_in_path_notation_or_new_key(file: str, key: str, cli_value: str, config: ConfigTree, key_indices: Dict):
+
+    key_value = None
+    parent, index, key = split_array_key(key)
+    if parent is not None and index is not None:
+        # we have key expressed in the form of array such as component[index]
+        parent_config_list = config.get(parent)
+        if not isinstance(parent_config_list, list):
+            raise ValueError(f"invalid key '{key}' for file {file}")
+        index_config = parent_config_list[index]
+        if cli_value:
+            index_config.put(key, cli_value)
+            key_value = index_config.get(key)
+        else:
+            # if the value is None, we need to drop the key
+            index_config.pop(key)
+    else:
+        # we have key has no array component.
+        if cli_value:
+            config.put(key, cli_value)
+            key_value = config.get(key)
+        else:
+            config.pop(key)
+
+    last_token = get_last_token(key)
+    if key_value:
+        # now update the key
+        key_index = KeyIndex(key, key_value)
+        key_indices[last_token] = [key_index]
+    else:
+        # now drop the key
+        key_indices.pop(last_token)
+
+
 def merge_configs(
     app_indices_configs: Dict[str, Dict[str, tuple]], app_cli_file_configs: Dict[str, Dict[str, Dict]]
 ) -> Dict[str, Dict[str, tuple]]:
@@ -177,33 +223,18 @@ def merge_configs(
                                 if key not in [APP_SCRIPT_KEY, APP_CONFIG_KEY]:
                                     if key.startswith(".") or key.endswith("."):
                                         raise ValueError(f"invalid key {key} for file {file}")
-
-                                parent, index, key = split_array_key(key)
-                                if parent is not None and index is not None:
-                                    parent_config_list = config.get(parent)
-                                    if not isinstance(parent_config_list, list):
-                                        raise ValueError(f"invalid key '{key}' for file {file}")
-                                    index_config = parent_config_list[index]
-
-                                    index_config.put(key, cli_value)
-                                    key_value = index_config.get(key)
-                                else:
-                                    config.put(key, cli_value)
-                                    key_value = config.get(key)
-
-                                tokens = key.split(".")
-                                if len(tokens) > 1:
-                                    key = tokens[-1]
-                                key_index = KeyIndex(key, key_value)
-                                key_indices[key] = [key_index]
+                                handle_key_in_path_notation_or_new_key(file, key, cli_value, config, key_indices)
                             else:
-                                indices = key_indices.get(key)
-                                for key_index in indices:
-                                    new_value = _cast_type(key_index, cli_value)
-                                    key_index.value = new_value
-                                    parent_key = key_index.parent_key
-                                    if parent_key and isinstance(parent_key.value, ConfigTree):
-                                        parent_key.value.put(key_index.key, new_value)
+                                if cli_value:
+                                    indices = key_indices.get(key)
+                                    for key_index in indices:
+                                        new_value = _cast_type(key_index, cli_value)
+                                        key_index.value = new_value
+                                        parent_key = key_index.parent_key
+                                        if parent_key and isinstance(parent_key.value, ConfigTree):
+                                            parent_key.value.put(key_index.key, new_value)
+                                else:
+                                    key_indices.pop(key)
 
                 merged[file] = (config, excluded_key_list, key_indices)
             app_merged[app_name] = merged
@@ -314,11 +345,19 @@ def _parse_cli_config(
                 )
 
             for conf in config_data:
-                index = conf.find("=")
-                if index == -1:
-                    raise ValueError("Invalid config data, expecting key, value pair in the format key=value")
-                conf_key = conf[0:index]
-                conf_value = conf[index + 1 :]
+                if conf.endswith("-"):
+                    conf_key = conf[:-1]
+                    conf_value = None
+                else:
+                    index = conf.find("=")
+                    if index == -1:
+                        raise ValueError("Invalid config data, expecting key, value pair in the format key=value")
+                    conf_key = conf[0:index]
+                    conf_value = conf[index + 1 :]
+                    if conf_key.endswith("-"):
+                        conf_key = conf_key[:-1]
+                        conf_value = None
+
                 config_dict[conf_key] = conf_value
 
             if app_name not in app_cli_config_dict:
