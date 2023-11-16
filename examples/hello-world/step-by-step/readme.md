@@ -35,6 +35,14 @@ program to a federated learning training program. The example will include:
 
 ## Tabular HIGGs dataset  
 
+### HIGGS
+
+HIGGS dataset. This dataset contains 11 million instances, each with 28 attributes.
+The first 21 features (columns 2-22) are kinematic properties measured by the particle detectors in the accelerator. 
+The last seven features are functions of the first 21 features; these are high-level features derived by physicists to help discriminate between the two classes.
+
+Please note that the [UCI's website](https://archive.ics.uci.edu/dataset/280/higgs) may experience occasional downtime.
+
 With the HIGGs Dataset, we like to demonstrate traditional machine learning techniques in federated learning.
 These include:
 
