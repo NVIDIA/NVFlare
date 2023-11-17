@@ -88,6 +88,7 @@ class SysCommandTopic(object):
     SYS_INFO = "sys.info"
     SHELL = "sys.shell"
     REPORT_RESOURCES = "resource_manager.report_resources"
+    REPORT_ENV = "sys.report_env"
 
 
 class ControlCommandTopic(object):

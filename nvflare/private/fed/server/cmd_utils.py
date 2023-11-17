@@ -46,7 +46,7 @@ class CommandUtil(object):
 
         err = self.validate_command_targets(conn, auth_args[1:])
         if err:
-            conn.append_error(err)
+            conn.append_error(err, meta=make_meta(MetaStatusValue.INVALID_TARGET, info=err))
             return PreAuthzReturnCode.ERROR
 
         return PreAuthzReturnCode.REQUIRE_AUTHZ
@@ -125,7 +125,7 @@ class CommandUtil(object):
     def authorize_server_operation(self, conn: Connection, args: List[str]):
         err = self.validate_command_targets(conn, args[1:])
         if err:
-            conn.append_error(err)
+            conn.append_error(err, meta=make_meta(MetaStatusValue.INVALID_TARGET, info=err))
             return PreAuthzReturnCode.ERROR
 
         target_type = conn.get_prop(self.TARGET_TYPE)
