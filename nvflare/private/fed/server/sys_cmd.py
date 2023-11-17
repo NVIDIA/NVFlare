@@ -18,6 +18,7 @@ from typing import List
 import psutil
 
 from nvflare.fuel.hci.conn import Connection
+from nvflare.fuel.hci.proto import MetaKey
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.private.admin_defs import MsgHeader, ReturnCode
 from nvflare.private.defs import SysCommandTopic
@@ -65,6 +66,14 @@ class SystemCommandModule(CommandModule, CommandUtil):
                     usage="report_resources server | client <client-name> ...",
                     handler_func=self.report_resources,
                     authz_func=self.authorize_server_operation,
+                    visible=True,
+                ),
+                CommandSpec(
+                    name="report_env",
+                    description="get env info of a client",
+                    usage="report_env <client-name>",
+                    handler_func=self.report_env,
+                    authz_func=self.authorize_client_operation,
                     visible=True,
                 ),
             ],
@@ -154,3 +163,15 @@ class SystemCommandModule(CommandModule, CommandUtil):
         table = conn.append_table(["Sites", "Resources"])
         for k, v in site_resources.items():
             table.add_row([str(k), str(v)])
+
+    def report_env(self, conn: Connection, args: List[str]):
+        message = new_message(conn, topic=SysCommandTopic.REPORT_ENV, body="", require_authz=True)
+        replies = self.send_request_to_clients(conn, message)
+        if not replies:
+            conn.append_error("no responses from clients")
+            return
+        site_resources = _parse_replies(conn, replies)
+
+        table = conn.append_table(["Sites", "Env"], name=MetaKey.CLIENTS)
+        for k, v in site_resources.items():
+            table.add_row([str(k), str(v)], meta=v)
