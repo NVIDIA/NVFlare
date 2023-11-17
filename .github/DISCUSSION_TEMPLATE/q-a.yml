@@ -46,6 +46,5 @@ body:
       description: "Please describe your question. It would be better if you can attach some logs."
       value: |
         I run into the following issue and don't know what to do ...
-      render: bash
     validations:
       required: true
