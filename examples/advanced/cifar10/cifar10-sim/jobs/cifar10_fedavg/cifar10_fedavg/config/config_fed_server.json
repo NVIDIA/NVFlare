@@ -2,8 +2,8 @@
     "format_version": 2,
     "min_clients": 8,
     "num_rounds": 50,
-    "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits",
-    "alpha": 1.0,
+    "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits/cifar10_fedavg_alpha0.1_731413aa-94c6-4d12-b643-247f673bb9c7",
+    "alpha": 0.1,
     "server": {
         "heart_beat_timeout": 600
     },
@@ -59,8 +59,8 @@
     ],
     "workflows": [
         {
-            "id": "scatter_gather_ctl",
-            "name": "ScatterAndGather",
+            "id": "fedavg_ctl",
+            "path": "nvflare.app_common.workflows.fedavg.FedAvg",
             "args": {
                 "min_clients": "{min_clients}",
                 "num_rounds": "{num_rounds}",
