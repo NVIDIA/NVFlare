@@ -14,33 +14,23 @@
 
 from typing import Any, Union, Optional, List
 
-from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_context import FLContext
-from nvflare.apis.fl_exception import TaskExecutionError
+from nvflare.apis.fl_component import FLComponentHelper
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
-from nvflare.app_common.abstract.model_learner import ModelLearner
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import OperatorMethod, TaskOperatorKey
-from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.impl.controller import ClientTask, Controller, Task
+from nvflare.apis.impl.controller import Task
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.app_common.abstract.aggregator import Aggregator
-from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
-from nvflare.app_common.abstract.model import ModelLearnable, make_model_learnable
-from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.security.logging import secure_format_exception
-from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
-from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from .scatter_and_gather import ScatterAndGather
 from nvflare.app_common.abstract.model import ModelLearnableKey
 
 
-class ModelController(ScatterAndGather, ModelLearner):
+class ModelController(ScatterAndGather, FLComponentHelper):
 
     #def __init__(self, **kwargs
     #):
@@ -74,7 +64,7 @@ class ModelController(ScatterAndGather, ModelLearner):
 
         return clients
 
-    def send_model_and_wait(self, targets: Union[List[Client], List[str], None] = None, data: FLModel = None):
+    def send_model_and_wait(self, targets: Union[List[Client], List[str], None] = None, data: FLModel = None) -> List:
         # Create train_task
         data_shareable: Shareable = FLModelUtils.to_shareable(data)
         data_shareable.set_header(AppConstants.CURRENT_ROUND, self._current_round)
@@ -98,12 +88,17 @@ class ModelController(ScatterAndGather, ModelLearner):
             result_received_cb=self._process_train_result,
         )
 
-        self.send_and_wait(
+        self.info(f"Sending train task to {[client.name for client in targets]}")
+        self.broadcast_and_wait(
             task=train_task,
             targets=targets,
+            min_responses=self._min_clients,
+            wait_time_after_min_received=self._wait_time_after_min_received,
             fl_ctx=self.fl_ctx,
             abort_signal=self.abort_signal,
         )
+
+        return None  # TODO: return results
 
     def run(self):
         raise NotImplementedError
