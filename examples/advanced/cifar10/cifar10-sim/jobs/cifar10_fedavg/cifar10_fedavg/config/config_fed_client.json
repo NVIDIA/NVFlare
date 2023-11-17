@@ -1,7 +1,7 @@
 {
     "format_version": 2,
-    "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits/cifar10_fedavg_alpha1.0_edc17139-c263-4609-bb0f-5972747f3af5",
-    "AGGREGATION_EPOCHS": 4,
+    "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits/cifar10_fedavg_alpha1.0_401bba66-bd97-4643-9399-64756c3078e8",
+    "AGGREGATION_EPOCHS": 1,
     "executors": [
         {
             "tasks": [

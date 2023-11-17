@@ -38,7 +38,7 @@ class FedAvg(ModelController):
                 targets=clients, data=self.model
             )
 
-            aggregate_results = self.aggregate(results)
+            aggregate_results = self.aggregate(results, aggregate_fn=None)  # if no `aggregate_fn` provided, default `WeightedAggregationHelper` is used
 
             self.update_model(aggregate_results)
 
