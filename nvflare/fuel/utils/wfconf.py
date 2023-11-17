@@ -39,9 +39,21 @@ class ConfigContext(object):
 class _EnvUpdater(JsonObjectProcessor):
     def __init__(self, vs, element_filter=None):
         JsonObjectProcessor.__init__(self)
-        self.vars = vs
         if element_filter is not None and not callable(element_filter):
             raise ValueError("element_filter must be a callable function but got {}.".format(type(element_filter)))
+        self.vars = copy.copy(vs)
+
+        # make all os env vars available for config
+        env_vars = dict(os.environ)
+        if env_vars:
+            for k, v in env_vars.items():
+                # when referencing os env var, must use a $ sign prefix!
+                var_name = "$" + k
+                if var_name not in self.vars:
+                    # only use env var when it is not locally defined!
+                    self.vars[var_name] = v
+                    print(f"==== added {var_name} => {v}")
+
         self.element_filter = element_filter
         self.num_updated = 0
 
@@ -62,28 +74,28 @@ class _EnvUpdater(JsonObjectProcessor):
     def substitute(self, element: str):
         original_value = element
 
-        # Check for single item ref
-        # Single ref is resolved to an object that is derived from the item definition.
-        # If the item def also contains refs, all such refs will also be resolved.
-        # If the item def contains local vars, they are also resolved with the values from the ref.
-        # There are two kinds of Single Item Ref:
+        # Check for Simple Variable Ref (SVR)
+        # SVR is resolved to an object that is derived from the variable definition.
+        # If the variable def also contains refs, all such refs will also be resolved.
+        # If the variable def contains local vars, they are also resolved with the values from the ref.
+        # There are two kinds of SVR:
         # - Simple ref that contains a single var name: {var_name}
-        # - Invoke a definition that contains local vars: {@var_name:p1=v1:p2=v2:...}
-        # The "@var_name" is a def that contains local vars p1, p2, ...
-        # When invoking such def, local var values could also be refs: {@var_name:p1={varp_name}}
-        is_single_ref = False
+        # - Invoke a definition that contains local vars: {@var_name:n1=v1:n2=v2:...}
+        # The "@var_name" is a def that contains local vars n1, n2, ...
+        # When invoking such def, local var values could also be refs: {@var_name:n1={varp_name}}
+        is_svr = False
         exp = element.strip()
         if exp.startswith("{@") and exp.endswith("}"):
             # this is a ref with local vars
-            is_single_ref = True
+            is_svr = True
             exp = exp[1 : len(exp) - 1]
         else:
             a = re.split("{|}", exp)
             if len(a) == 3 and a[0] == "" and a[2] == "":
-                is_single_ref = True
+                is_svr = True
                 exp = a[1]
 
-        if is_single_ref:
+        if is_svr:
             parts = exp.split(":")
             var_name = parts[0]
             params = []
@@ -111,6 +123,7 @@ class _EnvUpdater(JsonObjectProcessor):
                 else:
                     raise ConfigError(f"bad parameterized expression '{element}': {var_name} is not defined")
             else:
+                # this is a single var without params
                 element = self.vars.get(var_name, None)
         else:
             element = element.format(**self.vars)
