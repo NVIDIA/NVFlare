@@ -52,7 +52,6 @@ class _EnvUpdater(JsonObjectProcessor):
                 if var_name not in self.vars:
                     # only use env var when it is not locally defined!
                     self.vars[var_name] = v
-                    print(f"==== added {var_name} => {v}")
 
         self.element_filter = element_filter
         self.num_updated = 0
