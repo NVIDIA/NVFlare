@@ -42,6 +42,7 @@ COMMAND_CATEGORIES = {
     AC.GET_JOB_META: CommandCategory.VIEW,
     AC.SYS_INFO: CommandCategory.OPERATE,
     AC.REPORT_RESOURCES: CommandCategory.OPERATE,
+    AC.REPORT_ENV: CommandCategory.OPERATE,
     AC.RESTART: CommandCategory.OPERATE,
     AC.SHUTDOWN: CommandCategory.OPERATE,
     AC.REMOVE_CLIENT: CommandCategory.OPERATE,

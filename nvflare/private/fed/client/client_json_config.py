@@ -16,6 +16,7 @@ import re
 
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.fl_constant import SystemVarName
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
@@ -49,6 +50,25 @@ class ClientJsonConfigurator(FedJsonConfigurator):
         base_pkgs = FL_PACKAGES
         module_names = FL_MODULES
 
+        if kv_list:
+            assert isinstance(kv_list, list), "cmd_vars must be list, but got {}".format(type(kv_list))
+            self.cmd_vars = parse_vars(kv_list)
+        else:
+            self.cmd_vars = {}
+
+        # determine the values of variables that can be used in job config.
+        sp_scheme = args.sp_scheme
+        sp_target = args.sp_target
+        sp_url = f"{sp_scheme}://{sp_target}"
+
+        sys_vars = {
+            SystemVarName.JOB_ID: args.job_id,
+            SystemVarName.SITE_NAME: args.client_name,
+            SystemVarName.WORKSPACE: args.workspace,
+            SystemVarName.ROOT_URL: sp_url,
+            SystemVarName.SECURE_MODE: self.cmd_vars.get("secure_train", True),
+        }
+
         FedJsonConfigurator.__init__(
             self,
             config_file_name=config_file_name,
@@ -56,13 +76,9 @@ class ClientJsonConfigurator(FedJsonConfigurator):
             module_names=module_names,
             exclude_libs=exclude_libs,
             is_server=False,
+            sys_vars=sys_vars,
         )
 
-        if kv_list:
-            assert isinstance(kv_list, list), "cmd_vars must be list, but got {}".format(type(kv_list))
-            self.cmd_vars = parse_vars(kv_list)
-        else:
-            self.cmd_vars = {}
         self.config_files = [config_file_name]
 
         self.runner_config = None

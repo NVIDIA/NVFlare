@@ -15,7 +15,7 @@
 from .info_coll_cmd import ClientInfoProcessor
 from .scheduler_cmds import CancelResourceProcessor, CheckResourceProcessor, ReportResourcesProcessor, StartJobProcessor
 from .shell_cmd import ShellCommandProcessor
-from .sys_cmd import SysInfoProcessor
+from .sys_cmd import ReportEnvProcessor, SysInfoProcessor
 from .training_cmds import (  # StartClientMGpuProcessor,; SetRunNumberProcessor,
     AbortAppProcessor,
     AbortTaskProcessor,
@@ -49,6 +49,7 @@ class ClientRequestProcessors:
         CheckResourceProcessor(),
         CancelResourceProcessor(),
         ReportResourcesProcessor(),
+        ReportEnvProcessor(),
     ]
 
     @staticmethod

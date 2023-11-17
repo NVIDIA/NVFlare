@@ -34,7 +34,15 @@ class FilterChain(object):
 
 
 class FedJsonConfigurator(JsonConfigurator):
-    def __init__(self, config_file_name: str, base_pkgs: [str], module_names: [str], exclude_libs=True, is_server=True):
+    def __init__(
+        self,
+        config_file_name: str,
+        base_pkgs: [str],
+        module_names: [str],
+        exclude_libs=True,
+        is_server=True,
+        sys_vars=None,
+    ):
         """To init the FedJsonConfigurator.
 
         Args:
@@ -49,6 +57,7 @@ class FedJsonConfigurator(JsonConfigurator):
             base_pkgs=base_pkgs,
             module_names=module_names,
             exclude_libs=exclude_libs,
+            sys_vars=sys_vars,
         )
 
         self.format_version = None
