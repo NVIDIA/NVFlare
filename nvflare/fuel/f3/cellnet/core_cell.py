@@ -44,6 +44,7 @@ from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.communicator import Communicator, MessageReceiver
 from nvflare.fuel.f3.connection import Connection
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.drivers.net_utils import enhance_credential_info
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.mpm import MainProcessMonitor
@@ -158,7 +159,7 @@ class _BulkSender:
 
     def queue_message(self, channel: str, topic: str, message: Message):
         if self.secure:
-            message.add_headers({MessageHeaderKey.SECURE, True})
+            message.add_headers({MessageHeaderKey.SECURE: True})
 
         encode_payload(message)
         self.cell.encrypt_payload(message)
@@ -371,6 +372,9 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
         self.logger.debug(f"Creating Cell: {self.my_info.fqcn}")
 
+        if credentials:
+            enhance_credential_info(credentials)
+
         ep = Endpoint(
             name=fqcn,
             conn_props=credentials,
@@ -456,7 +460,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         )
 
         self.sent_msg_size_pool = StatsPoolManager.add_msg_size_pool(
-            "Sent_Msg_sizes", "Sizes of messages sent (MBs)", scope=self.my_info.fqcn
+            "Sent_Msg_Sizes", "Sizes of messages sent (MBs)", scope=self.my_info.fqcn
         )
 
         self.received_msg_size_pool = StatsPoolManager.add_msg_size_pool(
@@ -1120,6 +1124,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 err = ReturnCode.MSG_TOO_BIG
             else:
                 direct_cell = self.ALL_CELLS.get(to_endpoint.name)
+                msg_size_mbs = self._msg_size_mbs(message)
                 if direct_cell:
                     # create a thread and fire the cell's process_message!
                     # self.DIRECT_MSG_EXECUTOR.submit(self._send_direct_message, direct_cell, message)
@@ -1127,9 +1132,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
                 else:
                     self.communicator.send(to_endpoint, CoreCell.APP_ID, message)
-                self.sent_msg_size_pool.record_value(
-                    category=self._stats_category(message), value=self._msg_size_mbs(message)
-                )
+                self.sent_msg_size_pool.record_value(category=self._stats_category(message), value=msg_size_mbs)
         except Exception as ex:
             err_text = f"Failed to send message to {to_endpoint.name}: {secure_format_exception(ex)}"
             self.log_error(err_text, message)
@@ -1763,7 +1766,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                         )
                     )
             else:
-                self.log_error(f"no waiter for req {rid} - the reply is too late", None)
+                self.log_warning(f"no waiter for req {rid} - the reply is too late", None)
                 self.sent_msg_counter_pool.increment(
                     category=self._stats_category(message), counter_name=_CounterName.LATE
                 )
@@ -2050,3 +2053,6 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             if candidate_info.is_root and not candidate_info.is_on_server:
                 return self.SUB_TYPE_CLIENT
         return self.SUB_TYPE_NONE
+
+    def is_secure(self):
+        return self.secure

@@ -21,22 +21,27 @@ class TestConfigFormat:
         assert exts2fmt_map.get(".json") == ConfigFormat.JSON
         assert exts2fmt_map.get(".conf") == ConfigFormat.PYHOCON
         assert exts2fmt_map.get(".yml") == ConfigFormat.OMEGACONF
+        assert exts2fmt_map.get(".yaml") == ConfigFormat.OMEGACONF
         assert exts2fmt_map.get(".json.default") == ConfigFormat.JSON
         assert exts2fmt_map.get(".conf.default") == ConfigFormat.PYHOCON
         assert exts2fmt_map.get(".yml.default") == ConfigFormat.OMEGACONF
+        assert exts2fmt_map.get(".yaml.default") == ConfigFormat.OMEGACONF
 
     def test_config_exts2(self):
         exts2fmt_map = ConfigFormat.config_ext_formats()
-        assert "|".join(exts2fmt_map.keys()) == ".json|.conf|.yml|.json.default|.conf.default|.yml.default"
+        assert (
+            "|".join(exts2fmt_map.keys())
+            == ".json|.conf|.yml|.yaml|.json.default|.conf.default|.yml.default|.yaml.default"
+        )
 
     def test_config_exts3(self):
         exts = ConfigFormat.extensions()
-        assert "|".join(exts) == ".json|.conf|.yml|.json.default|.conf.default|.yml.default"
+        assert "|".join(exts) == ".json|.conf|.yml|.yaml|.json.default|.conf.default|.yml.default|.yaml.default"
 
     def test_config_exts4(self):
         exts = ConfigFormat.extensions(target_fmt=ConfigFormat.JSON)
         assert "|".join(exts) == ".json|.json.default"
         exts = ConfigFormat.extensions(target_fmt=ConfigFormat.OMEGACONF)
-        assert "|".join(exts) == ".yml|.yml.default"
+        assert "|".join(exts) == ".yml|.yaml|.yml.default|.yaml.default"
         exts = ConfigFormat.extensions(target_fmt=ConfigFormat.PYHOCON)
         assert "|".join(exts) == ".conf|.conf.default"

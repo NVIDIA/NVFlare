@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
+import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -33,12 +34,13 @@ from nvflare.fuel.f3.sfm.prefix import PREFIX_LEN, Prefix
 from nvflare.fuel.f3.sfm.sfm_conn import SfmConnection
 from nvflare.fuel.f3.sfm.sfm_endpoint import SfmEndpoint
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
+from nvflare.fuel.utils.buffer_list import BufferList
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 FRAME_THREAD_POOL_SIZE = 100
 CONN_THREAD_POOL_SIZE = 16
 INIT_WAIT = 1
-MAX_WAIT = 60
+MAX_WAIT = 10
 SILENT_RECONNECT_TIME = 5
 SELF_ADDR = "0.0.0.0:0"
 
@@ -106,7 +108,7 @@ class ConnManager(ConnMonitor):
             )
 
         handle = get_handle()
-        connector = ConnectorInfo(handle, driver, params, mode, 0, 0, False, False)
+        connector = ConnectorInfo(handle, driver, params, mode, 0, 0, False, threading.Event())
         driver.register_conn_monitor(self)
         with self.lock:
             self.connectors[handle] = connector
@@ -122,7 +124,7 @@ class ConnManager(ConnMonitor):
         with self.lock:
             connector = self.connectors.pop(handle, None)
             if connector:
-                connector.stopping = True
+                connector.stopped.set()
                 connector.driver.shutdown()
                 log.debug(f"Connector {connector} is removed")
             else:
@@ -146,7 +148,7 @@ class ConnManager(ConnMonitor):
         with self.lock:
             for handle in sorted(self.connectors.keys()):
                 connector = self.connectors[handle]
-                connector.stopping = True
+                connector.stopped.set()
                 connector.driver.shutdown()
 
         self.conn_mgr_executor.shutdown(True)
@@ -198,8 +200,14 @@ class ConnManager(ConnMonitor):
             CommError: If any error happens while sending the data
         """
 
+        # Flatten buffer list so drivers don't have to deal with it
+        if isinstance(payload, list):
+            flat_payload = BufferList(payload).flatten()
+        else:
+            flat_payload = payload
+
         if endpoint.name == self.local_endpoint.name:
-            self.send_loopback_message(endpoint, app_id, headers, payload)
+            self.send_loopback_message(endpoint, app_id, headers, flat_payload)
             return
 
         sfm_endpoint = self.sfm_endpoints.get(endpoint.name)
@@ -221,7 +229,7 @@ class ConnManager(ConnMonitor):
         # TODO: If multiple connections, should retry a diff connection on errors
         start = time.perf_counter()
 
-        sfm_conn.send_data(app_id, stream_id, headers, payload)
+        sfm_conn.send_data(app_id, stream_id, headers, flat_payload)
 
         self.send_frame_stats.record_value(
             category=sfm_conn.conn.connector.driver.get_name(), value=time.perf_counter() - start
@@ -261,7 +269,7 @@ class ConnManager(ConnMonitor):
             starter = connector.driver.listen
 
         wait = INIT_WAIT
-        while not connector.stopping:
+        while not connector.stopped.is_set():
             start_time = time.time()
             try:
                 starter(connector)
@@ -274,7 +282,7 @@ class ConnManager(ConnMonitor):
                 else:
                     log.error(fail_msg)
 
-            if connector.stopping:
+            if connector.stopped.is_set():
                 log.debug(f"Connector {connector} has stopped")
                 break
 
@@ -291,7 +299,8 @@ class ConnManager(ConnMonitor):
             else:
                 log.info(reconnect_msg)
 
-            time.sleep(wait)
+            connector.stopped.wait(wait)
+
             # Exponential backoff
             wait *= 2
             if wait > MAX_WAIT:
@@ -302,11 +311,13 @@ class ConnManager(ConnMonitor):
             state = connection.state
             connector = connection.connector
             if state == ConnState.CONNECTED:
+                log.info(f"Connection {connection} is created: PID: {os.getpid()}")
                 self.handle_new_connection(connection)
                 with self.lock:
                     connector.total_conns += 1
                     connector.curr_conns += 1
             elif state == ConnState.CLOSED:
+                log.info(f"Connection {connection} is closed PID: {os.getpid()}")
                 self.close_connection(connection)
                 with self.lock:
                     connector.curr_conns -= 1
@@ -477,7 +488,7 @@ class NullConnection(Connection):
     """A mock connection used for loopback messages"""
 
     def __init__(self):
-        connector = ConnectorInfo("Null", None, {}, Mode.ACTIVE, 0, 0, False, False)
+        connector = ConnectorInfo("Null", None, {}, Mode.ACTIVE, 0, 0, False, threading.Event())
         super().__init__(connector)
 
     def get_conn_properties(self) -> dict:

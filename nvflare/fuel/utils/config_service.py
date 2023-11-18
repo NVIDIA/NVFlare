@@ -49,6 +49,8 @@ def search_file(file_basename: str, dirs: List[str]) -> Union[None, str]:
     Returns: the full path of the file, if found; None if not found
 
     """
+    if isinstance(dirs, str):
+        dirs = [dirs]
     for d in dirs:
         f = find_file_in_dir(file_basename, d)
         if f:

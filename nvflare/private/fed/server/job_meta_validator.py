@@ -55,7 +55,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
                 self._validate_resource(job_name, meta)
                 self._validate_mandatory_clients(job_name, meta, clients)
         except ValueError as e:
-            return False, secure_format_exception(e), meta
+            return False, str(e), meta
 
         return True, "", meta
 

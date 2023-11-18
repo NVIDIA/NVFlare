@@ -18,14 +18,13 @@ import logging.config
 import os
 import sys
 from logging.handlers import RotatingFileHandler
-from multiprocessing.connection import Listener
 from typing import List
 
 from nvflare.apis.app_validation import AppValidator
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLContext
-from nvflare.apis.fl_constant import FLContextKey, SiteType, WorkspaceConstants
+from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, SiteType, WorkspaceConstants
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.utils.decomposers import flare_decomposers
@@ -39,7 +38,7 @@ from nvflare.private.defs import RequestHeader, SSLConstants
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.decomposers import private_decomposers
 from nvflare.private.privacy_manager import PrivacyManager, PrivacyService
-from nvflare.security.logging import secure_format_exception, secure_log_traceback
+from nvflare.security.logging import secure_format_exception
 from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
 
 from .app_authz import AppAuthzService
@@ -52,28 +51,6 @@ def add_logfile_handler(log_file):
     file_handler.setLevel(main_handler.level)
     file_handler.setFormatter(main_handler.formatter)
     root_logger.addHandler(file_handler)
-
-
-def listen_command(listen_port, engine, execute_func, logger):
-    conn = None
-    listener = None
-    try:
-        address = ("localhost", listen_port)
-        listener = Listener(address, authkey="client process secret password".encode())
-        conn = listener.accept()
-
-        execute_func(conn, engine)
-
-    except Exception as e:
-        logger.exception(
-            f"Could not create the listener for this process on port: {listen_port}: {secure_format_exception(e)}."
-        )
-        secure_log_traceback(logger)
-    finally:
-        if conn:
-            conn.close()
-        if listener:
-            listener.close()
 
 
 def _check_secure_content(site_type: str) -> List[str]:
@@ -338,3 +315,18 @@ def get_target_names(targets):
         if name not in target_names:
             target_names.append(t)
     return target_names
+
+
+def get_return_code(process, job_id, workspace):
+    run_dir = os.path.join(workspace, job_id)
+    rc_file = os.path.join(run_dir, FLMetaKey.PROCESS_RC_FILE)
+    try:
+        if os.path.exists(rc_file):
+            with open(rc_file, "r") as f:
+                return_code = int(f.readline())
+            os.remove(rc_file)
+        else:
+            return_code = process.poll()
+        return return_code
+    except Exception:
+        raise RuntimeError(f"Could not get the return_code of the {job_id} execution, process_id:{process.pid}")

@@ -20,7 +20,6 @@ from typing import Dict, Optional
 import mlflow
 from mlflow.entities import Metric, Param, RunTag
 from mlflow.tracking.client import MlflowClient
-from mlflow.utils.time_utils import get_current_time_millis
 
 from nvflare.apis.analytix import AnalyticsData, AnalyticsDataType
 from nvflare.apis.dxo import from_shareable
@@ -35,6 +34,10 @@ class MlflowConstants:
     EXPERIMENT_TAG = "experiment_tag"
     RUN_TAG = "run_tag"
     EXPERIMENT_NAME = "experiment_name"
+
+
+def get_current_time_millis():
+    return int(round(time.time() * 1000))
 
 
 class MLflowReceiver(AnalyticsReceiver):

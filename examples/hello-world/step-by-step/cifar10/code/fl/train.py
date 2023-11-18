@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import argparse
 
 import torch
@@ -22,8 +23,9 @@ from net import Net
 
 # (1) import nvflare client API
 import nvflare.client as flare
+from nvflare.app_common.app_constant import ModelName
 
-# default dataset path
+# (optional) set a fix place so we don't need to download everytime
 CIFAR10_ROOT = "/tmp/nvflare/data/cifar10"
 # (optional) We change to use GPU to speed things up.
 # if you want to use CPU, change DEVICE="cpu"
@@ -35,72 +37,29 @@ def define_parser():
     parser.add_argument("--dataset_path", type=str, default=CIFAR10_ROOT, nargs="?")
     parser.add_argument("--batch_size", type=int, default=4, nargs="?")
     parser.add_argument("--num_workers", type=int, default=1, nargs="?")
+    parser.add_argument("--local_epochs", type=int, default=2, nargs="?")
     parser.add_argument("--model_path", type=str, default=f"{CIFAR10_ROOT}/cifar_net.pth", nargs="?")
     return parser.parse_args()
 
 
-def _main(args):
-    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+def main():
+    # define local parameters
+    args = define_parser()
 
     dataset_path = args.dataset_path
     batch_size = args.batch_size
     num_workers = args.num_workers
+    local_epochs = args.local_epochs
     model_path = args.model_path
 
+    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
     trainset = torchvision.datasets.CIFAR10(root=dataset_path, train=True, download=True, transform=transform)
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-
     testset = torchvision.datasets.CIFAR10(root=dataset_path, train=False, download=True, transform=transform)
     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
     net = Net()
-
-    # (2) initializes NVFlare client API
-    flare.init()
-    # (3) gets FLModel from NVFlare
-    input_model = flare.receive()
-    print(
-        f" current_round={input_model.current_round},"
-        f" total_round={input_model.total_rounds},"
-        f" client={flare.system_info().get('site_name', None)}"
-    )
-
-    # (4) loads model from NVFlare
-    net.load_state_dict(input_model.params)
-
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
-
-    # (optional) use GPU to speed things up
-    net.to(DEVICE)
-    # (optional) calculate total steps
-    steps = 2 * len(trainloader)
-    for epoch in range(2):  # loop over the dataset multiple times
-
-        running_loss = 0.0
-        for i, data in enumerate(trainloader, 0):
-            # get the inputs; data is a list of [inputs, labels]
-            # (optional) use GPU to speed things up
-            inputs, labels = data[0].to(DEVICE), data[1].to(DEVICE)
-
-            # zero the parameter gradients
-            optimizer.zero_grad()
-
-            # forward + backward + optimize
-            outputs = net(inputs)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
-
-            # print statistics
-            running_loss += loss.item()
-            if i % 2000 == 1999:  # print every 2000 mini-batches
-                print(f"[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
-                running_loss = 0.0
-
-    print("Finished Training")
-
-    torch.save(net.state_dict(), model_path)
+    best_accuracy = 0.0
 
     # wraps evaluation logic into a method to re-use for
     #       evaluation on both trained and received model
@@ -124,25 +83,98 @@ def _main(args):
                 total += labels.size(0)
                 correct += (predicted == labels).sum().item()
 
-        print(f"Accuracy of the network on the 10000 test images: {100 * correct // total} %")
         return 100 * correct // total
 
-    # evaluation on local trained model
-    local_accuracy = evaluate(torch.load(model_path))
-    # (5) evaluate on received model
-    accuracy = evaluate(input_model.params)
-    # (6) construct trained FL model
-    output_model = flare.FLModel(
-        params=net.cpu().state_dict(),
-        metrics={"accuracy": accuracy},
-        meta={"NUM_STEPS_CURRENT_ROUND": steps},
-    )
-    # (7) send model back to NVFlare
-    flare.send(output_model)
+    # (2) initialize NVFlare client API
+    flare.init()
 
+    # (3) run continously when launch_once=true
+    while flare.is_running():
 
-def main():
-    _main(define_parser())
+        # (4) receive FLModel from NVFlare
+        input_model = flare.receive()
+        client_id = flare.system_info().get("site_name", None)
+
+        # (5) performing train task on received model
+        if flare.is_train():
+            print(f"({client_id}) round={input_model.current_round}/{input_model.total_rounds-1}")
+
+            # (5.1) loads model from NVFlare
+            net.load_state_dict(input_model.params)
+
+            criterion = nn.CrossEntropyLoss()
+            optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+
+            # (optional) use GPU to speed things up
+            net.to(DEVICE)
+            # (optional) calculate total steps
+            steps = local_epochs * len(trainloader)
+            for epoch in range(local_epochs):  # loop over the dataset multiple times
+
+                running_loss = 0.0
+                for i, data in enumerate(trainloader, 0):
+                    # get the inputs; data is a list of [inputs, labels]
+                    # (optional) use GPU to speed things up
+                    inputs, labels = data[0].to(DEVICE), data[1].to(DEVICE)
+
+                    # zero the parameter gradients
+                    optimizer.zero_grad()
+
+                    # forward + backward + optimize
+                    outputs = net(inputs)
+                    loss = criterion(outputs, labels)
+                    loss.backward()
+                    optimizer.step()
+
+                    # print statistics
+                    running_loss += loss.item()
+                    if i % 2000 == 1999:  # print every 2000 mini-batches
+                        print(f"({client_id}) [{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
+                        running_loss = 0.0
+
+            print(f"({client_id}) Finished Training")
+
+            # (5.2) evaluation on local trained model to save best model
+            local_accuracy = evaluate(net.state_dict())
+            print(f"({client_id}) Evaluating local trained model. Accuracy on the 10000 test images: {local_accuracy}")
+            if local_accuracy > best_accuracy:
+                best_accuracy = local_accuracy
+                torch.save(net.state_dict(), model_path)
+
+            # (5.3) evaluate on received model for model selection
+            accuracy = evaluate(input_model.params)
+            print(
+                f"({client_id}) Evaluating received model for model selection. Accuracy on the 10000 test images: {accuracy}"
+            )
+
+            # (5.4) construct trained FL model
+            output_model = flare.FLModel(
+                params=net.cpu().state_dict(),
+                metrics={"accuracy": accuracy},
+                meta={"NUM_STEPS_CURRENT_ROUND": steps},
+            )
+
+            # (5.5) send model back to NVFlare
+            flare.send(output_model)
+
+        # (6) performing evaluate task on received model
+        elif flare.is_evaluate():
+            accuracy = evaluate(input_model.params)
+            flare.send(flare.FLModel(metrics={"accuracy": accuracy}))
+
+        # (7) performing submit_model task to obtain best local model
+        elif flare.is_submit_model():
+            model_name = input_model.meta["submit_model_name"]
+            if model_name == ModelName.BEST_MODEL:
+                try:
+                    weights = torch.load(model_path)
+                    net = Net()
+                    net.load_state_dict(weights)
+                    flare.send(flare.FLModel(params=net.cpu().state_dict()))
+                except Exception as e:
+                    raise ValueError("Unable to load best model") from e
+            else:
+                raise ValueError(f"Unknown model_type: {model_name}")
 
 
 if __name__ == "__main__":

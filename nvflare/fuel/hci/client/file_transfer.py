@@ -430,7 +430,11 @@ class FileTransferModule(CommandModule):
             tx_path = self._tx_path(tx_id, folder_name)
             destination_path = os.path.join(self.download_dir, destination_name)
             location = self._rename_folder(tx_path, destination_path)
-            reply = {ProtoKey.STATUS: APIStatus.SUCCESS, ProtoKey.DETAILS: f"content downloaded to {location}"}
+            reply = {
+                ProtoKey.STATUS: APIStatus.SUCCESS,
+                ProtoKey.DETAILS: f"content downloaded to {location}",
+                ProtoKey.META: {MetaKey.LOCATION: location},
+            }
         else:
             reply = error
         return reply

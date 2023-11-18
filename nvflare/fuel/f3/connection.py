@@ -24,7 +24,7 @@ log = logging.getLogger(__name__)
 lock = threading.Lock()
 conn_count = 0
 
-BytesAlike = Union[bytes, bytearray, memoryview]
+BytesAlike = Union[bytes, bytearray, memoryview, list]
 
 
 def create_connection_name():

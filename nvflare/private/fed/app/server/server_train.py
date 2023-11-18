@@ -27,27 +27,14 @@ from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger, create_privacy_manager
-from nvflare.private.fed.app.utils import create_admin_server
+from nvflare.private.fed.app.utils import create_admin_server, version_check
 from nvflare.private.fed.server.server_status import ServerStatus
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, security_init
 from nvflare.private.privacy_manager import PrivacyService
 from nvflare.security.logging import secure_format_exception
 
 
-def main():
-    if sys.version_info >= (3, 11):
-        raise RuntimeError("Python versions 3.11 and above are not yet supported. Please use Python 3.8, 3.9 or 3.10.")
-    if sys.version_info < (3, 8):
-        raise RuntimeError("Python versions 3.7 and below are not supported. Please use Python 3.8, 3.9 or 3.10")
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
-    parser.add_argument(
-        "--fed_server", "-s", type=str, help="an aggregation server specification json file", required=True
-    )
-    parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
-
-    args = parser.parse_args()
+def main(args):
     kv_list = parse_vars(args.set)
 
     config_folder = kv_list.get("config_folder", "")
@@ -153,10 +140,23 @@ def main():
         raise e
 
 
+def parse_arguments():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
+    parser.add_argument(
+        "--fed_server", "-s", type=str, help="an aggregation server specification json file", required=True
+    )
+    parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
+    args = parser.parse_args()
+    return args
+
+
 if __name__ == "__main__":
     """
     This is the main program when starting the NVIDIA FLARE server process.
     """
 
-    rc = mpm.run(main_func=main)
+    version_check()
+    args = parse_arguments()
+    rc = mpm.run(main_func=main, run_dir=args.workspace, args=args)
     sys.exit(rc)

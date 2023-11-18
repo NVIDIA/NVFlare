@@ -33,7 +33,7 @@ def main():
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
     batch_size = 4
-    local_epochs = 2
+    epochs = 2
 
     trainset = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=True, download=True, transform=transform)
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=2)
@@ -46,8 +46,9 @@ def main():
     # (2) initializes NVFlare client API
     flare.init()
 
-    # (3) receives FLModel from NVFlare
-    for input_model in flare.receive_global_model():
+    while flare.is_running():
+        # (3) receives FLModel from NVFlare
+        input_model = flare.receive()
         print(f"current_round={input_model.current_round}")
 
         # (4) loads model from NVFlare
@@ -59,8 +60,8 @@ def main():
         # (optional) use GPU to speed things up
         net.to(DEVICE)
         # (optional) calculate total steps
-        steps = local_epochs * len(trainloader)
-        for epoch in range(local_epochs):  # loop over the dataset multiple times
+        steps = epochs * len(trainloader)
+        for epoch in range(epochs):  # loop over the dataset multiple times
 
             running_loss = 0.0
             for i, data in enumerate(trainloader, 0):

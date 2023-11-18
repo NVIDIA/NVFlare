@@ -21,7 +21,7 @@ import threading
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import MachineStatus, SystemComponents, WorkspaceConstants
+from nvflare.apis.fl_constant import FLContextKey, MachineStatus, SystemComponents, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.network_utils import get_open_ports
@@ -74,6 +74,9 @@ class ClientEngine(ClientEngineInternalSpec):
             private_stickers={
                 SystemComponents.DEFAULT_APP_DEPLOYER: AppDeployer(),
                 SystemComponents.JOB_META_VALIDATOR: JobMetaValidator(),
+                SystemComponents.FED_CLIENT: client,
+                FLContextKey.SECURE_MODE: self.client.secure_train,
+                FLContextKey.WORKSPACE_ROOT: args.workspace,
             },
         )
 
@@ -149,6 +152,7 @@ class ClientEngine(ClientEngineInternalSpec):
 
         open_port = get_open_ports(1)[0]
 
+        server_config = list(self.client.servers.values())[0]
         self.client_executor.start_app(
             self.client,
             job_id,
@@ -158,7 +162,8 @@ class ClientEngine(ClientEngineInternalSpec):
             allocated_resource,
             token,
             resource_manager,
-            list(self.client.servers.values())[0]["target"],
+            target=server_config["target"],
+            scheme=server_config.get("scheme", "grpc"),
         )
 
         return "Start the client app..."

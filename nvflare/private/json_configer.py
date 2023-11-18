@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import copy
 from typing import List, Union
 
 from nvflare.fuel.common.excepts import ComponentNotAuthorized, ConfigError
@@ -19,9 +19,9 @@ from nvflare.fuel.utils.class_utils import ModuleScanner, get_class
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.fuel.utils.config_service import ConfigService
-from nvflare.fuel.utils.dict_utils import augment, extract_first_level_primitive
+from nvflare.fuel.utils.dict_utils import augment
 from nvflare.fuel.utils.json_scanner import JsonObjectProcessor, JsonScanner, Node
-from nvflare.fuel.utils.wfconf import _EnvUpdater
+from nvflare.fuel.utils.wfconf import resolve_var_refs
 from nvflare.security.logging import secure_format_exception
 
 
@@ -40,6 +40,7 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
         module_names: List[str],
         exclude_libs=True,
         num_passes=1,
+        sys_vars=None,
     ):
         """To init the JsonConfigurator.
 
@@ -49,6 +50,7 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
             module_names: module names need to be scanned
             exclude_libs: True/False to exclude the libs folder
             num_passes: number of passes to parsing the config
+            sys_vars: system vars
         """
         JsonObjectProcessor.__init__(self)
 
@@ -70,6 +72,7 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
 
         self.config_file_names = config_files
         self.num_passes = num_passes
+        self.sys_vars = sys_vars
         self.module_scanner = ModuleScanner(base_pkgs, module_names, exclude_libs)
         self.config_ctx = None
 
@@ -107,8 +110,24 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
         config_ctx.config_json = self.config_data
         self.config_ctx = config_ctx
 
-        all_vars = extract_first_level_primitive(self.config_data)
-        self.json_scanner.scan(_EnvUpdater(all_vars))
+        # every item could be used as reference
+        all_vars = copy.deepcopy(self.config_data)
+
+        # Remove parameterized items from config data since such items could only be used as refs and cannot be
+        # part of config. After they are removed from config data, they will not be resolved until they are invoked.
+        parameterized_items = []
+        for k in self.config_data.keys():
+            if isinstance(k, str) and k.startswith("@"):
+                parameterized_items.append(k)
+        for k in parameterized_items:
+            self.config_data.pop(k)
+
+        # Add env_vars to all_vars. If there are conflicts, env_vars take precedence.
+        if self.sys_vars:
+            all_vars.update(self.sys_vars)
+
+        # resolve var references
+        resolve_var_refs(self.json_scanner, all_vars)
 
         self.start_config(self.config_ctx)
 

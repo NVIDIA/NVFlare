@@ -1,7 +1,6 @@
 {
   "format_version": 2,
-  "MODEL_DIR": "$SYS_VAR_NAME",
-  "RESULT_DIR": "$SYS_LOCATION",
+  "MODEL_DIR": "{$SERVER_MODEL_DIR}",
   "server": {
     "heart_beat_timeout": 600
   },

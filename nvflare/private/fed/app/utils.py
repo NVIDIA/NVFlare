@@ -14,6 +14,7 @@
 
 import os
 import signal
+import sys
 import threading
 import time
 
@@ -90,3 +91,10 @@ def create_admin_server(fl_server: FederatedServer, server_conf=None, args=None,
         download_job_url=server_conf.get("download_job_url", "http://"),
     )
     return admin_server
+
+
+def version_check():
+    if sys.version_info >= (3, 11):
+        raise RuntimeError("Python versions 3.11 and above are not yet supported. Please use Python 3.8, 3.9 or 3.10.")
+    if sys.version_info < (3, 8):
+        raise RuntimeError("Python versions 3.7 and below are not supported. Please use Python 3.8, 3.9 or 3.10")

@@ -20,7 +20,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
-from nvflare.app_opt.tf.utils import get_flat_weights, load_flat_weights
+from nvflare.app_opt.tf.utils import flat_layer_weights_dict, unflat_layer_weights_dict
 
 
 class TFModelPersistor(ModelPersistor):
@@ -49,7 +49,8 @@ class TFModelPersistor(ModelPersistor):
             self.model.load_weights(self._model_save_path)
 
         # get flat model parameters
-        result = get_flat_weights(self.model)
+        layer_weights_dict = {layer.name: layer.get_weights() for layer in self.model.layers}
+        result = flat_layer_weights_dict(layer_weights_dict)
 
         model_learnable = make_model_learnable(result, dict())
         return model_learnable
@@ -65,5 +66,8 @@ class TFModelPersistor(ModelPersistor):
             model_learnable: ModelLearnable object
             fl_ctx: FLContext
         """
-        load_flat_weights(self.model, model_learnable[ModelLearnableKey.WEIGHTS])
+        result = unflat_layer_weights_dict(model_learnable[ModelLearnableKey.WEIGHTS])
+        for k in result:
+            layer = self.model.get_layer(name=k)
+            layer.set_weights(result[k])
         self.model.save_weights(self._model_save_path)
