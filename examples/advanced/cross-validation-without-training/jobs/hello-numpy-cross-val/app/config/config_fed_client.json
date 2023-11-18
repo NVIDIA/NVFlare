@@ -1,6 +1,6 @@
 {
   "format_version": 2,
-  "MODEL_DIR": "/Users/yuhongw/workspace/nvidia/dlmed/NVFlare/examples/advanced/cross-validation-without-training/jobs/hello-numpy-cross-val/models/client",
+  "MODEL_DIR": "{$CLIENT_MODEL_DIR}",
   "executors": [
     {
       "tasks": [
