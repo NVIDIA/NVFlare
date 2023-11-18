@@ -221,6 +221,11 @@ class SimulatorRunner(FLComponent):
             simulator_server, self.server = self.deployer.create_fl_server(self.args)
             # self.services.deploy(self.args, grpc_args=simulator_server)
 
+            url = self.server.cell.get_root_url_for_child()
+            target, scheme = url.split("://")
+            self.args.sp_target = target
+            self.args.sp_scheme = scheme
+
             self.logger.info("Deploy the Apps.")
             self._deploy_apps(job_name, data_bytes, meta)
 
