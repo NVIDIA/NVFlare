@@ -2053,3 +2053,6 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             if candidate_info.is_root and not candidate_info.is_on_server:
                 return self.SUB_TYPE_CLIENT
         return self.SUB_TYPE_NONE
+
+    def is_secure(self):
+        return self.secure
