@@ -66,7 +66,6 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             SystemVarName.JOB_ID: args.job_id,
             SystemVarName.SITE_NAME: "server",
             SystemVarName.WORKSPACE: args.workspace,
-            SystemVarName.ROOT_URL: args.root_url,
             SystemVarName.SECURE_MODE: self.cmd_vars.get("secure_train", True),
         }
 
