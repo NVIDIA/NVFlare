@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from collections import OrderedDict
+from typing import Union
 
 import torch
 
@@ -23,6 +24,7 @@ from nvflare.app_common.abstract.model import (
     make_model_learnable,
     validate_model_learnable,
 )
+from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.app_constant import ModelFormat
 
 
@@ -115,20 +117,26 @@ class PTModelPersistenceFormatManager(object):
                 persistence_dict[k] = v
         return persistence_dict
 
-    def update(self, ml: ModelLearnable):
+    def update(self, ml: Union[ModelLearnable, FLModel]):
         """Update the persistence data with the learned values.
 
         Args:
-            ml (ModelLearnable): updated information to be merged into existing ModelLearnable
+            ml (ModelLearnable or FLModel): updated information to be merged into existing ModelLearnable
         """
-        err = validate_model_learnable(ml)
-        if err:
-            raise ValueError(err)
-        self.meta = ml.get(ModelLearnableKey.META, None)
+        if isinstance(ml, ModelLearnable):
+            err = validate_model_learnable(ml)
+            if err:
+                raise ValueError(err)
+            self.meta = ml.get(ModelLearnableKey.META, None)
+
+            learned_weights = ml.get(ModelLearnableKey.WEIGHTS, {})
+        elif isinstance(ml, FLModel):
+            learned_weights = ml.params
+        else:
+            raise ValueError(f"Learned values of type {type(ml)} are supported. Supported types are `ModelLearnable` or `FLModel`.")
 
         # update with value of the model learnable
         # note that the original weights that are not learned are still kept!
-        learned_weights = ml.get(ModelLearnableKey.WEIGHTS, {})
         for k, v in learned_weights.items():
             self.var_dict[k] = v
 

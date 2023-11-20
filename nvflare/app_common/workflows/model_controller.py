@@ -12,14 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Union, Optional, List
+from typing import Union, List
 
 from nvflare.apis.fl_component import FLComponentHelper
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import OperatorMethod, TaskOperatorKey
-from nvflare.apis.impl.controller import ClientTask, Controller, Task
+from nvflare.apis.impl.controller import ClientTask
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Task
 from nvflare.apis.shareable import Shareable
@@ -30,7 +30,6 @@ from nvflare.security.logging import secure_format_exception
 from .scatter_and_gather import ScatterAndGather
 from nvflare.app_common.abstract.model import ModelLearnableKey
 from nvflare.apis.fl_constant import FLMetaKey, ReturnCode
-from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 
 
@@ -250,7 +249,7 @@ class ModelController(ScatterAndGather, FLComponentHelper):
             ) or self._current_round == self._start_round + self._num_rounds - 1:
                 self.info("Start persist model on server.")
                 self.fire_event(AppEventType.BEFORE_LEARNABLE_PERSIST, self.fl_ctx)
-                # Replace: self.persistor.save(self._global_weights, self.fl_ctx)  # TODO: save FLModel
+                # Replace: self.persistor.save(self._global_weights, self.fl_ctx)
                 self.persistor.save(self.model, self.fl_ctx)
                 self.fire_event(AppEventType.AFTER_LEARNABLE_PERSIST, self.fl_ctx)
                 self.info("End persist model on server.")
