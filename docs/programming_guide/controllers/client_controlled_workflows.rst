@@ -191,6 +191,7 @@ purpose of status reporting is to let the server know that the job is still prog
 
 When the end-of-workflow message is received from the server, it stops the execution of the current learning task, if any.
 
+.. _ccwf_cyclic_learning:
 ***************
 Cyclic Learning
 ***************
@@ -361,6 +362,7 @@ Cyclic Learning: config_fed_client.json
 
     The ``cyclic_learn`` and ``cyclic_rcv_final_learn_result`` contain model data. You can apply ``task_data_filters`` if privacy is a concern (the OUT filter for the sending client, and IN filters for the receiving client).
 
+.. _ccwf_swarm_learning:
 **************
 Swarm Learning
 **************
@@ -603,6 +605,7 @@ Swarm Learning: config_fed_client.json
 
     Client assigned tasks contain model data. You can apply task_data_filters if privacy is a concern (the OUT filter for the sending client, and IN filters for the receiving client).
 
+.. _ccwf_cross_site_evaluation:
 *********************
 Cross Site Evaluation
 *********************
