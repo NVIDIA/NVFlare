@@ -38,7 +38,7 @@ from nvflare.private.fed.simulator.simulator_app_runner import SimulatorClientAp
 from nvflare.private.fed.simulator.simulator_audit import SimulatorAuditor
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
-from nvflare.security.logging import secure_format_exception
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 from nvflare.security.security import EmptyAuthorizer
 
 CELL_CONNECT_CHECK_TIMEOUT = 10.0
@@ -111,6 +111,7 @@ class ClientTaskWorker(FLComponent):
                             time.sleep(0.5)
         except Exception as e:
             self.logger.error(f"do_one_task execute exception: {secure_format_exception(e)}")
+            secure_log_traceback()
             interval = 1.0
             stop_run = True
 
