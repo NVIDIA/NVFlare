@@ -173,6 +173,7 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             task_result_filters=self.result_filter_table,
             components=self.components,
             handlers=self.handlers,
+            config_data=self.config_data,  # the config_data dict
         )
 
         ConfigService.initialize(

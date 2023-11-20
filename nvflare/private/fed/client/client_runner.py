@@ -78,6 +78,7 @@ class ClientRunnerConfig(object):
         handlers=None,  # list of event handlers
         components=None,  # dict of extra python objects: id => object
         default_task_fetch_interval: float = 0.5,
+        config_data=None,
     ):
         """To init ClientRunnerConfig.
 
@@ -96,6 +97,7 @@ class ClientRunnerConfig(object):
         self.handlers = handlers
         self.components = components
         self.default_task_fetch_interval = default_task_fetch_interval
+        self.config_data = config_data
 
         if not components:
             self.components = {}
@@ -135,6 +137,7 @@ class ClientRunner(FLComponent):
         self.task_data_filters = config.task_data_filters
         self.task_result_filters = config.task_result_filters
         self.default_task_fetch_interval = config.default_task_fetch_interval
+        self.config = config
 
         self.job_id = job_id
         self.engine = engine
@@ -651,6 +654,32 @@ class ClientRunner(FLComponent):
 
             self.fire_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
             self.log_info(fl_ctx, "ABOUT_TO_END_RUN fired")
+
+            # check with all components for their readiness to end run
+            # use ConfigService to determine max wait time for readiness check:
+            #   the job config could define variable "end_run_readiness_timeout"
+            #   the user could define OS env var NVFLARE_END_RUN_READINESS_TIMEOUT
+            max_wait = ConfigService.get_float_var(
+                name="end_run_readiness_timeout", conf=self.config.config_data, default=5.0
+            )
+            check_start_time = time.time()
+            while True:
+                fl_ctx.remove_prop(FLContextKey.NOT_READY_TO_END_RUN)
+                self.log_info(fl_ctx, "Firing CHECK_END_RUN_READINESS ...")
+                self.fire_event(EventType.CHECK_END_RUN_READINESS, fl_ctx)
+                any_component_not_ready = fl_ctx.get_prop(FLContextKey.NOT_READY_TO_END_RUN, False)
+                if any_component_not_ready:
+                    if time.time() - check_start_time > max_wait:
+                        # we have waited too long
+                        self.log_warning(
+                            fl_ctx, f"quit waiting for component ready-to-end-run after {max_wait} seconds"
+                        )
+                        break
+                    else:
+                        time.sleep(0.5)
+                else:
+                    # all components are ready to end
+                    break
 
             self.fire_event(EventType.END_RUN, fl_ctx)
             self.log_info(fl_ctx, "END_RUN fired")

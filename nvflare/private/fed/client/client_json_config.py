@@ -152,6 +152,7 @@ class ClientJsonConfigurator(FedJsonConfigurator):
             components=self.components,
             handlers=self.handlers,
             default_task_fetch_interval=self._default_task_fetch_interval,
+            config_data=self.config_data,
         )
 
         ConfigService.initialize(

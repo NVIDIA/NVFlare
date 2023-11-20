@@ -173,6 +173,7 @@ class FLContextKey(object):
     CONFIG_CTX = "__config_ctx__"
     FILTER_DIRECTION = "__filter_dir__"
     ROOT_URL = "__root_url__"  # the URL for accessing the FL Server
+    NOT_READY_TO_END_RUN = "not_ready_to_end_run__"  # component sets this to indicate it's not ready to end run yet
 
 
 class ReservedTopic(object):

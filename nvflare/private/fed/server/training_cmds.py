@@ -219,6 +219,10 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                 conn.append_error(err, meta={MetaKey.SERVER_STATUS: MetaStatusValue.ERROR, MetaKey.INFO: err})
             else:
                 conn.append_string("Server scheduled for restart", meta={MetaKey.SERVER_STATUS: MetaStatusValue.OK})
+
+                # ask the admin client to shut down since its current session will become invalid after
+                # the server is restarted.
+                conn.append_shutdown("Goodbye!")
         elif target_type == self.TARGET_TYPE_CLIENT:
             clients = conn.get_prop(self.TARGET_CLIENT_TOKENS)
             if not clients:
