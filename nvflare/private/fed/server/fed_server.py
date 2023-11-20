@@ -126,6 +126,9 @@ class BaseServer(ABC):
         """
         return self.client_manager.get_clients()
 
+    def get_cell(self):
+        return self.cell
+
     @abstractmethod
     def remove_client_data(self, token):
         pass
