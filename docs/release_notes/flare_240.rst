@@ -29,29 +29,30 @@ Here is a brief example of a common pattern when using the Client API for a clie
       # receive FLModel from NVFlare
       input_model = flare.receive()
 
-      if flare.is_train():
-        # loads model from NVFlare
-        net.load_state_dict(input_model.params)
+      # loads model from NVFlare
+      net.load_state_dict(input_model.params)
 
-        # perform local training and evaluation on received model
-        {existing centralized deep learning code} ...
+      # perform local training and evaluation on received model
+      {existing centralized deep learning code} ...
 
-        # construct output FLModel
-        output_model = flare.FLModel(
-            params=net.cpu().state_dict(),
-            metrics={"accuracy": accuracy},
-            meta={"NUM_STEPS_CURRENT_ROUND": steps},
-        )
+      # construct output FLModel
+      output_model = flare.FLModel(
+          params=net.cpu().state_dict(),
+          metrics={"accuracy": accuracy},
+          meta={"NUM_STEPS_CURRENT_ROUND": steps},
+      )
 
-        # send model back to NVFlare
-        flare.send(output_model)
-
-      elif flare.is_evaluate():
-        ...
-      elif flare.is_submit_model():
-        ...
+      # send model back to NVFlare
+      flare.send(output_model)
 
 For more in-depth information on the Client API, refer to the :ref:`client_api` documentation and `examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/ml-to-fl>`_.
+
+The 3rd-Party Integration Pattern
+---------------------------------
+In certain scenarios, users face challenges when attempting to moving the training logic to the FLARE client side due to pre-existing ML/DL training system infrastructure.
+In the 2.4.0 release, we introduce the Third-Party Integration Pattern, which allows the FLARE system and a third-party external training system to seamlessly exchange model parameters without requiring a tightly integrated system.
+
+See the documentation (coming soon) for more details.
 
 Job Templates and CLI
 ---------------------
@@ -96,17 +97,10 @@ Each example will build upon previous ones to showcase different features, workf
 **HIGGS Examples (coming soon):**
 
 - stats
-- linear and logisitc regression
+- scikit_learn linear
 - kmeans
 - svm
 - xgboost
-
-The 3rd-Party Integration Pattern
-=================================
-In certain scenarios, users face challenges when attempting to moving the training logic to the FLARE client side due to pre-existing ML/DL training system infrastructure.
-In the 2.4.0 release, we introduce the Third-Party Integration Pattern, which allows the FLARE system and a third-party external training system to seamlessly exchange model parameters without requiring a tightly integrated system.
-
-See the documentation (coming soon) for more details.
 
 Streaming APIs
 ==============
@@ -114,7 +108,7 @@ To support large language models (LLMs), the 2.4.0 release introduces the stream
 The addition of a new streaming layer designed to handle large objects allows us to divide the large model into 1M chunks and stream them to the target.
 We provide built-in streamers for Objects, Bytes, Files, and Blobs, providing a versatile solution for efficient object streaming between different endpoints.
 
-See the :ref:`notes_on_large_models` Experiment documentation for more insights on working with large models in FLARE.
+See the :ref:`notes_on_large_models` documentation for more insights on working with large models in FLARE.
 
 Expanding Federated Learning Workflows
 ======================================
@@ -137,9 +131,9 @@ Client-side controlled workflow
 
 Three commonly used types of client-side controlled workflows are provided:
 
-- **cyclic weight transfer:** the model is passed from client to client.
-- **swarm learning:** randomly select clients as client-side controller and aggregrators, where then Scatter and Gather with FedAvg is performed.
-- **cross-site evaluation:** allow clients to evaluate other sites' models.
+- :ref:`ccwf_cyclic_learning`: the model is passed from client to client.
+- :ref:`ccwf_swarm_learning`: randomly select clients as client-side controller and aggregrators, where then Scatter and Gather with FedAvg is performed.
+- :ref:`ccwf_cross_site_evaluation`: allow clients to evaluate other sites' models.
 
 See `swarm learning <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/swarm_learning>`_ and `client-controlled cyclic <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/step-by-step/cifar10/cyclic_ccwf>`_ for examples using these client-controlled workflows.
 
@@ -150,8 +144,11 @@ The detailed documentation on these features can be found in :ref:`experiment_tr
 `MLFlow <https://nvflare.readthedocs.io/en/main/examples/fl_experiment_tracking_mlflow.html#experiment-tracking-mlflow>`_ and
 `wandb <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/experiment-tracking/wandb>`_.
 
+Configuration Enhancements
+==========================
+
 Multi Configuration File Formats
-================================
+--------------------------------
 In the 2.4.0 release, we have added support for multiple configuration formats.
 Prior to this release, the sole configuration file format was JSON, which although flexible, was lacking in useful features such as comments, variable substitution, and inheritance.
 
@@ -162,6 +159,15 @@ We added two new configuration formats:
 
 Users have the flexibility to use a single format or combine several formats, as exemplified by config_fed_client.conf and config_fed_server.json.
 If multiple configuration formats coexist, then their usage will be prioritized based on the following search order: .json -> .conf -> .yml -> .yaml
+
+Improved Job Configuration File Processing
+------------------------------------------
+- Variable Resolution - for user-defined variable definitions and variable references in config files
+- Built-in System Variables - for pre-defined system variables available to use in config files
+- OS Environment Variables - OS environment variables can be referenced via the dollar sign
+- Parameterized Variable Definition - for creating configuration templates that can be reused and resolved into different concrete configurations
+
+See more details in the enhanced job config file processing documentation (coming soon)
 
 POC Command Upgrade
 ===================
@@ -179,16 +185,16 @@ Security Enhancements
 
 Unsafe component detection
 --------------------------
-Users now have the capability to define and load an unsafe component checker.
-An event will be fired before building the component, and the checker is used to validate it.
-The presence of an Unsafe Component will result in the interruption of downstream tasks.
+Users now have the capability to define an unsafe component checker, and the checker will be invoked to validate the component to be built.
+The checker raises UnsafeJob exception if it fails to validate the component, which will cause the job to be aborted.
+
+For more details, refer to the :ref:`unsafe_component_detection` documentation.
 
 Event-based security plug-in
 ----------------------------
-We have introduced an event-based security plug-in that adds contextual information related to the job.
-This enhancement facilitates site-specific authentication and enables job-level authorization validation.
+We have introduced additional FL events that can be used to build plug-ins for job-level function authorizations.
 
-For more details, refer to the :ref:`unsafe_component_detection` and :ref:`site_specific_auth` documentation as well as the
+For more details, refer to the :ref:`site_specific_auth` documentation as well as the
 `custom authentication example <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/custom_authentication>`_ for more details about these capabilites.
 
 FL HUB: Hierarchical Unification Bridge
