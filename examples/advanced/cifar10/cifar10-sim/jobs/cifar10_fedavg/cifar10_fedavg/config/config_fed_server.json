@@ -2,7 +2,7 @@
     "format_version": 2,
     "min_clients": 8,
     "num_rounds": 50,
-    "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits/cifar10_fedavg_alpha1.0_e420d7ba-adfd-4344-8129-263970106fa6",
+    "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits",
     "alpha": 1.0,
     "server": {
         "heart_beat_timeout": 600

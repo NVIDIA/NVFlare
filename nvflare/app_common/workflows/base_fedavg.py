@@ -193,9 +193,6 @@ class FedAvgModelController(Controller, FLComponentHelper, ABC):
 
         self._accept_train_result(client_name=client_name, result=result, fl_ctx=fl_ctx)
 
-        # Cleanup task result
-        client_task.result = None
-
         # Turn result into FLModel
         result_model = FLModelUtils.from_shareable(result)
         result_model.meta["client_name"] = client_name
@@ -204,37 +201,36 @@ class FedAvgModelController(Controller, FLComponentHelper, ABC):
 
         self._results.append(result_model)
 
+        # Cleanup task result
+        client_task.result = None
+
     def process_result_of_unknown_task(
         self, client: Client, task_name, client_task_id, result: Shareable, fl_ctx: FLContext
     ) -> None:
         if self._phase == AppConstants.PHASE_TRAIN and task_name == self.train_task_name:
             self._accept_train_result(client_name=client.name, result=result, fl_ctx=fl_ctx)
-            self.log_info(fl_ctx, f"Result of unknown task {task_name} sent to aggregator.")
+            self.info(f"Result of unknown task {task_name} sent to aggregator.")
         else:
-            self.log_error(fl_ctx, "Ignoring result from unknown task.")
+            self.error("Ignoring result from unknown task.")
 
     def _accept_train_result(self, client_name: str, result: Shareable, fl_ctx: FLContext) -> bool:
         self.fl_ctx = fl_ctx
         rc = result.get_return_code()
 
-        # Raise errors if bad peer context or execution exception.
+        # Raise panic if bad peer context or execution exception.
         if rc and rc != ReturnCode.OK:
             if self.ignore_result_error:
                 self.warning(
                     f"Ignore the train result from {client_name} at round {self._current_round}. Train result error code: {rc}",
                 )
-                return False
             else:
                 self.panic(
                     f"Result from {client_name} is bad, error code: {rc}. "
                     f"{self.__class__.__name__} exiting at round {self._current_round}."
                 )
-                return False
 
         self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=True)
         self.fl_ctx.set_prop(AppConstants.TRAINING_RESULT, result, private=True, sticky=False)
-
-        return True
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext) -> None:
         self.fl_ctx = fl_ctx
@@ -342,6 +338,16 @@ class BaseFedAvg(FedAvgModelController, ABC):
         return clients
 
     @staticmethod
+    def _check_results(results: List[FLModel]):
+        empty_clients = []
+        for _result in results:
+            if not _result.params:
+                empty_clients.append(_result.meta.get("client_name", "unkown"))
+
+        if len(empty_clients) > 0:
+            raise ValueError(f"Result from client(s) {empty_clients} is empty!")
+
+    @staticmethod
     def _aggregate_fn(results: List[FLModel]) -> FLModel:
         aggregation_helper = WeightedAggregationHelper()
         for _result in results:
@@ -368,7 +374,7 @@ class BaseFedAvg(FedAvgModelController, ABC):
         self.event(AppEventType.BEFORE_AGGREGATION)
         # Replaces: aggr_result = self.aggregator.aggregate(self.fl_ctx)
 
-        # TODO: self._check_results(results), params_type, current_round
+        self._check_results(results)
 
         if not aggregate_fn:
             aggregate_fn = self._aggregate_fn

@@ -14,7 +14,7 @@
 
 from nvflare import SimulatorRunner
 
-n_clients = 1
+n_clients = 8
 
 simulator = SimulatorRunner(
     job_folder="jobs/cifar10_fedavg",
