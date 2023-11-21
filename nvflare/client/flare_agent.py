@@ -350,7 +350,7 @@ class FlareAgentWithFLModel(FlareAgent):
         model = FLModelUtils.from_shareable(shareable, self._from_nvflare_converter)
         return model
 
-    def task_result_to_shareable(self, result: FLModel, rc):
+    def task_result_to_shareable(self, result: FLModel, rc) -> Shareable:
         shareable = FLModelUtils.to_shareable(result, self._to_nvflare_converter)
         shareable.set_return_code(rc)
         return shareable
