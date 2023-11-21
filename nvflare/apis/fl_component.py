@@ -15,9 +15,9 @@
 import logging
 from typing import Any
 
+from nvflare.apis.fl_exception import TaskExecutionError
 from nvflare.apis.utils.fl_context_utils import generate_log_message
 from nvflare.security.logging import secure_format_traceback
-from nvflare.apis.fl_exception import TaskExecutionError
 
 from .analytix import AnalyticsData, AnalyticsDataType
 from .event_type import EventType
@@ -233,7 +233,6 @@ class FLComponent(StatePersistable):
 
 
 class FLComponentHelper(FLComponent):
-
     STATE = None
 
     def __init__(self):

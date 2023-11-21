@@ -16,7 +16,6 @@ from .model_controller import ModelController
 
 
 class FedAvg(ModelController):
-
     def run(self) -> None:
         self.info("Start FedAvg.")
 
@@ -25,11 +24,11 @@ class FedAvg(ModelController):
 
             clients = self.sample_clients(self._min_clients)
 
-            results = self.send_model_and_wait(
-                targets=clients, data=self.model
-            )
+            results = self.send_model_and_wait(targets=clients, data=self.model)
 
-            aggregate_results = self.aggregate(results, aggregate_fn=None)  # if no `aggregate_fn` provided, default `WeightedAggregationHelper` is used
+            aggregate_results = self.aggregate(
+                results, aggregate_fn=None
+            )  # if no `aggregate_fn` provided, default `WeightedAggregationHelper` is used
 
             self.update_model(aggregate_results)
 

@@ -20,9 +20,8 @@ simulator = SimulatorRunner(
     job_folder="jobs/cifar10_fedavg",
     workspace="/tmp/nvflare/sim_cifar10/cifar10_fedavg_alpha1.0",
     n_clients=n_clients,
-    threads=n_clients
+    threads=n_clients,
 )
 
 run_status = simulator.run()
 print("Simulator finished with run_status", run_status)
-

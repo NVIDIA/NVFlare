@@ -13,26 +13,25 @@
 # limitations under the License.
 
 import random
-from abc import abstractmethod, ABC
-from typing import Union, List
+from abc import ABC, abstractmethod
+from typing import List, Union
 
-from nvflare.apis.fl_component import FLComponentHelper
-from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
-from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import OperatorMethod, TaskOperatorKey
-from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
-from nvflare.apis.impl.controller import ClientTask
+from nvflare.apis.fl_component import FLComponentHelper
+from nvflare.apis.fl_constant import FLMetaKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.impl.controller import Task
+from nvflare.apis.impl.controller import ClientTask, Task
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
+from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
+from nvflare.app_common.abstract.model import ModelLearnableKey
+from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.security.logging import secure_format_exception
-from nvflare.app_common.abstract.model import ModelLearnableKey
-from nvflare.apis.fl_constant import FLMetaKey, ReturnCode
-from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 
 from .scatter_and_gather import ScatterAndGather
 
@@ -74,13 +73,10 @@ class BaseModelController(ScatterAndGather, FLComponentHelper, ABC):
                 self.model = FLModel(
                     params_type=ParamsType.FULL,
                     params=self._global_weights[ModelLearnableKey.WEIGHTS],
-                    meta=self._global_weights[ModelLearnableKey.META]
+                    meta=self._global_weights[ModelLearnableKey.META],
                 )
             else:
-                self.model = FLModel(
-                    params_type=ParamsType.FULL,
-                    params={}
-                )
+                self.model = FLModel(params_type=ParamsType.FULL, params={})
 
             self.fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=True)
             self.event(AppEventType.INITIAL_MODEL_LOADED)
@@ -123,7 +119,9 @@ class BaseModelController(ScatterAndGather, FLComponentHelper, ABC):
         )
 
         if len(self._results) != self._min_clients:
-            self.warning(f"Number of results ({len(self._results)}) is different from min_clients ({self._min_clients}).")
+            self.warning(
+                f"Number of results ({len(self._results)}) is different from min_clients ({self._min_clients})."
+            )
 
         return self._results
 
@@ -184,8 +182,7 @@ class BaseModelController(ScatterAndGather, FLComponentHelper, ABC):
     def save_model(self):
         if self.persistor:
             if (
-                    self._persist_every_n_rounds != 0
-                    and (self._current_round + 1) % self._persist_every_n_rounds == 0
+                self._persist_every_n_rounds != 0 and (self._current_round + 1) % self._persist_every_n_rounds == 0
             ) or self._current_round == self._start_round + self._num_rounds - 1:
                 self.info("Start persist model on server.")
                 self.event(AppEventType.BEFORE_LEARNABLE_PERSIST)
@@ -218,7 +215,6 @@ class BaseModelController(ScatterAndGather, FLComponentHelper, ABC):
 
 
 class ModelController(BaseModelController, ABC):
-
     def sample_clients(self, min_clients):
         self._min_clients = min_clients
 
@@ -228,7 +224,7 @@ class ModelController(BaseModelController, ABC):
         if len(clients) < self._min_clients:
             self._min_clients = len(clients)
 
-        clients = clients[0:self._min_clients]
+        clients = clients[0 : self._min_clients]
 
         return clients
 
@@ -236,10 +232,12 @@ class ModelController(BaseModelController, ABC):
     def _aggregate_fn(results: List[FLModel]) -> FLModel:
         aggregation_helper = WeightedAggregationHelper()
         for _result in results:
-            aggregation_helper.add(data=_result.params,
-                                   weight=_result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0),
-                                   contributor_name=_result.meta.get("client_name", "unkown"),
-                                   contribution_round=_result.meta.get("current_round", None))
+            aggregation_helper.add(
+                data=_result.params,
+                weight=_result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0),
+                contributor_name=_result.meta.get("client_name", "unkown"),
+                contribution_round=_result.meta.get("current_round", None),
+            )
 
         aggregated_dict = aggregation_helper.get_result()
         aggregation_helper.reset_stats()
@@ -247,7 +245,7 @@ class ModelController(BaseModelController, ABC):
         aggr_result = FLModel(
             params=aggregated_dict,
             params_type=results[0].params_type,
-            meta={"nr_aggregated": len(results), "current_round": results[0].meta["current_round"]}
+            meta={"nr_aggregated": len(results), "current_round": results[0].meta["current_round"]},
         )
         return aggr_result
 

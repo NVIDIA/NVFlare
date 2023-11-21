@@ -18,18 +18,17 @@ from typing import Union
 import torch
 
 from nvflare.apis.dxo import MetaKey
+from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.model import (
     ModelLearnable,
     ModelLearnableKey,
     make_model_learnable,
     validate_model_learnable,
 )
-from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.app_constant import ModelFormat
 
 
 class PTModelPersistenceFormatManager(object):
-
     PERSISTENCE_KEY_MODEL = "model"
     PERSISTENCE_KEY_TRAIN_CONF = "train_conf"
     PERSISTENCE_KEY_META_PROPS = "meta_props"
@@ -134,7 +133,9 @@ class PTModelPersistenceFormatManager(object):
             # TODO: check if FLModel is valid
             learned_weights = ml.params
         else:
-            raise ValueError(f"Learned values of type {type(ml)} are supported. Supported types are `ModelLearnable` or `FLModel`.")
+            raise ValueError(
+                f"Learned values of type {type(ml)} are supported. Supported types are `ModelLearnable` or `FLModel`."
+            )
 
         # update with value of the model learnable
         # note that the original weights that are not learned are still kept!

@@ -57,7 +57,6 @@ class ScatterAndGather(Controller):
         persist_every_n_rounds: int = 1,
         snapshot_every_n_rounds: int = 1,
     ):
-        print("ScatterAndGather.init")
         """The controller for ScatterAndGather Workflow.
 
         The ScatterAndGather workflow defines FederatedAveraging on all clients.
