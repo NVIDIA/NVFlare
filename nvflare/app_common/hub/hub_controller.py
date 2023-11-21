@@ -38,6 +38,7 @@ from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.fuel.utils.constants import PipeChannelName
 from nvflare.fuel.utils.pipe.pipe import Message, Pipe
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler, Topic
 from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_number, check_str
@@ -282,10 +283,9 @@ class HubController(Controller):
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
         if event_type == EventType.START_RUN:
-            job_id = fl_ctx.get_job_id()
             pipe = engine.get_component(self.pipe_id)
             check_object_type("pipe", pipe, Pipe)
-            pipe.open(name=job_id)
+            pipe.open(name=PipeChannelName.TASK)
             self.pipe_handler = PipeHandler(pipe)
         elif event_type == EventType.END_RUN:
             self.run_ended = True
