@@ -229,8 +229,27 @@ class ConfigService:
         if env_var_name in os.environ:
             return os.environ.get(env_var_name)
 
-        if isinstance(conf, dict):
-            return conf.get(name)
+        if conf is None:
+            return None
+
+        # conf could be a single config source (a section name or a dict)
+        # conf could also be a list of config sources
+        if not isinstance(conf, list):
+            conf = [conf]
+
+        # check each conf source until the var is found
+        for src in conf:
+            if isinstance(src, str):
+                # this is a section name
+                src = cls.get_section(src)
+
+            if isinstance(src, dict):
+                v = src.get(name)
+                if v is not None:
+                    return v
+
+        # not found from any source
+        return None
 
     @classmethod
     def _int_var(cls, name: str, conf=None, default=None):
