@@ -42,7 +42,7 @@ class BaseModelController(ScatterAndGather, FLComponentHelper, ABC):
         self.model = None
         self.aggregator = None
         self.shareable_gen = None
-        self.results = []
+        self._results = []
 
         super().__init__(**kwargs)
 
@@ -122,10 +122,10 @@ class BaseModelController(ScatterAndGather, FLComponentHelper, ABC):
             abort_signal=self.abort_signal,
         )
 
-        if len(self.results) != self._min_clients:
-            self.warning(f"Number of results ({len(self.results)}) is different from min_clients ({self._min_clients}).")
+        if len(self._results) != self._min_clients:
+            self.warning(f"Number of results ({len(self._results)}) is different from min_clients ({self._min_clients}).")
 
-        return self.results
+        return self._results
 
     def _process_train_result(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
         self.fl_ctx = fl_ctx
@@ -143,7 +143,7 @@ class BaseModelController(ScatterAndGather, FLComponentHelper, ABC):
         result_model.meta["current_round"] = self._current_round
         result_model.meta["total_rounds"] = self._num_rounds
 
-        self.results.append(result_model)
+        self._results.append(result_model)
 
     def _accept_train_result(self, client_name: str, result: Shareable, fl_ctx: FLContext) -> bool:
         self.fl_ctx = fl_ctx
@@ -264,7 +264,7 @@ class ModelController(BaseModelController, ABC):
 
         self.info(f"aggregating {len(results)} update(s) at round {self._current_round}")
         aggr_result = aggregate_fn(results)
-        self.results = []
+        self._results = []
 
         self.fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, aggr_result, private=True, sticky=False)
         self.event(AppEventType.AFTER_AGGREGATION)
