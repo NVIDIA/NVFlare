@@ -47,28 +47,28 @@ class BaseModelController(ScatterAndGather, FLComponentHelper, ABC):
         super().__init__(**kwargs)
 
     def start_controller(self, fl_ctx: FLContext) -> None:
-        self.log_info(fl_ctx, "Initializing ScatterAndGather workflow.")
+        self.fl_ctx = fl_ctx
+        self.info("Initializing ScatterAndGather workflow.")
         self._phase = AppConstants.PHASE_INIT
 
         if self.persistor_id:
             self.persistor = self._engine.get_component(self.persistor_id)
             if not isinstance(self.persistor, LearnablePersistor):
-                self.system_panic(
+                self.panic(
                     f"Model Persistor {self.persistor_id} must be a LearnablePersistor type object, "
-                    f"but got {type(self.persistor)}",
-                    fl_ctx,
+                    f"but got {type(self.persistor)}"
                 )
                 return
 
         # initialize global model
-        fl_ctx.set_prop(AppConstants.START_ROUND, self._start_round, private=True, sticky=True)
-        fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self._num_rounds, private=True, sticky=False)
+        self.fl_ctx.set_prop(AppConstants.START_ROUND, self._start_round, private=True, sticky=True)
+        self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self._num_rounds, private=True, sticky=False)
         if self.persistor:
-            self._global_weights = self.persistor.load(fl_ctx)
+            self._global_weights = self.persistor.load(self.fl_ctx)
             if self._global_weights.is_empty():
                 if not self.allow_empty_global_weights:
                     # if empty not allowed, further check whether it is available from fl_ctx
-                    self._global_weights = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
+                    self._global_weights = self.fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
 
             if not self._global_weights.is_empty():
                 self.model = FLModel(
@@ -82,11 +82,10 @@ class BaseModelController(ScatterAndGather, FLComponentHelper, ABC):
                     params={}
                 )
 
-            fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=True)
-            self.fire_event(AppEventType.INITIAL_MODEL_LOADED, fl_ctx)
+            self.fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=True)
+            self.event(AppEventType.INITIAL_MODEL_LOADED)
 
-        self.engine = fl_ctx.get_engine()
-        self.fl_ctx = fl_ctx
+        self.engine = self.fl_ctx.get_engine()
         self.initialize()
 
     def send_model_and_wait(self, targets: Union[List[Client], List[str], None] = None, data: FLModel = None) -> List:
@@ -126,9 +125,10 @@ class BaseModelController(ScatterAndGather, FLComponentHelper, ABC):
         if len(self.results) != self._min_clients:
             self.warning(f"Number of results ({len(self.results)}) is different from min_clients ({self._min_clients}).")
 
-        return self.results  # TODO: return results
+        return self.results
 
     def _process_train_result(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
+        self.fl_ctx = fl_ctx
         result = client_task.result
         client_name = client_task.client.name
 
@@ -146,27 +146,25 @@ class BaseModelController(ScatterAndGather, FLComponentHelper, ABC):
         self.results.append(result_model)
 
     def _accept_train_result(self, client_name: str, result: Shareable, fl_ctx: FLContext) -> bool:
-
+        self.fl_ctx = fl_ctx
         rc = result.get_return_code()
 
         # Raise errors if bad peer context or execution exception.
         if rc and rc != ReturnCode.OK:
             if self.ignore_result_error:
-                self.log_warning(
-                    fl_ctx,
+                self.warning(
                     f"Ignore the train result from {client_name} at round {self._current_round}. Train result error code: {rc}",
                 )
                 return False
             else:
-                self.system_panic(
+                self.panic(
                     f"Result from {client_name} is bad, error code: {rc}. "
-                    f"{self.__class__.__name__} exiting at round {self._current_round}.",
-                    fl_ctx=fl_ctx,
+                    f"{self.__class__.__name__} exiting at round {self._current_round}."
                 )
                 return False
 
-        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=True)
-        fl_ctx.set_prop(AppConstants.TRAINING_RESULT, result, private=True, sticky=False)
+        self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=True)
+        self.fl_ctx.set_prop(AppConstants.TRAINING_RESULT, result, private=True, sticky=False)
 
         return True
 
@@ -174,14 +172,14 @@ class BaseModelController(ScatterAndGather, FLComponentHelper, ABC):
         self.fl_ctx = fl_ctx
         self.abort_signal = abort_signal
         try:
-            self.log_info(fl_ctx, "Beginning model controller run.")
+            self.info("Beginning model controller run.")
             self._phase = AppConstants.PHASE_TRAIN
 
             self.run()
         except Exception as e:
             error_msg = f"Exception in model controller run: {secure_format_exception(e)}"
-            self.log_exception(fl_ctx, error_msg)
-            self.system_panic(error_msg, fl_ctx)
+            self.exception(error_msg)
+            self.panic(error_msg)
 
     def save_model(self):
         if self.persistor:
@@ -190,10 +188,10 @@ class BaseModelController(ScatterAndGather, FLComponentHelper, ABC):
                     and (self._current_round + 1) % self._persist_every_n_rounds == 0
             ) or self._current_round == self._start_round + self._num_rounds - 1:
                 self.info("Start persist model on server.")
-                self.fire_event(AppEventType.BEFORE_LEARNABLE_PERSIST, self.fl_ctx)
-                # Replace: self.persistor.save(self._global_weights, self.fl_ctx)
+                self.event(AppEventType.BEFORE_LEARNABLE_PERSIST)
+                # Replace: self.persistor.save(self._global_weights, fl_ctx)
                 self.persistor.save(self.model, self.fl_ctx)
-                self.fire_event(AppEventType.AFTER_LEARNABLE_PERSIST, self.fl_ctx)
+                self.event(AppEventType.AFTER_LEARNABLE_PERSIST)
                 self.info("End persist model on server.")
 
     def stop_controller(self, fl_ctx: FLContext):
@@ -256,7 +254,7 @@ class ModelController(BaseModelController, ABC):
     def aggregate(self, results: List[FLModel], aggregate_fn=None) -> FLModel:
         # TODO: write separate FLModel aggregator? Check params_type for each result: add _check_results()
         self.info("Start aggregation.")
-        self.fire_event(AppEventType.BEFORE_AGGREGATION, self.fl_ctx)
+        self.event(AppEventType.BEFORE_AGGREGATION)
         # Replaces: aggr_result = self.aggregator.aggregate(self.fl_ctx)
 
         # TODO: self._check_results(results), params_type, current_round
@@ -269,13 +267,13 @@ class ModelController(BaseModelController, ABC):
         self.results = []
 
         self.fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, aggr_result, private=True, sticky=False)
-        self.fire_event(AppEventType.AFTER_AGGREGATION, self.fl_ctx)
+        self.event(AppEventType.AFTER_AGGREGATION)
         self.info("End aggregation.")
 
         return aggr_result
 
     def update_model(self, aggr_result):
-        self.fire_event(AppEventType.BEFORE_SHAREABLE_TO_LEARNABLE, self.fl_ctx)
+        self.event(AppEventType.BEFORE_SHAREABLE_TO_LEARNABLE)
 
         self.model.meta = aggr_result.meta
         if aggr_result.params_type == ParamsType.FULL:
@@ -288,4 +286,4 @@ class ModelController(BaseModelController, ABC):
 
         self.fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self.model, private=True, sticky=True)
         self.fl_ctx.sync_sticky()
-        self.fire_event(AppEventType.AFTER_SHAREABLE_TO_LEARNABLE, self.fl_ctx)
+        self.event(AppEventType.AFTER_SHAREABLE_TO_LEARNABLE)

@@ -419,3 +419,11 @@ class FLComponentHelper(FLComponent):
             event_type (str): The type of event.
         """
         self.fire_event(event_type, self.fl_ctx)
+
+    def panic(self, reason: str):
+        """Signals a fatal condition that could cause the RUN to end.
+
+        Args:
+            reason (str): The reason for panic.
+        """
+        self.system_panic(reason, self.fl_ctx)
