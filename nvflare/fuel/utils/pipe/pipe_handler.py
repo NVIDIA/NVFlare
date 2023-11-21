@@ -289,7 +289,8 @@ class PipeHandler(object):
             msg = self.pipe.receive()
             if msg:
                 last_heartbeat_received_time = now
-                self._other_end_is_up.set()
+                if msg.topic not in [Topic.END, Topic.ABORT, Topic.PEER_GONE]:
+                    self._other_end_is_up.set()
                 if msg.topic != Topic.HEARTBEAT:
                     self._add_message(msg)
                 if msg.topic in [Topic.END, Topic.ABORT]:

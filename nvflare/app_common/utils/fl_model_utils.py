@@ -17,6 +17,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Optional
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.fl_model import FLModel, FLModelConst, MetaKey, ParamsType
 from nvflare.app_common.app_constant import AppConstants
@@ -92,7 +93,9 @@ class FLModelUtils:
         return shareable
 
     @staticmethod
-    def from_shareable(shareable: Shareable, params_converter: Optional[ParamsConverter] = None) -> FLModel:
+    def from_shareable(
+        shareable: Shareable, params_converter: Optional[ParamsConverter] = None, fl_ctx: Optional[FLContext] = None
+    ) -> FLModel:
         """From NVFlare side shareable to FLModel.
 
         This is a temporary solution to converts the shareable of existing style to FLModel,

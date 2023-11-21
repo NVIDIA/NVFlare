@@ -146,6 +146,8 @@ class FlareAgent:
         """
         self.asked_to_stop = True
         self.pipe_handler.stop()
+        if self.metric_pipe_handler:
+            self.metric_pipe_handler.stop()
 
     def shareable_to_task_data(self, shareable: Shareable):
         """Convert the Shareable object received from the TaskExchanger to an app-friendly format.
@@ -178,7 +180,7 @@ class FlareAgent:
                 If not specified, this call is blocked forever until a task has been received or agent has been closed.
 
         Returns:
-            None if no task is available during before timeout; or a Task object if task is available.
+            None if no task is available before timeout; or a Task object if task is available.
         Raises:
             AgentClosed exception if the agent has been closed before timeout.
             CallStateError exception if the call has not been made properly.
@@ -199,7 +201,7 @@ class FlareAgent:
                 raise CallStateError("application called get_task while the current task is not processed")
 
             if timeout is not None and time.time() - start_time >= timeout:
-                self.pipe_handler.notify_abort()
+                self.logger.debug("get request timeout")
                 return None
 
             req: Optional[Message] = self.pipe_handler.get_next()
