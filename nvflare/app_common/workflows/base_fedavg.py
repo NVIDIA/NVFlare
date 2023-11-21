@@ -21,7 +21,7 @@ from nvflare.apis.controller_spec import OperatorMethod, TaskOperatorKey
 from nvflare.apis.fl_component import FLComponentHelper
 from nvflare.apis.fl_constant import FLMetaKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.impl.controller import ClientTask, Task
+from nvflare.apis.impl.controller import ClientTask, Controller, Task
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
@@ -33,17 +33,76 @@ from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.security.logging import secure_format_exception
 
-from .scatter_and_gather import ScatterAndGather
 
+class FedAvgModelController(Controller, FLComponentHelper, ABC):
+    def __init__(
+        self,
+        min_clients: int = 1000,
+        num_rounds: int = 5,
+        wait_time_after_min_received: int = 10,
+        persistor_id="",
+        train_task_name=AppConstants.TASK_TRAIN,
+        train_timeout: int = 0,
+        ignore_result_error: bool = False,
+        allow_empty_global_weights: bool = False,
+        task_check_period: float = 0.5,
+        persist_every_n_rounds: int = 1,
+    ):
+        """The base controller for FedAvg Workflow. *Note*: This class is experimental.
 
-class BaseModelController(ScatterAndGather, FLComponentHelper, ABC):
-    def __init__(self, **kwargs):
+        Implements [FederatedAveraging](https://arxiv.org/abs/1602.05629).
+        The model persistor (persistor_id) is used to load the initial global model which is sent to a list of clients.
+        Each client sends it's updated weights after local training which is aggregated.
+        Next, the global model is updated.
+        The model_persistor also saves the model after training.
+
+        The below abstract routines need to be implemented by the derived classes.
+
+            - def sample_clients(self, min_clients)
+            - def aggregate(self, results: List[FLModel], aggregate_fn=None) -> FLModel
+            - def update_model(self, aggr_result)
+            - def run(self)
+
+        Args:
+            min_clients (int, optional): The minimum number of clients responses before
+                Workflow starts to wait for `wait_time_after_min_received`. Note that the workflow will move forward
+                when all available clients have responded regardless of this value. Defaults to 1000.
+            num_rounds (int, optional): The total number of training rounds. Defaults to 5.
+            wait_time_after_min_received (int, optional): Time to wait before beginning aggregation after
+                minimum number of clients responses has been received. Defaults to 10.
+            persistor_id (str, optional): ID of the persistor component. Defaults to "persistor".
+            train_task_name (str, optional): Name of the train task. Defaults to "train".
+            train_timeout (int, optional): Time to wait for clients to do local training.
+            ignore_result_error (bool, optional): whether this controller can proceed if client result has errors.
+                Defaults to False.
+            allow_empty_global_weights (bool, optional): whether to allow empty global weights. Some pipelines can have
+                empty global weights at first round, such that clients start training from scratch without any global info.
+                Defaults to False.
+            task_check_period (float, optional): interval for checking status of tasks. Defaults to 0.5.
+            persist_every_n_rounds (int, optional): persist the global model every n rounds. Defaults to 1.
+                If n is 0 then no persist.
+        """
+        super().__init__(task_check_period=task_check_period)
+
+        self.persistor_id = persistor_id
+        self.train_task_name = train_task_name
+        self.persistor = None
+
+        # config data
+        self._min_clients = min_clients
+        self._num_rounds = num_rounds
+        self._wait_time_after_min_received = wait_time_after_min_received
+        self._train_timeout = train_timeout
+        self._persist_every_n_rounds = persist_every_n_rounds
+        self.ignore_result_error = ignore_result_error
+        self.allow_empty_global_weights = allow_empty_global_weights
+
+        # workflow phases: init, train, validate
+        self._phase = AppConstants.PHASE_INIT
+        self._current_round = None
+
         self.model = None
-        self.aggregator = None
-        self.shareable_gen = None
         self._results = []
-
-        super().__init__(**kwargs)
 
     def start_controller(self, fl_ctx: FLContext) -> None:
         self.fl_ctx = fl_ctx
@@ -60,26 +119,25 @@ class BaseModelController(ScatterAndGather, FLComponentHelper, ABC):
                 return
 
         # initialize global model
-        self.fl_ctx.set_prop(AppConstants.START_ROUND, self._start_round, private=True, sticky=True)
         self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self._num_rounds, private=True, sticky=False)
         if self.persistor:
-            self._global_weights = self.persistor.load(self.fl_ctx)
-            if self._global_weights.is_empty():
+            global_weights = self.persistor.load(self.fl_ctx)
+            if global_weights.is_empty():
                 if not self.allow_empty_global_weights:
                     # if empty not allowed, further check whether it is available from fl_ctx
-                    self._global_weights = self.fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
+                    global_weights = self.fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
 
-            if not self._global_weights.is_empty():
+            if not global_weights.is_empty():
                 self.model = FLModel(
                     params_type=ParamsType.FULL,
-                    params=self._global_weights[ModelLearnableKey.WEIGHTS],
-                    meta=self._global_weights[ModelLearnableKey.META],
+                    params=global_weights[ModelLearnableKey.WEIGHTS],
+                    meta=global_weights[ModelLearnableKey.META],
                 )
-            else:
-                self.model = FLModel(params_type=ParamsType.FULL, params={})
+        else:
+            self.model = FLModel(params_type=ParamsType.FULL, params={})
 
-            self.fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=True)
-            self.event(AppEventType.INITIAL_MODEL_LOADED)
+        self.fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self.model, private=True, sticky=True)
+        self.event(AppEventType.INITIAL_MODEL_LOADED)
 
         self.engine = self.fl_ctx.get_engine()
         self.initialize()
@@ -95,7 +153,6 @@ class BaseModelController(ScatterAndGather, FLComponentHelper, ABC):
             TaskOperatorKey.OP_ID: self.train_task_name,
             TaskOperatorKey.METHOD: OperatorMethod.BROADCAST,
             TaskOperatorKey.TIMEOUT: self._train_timeout,
-            TaskOperatorKey.AGGREGATOR: self.aggregator_id,
         }
 
         train_task = Task(
@@ -125,6 +182,10 @@ class BaseModelController(ScatterAndGather, FLComponentHelper, ABC):
 
         return self._results
 
+    def _prepare_train_task_data(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
+        fl_ctx.set_prop(AppConstants.TRAIN_SHAREABLE, client_task.task.data, private=True, sticky=False)
+        self.fire_event(AppEventType.BEFORE_TRAIN_TASK, fl_ctx)
+
     def _process_train_result(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
         self.fl_ctx = fl_ctx
         result = client_task.result
@@ -142,6 +203,15 @@ class BaseModelController(ScatterAndGather, FLComponentHelper, ABC):
         result_model.meta["total_rounds"] = self._num_rounds
 
         self._results.append(result_model)
+
+    def process_result_of_unknown_task(
+        self, client: Client, task_name, client_task_id, result: Shareable, fl_ctx: FLContext
+    ) -> None:
+        if self._phase == AppConstants.PHASE_TRAIN and task_name == self.train_task_name:
+            self._accept_train_result(client_name=client.name, result=result, fl_ctx=fl_ctx)
+            self.log_info(fl_ctx, f"Result of unknown task {task_name} sent to aggregator.")
+        else:
+            self.log_error(fl_ctx, "Ignoring result from unknown task.")
 
     def _accept_train_result(self, client_name: str, result: Shareable, fl_ctx: FLContext) -> bool:
         self.fl_ctx = fl_ctx
@@ -183,10 +253,10 @@ class BaseModelController(ScatterAndGather, FLComponentHelper, ABC):
         if self.persistor:
             if (
                 self._persist_every_n_rounds != 0 and (self._current_round + 1) % self._persist_every_n_rounds == 0
-            ) or self._current_round == self._start_round + self._num_rounds - 1:
+            ) or self._current_round == self._num_rounds - 1:
                 self.info("Start persist model on server.")
                 self.event(AppEventType.BEFORE_LEARNABLE_PERSIST)
-                # Replace: self.persistor.save(self._global_weights, fl_ctx)
+                # Replace: self.persistor.save(global_weights, fl_ctx)
                 self.persistor.save(self.model, self.fl_ctx)
                 self.event(AppEventType.AFTER_LEARNABLE_PERSIST)
                 self.info("End persist model on server.")
@@ -199,22 +269,65 @@ class BaseModelController(ScatterAndGather, FLComponentHelper, ABC):
     # To be implemented by derived classes
     @abstractmethod
     def sample_clients(self, min_clients):
+        """Called by the `run` routine to get a list of available clients.
+
+        Args:
+            min_clients: number of clients to return.
+
+        Returns: list of clients.
+
+        """
         raise NotImplementedError
 
     @abstractmethod
     def aggregate(self, results: List[FLModel], aggregate_fn=None) -> FLModel:
+        """Called by the `run` routine to aggregate the training results of clients.
+
+        Args:
+            results: a list of FLModel containing training results of the clients.
+            aggregate_fn: a function that turns the list of FLModel into one resulting (aggregated) FLModel.
+
+        Returns: aggregated FLModel.
+
+        """
         raise NotImplementedError
 
     @abstractmethod
     def update_model(self, aggr_result):
+        """Called by the `run` routine to update the current global model (self.model) given the aggregated result.
+
+        Args:
+            aggr_result: aggregated FLModel.
+
+        Returns: None.
+
+        """
         raise NotImplementedError
 
     @abstractmethod
     def run(self):
+        """Main `run` routine called by the Controller's `control_flow` to execute the workflow.
+
+        Returns: None.
+
+        """
         raise NotImplementedError
 
 
-class ModelController(BaseModelController, ABC):
+class BaseFedAvg(FedAvgModelController, ABC):
+    """Controller for FedAvg Workflow. *Note*: This class is experimental.
+    Implements [FederatedAveraging](https://arxiv.org/abs/1602.05629).
+
+    Provides the default implementations for the follow routines:
+        - def sample_clients(self, min_clients)
+        - def aggregate(self, results: List[FLModel], aggregate_fn=None) -> FLModel
+        - def update_model(self, aggr_result)
+
+    The `run` routine still needs to be implemented by the derived class:
+
+        - def run(self)
+    """
+
     def sample_clients(self, min_clients):
         self._min_clients = min_clients
 
