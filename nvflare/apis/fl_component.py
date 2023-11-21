@@ -237,6 +237,7 @@ class FLComponentHelper(FLComponent):
     STATE = None
 
     def __init__(self):
+        print("FLComponentHelper.init")
         super().__init__()
         self.engine = None
         self.fl_ctx = None
@@ -410,3 +411,11 @@ class FLComponentHelper(FLComponent):
 
         """
         pass
+
+    def event(self, event_type):
+        """Fires an event.
+
+        Args:
+            event_type (str): The type of event.
+        """
+        self.fire_event(event_type, self.fl_ctx)

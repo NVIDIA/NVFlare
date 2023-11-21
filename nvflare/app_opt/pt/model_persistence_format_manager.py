@@ -131,6 +131,7 @@ class PTModelPersistenceFormatManager(object):
 
             learned_weights = ml.get(ModelLearnableKey.WEIGHTS, {})
         elif isinstance(ml, FLModel):
+            # TODO: check if FLModel is valid
             learned_weights = ml.params
         else:
             raise ValueError(f"Learned values of type {type(ml)} are supported. Supported types are `ModelLearnable` or `FLModel`.")

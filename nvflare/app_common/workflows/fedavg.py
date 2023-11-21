@@ -16,16 +16,7 @@ from .model_controller import ModelController
 
 
 class FedAvg(ModelController):
-    #def __init__(
-    #    self,
-    #    **kwargs
-    #):
-    # super().__init__(**kwargs)
 
-    #def initialize(self):
-    #    self.model = ...  # initial global model
-
-    # Executed by ModelScatterAndGather
     def run(self) -> None:
         self.info("Start FedAvg.")
 
