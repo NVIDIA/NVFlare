@@ -236,7 +236,6 @@ class FLComponentHelper(FLComponent):
     STATE = None
 
     def __init__(self):
-        print("FLComponentHelper.init")
         super().__init__()
         self.engine = None
         self.fl_ctx = None
