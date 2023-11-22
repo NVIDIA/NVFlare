@@ -498,7 +498,7 @@ class ServerRunner(TBI):
             self.log_error(fl_ctx, f"missing {ReservedHeaderKey.TASK_ID} in task_check request")
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
-        self.log_info(fl_ctx, f"received task_check on task {task_id}")
+        self.log_debug(fl_ctx, f"received task_check on task {task_id}")
 
         with self.wf_lock:
             if self.current_wf is None or self.current_wf.responder is None:
@@ -507,7 +507,7 @@ class ServerRunner(TBI):
 
             task = self.current_wf.responder.process_task_check(task_id=task_id, fl_ctx=fl_ctx)
             if task:
-                self.log_info(fl_ctx, f"task {task_id} is still good")
+                self.log_debug(fl_ctx, f"task {task_id} is still good")
                 return make_reply(ReturnCode.OK)
             else:
                 self.log_info(fl_ctx, f"task {task_id} is not found")

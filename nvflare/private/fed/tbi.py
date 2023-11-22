@@ -16,7 +16,7 @@ import time
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, SystemConfigs
+from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import NotReadyToEndRun
 from nvflare.fuel.utils.config_service import ConfigService
@@ -32,6 +32,19 @@ class TBI(FLComponent):
 
     def __init__(self):
         super().__init__()
+
+    @staticmethod
+    def get_positive_float_var(var_name, default):
+        # use ConfigService to determine value for the specified var_name:
+        #   the job config could define variable var_name;
+        #   the user could define OS env var NVFLARE_VAR_NAME (the var_name turned to uppercase)
+        value = ConfigService.get_float_var(name=var_name, conf=SystemConfigs.APPLICATION_CONF, default=default)
+        return value if value > 0 else default
+
+    @staticmethod
+    def get_positive_int_var(var_name, default):
+        value = ConfigService.get_int_var(name=var_name, conf=SystemConfigs.APPLICATION_CONF, default=default)
+        return value if value > 0 else default
 
     def _any_component_is_not_ready(self, fl_ctx: FLContext) -> bool:
         any_component_not_ready = fl_ctx.get_prop(FLContextKey.NOT_READY_TO_END_RUN, False)
@@ -58,26 +71,8 @@ class TBI(FLComponent):
         Returns:
 
         """
-        default_max_wait = 5.0
-        default_check_interval = 0.5
-
-        # use ConfigService to determine max wait time for readiness check:
-        #   the job config could define variable "end_run_readiness_timeout"
-        #   the user could define OS env var NVFLARE_END_RUN_READINESS_TIMEOUT
-        max_wait = ConfigService.get_float_var(
-            name="end_run_readiness_timeout", conf=SystemConfigs.APPLICATION_CONF, default=default_max_wait
-        )
-        if max_wait <= 0:
-            max_wait = default_max_wait
-
-        # use ConfigService to determine interval for readiness check:
-        #   the job config could define variable "end_run_readiness_check_interval"
-        #   the user could define OS env var NVFLARE_END_RUN_READINESS_CHECK_INTERVAL
-        check_interval = ConfigService.get_float_var(
-            name="end_run_readiness_check_interval", conf=SystemConfigs.APPLICATION_CONF, default=default_check_interval
-        )
-        if check_interval <= 0:
-            check_interval = default_check_interval
+        max_wait = self.get_positive_float_var(ConfigVarName.END_RUN_READINESS_TIMEOUT, 5.0)
+        check_interval = self.get_positive_float_var(ConfigVarName.END_RUN_READINESS_CHECK_INTERVAL, 0.5)
 
         self.log_debug(fl_ctx, f"=== end_run_readiness: {max_wait=} {check_interval=}")
         check_start_time = time.time()
