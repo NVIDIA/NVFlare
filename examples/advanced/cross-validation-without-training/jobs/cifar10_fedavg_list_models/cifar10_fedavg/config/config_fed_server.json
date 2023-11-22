@@ -1,0 +1,50 @@
+{
+    "format_version": 2,
+    "min_clients": 2,
+    "MODEL_DIR": "{$SERVER_MODEL_DIR}",
+    "server": {
+        "heart_beat_timeout": 600
+    },
+    "task_data_filters": [],
+    "task_result_filters": [],
+    "components": [
+        {
+            "id": "persistor",
+            "name": "PTFileListModelPersistor",
+            "args": {
+                "model": {
+                    "path": "pt.networks.cifar10_nets.ModerateCNN",
+                    "args": {}
+                },
+                "model_list": {
+                    "best_global_model": "{MODEL_DIR}/best_FL_global_model.pt",
+                    "global_model": "{MODEL_DIR}/FL_global_model.pt"
+                }
+            }
+        },
+        {
+            "id": "model_locator",
+            "name": "PTFileModelLocator",
+            "args": {
+                "pt_persistor_id": "persistor"
+            }
+        },
+        {
+            "id": "json_generator",
+            "name": "ValidationJsonGenerator",
+            "args": {}
+        }
+    ],
+    "workflows": [
+        {
+            "id": "cross_site_model_eval",
+            "name": "CrossSiteModelEval",
+            "args": {
+                "model_locator_id": "model_locator",
+                "submit_model_timeout": 600,
+                "validation_timeout": 6000,
+                "cleanup_models": true
+            }
+        }
+    ]
+}
