@@ -143,13 +143,16 @@ class LauncherExecutor(Executor):
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         self.log_info(fl_ctx, f"execute for task ({task_name})")
+        print( f"\n******************************execute for task ({task_name})\n")
         supported_tasks = [self._train_task_name, self._evaluate_task_name, self._submit_model_task_name]
         if task_name not in supported_tasks:
             self.log_error(fl_ctx, f"Task '{task_name}' is not in supported tasks: {supported_tasks}")
             return make_reply(ReturnCode.BAD_TASK_DATA)
 
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
+        print( f"\n******************************{current_round}=\n")
         total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS, None)
+        print( f"\n******************************{total_rounds}=\n")
         if task_name == self._train_task_name:
             if current_round is None:
                 self.log_error(fl_ctx, "missing current round")
@@ -304,7 +307,6 @@ class LauncherExecutor(Executor):
     def _exchange(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if self.pipe_handler is None:
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-
         shareable.set_header(FLMetaKey.JOB_ID, fl_ctx.get_job_id())
         shareable.set_header(FLMetaKey.SITE_NAME, fl_ctx.get_identity_name())
         model = FLModelUtils.from_shareable(shareable, self._from_nvflare_converter)
