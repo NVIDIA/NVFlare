@@ -1,5 +1,5 @@
 {
-    "name": "cifar10_scaffold",
+    "name": "cifar10_scaffold_alpha0.1",
     "deploy_map": {
         "cifar10_scaffold": [
             "@ALL"

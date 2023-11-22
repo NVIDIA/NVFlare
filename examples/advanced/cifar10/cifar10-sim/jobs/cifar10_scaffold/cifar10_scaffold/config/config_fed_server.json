@@ -2,8 +2,8 @@
     "format_version": 2,
     "min_clients": 8,
     "num_rounds": 50,
-    "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits",
-    "alpha": 1.0,
+    "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits/cifar10_scaffold_alpha0.1_ca1aa955-1a35-4bcf-8863-6ed24d9dd2f6",
+    "alpha": 0.1,
     "server": {
         "heart_beat_timeout": 600
     },
@@ -30,21 +30,6 @@
             }
         },
         {
-            "id": "shareable_generator",
-            "name": "FullModelShareableGenerator",
-            "args": {}
-        },
-        {
-            "id": "aggregator",
-            "name": "InTimeAccumulateWeightedAggregator",
-            "args": {
-                "expected_data_kind": {
-                    "_model_weights_": "WEIGHT_DIFF",
-                    "scaffold_c_diff": "WEIGHT_DIFF"
-                }
-            }
-        },
-        {
             "id": "model_selector",
             "name": "IntimeModelSelector",
             "args": {}
@@ -64,17 +49,13 @@
     ],
     "workflows": [
         {
-            "id": "scatter_gather_ctl",
-            "name": "ScatterAndGatherScaffold",
+            "id": "scaffold_ctl",
+            "name": "Scaffold",
             "args": {
                 "min_clients": "{min_clients}",
                 "num_rounds": "{num_rounds}",
-                "start_round": 0,
                 "wait_time_after_min_received": 10,
-                "aggregator_id": "aggregator",
                 "persistor_id": "persistor",
-                "shareable_generator_id": "shareable_generator",
-                "train_task_name": "train",
                 "train_timeout": 0
             }
         },

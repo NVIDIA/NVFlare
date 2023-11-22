@@ -401,7 +401,6 @@ class BaseFedAvg(FedAvgModelController, ABC):
             )
 
         aggregated_dict = aggregation_helper.get_result()
-        aggregation_helper.reset_stats()
 
         aggr_result = FLModel(
             params=aggregated_dict,

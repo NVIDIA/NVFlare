@@ -1,6 +1,6 @@
 {
     "format_version": 2,
-    "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits",
+    "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits/cifar10_fedavg_alpha0.1_74ce0975-45f9-4982-838d-a32120ed1a9e",
     "AGGREGATION_EPOCHS": 4,
     "executors": [
         {
@@ -23,7 +23,7 @@
     "components": [
         {
             "id": "cifar10-learner",
-            "path": "pt.learners.cifar10_model_learner.CIFAR10ModelLearner",
+            "path": "pt.learners.CIFAR10ModelLearner",
             "args": {
                 "train_idx_root": "{TRAIN_SPLIT_ROOT}",
                 "aggregation_epochs": "{AGGREGATION_EPOCHS}",
