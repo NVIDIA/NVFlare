@@ -11,10 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import Any
+
 import nvflare.fuel.utils.fobs as fobs
 from nvflare.fuel.f3.cellnet.defs import Encoding, MessageHeaderKey
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
+from nvflare.fuel.utils.buffer_list import BufferList
 
 cell_mapping = {
     "O": MessageHeaderKey.ORIGIN,
@@ -44,6 +47,18 @@ def shorten_string(string):
     else:
         ss = string
     return ss
+
+
+def buffer_len(buffer: Any):
+
+    if not buffer:
+        buf_len = 0
+    elif isinstance(buffer, list):
+        buf_len = BufferList(buffer).get_size()
+    else:
+        buf_len = len(buffer)
+
+    return buf_len
 
 
 def shorten_fqcn(fqcn):
@@ -79,8 +94,14 @@ def encode_payload(message: Message, encoding_key=MessageHeaderKey.PAYLOAD_ENCOD
             message.payload = fobs.dumps(message.payload, buffer_list=True)
         message.set_header(encoding_key, encoding)
 
+    size = buffer_len(message.payload)
+    message.set_header(MessageHeaderKey.PAYLOAD_LEN, size)
+
 
 def decode_payload(message: Message, encoding_key=MessageHeaderKey.PAYLOAD_ENCODING):
+    size = buffer_len(message.payload)
+    message.set_header(MessageHeaderKey.PAYLOAD_LEN, size)
+
     encoding = message.get_header(encoding_key)
     if not encoding:
         return
@@ -93,3 +114,39 @@ def decode_payload(message: Message, encoding_key=MessageHeaderKey.PAYLOAD_ENCOD
         # assume to be bytes
         pass
     message.remove_header(encoding_key)
+
+
+def format_size(size, binary=False):
+    """Format size in human-readable formats like  KB, MB, KiB, MiB
+
+    Args:
+        size: Size in bytes
+        binary: If binary, one K is 1024 bytes, otherwise 1000 bytes.
+
+    Returns: Size in human-readable format (like 10MB, 100.2GiB etc)
+
+    """
+
+    if binary:
+        kilo = 1024.0
+        suffix = "iB"
+    else:
+        kilo = 1000.0
+        suffix = "B"
+
+    num = int(size)
+    unit_found = False
+    for unit in ("", "K", "M", "G", "T"):
+        if abs(num) < kilo:
+            unit_found = True
+            break
+        num /= kilo
+
+    if not unit_found:
+        unit = "P"
+
+    if not unit:
+        suffix = "B"
+
+    num_str = f"{num:.1f}".rstrip("0").rstrip(".")
+    return f"{num_str}{unit}{suffix}"

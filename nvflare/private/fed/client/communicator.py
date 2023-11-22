@@ -27,6 +27,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.fuel.f3.cellnet.core_cell import FQCN, CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.utils import format_size
 from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, SpecialTaskName, new_cell_message
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
 from nvflare.security.logging import secure_format_exception
@@ -194,14 +195,13 @@ class Communicator:
         return_code = task.get_header(MessageHeaderKey.RETURN_CODE)
 
         if return_code == ReturnCode.OK:
-            size = len(task.payload)
-            task.payload = task.payload
+            size = task.get_header(MessageHeaderKey.PAYLOAD_LEN)
             task_name = task.payload.get_header(ServerCommandKey.TASK_NAME)
             fl_ctx.set_prop(FLContextKey.SSID, ssid, sticky=False)
             if task_name not in [SpecialTaskName.END_RUN, SpecialTaskName.TRY_AGAIN]:
                 self.logger.info(
-                    f"Received from {project_name} server "
-                    f" ({size} Bytes). getTask: {task_name} time: {end_time - start_time} seconds"
+                    f"Received from {project_name} server. getTask: {task_name} size: {format_size(size)} "
+                    f"({size} Bytes) time: {end_time - start_time:.6f} seconds"
                 )
         elif return_code == ReturnCode.AUTHENTICATION_ERROR:
             self.logger.warning("get_task request authentication failed.")
@@ -266,8 +266,9 @@ class Communicator:
         )
         end_time = time.time()
         return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
+        size = task_message.get_header(MessageHeaderKey.PAYLOAD_LEN)
         self.logger.info(
-            f" SubmitUpdate size: {len(task_message.payload)} Bytes. time: {end_time - start_time} seconds"
+            f" SubmitUpdate size: {format_size(size)} ({size} Bytes). time: {end_time - start_time:.6f} seconds"
         )
 
         return return_code
