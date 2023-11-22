@@ -77,7 +77,6 @@ class FLModelUtils:
                 # if both params and metrics are presented, will be treated as evaluation on the global model
                 dxo = DXO(data_kind, data=fl_model.params, meta={MetaKey.INITIAL_METRICS: fl_model.metrics})
         else:
-            print(f"\n************************** {fl_model.metrics}=")
             dxo = DXO(DataKind.METRICS, data=fl_model.metrics, meta={})
 
         meta = fl_model.meta if fl_model.meta is not None else {}
