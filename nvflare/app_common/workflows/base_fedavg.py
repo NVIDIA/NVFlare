@@ -34,6 +34,8 @@ from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
+from .scatter_and_gather import _check_non_neg_int
+
 
 class FedAvgModelController(Controller, FLComponentHelper, ABC):
     def __init__(
@@ -84,6 +86,27 @@ class FedAvgModelController(Controller, FLComponentHelper, ABC):
                 If n is 0 then no persist.
         """
         super().__init__(task_check_period=task_check_period)
+
+        # Check arguments
+        if not isinstance(min_clients, int):
+            raise TypeError("min_clients must be int but got {}".format(type(min_clients)))
+        elif min_clients <= 0:
+            raise ValueError("min_clients must be greater than 0.")
+
+        _check_non_neg_int(num_rounds, "num_rounds")
+        _check_non_neg_int(wait_time_after_min_received, "wait_time_after_min_received")
+        _check_non_neg_int(train_timeout, "train_timeout")
+        _check_non_neg_int(persist_every_n_rounds, "persist_every_n_rounds")
+
+        if not isinstance(persistor_id, str):
+            raise TypeError("persistor_id must be a string but got {}".format(type(persistor_id)))
+        if not isinstance(train_task_name, str):
+            raise TypeError("train_task_name must be a string but got {}".format(type(train_task_name)))
+
+        if not isinstance(task_check_period, (int, float)):
+            raise TypeError(f"task_check_period must be an int or float but got {type(task_check_period)}")
+        elif task_check_period <= 0:
+            raise ValueError("task_check_period must be greater than 0.")
 
         self.persistor_id = persistor_id
         self.train_task_name = train_task_name
