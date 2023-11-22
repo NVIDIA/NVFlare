@@ -173,6 +173,7 @@ class FLContextKey(object):
     CONFIG_CTX = "__config_ctx__"
     FILTER_DIRECTION = "__filter_dir__"
     ROOT_URL = "__root_url__"  # the URL for accessing the FL Server
+    NOT_READY_TO_END_RUN = "not_ready_to_end_run__"  # component sets this to indicate it's not ready to end run yet
 
 
 class ReservedTopic(object):
@@ -429,9 +430,22 @@ class FilterKey:
 
 
 class ConfigVarName:
+    # These variables can be set in job config files (config_fed_server or config_fed_client)
+    RUNNER_SYNC_TIMEOUT = "runner_sync_timeout"  # client: runner sync message timeout
+    MAX_RUNNER_SYNC_TRIES = "max_runner_sync_tries"  # client: max number of runner sync attempts
+    TASK_CHECK_TIMEOUT = "task_check_timeout"  # client: timeout for task_check message (before submitting task)
 
-    RUNNER_SYNC_TIMEOUT = "runner_sync_timeout"
-    MAX_RUNNER_SYNC_TRIES = "max_runner_sync_tries"
+    # client: how long to wait before sending task_check again (if previous task_check fails)
+    TASK_CHECK_INTERVAL = "task_check_interval"
+
+    # client: how often to send job heartbeats
+    JOB_HEARTBEAT_INTERVAL = "job_heartbeat_interval"
+
+    # client and server: max time to wait for components to become ready for end-run
+    END_RUN_READINESS_TIMEOUT = "end_run_readiness_timeout"
+
+    # client and server: how long to wait before checking components end-run readiness again (if previous check fails)
+    END_RUN_READINESS_CHECK_INTERVAL = "end_run_readiness_check_interval"
 
 
 class SystemVarName:
