@@ -32,6 +32,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.security.logging import secure_format_exception
+from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
 
 class FedAvgModelController(Controller, FLComponentHelper, ABC):
@@ -184,7 +185,7 @@ class FedAvgModelController(Controller, FLComponentHelper, ABC):
 
     def _prepare_train_task_data(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
         fl_ctx.set_prop(AppConstants.TRAIN_SHAREABLE, client_task.task.data, private=True, sticky=False)
-        self.fire_event(AppEventType.BEFORE_TRAIN_TASK, fl_ctx)
+        self.event(AppEventType.BEFORE_TRAIN_TASK)
 
     def _process_train_result(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
         self.fl_ctx = fl_ctx
@@ -233,13 +234,18 @@ class FedAvgModelController(Controller, FLComponentHelper, ABC):
         self.fl_ctx.set_prop(AppConstants.TRAINING_RESULT, result, private=True, sticky=False)
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext) -> None:
+        self._phase = AppConstants.PHASE_TRAIN
+        fl_ctx.set_prop(AppConstants.PHASE, self._phase, private=True, sticky=False)
+        fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self._num_rounds, private=True, sticky=False)
         self.fl_ctx = fl_ctx
         self.abort_signal = abort_signal
         try:
             self.info("Beginning model controller run.")
+            self.event(AppEventType.TRAINING_STARTED)
             self._phase = AppConstants.PHASE_TRAIN
 
             self.run()
+            self._phase = AppConstants.PHASE_FINISHED
         except Exception as e:
             error_msg = f"Exception in model controller run: {secure_format_exception(e)}"
             self.exception(error_msg)
@@ -258,9 +264,22 @@ class FedAvgModelController(Controller, FLComponentHelper, ABC):
                 self.info("End persist model on server.")
 
     def stop_controller(self, fl_ctx: FLContext):
-        super().stop_controller(fl_ctx)
+        self._phase = AppConstants.PHASE_FINISHED
         self.fl_ctx = fl_ctx
         self.finalize()
+
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        super().handle_event(event_type, fl_ctx)
+        if event_type == InfoCollector.EVENT_TYPE_GET_STATS:
+            collector = fl_ctx.get_prop(InfoCollector.CTX_KEY_STATS_COLLECTOR, None)
+            if collector:
+                if not isinstance(collector, GroupInfoCollector):
+                    raise TypeError("collector must be GroupInfoCollector but got {}".format(type(collector)))
+
+                collector.add_info(
+                    group_name=self._name,
+                    info={"phase": self._phase, "current_round": self._current_round, "num_rounds": self._num_rounds},
+                )
 
     # To be implemented by derived classes
     @abstractmethod
@@ -369,11 +388,8 @@ class BaseFedAvg(FedAvgModelController, ABC):
         return aggr_result
 
     def aggregate(self, results: List[FLModel], aggregate_fn=None) -> FLModel:
-        # TODO: write separate FLModel aggregator? Check params_type for each result: add _check_results()
-        self.info("Start aggregation.")
+        self.debug("Start aggregation.")
         self.event(AppEventType.BEFORE_AGGREGATION)
-        # Replaces: aggr_result = self.aggregator.aggregate(self.fl_ctx)
-
         self._check_results(results)
 
         if not aggregate_fn:
@@ -385,7 +401,7 @@ class BaseFedAvg(FedAvgModelController, ABC):
 
         self.fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, aggr_result, private=True, sticky=False)
         self.event(AppEventType.AFTER_AGGREGATION)
-        self.info("End aggregation.")
+        self.debug("End aggregation.")
 
         return aggr_result
 
