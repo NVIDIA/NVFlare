@@ -208,18 +208,8 @@ class ConfigService:
             raise TypeError(f"file_basename must be str but got {type(file_basename)}")
         return search_file(file_basename, cls._config_path)
 
-    @classmethod
-    def _get_var(cls, name: str, conf):
-        if not isinstance(name, str):
-            raise ValueError(f"var name must be str but got {type(name)}")
-
-        # see whether command args have it
-        if cls._cmd_args and name in cls._cmd_args:
-            return cls._cmd_args.get(name)
-        if cls._var_dict and name in cls._var_dict:
-            return cls._var_dict.get(name)
-
-        # check OS env vars
+    @staticmethod
+    def _get_var_from_os_env(name: str):
         if not name.startswith(ENV_VAR_PREFIX):
             env_var_name = ENV_VAR_PREFIX + name
         else:
@@ -228,12 +218,17 @@ class ConfigService:
         env_var_name = env_var_name.upper()
         if env_var_name in os.environ:
             return os.environ.get(env_var_name)
+        else:
+            return None
 
+    @classmethod
+    def _get_var_from_config_sources(cls, name: str, conf):
         if conf is None:
             return None
 
-        # conf could be a single config source (a section name or a dict)
-        # conf could also be a list of config sources
+        # conf could be:
+        #   a single config source (a section name or a dict)
+        #   a list of config sources
         if not isinstance(conf, list):
             conf = [conf]
 
@@ -248,8 +243,33 @@ class ConfigService:
                 if v is not None:
                     return v
 
-        # not found from any source
+        # No source has this var
         return None
+
+    @classmethod
+    def _get_var_from_source(cls, name: str, conf):
+        if not isinstance(name, str):
+            raise ValueError(f"var name must be str but got {type(name)}")
+
+        # see whether command args have it
+        if cls._cmd_args and name in cls._cmd_args:
+            return cls._cmd_args.get(name), "cmd_args"
+
+        if cls._var_dict and name in cls._var_dict:
+            return cls._var_dict.get(name), "var_dict"
+
+        value = cls._get_var_from_config_sources(name, conf)
+        if value is not None:
+            return value, "config"
+
+        # finally check os env
+        return cls._get_var_from_os_env(name), "env"
+
+    @classmethod
+    def _get_var(cls, name: str, conf):
+        value, src = cls._get_var_from_source(name, conf)
+        # print(f"#### VAR from {src}: {name}={value}")
+        return value
 
     @classmethod
     def _int_var(cls, name: str, conf=None, default=None):
