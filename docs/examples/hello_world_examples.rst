@@ -1,7 +1,7 @@
 ********************
 Hello World Examples
 ********************
-Hello World examples can be run from the `hello_world notebook <https://github.com/NVIDIA/NVFlare/blob/main/examples/hello-world/hello_world.ipynb>`_.
+Hello World examples can be run from the :github_nvflare_link:`hello_world notebook <examples/hello-world/hello_world.ipynb>`.
 
 .. toctree::
 

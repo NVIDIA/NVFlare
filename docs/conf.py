@@ -51,6 +51,8 @@ author = "NVIDIA"
 release = "2.4.0"
 version = "2.4.0"
 
+readthedocs_version_name = os.environ.get("READTHEDOCS_VERSION_NAME")
+build_version = readthedocs_version_name if readthedocs_version_name not in (None, "latest", "stable") else "main"
 
 # -- General configuration ---------------------------------------------------
 
@@ -77,7 +79,8 @@ extensions = [
     "sphinx.ext.viewcode",
     "sphinx.ext.autosectionlabel",
     "sphinx_copybutton",
-    "sphinxcontrib.jquery"
+    "sphinxcontrib.jquery",
+    "sphinx.ext.extlinks"
 ]
 
 autoclass_content = "both"
@@ -92,6 +95,7 @@ autosectionlabel_prefix_document = True
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = []
 
+extlinks = {"github_nvflare_link": (f"https://github.com/NVIDIA/NVFlare/tree/{build_version}/%s", "")}
 
 # -- Options for HTML output -------------------------------------------------
 
