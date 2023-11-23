@@ -28,7 +28,7 @@ def log_subprocess_output(process, log_file):
     buffer_size = 1024 * 4
     while True:
         nextline = process.stdout.readline()
-        if nextline == '' and process.poll() is not None:
+        if nextline == "" and process.poll() is not None:
             break
         sys.stdout.write(nextline)
         sys.stdout.flush()
@@ -44,7 +44,7 @@ def log_subprocess_output(process, log_file):
 
 
 def log_buffer_output(buffer, log_file):
-    with open(log_file, 'a') as f:
+    with open(log_file, "a") as f:
         for c in buffer:
             f.write(c)
         f.flush()
@@ -81,7 +81,7 @@ class SubprocessLauncher(Launcher):
                 # stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 cwd=self._app_dir,
-                env=env
+                env=env,
             )
 
             # log_subprocess_output(self._process, log_file)

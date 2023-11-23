@@ -45,7 +45,7 @@ def _to_data_tuple(data):
 def load_features(feature_data_path: str) -> List:
     try:
         features = []
-        with open(feature_data_path, 'r') as file:
+        with open(feature_data_path, "r") as file:
             # Create a CSV reader object
             csv_reader = csv.reader(file)
             line_list = next(csv_reader)
@@ -55,10 +55,7 @@ def load_features(feature_data_path: str) -> List:
         raise Exception(f"Load header for path'{feature_data_path} failed! {e}")
 
 
-def load_data(data_path: str,
-              data_features: List,
-              test_size: float = 0.2,
-              skip_rows=None) -> Dict[str, pd.DataFrame]:
+def load_data(data_path: str, data_features: List, test_size: float = 0.2, skip_rows=None) -> Dict[str, pd.DataFrame]:
     try:
         df: pd.DataFrame = pd.read_csv(
             data_path, names=data_features, sep=r"\s*,\s*", engine="python", na_values="?", skiprows=skip_rows
@@ -182,8 +179,13 @@ def define_args_parser():
     parser.add_argument("--data_root_dir", type=str, help="root directory path to csv data file")
     parser.add_argument("--random_state", type=int, default=0, help="random state")
     parser.add_argument("--test_size", type=float, default=1.0, help="random state")
-    parser.add_argument("--skip_rows", type=str, default=None, help="""If skip_rows = N, the first N rows will be skipped, 
-       if skiprows=[0, 1, 4], the rows will be skip by row indices such as row 0,1,4 will be skipped. """)
+    parser.add_argument(
+        "--skip_rows",
+        type=str,
+        default=None,
+        help="""If skip_rows = N, the first N rows will be skipped, 
+       if skiprows=[0, 1, 4], the rows will be skip by row indices such as row 0,1,4 will be skipped. """,
+    )
     return parser
 
 
