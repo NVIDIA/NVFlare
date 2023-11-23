@@ -26,7 +26,7 @@ from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.decomposers import common_decomposers
-from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+from nvflare.app_common.utils.fl_model_utils import FLModelUtils, ParamsConverter
 from nvflare.fuel.utils.constants import PipeChannelName
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 from nvflare.fuel.utils.pipe.pipe import Message, Mode, Pipe
@@ -343,10 +343,23 @@ class FlareAgentWithCellPipe(FlareAgent):
 
 
 class FlareAgentWithFLModel(FlareAgent):
-    def __init__(self, **kwargs):
+    def __init__(
+        self,
+        from_nvflare_converter: Optional[ParamsConverter] = None,
+        to_nvflare_converter: Optional[ParamsConverter] = None,
+        **kwargs,
+    ):
+        """FlareAgentWithFLModel
+
+        Args:
+            from_nvflare_converter (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
+                This converter will be called when model is sent from nvflare controller side to executor side.
+            to_nvflare_converter (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
+                This converter will be called when model is sent from nvflare executor side to controller side.
+        """
+        self._from_nvflare_converter = from_nvflare_converter
+        self._to_nvflare_converter = to_nvflare_converter
         super().__init__(**kwargs)
-        self._from_nvflare_converter = None
-        self._to_nvflare_converter = None
 
     def shareable_to_task_data(self, shareable: Shareable) -> FLModel:
         model = FLModelUtils.from_shareable(shareable, self._from_nvflare_converter)

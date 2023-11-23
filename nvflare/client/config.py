@@ -57,8 +57,6 @@ class ClientConfig:
         if config is None:
             config = {}
         self.config = config
-        if ConfigKey.EXCHANGE_FORMAT in self.config:
-            self.config[ConfigKey.EXCHANGE_FORMAT] = ExchangeFormat(self.config[ConfigKey.EXCHANGE_FORMAT])
 
     def get_config(self):
         return self.config

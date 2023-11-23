@@ -1,11 +1,11 @@
 # Job Template Information Card
 
-## sag_np
-    name = "sag_np"
+## sag_np_cell_pipe
+    name = "sag_np_cell_pipe"
     description = "Scatter and Gather Workflow using NumPy" 
     class_name  =  "ScatterAndGather"
     controller_type = "server"
     executor_type = "launcher_executor"
     contributor = "NVIDIA"
-    init_publish_date = "2023-09-11"
+    init_publish_date = "2023-11-22"
     last_updated_date = "2023-11-22" # yyyy-mm-dd

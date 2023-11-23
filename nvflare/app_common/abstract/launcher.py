@@ -14,7 +14,6 @@
 
 import os
 from abc import ABC, abstractmethod
-from enum import Enum
 from typing import Optional
 
 from nvflare.apis.fl_context import FLContext
@@ -23,9 +22,11 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
 
 
-class LauncherCompleteStatus(str, Enum):
-    SUCCESS = "success"
-    FAILED = "failed"
+class LauncherRunStatus:
+    COMPLETE_SUCCESS = "success"
+    COMPLETE_FAILED = "failed"
+    RUNNING = "running"
+    NOT_RUNNING = "not_running"
 
 
 class Launcher(ABC):
@@ -58,7 +59,7 @@ class Launcher(ABC):
         pass
 
     @abstractmethod
-    def wait_task(self, task_name: str, fl_ctx: FLContext, timeout: Optional[float] = None) -> LauncherCompleteStatus:
+    def wait_task(self, task_name: str, fl_ctx: FLContext, timeout: Optional[float] = None) -> LauncherRunStatus:
         """Waits for external system to end.
 
         Args:
@@ -79,4 +80,9 @@ class Launcher(ABC):
             task_name (str): task name.
             fl_ctx (FLContext): fl context.
         """
+        pass
+
+    @abstractmethod
+    def check_run_status(self, task_name: str, fl_ctx: FLContext) -> LauncherRunStatus:
+        """Checks the run status of Launcher."""
         pass

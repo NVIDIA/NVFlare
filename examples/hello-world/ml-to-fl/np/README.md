@@ -99,12 +99,29 @@ Then we can create the job:
 
 ```bash
 nvflare job create -force -j ./jobs/np_loop -w sag_np -sd ./code/ \
--f config_fed_client.conf app_script=train_loop.py params_transfer_type=FULL launch_once=true \
+-f config_fed_client.conf app_script=train_loop.py params_transfer_type=FULL launch_once=true
 ```
 
 Then we can run it using the NVFlare Simulator:
 
 ```bash
 nvflare simulator -n 2 -t 2 ./jobs/np_loop -w np_loop_workspace
+```
+
+## Using CellPipe instead of FilePipe
+
+We can use CellPipe instead of FilePipe to communicate between NVFlare client and external process.
+
+Let's create the job:
+
+```bash
+nvflare job create -force -j ./jobs/np_loop_cell_pipe -w sag_np_cell_pipe -sd ./code/ \
+-f config_fed_client.conf app_script=train_loop.py params_transfer_type=FULL launch_once=true
+```
+
+Then we can run it using the NVFlare Simulator:
+
+```bash
+nvflare simulator -n 2 -t 2 ./jobs/np_loop_cell_pipe -w np_loop_cell_pipe_workspace
 ```
 

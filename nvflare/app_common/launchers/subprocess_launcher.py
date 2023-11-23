@@ -19,7 +19,7 @@ from typing import Optional
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.app_common.abstract.launcher import Launcher, LauncherCompleteStatus
+from nvflare.app_common.abstract.launcher import Launcher, LauncherRunStatus
 
 
 class SubprocessLauncher(Launcher):
@@ -36,7 +36,6 @@ class SubprocessLauncher(Launcher):
         self._process = None
         self._script = script
         self._clean_up_script = clean_up_script
-        self._log_thread = None
 
     def initialize(self, fl_ctx: FLContext):
         self._app_dir = self.get_app_dir(fl_ctx)
@@ -46,7 +45,6 @@ class SubprocessLauncher(Launcher):
             command = self._script
             env = os.environ.copy()
             command_seq = shlex.split(command)
-            log_file = os.path.join(self._app_dir, f"{task_name}_logfile")
 
             self._process = subprocess.Popen(
                 command_seq,
@@ -54,17 +52,16 @@ class SubprocessLauncher(Launcher):
                 cwd=self._app_dir,
                 env=env,
             )
-
             return True
         return False
 
-    def wait_task(self, task_name: str, fl_ctx: FLContext, timeout: Optional[float] = None) -> LauncherCompleteStatus:
+    def wait_task(self, task_name: str, fl_ctx: FLContext, timeout: Optional[float] = None) -> LauncherRunStatus:
         if self._process:
             return_code = self._process.wait(timeout)
             if return_code == 0:
-                return LauncherCompleteStatus.SUCCESS
-            return LauncherCompleteStatus.FAILED
-        return LauncherCompleteStatus.SUCCESS
+                return LauncherRunStatus.COMPLETE_SUCCESS
+            return LauncherRunStatus.COMPLETE_FAILED
+        return LauncherRunStatus.COMPLETE_SUCCESS
 
     def stop_task(self, task_name: str, fl_ctx: FLContext) -> None:
         if self._process:
@@ -75,3 +72,13 @@ class SubprocessLauncher(Launcher):
                 process = subprocess.Popen(command_seq, cwd=self._app_dir)
                 process.wait()
             self._process = None
+
+    def check_run_status(self, task_name: str, fl_ctx: FLContext) -> LauncherRunStatus:
+        if self._process:
+            return_code = self._process.poll()
+            if return_code is None:
+                return LauncherRunStatus.RUNNING
+            elif return_code == 0:
+                return LauncherRunStatus.COMPLETE_SUCCESS
+            return LauncherRunStatus.COMPLETE_FAILED
+        return LauncherRunStatus.NOT_RUNNING
