@@ -14,40 +14,12 @@
 import os
 import shlex
 import subprocess
-import sys
 from typing import Optional
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.launcher import Launcher, LauncherCompleteStatus
-
-
-def log_subprocess_output(process, log_file):
-    buffer = []
-    buffer_size = 1024 * 4
-    while True:
-        nextline = process.stdout.readline()
-        if nextline == "" and process.poll() is not None:
-            break
-        sys.stdout.write(nextline)
-        sys.stdout.flush()
-
-        if len(buffer) + len(nextline) >= buffer_size:
-            log_buffer_output(buffer, log_file)
-            buffer.clear()
-            buffer.append(nextline)
-        else:
-            buffer.append(nextline)
-
-        log_buffer_output(buffer, log_file)
-
-
-def log_buffer_output(buffer, log_file):
-    with open(log_file, "a") as f:
-        for c in buffer:
-            f.write(c)
-        f.flush()
 
 
 class SubprocessLauncher(Launcher):
@@ -84,17 +56,12 @@ class SubprocessLauncher(Launcher):
                 env=env,
             )
 
-            # log_subprocess_output(self._process, log_file)
-            # self._log_thread = Thread(target=log_subprocess_output, args=(self._process, log_file))
-            # self._log_thread.start()
-
             return True
         return False
 
     def wait_task(self, task_name: str, fl_ctx: FLContext, timeout: Optional[float] = None) -> LauncherCompleteStatus:
         if self._process:
             return_code = self._process.wait(timeout)
-            # self._log_thread.join(timeout)
             if return_code == 0:
                 return LauncherCompleteStatus.SUCCESS
             return LauncherCompleteStatus.FAILED
