@@ -11,12 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import os
 import shlex
 import subprocess
 import sys
-from threading import Thread
 from typing import Optional
 
 from nvflare.apis.fl_context import FLContext
@@ -26,12 +24,30 @@ from nvflare.app_common.abstract.launcher import Launcher, LauncherCompleteStatu
 
 
 def log_subprocess_output(process, log_file):
-    with open(log_file, "ab") as f:
-        for c in iter(process.stdout.readline, b""):
-            sys.stdout.buffer.write(c)
-            sys.stdout.flush()
+    buffer = []
+    buffer_size = 1024 * 4
+    while True:
+        nextline = process.stdout.readline()
+        if nextline == '' and process.poll() is not None:
+            break
+        sys.stdout.write(nextline)
+        sys.stdout.flush()
+
+        if len(buffer) + len(nextline) >= buffer_size:
+            log_buffer_output(buffer, log_file)
+            buffer.clear()
+            buffer.append(nextline)
+        else:
+            buffer.append(nextline)
+
+        log_buffer_output(buffer, log_file)
+
+
+def log_buffer_output(buffer, log_file):
+    with open(log_file, 'a') as f:
+        for c in buffer:
             f.write(c)
-            f.flush()
+        f.flush()
 
 
 class SubprocessLauncher(Launcher):
@@ -62,20 +78,23 @@ class SubprocessLauncher(Launcher):
 
             self._process = subprocess.Popen(
                 command_seq,
-                stdout=subprocess.PIPE,
+                # stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 cwd=self._app_dir,
-                env=env,
+                env=env
             )
-            self._log_thread = Thread(target=log_subprocess_output, args=(self._process, log_file))
-            self._log_thread.start()
+
+            # log_subprocess_output(self._process, log_file)
+            # self._log_thread = Thread(target=log_subprocess_output, args=(self._process, log_file))
+            # self._log_thread.start()
+
             return True
         return False
 
     def wait_task(self, task_name: str, fl_ctx: FLContext, timeout: Optional[float] = None) -> LauncherCompleteStatus:
         if self._process:
             return_code = self._process.wait(timeout)
-            self._log_thread.join(timeout)
+            # self._log_thread.join(timeout)
             if return_code == 0:
                 return LauncherCompleteStatus.SUCCESS
             return LauncherCompleteStatus.FAILED

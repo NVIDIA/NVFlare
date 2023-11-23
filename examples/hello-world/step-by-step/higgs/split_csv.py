@@ -22,7 +22,7 @@ import pandas as pd
 
 def load_data(input_file_path) -> pd.DataFrame:
     # Read the CSV file into a pandas DataFrame
-    return pd.read_csv(input_file_path, header=None, dtype=float)
+    return pd.read_csv(input_file_path, header=None)
 
 
 def split_csv(input_file_path, output_dir, num_parts, part_name, sample_rate):

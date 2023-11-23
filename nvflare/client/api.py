@@ -78,7 +78,7 @@ def init(config: Union[str, Dict] = f"config/{CONFIG_EXCHANGE}", rank: Optional[
 
         PROCESS_MODEL_REGISTRY = ModelRegistry(client_config, rank, dx)
     except Exception as e:
-        print(f"Exception {e} happens in flare.init()")
+        raise ValueError(f"Exception {e} happens in flare.init()")
 
 
 def _get_model_registry() -> ModelRegistry:

@@ -35,8 +35,6 @@ def to_dataset_tuple(data: dict):
 
 
 def _to_data_tuple(data):
-    print(f"{type(data)=}")
-
     data_num = data.shape[0]
     # split to feature and label
     x = data.iloc[:, 1:]
@@ -115,7 +113,7 @@ def main():
         global_params = input_model.params
         curr_round = input_model.current_round
 
-        print(f"\n************************* current_round={input_model.current_round}\n")
+        print(f"current_round={curr_round}")
         if curr_round == 0:
             # (4) initialize model with global_params
             # and set to all zero
@@ -146,8 +144,9 @@ def main():
         # (6) evaluate global model first.
         global_accuracy, global_report = evaluate_model(x_test, model, y_test)
         # Print the results
-        print(f"global model Accuracy: {global_accuracy:.2f}")
-        print("global model Classification Report:\n", global_report)
+        if curr_round % 10 == 0:
+            print(f"global model Accuracy: {global_accuracy:.2f}")
+            print("global model Classification Report:\n", global_report)
 
         # Train the model on the training set
         model.fit(x_train, y_train)
@@ -155,8 +154,9 @@ def main():
         accuracy, report = evaluate_model(x_test, model, y_test)
 
         # Print the results
-        print(f"local model Accuracy: {accuracy:.2f}")
-        print("local model Classification Report:\n", report)
+        if curr_round % 10 == 0:
+            print(f"local model Accuracy: {accuracy:.2f}")
+            print("local model Classification Report:\n", report)
 
         # (7) construct trained FL model
         params = {"coef": model.coef_, "intercept": model.intercept_}
