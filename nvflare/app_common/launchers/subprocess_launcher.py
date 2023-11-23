@@ -50,7 +50,6 @@ class SubprocessLauncher(Launcher):
 
             self._process = subprocess.Popen(
                 command_seq,
-                # stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 cwd=self._app_dir,
                 env=env,
