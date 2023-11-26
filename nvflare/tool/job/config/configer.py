@@ -459,4 +459,3 @@ def get_app_name_from_path(path: str):
         return DEFAULT_APP_NAME
     else:
         return segs[0]
-

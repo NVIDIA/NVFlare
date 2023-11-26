@@ -20,8 +20,8 @@ import pytest
 
 from nvflare.tool.job.config.configer import (
     build_config_file_indices,
-    get_app_name_from_path,
     convert_to_number,
+    get_app_name_from_path,
     get_cli_config,
     get_config_file_path,
     merge_configs,
