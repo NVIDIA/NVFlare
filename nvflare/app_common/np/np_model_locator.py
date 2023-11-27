@@ -29,18 +29,21 @@ from .constants import NPConstants
 class NPModelLocator(ModelLocator):
     SERVER_MODEL_NAME = "server"
 
-    def __init__(self, model_dir="models", model_name="server.npy"):
+    def __init__(self, model_dir="models", model_names=None):
         """The ModelLocator's job is to find the models to be included for cross site evaluation
         located on server. This NPModelLocator finds and extracts "server" model that is saved during training.
 
         Args:
             model_dir (str): Directory to look for models in. Defaults to "model"
-            model_name (str). Name of the model. Defaults to "server.npy"
+            model_names (dict). Name of the model. Defaults to "server.npy"
         """
         super().__init__()
 
         self.model_dir = model_dir
-        self.model_file_name = model_name
+        if model_names is None:
+            self.model_file_names = {NPModelLocator.SERVER_MODEL_NAME: "server.npy"}
+        else:
+            self.model_file_names = model_names
 
     def get_model_names(self, fl_ctx: FLContext) -> List[str]:
         """Returns the list of model names that should be included from server in cross site validation.add()
@@ -51,19 +54,19 @@ class NPModelLocator(ModelLocator):
         Returns:
             List[str]: List of model names.
         """
-        return [NPModelLocator.SERVER_MODEL_NAME]
+        return list(self.model_file_names.keys())
 
     def locate_model(self, model_name, fl_ctx: FLContext) -> DXO:
         dxo = None
         engine = fl_ctx.get_engine()
 
-        if model_name == NPModelLocator.SERVER_MODEL_NAME:
+        if model_name in list(self.model_file_names.keys()):
             try:
                 job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
                 run_dir = engine.get_workspace().get_run_dir(job_id)
                 model_path = os.path.join(run_dir, self.model_dir)
 
-                model_load_path = os.path.join(model_path, self.model_file_name)
+                model_load_path = os.path.join(model_path, self.model_file_names[model_name])
                 np_data = None
                 try:
                     np_data = np.load(model_load_path, allow_pickle=False)
