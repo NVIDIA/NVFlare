@@ -15,18 +15,18 @@
                 "model": {
                     "path": "pt.networks.cifar10_nets.ModerateCNN",
                     "args": {}
-                },
-                "model_list": {
-                    "best_global_model": "{MODEL_DIR}/best_FL_global_model.pt",
-                    "global_model": "{MODEL_DIR}/FL_global_model.pt"
                 }
             }
         },
         {
             "id": "model_locator",
-            "name": "PTFileModelLocator",
+            "name": "PTFileListModelLocator",
             "args": {
-                "pt_persistor_id": "persistor"
+                "pt_persistor_id": "persistor",
+                "model_list": {
+                    "best_global_model": "{MODEL_DIR}/best_FL_global_model.pt",
+                    "global_model": "{MODEL_DIR}/FL_global_model.pt"
+                }
             }
         },
         {
