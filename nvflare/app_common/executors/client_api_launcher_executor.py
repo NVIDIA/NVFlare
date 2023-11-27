@@ -43,6 +43,8 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         train_task_name: str = "train",
         evaluate_task_name: str = "evaluate",
         submit_model_task_name: str = "submit_model",
+        from_nvflare_converter_id: Optional[str] = None,
+        to_nvflare_converter_id: Optional[str] = None,
         launch_once: bool = True,
         params_exchange_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
@@ -67,6 +69,10 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             train_task_name (str): Task name of train mode (default: train).
             evaluate_task_name (str): Task name of evaluate mode (default: evaluate).
             submit_model_task_name (str): Task name of submit_model mode (default: submit_model).
+            from_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
+                This ParamsConverter will be called when model is sent from nvflare controller side to executor side.
+            to_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
+                This ParamsConverter will be called when model is sent from nvflare executor side to controller side.
             launch_once (bool): Whether to launch just once for the whole job (default: True). True means only the first task
                 will trigger `launcher.launch_task`. Which is efficient when the data setup is taking a lot of time.
             params_exchange_format (ExchangeFormat): What format to exchange the parameters.
@@ -91,6 +97,8 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             train_task_name=train_task_name,
             evaluate_task_name=evaluate_task_name,
             submit_model_task_name=submit_model_task_name,
+            from_nvflare_converter_id=from_nvflare_converter_id,
+            to_nvflare_converter_id=to_nvflare_converter_id,
             launch_once=launch_once,
         )
 
@@ -116,7 +124,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         config_dict[ConfigKey.TOTAL_ROUNDS] = total_rounds
 
         config_dict[ConfigKey.PIPE_NAME] = self.pipe_channel_name
-        config_dict[ConfigKey.PIPE_CLASS] = self.get_external_pipe_class()
+        config_dict[ConfigKey.PIPE_CLASS] = self.get_external_pipe_class(fl_ctx)
         config_dict[ConfigKey.PIPE_ARGS] = self.get_external_pipe_args(fl_ctx)
         config_dict[ConfigKey.SITE_NAME] = fl_ctx.get_identity_name()
         config_dict[ConfigKey.JOB_ID] = fl_ctx.get_job_id()

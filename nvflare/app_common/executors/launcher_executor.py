@@ -19,22 +19,21 @@ from threading import Event
 from typing import Optional
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLMetaKey, ReturnCode
+from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.launcher import Launcher, LauncherRunStatus
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.data_exchange.params_converter import ParamsConverter
 from nvflare.app_common.data_exchange.piper import Piper
 from nvflare.app_common.executors.task_exchanger import TaskExchanger
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
-from nvflare.fuel.utils.pipe.pipe import Message
-from nvflare.fuel.utils.pipe.pipe_handler import Topic
 from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.security.logging import secure_format_exception
 
 
-class LauncherExecutor(Piper, TaskExchanger):
+class LauncherExecutor(TaskExchanger):
     def __init__(
         self,
         pipe_id: str,
@@ -53,6 +52,8 @@ class LauncherExecutor(Piper, TaskExchanger):
         train_task_name: str = "train",
         evaluate_task_name: str = "evaluate",
         submit_model_task_name: str = "submit_model",
+        from_nvflare_converter_id: Optional[str] = None,
+        to_nvflare_converter_id: Optional[str] = None,
         launch_once: bool = True,
     ) -> None:
         """Initializes the LauncherExecutor.
@@ -75,13 +76,13 @@ class LauncherExecutor(Piper, TaskExchanger):
             train_task_name (str): Task name of train mode (default: train).
             evaluate_task_name (str): Task name of evaluate mode (default: evaluate).
             submit_model_task_name (str): Task name of submit_model mode (default: submit_model).
+            from_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
+                This ParamsConverter will be called when model is sent from nvflare controller side to executor side.
+            to_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
+                This ParamsConverter will be called when model is sent from nvflare executor side to controller side.
             launch_once (bool): Whether to launch just once for the whole job (default: True). True means only the first task
                 will trigger `launcher.launch_task`. Which is efficient when the data setup is taking a lot of time.
         """
-        Piper.__init__(
-            self,
-            pipe_id=pipe_id,
-        )
         TaskExchanger.__init__(
             self,
             pipe_id=pipe_id,
@@ -114,17 +115,22 @@ class LauncherExecutor(Piper, TaskExchanger):
         self._evaluate_task_name = evaluate_task_name
         self._submit_model_task_name = submit_model_task_name
 
+        self._from_nvflare_converter_id = from_nvflare_converter_id
+        self._from_nvflare_converter: Optional[ParamsConverter] = None
+        self._to_nvflare_converter_id = to_nvflare_converter_id
+        self._to_nvflare_converter: Optional[ParamsConverter] = None
+
         self._error_happened = threading.Event()
-        self._check_last_result_transfer_thread = None
+        self._check_launcher_finish_thread = None
 
     def initialize(self, fl_ctx: FLContext) -> None:
         self._init_launcher(fl_ctx)
-        self.init_pipe(fl_ctx)
+        self._init_converter(fl_ctx)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext) -> None:
         if event_type == EventType.START_RUN:
-            self.initialize(fl_ctx)
             super().handle_event(event_type, fl_ctx)
+            self.initialize(fl_ctx)
         elif event_type == EventType.END_RUN:
             if self.launcher is None:
                 raise RuntimeError("Launcher is None.")
@@ -152,60 +158,92 @@ class LauncherExecutor(Piper, TaskExchanger):
                 self.log_error(fl_ctx, "missing total number of rounds")
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
+        if not self._launch_external_process(task_name, shareable, fl_ctx, abort_signal):
+            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+
+        shareable = self._from_nvflare_converter.process(shareable, fl_ctx)
+        result = super().execute(task_name, shareable, fl_ctx, abort_signal)
+
+        check_result = self._check_result_shareable(task_name, result)
+        if check_result != "":
+            self.log_error(fl_ctx, check_result)
+            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+        self._received_result = True
+        result = self._to_nvflare_converter.process(result, fl_ctx)
+
+        if not self._end_external_process(task_name, shareable, fl_ctx, abort_signal):
+            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+
+        return result
+
+    def prepare_config_for_launch(self, shareable: Shareable, fl_ctx: FLContext):
+        """Prepares any configuration for the process to be launched."""
+        pass
+
+    def get_external_pipe_class(self, fl_ctx: FLContext):
+        return Piper.get_external_pipe_class(self.pipe_id, fl_ctx)
+
+    def get_external_pipe_args(self, fl_ctx: FLContext):
+        return Piper.get_external_pipe_args(self.pipe_id, fl_ctx)
+
+    def _init_launcher(self, fl_ctx: FLContext):
+        engine = fl_ctx.get_engine()
+        launcher: Launcher = engine.get_component(self._launcher_id)
+        if launcher is None:
+            raise RuntimeError(f"Launcher can not be found using {self._launcher_id}")
+        check_object_type(self._launcher_id, launcher, Launcher)
+        launcher.initialize(fl_ctx)
+        self.launcher = launcher
+
+    def _init_converter(self, fl_ctx: FLContext):
+        engine = fl_ctx.get_engine()
+        from_nvflare_converter: ParamsConverter = engine.get_component(self._from_nvflare_converter_id)
+        if from_nvflare_converter is not None:
+            check_object_type(self._from_nvflare_converter_id, from_nvflare_converter, ParamsConverter)
+            self._from_nvflare_converter = from_nvflare_converter
+
+        to_nvflare_converter: ParamsConverter = engine.get_component(self._to_nvflare_converter_id)
+        if to_nvflare_converter is not None:
+            check_object_type(self._to_nvflare_converter_id, to_nvflare_converter, ParamsConverter)
+            self._to_nvflare_converter = to_nvflare_converter
+
+    def _launch_external_process(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal):
         # if not launched yet
         if not self._launch_once or not self._launched:
             self.prepare_config_for_launch(shareable, fl_ctx)
             launch_success = self._launch(task_name, shareable, fl_ctx, abort_signal)
             if not launch_success:
                 self.log_error(fl_ctx, f"launch task ({task_name}): failed")
-                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+                False
             self._launched = True
             self.log_info(fl_ctx, f"External process for task ({task_name}) is launched.")
-            self._check_last_result_transfer_thread = threading.Thread(
-                target=self._check_last_result_transfer,
+            self._check_launcher_finish_thread = threading.Thread(
+                target=self._check_launcher_finish,
                 args=(
                     fl_ctx,
                     abort_signal,
                 ),
             )
-            self._check_last_result_transfer_thread.start()
-
-        # pipe handler starts checking for heartbeats only after the 3rd party code has been launched
-        self.pipe_handler.start()
-
+            self._check_launcher_finish_thread.start()
         # wait for external process to setup their pipe_handler
         setup_success = self._wait_external_setup(task_name, fl_ctx, abort_signal)
         if not setup_success:
             self.log_error(fl_ctx, "External process set up failed.")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+        return True
 
-        shareable.set_header(FLMetaKey.JOB_ID, fl_ctx.get_job_id())
-        shareable.set_header(FLMetaKey.SITE_NAME, fl_ctx.get_identity_name())
-
-        result = super().execute(task_name, shareable, fl_ctx, abort_signal)
-        check_result = self._check_result_shareable(task_name, result)
-        if check_result != "":
-            self.log_error(fl_ctx, check_result)
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-        self._received_result = True
-
+    def _end_external_process(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal):
         if not self._launch_once or self._job_end:
-            req = Message.new_request(topic=Topic.END, data="END")
-            has_been_read = self.pipe_handler.send_to_peer(req, timeout=self.peer_read_timeout)
-            if self.peer_read_timeout and not has_been_read:
-                self.log_warning(
-                    fl_ctx,
-                    f"3rd party does not get END msg in {self.peer_read_timeout} secs!",
-                )
-                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+            ask_peer_end_success = self.ask_peer_to_end(fl_ctx)
+            if not ask_peer_end_success:
+                return False
             launch_finish = self._wait_launch_finish(task_name, shareable, fl_ctx, abort_signal)
             if not launch_finish:
-                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-            self._check_last_result_transfer_thread.join()
+                return False
+            self._check_launcher_finish_thread.join()
             self._clear_state()
             self.log_info(fl_ctx, f"Launched external process for task ({task_name}) is finished.")
-
-        return result
+        return True
 
     def _wait_external_setup(self, task_name: str, fl_ctx: FLContext, abort_signal: Signal):
         start_time = time.time()
@@ -217,26 +255,13 @@ class LauncherExecutor(Piper, TaskExchanger):
             if abort_signal.triggered:
                 return False
 
-            if self.pipe_handler.other_end_is_up_or_dead.is_set():
+            if self.peer_is_up_or_dead():
                 return True
 
             if self.launcher.check_run_status(task_name, fl_ctx) != LauncherRunStatus.RUNNING:
                 return False
 
             time.sleep(0.1)
-
-    def prepare_config_for_launch(self, shareable: Shareable, fl_ctx: FLContext):
-        """Prepares any configuration for the process to be launched."""
-        pass
-
-    def _init_launcher(self, fl_ctx: FLContext):
-        engine = fl_ctx.get_engine()
-        launcher: Launcher = engine.get_component(self._launcher_id)
-        if launcher is None:
-            raise RuntimeError(f"Launcher can not be found using {self._launcher_id}")
-        check_object_type(self._launcher_id, launcher, Launcher)
-        launcher.initialize(fl_ctx)
-        self.launcher = launcher
 
     def _launch(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> bool:
         future = self._thread_pool_executor.submit(self._launch_task, task_name, shareable, fl_ctx, abort_signal)
@@ -274,7 +299,7 @@ class LauncherExecutor(Piper, TaskExchanger):
             return False
         return True
 
-    def _wait_launcher(self, task_name: str, fl_ctx: FLContext, timeout: Optional[float]) -> LauncherRunStatus:
+    def _wait_launcher(self, task_name: str, fl_ctx: FLContext, timeout: Optional[float]) -> str:
         return_status = LauncherRunStatus.COMPLETE_FAILED
         try:
             if self.launcher is None:
@@ -314,12 +339,16 @@ class LauncherExecutor(Piper, TaskExchanger):
                 return f"missing result FLModel for submit_model_task: {self._submit_model_task_name}."
         return ""
 
-    def _check_last_result_transfer(self, fl_ctx: FLContext, abort_signal: Signal):
-        """Checks last result transfer timeout.
+    def _check_launcher_finish(self, fl_ctx: FLContext, abort_signal: Signal):
+        """Checks the launcher finish event.
+
+        Trigger the abort signal if "_launcher_finish" is set and "_launcher_finish_time" has passed,
+        so TaskExchanger will stop waiting.
 
         Note:
-            If we don't wait after the Launcher finishes, then there is possibility
-            that the result is still in transmission, but we mark it as failed.
+            If we don't wait extra time after the Launcher finishes, then there is possibility
+            that the result is still in transmission, but we will mark it as failed.
+            (for example: when using FilePipe, if result has been written out but not read.)
         """
         while True:
             if abort_signal.triggered or self._job_end:
@@ -338,7 +367,7 @@ class LauncherExecutor(Piper, TaskExchanger):
                         "Launcher already exited and LauncherExecutor does not receive the last result within "
                         f"{self._last_result_transfer_timeout} seconds. Exit status is: '{self._launcher_finish_status}'",
                     )
-                    abort_signal.trigger("launcher_finish_timeout_exceeds")
+                    abort_signal.trigger("exceeds_launcher_finish_timeout")
                     break
             time.sleep(self._result_poll_interval)
 
@@ -347,6 +376,5 @@ class LauncherExecutor(Piper, TaskExchanger):
         self._launcher_finish_time = None
         self._launcher_finish.clear()
         self._launched = False
-        if self.pipe:
-            self.pipe.clear()
+        self.clear_pipe()
         self._received_result = False

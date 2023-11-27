@@ -59,7 +59,7 @@ class Launcher(ABC):
         pass
 
     @abstractmethod
-    def wait_task(self, task_name: str, fl_ctx: FLContext, timeout: Optional[float] = None) -> LauncherRunStatus:
+    def wait_task(self, task_name: str, fl_ctx: FLContext, timeout: Optional[float] = None) -> str:
         """Waits for external system to end.
 
         Args:
@@ -83,6 +83,6 @@ class Launcher(ABC):
         pass
 
     @abstractmethod
-    def check_run_status(self, task_name: str, fl_ctx: FLContext) -> LauncherRunStatus:
+    def check_run_status(self, task_name: str, fl_ctx: FLContext) -> str:
         """Checks the run status of Launcher."""
         pass

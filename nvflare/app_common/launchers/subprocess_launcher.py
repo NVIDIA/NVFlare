@@ -55,7 +55,7 @@ class SubprocessLauncher(Launcher):
             return True
         return False
 
-    def wait_task(self, task_name: str, fl_ctx: FLContext, timeout: Optional[float] = None) -> LauncherRunStatus:
+    def wait_task(self, task_name: str, fl_ctx: FLContext, timeout: Optional[float] = None) -> str:
         if self._process:
             return_code = self._process.wait(timeout)
             if return_code == 0:
@@ -73,7 +73,7 @@ class SubprocessLauncher(Launcher):
                 process.wait()
             self._process = None
 
-    def check_run_status(self, task_name: str, fl_ctx: FLContext) -> LauncherRunStatus:
+    def check_run_status(self, task_name: str, fl_ctx: FLContext) -> str:
         if self._process:
             return_code = self._process.poll()
             if return_code is None:

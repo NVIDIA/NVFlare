@@ -12,18 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict
+from abc import ABC, abstractmethod
+from typing import Any
 
-import torch
-
-from nvflare.app_common.data_exchange.params_converter import ParamsConverter
-
-
-class NumpyToPTParamsConverter(ParamsConverter):
-    def convert(self, params: Dict) -> Dict:
-        return {k: torch.as_tensor(v) for k, v in params.items()}
+from nvflare.apis.dxo import from_shareable
+from nvflare.apis.filter import Filter
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import Shareable
 
 
-class PTToNumpyParamsConverter(ParamsConverter):
-    def convert(self, params: Dict) -> Dict:
-        return {k: v.cpu().numpy() for k, v in params.items()}
+class ParamsConverter(Filter, ABC):
+    def process(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
+        dxo = from_shareable(shareable)
+        dxo.data = self.convert(dxo.data)
+        dxo.update_shareable(shareable)
+        return shareable
+
+    @abstractmethod
+    def convert(self, params: Any) -> Any:
+        pass

@@ -288,7 +288,7 @@ class PipeHandler(object):
             if msg:
                 last_heartbeat_received_time = now
                 # if receive any messages even if Topic is END or ABORT or PEER_GONE
-                #    we still set other_end_is_up_or_dead, as we no longer needs to wait
+                #    we still set other_end_is_up_or_dead, as we no longer need to wait
                 self.other_end_is_up_or_dead.set()
                 if msg.topic != Topic.HEARTBEAT:
                     self._add_message(msg)

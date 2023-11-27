@@ -17,7 +17,6 @@ from typing import Dict, Optional, Union
 
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.data_exchange.constants import ExchangeFormat
-from nvflare.app_opt.pt.params_converter import NumpyToPTParamsConverter, PTToNumpyParamsConverter
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
@@ -29,6 +28,7 @@ from .flare_agent import FlareAgentException, FlareAgentWithFLModel
 from .model_registry import ModelRegistry
 
 PROCESS_MODEL_REGISTRY = None
+PIPE_CLASS_MAPPING = {"FilePipe": FilePipe, "CellPipe": CellPipe}
 
 
 def init(config: Union[str, Dict] = f"config/{CONFIG_DATA_EXCHANGE}", rank: Optional[str] = None):
@@ -56,28 +56,21 @@ def init(config: Union[str, Dict] = f"config/{CONFIG_DATA_EXCHANGE}", rank: Opti
 
     flare_agent = None
     if rank == "0":
-        from_nvflare_converter = None
-        to_nvflare_converter = None
         if client_config.get_exchange_format() == ExchangeFormat.PYTORCH:
             tensor_decomposer, ok = optional_import(module="nvflare.app_opt.pt.decomposers", name="TensorDecomposer")
             if ok:
                 fobs.register(tensor_decomposer)
             else:
                 raise RuntimeError(f"Can't import TensorDecomposer for format: {ExchangeFormat.PYTORCH}")
-            from_nvflare_converter = NumpyToPTParamsConverter()
-            to_nvflare_converter = PTToNumpyParamsConverter()
+
+        pipe_class = client_config.get_pipe_class()
+        if pipe_class not in PIPE_CLASS_MAPPING:
+            raise RuntimeError(f"Pipe class {pipe_class} is not supported.")
 
         pipe_args = client_config.get_pipe_args()
-        if client_config.get_pipe_class() == "FilePipe":
-            pipe = FilePipe(**pipe_args)
-        elif client_config.get_pipe_class() == "CellPipe":
-            pipe = CellPipe(**pipe_args)
-        else:
-            raise RuntimeError(f"Pipe class {client_config.get_pipe_class()} is not supported.")
+        pipe = PIPE_CLASS_MAPPING[pipe_class](**pipe_args)
 
         flare_agent = FlareAgentWithFLModel(
-            from_nvflare_converter=from_nvflare_converter,
-            to_nvflare_converter=to_nvflare_converter,
             pipe=pipe,
             task_channel_name=client_config.get_pipe_name(),
         )
