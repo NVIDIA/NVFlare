@@ -85,4 +85,4 @@ Users can use these APIs to change their centralized training code to federate l
 Please refer to (:mod:`nvflare.client` for all the APIs)
 
 For more examples of using Client API with different frameworks,
-please refer to `examples/hello-world/ml-to-fl <https://github.com/NVIDIA/NVFlare/tree/main/examples/ml-to-fl>`_.
+please refer to :github_nvflare_link:`examples/hello-world/ml-to-fl <examples/ml-to-fl>`.

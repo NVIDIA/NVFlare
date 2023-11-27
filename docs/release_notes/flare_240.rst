@@ -45,7 +45,7 @@ Here is a brief example of a common pattern when using the Client API for a clie
       # send model back to NVFlare
       flare.send(output_model)
 
-For more in-depth information on the Client API, refer to the :ref:`client_api` documentation and `examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/ml-to-fl>`_.
+For more in-depth information on the Client API, refer to the :ref:`client_api` documentation and :github_nvflare_link:`examples <examples/hello-world/ml-to-fl>`.
 
 The 3rd-Party Integration Pattern
 ---------------------------------
@@ -62,8 +62,8 @@ Furthermore, the Job CLI also offers users a convenient method for submitting jo
 
 ``nvflare job list_templates|create|submit|show_variables``
 
-Also explore the continously growing `Job Template directory <https://github.com/NVIDIA/NVFlare/blob/main/job_templates>`_ we have created for commonly used configurations.
-For more in-depth information on Job Templates and the Job CLI, refer to the :ref:`job_cli` documentation and `tutorials <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/job_cli.ipynb>`_.
+Also explore the continously growing :github_nvflare_link:`Job Template directory <job_templates>` we have created for commonly used configurations.
+For more in-depth information on Job Templates and the Job CLI, refer to the :ref:`job_cli` documentation and :github_nvflare_link:`tutorials <examples/tutorials/job_cli.ipynb>`.
 
 ModelLearner
 ------------
@@ -71,12 +71,12 @@ The ModelLearner is introduced for a simplifed user experience in cases requirin
 Users exclusively interact with the FLModel object, which includes weights, optimizer, metrics, and metadata, while FLARE-specific concepts remain hidden to users.
 The ModelLearner defines standard learning functions, such as ``train()``, ``validate()``, and ``submit_model()`` that can be subclassed for easy adaptation.
 
-See the API definitions of `ModelLearner <https://github.com/NVIDIA/NVFlare/blob/main/nvflare/app_common/abstract/model_learner.py>`_ and
-`FLModel <https://github.com/NVIDIA/NVFlare/blob/main/nvflare/app_common/abstract/fl_model.py>`_ for more detail.
+See the API definitions of :github_nvflare_link:`ModelLearner <nvflare/app_common/abstract/model_learner.py>` and
+:github_nvflare_link:`FLModel <nvflare/app_common/abstract/fl_model.py>` for more detail.
 
 Step-by-Step Example Series
 ---------------------------
-To help users quickly get started with FLARE, we've introduced a comprehensive `step-by-step example series <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/step-by-step>`_ using Jupyter Notebooks.
+To help users quickly get started with FLARE, we've introduced a comprehensive :github_nvflare_link:`step-by-step example series <examples/hello-world/step-by-step>` using Jupyter Notebooks.
 Unlike traditional examples, each step-by-step example utilizes only two datasets for consistency— CIFAR10 for image data and the HIGGS dataset for tabular data.
 Each example will build upon previous ones to showcase different features, workflows, or APIs, allowing users to gain a comprehensive understanding of FLARE functionalities.
 
@@ -135,14 +135,14 @@ Three commonly used types of client-side controlled workflows are provided:
 - :ref:`ccwf_swarm_learning`: randomly select clients as client-side controller and aggregrators, where then Scatter and Gather with FedAvg is performed.
 - :ref:`ccwf_cross_site_evaluation`: allow clients to evaluate other sites' models.
 
-See `swarm learning <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/swarm_learning>`_ and `client-controlled cyclic <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/step-by-step/cifar10/cyclic_ccwf>`_ for examples using these client-controlled workflows.
+See :github_nvflare_link:`swarm learning <examples/hello-world/step-by-step/cifar10/cyclic_ccwf>` for examples using these client-controlled workflows.
 
 MLFlow and WandB Experiment Tracking Support
 ============================================
 We expand our experiment tracking support with MLFLow and Weights & Biases systems.
 The detailed documentation on these features can be found in :ref:`experiment_tracking`, and examples can be found at FL Experiment Tracking with
-`MLFlow <https://nvflare.readthedocs.io/en/main/examples/fl_experiment_tracking_mlflow.html#experiment-tracking-mlflow>`_ and
-`wandb <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/experiment-tracking/wandb>`_.
+:github_nvflare_link:`MLFlow <examples/advanced/experiment-tracking/mlflow>` and
+:github_nvflare_link:`wandb <examples/advanced/experiment-tracking/wandb>`.
 
 Configuration Enhancements
 ==========================
@@ -178,7 +178,7 @@ The POC command mode has been changed from "local, non-secure" to "local, secure
 Lastly, the POC command is now more aligned with common syntax,
 ``nvflare poc -<action>`` => ``nvflare poc <action>``
 
-See more details in the :ref:`poc_command` documentation or `tutorial <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/setup_poc.ipynb>`_.
+See more details in the :ref:`poc_command` documentation or :github_nvflare_link:`tutorial <examples/tutorials/setup_poc.ipynb>`.
 
 Security Enhancements
 =====================
@@ -195,7 +195,7 @@ Event-based security plug-in
 We have introduced additional FL events that can be used to build plug-ins for job-level function authorizations.
 
 For more details, refer to the :ref:`site_specific_auth` documentation as well as the
-`custom authentication example <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/custom_authentication>`_ for more details about these capabilites.
+:github_nvflare_link:`custom authentication example <examples/advanced/custom_authentication>` for more details about these capabilites.
 
 FL HUB: Hierarchical Unification Bridge
 =======================================
@@ -207,7 +207,7 @@ Each leaf of clients (edge devices) only connect to its server, where this serve
 One potential use case is with global studies, where the client machine may be located across different regions.
 Rather than requiring every region's client machines connect to only a single FL server in that region, the FL HUB could enable a more performant tiered multi-server setup.
 
-Learn more about the FL Hub in the :ref:`hierarchy_unification_bridge` documenation and the `code <https://github.com/NVIDIA/NVFlare/tree/main/nvflare/app_common/hub>`_.
+Learn more about the FL Hub in the :ref:`hierarchy_unification_bridge` documenation and the :github_nvflare_link:`code <nvflare/app_common/hub>`.
 
 Misc. Features
 ==============
@@ -253,13 +253,13 @@ Federated Large Language Model (LLM) examples
 
 We've added several examples to demonstrate how to work with federated LLM:
 
-- `Parameter Efficient Fine Turning <https://github.com/NVIDIA/NVFlare/tree/main/integration/nemo/examples/peft>`_ utilizing NeMo's PEFT methods to adapt a LLM to a downstream task.
-- `Prompt-Tuning Example <https://github.com/NVIDIA/NVFlare/tree/main/integration/nemo/examples/prompt_learning>`_ for using FLARE with NeMo for prompt learning.
-- `Supervised Fine Tuning (SFT) <https://github.com/NVIDIA/NVFlare/tree/main/integration/nemo/examples/supervised_fine_tuning>`_ to fine-tune all parameters of a LLM on supervised data.
+- :github_nvflare_link:`Parameter Efficient Fine Turning <integration/nemo/examples/peft>` utilizing NeMo's PEFT methods to adapt a LLM to a downstream task.
+- :github_nvflare_link:`Prompt-Tuning Example <integration/nemo/examples/prompt_learning>` for using FLARE with NeMo for prompt learning.
+- :github_nvflare_link:`Supervised Fine Tuning (SFT) <integration/nemo/examples/supervised_fine_tuning>` to fine-tune all parameters of a LLM on supervised data.
 
 Vertical Federated XGBoost
 --------------------------
-With the 2.0 release of `XGBoost <https://github.com/dmlc/xgboost>`_, we are able to demonstrate the `vertical xgboost example <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/vertical_xgboost>`_.
+With the 2.0 release of :github_nvflare_link:`XGBoost <examples/advanced/vertical_xgboost>`.
 We use Private Set Intersection and XGBoost's new federated learning support to perform classification on vertically split HIGGS data (where sites share overlapping data samples but contain different features).
 
 GNN Examples
@@ -279,7 +279,7 @@ addresses (actors) in the Bitcoin network by leveraging graph data. For more det
 
 Finanical Application Examples
 ------------------------------
-To demonstrate how to perform Fraud Detection in financial applications, we introduced an `example <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/finance>`_ illustrating how to use XGBoost in various ways
+To demonstrate how to perform Fraud Detection in financial applications, we introduced an :github_nvflare_link:`example <examples/advanced/finance>` illustrating how to use XGBoost in various ways
 to train a model in a federated manner with a `finance dataset <https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud>`_.
 We illustrate both vertical and horizontal federated learning with XGBoost, along with histogram and tree-based approaches.
 

@@ -145,7 +145,7 @@ and instructions for this can be found in the `NVIDIA Container Toolkit Install 
 
 A simple Dockerfile is used to capture the base requirements and dependencies.  In
 this case, we're building an environment that will support PyTorch-based workflows,
-in particular the `Hello PyTorch <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-pt>`_
+in particular the :github_nvflare_link:`Hello PyTorch <examples/hello-world/hello-pt>`
 example. The base for this build is the NGC PyTorch container.  On this base image,
 we will install the necessary dependencies and clone the NVIDIA FLARE GitHub
 source code into the root workspace directory.
