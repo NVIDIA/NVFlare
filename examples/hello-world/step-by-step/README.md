@@ -51,4 +51,4 @@ These include:
 * Federated Logistic Regression
 * Federated Kmeans
 * Federated SVM
-* Federated XGBoost
+* Federated Horizontal XGBoost
