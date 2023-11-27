@@ -20,9 +20,13 @@ import shutil
 import pandas as pd
 
 
-def split_csv(input_file_path, output_dir, num_parts, part_name, sample_rate):
+def load_data(input_file_path) -> pd.DataFrame:
     # Read the CSV file into a pandas DataFrame
-    df = pd.read_csv(input_file_path)
+    return pd.read_csv(input_file_path, header=None)
+
+
+def split_csv(input_file_path, output_dir, num_parts, part_name, sample_rate):
+    df = load_data(input_file_path)
 
     # Calculate the number of rows per part
     total_size = int(len(df) * sample_rate)
@@ -35,11 +39,12 @@ def split_csv(input_file_path, output_dir, num_parts, part_name, sample_rate):
     for i in range(num_parts):
         start_index = i * rows_per_part
         end_index = (i + 1) * rows_per_part if i < num_parts - 1 else total_size
+        print(f"{part_name}{i + 1}=", f"{start_index=}", f"{end_index=}")
         part_df = df.iloc[start_index:end_index]
 
         # Save each part to a separate CSV file
         output_file = os.path.join(output_dir, f"{part_name}{i + 1}.csv")
-        part_df.to_csv(output_file, index=False)
+        part_df.to_csv(output_file, header=False, index=False)
 
 
 def distribute_header_file(input_header_file: str, output_dir: str, num_parts: int, part_name: str):
