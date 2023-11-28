@@ -32,7 +32,7 @@ app_server  app_site-1  app_site-2  log.txt
 
 ## Introduction
 
-This example shows how to run the NVFlare cross-site validation without the training workflow, making use of the previous run results. 
+The "hello-numpy-cross-val-only" and "hello-numpy-cross-val-only-list-models" jobs show how to run the NVFlare cross-site validation without the training workflow, making use of the previous run results. The first one uses the default single server model. The second enables a list of server models. 
 
 ### Previous run best global model and local best model
 
