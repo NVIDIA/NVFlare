@@ -13,12 +13,10 @@
 # limitations under the License.
 
 from collections import OrderedDict
-from typing import Union
 
 import torch
 
 from nvflare.apis.dxo import MetaKey
-from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.model import (
     ModelLearnable,
     ModelLearnableKey,
@@ -29,6 +27,7 @@ from nvflare.app_common.app_constant import ModelFormat
 
 
 class PTModelPersistenceFormatManager(object):
+
     PERSISTENCE_KEY_MODEL = "model"
     PERSISTENCE_KEY_TRAIN_CONF = "train_conf"
     PERSISTENCE_KEY_META_PROPS = "meta_props"
@@ -116,29 +115,20 @@ class PTModelPersistenceFormatManager(object):
                 persistence_dict[k] = v
         return persistence_dict
 
-    def update(self, ml: Union[ModelLearnable, FLModel]):
+    def update(self, ml: ModelLearnable):
         """Update the persistence data with the learned values.
 
         Args:
-            ml (ModelLearnable or FLModel): updated information to be merged into existing ModelLearnable
+            ml (ModelLearnable): updated information to be merged into existing ModelLearnable
         """
-        if isinstance(ml, ModelLearnable):
-            err = validate_model_learnable(ml)
-            if err:
-                raise ValueError(err)
-            self.meta = ml.get(ModelLearnableKey.META, None)
-
-            learned_weights = ml.get(ModelLearnableKey.WEIGHTS, {})
-        elif isinstance(ml, FLModel):
-            # TODO: check if FLModel is valid
-            learned_weights = ml.params
-        else:
-            raise ValueError(
-                f"Learned values of type {type(ml)} are supported. Supported types are `ModelLearnable` or `FLModel`."
-            )
+        err = validate_model_learnable(ml)
+        if err:
+            raise ValueError(err)
+        self.meta = ml.get(ModelLearnableKey.META, None)
 
         # update with value of the model learnable
         # note that the original weights that are not learned are still kept!
+        learned_weights = ml.get(ModelLearnableKey.WEIGHTS, {})
         for k, v in learned_weights.items():
             self.var_dict[k] = v
 

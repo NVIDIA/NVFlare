@@ -14,26 +14,15 @@
 
 import random
 from abc import ABC, abstractmethod
-from typing import List, Union
+from typing import List
 
-from nvflare.apis.client import Client
-from nvflare.apis.controller_spec import OperatorMethod, TaskOperatorKey
-from nvflare.apis.fl_constant import FLMetaKey, ReturnCode
-from nvflare.apis.fl_context import FLContext
-from nvflare.apis.impl.controller import ClientTask, Controller, Task
-from nvflare.apis.shareable import Shareable
-from nvflare.apis.signal import Signal
+from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
-from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
-from nvflare.app_common.abstract.model import ModelLearnableKey
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
-from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.security.logging import secure_format_exception
-from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
-from .scatter_and_gather import _check_non_neg_int
 from .model_controller import ModelController
 
 
@@ -86,15 +75,6 @@ class FedAvgModelControllerSpec(ModelController, ABC):
 
         Args:
             aggr_result: aggregated FLModel.
-
-        Returns: None.
-
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def run(self):
-        """Main `run` routine called by the Controller's `control_flow` to execute the workflow.
 
         Returns: None.
 

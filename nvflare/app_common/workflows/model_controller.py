@@ -12,14 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import random
 from abc import ABC, abstractmethod
 from typing import List, Union
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import OperatorMethod, TaskOperatorKey
 from nvflare.apis.fl_component import FLComponentHelper
-from nvflare.apis.fl_constant import FLMetaKey, ReturnCode
+from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import ClientTask, Controller, Task
 from nvflare.apis.shareable import Shareable
@@ -27,17 +26,17 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.abstract.model import ModelLearnableKey
-from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
+from nvflare.app_common.abstract.model import make_model_learnable
 
 from .scatter_and_gather import _check_non_neg_int
 
 
-class ModelController(Controller, FLComponentHelper):
+class ModelController(Controller, FLComponentHelper, ABC):
     def __init__(
         self,
         min_clients: int = 1000,
@@ -118,7 +117,7 @@ class ModelController(Controller, FLComponentHelper):
 
     def start_controller(self, fl_ctx: FLContext) -> None:
         self.fl_ctx = fl_ctx
-        self.info("Initializing ScatterAndGather workflow.")
+        self.info("Initializing ModelController workflow.")
 
         if self.persistor_id:
             self.persistor = self._engine.get_component(self.persistor_id)
@@ -153,7 +152,19 @@ class ModelController(Controller, FLComponentHelper):
         self.initialize()
 
     def send_model_and_wait(self, targets: Union[List[Client], List[str], None] = None, data: FLModel = None) -> List:
+        """Send the current global model or given data to a list of targets
+
+        The task is scheduled into a task list.  Clients can request tasks and controller will dispatch the task to eligible clients.
+
+        Args:
+            targets: the list of eligible clients or client names or None (all clients). Defaults to None.
+            data: FLModel to be sent to clients. If no data is given, send `self.model`.
+        """
+
         # Create train_task
+        if not data:  # if no data is given, send self.model
+            data = self.model
+
         data_shareable: Shareable = FLModelUtils.to_shareable(data)
         data_shareable.set_header(AppConstants.CURRENT_ROUND, self._current_round)
         data_shareable.set_header(AppConstants.NUM_ROUNDS, self._num_rounds)
@@ -218,13 +229,13 @@ class ModelController(Controller, FLComponentHelper):
     def process_result_of_unknown_task(
         self, client: Client, task_name, client_task_id, result: Shareable, fl_ctx: FLContext
     ) -> None:
-        if self._phase == AppConstants.PHASE_TRAIN and task_name == self.train_task_name:
+        if self._phase == AppConstants.PHASE_TRAIN and task_name == self.task_name:
             self._accept_train_result(client_name=client.name, result=result, fl_ctx=fl_ctx)
             self.info(f"Result of unknown task {task_name} sent to aggregator.")
         else:
             self.error("Ignoring result from unknown task.")
 
-    def _accept_train_result(self, client_name: str, result: Shareable, fl_ctx: FLContext) -> bool:
+    def _accept_train_result(self, client_name: str, result: Shareable, fl_ctx: FLContext):
         self.fl_ctx = fl_ctx
         rc = result.get_return_code()
 
@@ -239,9 +250,19 @@ class ModelController(Controller, FLComponentHelper):
                     f"Result from {client_name} is bad, error code: {rc}. "
                     f"{self.__class__.__name__} exiting at round {self._current_round}."
                 )
+                return
 
         self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=True)
         self.fl_ctx.set_prop(AppConstants.TRAINING_RESULT, result, private=True, sticky=False)
+
+    @abstractmethod
+    def run(self):
+        """Main `run` routine called by the Controller's `control_flow` to execute the workflow.
+
+        Returns: None.
+
+        """
+        raise NotImplementedError
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext) -> None:
         self._phase = AppConstants.PHASE_TRAIN
@@ -268,8 +289,8 @@ class ModelController(Controller, FLComponentHelper):
             ) or self._current_round == self._num_rounds - 1:
                 self.info("Start persist model on server.")
                 self.event(AppEventType.BEFORE_LEARNABLE_PERSIST)
-                # Replace: self.persistor.save(global_weights, fl_ctx)
-                self.persistor.save(self.model, self.fl_ctx)
+                ml = make_model_learnable(weights=self.model.params, meta_props=self.model.meta)
+                self.persistor.save(ml, self.fl_ctx)
                 self.event(AppEventType.AFTER_LEARNABLE_PERSIST)
                 self.info("End persist model on server.")
 
