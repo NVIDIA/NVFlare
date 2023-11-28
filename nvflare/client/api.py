@@ -28,7 +28,10 @@ from .flare_agent import FlareAgentException, FlareAgentWithFLModel
 from .model_registry import ModelRegistry
 
 PROCESS_MODEL_REGISTRY = None
-PIPE_CLASS_MAPPING = {"FilePipe": FilePipe, "CellPipe": CellPipe}
+PIPE_CLASS_MAPPING = {
+    "FilePipe": {"pipe_class": FilePipe, "need_to_close_pipe": False},
+    "CellPipe": {"pipe_class": CellPipe, "need_to_close_pipe": True},
+}
 
 
 def init(config: Union[str, Dict] = f"config/{CONFIG_DATA_EXCHANGE}", rank: Optional[str] = None):
@@ -68,11 +71,11 @@ def init(config: Union[str, Dict] = f"config/{CONFIG_DATA_EXCHANGE}", rank: Opti
             raise RuntimeError(f"Pipe class {pipe_class} is not supported.")
 
         pipe_args = client_config.get_pipe_args()
-        pipe = PIPE_CLASS_MAPPING[pipe_class](**pipe_args)
+        pipe = PIPE_CLASS_MAPPING[pipe_class]["pipe_class"](**pipe_args)
+        close_pipe = PIPE_CLASS_MAPPING[pipe_class]["need_to_close_pipe"]
 
         flare_agent = FlareAgentWithFLModel(
-            pipe=pipe,
-            task_channel_name=client_config.get_pipe_name(),
+            pipe=pipe, task_channel_name=client_config.get_pipe_name(), close_pipe=close_pipe
         )
         flare_agent.start()
 

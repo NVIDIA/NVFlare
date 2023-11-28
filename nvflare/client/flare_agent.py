@@ -75,6 +75,7 @@ class FlareAgent:
         metric_pipe=None,
         task_channel_name=PipeChannelName.TASK,
         metric_channel_name=PipeChannelName.METRIC,
+        close_pipe: bool = True,
     ):
         """Constructor of Flare Agent. The agent is responsible for communicating with the Flare Client Job cell (CJ)
         to get task and to submit task result.
@@ -115,6 +116,7 @@ class FlareAgent:
         self.current_task = None
         self.task_lock = threading.Lock()
         self.asked_to_stop = False
+        self._close_pipe = close_pipe
 
     def start(self):
         """Start the agent. This method must be called to enable CJ/Agent communication.
@@ -136,7 +138,7 @@ class FlareAgent:
     def _status_cb(self, msg: Message, pipe_handler: PipeHandler, channel):
         self.logger.info(f"{channel} pipe status changed to {msg.topic}: {msg.data}")
         self.asked_to_stop = True
-        pipe_handler.stop()
+        pipe_handler.stop(self._close_pipe)
 
     def stop(self):
         """Stop the agent. After this is called, there will be no more communications between CJ and agent.
@@ -144,10 +146,11 @@ class FlareAgent:
         Returns: None
 
         """
+        self.logger.info("Calling flare agent stop")
         self.asked_to_stop = True
-        self.pipe_handler.stop()
+        self.pipe_handler.stop(self._close_pipe)
         if self.metric_pipe_handler:
-            self.metric_pipe_handler.stop()
+            self.metric_pipe_handler.stop(self._close_pipe)
 
     def shareable_to_task_data(self, shareable: Shareable):
         """Convert the Shareable object received from the TaskExchanger to an app-friendly format.

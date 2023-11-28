@@ -43,7 +43,7 @@ class LauncherExecutor(TaskExchanger):
         task_wait_timeout: Optional[float] = None,
         last_result_transfer_timeout: float = 5.0,
         peer_read_timeout: Optional[float] = None,
-        result_poll_interval: float = 0.001,
+        monitor_interval: float = 0.01,
         read_interval: float = 0.001,
         heartbeat_interval: float = 5.0,
         heartbeat_timeout: float = 30.0,
@@ -67,7 +67,7 @@ class LauncherExecutor(TaskExchanger):
             last_result_transfer_timeout (float): Timeout for transmitting the last result from an external process (default: 5.0).
                 This value should be greater than the time needed for sending the whole result.
             peer_read_timeout (Optional[float]): Timeout for waiting the task to be read by the peer from the pipe (None for no timeout).
-            result_poll_interval (float): Interval for polling task results from the pipe (default: 0.5).
+            monitor_interval (float): Interval for monitoring the launcher (default: 0.01).
             read_interval (float): Interval for reading from the pipe (default: 0.5).
             heartbeat_interval (float): Interval for sending heartbeat to the peer (default: 5.0).
             heartbeat_timeout (float): Timeout for waiting for a heartbeat from the peer (default: 30.0).
@@ -97,7 +97,7 @@ class LauncherExecutor(TaskExchanger):
         self._launch_timeout = launch_timeout
         self._wait_timeout = wait_timeout
         self._launch_once = launch_once
-        self._launched = False
+        self._launched = Event()
         self._launcher_finish = Event()
         self._launcher_finish_status = None
         self._launcher_finish_time = None
@@ -107,7 +107,7 @@ class LauncherExecutor(TaskExchanger):
 
         self._thread_pool_executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix=self.__class__.__name__)
 
-        self._result_poll_interval = result_poll_interval
+        self._monitor_interval = monitor_interval
 
         # flags to indicate whether the launcher side will send back trained model and/or metrics
         self._train_with_evaluation = train_with_evaluation
@@ -121,11 +121,14 @@ class LauncherExecutor(TaskExchanger):
         self._to_nvflare_converter: Optional[ParamsConverter] = None
 
         self._error_happened = threading.Event()
-        self._check_launcher_finish_thread = None
+        self._monitor_launcher_thread = None
+        self._abort_signal = None
 
     def initialize(self, fl_ctx: FLContext) -> None:
         self._init_launcher(fl_ctx)
         self._init_converter(fl_ctx)
+        self._monitor_launcher_thread = threading.Thread(target=self._monitor_launcher, args=(fl_ctx,), daemon=True)
+        self._monitor_launcher_thread.start()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext) -> None:
         if event_type == EventType.START_RUN:
@@ -142,39 +145,52 @@ class LauncherExecutor(TaskExchanger):
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         self.log_info(fl_ctx, f"execute for task ({task_name})")
+
+        if not self._launch_external_process(task_name, shareable, fl_ctx, abort_signal):
+            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+
+        if self._from_nvflare_converter is not None:
+            shareable = self._from_nvflare_converter.process(shareable, fl_ctx)
+
+        result = super().execute(task_name, shareable, fl_ctx, abort_signal)
+
+        if self._to_nvflare_converter is not None:
+            result = self._to_nvflare_converter.process(result, fl_ctx)
+
+        if not self._end_external_process(task_name, shareable, fl_ctx, abort_signal):
+            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+
+        return result
+
+    def stop(self, task_name: str, fl_ctx: FLContext):
+        """Stops the LauncherExecutor."""
+        self._stop_launcher(task_name, fl_ctx)
+
+    def check_input_shareable(self, task_name: str, shareable: Shareable, fl_ctx: FLContext) -> bool:
         supported_tasks = [self._train_task_name, self._evaluate_task_name, self._submit_model_task_name]
         if task_name not in supported_tasks:
             self.log_error(fl_ctx, f"Task '{task_name}' is not in supported tasks: {supported_tasks}")
-            return make_reply(ReturnCode.BAD_TASK_DATA)
+            return False
 
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
         total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS, None)
         if task_name == self._train_task_name:
             if current_round is None:
                 self.log_error(fl_ctx, "missing current round")
-                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+                return False
 
             if total_rounds is None:
                 self.log_error(fl_ctx, "missing total number of rounds")
-                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+                return False
+        return True
 
-        if not self._launch_external_process(task_name, shareable, fl_ctx, abort_signal):
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-
-        shareable = self._from_nvflare_converter.process(shareable, fl_ctx)
-        result = super().execute(task_name, shareable, fl_ctx, abort_signal)
-
-        check_result = self._check_result_shareable(task_name, result)
+    def check_output_shareable(self, task_name: str, shareable: Shareable, fl_ctx: FLContext) -> bool:
+        check_result = self._check_result_shareable(task_name, shareable)
         if check_result != "":
             self.log_error(fl_ctx, check_result)
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+            return False
         self._received_result = True
-        result = self._to_nvflare_converter.process(result, fl_ctx)
-
-        if not self._end_external_process(task_name, shareable, fl_ctx, abort_signal):
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-
-        return result
+        return True
 
     def prepare_config_for_launch(self, shareable: Shareable, fl_ctx: FLContext):
         """Prepares any configuration for the process to be launched."""
@@ -208,23 +224,16 @@ class LauncherExecutor(TaskExchanger):
             self._to_nvflare_converter = to_nvflare_converter
 
     def _launch_external_process(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal):
+        self._abort_signal = abort_signal
         # if not launched yet
-        if not self._launch_once or not self._launched:
+        if not self._launch_once or not self._launched.is_set():
             self.prepare_config_for_launch(shareable, fl_ctx)
             launch_success = self._launch(task_name, shareable, fl_ctx, abort_signal)
             if not launch_success:
                 self.log_error(fl_ctx, f"launch task ({task_name}): failed")
-                False
-            self._launched = True
+                return False
+            self._launched.set()
             self.log_info(fl_ctx, f"External process for task ({task_name}) is launched.")
-            self._check_launcher_finish_thread = threading.Thread(
-                target=self._check_launcher_finish,
-                args=(
-                    fl_ctx,
-                    abort_signal,
-                ),
-            )
-            self._check_launcher_finish_thread.start()
         # wait for external process to setup their pipe_handler
         setup_success = self._wait_external_setup(task_name, fl_ctx, abort_signal)
         if not setup_success:
@@ -240,7 +249,6 @@ class LauncherExecutor(TaskExchanger):
             launch_finish = self._wait_launch_finish(task_name, shareable, fl_ctx, abort_signal)
             if not launch_finish:
                 return False
-            self._check_launcher_finish_thread.join()
             self._clear_state()
             self.log_info(fl_ctx, f"Launched external process for task ({task_name}) is finished.")
         return True
@@ -321,9 +329,6 @@ class LauncherExecutor(TaskExchanger):
         except Exception as e:
             self.log_exception(fl_ctx, f"launcher stop exception: {secure_format_exception(e)}")
 
-    def stop(self, task_name: str, fl_ctx: FLContext):
-        self._stop_launcher(task_name, fl_ctx)
-
     def _check_result_shareable(self, task_name: str, result) -> str:
         """Checks if exchange should be exited."""
         result_fl_model = FLModelUtils.from_shareable(result)
@@ -339,8 +344,8 @@ class LauncherExecutor(TaskExchanger):
                 return f"missing result FLModel for submit_model_task: {self._submit_model_task_name}."
         return ""
 
-    def _check_launcher_finish(self, fl_ctx: FLContext, abort_signal: Signal):
-        """Checks the launcher finish event.
+    def _monitor_launcher(self, fl_ctx: FLContext):
+        """Monitors the launcher.
 
         Trigger the abort signal if "_launcher_finish" is set and "_launcher_finish_time" has passed,
         so TaskExchanger will stop waiting.
@@ -351,30 +356,33 @@ class LauncherExecutor(TaskExchanger):
             (for example: when using FilePipe, if result has been written out but not read.)
         """
         while True:
-            if abort_signal.triggered or self._job_end:
+            # job end
+            if self._job_end:
                 break
 
-            if self._received_result:
-                break
+            # launcher is launched
+            if self._launched.is_set():
+                if self._abort_signal.triggered or self._received_result:
+                    continue
 
-            if self._launcher_finish.is_set() and self._launcher_finish_time:
-                # LauncherExecutor need to wait additional time after the Launcher finishes
-                # because it will take some time to communicate the result
-                # (from external process sends and LauncherExecutor receives this last result)
-                if time.time() - self._launcher_finish_time > self._last_result_transfer_timeout:
-                    self.log_error(
-                        fl_ctx,
-                        "Launcher already exited and LauncherExecutor does not receive the last result within "
-                        f"{self._last_result_transfer_timeout} seconds. Exit status is: '{self._launcher_finish_status}'",
-                    )
-                    abort_signal.trigger("exceeds_launcher_finish_timeout")
-                    break
-            time.sleep(self._result_poll_interval)
+                if self._launcher_finish.is_set() and self._launcher_finish_time:
+                    # LauncherExecutor need to wait additional time after the Launcher finishes
+                    # because it will take some time to communicate the result
+                    # (from external process sends and LauncherExecutor receives this last result)
+                    if time.time() - self._launcher_finish_time > self._last_result_transfer_timeout:
+                        self.log_error(
+                            fl_ctx,
+                            "Launcher already exited and LauncherExecutor does not receive the last result within "
+                            f"{self._last_result_transfer_timeout} seconds. Exit status is: '{self._launcher_finish_status}'",
+                        )
+                        self._abort_signal.trigger("exceeds_launcher_finish_timeout")
+
+            time.sleep(self._monitor_interval)
 
     def _clear_state(self):
         self._launcher_finish_status = None
         self._launcher_finish_time = None
         self._launcher_finish.clear()
-        self._launched = False
+        self._launched.clear()
         self.clear_pipe()
         self._received_result = False

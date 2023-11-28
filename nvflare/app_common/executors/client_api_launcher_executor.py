@@ -34,7 +34,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         task_wait_timeout: Optional[float] = None,
         last_result_transfer_timeout: float = 5.0,
         peer_read_timeout: Optional[float] = None,
-        result_poll_interval: float = 0.001,
+        monitor_interval: float = 0.01,
         read_interval: float = 0.001,
         heartbeat_interval: float = 5.0,
         heartbeat_timeout: float = 30.0,
@@ -60,7 +60,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             last_result_transfer_timeout (float): Timeout for transmitting the last result from an external process (default: 5.0).
                 This value should be greater than the time needed for sending the whole result.
             peer_read_timeout (Optional[float]): Timeout for waiting the task to be read by the peer from the pipe (None for no timeout).
-            result_poll_interval (float): Interval for polling task results from the pipe (default: 0.5).
+            monitor_interval (float): Interval for monitoring the launcher (default: 0.01).
             read_interval (float): Interval for reading from the pipe (default: 0.5).
             heartbeat_interval (float): Interval for sending heartbeat to the peer (default: 5.0).
             heartbeat_timeout (float): Timeout for waiting for a heartbeat from the peer (default: 30.0).
@@ -88,7 +88,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             task_wait_timeout=task_wait_timeout,
             last_result_transfer_timeout=last_result_transfer_timeout,
             peer_read_timeout=peer_read_timeout,
-            result_poll_interval=result_poll_interval,
+            monitor_interval=monitor_interval,
             read_interval=read_interval,
             heartbeat_interval=heartbeat_interval,
             heartbeat_timeout=heartbeat_timeout,

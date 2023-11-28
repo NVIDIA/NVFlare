@@ -114,9 +114,6 @@ class TaskExchanger(Executor):
         self.logger.info(f"pipe status changed to {msg.topic}")
         self.pipe_handler.stop()
 
-    def stop(self, task_name: str, fl_ctx: FLContext):
-        pass
-
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         """
         The TaskExchanger always sends the Shareable to the peer, and expects to receive a Shareable object from the
@@ -128,6 +125,10 @@ class TaskExchanger(Executor):
         TaskExchanger generic and can be reused for any applications (e.g. Shareable based, DXO based, or any custom
         data based).
         """
+        if not self.check_input_shareable(task_name, shareable, fl_ctx):
+            self.log_error(fl_ctx, "bad input task shareable")
+            return make_reply(ReturnCode.BAD_TASK_DATA)
+
         shareable.set_header(FLMetaKey.JOB_ID, fl_ctx.get_job_id())
         shareable.set_header(FLMetaKey.SITE_NAME, fl_ctx.get_identity_name())
         task_id = shareable.get_header(key=FLContextKey.TASK_ID)
@@ -158,6 +159,7 @@ class TaskExchanger(Executor):
 
             if self.pipe_handler.asked_to_stop:
                 self.log_debug(fl_ctx, "task pipe stopped!")
+                self.pipe_handler.notify_abort(task_id)
                 self.stop(task_name, fl_ctx)
                 return make_reply(ReturnCode.TASK_ABORTED)
 
@@ -192,16 +194,40 @@ class TaskExchanger(Executor):
                     result = reply.data
                     if not isinstance(result, Shareable):
                         self.log_error(fl_ctx, f"bad task result from peer: expect Shareable but got {type(result)}")
-                        result = make_reply(ReturnCode.EXECUTION_EXCEPTION)
-                        return result
+                        return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+
                     current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
                     if current_round:
                         result.set_header(AppConstants.CURRENT_ROUND, current_round)
+
+                    if not self.check_output_shareable(task_name, result, fl_ctx):
+                        self.log_error(fl_ctx, "bad task result from peer")
+                        return make_reply(ReturnCode.EXECUTION_EXCEPTION)
                     return result
                 except Exception as ex:
                     self.log_error(fl_ctx, f"Failed to convert result: {secure_format_exception(ex)}")
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
             time.sleep(self.result_poll_interval)
+
+    def stop(self, task_name: str, fl_ctx: FLContext):
+        """Stops the executor."""
+        pass
+
+    def check_input_shareable(self, task_name: str, shareable: Shareable, fl_ctx: FLContext) -> bool:
+        """Checks input shareable before execute.
+
+        Returns:
+            True, if input shareable looks good; False, otherwise.
+        """
+        return True
+
+    def check_output_shareable(self, task_name: str, shareable: Shareable, fl_ctx: FLContext) -> bool:
+        """Checks output shareable after execute.
+
+        Returns:
+            True, if output shareable looks good; False, otherwise.
+        """
+        return True
 
     def ask_peer_to_end(self, fl_ctx: FLContext) -> bool:
         req = Message.new_request(topic=Topic.END, data="END")

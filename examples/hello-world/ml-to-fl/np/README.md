@@ -110,7 +110,11 @@ nvflare simulator -n 2 -t 2 ./jobs/np_loop -w np_loop_workspace
 
 ## Using CellPipe instead of FilePipe
 
-We can use CellPipe instead of FilePipe to communicate between NVFlare client and external process.
+We can use `CellPipe` instead of `FilePipe` to communicate between NVFlare client and external process.
+
+The `FilePipe` is using the file system to do the communication (read/write to the file).
+While the `CellPipe` utilizes the `Cell` from NVFlare's foundation layer (f3) to do the communication.
+So it could use the drivers from the f3 layer including TCP/GRPC/HTTP and any customize drivers.
 
 Let's create the job:
 
