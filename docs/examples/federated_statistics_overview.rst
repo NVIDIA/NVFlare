@@ -57,16 +57,16 @@ The main steps are:
     * provide server side configuration to specify target statistics and their configurations and output location
     * implement the local statistics generator (statistics_spec)
     * provide client side configuration to specify data input location
-    * The detailed example instructions can be found in `Data frame statistics <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/federated-statistics/df_stats/README.md>`__
+    * The detailed example instructions can be found in :github_nvflare_link:`Data frame statistics <examples/advanced/federated-statistics/df_stats/README.md>`_
 
 COVID 19 Radiology Image Examples
 ---------------------------------
 The second example provided is an image histogram example. Different from the tabular data example, the image example show the following:
 
-* The `image_statistics.py <https://github.com/NVIDIA/NVFlare/tree/main/examples/federated_statistics/image_stats/image_stats_job/custom/image_statistics.py>`_ only needs to calculate the count and histogram target statistics, then user only needs to provide the calculation count, failure_count and histogram functions. There is no need to implement other metrics functions (sum, mean,std_dev etc.) ( get_failure_count by default return 0 )
+* The :github_nvflare_link:`image_statistics.py <examples/federated_statistics/image_stats/image_stats_job/custom/image_statistics.py>` only needs to calculate the count and histogram target statistics, then user only needs to provide the calculation count, failure_count and histogram functions. There is no need to implement other metrics functions (sum, mean,std_dev etc.) ( get_failure_count by default return 0 )
 * For each site's dataset, there are several thousands of images, the local histogram is aggregate histogram of all the image histograms.
 * The image files are large, we can't load everything in memory, then calculate the statistics. We will need to iterate through files for each calculation. For single feature, such as example. This is ok. If there are multiple features, such as multiple channels, reload image to memory for each channel to do histogram calculation is really wasteful.
-* Unlike `Data frame statistics <https://github.com/NVIDIA/NVFlare/blob/main/examples/advanced/federated-statistics/df_stats/README.md>`__, the histogram bin's global range is pre-defined by user [0, 256] where in Data frame statistics, besides "Age", all other features histogram global bin range is dynamically estimated based on local min/max values
+* Unlike :github_nvflare_link:`Data frame statistics <examples/advanced/federated-statistics/df_stats/README.md>`_, the histogram bin's global range is pre-defined by user [0, 256] where in Data frame statistics, besides "Age", all other features histogram global bin range is dynamically estimated based on local min/max values
 
 Here some of the image histogram ( the underline image files have only 1 channel)
 
@@ -76,7 +76,7 @@ Here some of the image histogram ( the underline image files have only 1 channel
 Monai Stats with Spleen CT Image example
 ----------------------------------------
 
-This example `Spleen CT Image Statistics <https://github.com/NVIDIA/NVFlare/tree/main/integration/monai/examples/spleen_ct_segmentation>`_ demonstrated few more details in federated statistics.
+This example :github_nvflare_link:`Spleen CT Image Statistics <integration/monai/examples/spleen_ct_segmentation>` demonstrated few more details in federated statistics.
 
 * instead of locally calculate the histogram on each image, this example shows how to get the local statistics from monai via the MONAI FLARE integration.
 * to avoid the reloading the same image into memory for each feature. This example shows the one can use pre_run() method to load and cache the externally calculated statistics. The server side controller will pass the target metrics to pre_run method so it can be used to load the statistics.
@@ -175,7 +175,7 @@ Some of the local statistics (such as count, failure count, sum etc.) can be cal
 Summary
 =======
 We provided federated statistics operators that can easily aggregate and visualize the local statistics for different data site and features.
-We hope this feature will make it easier to perform federated data analysis. For more details, please look at `Federated Statistics (Github) <https://github.com/NVIDIA/NVFlare/tree/main/examples/federated_statistics/README.md>`_
+We hope this feature will make it easier to perform federated data analysis. For more details, please look at :github_nvflare_link:`Federated Statistics (Github) <examples/federated_statistics/README.md>`
 
 Previous Versions of Federated XGBoost
 --------------------------------------

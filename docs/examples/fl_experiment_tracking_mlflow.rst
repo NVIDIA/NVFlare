@@ -145,4 +145,4 @@ Congratulations!
 Now you will be able to see the live training metrics of each client from MLflow, streamed from the server.
 
 The full source code for this exercise can be found in
-`examples/advanced/experiment-tracking/mlflow <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/experiment-tracking/mlflow>`_.
+:github_nvflare_link:`examples/advanced/experiment-tracking/mlflow <examples/advanced/experiment-tracking/mlflow>`.

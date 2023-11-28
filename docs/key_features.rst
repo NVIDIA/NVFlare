@@ -62,10 +62,9 @@ Learning Algorithms
       a set of initial weights is distributed to client Workers who perform local training.  After local training,
       clients return their local weights as a Shareables that are aggregated (averaged).  This new set of global average
       weights is redistributed to clients and the process repeats for the specified number of rounds.
-    - `FedProx <https://arxiv.org/abs/1812.06127>`_ (example configuration can be found in cifar10_fedprox of `CIFAR-10 example <https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10>`_) -
-      implements a :class:`Loss function <nvflare.app_common.pt.pt_fedproxloss.PTFedProxLoss>` to penalize a client's
-      local weights based on deviation from the global model.
-    - `FedOpt <https://arxiv.org/abs/2003.00295>`_ (example configuration can be found in cifar10_fedopt of `CIFAR-10 example <https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10>`_) -
+    - `FedProx <https://arxiv.org/abs/1812.06127>`_ (example configuration can be found in cifar10_fedprox of :github_nvflare_link:`CIFAR-10 example <examples/advanced/cifar10>`) -
+      implements a :class:`Loss function <nvflare.app_common.pt.pt_fedproxloss.PTFedProxLoss>` to penalize a client's local weights based on deviation from the global model.
+    - `FedOpt <https://arxiv.org/abs/2003.00295>`_ (example configuration can be found in cifar10_fedopt of :github_nvflare_link:`CIFAR-10 example <examples/advanced/cifar10>`) -
       implements a :class:`ShareableGenerator <nvflare.app_common.pt.pt_fedopt.PTFedOptModelShareableGenerator>` that
       can use a specified Optimizer and Learning Rate Scheduler when updating the global model.
 

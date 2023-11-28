@@ -81,7 +81,7 @@ Federated XGBoost
 
 XGBoost is a popular machine learning method used by applied data scientists in a wide variety of applications. In FLARE v2.2,
 we introcuce federated XGBoost integration, with a controller and executor that run distributed XGBoost training among a group
-of clients.  See the `hello-xgboost example <https://github.com/NVIDIA/NVFlare/tree/main/examples/xgboost>`_ to get started.
+of clients.  See the :github_nvflare_link:`hello-xgboost example <examples/xgboost>` to get started.
 
 Federated Statistics
 """"""""""""""""""""
@@ -122,17 +122,17 @@ Stop using Pickle in favor of using FOBS to serialize/deserialize data between C
 ------------------------------------------------------------------------------------------------
 Prior to NVFLARE 2.1.4, NVFLARE used python's `pickle <https://docs.python.org/3/library/pickle.html>`_ to transfer data between the FL clients and server.
 NVFLARE now uses the FLARE Object Serializer (FOBS). You might experience failures if your code is still using Pickle. 
-To migrate the code or if you experience errors due to this, please refer to `Flare Object Serializer (FOBS) <https://github.com/NVIDIA/NVFlare/blob/main/nvflare/fuel/utils/fobs/README.rst>`_.
+To migrate the code or if you experience errors due to this, please refer to :github_nvflare_link:`Flare Object Serializer (FOBS) <nvflare/fuel/utils/fobs/README.rst>`.
 
 Another type of failure is due to data types that are not supported by FOBS. By default FOBS supports some data types, if the data type (Custom Class or Class from 3rd parties)
 is not part of supported FOBS data type, then you need to follow the instructions at
-`Flare Object Serializer (FOBS) <https://github.com/NVIDIA/NVFlare/blob/main/nvflare/fuel/utils/fobs/README.rst>`_.
+:github_nvflare_link:`Flare Object Serializer (FOBS) <nvflare/fuel/utils/fobs/README.rst>`.
 
 Essentially, to address this type of issue, you need to do the following steps:
   - Create a FobDecomposer class for the targeted data type
   - Register the newly created FobDecomposer before the data type is transmitted between client and server.
 
-The following examples are directly copied from `Flare Object Serializer (FOBS) <https://github.com/NVIDIA/NVFlare/blob/main/nvflare/fuel/utils/fobs/README.rst>`_.
+The following examples are directly copied from :github_nvflare_link:`Flare Object Serializer (FOBS) <nvflare/fuel/utils/fobs/README.rst>`.
 
 .. code-block:: python
 
