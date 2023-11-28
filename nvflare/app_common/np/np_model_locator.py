@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import os
-from typing import List
+from typing import List, Union, Dict
 
 import numpy as np
 
@@ -29,7 +29,7 @@ from .constants import NPConstants
 class NPModelLocator(ModelLocator):
     SERVER_MODEL_NAME = "server"
 
-    def __init__(self, model_dir="models", model_names=None):
+    def __init__(self, model_names: Union[str, Dict[str, str]], model_dir="models"):
         """The ModelLocator's job is to find the models to be included for cross site evaluation
         located on server. This NPModelLocator finds and extracts "server" model that is saved during training.
 
@@ -42,6 +42,8 @@ class NPModelLocator(ModelLocator):
         self.model_dir = model_dir
         if model_names is None:
             self.model_file_names = {NPModelLocator.SERVER_MODEL_NAME: "server.npy"}
+        elif isinstance(model_names, str):
+            self.model_file_names = {NPModelLocator.SERVER_MODEL_NAME: model_names}
         else:
             self.model_file_names = model_names
 

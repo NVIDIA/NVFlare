@@ -19,20 +19,20 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import model_learnable_to_dxo
 from nvflare.app_common.abstract.model_locator import ModelLocator
-from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+from nvflare.app_common.abstract.model_persistor import ModelPersistor
 
 
-class PTFileListModelLocator(ModelLocator):
-    def __init__(self, pt_persistor_id: str, model_list={}):
+class FileListModelLocator(ModelLocator):
+    def __init__(self, persistor_id: str, model_list={}):
         """The ModelLocator's job is to find and locate the models inventory saved during training.
 
         Args:
-            pt_persistor_id (str): ModelPersistor component ID
+            persistor_id (str): ModelPersistor component ID
             model_list: a list of model_names and locations
         """
         super().__init__()
 
-        self.pt_persistor_id = pt_persistor_id
+        self.persistor_id = persistor_id
 
         self.model_persistor = None
         self.model_list = model_list
@@ -43,12 +43,11 @@ class PTFileListModelLocator(ModelLocator):
 
     def _initialize(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
-        self.model_persistor: PTFileModelPersistor = engine.get_component(self.pt_persistor_id)
-        if self.model_persistor is None or not isinstance(self.model_persistor, PTFileModelPersistor):
+        self.model_persistor: ModelPersistor = engine.get_component(self.persistor_id)
+        if self.model_persistor is None or not isinstance(self.model_persistor, ModelPersistor):
             raise ValueError(
-                f"pt_persistor_id component must be PTFileModelPersistor. " f"But got: {type(self.model_persistor)}"
+                f"persistor_id component must be PTFileModelPersistor. " f"But got: {type(self.model_persistor)}"
             )
-        self.model_persistor.load_model(fl_ctx)
 
     def get_model_names(self, fl_ctx: FLContext) -> List[str]:
         """Returns the list of model names that should be included from server in cross site validation.add().

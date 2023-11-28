@@ -47,7 +47,6 @@ class PTFileModelLocator(ModelLocator):
             raise ValueError(
                 f"pt_persistor_id component must be PTFileModelPersistor. " f"But got: {type(self.model_persistor)}"
             )
-        self.model_persistor.load_model(fl_ctx)
 
     def get_model_names(self, fl_ctx: FLContext) -> List[str]:
         """Returns the list of model names that should be included from server in cross site validation.add().
