@@ -12,9 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from nvflare.fuel.utils.experimental import experimental
+
 from .base_fedavg import BaseFedAvg
 
 
+@experimental
 class FedAvg(BaseFedAvg):
     """Controller for FedAvg Workflow. *Note*: This class is experimental.
     Implements [FederatedAveraging](https://arxiv.org/abs/1602.05629).

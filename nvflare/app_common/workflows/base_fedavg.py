@@ -22,10 +22,12 @@ from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedA
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.security.logging import secure_format_exception
+from nvflare.fuel.utils.experimental import experimental
 
 from .model_controller import ModelController
 
 
+@experimental
 class FedAvgModelControllerSpec(ModelController, ABC):
     """The base controller for FedAvg Workflow. *Note*: This class is experimental.
 
@@ -82,6 +84,7 @@ class FedAvgModelControllerSpec(ModelController, ABC):
         raise NotImplementedError
 
 
+@experimental
 class BaseFedAvg(FedAvgModelControllerSpec, ABC):
     """Controller for FedAvg Workflow. *Note*: This class is experimental.
     Implements [FederatedAveraging](https://arxiv.org/abs/1602.05629).

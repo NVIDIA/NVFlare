@@ -32,10 +32,12 @@ from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 from nvflare.app_common.abstract.model import make_model_learnable
+from nvflare.fuel.utils.experimental import experimental
 
 from .scatter_and_gather import _check_non_neg_int
 
 
+@experimental
 class ModelController(Controller, FLComponentWrapper, ABC):
     def __init__(
         self,
