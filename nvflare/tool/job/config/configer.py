@@ -121,18 +121,26 @@ def split_array_key(key: str) -> Tuple:
     if "[" not in key and "]" not in key:
         return None, None, key
 
-    tokens = key.split("[")
-    if len(tokens) == 1:
+    # Split key using '[' as delimiter
+    parent, rest_of_key = key.split("[", 1)
+
+    # Check if there is a ']' in the remaining part of the key
+    if "]" not in rest_of_key:
         raise ValueError(f"invalid key '{key}'")
-    else:
-        # len(tokens) > 1
-        parent = tokens[0]
-        tokens = tokens[1].split("]")
-        if len(tokens) == 1:
-            raise ValueError(f"invalid key '{key}'")
-        index = int(tokens[0])
-        key = tokens[1].strip(".")
-        return parent, index, key
+
+    # Split the remaining part using ']' as delimiter
+    index_str, key = rest_of_key.split("]", 1)
+
+    # Convert index string to integer
+    try:
+        index = int(index_str)
+    except ValueError:
+        raise ValueError(f"invalid index '{index_str}' in key '{key}'")
+
+    # Remove leading '.' from the key, if any
+    key = key.lstrip(".")
+
+    return parent, index, key
 
 
 def convert_to_number(value: str):

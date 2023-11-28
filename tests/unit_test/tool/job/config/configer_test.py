@@ -180,6 +180,9 @@ class TestConfiger:
         assert split_array_key("components[1].args.model.path") == ("components", 1, "args.model.path")
         assert split_array_key("args.model.path") == (None, None, "args.model.path")
         with pytest.raises(ValueError):
+            split_array_key("components[].args.model.path")
+
+        with pytest.raises(ValueError):
             split_array_key("components1].args.model.path")
 
         with pytest.raises(ValueError):
