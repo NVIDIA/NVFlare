@@ -16,12 +16,11 @@ import argparse
 import csv
 from typing import Dict, List, Tuple
 
-import numpy as np
 import pandas as pd
-from sklearn.svm import SVC
-from sklearn.metrics import roc_auc_score, classification_report
+from sklearn.metrics import classification_report, roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
 
 
 def to_dataset_tuple(data: dict):
@@ -52,7 +51,9 @@ def load_features(feature_data_path: str) -> List:
         raise Exception(f"Load header for path'{feature_data_path} failed! {e}")
 
 
-def load_data(data_path: str, data_features: List, random_state: int, test_size: float, subsample: float = 0.001, skip_rows=None) -> Dict[str, pd.DataFrame]:
+def load_data(
+    data_path: str, data_features: List, random_state: int, test_size: float, subsample: float = 0.001, skip_rows=None
+) -> Dict[str, pd.DataFrame]:
     try:
         df: pd.DataFrame = pd.read_csv(
             data_path, names=data_features, sep=r"\s*,\s*", engine="python", na_values="?", skiprows=skip_rows
@@ -92,16 +93,16 @@ def main():
     features = load_features(feature_data_path)
 
     data_path = f"{data_root_dir}/{site_name}.csv"
-    data = load_data(data_path=data_path, data_features=features, random_state=random_state, test_size=test_size, skip_rows=skip_rows)
+    data = load_data(
+        data_path=data_path, data_features=features, random_state=random_state, test_size=test_size, skip_rows=skip_rows
+    )
 
     data = to_dataset_tuple(data)
     dataset = transform_data(data)
     x_train, y_train, train_size = dataset["train"]
     x_test, y_test, test_size = dataset["test"]
 
-    global_params = {
-        "kernel": "rbf"
-    }
+    global_params = {"kernel": "rbf"}
 
     model = SVC(kernel=global_params["kernel"])
 
@@ -113,7 +114,7 @@ def main():
 
     # Print the results
     print(f"model AUC: {auc:.4f}")
-    #print("model Classification Report:\n", report)
+    # print("model Classification Report:\n", report)
 
 
 def evaluate_model(x_test, model, y_test):

@@ -19,7 +19,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import SGDClassifier
-from sklearn.metrics import roc_auc_score, classification_report
+from sklearn.metrics import classification_report, roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
@@ -52,7 +52,9 @@ def load_features(feature_data_path: str) -> List:
         raise Exception(f"Load header for path'{feature_data_path} failed! {e}")
 
 
-def load_data(data_path: str, data_features: List, random_state: int, test_size: float, skip_rows=None) -> Dict[str, pd.DataFrame]:
+def load_data(
+    data_path: str, data_features: List, random_state: int, test_size: float, skip_rows=None
+) -> Dict[str, pd.DataFrame]:
     try:
         df: pd.DataFrame = pd.read_csv(
             data_path, names=data_features, sep=r"\s*,\s*", engine="python", na_values="?", skiprows=skip_rows
@@ -90,7 +92,9 @@ def main():
     n_features = len(features) - 1  # remove label
 
     data_path = f"{data_root_dir}/{site_name}.csv"
-    data = load_data(data_path=data_path, data_features=features, random_state=random_state, test_size=test_size, skip_rows=skip_rows)
+    data = load_data(
+        data_path=data_path, data_features=features, random_state=random_state, test_size=test_size, skip_rows=skip_rows
+    )
 
     data = to_dataset_tuple(data)
     dataset = transform_data(data)
@@ -129,7 +133,7 @@ def main():
     global_auc, global_report = evaluate_model(x_test, model, y_test)
     # Print the results
     print(f"global model AUC: {global_auc:.4f}")
-    #print("global model Classification Report:\n", global_report)
+    # print("global model Classification Report:\n", global_report)
 
     # Train the model on the training set
     model.fit(x_train, y_train)
@@ -137,7 +141,7 @@ def main():
 
     # Print the results
     print(f"local model AUC: {auc:.4f}")
-    #print("local model Classification Report:\n", report)
+    # print("local model Classification Report:\n", report)
 
 
 def evaluate_model(x_test, model, y_test):
