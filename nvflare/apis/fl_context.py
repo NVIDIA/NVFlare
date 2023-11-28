@@ -193,12 +193,12 @@ class FLContext(object):
             else:
                 return None
 
-    def remove_prop(self, key: str):
+    def remove_prop(self, key: str, force_removal=False):
         if not isinstance(key, str):
             return
 
-        if key.startswith("__"):
-            # do not allow removal of reserved props!
+        if key.startswith("__") and not force_removal:
+            # do not allow removal of reserved props unless forced!
             return
 
         with _update_lock:

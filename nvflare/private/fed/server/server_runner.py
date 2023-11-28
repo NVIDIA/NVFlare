@@ -26,6 +26,7 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.apis.utils.task_utils import apply_filters
 from nvflare.private.defs import SpecialTaskName, TaskConstant
+from nvflare.private.fed.tbi import TBI
 from nvflare.private.privacy_manager import Scope
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
@@ -73,7 +74,7 @@ class ServerRunnerConfig(object):
             self.handlers.append(component)
 
 
-class ServerRunner(FLComponent):
+class ServerRunner(TBI):
 
     ABORT_RETURN_CODES = [
         ReturnCode.RUN_MISMATCH,
@@ -89,7 +90,7 @@ class ServerRunner(FLComponent):
             job_id (str): The number to distinguish each experiment
             engine (ServerEngineSpec): server engine
         """
-        FLComponent.__init__(self)
+        TBI.__init__(self)
         self.job_id = job_id
         self.config = config
         self.engine = engine
@@ -203,6 +204,10 @@ class ServerRunner(FLComponent):
                         )
 
                         self.engine.persist_components(fl_ctx, completed=True)
+
+                    self.check_end_run_readiness(fl_ctx)
+
+                    # Now ready to end the run!
                     self.fire_event(EventType.END_RUN, fl_ctx)
                     self.log_info(fl_ctx, "END_RUN fired")
 
@@ -493,7 +498,7 @@ class ServerRunner(FLComponent):
             self.log_error(fl_ctx, f"missing {ReservedHeaderKey.TASK_ID} in task_check request")
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
-        self.log_info(fl_ctx, f"received task_check on task {task_id}")
+        self.log_debug(fl_ctx, f"received task_check on task {task_id}")
 
         with self.wf_lock:
             if self.current_wf is None or self.current_wf.responder is None:
@@ -502,7 +507,7 @@ class ServerRunner(FLComponent):
 
             task = self.current_wf.responder.process_task_check(task_id=task_id, fl_ctx=fl_ctx)
             if task:
-                self.log_info(fl_ctx, f"task {task_id} is still good")
+                self.log_debug(fl_ctx, f"task {task_id} is still good")
                 return make_reply(ReturnCode.OK)
             else:
                 self.log_info(fl_ctx, f"task {task_id} is not found")

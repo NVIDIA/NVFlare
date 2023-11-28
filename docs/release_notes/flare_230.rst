@@ -48,14 +48,14 @@ You can read more about this feature in :ref:`initialize_global_weights_workflow
 Traditional Machine Learning Examples
 =====================================
 Several new examples have been added to support using traditional machine learning algorithms in federated learning:
-   - `Linear model <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/sklearn-linear>`_ using scikit-learn library via
+   - :github_nvflare_link:`Linear model <examples/advanced/sklearn-linear>` using scikit-learn library via
      `iterative SGD training <https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.SGDClassifier.html>`_.
      Linear and logistic regressions can be implemented following this iterative example by adopting different loss functions.
-   - `SVM <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/sklearn-svm>`_ using scikit-learn library. In this two-step process, the server performs an additional round of SVM over the collected supporting vectors from clients.
-   - `K-Means <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/sklearn-kmeans>`_ using scikit-learn library via
+   - :github_nvflare_link:`SVM <examples/advanced/sklearn-svm>` using scikit-learn library. In this two-step process, the server performs an additional round of SVM over the collected supporting vectors from clients.
+   - :github_nvflare_link:`K-Means <examples/advanced/sklearn-kmeans>` using scikit-learn library via
      `mini-batch K-Means method <https://scikit-learn.org/stable/modules/generated/sklearn.cluster.MiniBatchKMeans.html>`_.
      In this iterative process, each client performs mini-batch K-Means and the server syncs the updates for the global model.
-   - `Random Forest <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/random_forest>`_ using XGBoost library with
+   - :github_nvflare_link:`Random Forest <examples/advanced/random_forest>` using XGBoost library with
      `random forest functionality <https://xgboost.readthedocs.io/en/stable/tutorials/rf.html>`_. In this two-step process, clients
      construct sub-forests on their local data, and the server ensembles all collected sub-forests to produce the global random forest.
 
@@ -69,10 +69,10 @@ over-lapping discovery, we have developed a multi-party private set intersection
 that allows for the secure discovery of data intersections. Our approach leverages OpenMined's two-party
 `Private Set Intersection Cardinality protocol <https://github.com/OpenMined/PSI>`_, which is basedon ECDH and Bloom Filters, and we have
 made this protocol available for multi-party use. More information on our approach and how to use the
-PSI operator can be found in the `PSI Example <https://github.com/NVIDIA/NVFlare/blob/main/examples/advanced/psi/README.md>`_.
+PSI operator can be found in the :github_nvflare_link:`PSI Example <examples/advanced/psi/README.md>`.
 
 It is worth noting that PSI is used as a pre-processing step in the split learning example, which can be found in this
-`notebook <https://github.com/NVIDIA/NVFlare/blob/main/examples/advanced/vertical_federated_learning/cifar10-splitnn/README.md>`_.
+:github_nvflare_link:`notebook <examples/advanced/vertical_federated_learning/cifar10-splitnn/README.md>`.
 
 Split Learning
 --------------
@@ -83,7 +83,7 @@ Activations and corresponding gradients are being exchanged between the clients 
 
 New Example for NLP
 ===================
-The new `NLP-NER Example <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/nlp-ner/README.md>`_ illustrates both `BERT <https://github.com/google-research/bert>`_ and
+The new :github_nvflare_link:`NLP-NER Example <examples/advanced/nlp-ner/README.md>` illustrates both `BERT <https://github.com/google-research/bert>`_ and
 `GPT-2 <https://github.com/openai/gpt-2>`__ models from `Hugging Face <https://huggingface.co/>`_ (`BERT-base-uncased <https://huggingface.co/bert-base-uncased>`_, `GPT-2 <https://huggingface.co/gpt2>`__)
 on a Named Entity Recognition (NER) task using the `NCBI disease dataset <https://pubmed.ncbi.nlm.nih.gov/24393765/>`_.
 
@@ -92,7 +92,7 @@ Research Areas
 
 FedSM
 -----
-The `FedSM example <https://github.com/NVIDIA/NVFlare/blob/main/research/fed-sm/README.md>`_ illustrates the personalized federated learning algorithm `FedSM <https://arxiv.org/abs/2203.10144>`_
+The :github_nvflare_link:`FedSM example <research/fed-sm/README.md>` illustrates the personalized federated learning algorithm `FedSM <https://arxiv.org/abs/2203.10144>`_
 accepted to CVPR 2022. It bridges the different data distributions across clients via a SoftPull mechanism and utilizes
 a Super Model. A model selector is trained to predict the belongings of a particular sample to any of the clients'
 personalized models or global model. The training of this model also illustrates a challenging federated learning scenario
@@ -102,7 +102,7 @@ Adam optimizer are also averaged and synced together with model updates.
 
 Auto-FedRL
 ----------
-The `Auto-FedRL example <https://github.com/NVIDIA/NVFlare/blob/main/research/auto-fed-rl/README.md>`_ implements the automated machine learning solution described in
+The :github_nvflare_link:`Auto-FedRL example <research/auto-fed-rl/README.md>` implements the automated machine learning solution described in
 `Auto-FedRL: Federated Hyperparameter Optimization for Multi-institutional Medical Image Segmentation <https://arxiv.org/abs/2203.06338>`_ accepted to ECCV 2022.
 Conventional hyperparameter optimization algorithms are often impractical in real-world FL applications as they involve numerous training trials,
 which are often not affordable with limited computing budgets.
@@ -111,7 +111,7 @@ in which an online RL agent can dynamically adjust the hyperparameters of each c
 
 Quantifying Data Leakage in Federated Learning
 ----------------------------------------------
-This research `example <https://github.com/NVIDIA/NVFlare/blob/main/research/quantifying-data-leakage/README.md>`__ contains the tools necessary to recreate the chest X-ray experiments described in
+This research :github_nvflare_link:`example <research/quantifying-data-leakage/README.md>`_ contains the tools necessary to recreate the chest X-ray experiments described in
 `Do Gradient Inversion Attacks Make Federated Learning Unsafe? <https://arxiv.org/abs/2202.06924>`_, accepted to IEEE Transactions on Medical Imaging.
 It presents new ways to measure and visualize potential data leakage in FL using a new FLARE filter
 that can quantify the data leakage for each client and visualize it as a function of the FL training rounds.

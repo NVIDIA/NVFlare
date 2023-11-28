@@ -19,7 +19,7 @@ from typing import Optional
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
-from nvflare.apis.fl_constant import FLContextKey, ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
@@ -304,7 +304,10 @@ class LauncherExecutor(Executor):
     def _exchange(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if self.pipe_handler is None:
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-        model = FLModelUtils.from_shareable(shareable, self._from_nvflare_converter, fl_ctx)
+
+        shareable.set_header(FLMetaKey.JOB_ID, fl_ctx.get_job_id())
+        shareable.set_header(FLMetaKey.SITE_NAME, fl_ctx.get_identity_name())
+        model = FLModelUtils.from_shareable(shareable, self._from_nvflare_converter)
         task_id = shareable.get_header(key=FLContextKey.TASK_ID)
 
         req = Message.new_request(topic=task_name, data=ExchangeTask(task_name, task_id, meta={}, data=model))

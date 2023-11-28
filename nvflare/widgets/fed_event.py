@@ -27,7 +27,7 @@ FED_EVENT_TOPIC = "fed.event"
 
 
 class FedEventRunner(Widget):
-    def __init__(self, topic=FED_EVENT_TOPIC, regular_interval=0.01, grace_period=2.0):
+    def __init__(self, topic=FED_EVENT_TOPIC, regular_interval=0.01, grace_period=2.0, queue_empty_period=2.0):
         """Init FedEventRunner.
 
         The FedEventRunner handles posting and receiving of fed events.
@@ -43,10 +43,12 @@ class FedEventRunner(Widget):
         self.asked_to_stop = False
         self.regular_interval = regular_interval
         self.grace_period = grace_period
+        self.queue_empty_period = queue_empty_period
         self.engine = None
         self.last_timestamps = {}  # client name => last_timestamp
         self.in_events = []
         self.in_lock = threading.Lock()
+        self.last_queue_empty_time = time.time()  # last time when the in_events queue became empty
         self.poster = None
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
@@ -59,6 +61,20 @@ class FedEventRunner(Widget):
             self.asked_to_stop = True
             if self.poster is not None and self.poster.is_alive():
                 self.poster.join()
+        elif event_type == EventType.CHECK_END_RUN_READINESS:
+            # Are we ready to end the run?
+            ready_to_end = True
+            with self.in_lock:
+                if len(self.in_events) > 0:
+                    # we still have unprocessed incoming events.
+                    ready_to_end = False
+                elif time.time() - self.last_queue_empty_time < self.queue_empty_period:
+                    # there are no pending incoming events, but we want to wait for self.queue_empty_period in case
+                    # some clients still send us events.
+                    ready_to_end = False
+            if not ready_to_end:
+                # tell the controller that we are not ready to end the run!
+                fl_ctx.set_prop(FLContextKey.NOT_READY_TO_END_RUN, value=True, private=True, sticky=False)
         else:
             # handle outgoing fed events
             event_scope = fl_ctx.get_prop(key=FLContextKey.EVENT_SCOPE, default=EventScope.LOCAL)
@@ -142,6 +158,8 @@ class FedEventRunner(Widget):
                 sleep_time = 0.0
                 with self.in_lock:
                     event_to_post = self.in_events.pop(0)
+                    if len(self.in_events) == 0:
+                        self.last_queue_empty_time = time.time()
             elif self.asked_to_stop:
                 time.sleep(self.grace_period)
                 if len(self.in_events) > 0:
@@ -169,9 +187,9 @@ class FedEventRunner(Widget):
 
 
 class ServerFedEventRunner(FedEventRunner):
-    def __init__(self, topic=FED_EVENT_TOPIC, regular_interval=0.01, grace_period=2.0):
+    def __init__(self, topic=FED_EVENT_TOPIC, regular_interval=0.01, grace_period=2.0, queue_empty_period=2.0):
         """Init ServerFedEventRunner."""
-        FedEventRunner.__init__(self, topic, regular_interval, grace_period)
+        FedEventRunner.__init__(self, topic, regular_interval, grace_period, queue_empty_period)
 
     def fire_and_forget_request(self, request: Shareable, fl_ctx: FLContext, targets=None, secure=False):
         if not isinstance(self.engine, ServerEngineSpec):

@@ -266,8 +266,12 @@ class FilePipe(Pipe):
     def close(self):
         pipe_path = self.pipe_path
         self.pipe_path = None
-        if pipe_path and os.path.exists(pipe_path):
-            try:
-                shutil.rmtree(pipe_path)
-            except Exception:
-                pass
+        if self.mode == Mode.PASSIVE:
+            if pipe_path and os.path.exists(pipe_path):
+                try:
+                    shutil.rmtree(pipe_path)
+                except Exception:
+                    pass
+
+    def can_resend(self) -> bool:
+        return False

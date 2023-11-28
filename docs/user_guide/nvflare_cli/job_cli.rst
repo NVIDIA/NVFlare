@@ -5,7 +5,7 @@ NVIDIA FLARE Job CLI
 #########################
 
 The NVIDIA FLARE :mod:`Job CLI<nvflare.tool.job.job_cli>` provides options to create and submit
-jobs from a command line interface. See the `NVFlare Job CLI Notebook <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/setup_poc.ipynb>`_
+jobs from a command line interface. See the :github_nvflare_link:`NVFlare Job CLI Notebook <examples/tutorials/setup_poc.ipynb>`
 for a tutorial on how to use the Job CLI.
 
 ***********************
@@ -158,7 +158,7 @@ Alternatively, you can use the ``nvflare config`` command with the ``-d`` or ``-
     nvflare config --startup_kit_dir /tmp/nvflare/poc/example_project/prod_00
 
 With the startup kit directory path set, you can submit the job (this following example is from the
-`NVFlare Job CLI Notebook <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/setup_poc.ipynb>`_ and
+:github_nvflare_link:`NVFlare Job CLI Notebook <examples/tutorials/setup_poc.ipynb>` and
 replaces several variables in the ``config_fed_server.conf`` config file):
 
 .. code-block:: shell
@@ -193,7 +193,7 @@ config file for each client site.
 
 For example, to change number of training rounds to 2, change default app_script from "cifar10.py" to "train.py" for both app_1 and app_2,
 and change the app_1 batch_size to 4, app_2 batch_size to 6 for sag_pt_deploy_map as in the
-`NVFlare Job CLI Notebook <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/setup_poc.ipynb>`_:
+:github_nvflare_link:`NVFlare Job CLI Notebook <examples/tutorials/setup_poc.ipynb>`:
 
 .. code-block:: shell
 
