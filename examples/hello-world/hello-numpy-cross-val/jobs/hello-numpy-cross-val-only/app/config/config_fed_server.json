@@ -8,11 +8,6 @@
   "task_result_filters": [],
   "components": [
     {
-      "id": "persistor",
-      "path": "nvflare.app_common.np.np_model_persistor.NPModelPersistor",
-      "args": {}
-    },
-    {
       "id": "model_locator",
       "path": "nvflare.app_common.np.np_model_locator.NPModelLocator",
       "args": {
