@@ -55,16 +55,16 @@ def load_features(feature_data_path: str) -> List:
         raise Exception(f"Load header for path'{feature_data_path} failed! {e}")
 
 
-def load_data(data_path: str, data_features: List, subsample: float = 0.001, test_size: float = 0.2, skip_rows=None) -> Dict[str, pd.DataFrame]:
+def load_data(data_path: str, data_features: List, random_state: int, test_size: float, subsample: float = 0.001, skip_rows=None) -> Dict[str, pd.DataFrame]:
     try:
         df: pd.DataFrame = pd.read_csv(
             data_path, names=data_features, sep=r"\s*,\s*", engine="python", na_values="?", skiprows=skip_rows
         )
 
         # subsample for SVM to handle in reasonable time
-        df = df.sample(frac=subsample, random_state=77)
+        df = df.sample(frac=subsample, random_state=random_state)
 
-        train, test = train_test_split(df, test_size=test_size, random_state=77)
+        train, test = train_test_split(df, test_size=test_size, random_state=random_state)
 
         return {"train": train, "test": test}
 
@@ -130,8 +130,8 @@ def main():
         # (6) evaluate model
         auc, report = evaluate_model(x_test, model, y_test)
         # Print the results
-        print(f"global model AUC: {auc:.4f}")
-        #print("global model Classification Report:\n", global_report)
+        print(f"{site_name}: model AUC: {auc:.4f}")
+        #print("model Classification Report:\n", report)
 
         # (7) construct trained FL model
         # get support vectors
@@ -160,7 +160,7 @@ def define_args_parser():
     parser = argparse.ArgumentParser(description="scikit learn linear model with SGD")
     parser.add_argument("--data_root_dir", type=str, help="root directory path to csv data file")
     parser.add_argument("--random_state", type=int, default=0, help="random state")
-    parser.add_argument("--test_size", type=float, default=1.0, help="random state")
+    parser.add_argument("--test_size", type=float, default=0.2, help="test ratio, default to 20%")
     parser.add_argument(
         "--skip_rows",
         type=str,
