@@ -223,7 +223,9 @@ class LauncherExecutor(TaskExchanger):
             check_object_type(self._to_nvflare_converter_id, to_nvflare_converter, ParamsConverter)
             self._to_nvflare_converter = to_nvflare_converter
 
-    def _launch_external_process(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal):
+    def _launch_external_process(
+        self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal
+    ) -> bool:
         self._abort_signal = abort_signal
         # if not launched yet
         if not self._launch_once or not self._launched.is_set():
@@ -234,11 +236,11 @@ class LauncherExecutor(TaskExchanger):
                 return False
             self._launched.set()
             self.log_info(fl_ctx, f"External process for task ({task_name}) is launched.")
-        # wait for external process to setup their pipe_handler
+        # wait for external process to set up their pipe_handler
         setup_success = self._wait_external_setup(task_name, fl_ctx, abort_signal)
         if not setup_success:
             self.log_error(fl_ctx, "External process set up failed.")
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+            return False
         return True
 
     def _end_external_process(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal):
