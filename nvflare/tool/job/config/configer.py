@@ -452,8 +452,8 @@ def get_app_name_from_path(path: str):
     # path app1/custom/xxx.conf
     if _is_meta_file(os.path.basename(path)):
         return META_APP_NAME
-    if path == os.path.sep:
-        raise ValueError(f"Expecting <config file> or <app_name>/<config file>, but '{path}' is given.")
+    if os.path.isabs(path):
+        raise ValueError(f"Expecting <config file> or <app_name>/xxx/<config file>, but '{path}' is given.")
     segs = path.split(os.path.sep)
     if len(segs) == 1:
         return DEFAULT_APP_NAME

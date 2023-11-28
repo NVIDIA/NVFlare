@@ -192,6 +192,8 @@ class TestConfiger:
         assert get_app_name_from_path("app_server/custom/bbb.conf") == "app_server"
         with pytest.raises(ValueError):
             get_app_name_from_path("/")
+        with pytest.raises(ValueError):
+            get_app_name_from_path("/app_1/a.conf")
 
     @pytest.mark.parametrize("input_file_path, expected_config_file_path", GET_CONFIG_FILE_PATH_TEST_CASES)
     def test_get_config_file_path(self, input_file_path, expected_config_file_path):
