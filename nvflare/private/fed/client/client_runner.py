@@ -145,6 +145,8 @@ class ClientRunner(TBI):
         self.task_check_timeout = self.get_positive_float_var(ConfigVarName.TASK_CHECK_TIMEOUT, 5.0)
         self.task_check_interval = self.get_positive_float_var(ConfigVarName.TASK_CHECK_INTERVAL, 5.0)
         self.job_heartbeat_interval = self.get_positive_float_var(ConfigVarName.JOB_HEARTBEAT_INTERVAL, 30.0)
+        self.get_task_timeout = self.get_positive_float_var(ConfigVarName.GET_TASK_TIMEOUT, None)
+        self.submit_task_result_timeout = self.get_positive_float_var(ConfigVarName.SUBMIT_TASK_RESULT_TIMEOUT, None)
         self._register_aux_message_handlers(engine)
 
     def find_executor(self, task_name):
@@ -442,7 +444,7 @@ class ClientRunner(TBI):
         """
         default_task_fetch_interval = self.default_task_fetch_interval
         self.log_debug(fl_ctx, "fetching task from server ...")
-        task = self.engine.get_task_assignment(fl_ctx)
+        task = self.engine.get_task_assignment(fl_ctx, self.get_task_timeout)
 
         if not task:
             self.log_debug(fl_ctx, "no task received - will try in {} secs".format(default_task_fetch_interval))
@@ -513,7 +515,7 @@ class ClientRunner(TBI):
 
         # try to send the result
         self.log_info(fl_ctx, "start to send task result to server")
-        reply_sent = self.engine.send_task_result(result, fl_ctx)
+        reply_sent = self.engine.send_task_result(result, fl_ctx, timeout=self.submit_task_result_timeout)
         if reply_sent:
             self.log_info(fl_ctx, "task result sent to server")
             return _TASK_CHECK_RESULT_OK
