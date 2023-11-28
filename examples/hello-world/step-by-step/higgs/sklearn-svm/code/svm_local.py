@@ -18,7 +18,7 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import SGDClassifier
+from sklearn.svm import SVC
 from sklearn.metrics import roc_auc_score, classification_report
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
@@ -52,13 +52,16 @@ def load_features(feature_data_path: str) -> List:
         raise Exception(f"Load header for path'{feature_data_path} failed! {e}")
 
 
-def load_data(data_path: str, data_features: List, random_state: int, test_size: float, skip_rows=None) -> Dict[str, pd.DataFrame]:
+def load_data(data_path: str, data_features: List, subsample: float = 0.001, test_size: float = 0.2, skip_rows=None) -> Dict[str, pd.DataFrame]:
     try:
         df: pd.DataFrame = pd.read_csv(
             data_path, names=data_features, sep=r"\s*,\s*", engine="python", na_values="?", skiprows=skip_rows
         )
 
-        train, test = train_test_split(df, test_size=test_size, random_state=random_state)
+        # subsample for SVM to handle in reasonable time
+        df = df.sample(frac=subsample, random_state=77)
+
+        train, test = train_test_split(df, test_size=test_size, random_state=77)
 
         return {"train": train, "test": test}
 
@@ -87,67 +90,30 @@ def main():
     site_name = "site-1"
     feature_data_path = f"{data_root_dir}/{site_name}_header.csv"
     features = load_features(feature_data_path)
-    n_features = len(features) - 1  # remove label
 
     data_path = f"{data_root_dir}/{site_name}.csv"
-    data = load_data(data_path=data_path, data_features=features, random_state=random_state, test_size=test_size, skip_rows=skip_rows)
+    data = load_data(data_path=data_path, data_features=features, test_size=test_size, skip_rows=skip_rows)
 
     data = to_dataset_tuple(data)
     dataset = transform_data(data)
     x_train, y_train, train_size = dataset["train"]
     x_test, y_test, test_size = dataset["test"]
 
-    model = None
     global_params = {
-        "n_classes": 2,
-        "learning_rate": "constant",
-        "eta0": 1e-5,
-        "loss": "log_loss",
-        "penalty": "l2",
-        "fit_intercept": True,
+        "kernel": "rbf"
     }
-    for curr_round in range(30):
-        print(f"current_round={curr_round}")
-        if curr_round == 0:
-            fit_intercept = bool(global_params["fit_intercept"])
-            model = SGDClassifier(
-                loss=global_params["loss"],
-                penalty=global_params["penalty"],
-                fit_intercept=fit_intercept,
-                learning_rate=global_params["learning_rate"],
-                eta0=global_params["eta0"],
-                max_iter=1,
-                warm_start=True,
-                random_state=random_state,
-            )
-            n_classes = global_params["n_classes"]
-            model.classes_ = np.array(list(range(n_classes)))
-            model.coef_ = np.zeros((1, n_features))
-            if fit_intercept:
-                model.intercept_ = np.zeros((1,))
-        else:
-            # the model has warm_start, so these parameters will be used in initialize the training
-            if "coef" in global_params:
-                model.coef_ = global_params["coef"]
-            if model.fit_intercept and "intercept" in global_params:
-                model.intercept_ = global_params["intercept"]
 
-        # evaluate model
-        auc, report = evaluate_model(x_test, model, y_test)
-        # Print the results
-        print(f"starting model AUC: {auc:.4f}")
-        #print("starting model Classification Report:\n", global_report)
+    model = SVC(kernel=global_params["kernel"])
 
-        # Train the model on the training set
-        model.fit(x_train, y_train)
-        auc, report = evaluate_model(x_test, model, y_test)
+    # Train the model on the training set
+    model.fit(x_train, y_train)
 
-        # Print the results
-        print(f"ending model AUC: {auc:.4f}")
-        #print("local model Classification Report:\n", report)
+    # evaluate model
+    auc, report = evaluate_model(x_test, model, y_test)
 
-        # Record ending params for next round
-        global_params = {"coef": model.coef_, "intercept": model.intercept_}
+    # Print the results
+    print(f"model AUC: {auc:.4f}")
+    #print("model Classification Report:\n", report)
 
 
 def evaluate_model(x_test, model, y_test):
@@ -164,7 +130,7 @@ def define_args_parser():
     parser = argparse.ArgumentParser(description="scikit learn linear model with SGD")
     parser.add_argument("--data_root_dir", type=str, help="root directory path to csv data file")
     parser.add_argument("--random_state", type=int, default=0, help="random state")
-    parser.add_argument("--test_size", type=float, default=0.2, help="test ratio, default to 20%")
+    parser.add_argument("--test_size", type=float, default=1.0, help="random state")
     parser.add_argument(
         "--skip_rows",
         type=str,

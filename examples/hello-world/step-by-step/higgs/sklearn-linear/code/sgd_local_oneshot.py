@@ -52,13 +52,13 @@ def load_features(feature_data_path: str) -> List:
         raise Exception(f"Load header for path'{feature_data_path} failed! {e}")
 
 
-def load_data(data_path: str, data_features: List, test_size: float = 0.2, skip_rows=None) -> Dict[str, pd.DataFrame]:
+def load_data(data_path: str, data_features: List, random_state: int, test_size: float, skip_rows=None) -> Dict[str, pd.DataFrame]:
     try:
         df: pd.DataFrame = pd.read_csv(
             data_path, names=data_features, sep=r"\s*,\s*", engine="python", na_values="?", skiprows=skip_rows
         )
 
-        train, test = train_test_split(df, test_size=test_size, random_state=77)
+        train, test = train_test_split(df, test_size=test_size, random_state=random_state)
 
         return {"train": train, "test": test}
 
@@ -90,7 +90,7 @@ def main():
     n_features = len(features) - 1  # remove label
 
     data_path = f"{data_root_dir}/{site_name}.csv"
-    data = load_data(data_path=data_path, data_features=features, test_size=test_size, skip_rows=skip_rows)
+    data = load_data(data_path=data_path, data_features=features, random_state=random_state, test_size=test_size, skip_rows=skip_rows)
 
     data = to_dataset_tuple(data)
     dataset = transform_data(data)
@@ -101,7 +101,7 @@ def main():
     global_params = {
         "n_classes": 2,
         "learning_rate": "constant",
-        "eta0": 0.00001,
+        "eta0": 1e-5,
         "loss": "log_loss",
         "penalty": "l2",
         "fit_intercept": True,
@@ -154,7 +154,7 @@ def define_args_parser():
     parser = argparse.ArgumentParser(description="scikit learn linear model with SGD")
     parser.add_argument("--data_root_dir", type=str, help="root directory path to csv data file")
     parser.add_argument("--random_state", type=int, default=0, help="random state")
-    parser.add_argument("--test_size", type=float, default=1.0, help="random state")
+    parser.add_argument("--test_size", type=float, default=0.2, help="test ratio, default to 20%")
     parser.add_argument(
         "--skip_rows",
         type=str,
