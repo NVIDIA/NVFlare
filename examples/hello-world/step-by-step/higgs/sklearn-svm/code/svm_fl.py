@@ -98,7 +98,7 @@ def main():
     features = load_features(feature_data_path)
 
     data_path = f"{data_root_dir}/{site_name}.csv"
-    data = load_data(data_path=data_path, data_features=features, test_size=test_size, skip_rows=skip_rows)
+    data = load_data(data_path=data_path, data_features=features, random_state=random_state, test_size=test_size, skip_rows=skip_rows)
 
     data = to_dataset_tuple(data)
     dataset = transform_data(data)
@@ -135,9 +135,13 @@ def main():
 
         # (7) construct trained FL model
         # get support vectors
-        index = model.support_
-        local_support_x = x_train[index]
-        local_support_y = y_train[index]
+        if curr_round == 0:
+            index = model.support_
+            local_support_x = x_train[index]
+            local_support_y = y_train[index]
+        else:
+            local_support_x = support_x
+            local_support_y = support_y
         params = {"support_x": local_support_x, "support_y": local_support_y}
         metrics = {"accuracy": auc}
         output_model = flare.FLModel(params=params, metrics=metrics)
