@@ -19,7 +19,7 @@ from nvflare.apis.fl_exception import TaskExecutionError
 from nvflare.apis.fl_context import FLContext
 
 
-class FLComponentHelper(FLComponent):
+class FLComponentWrapper(FLComponent):
     STATE = None
 
     def __init__(self):

@@ -14,11 +14,11 @@
 
 from typing import Union
 
-from nvflare.apis.fl_component import FLComponentHelper
+from nvflare.app_common.utils.fl_component_wrapper import FLComponentWrapper
 from nvflare.app_common.abstract.fl_model import FLModel
 
 
-class ModelLearner(FLComponentHelper):
+class ModelLearner(FLComponentWrapper):
 
     STATE = None
 

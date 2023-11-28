@@ -17,7 +17,7 @@ from typing import List, Union
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import OperatorMethod, TaskOperatorKey
-from nvflare.apis.fl_component import FLComponentHelper
+from nvflare.app_common.utils.fl_component_wrapper import FLComponentWrapper
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import ClientTask, Controller, Task
@@ -36,7 +36,7 @@ from nvflare.app_common.abstract.model import make_model_learnable
 from .scatter_and_gather import _check_non_neg_int
 
 
-class ModelController(Controller, FLComponentHelper, ABC):
+class ModelController(Controller, FLComponentWrapper, ABC):
     def __init__(
         self,
         min_clients: int = 1000,
