@@ -17,7 +17,6 @@ from typing import List, Union
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import OperatorMethod, TaskOperatorKey
-from nvflare.app_common.utils.fl_component_wrapper import FLComponentWrapper
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import ClientTask, Controller, Task
@@ -25,14 +24,14 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
-from nvflare.app_common.abstract.model import ModelLearnableKey
+from nvflare.app_common.abstract.model import ModelLearnableKey, make_model_learnable
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.app_common.utils.fl_component_wrapper import FLComponentWrapper
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+from nvflare.fuel.utils.experimental import experimental
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
-from nvflare.app_common.abstract.model import make_model_learnable
-from nvflare.fuel.utils.experimental import experimental
 
 from .scatter_and_gather import _check_non_neg_int
 
@@ -43,10 +42,7 @@ class ModelController(Controller, FLComponentWrapper, ABC):
         self,
         min_clients: int = 1000,
         num_rounds: int = 5,
-        wait_time_after_min_received: int = 10,
         persistor_id="",
-        task_name=AppConstants.TASK_TRAIN,
-        timeout: int = 0,
         ignore_result_error: bool = False,
         allow_empty_global_weights: bool = False,
         task_check_period: float = 0.5,
@@ -59,11 +55,7 @@ class ModelController(Controller, FLComponentWrapper, ABC):
                 Workflow starts to wait for `wait_time_after_min_received`. Note that the workflow will move forward
                 when all available clients have responded regardless of this value. Defaults to 1000.
             num_rounds (int, optional): The total number of training rounds. Defaults to 5.
-            wait_time_after_min_received (int, optional): Time to wait before beginning aggregation after
-                minimum number of clients responses has been received. Defaults to 10.
             persistor_id (str, optional): ID of the persistor component. Defaults to "persistor".
-            task_name (str, optional): Name of the train task. Defaults to "train".
-            timeout (int, optional): Time to wait for clients to do local training.
             ignore_result_error (bool, optional): whether this controller can proceed if client result has errors.
                 Defaults to False.
             allow_empty_global_weights (bool, optional): whether to allow empty global weights. Some pipelines can have
@@ -82,14 +74,10 @@ class ModelController(Controller, FLComponentWrapper, ABC):
             raise ValueError("min_clients must be greater than 0.")
 
         _check_non_neg_int(num_rounds, "num_rounds")
-        _check_non_neg_int(wait_time_after_min_received, "wait_time_after_min_received")
-        _check_non_neg_int(timeout, "timeout")
         _check_non_neg_int(persist_every_n_rounds, "persist_every_n_rounds")
 
         if not isinstance(persistor_id, str):
             raise TypeError("persistor_id must be a string but got {}".format(type(persistor_id)))
-        if not isinstance(task_name, str):
-            raise TypeError("train_task_name must be a string but got {}".format(type(task_name)))
 
         if not isinstance(task_check_period, (int, float)):
             raise TypeError(f"task_check_period must be an int or float but got {type(task_check_period)}")
@@ -97,14 +85,11 @@ class ModelController(Controller, FLComponentWrapper, ABC):
             raise ValueError("task_check_period must be greater than 0.")
 
         self.persistor_id = persistor_id
-        self.task_name = task_name
         self.persistor = None
 
         # config data
         self._min_clients = min_clients
         self._num_rounds = num_rounds
-        self._wait_time_after_min_received = wait_time_after_min_received
-        self._timeout = timeout
         self._persist_every_n_rounds = persist_every_n_rounds
         self.ignore_result_error = ignore_result_error
         self.allow_empty_global_weights = allow_empty_global_weights
@@ -153,17 +138,7 @@ class ModelController(Controller, FLComponentWrapper, ABC):
         self.engine = self.fl_ctx.get_engine()
         self.initialize()
 
-    def send_model_and_wait(self, targets: Union[List[Client], List[str], None] = None, data: FLModel = None) -> List:
-        """Send the current global model or given data to a list of targets
-
-        The task is scheduled into a task list.  Clients can request tasks and controller will dispatch the task to eligible clients.
-
-        Args:
-            targets: the list of eligible clients or client names or None (all clients). Defaults to None.
-            data: FLModel to be sent to clients. If no data is given, send `self.model`.
-        """
-
-        # Create train_task
+    def _build_shareable(self, data: FLModel = None) -> Shareable:
         if not data:  # if no data is given, send self.model
             data = self.model
 
@@ -172,29 +147,60 @@ class ModelController(Controller, FLComponentWrapper, ABC):
         data_shareable.set_header(AppConstants.NUM_ROUNDS, self._num_rounds)
         data_shareable.add_cookie(AppConstants.CONTRIBUTION_ROUND, self._current_round)
 
+        return data_shareable
+
+    def send_model_and_wait(
+        self,
+        targets: Union[List[Client], List[str], None] = None,
+        data: FLModel = None,
+        task_name=AppConstants.TASK_TRAIN,
+        timeout: int = 0,
+        wait_time_after_min_received: int = 10,
+    ) -> List:
+        """Send the current global model or given data to a list of targets
+
+        The task is scheduled into a task list.  Clients can request tasks and controller will dispatch the task to eligible clients.
+
+        Args:
+            targets: the list of eligible clients or client names or None (all clients). Defaults to None.
+            data: FLModel to be sent to clients. If no data is given, send `self.model`.
+            task_name (str, optional): Name of the train task. Defaults to "train".
+            timeout (int, optional): Time to wait for clients to do local training. Defaults to 0, i.e., never time out.
+            wait_time_after_min_received (int, optional): Time to wait before beginning aggregation after
+                minimum number of clients responses has been received. Defaults to 10.
+        """
+
+        if not isinstance(task_name, str):
+            raise TypeError("train_task_name must be a string but got {}".format(type(task_name)))
+        _check_non_neg_int(timeout, "timeout")
+        _check_non_neg_int(wait_time_after_min_received, "wait_time_after_min_received")
+
+        # Create train_task
+        data_shareable = self._build_shareable(data)
+
         operator = {
-            TaskOperatorKey.OP_ID: self.task_name,
+            TaskOperatorKey.OP_ID: task_name,
             TaskOperatorKey.METHOD: OperatorMethod.BROADCAST,
-            TaskOperatorKey.TIMEOUT: self._timeout,
+            TaskOperatorKey.TIMEOUT: timeout,
         }
 
         train_task = Task(
-            name=self.task_name,
+            name=task_name,
             data=data_shareable,
             operator=operator,
             props={},
-            timeout=self._timeout,
-            before_task_sent_cb=self._prepare_train_task_data,
-            result_received_cb=self._process_train_result,
+            timeout=timeout,
+            before_task_sent_cb=self._prepare_task_data,
+            result_received_cb=self._process_result,
         )
 
-        self._results = []   # reset results list
-        self.info(f"Sending train task to {[client.name for client in targets]}")
+        self._results = []  # reset results list
+        self.info(f"Sending task {task_name} to {[client.name for client in targets]}")
         self.broadcast_and_wait(
             task=train_task,
             targets=targets,
             min_responses=self._min_clients,
-            wait_time_after_min_received=self._wait_time_after_min_received,
+            wait_time_after_min_received=wait_time_after_min_received,
             fl_ctx=self.fl_ctx,
             abort_signal=self.abort_signal,
         )
@@ -206,11 +212,67 @@ class ModelController(Controller, FLComponentWrapper, ABC):
 
         return self._results
 
-    def _prepare_train_task_data(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
+    def relay_model_and_wait(
+        self,
+        targets: Union[List[Client], List[str], None] = None,
+        data: FLModel = None,
+        task_name=AppConstants.TASK_TRAIN,
+        timeout: int = 0,
+        task_assignment_timeout: int = 10,
+    ) -> List:
+        """Send the current global model or given data to a list of targets
+
+        The task is scheduled into a task list.  Clients can request tasks and controller will dispatch the task to eligible clients.
+
+        Args:
+            targets: the list of eligible clients or client names or None (all clients). Defaults to None.
+            data: FLModel to be sent to clients. If no data is given, send `self.model`.
+            task_name (str, optional): Name of the train task. Defaults to "train".
+            timeout (int, optional): Time to wait for clients to do local training. Defaults to 0, i.e., never time out.
+            task_assignment_timeout (int, optional): timeout (in sec) to determine if one client fails to
+                request the task which it is assigned to . Defaults to 10.
+        """
+
+        if not isinstance(task_name, str):
+            raise TypeError("train_task_name must be a string but got {}".format(type(task_name)))
+        _check_non_neg_int(timeout, "timeout")
+        _check_non_neg_int(task_assignment_timeout, "task_assignment_timeout")
+
+        # Create train_task
+        data_shareable = self._build_shareable(data)
+
+        train_task = Task(
+            name=task_name,
+            data=data_shareable,
+            props={},
+            timeout=timeout,
+            before_task_sent_cb=self._prepare_task_data,
+            result_received_cb=self._process_result,
+        )
+
+        self._results = []  # reset results list
+        self.info(f"Relay task {task_name} to {[client.name for client in targets]}")
+        self.relay_and_wait(
+            task=train_task,
+            targets=targets,
+            task_assignment_timeout=task_assignment_timeout,
+            fl_ctx=self.fl_ctx,
+            dynamic_targets=False,
+            abort_signal=self.abort_signal,
+        )
+
+        if len(self._results) != self._min_clients:
+            self.warning(
+                f"Number of results ({len(self._results)}) is different from min_clients ({self._min_clients})."
+            )
+
+        return self._results
+
+    def _prepare_task_data(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
         fl_ctx.set_prop(AppConstants.TRAIN_SHAREABLE, client_task.task.data, private=True, sticky=False)
         self.event(AppEventType.BEFORE_TRAIN_TASK)
 
-    def _process_train_result(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
+    def _process_result(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
         self.fl_ctx = fl_ctx
         result = client_task.result
         client_name = client_task.client.name
@@ -229,9 +291,9 @@ class ModelController(Controller, FLComponentWrapper, ABC):
         client_task.result = None
 
     def process_result_of_unknown_task(
-        self, client: Client, task_name, client_task_id, result: Shareable, fl_ctx: FLContext
+        self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
     ) -> None:
-        if self._phase == AppConstants.PHASE_TRAIN and task_name == self.task_name:
+        if self._phase == AppConstants.PHASE_TRAIN and task_name == task_name:
             self._accept_train_result(client_name=client.name, result=result, fl_ctx=fl_ctx)
             self.info(f"Result of unknown task {task_name} sent to aggregator.")
         else:

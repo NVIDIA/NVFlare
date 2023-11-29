@@ -28,7 +28,7 @@ from .model_controller import ModelController
 
 
 @experimental
-class FedAvgModelControllerSpec(ModelController, ABC):
+class FedAvgModelControllerSpec(ModelController):
     """The base controller for FedAvg Workflow. *Note*: This class is experimental.
 
     Implements [FederatedAveraging](https://arxiv.org/abs/1602.05629).
@@ -85,7 +85,7 @@ class FedAvgModelControllerSpec(ModelController, ABC):
 
 
 @experimental
-class BaseFedAvg(FedAvgModelControllerSpec, ABC):
+class BaseFedAvg(FedAvgModelControllerSpec):
     """Controller for FedAvg Workflow. *Note*: This class is experimental.
     Implements [FederatedAveraging](https://arxiv.org/abs/1602.05629).
 
@@ -181,3 +181,6 @@ class BaseFedAvg(FedAvgModelControllerSpec, ABC):
         self.fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self.model, private=True, sticky=True)
         self.fl_ctx.sync_sticky()
         self.event(AppEventType.AFTER_SHAREABLE_TO_LEARNABLE)
+
+    def run(self):
+        raise NotImplementedError
