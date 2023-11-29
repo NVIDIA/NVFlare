@@ -22,7 +22,7 @@ import xgboost as xgb
 class XGBDataLoader(ABC):
     @abstractmethod
     def load_data(self, client_id: str) -> Tuple[xgb.core.DMatrix, xgb.core.DMatrix]:
-        """Loads data for xgboost_bagging.
+        """Loads data for xgboost.
 
         Returns:
             A tuple of train_data, validation_data

@@ -160,7 +160,7 @@ class FedXGBTreeExecutor(Executor):
         for i in range(self.num_local_round):
             self.bst.update(self.train_data, self.bst.num_boosted_rounds())
 
-        # extract newly added self.num_local_round using xgboost_bagging slicing api
+        # extract newly added self.num_local_round using xgboost slicing api
         bst = self.bst[self.bst.num_boosted_rounds() - self.num_local_round : self.bst.num_boosted_rounds()]
 
         self.log_info(
@@ -206,7 +206,7 @@ class FedXGBTreeExecutor(Executor):
         dxo = from_shareable(shareable)
         model_update = dxo.data
 
-        # xgboost_bagging parameters
+        # xgboost parameters
         params = self._get_xgb_train_params()
 
         if self.use_gpus:

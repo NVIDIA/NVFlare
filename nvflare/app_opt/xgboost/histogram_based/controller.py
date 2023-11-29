@@ -84,9 +84,9 @@ class XGBFedController(Controller):
 
     def start_controller(self, fl_ctx: FLContext):
         self.log_info(fl_ctx, f"Initializing {self.__class__.__name__} workflow.")
-        xgb_federated, flag = optional_import(module="xgboost_bagging.federated")
+        xgb_federated, flag = optional_import(module="xgboost.federated")
         if not flag:
-            self.log_error(fl_ctx, "Can't import xgboost_bagging.federated")
+            self.log_error(fl_ctx, "Can't import xgboost.federated")
             return
 
         # Assumption: all clients are used
