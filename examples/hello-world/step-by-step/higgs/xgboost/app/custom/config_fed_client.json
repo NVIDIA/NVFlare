@@ -1,0 +1,42 @@
+{
+  "format_version": 2,
+
+  "executors": [
+    {
+      "tasks": [
+        "train"
+      ],
+      "executor": {
+        "id": "Executor",
+        "name": "FedXGBTreeExecutor",
+        "args": {
+          "data_loader_id": "dataloader",
+          "training_mode": "bagging",
+          "num_client_bagging": 5,
+          "num_local_parallel_tree": 1,
+          "local_subsample": 1,
+          "lr_mode": "scaled",
+          "local_model_path": "model.json",
+          "global_model_path": "model_global.json",
+          "learning_rate": 0.1,
+          "objective": "binary:logistic",
+          "max_depth": 8,
+          "eval_metric": "auc",
+          "tree_method": "hist",
+          "nthread": 16
+        }
+      }
+    }
+  ],
+  "task_result_filters": [],
+  "task_data_filters": [],
+  "components": [
+    {
+      "id": "dataloader",
+      "path": "higgs_data_loader.HIGGSDataLoader",
+      "args": {
+        "data_split_filename": "data_split.json"
+      }
+    }
+  ]
+}

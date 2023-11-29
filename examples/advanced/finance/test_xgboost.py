@@ -62,7 +62,7 @@ def main():
     # Load data
     X_test, y_test = prepare_data(test_data_path)
 
-    # construct xgboost DMatrix
+    # construct xgboost_bagging DMatrix
     dmat_test = xgb.DMatrix(X_test, label=y_test)
 
     # test model

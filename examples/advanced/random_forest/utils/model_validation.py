@@ -40,7 +40,7 @@ def model_validation_args_parser():
         help="Total number of trees",
     )
     parser.add_argument(
-        "--tree_method", type=str, default="hist", help="tree_method for xgboost - use hist or gpu_hist for best perf"
+        "--tree_method", type=str, default="hist", help="tree_method for xgboost_bagging - use hist or gpu_hist for best perf"
     )
     return parser
 

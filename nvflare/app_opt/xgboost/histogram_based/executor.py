@@ -37,7 +37,7 @@ class XGBoostParams:
         """Container for all XGBoost parameters.
 
         Args:
-            xgb_params: This dict is passed to `xgboost.train()` as the first argument `params`.
+            xgb_params: This dict is passed to `xgboost_bagging.train()` as the first argument `params`.
                 It contains all the Booster parameters.
                 Please refer to XGBoost documentation for details:
                 https://xgboost.readthedocs.io/en/stable/python/python_api.html#module-xgboost.training
@@ -90,12 +90,12 @@ class FedXGBHistogramExecutor(Executor):
         Args:
             num_rounds: number of boosting rounds
             early_stopping_rounds: early stopping rounds
-            xgb_params: This dict is passed to `xgboost.train()` as the first argument `params`.
+            xgb_params: This dict is passed to `xgboost_bagging.train()` as the first argument `params`.
                 It contains all the Booster parameters.
                 Please refer to XGBoost documentation for details:
                 https://xgboost.readthedocs.io/en/stable/python/python_api.html#module-xgboost.training
             data_loader_id: the ID points to XGBDataLoader.
-            verbose_eval: verbose_eval in xgboost.train
+            verbose_eval: verbose_eval in xgboost_bagging.train
             use_gpus: flag to enable gpu training
         """
         super().__init__()
@@ -135,10 +135,10 @@ class FedXGBHistogramExecutor(Executor):
         """XGBoost training logic.
 
         Args:
-            params (XGBoostParams): xgboost parameters.
+            params (XGBoostParams): xgboost_bagging parameters.
 
         Returns:
-            A xgboost booster.
+            A xgboost_bagging booster.
         """
         # Load file, file will not be sharded in federated mode.
         dtrain = self.train_data
@@ -230,17 +230,17 @@ class FedXGBHistogramExecutor(Executor):
 
         world_size = shareable.get_header(XGBShareableHeader.WORLD_SIZE)
         if world_size is None:
-            self.log_error(fl_ctx, f"Train failed in client {client_name}: missing xgboost world size in header.")
+            self.log_error(fl_ctx, f"Train failed in client {client_name}: missing xgboost_bagging world size in header.")
             return make_reply(ReturnCode.ERROR)
 
         xgb_fl_server_port = shareable.get_header(XGBShareableHeader.XGB_FL_SERVER_PORT)
         if xgb_fl_server_port is None:
-            self.log_error(fl_ctx, f"Train failed in client {client_name}: missing xgboost FL server port in header.")
+            self.log_error(fl_ctx, f"Train failed in client {client_name}: missing xgboost_bagging FL server port in header.")
             return make_reply(ReturnCode.ERROR)
 
         secure_comm = shareable.get_header(XGBShareableHeader.XGB_FL_SERVER_SECURE)
         if secure_comm is None:
-            self.log_error(fl_ctx, f"Train failed in client {client_name}: missing xgboost secure_comm in header.")
+            self.log_error(fl_ctx, f"Train failed in client {client_name}: missing xgboost_bagging secure_comm in header.")
             return make_reply(ReturnCode.ERROR)
 
         self.rank = rank_map[client_name]

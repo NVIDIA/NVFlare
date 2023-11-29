@@ -99,7 +99,7 @@ def main():
         f"VALIDATION: X_validate: {X_valid.shape}, y_validate: {y_valid.shape}, Fraudulant transaction: {y_valid.value_counts()[1]}"
     )
 
-    # construct xgboost DMatrix
+    # construct xgboost_bagging DMatrix
     dmat_train = xgb.DMatrix(X_train, label=y_train)
     dmat_valid = xgb.DMatrix(X_valid, label=y_valid)
 
@@ -107,7 +107,7 @@ def main():
     lapse_time = end - start
     print(f"Data loading time: {lapse_time}")
 
-    # xgboost training
+    # xgboost_bagging training
     start = time.time()
     xgb_params = get_training_parameters(args)
     bst = xgb.train(
