@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import random
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from typing import List
 
 from nvflare.apis.fl_constant import FLMetaKey
@@ -44,6 +44,8 @@ class FedAvgModelControllerSpec(ModelController):
         - def update_model(self, aggr_result)
         - def run(self)
     """
+    def __int__(self):
+        super().__int__()
 
     # To be implemented by derived classes
     @abstractmethod
@@ -98,6 +100,8 @@ class BaseFedAvg(FedAvgModelControllerSpec):
 
         - def run(self)
     """
+    def __int__(self):
+        super().__int__()
 
     def sample_clients(self, min_clients):
         self._min_clients = min_clients

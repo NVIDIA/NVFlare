@@ -32,11 +32,7 @@ class FedAvg(BaseFedAvg):
             Workflow starts to wait for `wait_time_after_min_received`. Note that the workflow will move forward
             when all available clients have responded regardless of this value. Defaults to 1000.
         num_rounds (int, optional): The total number of training rounds. Defaults to 5.
-        wait_time_after_min_received (int, optional): Time to wait before beginning aggregation after
-            minimum number of clients responses has been received. Defaults to 10.
         persistor_id (str, optional): ID of the persistor component. Defaults to "persistor".
-        train_task_name (str, optional): Name of the train task. Defaults to "train".
-        train_timeout (int, optional): Time to wait for clients to do local training.
         ignore_result_error (bool, optional): whether this controller can proceed if client result has errors.
             Defaults to False.
         allow_empty_global_weights (bool, optional): whether to allow empty global weights. Some pipelines can have

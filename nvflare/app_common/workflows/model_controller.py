@@ -37,7 +37,7 @@ from .scatter_and_gather import _check_non_neg_int
 
 
 @experimental
-class ModelController(Controller, FLComponentWrapper, ABC):
+class ModelController(Controller, FLComponentWrapper):
     def __init__(
         self,
         min_clients: int = 1000,
@@ -247,7 +247,7 @@ class ModelController(Controller, FLComponentWrapper, ABC):
             props={},
             timeout=timeout,
             before_task_sent_cb=self._prepare_task_data,
-            result_received_cb=self._process_result,
+            result_received_cb=self._process_result,  # TODO: do not use the same process?
         )
 
         self._results = []  # reset results list
@@ -260,11 +260,6 @@ class ModelController(Controller, FLComponentWrapper, ABC):
             dynamic_targets=False,
             abort_signal=self.abort_signal,
         )
-
-        if len(self._results) != self._min_clients:
-            self.warning(
-                f"Number of results ({len(self._results)}) is different from min_clients ({self._min_clients})."
-            )
 
         return self._results
 
