@@ -444,8 +444,9 @@ class SimulatorRunner(FLComponent):
         )
         server_app_runner = SimulatorServerAppRunner(self.server)
         snapshot = None
+        kv_list = [f"secure_train={self.server.secure_train}"]
         server_app_runner.start_server_app(
-            workspace, self.args, app_server_root, self.args.job_id, snapshot, self.logger
+            workspace, self.args, app_server_root, self.args.job_id, snapshot, self.logger, kv_list=kv_list
         )
 
         # start = time.time()
