@@ -42,3 +42,9 @@ The previous run best global model and best local model are stored in the "serve
 
 Define two OS system variable "SERVER_MODEL_DIR" and "CLIENT_MODEL_DIR" to point to the absolute path of the server best model and local best model location respectively. Then use the NVFlare admin command "submit_job" to submit and run the cross-validation job.
 
+For example, define the system variable "SERVER_MODEL_DIR" like this:
+
+```
+export SERVER_MODEL_DIR="Server_Model_Location"
+```
+

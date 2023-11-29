@@ -22,7 +22,7 @@ from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 
 
-class FileListModelLocator(ModelLocator):
+class ListModelLocator(ModelLocator):
     def __init__(self, persistor_id: str, model_list={}):
         """The ModelLocator's job is to find and locate the models inventory saved during training.
 
