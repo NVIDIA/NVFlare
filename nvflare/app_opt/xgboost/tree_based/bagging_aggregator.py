@@ -30,12 +30,12 @@ class XGBBaggingAggregator(Aggregator):
         Bagging aggregation simply add the new trees to existing global model.
         """
         super().__init__()
-        self.logger.debug(f"expected data kind: {DataKind.XGB_MODEL}")
+        self.logger.debug(f"expected data kind: {DataKind.XGB_MODEL} or {DataKind.WEIGHTS}")
         self.history = []
         self.local_models = []
         self.local_models_as_dict = []
         self.global_model = None
-        self.expected_data_kind = DataKind.XGB_MODEL
+        self.expected_data_kind = [DataKind.XGB_MODEL, DataKind.WEIGHTS]
         self.num_trees = 0
 
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
@@ -63,9 +63,11 @@ class XGBBaggingAggregator(Aggregator):
             self.log_warning(fl_ctx, f"Contributor {contributor_name} returned rc: {rc}. Disregarding contribution.")
             return False
 
-        if dxo.data_kind != self.expected_data_kind:
+        if dxo.data_kind not in self.expected_data_kind:
             self.log_error(fl_ctx, "expected {} but got {}".format(self.expected_data_kind, dxo.data_kind))
             return False
+        else:
+            self.expected_data_kind = dxo.data_kind
 
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         self.log_debug(fl_ctx, f"current_round: {current_round}")
