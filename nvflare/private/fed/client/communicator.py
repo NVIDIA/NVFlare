@@ -152,15 +152,15 @@ class Communicator:
 
         return token, ssid
 
-    def pull_task(self, servers, project_name, token, ssid, fl_ctx: FLContext):
+    def pull_task(self, project_name, token, ssid, fl_ctx: FLContext, timeout=None):
         """Get a task from server.
 
         Args:
-            servers: FL servers
             project_name: FL study project name
             token: client token
             ssid: service session ID
             fl_ctx: FLContext
+            timeout: how long to wait for response from server
 
         Returns:
             A CurrentTask message from server
@@ -182,13 +182,16 @@ class Communicator:
         )
         job_id = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
 
+        if not timeout:
+            timeout = self.timeout
+
         fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
         task = self.cell.send_request(
             target=fqcn,
             channel=CellChannel.SERVER_COMMAND,
             topic=ServerCommandNames.GET_TASK,
             request=task_message,
-            timeout=self.timeout,
+            timeout=timeout,
             optional=True,
         )
         end_time = time.time()
@@ -214,12 +217,11 @@ class Communicator:
         return task
 
     def submit_update(
-        self, servers, project_name, token, ssid, fl_ctx: FLContext, client_name, shareable, execute_task_name
+        self, project_name, token, ssid, fl_ctx: FLContext, client_name, shareable, execute_task_name, timeout=None
     ):
         """Submit the task execution result back to the server.
 
         Args:
-            servers: FL servers
             project_name: server project name
             token: client token
             ssid: service session ID
@@ -227,6 +229,7 @@ class Communicator:
             client_name: client name
             shareable: execution task result shareable
             execute_task_name: execution task name
+            timeout: how long to wait for response from server
 
         Returns:
             ReturnCode
@@ -255,13 +258,16 @@ class Communicator:
         )
         job_id = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
 
+        if not timeout:
+            timeout = self.timeout
+
         fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
         result = self.cell.send_request(
             target=fqcn,
             channel=CellChannel.SERVER_COMMAND,
             topic=ServerCommandNames.SUBMIT_UPDATE,
             request=task_message,
-            timeout=self.timeout,
+            timeout=timeout,
             optional=optional,
         )
         end_time = time.time()
