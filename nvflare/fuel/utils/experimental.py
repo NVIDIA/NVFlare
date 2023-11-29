@@ -19,30 +19,30 @@ import warnings
 
 def experimental(reason):
     """
-    This is a decorator which can be used to mark functions
+    This is a decorator which can be used to mark classes
     as experimental. It will result in a warning being emitted
-    when the function is used.
+    when the class is used.
     """
 
     def decorator(func):
-        fmt = "Call to experimental {kind} {name}{reason}."
+        fmt = "Use of experimental class {name}{reason}."
 
-        @functools.wraps(func)
-        def new_func(*args, **kwargs):
-            warnings.simplefilter("always", Warning)
-            warnings.warn(
-                fmt.format(
-                    kind="class" if inspect.isclass(func) else "function",
-                    name=func.__name__,
-                    reason=f" ({reason})" if reason else "",
-                ),
-                category=Warning,
-                stacklevel=2,
-            )
-            warnings.simplefilter("default", Warning)
-            return func(*args, **kwargs)
+        class DeprecatedClass(cls):
+            __name__ = cls.__name__
+            def __new__(cls, *args, **kwargs):
+                warnings.simplefilter("always", DeprecationWarning)
+                warnings.warn(
+                    fmt.format(
+                        name=cls.__name__,
+                        reason=f" ({reason})" if reason else "",
+                    ),
+                    category=DeprecationWarning,
+                    stacklevel=2,
+                )
+                warnings.simplefilter("default", DeprecationWarning)
+                return super(DeprecatedClass, cls).__new__(cls)
 
-        return new_func
+        return DeprecatedClass
 
     if inspect.isclass(reason) or inspect.isfunction(reason):
         # The @experimental is used without any 'reason'.
