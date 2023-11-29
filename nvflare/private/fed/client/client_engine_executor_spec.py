@@ -46,11 +46,11 @@ class ClientEngineExecutorSpec(ClientEngineSpec, EngineSpec, ABC):
     """The ClientEngineExecutorSpec defines the ClientEngine APIs running in the child process."""
 
     @abstractmethod
-    def get_task_assignment(self, fl_ctx: FLContext) -> TaskAssignment:
+    def get_task_assignment(self, fl_ctx: FLContext, timeout=None) -> TaskAssignment:
         pass
 
     @abstractmethod
-    def send_task_result(self, result: Shareable, fl_ctx: FLContext) -> bool:
+    def send_task_result(self, result: Shareable, fl_ctx: FLContext, timeout=None) -> bool:
         pass
 
     @abstractmethod
