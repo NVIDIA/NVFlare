@@ -29,7 +29,7 @@ from .constants import NPConstants
 class NPModelLocator(ModelLocator):
     SERVER_MODEL_NAME = "server"
 
-    def __init__(self, model_names: Union[str, Dict[str, str]], model_dir="models"):
+    def __init__(self, model_dir="models", model_names: Union[str, Dict[str, str]] = "server.npy"):
         """The ModelLocator's job is to find the models to be included for cross site evaluation
         located on server. This NPModelLocator finds and extracts "server" model that is saved during training.
 
