@@ -100,6 +100,7 @@ class ClientTaskWorker(FLComponent):
                     if client_runner.run_abort_signal.triggered:
                         stop_run = True
                         self.logger.info("End the Simulator run.")
+                        client_runner.end_run_events_sequence()
                         break
                     else:
                         if task_processed:
