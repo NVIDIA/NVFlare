@@ -1,9 +1,9 @@
 # Job Template Information Card
 
-## sag_tf
-    name = "sag_tf"
-    description = "scikit Learn linear model" 
+## sklearn_linear
+    name = "sklearn_linear"
+    description = "scikit-learn linear model" 
     controller_type = "server"
     contributor = "NVIDIA"
     init_publish_date = "2023-11-17"
-    last_updated_date = "2023-11-17" # yyyy-mm-dd
+    last_updated_date = "2023-12-01" # yyyy-mm-dd

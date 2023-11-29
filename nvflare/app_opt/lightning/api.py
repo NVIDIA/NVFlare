@@ -19,7 +19,17 @@ from pytorch_lightning.callbacks import Callback
 from torch import Tensor
 
 from nvflare.app_common.abstract.fl_model import FLModel, MetaKey
-from nvflare.client.api import _get_model_registry, clear, get_config, init, receive, send
+from nvflare.client.api import (
+    _get_model_registry,
+    clear,
+    get_config,
+    init,
+    is_evaluate,
+    is_submit_model,
+    is_train,
+    receive,
+    send,
+)
 from nvflare.client.config import ConfigKey
 
 from .callbacks import RestoreState
@@ -54,6 +64,10 @@ class FLCallback(Callback):
         self.total_local_steps = 0
         self.max_epochs_per_round = None
         self.max_steps_per_round = None
+        self.rank = rank
+        self._is_training = False
+        self._is_evaluation = False
+        self._is_submit_model = False
 
     def reset_state(self, trainer):
         """Resets the state.
@@ -98,8 +112,16 @@ class FLCallback(Callback):
             fl_meta = {}
         if MetaKey.NUM_STEPS_CURRENT_ROUND not in fl_meta:
             fl_meta[MetaKey.NUM_STEPS_CURRENT_ROUND] = trainer.estimated_stepping_batches
-        self._send_model(FLModel(params=pl_module.cpu().state_dict(), meta=fl_meta))
-        self.reset_state(trainer)
+        if self._is_training:
+            model = FLModel(params=pl_module.cpu().state_dict(), meta=fl_meta)
+            if self.train_with_evaluation:
+                if self.metrics is None:
+                    raise RuntimeError(
+                        "train with evaluation missing training metrics, please remember to call validate."
+                    )
+                model.metrics = self.metrics
+            self._send_model(model)
+            self.reset_state(trainer)
 
     def on_validation_start(self, trainer, pl_module):
         # receive the global model and update the local model with global model
@@ -114,29 +136,44 @@ class FLCallback(Callback):
     def on_validation_end(self, trainer, pl_module):
         if pl_module and self.metrics is None:
             self.metrics = _extract_metrics(trainer.callback_metrics)
-            self._send_model(FLModel(metrics=self.metrics))
+            if self._is_evaluation:
+                self._send_model(FLModel(metrics=self.metrics))
+                self.reset_state(trainer)
 
     def _receive_and_update_model(self, trainer, pl_module):
         model = self._receive_model(trainer)
-        if model and model.params:
-            pl_module.load_state_dict(model.params)
-        if model and model.current_round is not None:
-            self.current_round = model.current_round
+        if model:
+            if model.params:
+                pl_module.load_state_dict(model.params)
+            if model.current_round is not None:
+                self.current_round = model.current_round
 
     def _receive_model(self, trainer) -> FLModel:
         """Receives model from NVFlare."""
-        model = receive()
         registry = _get_model_registry()
+        model = None
+        _is_training = False
+        _is_evaluation = False
+        _is_submit_model = False
+        if self.rank == 0:
+            model = receive()
+            _is_training = is_train()
+            _is_evaluation = is_evaluate()
+            _is_submit_model = is_submit_model()
+
         model = trainer.strategy.broadcast(model, src=0)
         task_name = trainer.strategy.broadcast(registry.task_name, src=0)
         registry.set_task_name(task_name)
+        self._is_training = trainer.strategy.broadcast(_is_training, src=0)
+        self._is_evaluation = trainer.strategy.broadcast(_is_evaluation, src=0)
+        self._is_submit_model = trainer.strategy.broadcast(_is_submit_model, src=0)
         return model
 
     def _send_model(self, output_model: FLModel):
         try:
             send(output_model, clear_registry=False)
         except Exception as e:
-            raise RuntimeError("failed to send FL model", e)
+            raise RuntimeError(f"failed to send FL model: {e}")
 
 
 def _extract_metrics(metrics: Dict[str, Tensor]):

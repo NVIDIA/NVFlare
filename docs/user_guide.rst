@@ -20,6 +20,7 @@ which are explained in more detail in their own sections linked below.
 
    user_guide/nvflare_cli
    user_guide/client_api
+   user_guide/configuration_files
    user_guide/dashboard_api
    user_guide/dashboard_ui
    user_guide/nvflare_security

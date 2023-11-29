@@ -3,8 +3,8 @@
 ####################
 Example Applications
 ####################
-NVIDIA FLARE has several tutorials and examples to help you get started with federated learning and to explore certain features in
-:github_nvflare_link:`the examples directory <examples>`.
+NVIDIA FLARE has several tutorials and examples to help you get started with federated learning and to explore certain features in the
+:github_nvflare_link:`examples directory <examples>`.
 
 .. toctree::
    :maxdepth: -1
@@ -23,42 +23,45 @@ NVIDIA FLARE has several tutorials and examples to help you get started with fed
 
 The following tutorials and quickstart guides walk you through some of these examples:
 
-  1. **Hello World** introduction to NVFlare.
+  1. **Step-By-Step Example Series**
 
-     1.1. Deep Learning to Federated Learning
-          * :github_nvflare_link:`Deep Learning to Federated Learning (GitHub) <examples/hello-world/ml-to-fl>` - Example for converting Deep Learning (DL) to Federated Learning (FL).
-
-     1.2. Step-by-Step Examples
-          * :github_nvflare_link:`Step-by-Step Examples (GitHub) <examples/hello-world/step-by-step>` - Step-by-step examples for running a federated learning project with NVFlare.
+    * :github_nvflare_link:`Step-by-Step Examples (GitHub) <examples/hello-world/step-by-step>` - Step-by-step examples series with CIFAR-10 and HIGGS to showcase to showcase different FLARE features, workflows, and APIs.
 
   2. **Hello World Examples** which can be run from the :github_nvflare_link:`hello_world notebook <examples/hello-world/hello_world.ipynb>`.
 
-     2.1. Workflows
+     2.1. Deep Learning to Federated Learning
+          * :github_nvflare_link:`Deep Learning to Federated Learning (GitHub) <examples/hello-world/ml-to-fl>` - Example for converting Deep Learning (DL) to Federated Learning (FL) using the Client API.
+
+     2.2. Workflows
           * :ref:`Hello Scatter and Gather <hello_scatter_and_gather>` - Example using the Scatter And Gather (SAG) workflow with a Numpy trainer
           * :ref:`Hello Cross-Site Validation <hello_cross_val>` - Example using the Cross Site Model Eval workflow with a Numpy trainer
           * :github_nvflare_link:`Hello Cyclic Weight Transfer (GitHub) <examples/hello-world/hello-cyclic>` - Example using the CyclicController workflow to implement `Cyclic Weight Transfer <https://pubmed.ncbi.nlm.nih.gov/29617797/>`_ with TensorFlow as the deep learning training framework
+          * :github_nvflare_link:`Swarm Learning <examples/advanced/swarm_learning>` - Example using Swarm Learning and Client-Controlled Cross-site Evaluation workflows.
+          * :github_nvflare_link:`Client-Controlled Cyclic Weight Transfer <examples/hello-world/step-by-step/cifar10/cyclic_ccwf>` - Example using Client-Controlled Cyclic workflow using Client API.
 
-     2.2. Deep Learning
+     2.3. Deep Learning
           * :ref:`Hello PyTorch <hello_pt>` - Example image classifier using FedAvg and PyTorch as the deep learning training framework
           * :ref:`Hello TensorFlow <hello_tf2>` - Example image classifier using FedAvg and TensorFlow as the deep learning training frameworks
 
-  3. **Tutorial notebooks**
+  3. **Tutorial Notebooks**
 
     * :github_nvflare_link:`Intro to the FL Simulator <examples/tutorials/flare_simulator.ipynb>` - Shows how to use the :ref:`fl_simulator` to run a local simulation of an NVFLARE deployment to test and debug an application without provisioning a real FL project.
     * :github_nvflare_link:`Hello FLARE API <examples/tutorials/flare_api.ipynb>` - Goes through the different commands of the :ref:`flare_api` to show the syntax and usage of each.
     * :github_nvflare_link:`NVFLARE in POC Mode <examples/tutorials/setup_poc.ipynb>` - Shows how to use :ref:`POC mode <poc_command>` to test the features of a full FLARE deployment on a single machine.
+    * :github_nvflare_link:`Job CLI Tutorial <examples/tutorials/job_cli.ipynb>` - Walks through the different commands of the Job CLI and showcases syntax and example usages.
 
-  4. **FL algorithms**
+  4. **FL Algorithms**
 
     * :github_nvflare_link:`Federated Learning with CIFAR-10 (GitHub) <examples/advanced/cifar10>` - Includes examples of using FedAvg, FedProx, FedOpt, SCAFFOLD, homomorphic encryption, and streaming of TensorBoard metrics to the server during training
-    * :ref:`Federated XGBoost <federated_xgboost>` - Includes examples of histogram-based and tree-based algorithms. Tree-based algorithms also includes bagging and cyclic approaches
 
   5. **Traditional ML examples**
 
     * :github_nvflare_link:`Federated Linear Model with Scikit-learn (GitHub) <examples/advanced/sklearn-linear>` - For an example of using NVIDIA FLARE with `scikit-learn <https://scikit-learn.org/>`_, a widely used open-source machine learning library that supports supervised and unsupervised learning.
     * :github_nvflare_link:`Federated K-Means Clustering with Scikit-learn (GitHub) <examples/advanced/sklearn-kmeans>` - NVIDIA FLARE with `scikit-learn <https://scikit-learn.org/>`_ and k-Means.
     * :github_nvflare_link:`Federated SVM with Scikit-learn (GitHub) <examples/advanced/sklearn-svm>` - NVIDIA FLARE with `scikit-learn <https://scikit-learn.org/>`_ and `SVM <https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html>`_.
+    * :ref:`Federated XGBoost <federated_xgboost>` - Includes examples of histogram-based and tree-based algorithms. Tree-based algorithms also includes bagging and cyclic approaches
     * :github_nvflare_link:`Federated Learning for Random Forest based on XGBoost (GitHub) <examples/advanced/random_forest>` - Example of using NVIDIA FLARE with `scikit-learn <https://scikit-learn.org/>`_ and `Random Forest <https://xgboost.readthedocs.io/en/stable/tutorials/rf.html>`_.
+    * :github_nvflare_link:`Federated Vertical XGBoost (GitHub) <examples/advanced/vertical_xgboost>` - Example using Private Set Intersection and XGBoost on vertically split HIGGS data.
 
   6. **Medical Image Analysis**
 
@@ -76,17 +79,39 @@ The following tutorials and quickstart guides walk you through some of these exa
   8. **Federated Site Policies**
 
     * :github_nvflare_link:`Federated Policies (Github) <examples/advanced/federated-policies/README.rst>` - Discuss the federated site policies for authorization, resource and data privacy management
+    * :github_nvflare_link:`Custom Authentication (Github) <examples/advanced/custom_authentication/README.rst>` - Show the custom authentication policy and secure mode.
+    * :github_nvflare_link:`Job-Level Authorization (Github) <examples/advanced/job-level-authorization/README.md>` - Show the job-level authorization policy and secure mode.
 
-  9. **Experiment tracking**
+  9. **Experiment Tracking**
 
     * :ref:`FL Experiment Tracking with TensorBoard Streaming <tensorboard_streaming>` - Example building on Hello PyTorch with TensorBoard streaming from clients to server
     * :ref:`FL Experiment Tracking with MLflow <experiment_tracking_mlflow>` - Example integrating Hello PyTorch with MLflow with streaming from clients to server
+    * :github_nvflare_link:`FL Experiment Tracking with Weights and Biases <examples/advanced/experiment-tracking/wandb>` - Example integrating Hello PyTorch with Weights and Biases streaming capability from clients to server.
 
   10. **NLP**
 
     * :github_nvflare_link:`NLP-NER (Github) <examples/advanced/nlp-ner/README.md>` - Illustrates both `BERT <https://github.com/google-research/bert>`_ and `GPT-2 <https://github.com/openai/gpt-2>`_ models from `Hugging Face <https://huggingface.co/>`_ (`BERT-base-uncased <https://huggingface.co/bert-base-uncased>`_, `GPT-2 <https://huggingface.co/gpt2>`_) on a Named Entity Recognition (NER) task using the `NCBI disease dataset <https://pubmed.ncbi.nlm.nih.gov/24393765/>`_.
 
-For the complete collection of example applications, see https://github.com/NVIDIA/NVFlare/tree/main/examples.
+  11. **FL Hierarchical Unification Bridge (HUB)**
+
+    * :github_nvflare_link:`FL HUB <examples/advanced/fl_hub>` - Example for FL HUB allowing hierarchical interaction between several levels of FLARE FL systems.
+
+  12. **Federated Large Language Model (LLM)**
+
+    * :github_nvflare_link:`Parameter Efficient Fine Turning <integration/nemo/examples/peft>` - Example utilizing NeMo's PEFT methods to adapt a LLM to a downstream task.
+    * :github_nvflare_link:`Prompt-Tuning Example <integration/nemo/examples/prompt_learning>` - Example for using FLARE with NeMo for prompt learning.
+    * :github_nvflare_link:`Supervised Fine Tuning (SFT) <integration/nemo/examples/supervised_fine_tuning>` - Example to fine-tune all parameters of a LLM on supervised data.
+
+  13. **Graph Neural Network (GNN) **
+
+    * :github_nvflare_link:`Protein Classification <examples/advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning>` - Example using GNNs for Protein Classification using `PPI <http://snap.stanford.edu/graphsage/#code>`_ dataset using GraphSAGE.
+    * :github_nvflare_link:`Financial Transaction Classification <examples/advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning>` - Example using GNNs for Financial Transaction Classification with `Elliptic++ <https://github.com/git-disl/EllipticPlusPlus>`_ dataset using GraphSAGE.
+
+  14. **Financial Applications**
+
+    * :github_nvflare_link:`Financial Application with Federated XGBoost Methods <examples/advanced/finance>` Example using XGBoost in various ways to train a federated model to perform fraud detection with a finance dataset.
+
+For the complete collection of example applications, see the :github_nvflare_link:`examples directory <examples>`.
 
 Setting up a virtual environment for examples and notebooks
 ===========================================================
@@ -211,7 +236,8 @@ for an example with ditto in addition to FedProx, FedAvg, and centralized traini
 Federated XGBoost
 -----------------
 
-* :github_nvflare_link:`Federated XGBoost (GitHub) <examples/xgboost>` - Includes examples of histogram-based and tree-based algorithms. Tree-based algorithms also includes bagging and cyclic approaches
+* :github_nvflare_link:`Federated Horizontal XGBoost (GitHub) <examples/advanced/xgboost>` - Includes examples of histogram-based and tree-based algorithms. Tree-based algorithms also includes bagging and cyclic approaches
+* :github_nvflare_link:`Federated Vertical XGBoost (GitHub) <examples/advanced/vertical_xgboost>` - Example using Private Set Intersection and XGBoost on vertically split HIGGS data.
 
 Federated Analytics
 -------------------

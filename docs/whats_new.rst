@@ -1,5 +1,9 @@
 .. _whats_new:
 
+##########
+What's New
+##########
+
 .. include:: release_notes/flare_240.rst
 
 **************************

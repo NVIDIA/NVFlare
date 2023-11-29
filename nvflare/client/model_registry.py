@@ -15,9 +15,9 @@
 from typing import Optional
 
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
-from nvflare.app_common.data_exchange.data_exchanger import DataExchanger
 
 from .config import ClientConfig
+from .flare_agent import FlareAgent
 from .task_registry import TaskRegistry
 from .utils import DIFF_FUNCS
 
@@ -34,14 +34,12 @@ class ModelRegistry(TaskRegistry):
 
     """
 
-    def __init__(
-        self, config: ClientConfig, rank: Optional[str] = None, data_exchanger: Optional[DataExchanger] = None
-    ):
-        super().__init__(config, rank, data_exchanger)
+    def __init__(self, config: ClientConfig, rank: Optional[str] = None, flare_agent: Optional[FlareAgent] = None):
+        super().__init__(config, rank, flare_agent)
         self.metrics = None
 
     def get_model(self, timeout: Optional[float] = None) -> Optional[FLModel]:
-        task = self.get_task()
+        task = self.get_task(timeout)
         if task is not None and task.data is not None:
             if not isinstance(task.data, FLModel):
                 raise RuntimeError("task.data is not FLModel.")
@@ -49,7 +47,7 @@ class ModelRegistry(TaskRegistry):
         return None
 
     def submit_model(self, model: FLModel) -> None:
-        if not self.data_exchanger:
+        if not self.flare_agent:
             return None
         if self.config.get_transfer_type() == "DIFF":
             exchange_format = self.config.get_exchange_format()
@@ -71,7 +69,7 @@ class ModelRegistry(TaskRegistry):
                         raise RuntimeError(f"params diff function failed: {e}")
             elif model.metrics is None:
                 raise RuntimeError("the model to send does not have either params or metrics")
-        self.submit_task(model, {}, "ok")
+        self.submit_task(model)
 
     def clear(self):
         super().clear()

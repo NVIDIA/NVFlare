@@ -16,7 +16,7 @@ from typing import Dict
 
 import torch
 
-from nvflare.app_common.utils.fl_model_utils import ParamsConverter
+from nvflare.app_common.data_exchange.params_converter import ParamsConverter
 
 
 class NumpyToPTParamsConverter(ParamsConverter):

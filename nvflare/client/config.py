@@ -33,11 +33,9 @@ class ConfigKey:
     TRAIN_TASK_NAME = "train_task_name"
     EVAL_TASK_NAME = "eval_task_name"
     SUBMIT_MODEL_TASK_NAME = "submit_model_task_name"
-    PIPE_NAME = "pipe_name"
+    PIPE_CHANNEL_NAME = "pipe_name"
     PIPE_CLASS = "pipe_class"
     PIPE_ARGS = "pipe_args"
-    LAUNCH_ONCE = "launch_once"
-    TOTAL_ROUNDS = "total_rounds"
     SITE_NAME = "site_name"
     JOB_ID = "job_id"
 
@@ -57,8 +55,6 @@ class ClientConfig:
         if config is None:
             config = {}
         self.config = config
-        if ConfigKey.EXCHANGE_FORMAT in self.config:
-            self.config[ConfigKey.EXCHANGE_FORMAT] = ExchangeFormat(self.config[ConfigKey.EXCHANGE_FORMAT])
 
     def get_config(self):
         return self.config
@@ -69,8 +65,8 @@ class ClientConfig:
             for k in [ConfigKey.TRAIN_TASK_NAME, ConfigKey.EVAL_TASK_NAME, ConfigKey.SUBMIT_MODEL_TASK_NAME]
         ]
 
-    def get_pipe_name(self) -> str:
-        return self.config[ConfigKey.PIPE_NAME]
+    def get_pipe_channel_name(self) -> str:
+        return self.config[ConfigKey.PIPE_CHANNEL_NAME]
 
     def get_pipe_args(self) -> dict:
         return self.config[ConfigKey.PIPE_ARGS]

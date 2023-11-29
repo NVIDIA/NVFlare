@@ -158,7 +158,7 @@ class TestConfiger:
             [
                 "config_fed_client.conf",
                 "executors[0].executor.args.training-",
-                "executors[0].executor.args.evaluation=true",
+                "executors[0].executor.args.train_with_evaluation=true",
             ]
         ]
         args = _create_test_args(
@@ -173,8 +173,8 @@ class TestConfiger:
         assert config.get("executors")[0].get("executor.args.training", None) is None
         assert key_indices.get("training", None) is None
 
-        assert config.get("executors")[0].get("executor.args.evaluation", None) == "true"
-        assert key_indices.get("evaluation", None) is not None
+        assert config.get("executors")[0].get("executor.args.train_with_evaluation", None) == "true"
+        assert key_indices.get("train_with_evaluation", None) is not None
 
     def test_split_key(self):
         assert split_array_key("components[1].args.model.path") == ("components", 1, "args.model.path")

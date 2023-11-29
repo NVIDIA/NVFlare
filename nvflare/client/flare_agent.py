@@ -23,10 +23,8 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_constant import ReturnCode as RC
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.decomposers import flare_decomposers
-from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.decomposers import common_decomposers
-from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.fuel.utils.constants import PipeChannelName
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 from nvflare.fuel.utils.pipe.pipe import Message, Mode, Pipe
@@ -75,6 +73,7 @@ class FlareAgent:
         metric_pipe=None,
         task_channel_name=PipeChannelName.TASK,
         metric_channel_name=PipeChannelName.METRIC,
+        close_pipe: bool = True,
     ):
         """Constructor of Flare Agent. The agent is responsible for communicating with the Flare Client Job cell (CJ)
         to get task and to submit task result.
@@ -115,6 +114,7 @@ class FlareAgent:
         self.current_task = None
         self.task_lock = threading.Lock()
         self.asked_to_stop = False
+        self._close_pipe = close_pipe
 
     def start(self):
         """Start the agent. This method must be called to enable CJ/Agent communication.
@@ -136,7 +136,7 @@ class FlareAgent:
     def _status_cb(self, msg: Message, pipe_handler: PipeHandler, channel):
         self.logger.info(f"{channel} pipe status changed to {msg.topic}: {msg.data}")
         self.asked_to_stop = True
-        pipe_handler.stop()
+        pipe_handler.stop(self._close_pipe)
 
     def stop(self):
         """Stop the agent. After this is called, there will be no more communications between CJ and agent.
@@ -144,10 +144,11 @@ class FlareAgent:
         Returns: None
 
         """
+        self.logger.info("Calling flare agent stop")
         self.asked_to_stop = True
-        self.pipe_handler.stop()
+        self.pipe_handler.stop(self._close_pipe)
         if self.metric_pipe_handler:
-            self.metric_pipe_handler.stop()
+            self.metric_pipe_handler.stop(self._close_pipe)
 
     def shareable_to_task_data(self, shareable: Shareable):
         """Convert the Shareable object received from the TaskExchanger to an app-friendly format.
@@ -340,19 +341,3 @@ class FlareAgentWithCellPipe(FlareAgent):
             submit_result_timeout=submit_result_timeout,
             metric_pipe=metric_pipe,
         )
-
-
-class FlareAgentWithFLModel(FlareAgent):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self._from_nvflare_converter = None
-        self._to_nvflare_converter = None
-
-    def shareable_to_task_data(self, shareable: Shareable) -> FLModel:
-        model = FLModelUtils.from_shareable(shareable, self._from_nvflare_converter)
-        return model
-
-    def task_result_to_shareable(self, result: FLModel, rc) -> Shareable:
-        shareable = FLModelUtils.to_shareable(result, self._to_nvflare_converter)
-        shareable.set_return_code(rc)
-        return shareable

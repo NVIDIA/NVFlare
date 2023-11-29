@@ -19,7 +19,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import SGDClassifier
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.metrics import classification_report, roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
@@ -55,13 +55,15 @@ def load_features(feature_data_path: str) -> List:
         raise Exception(f"Load header for path'{feature_data_path} failed! {e}")
 
 
-def load_data(data_path: str, data_features: List, test_size: float = 0.2, skip_rows=None) -> Dict[str, pd.DataFrame]:
+def load_data(
+    data_path: str, data_features: List, random_state: int, test_size: float, skip_rows=None
+) -> Dict[str, pd.DataFrame]:
     try:
         df: pd.DataFrame = pd.read_csv(
             data_path, names=data_features, sep=r"\s*,\s*", engine="python", na_values="?", skiprows=skip_rows
         )
 
-        train, test = train_test_split(df, test_size=test_size)
+        train, test = train_test_split(df, test_size=test_size, random_state=random_state)
 
         return {"train": train, "test": test}
 
@@ -96,7 +98,9 @@ def main():
     n_features = len(features) - 1  # remove label
 
     data_path = f"{data_root_dir}/{site_name}.csv"
-    data = load_data(data_path=data_path, data_features=features, test_size=test_size, skip_rows=skip_rows)
+    data = load_data(
+        data_path=data_path, data_features=features, random_state=random_state, test_size=test_size, skip_rows=skip_rows
+    )
 
     data = to_dataset_tuple(data)
     dataset = transform_data(data)
@@ -139,25 +143,22 @@ def main():
                 model.intercept_ = global_params["intercept"]
 
         # (6) evaluate global model first.
-        global_accuracy, global_report = evaluate_model(x_test, model, y_test)
+        global_auc, global_report = evaluate_model(x_test, model, y_test)
         # Print the results
-        if curr_round % 10 == 0:
-            print(f"global model Accuracy: {global_accuracy:.2f}")
-            print("global model Classification Report:\n", global_report)
+        print(f"{site_name}: global model AUC: {global_auc:.4f}")
+        # print("{site_name}: global model Classification Report:\n", global_report)
 
         # Train the model on the training set
         model.fit(x_train, y_train)
-
-        accuracy, report = evaluate_model(x_test, model, y_test)
+        local_auc, local_report = evaluate_model(x_test, model, y_test)
 
         # Print the results
-        if curr_round % 10 == 0:
-            print(f"local model Accuracy: {accuracy:.2f}")
-            print("local model Classification Report:\n", report)
+        print(f"{site_name}: local model AUC: {local_auc:.4f}")
+        # print("{site_name}: local model Classification Report:\n", local_report)
 
         # (7) construct trained FL model
         params = {"coef": model.coef_, "intercept": model.intercept_}
-        metrics = {"accuracy": global_accuracy}
+        metrics = {"accuracy": global_auc}
         output_model = flare.FLModel(params=params, metrics=metrics)
 
         # (8) send model back to NVFlare
@@ -169,16 +170,16 @@ def evaluate_model(x_test, model, y_test):
     y_pred = model.predict(x_test)
 
     # Evaluate the model
-    accuracy = accuracy_score(y_test, y_pred)
+    auc = roc_auc_score(y_test, y_pred)
     report = classification_report(y_test, y_pred)
-    return accuracy, report
+    return auc, report
 
 
 def define_args_parser():
     parser = argparse.ArgumentParser(description="scikit learn linear model with SGD")
     parser.add_argument("--data_root_dir", type=str, help="root directory path to csv data file")
     parser.add_argument("--random_state", type=int, default=0, help="random state")
-    parser.add_argument("--test_size", type=float, default=1.0, help="random state")
+    parser.add_argument("--test_size", type=float, default=0.2, help="test ratio, default to 20%")
     parser.add_argument(
         "--skip_rows",
         type=str,

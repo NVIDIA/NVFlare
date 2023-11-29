@@ -14,7 +14,7 @@
 
 from typing import Any
 
-from nvflare.app_common.utils.fl_model_utils import ParamsConverter
+from nvflare.app_common.data_exchange.params_converter import ParamsConverter
 from nvflare.app_opt.tf.utils import flat_layer_weights_dict, unflat_layer_weights_dict
 
 
