@@ -120,7 +120,6 @@ class LauncherExecutor(TaskExchanger):
         self._to_nvflare_converter_id = to_nvflare_converter_id
         self._to_nvflare_converter: Optional[ParamsConverter] = None
 
-        self._error_happened = threading.Event()
         self._monitor_launcher_thread = None
         self._abort_signal = None
 
@@ -138,9 +137,8 @@ class LauncherExecutor(TaskExchanger):
             if self.launcher is None:
                 raise RuntimeError("Launcher is None.")
             self._job_end = True
-            self._error_happened.clear()
             self.launcher.finalize(fl_ctx)
-            self.log_info(fl_ctx, "END_RUN event received - telling external to stop")
+            self.log_info(fl_ctx, f"{EventType.END_RUN} event received - telling external to stop")
             super().handle_event(event_type, fl_ctx)
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
