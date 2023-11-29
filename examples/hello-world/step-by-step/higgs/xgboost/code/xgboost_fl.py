@@ -125,6 +125,7 @@ def main():
     }
 
     global_model_as_dict = None
+    auc = 0.5
     while flare.is_running():
         # (3) receives FLModel from NVFlare
         input_model = flare.receive()
