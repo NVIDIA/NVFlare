@@ -1,8 +1,8 @@
 # Job Template Information Card
 
 ## xgboost_bagging
-    name = "xgboost_bagging"
-    description = "xgboost horizontal bagging model" 
+    name = "xgboost_tree"
+    description = "xgboost horizontal tree-based collaboration model" 
     controller_type = "server"
     contributor = "NVIDIA"
     init_publish_date = "2023-11-28"
