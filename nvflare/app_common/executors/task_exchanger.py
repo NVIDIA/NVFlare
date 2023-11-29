@@ -235,7 +235,7 @@ class TaskExchanger(Executor):
         if self.peer_read_timeout and not has_been_read:
             self.log_warning(
                 fl_ctx,
-                f"3rd party does not get END msg in {self.peer_read_timeout} secs!",
+                f"3rd party does not read END msg in {self.peer_read_timeout} secs!",
             )
             return False
         return True

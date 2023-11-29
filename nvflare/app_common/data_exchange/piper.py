@@ -46,6 +46,8 @@ class Piper:
     @classmethod
     def get_external_pipe_class(cls, pipe_id: str, fl_ctx: FLContext) -> str:
         pipe = fl_ctx.get_engine().get_component(pipe_id)
+        if pipe is None:
+            raise RuntimeError(f"Pipe ({pipe_id}) can't be found in components.")
         pipe_class = type(pipe)
         for pipe_type, info in cls.PIPE_CLASSES.items():
             if issubclass(pipe_class, pipe_type):
@@ -55,6 +57,8 @@ class Piper:
     @classmethod
     def get_external_pipe_args(cls, pipe_id: str, fl_ctx: FLContext) -> dict:
         pipe = fl_ctx.get_engine().get_component(pipe_id)
+        if pipe is None:
+            raise RuntimeError(f"Pipe ({pipe_id}) can't be found in components.")
         pipe_class = type(pipe)
         for pipe_type, info in cls.PIPE_CLASSES.items():
             if issubclass(pipe_class, pipe_type):

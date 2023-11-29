@@ -24,7 +24,8 @@ from nvflare.fuel.utils.pipe.file_pipe import FilePipe
 
 from .config import ClientConfig, ConfigKey, from_file
 from .constants import CONFIG_DATA_EXCHANGE
-from .flare_agent import FlareAgentException, FlareAgentWithFLModel
+from .flare_agent import FlareAgentException
+from .flare_agent_with_fl_model import FlareAgentWithFLModel
 from .model_registry import ModelRegistry
 
 PROCESS_MODEL_REGISTRY = None

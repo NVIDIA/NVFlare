@@ -23,10 +23,8 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_constant import ReturnCode as RC
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.decomposers import flare_decomposers
-from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.decomposers import common_decomposers
-from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.fuel.utils.constants import PipeChannelName
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 from nvflare.fuel.utils.pipe.pipe import Message, Mode, Pipe
@@ -343,14 +341,3 @@ class FlareAgentWithCellPipe(FlareAgent):
             submit_result_timeout=submit_result_timeout,
             metric_pipe=metric_pipe,
         )
-
-
-class FlareAgentWithFLModel(FlareAgent):
-    def shareable_to_task_data(self, shareable: Shareable) -> FLModel:
-        model = FLModelUtils.from_shareable(shareable)
-        return model
-
-    def task_result_to_shareable(self, result: FLModel, rc) -> Shareable:
-        shareable = FLModelUtils.to_shareable(result)
-        shareable.set_return_code(rc)
-        return shareable
