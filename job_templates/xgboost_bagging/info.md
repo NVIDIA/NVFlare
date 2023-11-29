@@ -1,6 +1,6 @@
 # Job Template Information Card
 
-## sag_tf
+## xgboost_bagging
     name = "xgboost_bagging"
     description = "xgboost horizontal bagging model" 
     controller_type = "server"

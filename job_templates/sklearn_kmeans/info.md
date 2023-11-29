@@ -1,6 +1,6 @@
 # Job Template Information Card
 
-## sag_tf
+## sklearn_kmeans
     name = "sklearn_kmeans"
     description = "scikit-learn KMeans model" 
     controller_type = "server"

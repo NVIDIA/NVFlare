@@ -1,6 +1,6 @@
 # Job Template Information Card
 
-## sag_tf
+## sklearn_svm
     name = "sklearn_svm"
     description = "scikit-learn SVM model" 
     controller_type = "server"

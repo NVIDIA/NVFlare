@@ -1,6 +1,6 @@
 # Job Template Information Card
 
-## sag_tf
+## sklearn_linear
     name = "sklearn_linear"
     description = "scikit-learn linear model" 
     controller_type = "server"
