@@ -35,7 +35,8 @@ class NPModelLocator(ModelLocator):
 
         Args:
             model_dir (str): Directory to look for models in. Defaults to "model"
-            model_name (dict). Name of the model. Defaults to "server.npy"
+            model_name (Union[str, Dict[str, str]]). Name of the model. Defaults to "server.npy", or a list of
+                model names and locations
         """
         super().__init__()
 
@@ -44,8 +45,10 @@ class NPModelLocator(ModelLocator):
             self.model_file_name = {NPModelLocator.SERVER_MODEL_NAME: "server.npy"}
         elif isinstance(model_name, str):
             self.model_file_name = {NPModelLocator.SERVER_MODEL_NAME: model_name}
-        else:
+        elif isinstance(model_name, dict):
             self.model_file_name = model_name
+        else:
+            raise ValueError(f"model_name must be a str, or a Dict[str, str]. But got: {type(model_name)}")
 
     def get_model_names(self, fl_ctx: FLContext) -> List[str]:
         """Returns the list of model names that should be included from server in cross site validation.add()
