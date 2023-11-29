@@ -447,6 +447,12 @@ class ConfigVarName:
     # client and server: how long to wait before checking components end-run readiness again (if previous check fails)
     END_RUN_READINESS_CHECK_INTERVAL = "end_run_readiness_check_interval"
 
+    # client: timeout for getTask requests
+    GET_TASK_TIMEOUT = "get_task_timeout"
+
+    # client: timeout for submitTaskResult requests
+    SUBMIT_TASK_RESULT_TIMEOUT = "submit_task_result_timeout"
+
 
 class SystemVarName:
     """

@@ -114,8 +114,8 @@ class ClientRunManager(ClientEngineExecutorSpec):
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def get_task_assignment(self, fl_ctx: FLContext) -> TaskAssignment:
-        pull_success, task_name, return_shareable = self.client.fetch_task(fl_ctx)
+    def get_task_assignment(self, fl_ctx: FLContext, timeout=None) -> TaskAssignment:
+        pull_success, task_name, return_shareable = self.client.fetch_task(fl_ctx, timeout)
         task = None
         if pull_success:
             shareable = self.client.extract_shareable(return_shareable, fl_ctx)
@@ -126,8 +126,8 @@ class ClientRunManager(ClientEngineExecutorSpec):
     def new_context(self) -> FLContext:
         return self.fl_ctx_mgr.new_context()
 
-    def send_task_result(self, result: Shareable, fl_ctx: FLContext) -> bool:
-        push_result = self.client.push_results(result, fl_ctx)  # push task execution results
+    def send_task_result(self, result: Shareable, fl_ctx: FLContext, timeout=None) -> bool:
+        push_result = self.client.push_results(result, fl_ctx, timeout)  # push task execution results
         if push_result == CellReturnCode.OK:
             return True
         else:
