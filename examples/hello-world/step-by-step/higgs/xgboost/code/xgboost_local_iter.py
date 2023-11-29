@@ -126,13 +126,12 @@ def main():
                 xgb_params,
                 dmat_train,
                 num_boost_round=1,
-                evals=[(dmat_test, "test"), (dmat_train, "train")],
+                evals=[(dmat_train, "train"), (dmat_test, "test")],
             )
             config = model.save_config()
         else:
             # get model from previous round
-            for update in model_params:
-                global_model_as_dict = update_model(global_model_as_dict, json.loads(update))
+            global_model_as_dict = update_model(global_model_as_dict, json.loads(model_update))
             loadable_model = bytearray(json.dumps(global_model_as_dict), "utf-8")
             # load model
             model.load_model(loadable_model)
@@ -150,11 +149,11 @@ def main():
         auc = evaluate_model(x_test, model, y_test)
 
         # Print the results
-        print(f"local model AUC: {auc:.4f}")
+        print(f"local model AUC: {auc:.5f}")
 
         # Extract newly added tree using xgboost_bagging slicing api
         bst_new = model[model.num_boosted_rounds() - 1 : model.num_boosted_rounds()]
-        model_params = bst_new.save_raw("json")
+        model_update = bst_new.save_raw("json")
 
 
 def evaluate_model(x_test, model, y_test):

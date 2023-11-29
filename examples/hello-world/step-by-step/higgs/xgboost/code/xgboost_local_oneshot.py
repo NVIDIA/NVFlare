@@ -120,14 +120,14 @@ def main():
         xgb_params,
         dmat_train,
         num_boost_round=100,
-        evals=[(dmat_test, "test"), (dmat_train, "train")],
+        evals=[(dmat_train, "train"), (dmat_test, "test")],
     )
 
     # evaluate model
     auc = evaluate_model(x_test, model, y_test)
 
     # Print the results
-    print(f"local model AUC: {auc:.4f}")
+    print(f"local model AUC: {auc:.5f}")
 
 
 def evaluate_model(x_test, model, y_test):
