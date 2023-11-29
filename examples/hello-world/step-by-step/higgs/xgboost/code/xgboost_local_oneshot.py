@@ -16,10 +16,9 @@ import argparse
 import csv
 from typing import Dict, List, Tuple
 
-import numpy as np
 import pandas as pd
-from sklearn.linear_model import SGDClassifier
-from sklearn.metrics import classification_report, roc_auc_score
+import xgboost as xgb
+from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
@@ -101,57 +100,44 @@ def main():
     x_train, y_train, train_size = dataset["train"]
     x_test, y_test, test_size = dataset["test"]
 
-    model = None
-    global_params = {
-        "n_classes": 2,
-        "learning_rate": "constant",
-        "eta0": 1e-5,
-        "loss": "log_loss",
-        "penalty": "l2",
-        "fit_intercept": True,
+    # convert to xgboost data matrix
+    dmat_train = xgb.DMatrix(x_train, label=y_train)
+    dmat_test = xgb.DMatrix(x_test, label=y_test)
+
+    xgb_params = {
+        "eta": 0.1,
+        "objective": "binary:logistic",
+        "max_depth": 8,
+        "eval_metric": "auc",
+        "nthread": 16,
+        "num_parallel_tree": 1,
+        "subsample": 1.0,
+        "tree_method": "hist",
     }
 
-    fit_intercept = bool(global_params["fit_intercept"])
-    model = SGDClassifier(
-        loss=global_params["loss"],
-        penalty=global_params["penalty"],
-        fit_intercept=fit_intercept,
-        learning_rate=global_params["learning_rate"],
-        eta0=global_params["eta0"],
-        max_iter=30,
-        warm_start=True,
-        random_state=random_state,
-        n_iter_no_change=30,
+    # Train the model on the training set
+    model = xgb.train(
+        xgb_params,
+        dmat_train,
+        num_boost_round=100,
+        evals=[(dmat_test, "test"), (dmat_train, "train")],
     )
-    n_classes = global_params["n_classes"]
-    model.classes_ = np.array(list(range(n_classes)))
-    model.coef_ = np.zeros((1, n_features))
-    if fit_intercept:
-        model.intercept_ = np.zeros((1,))
 
     # evaluate model
-    global_auc, global_report = evaluate_model(x_test, model, y_test)
-    # Print the results
-    print(f"global model AUC: {global_auc:.4f}")
-    # print("global model Classification Report:\n", global_report)
-
-    # Train the model on the training set
-    model.fit(x_train, y_train)
-    auc, report = evaluate_model(x_test, model, y_test)
+    auc = evaluate_model(x_test, model, y_test)
 
     # Print the results
     print(f"local model AUC: {auc:.4f}")
-    # print("local model Classification Report:\n", report)
 
 
 def evaluate_model(x_test, model, y_test):
     # Make predictions on the testing set
-    y_pred = model.predict(x_test)
+    dtest = xgb.DMatrix(x_test)
+    y_pred = model.predict(dtest)
 
     # Evaluate the model
     auc = roc_auc_score(y_test, y_pred)
-    report = classification_report(y_test, y_pred)
-    return auc, report
+    return auc
 
 
 def define_args_parser():

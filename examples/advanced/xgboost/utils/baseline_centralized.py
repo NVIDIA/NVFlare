@@ -119,15 +119,15 @@ def main():
     lapse_time = end - start
     print(f"Data loading time: {lapse_time}")
 
-    # construct training and validation xgboost_bagging DMatrix
+    # construct training and validation xgboost DMatrix
     dmat_higgs = xgb.DMatrix(X_higgs, label=y_higgs)
     dmat_valid = dmat_higgs.slice(X_higgs.index[0:valid_num])
     dmat_train = dmat_higgs.slice(X_higgs.index[valid_num:])
 
-    # setup parameters for xgboost_bagging
+    # setup parameters for xgboost
     xgb_params = get_training_parameters(args)
 
-    # xgboost_bagging training
+    # xgboost training
     start = time.time()
     if args.train_in_one_session:
         bst = xgb.train(
