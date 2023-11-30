@@ -29,7 +29,7 @@ from multiprocessing.connection import Client
 from urllib.parse import urlparse
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import JobConstants, MachineStatus, RunProcessKey, WorkspaceConstants
+from nvflare.apis.fl_constant import JobConstants, MachineStatus, RunnerTask, RunProcessKey, WorkspaceConstants
 from nvflare.apis.job_def import ALL_SITES, JobMetaKey
 from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
 from nvflare.apis.workspace import Workspace
@@ -532,8 +532,11 @@ class SimulatorClientRunner(FLComponent):
                 client.simulate_running = False
         except Exception as e:
             self.logger.error(f"run_client_thread error: {secure_format_exception(e)}")
+        finally:
+            for client in self.federated_clients:
+                self.do_one_task(client, num_of_threads, gpu, lock, timeout=timeout, task_name=RunnerTask.END_RUN)
 
-    def do_one_task(self, client, num_of_threads, gpu, lock, timeout=60.0):
+    def do_one_task(self, client, num_of_threads, gpu, lock, timeout=60.0, task_name=RunnerTask.TASK_EXEC):
         open_port = get_open_ports(1)[0]
         command = (
             sys.executable
@@ -553,6 +556,8 @@ class SimulatorClientRunner(FLComponent):
             + str(client.cell.get_root_url_for_child())
             + " --parent_url "
             + str(client.cell.get_internal_listener_url())
+            + " --task_name "
+            + str(task_name)
         )
         if gpu:
             command += " --gpu " + str(gpu)

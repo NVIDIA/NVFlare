@@ -22,7 +22,7 @@ from multiprocessing.connection import Listener
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
+from nvflare.apis.fl_constant import FLContextKey, RunnerTask, WorkspaceConstants
 from nvflare.fuel.common.multi_process_executor_constants import CommunicationMetaData
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
@@ -76,7 +76,8 @@ class ClientTaskWorker(FLComponent):
             client_runner.engine.cell = client.cell
             client_runner.init_run(app_client_root, args)
 
-    def do_one_task(self, client):
+    def do_one_task(self, client, args):
+        interval = 1.0
         stop_run = False
         # Create the ClientRunManager and ClientRunner for the new client to run
         try:
@@ -87,32 +88,37 @@ class ClientTaskWorker(FLComponent):
                 client_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
                 self.fire_event(EventType.SWAP_IN, fl_ctx)
 
-                run_task_tries = 0
-                while True:
-                    interval, task_processed = client_runner.fetch_and_run_one_task(fl_ctx)
-                    if task_processed:
-                        self.logger.info(
-                            f"Finished one task run for client: {client.client_name} "
-                            f"interval: {interval} task_processed: {task_processed}"
-                        )
+                if args.task_name == RunnerTask.END_RUN:
+                    client_runner.end_run_events_sequence()
+                    self.logger.info("Simulator END_RUN sequence.")
+                    stop_run = True
 
-                    # if any client got the END_RUN event, stop the simulator run.
-                    if client_runner.run_abort_signal.triggered:
-                        stop_run = True
-                        self.logger.info("End the Simulator run.")
-                        break
-                    else:
+                else:
+                    run_task_tries = 0
+                    while True:
+                        interval, task_processed = client_runner.fetch_and_run_one_task(fl_ctx)
                         if task_processed:
+                            self.logger.info(
+                                f"Finished one task run for client: {client.client_name} "
+                                f"interval: {interval} task_processed: {task_processed}"
+                            )
+
+                        # if any client got the END_RUN event, stop the simulator run.
+                        if client_runner.run_abort_signal.triggered:
+                            stop_run = True
+                            self.logger.info("End the Simulator run.")
                             break
                         else:
-                            run_task_tries += 1
-                            if run_task_tries >= FETCH_TASK_RUN_RETRY:
+                            if task_processed:
                                 break
-                            time.sleep(0.5)
+                            else:
+                                run_task_tries += 1
+                                if run_task_tries >= FETCH_TASK_RUN_RETRY:
+                                    break
+                                time.sleep(0.5)
         except Exception as e:
             self.logger.error(f"do_one_task execute exception: {secure_format_exception(e)}")
             secure_log_traceback()
-            interval = 1.0
             stop_run = True
 
         return interval, stop_run
@@ -144,7 +150,7 @@ class ClientTaskWorker(FLComponent):
             self.create_client_engine(client, deploy_args)
 
             while True:
-                interval, stop_run = self.do_one_task(client)
+                interval, stop_run = self.do_one_task(client, args)
                 conn.send(stop_run)
 
                 continue_run = conn.recv()
@@ -260,6 +266,7 @@ def parse_arguments():
     parser.add_argument("--simulator_root", "-root", type=str, help="Simulator root folder")
     parser.add_argument("--root_url", "-r", type=str, help="cellnet root_url")
     parser.add_argument("--parent_url", "-p", type=str, help="cellnet parent_url")
+    parser.add_argument("--task_name", type=str, help="end_run")
     args = parser.parse_args()
     return args
 
