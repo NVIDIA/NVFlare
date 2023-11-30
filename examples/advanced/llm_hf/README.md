@@ -47,8 +47,19 @@ Centralized trainings, as the baseline for comparison with FL results, are done 
 python3 ./utils/hf_sft_peft.py --output_path ./workspace_centralized/llama2-7b-dolly-sft --mode 0
 python3 ./utils/hf_sft_peft.py --output_path ./workspace_centralized/llama2-7b-dolly-peft --mode 1
 ```
+### Pre: Launch Modes
+Before we start adapting the local training script to federated application, we first need to understand the launch modes of NVFlare client API.
+In our [client settings](../../../job_templates/sag_pt/config_fed_client.conf), we have two launch modes by switching the `--launch_once` flag:
+* If launch_once is true, the executor will only call launcher.launch_task once for the whole job
+* If launch_once is false, the executor will call launcher.launch_task everytime it receives a task from server
+So if it is false, the executor will create new objects every round. If it is true, the executor will reuse the same objects for all rounds.
+
+Turning `launch_once` to `false` can be useful in some scenarios like quick prototyping, but for the application of LLM where setup stage can take significant resources, we would want to only setup once. Hence, the below steps are for `launch_once = true` scenario.
+
+See [Client API](../../hello-world/ml-to-fl/pt/README.md) for more details.
+
 ### Adaptation Step 1: iterative training
-To adapt the centralized training script to federated application, under ``launch_once'' setting, we first need to "break" the single call to `trainer.train()` into iterative calls, one for each round of training.
+To adapt the centralized training script to federated application, under `launch_once = true` setting, we first need to "break" the single call to `trainer.train()` into iterative calls, one for each round of training.
 For this purpose, we provided `utils/hf_sft_peft_iter.py` as an example, which is a modified version of `utils/hf_sft_peft.py`.
 Their differences are highlighted below:
 
