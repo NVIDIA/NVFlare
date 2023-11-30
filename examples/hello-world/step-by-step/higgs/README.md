@@ -1,19 +1,23 @@
 
-# Training a image classifier with CIFAR10 data
- 
-We will use the original [Training a Classifer](https://pytorch.org/tutorials/beginner/blitz/cifar10_tutorial.html) example
-in pytorch as the code base.  
+# Training traditional ML classifiers with HIGGS data
 
-The CIFAR10 dataset has the following classes: ‘airplane’, ‘automobile’, ‘bird’, ‘cat’, ‘deer’, ‘dog’, ‘frog’, ‘horse’, ‘ship’, ‘truck’.
-The images in CIFAR-10 are of size 3x32x32, i.e. 3-channel color images of 32x32 pixels in size.
+[HIGGS dataset](https://archive.ics.uci.edu/dataset/280/higgs) contains 11 million instances, each with 28 attributes, for binary classification to predict whether an event corresponds to the decayment of a Higgs boson or not.
 
-![image](data/cifar10.png)
+The first 21 features (columns 2-22) are kinematic properties measured by the particle detectors in the accelerator. 
+The data has been produced using Monte Carlo simulations. The first 21 features are kinematic properties measured by the particle detectors in the accelerator. The last 7 features are functions of the first 21 features; these are high-level features derived by physicists to help discriminate between the two classes.
 
-In the follow examples, we will show various Federated Learning workflows.
+Please note that the [UCI's website](https://archive.ics.uci.edu/dataset/280/higgs) may experience occasional downtime.
 
-* [Image intensity histogram caculation](stats)
-* Scatter and Gather (SAG) workflow with NVFLARE Client APIs
-* Cyclic Weight Transfer workflow with NVFLARE Client APIs
-* Swarm Learning Workflow with NVFLARE Client APIs
-* SAG with NVFLARE model learner APIs
-* SAG with NVFLARE Executor APIs
+With the HIGGs Dataset, in the following examples, we like to demonstrate traditional machine learning techniques in federated learning.
+These include:
+
+* Federated Statistics for tabular data
+* Federated Logistic Regression
+* Federated Kmeans
+* Federated SVM
+* Federated Horizontal XGBoost
+
+These examples demostrate:
+* How to use the NVFlare Client APIs to convert the traditional machine learning code to federated learning code. Most of them contains local training scripts as baselines for comparison.
+* How different machine learning methods can be applied to the same problem. Different behaviors and accuracies can be observed, as a reference for choosing the right method for the problem.
+* How federated learning impacts different machine learning methods. Some methods are more sensitive to the federated learning process, and some are less.
