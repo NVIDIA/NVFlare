@@ -15,8 +15,8 @@
 from typing import Any
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_exception import TaskExecutionError
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_exception import TaskExecutionError
 
 
 class FLComponentWrapper(FLComponent):
