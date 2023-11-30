@@ -39,12 +39,18 @@ class TBI(FLComponent):
         #   the job config could define variable var_name;
         #   the user could define OS env var NVFLARE_VAR_NAME (the var_name turned to uppercase)
         value = ConfigService.get_float_var(name=var_name, conf=SystemConfigs.APPLICATION_CONF, default=default)
-        return value if value > 0 else default
+        if value is None:
+            return default
+        else:
+            return value if value > 0.0 else default
 
     @staticmethod
     def get_positive_int_var(var_name, default):
         value = ConfigService.get_int_var(name=var_name, conf=SystemConfigs.APPLICATION_CONF, default=default)
-        return value if value > 0 else default
+        if value is None:
+            return default
+        else:
+            return value if value > 0 else default
 
     def _any_component_is_not_ready(self, fl_ctx: FLContext) -> bool:
         any_component_not_ready = fl_ctx.get_prop(FLContextKey.NOT_READY_TO_END_RUN, False)
