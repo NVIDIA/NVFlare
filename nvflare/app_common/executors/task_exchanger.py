@@ -241,3 +241,11 @@ class TaskExchanger(Executor):
     def clear_pipe(self):
         if self.pipe:
             self.pipe.clear()
+
+    def pause_pipe_handler(self):
+        """Stops pipe_handler from checking for heartbeats from peer."""
+        self.pipe_handler.pause()
+
+    def resume_pipe_handler(self):
+        """Resumes pipe_handler checking for heartbeats from peer."""
+        self.pipe_handler.resume()

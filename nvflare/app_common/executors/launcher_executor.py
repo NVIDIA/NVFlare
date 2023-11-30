@@ -123,7 +123,6 @@ class LauncherExecutor(TaskExchanger):
 
     def finalize(self, fl_ctx: FLContext) -> None:
         self._execute_launcher_method_in_thread_executor(method_name="finalize", fl_ctx=fl_ctx)
-        self._clear_state()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext) -> None:
         if event_type == EventType.START_RUN:
@@ -148,15 +147,15 @@ class LauncherExecutor(TaskExchanger):
         if self._from_nvflare_converter is not None:
             shareable = self._from_nvflare_converter.process(shareable, fl_ctx)
 
+        self.resume_pipe_handler()
         result = super().execute(task_name, shareable, fl_ctx, abort_signal)
+        self.pause_pipe_handler()
 
         if result.get_return_code() != ReturnCode.OK:
             abort_signal.trigger("execution exception in TaskExchanger")
             self._execute_launcher_method_in_thread_executor(
                 method_name="stop_task", task_name=task_name, fl_ctx=fl_ctx, abort_signal=abort_signal
             )
-            self._launcher_finish.set()
-            self._launcher_finish_time = time.time()
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
         if self._to_nvflare_converter is not None:
@@ -190,6 +189,7 @@ class LauncherExecutor(TaskExchanger):
             self.log_error(fl_ctx, check_result)
             return False
         self._received_result = True
+        self._current_task = None
         return True
 
     def _init_launcher(self, fl_ctx: FLContext):
@@ -295,11 +295,10 @@ class LauncherExecutor(TaskExchanger):
         if check_run_status != LauncherRunStatus.COMPLETE_SUCCESS:
             self.log_warning(fl_ctx, f"Try to stop task ({task_name}) when launcher run status is {check_run_status}")
 
-        self.log_info(fl_ctx, f"Try to stop task ({task_name}).")
+        self.log_info(fl_ctx, f"Calling stop task ({task_name}).")
         stop_task_success = self._execute_launcher_method_in_thread_executor(
             method_name="stop_task", task_name=task_name, fl_ctx=fl_ctx, abort_signal=abort_signal
         )
-        self._clear_state()
 
         if not stop_task_success:
             return False
@@ -344,8 +343,9 @@ class LauncherExecutor(TaskExchanger):
                 self._job_end = True
                 break
 
-            # results has been received
+            # result has been received
             if self._received_result:
+                self._clear_state()
                 continue
 
             if self.launcher is None:
@@ -354,9 +354,10 @@ class LauncherExecutor(TaskExchanger):
             if self._current_task is None:
                 continue
 
+            task_name = self._current_task
             run_status = self._execute_launcher_method_in_thread_executor(
                 method_name="check_run_status",
-                task_name=self._current_task,
+                task_name=task_name,
                 fl_ctx=fl_ctx,
             )
             if run_status == LauncherRunStatus.NOT_RUNNING or run_status == LauncherRunStatus.RUNNING:
@@ -367,7 +368,8 @@ class LauncherExecutor(TaskExchanger):
                     self._launcher_finish_time = time.time()
                     self._launcher_finish.set()
                     self.log_info(
-                        fl_ctx, f"launcher exited with status {run_status} at time {self._launcher_finish_time}"
+                        fl_ctx,
+                        f"launcher completed {task_name} with status {run_status} at time {self._launcher_finish_time}",
                     )
 
             if not self._launcher_finish.is_set():
