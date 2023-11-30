@@ -100,7 +100,7 @@ class XGBModelShareableGenerator(ShareableGenerator):
     def shareable_to_learnable(self, shareable: Shareable, fl_ctx: FLContext) -> ModelLearnable:
         """Convert Shareable to ModelLearnable.
 
-        Supporting TYPE == TYPE_XGB_MODEL
+        Supporting TYPE == TYPE_WEIGHTS
 
         Args:
             shareable (Shareable): Shareable that contains a DXO object
@@ -111,7 +111,7 @@ class XGBModelShareableGenerator(ShareableGenerator):
 
         Raises:
             TypeError: if shareable is not of type shareable
-            ValueError: if data_kind is not `DataKind.XGB_MODEL`
+            ValueError: if data_kind is not `DataKind.WEIGHTS`
         """
         if not isinstance(shareable, Shareable):
             raise TypeError("shareable must be Shareable, but got {}.".format(type(shareable)))
@@ -123,7 +123,7 @@ class XGBModelShareableGenerator(ShareableGenerator):
 
         dxo = from_shareable(shareable)
 
-        if dxo.data_kind in [DataKind.XGB_MODEL, DataKind.WEIGHTS]:
+        if dxo.data_kind == DataKind.WEIGHTS:
             model_update = dxo.data
             if not model_update:
                 self.log_info(fl_ctx, "No model update found. Model will not be updated.")
@@ -143,6 +143,6 @@ class XGBModelShareableGenerator(ShareableGenerator):
             self.shareable = dxo.to_shareable()
         else:
             raise ValueError(
-                "data_kind should be either DataKind.XGB_MODEL or DataKind.WEIGHTS, but got {}".format(dxo.data_kind)
+                "data_kind should be either DataKind.WEIGHTS, but got {}".format(dxo.data_kind)
             )
         return base_model
