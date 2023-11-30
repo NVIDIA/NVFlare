@@ -21,6 +21,7 @@ import pytest
 from nvflare.tool.job.config.configer import (
     build_config_file_indices,
     convert_to_number,
+    get_app_name_from_path,
     get_cli_config,
     get_config_file_path,
     merge_configs,
@@ -178,14 +179,24 @@ class TestConfiger:
     def test_split_key(self):
         assert split_array_key("components[1].args.model.path") == ("components", 1, "args.model.path")
         assert split_array_key("args.model.path") == (None, None, "args.model.path")
-        try:
-            assert split_array_key("components1].args.model.path")
-        except ValueError:
-            assert True
-        try:
-            assert split_array_key("components[1.args.model.path")
-        except ValueError:
-            assert True
+        with pytest.raises(ValueError):
+            split_array_key("components[].args.model.path")
+
+        with pytest.raises(ValueError):
+            split_array_key("components1].args.model.path")
+
+        with pytest.raises(ValueError):
+            split_array_key("components[1.args.model.path")
+
+    def test_get_app_name_from_path(self):
+        assert get_app_name_from_path("a.conf") == DEFAULT_APP_NAME
+        assert get_app_name_from_path("app_1/a.conf") == "app_1"
+        assert get_app_name_from_path("app_server/bbb.conf") == "app_server"
+        assert get_app_name_from_path("app_server/custom/bbb.conf") == "app_server"
+        with pytest.raises(ValueError):
+            get_app_name_from_path("/")
+        with pytest.raises(ValueError):
+            get_app_name_from_path("/app_1/a.conf")
 
     @pytest.mark.parametrize("input_file_path, expected_config_file_path", GET_CONFIG_FILE_PATH_TEST_CASES)
     def test_get_config_file_path(self, input_file_path, expected_config_file_path):
