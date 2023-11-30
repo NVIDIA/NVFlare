@@ -66,8 +66,6 @@ class XGBBaggingAggregator(Aggregator):
         if dxo.data_kind != self.expected_data_kind:
             self.log_error(fl_ctx, "expected {} but got {}".format(self.expected_data_kind, dxo.data_kind))
             return False
-        else:
-            self.expected_data_kind = dxo.data_kind
 
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         self.log_debug(fl_ctx, f"current_round: {current_round}")
