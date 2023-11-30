@@ -142,7 +142,5 @@ class XGBModelShareableGenerator(ShareableGenerator):
                 base_model[ModelLearnableKey.WEIGHTS] = model
             self.shareable = dxo.to_shareable()
         else:
-            raise ValueError(
-                "data_kind should be either DataKind.WEIGHTS, but got {}".format(dxo.data_kind)
-            )
+            raise ValueError("data_kind should be either DataKind.WEIGHTS, but got {}".format(dxo.data_kind))
         return base_model
