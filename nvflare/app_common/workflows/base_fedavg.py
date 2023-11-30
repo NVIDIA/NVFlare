@@ -22,14 +22,12 @@ from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedA
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.security.logging import secure_format_exception
-from nvflare.fuel.utils.experimental import experimental
 
 from .model_controller import ModelController
 
 
-@experimental
 class FedAvgModelControllerSpec(ModelController):
-    """The base controller for FedAvg Workflow. *Note*: This class is experimental.
+    """The base controller for FedAvg Workflow. *Note*: This class is based on the experimental `ModelController`.
 
     Implements [FederatedAveraging](https://arxiv.org/abs/1602.05629).
     The model persistor (persistor_id) is used to load the initial global model which is sent to a list of clients.
@@ -44,8 +42,6 @@ class FedAvgModelControllerSpec(ModelController):
         - def update_model(self, aggr_result)
         - def run(self)
     """
-    def __int__(self):
-        super().__int__()
 
     # To be implemented by derived classes
     @abstractmethod
@@ -86,9 +82,8 @@ class FedAvgModelControllerSpec(ModelController):
         raise NotImplementedError
 
 
-@experimental
 class BaseFedAvg(FedAvgModelControllerSpec):
-    """Controller for FedAvg Workflow. *Note*: This class is experimental.
+    """Controller for FedAvg Workflow. *Note*: This class is based on the experimental `ModelController`.
     Implements [FederatedAveraging](https://arxiv.org/abs/1602.05629).
 
     Provides the default implementations for the follow routines:
@@ -100,8 +95,6 @@ class BaseFedAvg(FedAvgModelControllerSpec):
 
         - def run(self)
     """
-    def __int__(self):
-        super().__int__()
 
     def sample_clients(self, min_clients):
         self._min_clients = min_clients

@@ -21,14 +21,12 @@ from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AlgorithmConstants
-from nvflare.fuel.utils.experimental import experimental
 
 from .base_fedavg import BaseFedAvg
 
 
-@experimental
 class Scaffold(BaseFedAvg):
-    """Controller for Scaffold Workflow. *Note*: This class is experimental.
+    """Controller for Scaffold Workflow. *Note*: This class is based on the experimental `ModelController`.
     Implements [SCAFFOLD](https://proceedings.mlr.press/v119/karimireddy20a.html).
 
     Provides the implementations for the `run` routine, controlling the main workflow:

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from typing import List, Union
 
 from nvflare.apis.client import Client
@@ -209,57 +209,6 @@ class ModelController(Controller, FLComponentWrapper):
             self.warning(
                 f"Number of results ({len(self._results)}) is different from min_clients ({self._min_clients})."
             )
-
-        return self._results
-
-    def relay_model_and_wait(
-        self,
-        targets: Union[List[Client], List[str], None] = None,
-        data: FLModel = None,
-        task_name=AppConstants.TASK_TRAIN,
-        timeout: int = 0,
-        task_assignment_timeout: int = 10,
-    ) -> List:
-        """Send the current global model or given data to a list of targets
-
-        The task is scheduled into a task list.  Clients can request tasks and controller will dispatch the task to eligible clients.
-
-        Args:
-            targets: the list of eligible clients or client names or None (all clients). Defaults to None.
-            data: FLModel to be sent to clients. If no data is given, send `self.model`.
-            task_name (str, optional): Name of the train task. Defaults to "train".
-            timeout (int, optional): Time to wait for clients to do local training. Defaults to 0, i.e., never time out.
-            task_assignment_timeout (int, optional): timeout (in sec) to determine if one client fails to
-                request the task which it is assigned to . Defaults to 10.
-        """
-
-        if not isinstance(task_name, str):
-            raise TypeError("train_task_name must be a string but got {}".format(type(task_name)))
-        _check_non_neg_int(timeout, "timeout")
-        _check_non_neg_int(task_assignment_timeout, "task_assignment_timeout")
-
-        # Create train_task
-        data_shareable = self._build_shareable(data)
-
-        train_task = Task(
-            name=task_name,
-            data=data_shareable,
-            props={},
-            timeout=timeout,
-            before_task_sent_cb=self._prepare_task_data,
-            result_received_cb=self._process_result,  # TODO: do not use the same process?
-        )
-
-        self._results = []  # reset results list
-        self.info(f"Relay task {task_name} to {[client.name for client in targets]}")
-        self.relay_and_wait(
-            task=train_task,
-            targets=targets,
-            task_assignment_timeout=task_assignment_timeout,
-            fl_ctx=self.fl_ctx,
-            dynamic_targets=False,
-            abort_signal=self.abort_signal,
-        )
 
         return self._results
 
