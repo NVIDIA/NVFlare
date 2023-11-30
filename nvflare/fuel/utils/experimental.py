@@ -19,7 +19,7 @@ import warnings
 
 def experimental(reason):
     """
-    This is a decorator which can be used to mark classes
+    This is a decorator which can be used to mark classes and functions
     as experimental. It will result in a warning being emitted
     when the class is used.
 
@@ -50,10 +50,9 @@ def experimental(reason):
     """
 
     def decorator(obj):
-        fmt = "Use of experimental class {name}{reason}."
-        orig_cls_name = obj.__name__
-
         if inspect.isclass(obj):
+            fmt = "Use of experimental class {name}{reason}."
+            orig_cls_name = obj.__name__
 
             class ExperimentalClass(obj):
                 def __new__(obj, *args, **kwargs):
@@ -92,10 +91,10 @@ def experimental(reason):
             raise TypeError(repr(type(reason)))
 
     if inspect.isclass(reason) or inspect.isfunction(reason):
-        # The @deprecated is used without any 'reason'.
+        # The @experimental is used without any 'reason'.
         return decorator(reason)
     elif isinstance(reason, str):
-        # The @deprecated is used with a 'reason'.
+        # The @experimental is used with a 'reason'.
         return decorator
     else:
         raise TypeError(repr(type(reason)))
