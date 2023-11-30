@@ -63,7 +63,7 @@ class XGBBaggingAggregator(Aggregator):
             self.log_warning(fl_ctx, f"Contributor {contributor_name} returned rc: {rc}. Disregarding contribution.")
             return False
 
-        if dxo.data_kind not in self.expected_data_kind:
+        if dxo.data_kind != self.expected_data_kind:
             self.log_error(fl_ctx, "expected {} but got {}".format(self.expected_data_kind, dxo.data_kind))
             return False
         else:
