@@ -112,6 +112,7 @@ class PipeHandler(object):
         self.msg_cb_kwargs = None
         self.peer_is_up_or_dead = threading.Event()
         self._pause = False
+        self._last_heartbeat_received_time = None
 
     def set_status_cb(self, cb, *args, **kwargs):
         """Set CB for status handling. When the peer status is changed (ABORT, END, GONE), this CB is called.
@@ -281,36 +282,39 @@ class PipeHandler(object):
             self._add_message(self._make_event_message(Topic.PEER_GONE, f"read error: {secure_format_exception(e)}"))
 
     def _try_read(self):
-        last_heartbeat_received_time = time.time()
+        self._last_heartbeat_received_time = time.time()
         last_heartbeat_sent_time = 0.0
         while not self.asked_to_stop:
             now = time.time()
 
-            if not self._pause:
-                msg = self.pipe.receive()
+            if self._pause:
+                time.sleep(self.read_interval)
+                continue
 
-                if msg:
-                    last_heartbeat_received_time = now
-                    # if receive any messages even if Topic is END or ABORT or PEER_GONE
-                    #    we still set peer_is_up_or_dead, as we no longer need to wait
-                    self.peer_is_up_or_dead.set()
-                    if msg.topic != Topic.HEARTBEAT and not self.asked_to_stop:
-                        self._add_message(msg)
-                    if msg.topic in [Topic.END, Topic.ABORT]:
-                        break
-                else:
-                    # is peer gone?
-                    if (
-                        self.heartbeat_timeout
-                        and now - last_heartbeat_received_time > self.heartbeat_timeout
-                        and not self.asked_to_stop
-                    ):
-                        self._add_message(
-                            self._make_event_message(
-                                Topic.PEER_GONE, f"missing heartbeat after {self.heartbeat_timeout} secs"
-                            )
+            msg = self.pipe.receive()
+
+            if msg:
+                self._last_heartbeat_received_time = now
+                # if receive any messages even if Topic is END or ABORT or PEER_GONE
+                #    we still set peer_is_up_or_dead, as we no longer need to wait
+                self.peer_is_up_or_dead.set()
+                if msg.topic != Topic.HEARTBEAT and not self.asked_to_stop:
+                    self._add_message(msg)
+                if msg.topic in [Topic.END, Topic.ABORT]:
+                    break
+            else:
+                # is peer gone?
+                if (
+                    self.heartbeat_timeout
+                    and now - self._last_heartbeat_received_time > self.heartbeat_timeout
+                    and not self.asked_to_stop
+                ):
+                    self._add_message(
+                        self._make_event_message(
+                            Topic.PEER_GONE, f"missing heartbeat after {self.heartbeat_timeout} secs"
                         )
-                        break
+                    )
+                    break
 
             # send heartbeat to the peer
             if now - last_heartbeat_sent_time > self.heartbeat_interval:
@@ -337,9 +341,11 @@ class PipeHandler(object):
                 return None
 
     def pause(self):
-        """Stops checking for heartbeats from peer."""
+        """Stops heartbeat checking and sending."""
         self._pause = True
 
     def resume(self):
-        """Resumes checking for heartbeats from peer."""
-        self._pause = False
+        """Resumes heartbeat checking and sending."""
+        if self._pause:
+            self._pause = False
+            self._last_heartbeat_received_time = time.time()

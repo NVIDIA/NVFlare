@@ -243,9 +243,9 @@ class TaskExchanger(Executor):
             self.pipe.clear()
 
     def pause_pipe_handler(self):
-        """Stops pipe_handler from checking for heartbeats from peer."""
+        """Stops pipe_handler heartbeat."""
         self.pipe_handler.pause()
 
     def resume_pipe_handler(self):
-        """Resumes pipe_handler checking for heartbeats from peer."""
+        """Resumes pipe_handler heartbeat."""
         self.pipe_handler.resume()

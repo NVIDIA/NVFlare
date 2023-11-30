@@ -31,6 +31,8 @@ from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.security.logging import secure_format_exception
 
+LAUNCHER_EXCEPTION = "launcher_exception"
+
 
 class LauncherExecutor(TaskExchanger):
     def __init__(
@@ -147,9 +149,7 @@ class LauncherExecutor(TaskExchanger):
         if self._from_nvflare_converter is not None:
             shareable = self._from_nvflare_converter.process(shareable, fl_ctx)
 
-        self.resume_pipe_handler()
         result = super().execute(task_name, shareable, fl_ctx, abort_signal)
-        self.pause_pipe_handler()
 
         if result.get_return_code() != ReturnCode.OK:
             abort_signal.trigger("execution exception in TaskExchanger")
@@ -199,7 +199,11 @@ class LauncherExecutor(TaskExchanger):
             raise RuntimeError(f"Launcher can not be found using {self._launcher_id}")
         check_object_type(self._launcher_id, launcher, Launcher)
         self.launcher = launcher
-        self._execute_launcher_method_in_thread_executor(method_name="initialize", fl_ctx=fl_ctx)
+        if (
+            self._execute_launcher_method_in_thread_executor(method_name="initialize", fl_ctx=fl_ctx)
+            == LAUNCHER_EXCEPTION
+        ):
+            raise RuntimeError("Launcher initialize failed.")
 
     def _init_converter(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
@@ -226,7 +230,7 @@ class LauncherExecutor(TaskExchanger):
             fl_ctx=fl_ctx,
             abort_signal=abort_signal,
         )
-        if not launch_task_success:
+        if not launch_task_success or launch_task_success == LAUNCHER_EXCEPTION:
             abort_signal.trigger("launch task failed")
             return False
 
@@ -253,13 +257,13 @@ class LauncherExecutor(TaskExchanger):
                 kwargs.get("fl_ctx"),
                 f"launcher method ({method_name}) execution timeout: exceeds {self._launch_timeout} seconds",
             )
-            return False
+            return LAUNCHER_EXCEPTION
         except Exception as e:
             self.log_warning(
                 kwargs.get("fl_ctx"),
                 f"launcher method ({method_name}) execution failed: {secure_format_exception(e)}",
             )
-            return False
+            return LAUNCHER_EXCEPTION
 
     def _wait_external_setup(self, task_name: str, fl_ctx: FLContext, abort_signal: Signal):
         start_time = time.time()
@@ -300,7 +304,7 @@ class LauncherExecutor(TaskExchanger):
             method_name="stop_task", task_name=task_name, fl_ctx=fl_ctx, abort_signal=abort_signal
         )
 
-        if not stop_task_success:
+        if not stop_task_success or stop_task_success == LAUNCHER_EXCEPTION:
             return False
 
         self.log_info(fl_ctx, f"External execution for task ({task_name}) is finished.")
@@ -360,10 +364,21 @@ class LauncherExecutor(TaskExchanger):
                 task_name=task_name,
                 fl_ctx=fl_ctx,
             )
-            if run_status == LauncherRunStatus.NOT_RUNNING or run_status == LauncherRunStatus.RUNNING:
+            if run_status == LAUNCHER_EXCEPTION:
+                msg = "launcher check_run_status failed"
+                self.log_error(fl_ctx, msg)
+                self._abort_signal.trigger(msg)
+                continue
+            elif run_status == LauncherRunStatus.NOT_RUNNING:
+                self.pause_pipe_handler()
+                continue
+
+            elif run_status == LauncherRunStatus.RUNNING:
+                self.resume_pipe_handler()
                 continue
 
             elif run_status == LauncherRunStatus.COMPLETE_FAILED or run_status == LauncherRunStatus.COMPLETE_SUCCESS:
+                self.pause_pipe_handler()
                 if not self._launcher_finish.is_set():
                     self._launcher_finish_time = time.time()
                     self._launcher_finish.set()
