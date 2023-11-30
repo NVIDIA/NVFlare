@@ -153,14 +153,13 @@ class TaskExchanger(Executor):
                 # notify peer that the task is aborted
                 self.log_debug(fl_ctx, f"task '{task_name}' is aborted.")
                 self.pipe_handler.notify_abort(task_id)
-                self.stop(task_name, fl_ctx)
                 self.pipe_handler.stop()
                 return make_reply(ReturnCode.TASK_ABORTED)
 
             if self.pipe_handler.asked_to_stop:
                 self.log_debug(fl_ctx, "task pipe stopped!")
                 self.pipe_handler.notify_abort(task_id)
-                self.stop(task_name, fl_ctx)
+                abort_signal.trigger("task pipe stopped!")
                 return make_reply(ReturnCode.TASK_ABORTED)
 
             reply: Optional[Message] = self.pipe_handler.get_next()
@@ -170,7 +169,7 @@ class TaskExchanger(Executor):
                     self.log_error(fl_ctx, f"task '{task_name}' timeout after {self.task_wait_time} secs")
                     # also tell peer to abort the task
                     self.pipe_handler.notify_abort(task_id)
-                    self.stop(task_name, fl_ctx)
+                    abort_signal.trigger(f"task '{task_name}' timeout after {self.task_wait_time} secs")
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
             elif reply.msg_type != Message.REPLY:
                 self.log_warning(
@@ -209,10 +208,6 @@ class TaskExchanger(Executor):
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
             time.sleep(self.result_poll_interval)
 
-    def stop(self, task_name: str, fl_ctx: FLContext):
-        """Stops the executor."""
-        pass
-
     def check_input_shareable(self, task_name: str, shareable: Shareable, fl_ctx: FLContext) -> bool:
         """Checks input shareable before execute.
 
@@ -241,7 +236,7 @@ class TaskExchanger(Executor):
         return True
 
     def peer_is_up_or_dead(self) -> bool:
-        return self.pipe_handler.other_end_is_up_or_dead.is_set()
+        return self.pipe_handler.peer_is_up_or_dead.is_set()
 
     def clear_pipe(self):
         if self.pipe:

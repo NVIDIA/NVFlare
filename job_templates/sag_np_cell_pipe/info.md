@@ -7,5 +7,5 @@
     controller_type = "server"
     executor_type = "launcher_executor"
     contributor = "NVIDIA"
-    init_publish_date = "2023-11-22"
-    last_updated_date = "2023-11-22" # yyyy-mm-dd
+    init_publish_date = "2023-11-29"
+    last_updated_date = "2023-11-29" # yyyy-mm-dd

@@ -46,7 +46,7 @@ class TestSubprocessLauncher:
         dxo = DXO(DataKind.WEIGHTS, {})
         status = launcher.launch_task(task_name, dxo.to_shareable(), fl_ctx, signal)
         assert status is True
-        launcher.stop_task(task_name, fl_ctx)
+        launcher.stop_task(task_name, fl_ctx, signal)
 
         assert launcher._process is None
         shutil.rmtree(tempdir)

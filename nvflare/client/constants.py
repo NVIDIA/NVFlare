@@ -14,7 +14,6 @@
 
 from .config import ConfigKey
 
-SYS_ATTRS = (ConfigKey.JOB_ID, ConfigKey.SITE_NAME, ConfigKey.TOTAL_ROUNDS)
-CONST_ATTRS = (ConfigKey.TOTAL_ROUNDS,)
+SYS_ATTRS = (ConfigKey.JOB_ID, ConfigKey.SITE_NAME)
 CONFIG_DATA_EXCHANGE = "config_data_exchange.json"
 CONFIG_METRICS_EXCHANGE = "config_metrics_exchange.json"

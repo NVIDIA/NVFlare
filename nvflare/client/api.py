@@ -76,7 +76,7 @@ def init(config: Union[str, Dict] = f"config/{CONFIG_DATA_EXCHANGE}", rank: Opti
         close_pipe = PIPE_CLASS_MAPPING[pipe_class]["need_to_close_pipe"]
 
         flare_agent = FlareAgentWithFLModel(
-            pipe=pipe, task_channel_name=client_config.get_pipe_name(), close_pipe=close_pipe
+            pipe=pipe, task_channel_name=client_config.get_pipe_channel_name(), close_pipe=close_pipe
         )
         flare_agent.start()
 
@@ -139,11 +139,6 @@ def get_config() -> Dict:
 def get_job_id() -> str:
     sys_info = system_info()
     return sys_info.get(ConfigKey.JOB_ID, "")
-
-
-def get_total_rounds() -> int:
-    sys_info = system_info()
-    return sys_info.get(ConfigKey.TOTAL_ROUNDS, 0)
 
 
 def get_site_name() -> str:
