@@ -3,7 +3,7 @@
     "min_clients": 8,
     "num_rounds": 50,
     "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits",
-    "alpha": 0.1,
+    "alpha": 1.0,
     "server": {
         "heart_beat_timeout": 600
     },
