@@ -22,6 +22,7 @@ class EventType(object):
     START_RUN = "_start_run"
     ABOUT_TO_END_RUN = "_about_to_end_run"
     END_RUN = "_end_run"
+    CHECK_END_RUN_READINESS = "_check_end_run_readiness"
     SWAP_IN = "_swap_in"
     SWAP_OUT = "_swap_out"
     START_WORKFLOW = "_start_workflow"

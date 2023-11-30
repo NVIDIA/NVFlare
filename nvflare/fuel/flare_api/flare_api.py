@@ -158,11 +158,10 @@ class Session(SessionSpec):
         if not isinstance(result, dict):
             raise InternalError(f"result from server must be dict but got {type(result)}")
 
-        # check meta status first
+        # Check meta status if available
+        # There are still some commands that do not return meta. But for commands that do return meta, we will check
+        # its meta status first.
         meta = result.get(ResultKey.META, None)
-        if enforce_meta and not meta:
-            raise InternalError("missing meta from result")
-
         if meta:
             if not isinstance(meta, dict):
                 raise InternalError(f"meta must be dict but got {type(meta)}")
@@ -194,6 +193,8 @@ class Session(SessionSpec):
             elif cmd_status != MetaStatusValue.OK:
                 raise InternalError(f"{cmd_status}: {info}")
 
+        # Then check API Status. There are cases that a command does not return meta or ran into errors before
+        # setting meta. Even if the command does return meta, still need to make sure APIStatus is good.
         status = result.get(ResultKey.STATUS, None)
         if not status:
             raise InternalError("missing status in result")
@@ -212,6 +213,10 @@ class Session(SessionSpec):
             details = result.get(ResultKey.DETAILS, "")
             raise RuntimeError(f"runtime error encountered: {status}: {details}")
 
+        if enforce_meta and not meta:
+            raise InternalError("missing meta from result")
+
+        # both API Status and Meta are okay
         return result
 
     @staticmethod
@@ -260,6 +265,7 @@ class Session(SessionSpec):
         if not os.path.isdir(job_definition_path):
             if os.path.isdir(os.path.join(self.upload_dir, job_definition_path)):
                 job_definition_path = os.path.join(self.upload_dir, job_definition_path)
+                job_definition_path = os.path.abspath(job_definition_path)
             else:
                 raise InvalidJobDefinition(f"job_definition_path '{job_definition_path}' is not a valid folder")
 
@@ -801,6 +807,36 @@ class Session(SessionSpec):
         """
         sys_info = self.get_system_info()
         return sys_info.client_info
+
+    def get_client_env(self, client_names=None):
+        """Get running environment values for specified clients. The env includes values of client name,
+        workspace directory, root url of the FL server, and secure mode or not.
+
+        These values can be used for 3rd-party system configuration (e.g. CellPipe to connect to the FLARE system).
+
+        Args:
+            client_names: clients to get env from. None means all clients.
+
+        Returns: list of env info for specified clients.
+
+        Raises: InvalidTarget exception, if no clients are connected or an invalid client name is specified
+
+        """
+        if not client_names:
+            command = AdminCommandNames.REPORT_ENV
+        else:
+            if isinstance(client_names, str):
+                client_names = [client_names]
+            elif not isinstance(client_names, list):
+                raise ValueError(f"client_names must be str or list of str but got {type(client_names)}")
+            command = AdminCommandNames.REPORT_ENV + " " + " ".join(client_names)
+
+        result = self._do_command(command)
+        meta = result[ResultKey.META]
+        client_envs = meta.get(MetaKey.CLIENTS)
+        if not client_envs:
+            raise RuntimeError(f"missing {MetaKey.CLIENTS} from meta")
+        return client_envs
 
     def monitor_job(
         self, job_id: str, timeout: float = 0.0, poll_interval: float = 2.0, cb=None, *cb_args, **cb_kwargs

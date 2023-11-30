@@ -46,6 +46,7 @@ class ClientExecutor(ABC):
         token,
         resource_manager,
         target: str,
+        scheme: str,
     ):
         """Starts the client app.
 
@@ -59,6 +60,7 @@ class ClientExecutor(ABC):
             token: token from resource manager
             resource_manager: resource manager
             target: SP target location
+            scheme: SP target connection scheme
         """
         pass
 
@@ -147,6 +149,7 @@ class ProcessExecutor(ClientExecutor):
         token,
         resource_manager: ResourceManagerSpec,
         target: str,
+        scheme: str,
     ):
         """Starts the app.
 
@@ -160,6 +163,7 @@ class ProcessExecutor(ClientExecutor):
             token: token from resource manager
             resource_manager: resource manager
             target: SP target location
+            scheme: SP connection scheme
         """
         new_env = os.environ.copy()
         if app_custom_folder != "":
@@ -185,6 +189,8 @@ class ProcessExecutor(ClientExecutor):
             + str(client.cell.get_internal_listener_url())
             + " -g "
             + target
+            + " -scheme "
+            + scheme
             + " -s fed_client.json "
             " --set" + command_options + " print_conf=True"
         )

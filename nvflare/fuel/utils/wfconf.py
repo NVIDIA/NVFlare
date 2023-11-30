@@ -21,6 +21,7 @@ from typing import List
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.security.logging import secure_format_exception
 
+from .argument_utils import parse_vars
 from .class_utils import ModuleScanner, get_class, instantiate_class
 from .dict_utils import extract_first_level_primitive, merge_dict
 from .json_scanner import JsonObjectProcessor, JsonScanner, Node
@@ -38,10 +39,22 @@ class ConfigContext(object):
 class _EnvUpdater(JsonObjectProcessor):
     def __init__(self, vs, element_filter=None):
         JsonObjectProcessor.__init__(self)
-        self.vars = vs
         if element_filter is not None and not callable(element_filter):
             raise ValueError("element_filter must be a callable function but got {}.".format(type(element_filter)))
+        self.vars = copy.copy(vs)
+
+        # make all os env vars available for config
+        env_vars = dict(os.environ)
+        if env_vars:
+            for k, v in env_vars.items():
+                # when referencing os env var, must use a $ sign prefix!
+                var_name = "$" + k
+                if var_name not in self.vars:
+                    # only use env var when it is not locally defined!
+                    self.vars[var_name] = v
+
         self.element_filter = element_filter
+        self.num_updated = 0
 
     def process_element(self, node: Node):
         element = node.element
@@ -58,12 +71,95 @@ class _EnvUpdater(JsonObjectProcessor):
                 parent_element[node.key] = element
 
     def substitute(self, element: str):
-        a = re.split("{|}", element)
-        if len(a) == 3 and a[0] == "" and a[2] == "":
-            element = self.vars.get(a[1], None)
+        original_value = element
+
+        # Check for Simple Variable Ref (SVR)
+        # SVR is resolved to an object that is derived from the variable definition.
+        # If the variable def also contains refs, all such refs will also be resolved.
+        # If the variable def contains local vars, they are also resolved with the values from the ref.
+        # There are two kinds of SVR:
+        # - Simple ref that contains a single var name: {var_name}
+        # - Invoke a definition that contains local vars: {@var_name:n1=v1:n2=v2:...}
+        # The "@var_name" is a def that contains local vars n1, n2, ...
+        # When invoking such def, local var values could also be refs: {@var_name:n1={varp_name}}
+        is_svr = False
+        exp = element.strip()
+        if exp.startswith("{@") and exp.endswith("}"):
+            # this is a ref with local vars
+            is_svr = True
+            exp = exp[1 : len(exp) - 1]
+        else:
+            a = re.split("{|}", exp)
+            if len(a) == 3 and a[0] == "" and a[2] == "":
+                is_svr = True
+                exp = a[1]
+
+        if is_svr:
+            parts = exp.split(":")
+            var_name = parts[0]
+            params = []
+            for i, p in enumerate(parts):
+                if i > 0:
+                    params.append(p)
+
+            if params:
+                # the var_name must reference a dict
+                local_vars = parse_vars(params)
+                item = self.vars.get(var_name)
+                if item:
+                    if isinstance(item, dict):
+                        # scan the item to resolve var refs
+                        new_item = copy.deepcopy(item)
+                        scanner = JsonScanner(new_item)
+                        new_vars = copy.copy(self.vars)
+                        new_vars.update(local_vars)
+                        resolve_var_refs(scanner, new_vars)
+                        element = new_item
+                    else:
+                        raise ConfigError(
+                            f"bad parameterized expression '{element}': {var_name} must be dict but got {type(item)}"
+                        )
+                else:
+                    raise ConfigError(f"bad parameterized expression '{element}': {var_name} is not defined")
+            else:
+                # this is a single var without params
+                element = self.vars.get(var_name, None)
         else:
             element = element.format(**self.vars)
+        if element != original_value:
+            self.num_updated += 1
         return element
+
+
+def resolve_var_refs(scanner: JsonScanner, var_values: dict):
+    """Resolve var references in the config contained in the scanner
+
+    Args:
+        scanner: the scanner that contains config data to be resolved
+        var_values: the dict that contains var values.
+
+    Returns: None
+
+    """
+    updater = _EnvUpdater(var_values)
+    max_rounds = 20
+    num_rounds = 0
+
+    # var_values may contain multi-level refs (value contains refs to other vars)
+    # we keep scanning and resolving refs until all refs are resolved, or we reached max number of rounds.
+    # The max rounds could be reached either because there are cyclic refs or the ref level is too deep.
+    while True:
+        scanner.scan(updater)
+        num_rounds += 1
+        if updater.num_updated == 0:
+            # nothing was resolved - we have resolved everything.
+            break
+        else:
+            # prepare for the next round
+            if num_rounds > max_rounds:
+                # cyclic refs or nest level too deep.
+                raise ConfigError(f"item de-ref exceeds {max_rounds} rounds - cyclic refs or ref level too deep")
+            updater.num_updated = 0
 
 
 class Configurator(JsonObjectProcessor):

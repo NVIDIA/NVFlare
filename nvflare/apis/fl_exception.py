@@ -57,3 +57,9 @@ class TaskExecutionError(Exception):
     """Raised when a task execution failed"""
 
     pass
+
+
+class NotReadyToEndRun(Exception):
+    """Raised when a component is not ready to end run"""
+
+    pass

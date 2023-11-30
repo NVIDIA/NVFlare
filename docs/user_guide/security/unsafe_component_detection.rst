@@ -1,3 +1,5 @@
+.. _unsafe_component_detection:
+
 **************************
 Unsafe Component Detection
 **************************

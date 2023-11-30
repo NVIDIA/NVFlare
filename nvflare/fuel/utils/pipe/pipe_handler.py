@@ -11,12 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import logging
 import threading
 import time
 from collections import deque
 from typing import Optional
 
+from nvflare.apis.signal import Signal
 from nvflare.fuel.utils.pipe.pipe import Message, Pipe
 from nvflare.fuel.utils.validation_utils import (
     check_callable,
@@ -60,7 +61,15 @@ class PipeHandler(object):
 
     """
 
-    def __init__(self, pipe: Pipe, read_interval=0.1, heartbeat_interval=5.0, heartbeat_timeout=30.0):
+    def __init__(
+        self,
+        pipe: Pipe,
+        read_interval=0.1,
+        heartbeat_interval=5.0,
+        heartbeat_timeout=30.0,
+        resend_interval=2.0,
+        max_resends=None,
+    ):
         """
         Constructor of the PipeHandler.
 
@@ -70,6 +79,9 @@ class PipeHandler(object):
             heartbeat_interval: how often to send a heartbeat to the peer
             heartbeat_timeout: how long to wait for a heartbeat from the peer before treating the peer as gone,
                 0 means DO NOT check for heartbeat.
+            resend_interval: how often to resend a message if failing to send. None means no resend.
+                Note that if the pipe does not support resending, then no resend.
+            max_resends: max number of resends. None means no limit.
         """
         check_positive_number("read_interval", read_interval)
         check_positive_number("heartbeat_interval", heartbeat_interval)
@@ -79,10 +91,13 @@ class PipeHandler(object):
         if 0 < heartbeat_timeout <= heartbeat_interval:
             raise ValueError(f"heartbeat_interval {heartbeat_interval} must < heartbeat_timeout {heartbeat_timeout}")
 
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.pipe = pipe
         self.read_interval = read_interval
         self.heartbeat_interval = heartbeat_interval
         self.heartbeat_timeout = heartbeat_timeout
+        self.resend_interval = resend_interval
+        self.max_resends = max_resends
         self.messages = deque([])
         self.reader = threading.Thread(target=self._read)
         self.reader.daemon = True
@@ -91,6 +106,9 @@ class PipeHandler(object):
         self.status_cb = None
         self.cb_args = None
         self.cb_kwargs = None
+        self.msg_cb = None
+        self.msg_cb_args = None
+        self.msg_cb_kwargs = None
         self._other_end_is_up = threading.Event()
 
     def set_status_cb(self, cb, *args, **kwargs):
@@ -99,16 +117,16 @@ class PipeHandler(object):
 
         The status_cb must conform to this signature:
 
-            cb(topic, data, *args, **kwargs)
+            cb(msg, *args, **kwargs)
 
         where the *args and *kwargs are ones passed to this call.
         The status_cb is called from the thread that reads from the pipe, hence it should be short-lived.
         Do not put heavy processing logic in the status_cb.
 
         Args:
-            cb:
-            *args:
-            **kwargs:
+            cb: the callback func
+            *args: the args to be passed to the cb
+            **kwargs: the kwargs to be passed to the cb
 
         Returns: None
 
@@ -118,14 +136,70 @@ class PipeHandler(object):
         self.cb_args = args
         self.cb_kwargs = kwargs
 
-    def _send_to_pipe(self, msg: Message, timeout=None):
-        return self.pipe.send(msg, timeout)
+    def set_message_cb(self, cb, *args, **kwargs):
+        """Set CB for message handling. When a regular message is received, this CB is called.
+        If the msg CB is not set, the handler simply adds the received msg to the message queue.
+        If the msg CB is set, the received msg will NOT be added to the message queue.
 
-    def _receive_from_pipe(self):
-        return self.pipe.receive()
+        The CB must conform to this signature:
+
+            cb(msg, *args, **kwargs)
+
+        where the *args and *kwargs are ones passed to this call.
+
+        The CB is called from the thread that reads from the pipe, hence it should be short-lived.
+        Do not put heavy processing logic in the CB.
+
+        Args:
+            cb: the callback func
+            *args: the args to be passed to the cb
+            **kwargs: the kwargs to be passed to the cb
+
+        Returns: None
+
+        """
+        check_callable("cb", cb)
+        self.msg_cb = cb
+        self.msg_cb_args = args
+        self.msg_cb_kwargs = kwargs
+
+    def _send_to_pipe(self, msg: Message, timeout=None, abort_signal: Signal = None):
+        pipe = self.pipe
+        if not pipe:
+            return False
+
+        if not timeout or not pipe.can_resend() or not self.resend_interval:
+            return pipe.send(msg, timeout)
+
+        num_sends = 0
+        while not self.asked_to_stop:
+            sent = pipe.send(msg, timeout)
+            num_sends += 1
+            if sent:
+                return sent
+
+            if self.max_resends is not None and num_sends > self.max_resends:
+                return False
+
+            if self.asked_to_stop:
+                return False
+
+            if abort_signal and abort_signal.triggered:
+                return False
+
+            # wait for resend_interval before resend, but return if asked_to_stop is set during the wait
+            self.logger.info(f"will resend '{msg.topic}' in {self.resend_interval} secs")
+            start_wait = time.time()
+            while True:
+                if time.time() - start_wait > self.resend_interval:
+                    break
+                time.sleep(0.1)
+        return False
 
     def start(self):
-        """Starts the PipeHandler."""
+        """Starts the PipeHandler.
+        Note: before calling this method, the pipe managed by this PipeHandler must have been opened.
+        """
         if not self.reader.is_alive():
             self.reader.start()
 
@@ -149,13 +223,14 @@ class PipeHandler(object):
     def wait_for_other_end(self, timeout: Optional[float] = None):
         self._other_end_is_up.wait(timeout)
 
-    def send_to_peer(self, msg: Message, timeout=None) -> bool:
+    def send_to_peer(self, msg: Message, timeout=None, abort_signal: Signal = None) -> bool:
         """Sends a message to peer.
 
         Args:
             msg: message to be sent
             timeout: how long to wait for the peer to read the data.
                 If not specified, return False immediately.
+            abort_signal:
 
         Returns:
             Whether the peer has read the data.
@@ -163,24 +238,39 @@ class PipeHandler(object):
         if timeout is not None:
             check_positive_number("timeout", timeout)
         try:
-            return self._send_to_pipe(msg, timeout)
+            return self._send_to_pipe(msg, timeout, abort_signal)
         except BrokenPipeError:
             self._add_message(self._make_event_message(Topic.PEER_GONE, "send failed"))
             return False
 
     def notify_end(self, data):
         """Notifies the peer that the communication is ended normally."""
-        self.send_to_peer(self._make_event_message(Topic.END, data))
+        p = self.pipe
+        if p:
+            try:
+                p.send(self._make_event_message(Topic.END, data))
+            except Exception as ex:
+                self.logger.debug(f"exception notify_end: {secure_format_exception(ex)}")
 
     def notify_abort(self, data):
         """Notifies the peer that the communication is aborted."""
-        self.send_to_peer(self._make_event_message(Topic.ABORT, data))
+        p = self.pipe
+        if p:
+            try:
+                p.send(self._make_event_message(Topic.ABORT, data))
+            except Exception as ex:
+                self.logger.debug(f"exception notify_abort: {secure_format_exception(ex)}")
 
     def _add_message(self, msg: Message):
         if msg.topic in [Topic.END, Topic.ABORT, Topic.PEER_GONE]:
             if self.status_cb is not None:
                 self.status_cb(msg, *self.cb_args, **self.cb_kwargs)
                 return
+        else:
+            if self.msg_cb is not None:
+                self.msg_cb(msg, *self.msg_cb_args, **self.msg_cb_kwargs)
+                return
+
         with self.lock:
             self.messages.append(msg)
 
@@ -188,6 +278,7 @@ class PipeHandler(object):
         try:
             self._try_read()
         except Exception as e:
+            self.logger.error(f"read error: {secure_format_exception(e)}")
             self._add_message(self._make_event_message(Topic.PEER_GONE, f"read error: {secure_format_exception(e)}"))
 
     def _try_read(self):
@@ -195,10 +286,11 @@ class PipeHandler(object):
         last_heartbeat_sent_time = 0.0
         while not self.asked_to_stop:
             now = time.time()
-            msg = self._receive_from_pipe()
+            msg = self.pipe.receive()
             if msg:
                 last_heartbeat_received_time = now
-                self._other_end_is_up.set()
+                if msg.topic not in [Topic.END, Topic.ABORT, Topic.PEER_GONE]:
+                    self._other_end_is_up.set()
                 if msg.topic != Topic.HEARTBEAT:
                     self._add_message(msg)
                 if msg.topic in [Topic.END, Topic.ABORT]:
@@ -206,6 +298,7 @@ class PipeHandler(object):
             else:
                 # is peer gone?
                 if self.heartbeat_timeout and now - last_heartbeat_received_time > self.heartbeat_timeout:
+                    self.logger.error(f"read timeout after {self.heartbeat_timeout} secs")
                     self._add_message(self._make_event_message(Topic.PEER_GONE, "missing heartbeat"))
                     break
 
@@ -224,6 +317,9 @@ class PipeHandler(object):
             A Message at the top of the message queue.
             If the queue is empty, returns None.
         """
+        if self.asked_to_stop:
+            return None
+
         with self.lock:
             if self.messages:
                 return self.messages.popleft()
