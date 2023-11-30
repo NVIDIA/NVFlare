@@ -113,3 +113,11 @@ class TestExperimental:
             Warning, match=r"Use of experimental class BaseClass \(Because it's experimental\)."
         ) and pytest.warns(Warning, match=r"Use of experimental class TestClass \(Because it's also experimental\)."):
             _ = TestClass()
+
+    def test_experimental_func_with_non_string(self):
+        with pytest.raises(TypeError):
+            a = {"test"}
+
+            @experimental(a)
+            def test_f():
+                print("test")

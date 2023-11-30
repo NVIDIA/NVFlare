@@ -69,7 +69,7 @@ def experimental(reason):
                     return super(ExperimentalClass, obj).__new__(obj)
 
             return ExperimentalClass
-        elif inspect.isfunction(obj):
+        else:  # function
             fmt = "Call to experimental function {name}{reason}."
 
             @functools.wraps(obj)
@@ -87,8 +87,6 @@ def experimental(reason):
                 return obj(*args, **kwargs)
 
             return new_func
-        else:
-            raise TypeError(repr(type(reason)))
 
     if inspect.isclass(reason) or inspect.isfunction(reason):
         # The @experimental is used without any 'reason'.
@@ -97,4 +95,4 @@ def experimental(reason):
         # The @experimental is used with a 'reason'.
         return decorator
     else:
-        raise TypeError(repr(type(reason)))
+        raise TypeError(f"@experimental decorator `reason` expected to be string but got {type(reason)}")
