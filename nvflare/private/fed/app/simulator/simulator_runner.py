@@ -490,7 +490,7 @@ class SimulatorClientRunner(FLComponent):
             lock = threading.Lock()
             timeout = self.kv_list.get("simulator_worker_timeout", 60.0)
             for i in range(self.args.threads):
-                executor.submit(lambda p: self.run_client_thread(*p), [self.args.threads, gpu, lock, timeout])
+                executor.submit(lambda p: self.run_client_thread(*p), [self.args.threads, gpu, lock, i, timeout])
 
             # wait for the server and client running thread to finish.
             executor.shutdown()
@@ -512,7 +512,7 @@ class SimulatorClientRunner(FLComponent):
             # Ignore the exception for the simulator client shutdown
             self.logger.warn(f"Exception happened to client{client.name} during shutdown ")
 
-    def run_client_thread(self, num_of_threads, gpu, lock, timeout=60):
+    def run_client_thread(self, num_of_threads, gpu, lock, rank, timeout=60):
         stop_run = False
         interval = 1
         client_to_run = None  # indicates the next client to run
@@ -533,8 +533,9 @@ class SimulatorClientRunner(FLComponent):
         except Exception as e:
             self.logger.error(f"run_client_thread error: {secure_format_exception(e)}")
         finally:
-            for client in self.federated_clients:
-                self.do_one_task(client, num_of_threads, gpu, lock, timeout=timeout, task_name=RunnerTask.END_RUN)
+            if rank == 0:
+                for client in self.federated_clients:
+                    self.do_one_task(client, num_of_threads, gpu, lock, timeout=timeout, task_name=RunnerTask.END_RUN)
 
     def do_one_task(self, client, num_of_threads, gpu, lock, timeout=60.0, task_name=RunnerTask.TASK_EXEC):
         open_port = get_open_ports(1)[0]
