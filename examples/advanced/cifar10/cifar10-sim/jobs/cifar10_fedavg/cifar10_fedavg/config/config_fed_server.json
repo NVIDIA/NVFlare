@@ -2,7 +2,7 @@
     "format_version": 2,
     "min_clients": 8,
     "num_rounds": 50,
-    "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits/cifar10_fedavg_alpha0.1_018566b9-8edc-4462-956f-0ad2021ddb77",
+    "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits",
     "alpha": 0.1,
     "server": {
         "heart_beat_timeout": 600
@@ -54,7 +54,6 @@
             "args": {
                 "min_clients": "{min_clients}",
                 "num_rounds": "{num_rounds}",
-                "wait_time_after_min_received": 10,
                 "persistor_id": "persistor"
             }
         },
