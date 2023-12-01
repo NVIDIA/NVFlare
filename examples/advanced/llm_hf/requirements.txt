@@ -1,0 +1,8 @@
+nvflare
+torch
+datasets
+tensorboard
+transformers
+peft
+trl
+flash-attn
