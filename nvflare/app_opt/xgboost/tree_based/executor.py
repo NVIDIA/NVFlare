@@ -274,7 +274,7 @@ class FedXGBTreeExecutor(Executor):
         self.local_model = bst.save_raw("json")
 
         # report updated model in shareable
-        dxo = DXO(data_kind=DataKind.XGB_MODEL, data={"model_data": self.local_model})
+        dxo = DXO(data_kind=DataKind.WEIGHTS, data={"model_data": self.local_model})
         self.log_info(fl_ctx, "Local epochs finished. Returning shareable")
         new_shareable = dxo.to_shareable()
 

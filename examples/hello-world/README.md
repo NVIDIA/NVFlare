@@ -22,7 +22,7 @@ Before you run the notebook, the following preparation work must be done:
 * [ML to FL](./ml-to-fl/README.md): Showcases how to convert existing ML/DL code to an NVFlare job.
 
 ### Step by step examples
-* [Step by step examples](./step-by-step/readme.md): Shows specific techniques and workflows and what needs to be changed for each.
+* [Step by step examples](./step-by-step/README.md): Shows specific techniques and workflows and what needs to be changed for each.
 
 ### Workflows
 * [Hello Scatter and Gather](./hello-numpy-sag/README.md)

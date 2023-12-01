@@ -16,15 +16,11 @@ import argparse
 import csv
 from typing import Dict, List, Tuple
 
-import numpy as np
 import pandas as pd
-from sklearn.linear_model import SGDClassifier
-from sklearn.metrics import classification_report, roc_auc_score
+from sklearn.cluster import KMeans, MiniBatchKMeans, kmeans_plusplus
+from sklearn.metrics import homogeneity_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-
-# (1) import nvflare client API
-from nvflare import client as flare
 
 
 def to_dataset_tuple(data: dict):
@@ -89,10 +85,7 @@ def main():
     test_size = args.test_size
     skip_rows = args.skip_rows
 
-    # (2) initializes NVFlare client API
-    flare.init()
-
-    site_name = flare.get_site_name()
+    site_name = "site-1"
     feature_data_path = f"{data_root_dir}/{site_name}_header.csv"
     features = load_features(feature_data_path)
     n_features = len(features) - 1  # remove label
@@ -108,61 +101,37 @@ def main():
     x_test, y_test, test_size = dataset["test"]
 
     model = None
-    while flare.is_running():
-        # (3) receives FLModel from NVFlare
-        input_model = flare.receive()
-        global_params = input_model.params
-        curr_round = input_model.current_round
+    global_params = {
+        "n_clusters": 2,
+    }
 
-        print(f"current_round={curr_round}")
-        if curr_round == 0:
-            # (4) initialize model with global_params
-            # and set to all zero
-            fit_intercept = bool(global_params["fit_intercept"])
-            model = SGDClassifier(
-                loss=global_params["loss"],
-                penalty=global_params["penalty"],
-                fit_intercept=fit_intercept,
-                learning_rate=global_params["learning_rate"],
-                eta0=global_params["eta0"],
-                max_iter=1,
-                warm_start=True,
-                random_state=random_state,
-            )
-            n_classes = global_params["n_classes"]
-            model.classes_ = np.array(list(range(n_classes)))
-            model.coef_ = np.zeros((1, n_features))
-            if fit_intercept:
-                model.intercept_ = np.zeros((1,))
-        else:
-            # (5) update model based on global parameters
-            # the model has warm_start, so these parameters will be used in initialize the training
-            if "coef" in global_params:
-                model.coef_ = global_params["coef"]
-            if model.fit_intercept and "intercept" in global_params:
-                model.intercept_ = global_params["intercept"]
+    # Initialize
+    n_clusters = global_params["n_clusters"]
+    center_init, _ = kmeans_plusplus(x_train, n_clusters=n_clusters, random_state=random_state)
 
-        # (6) evaluate global model first.
-        global_auc, global_report = evaluate_model(x_test, model, y_test)
-        # Print the results
-        print(f"{site_name}: global model AUC: {global_auc:.4f}")
-        # print("{site_name}: global model Classification Report:\n", global_report)
+    # following rounds, local training starting from global center
+    model = MiniBatchKMeans(
+        n_clusters=n_clusters,
+        batch_size=train_size,
+        max_iter=5,
+        init=center_init,
+        n_init=1,
+        reassignment_ratio=0,
+        random_state=random_state,
+    )
+    model.fit(x_train)
 
-        # Train the model on the training set
-        model.fit(x_train, y_train)
-        local_auc, local_report = evaluate_model(x_test, model, y_test)
+    # evaluate model
+    # Option 1: if we have the model, directly evaluate the model
+    homo_1 = evaluate_model(x_test, model, y_test)
+    # Option 2: if we have the centers, fit a new model to the centers and eval
+    center_eval = model.cluster_centers_
+    model_eval = KMeans(n_clusters=n_clusters, init=center_eval, n_init=1)
+    model_eval.fit(center_eval)
+    homo_2 = evaluate_model(x_test, model_eval, y_test)
 
-        # Print the results
-        print(f"{site_name}: local model AUC: {local_auc:.4f}")
-        # print("{site_name}: local model Classification Report:\n", local_report)
-
-        # (7) construct trained FL model
-        params = {"coef": model.coef_, "intercept": model.intercept_}
-        metrics = {"accuracy": global_auc}
-        output_model = flare.FLModel(params=params, metrics=metrics)
-
-        # (8) send model back to NVFlare
-        flare.send(output_model)
+    # Print the results, the two options have identical value
+    print(f"model homogeneity_score: {homo_1:.4f}, {homo_2:.4f}")
 
 
 def evaluate_model(x_test, model, y_test):
@@ -170,9 +139,8 @@ def evaluate_model(x_test, model, y_test):
     y_pred = model.predict(x_test)
 
     # Evaluate the model
-    auc = roc_auc_score(y_test, y_pred)
-    report = classification_report(y_test, y_pred)
-    return auc, report
+    homo = homogeneity_score(y_test, y_pred)
+    return homo
 
 
 def define_args_parser():

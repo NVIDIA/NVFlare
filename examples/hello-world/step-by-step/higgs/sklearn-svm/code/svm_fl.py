@@ -16,12 +16,11 @@ import argparse
 import csv
 from typing import Dict, List, Tuple
 
-import numpy as np
 import pandas as pd
-from sklearn.linear_model import SGDClassifier
 from sklearn.metrics import classification_report, roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
 
 # (1) import nvflare client API
 from nvflare import client as flare
@@ -56,12 +55,15 @@ def load_features(feature_data_path: str) -> List:
 
 
 def load_data(
-    data_path: str, data_features: List, random_state: int, test_size: float, skip_rows=None
+    data_path: str, data_features: List, random_state: int, test_size: float, subsample: float = 0.001, skip_rows=None
 ) -> Dict[str, pd.DataFrame]:
     try:
         df: pd.DataFrame = pd.read_csv(
             data_path, names=data_features, sep=r"\s*,\s*", engine="python", na_values="?", skiprows=skip_rows
         )
+
+        # subsample for SVM to handle in reasonable time
+        df = df.sample(frac=subsample, random_state=random_state)
 
         train, test = train_test_split(df, test_size=test_size, random_state=random_state)
 
@@ -95,7 +97,6 @@ def main():
     site_name = flare.get_site_name()
     feature_data_path = f"{data_root_dir}/{site_name}_header.csv"
     features = load_features(feature_data_path)
-    n_features = len(features) - 1  # remove label
 
     data_path = f"{data_root_dir}/{site_name}.csv"
     data = load_data(
@@ -117,48 +118,33 @@ def main():
         print(f"current_round={curr_round}")
         if curr_round == 0:
             # (4) initialize model with global_params
-            # and set to all zero
-            fit_intercept = bool(global_params["fit_intercept"])
-            model = SGDClassifier(
-                loss=global_params["loss"],
-                penalty=global_params["penalty"],
-                fit_intercept=fit_intercept,
-                learning_rate=global_params["learning_rate"],
-                eta0=global_params["eta0"],
-                max_iter=1,
-                warm_start=True,
-                random_state=random_state,
-            )
-            n_classes = global_params["n_classes"]
-            model.classes_ = np.array(list(range(n_classes)))
-            model.coef_ = np.zeros((1, n_features))
-            if fit_intercept:
-                model.intercept_ = np.zeros((1,))
+            model = SVC(kernel=global_params["kernel"])
+            # Train the model on the training set
+            # note that SVM training only happens on first round
+            model.fit(x_train, y_train)
         else:
             # (5) update model based on global parameters
-            # the model has warm_start, so these parameters will be used in initialize the training
-            if "coef" in global_params:
-                model.coef_ = global_params["coef"]
-            if model.fit_intercept and "intercept" in global_params:
-                model.intercept_ = global_params["intercept"]
+            support_x = global_params["support_x"]
+            support_y = global_params["support_y"]
+            model.fit(support_x, support_y)
 
-        # (6) evaluate global model first.
-        global_auc, global_report = evaluate_model(x_test, model, y_test)
+        # (6) evaluate model
+        auc, report = evaluate_model(x_test, model, y_test)
         # Print the results
-        print(f"{site_name}: global model AUC: {global_auc:.4f}")
-        # print("{site_name}: global model Classification Report:\n", global_report)
-
-        # Train the model on the training set
-        model.fit(x_train, y_train)
-        local_auc, local_report = evaluate_model(x_test, model, y_test)
-
-        # Print the results
-        print(f"{site_name}: local model AUC: {local_auc:.4f}")
-        # print("{site_name}: local model Classification Report:\n", local_report)
+        print(f"{site_name}: model AUC: {auc:.4f}")
+        # print("model Classification Report:\n", report)
 
         # (7) construct trained FL model
-        params = {"coef": model.coef_, "intercept": model.intercept_}
-        metrics = {"accuracy": global_auc}
+        # get support vectors
+        if curr_round == 0:
+            index = model.support_
+            local_support_x = x_train[index]
+            local_support_y = y_train[index]
+        else:
+            local_support_x = support_x
+            local_support_y = support_y
+        params = {"support_x": local_support_x, "support_y": local_support_y}
+        metrics = {"accuracy": auc}
         output_model = flare.FLModel(params=params, metrics=metrics)
 
         # (8) send model back to NVFlare
