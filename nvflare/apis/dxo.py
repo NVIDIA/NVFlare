@@ -24,7 +24,6 @@ class DataKind(object):
     FL_MODEL = "FL_MODEL"
     WEIGHTS = "WEIGHTS"
     WEIGHT_DIFF = "WEIGHT_DIFF"
-    XGB_MODEL = "XGB_MODEL"
     METRICS = "METRICS"
     ANALYTIC = "ANALYTIC"
     COLLECTION = "COLLECTION"  # Dict or List of DXO objects

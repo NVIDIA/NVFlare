@@ -92,7 +92,6 @@ class DFStatistics(Statistics):
         return df[feature_name].sum().item()
 
     def mean(self, dataset_name: str, feature_name: str) -> float:
-
         count: int = self.count(dataset_name, feature_name)
         sum_value: float = self.sum(dataset_name, feature_name)
         return sum_value / count
@@ -112,7 +111,6 @@ class DFStatistics(Statistics):
     def histogram(
         self, dataset_name: str, feature_name: str, num_of_bins: int, global_min_value: float, global_max_value: float
     ) -> Histogram:
-
         num_of_bins: int = num_of_bins
 
         df = self.data[dataset_name]

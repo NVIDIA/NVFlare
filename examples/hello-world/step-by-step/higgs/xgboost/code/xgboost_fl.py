@@ -14,17 +14,18 @@
 
 import argparse
 import csv
+import json
 from typing import Dict, List, Tuple
 
-import numpy as np
 import pandas as pd
-from sklearn.linear_model import SGDClassifier
-from sklearn.metrics import classification_report, roc_auc_score
+import xgboost as xgb
+from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
 # (1) import nvflare client API
 from nvflare import client as flare
+from nvflare.app_opt.xgboost.tree_based.shareable_generator import update_model
 
 
 def to_dataset_tuple(data: dict):
@@ -88,6 +89,7 @@ def main():
     random_state = args.random_state
     test_size = args.test_size
     skip_rows = args.skip_rows
+    num_client_bagging = args.num_client_bagging
 
     # (2) initializes NVFlare client API
     flare.init()
@@ -107,7 +109,23 @@ def main():
     x_train, y_train, train_size = dataset["train"]
     x_test, y_test, test_size = dataset["test"]
 
-    model = None
+    # convert to xgboost data matrix
+    dmat_train = xgb.DMatrix(x_train, label=y_train)
+    dmat_test = xgb.DMatrix(x_test, label=y_test)
+
+    xgb_params = {
+        "eta": 0.1 / num_client_bagging,
+        "objective": "binary:logistic",
+        "max_depth": 8,
+        "eval_metric": "auc",
+        "nthread": 16,
+        "num_parallel_tree": 1,
+        "subsample": 1.0,
+        "tree_method": "hist",
+    }
+
+    global_model_as_dict = None
+    auc = 0.5
     while flare.is_running():
         # (3) receives FLModel from NVFlare
         input_model = flare.receive()
@@ -116,49 +134,44 @@ def main():
 
         print(f"current_round={curr_round}")
         if curr_round == 0:
-            # (4) initialize model with global_params
-            # and set to all zero
-            fit_intercept = bool(global_params["fit_intercept"])
-            model = SGDClassifier(
-                loss=global_params["loss"],
-                penalty=global_params["penalty"],
-                fit_intercept=fit_intercept,
-                learning_rate=global_params["learning_rate"],
-                eta0=global_params["eta0"],
-                max_iter=1,
-                warm_start=True,
-                random_state=random_state,
+            # (4) first round, no global model
+            model = xgb.train(
+                xgb_params,
+                dmat_train,
+                num_boost_round=1,
+                evals=[(dmat_train, "train"), (dmat_test, "test")],
             )
-            n_classes = global_params["n_classes"]
-            model.classes_ = np.array(list(range(n_classes)))
-            model.coef_ = np.zeros((1, n_features))
-            if fit_intercept:
-                model.intercept_ = np.zeros((1,))
+            config = model.save_config()
         else:
-            # (5) update model based on global parameters
-            # the model has warm_start, so these parameters will be used in initialize the training
-            if "coef" in global_params:
-                model.coef_ = global_params["coef"]
-            if model.fit_intercept and "intercept" in global_params:
-                model.intercept_ = global_params["intercept"]
+            # (5) update model based on global updates
+            model_updates = global_params["model_data"]
+            for update in model_updates:
+                global_model_as_dict = update_model(global_model_as_dict, json.loads(update))
+            loadable_model = bytearray(json.dumps(global_model_as_dict), "utf-8")
+            # load model
+            model.load_model(loadable_model)
+            model.load_config(config)
 
-        # (6) evaluate global model first.
-        global_auc, global_report = evaluate_model(x_test, model, y_test)
-        # Print the results
-        print(f"{site_name}: global model AUC: {global_auc:.4f}")
-        # print("{site_name}: global model Classification Report:\n", global_report)
+            # (6) evaluate model
+            auc = evaluate_model(x_test, model, y_test)
+            # Print the results
+            print(f"{site_name}: global model AUC: {auc:.5f}")
 
-        # Train the model on the training set
-        model.fit(x_train, y_train)
-        local_auc, local_report = evaluate_model(x_test, model, y_test)
-
-        # Print the results
-        print(f"{site_name}: local model AUC: {local_auc:.4f}")
-        # print("{site_name}: local model Classification Report:\n", local_report)
+            # train model in two steps
+            # first, eval on train and test
+            eval_results = model.eval_set(
+                evals=[(dmat_train, "train"), (dmat_test, "test")], iteration=model.num_boosted_rounds() - 1
+            )
+            print(eval_results)
+            # second, train for one round
+            model.update(dmat_train, model.num_boosted_rounds())
 
         # (7) construct trained FL model
-        params = {"coef": model.coef_, "intercept": model.intercept_}
-        metrics = {"accuracy": global_auc}
+        # Extract newly added tree using xgboost_bagging slicing api
+        bst_new = model[model.num_boosted_rounds() - 1 : model.num_boosted_rounds()]
+        local_model_update = bst_new.save_raw("json")
+        params = {"model_data": local_model_update}
+        metrics = {"accuracy": auc}
         output_model = flare.FLModel(params=params, metrics=metrics)
 
         # (8) send model back to NVFlare
@@ -167,12 +180,12 @@ def main():
 
 def evaluate_model(x_test, model, y_test):
     # Make predictions on the testing set
-    y_pred = model.predict(x_test)
+    dtest = xgb.DMatrix(x_test)
+    y_pred = model.predict(dtest)
 
     # Evaluate the model
     auc = roc_auc_score(y_test, y_pred)
-    report = classification_report(y_test, y_pred)
-    return auc, report
+    return auc
 
 
 def define_args_parser():
@@ -180,6 +193,12 @@ def define_args_parser():
     parser.add_argument("--data_root_dir", type=str, help="root directory path to csv data file")
     parser.add_argument("--random_state", type=int, default=0, help="random state")
     parser.add_argument("--test_size", type=float, default=0.2, help="test ratio, default to 20%")
+    parser.add_argument(
+        "--num_client_bagging",
+        type=int,
+        default=3,
+        help="number of clients with uniform data sizes participating in bagging",
+    )
     parser.add_argument(
         "--skip_rows",
         type=str,
