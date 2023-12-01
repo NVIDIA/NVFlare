@@ -62,6 +62,21 @@ def _object_exists(uri: str):
     return all((os.path.isabs(uri), os.path.isdir(uri), data_exists, meta_exists))
 
 
+def _encode_meta(meta: dict) -> bytes:
+    return json.dumps(meta).encode("utf-8")
+
+
+def _decode_meta(data: bytes) -> dict:
+    s = data.decode("utf-8")
+    if s.startswith('"'):
+        # this is in old format
+        result = ast.literal_eval(json.loads(s))
+    else:
+        # this is json string
+        result = json.loads(s)
+    return result
+
+
 @validate_class_methods_args
 class FilesystemStorage(StorageSpec):
     def __init__(self, root_dir=os.path.abspath(os.sep), uri_root="/"):
@@ -125,7 +140,7 @@ class FilesystemStorage(StorageSpec):
         meta_path = os.path.join(full_uri, META)
         self._save_data(data, data_path)
         try:
-            _write(meta_path, json.dumps(str(meta)).encode("utf-8"))
+            _write(meta_path, _encode_meta(meta))
         except Exception as e:
             os.remove(data_path)
             raise e
@@ -184,11 +199,11 @@ class FilesystemStorage(StorageSpec):
             raise StorageException("object {} does not exist".format(uri))
 
         if replace:
-            _write(os.path.join(full_uri, META), json.dumps(str(meta)).encode("utf-8"))
+            _write(os.path.join(full_uri, META), _encode_meta(meta))
         else:
             prev_meta = self.get_meta(uri)
             prev_meta.update(meta)
-            _write(os.path.join(full_uri, META), json.dumps(str(prev_meta)).encode("utf-8"))
+            _write(os.path.join(full_uri, META), _encode_meta(prev_meta))
 
     def list_objects(self, path: str) -> List[str]:
         """List all objects in the specified path.
@@ -231,7 +246,7 @@ class FilesystemStorage(StorageSpec):
         if not _object_exists(full_uri):
             raise StorageException("object {} does not exist".format(uri))
 
-        return ast.literal_eval(json.loads(_read(os.path.join(full_uri, META)).decode("utf-8")))
+        return _decode_meta(_read(os.path.join(full_uri, META)))
 
     def get_data(self, uri: str, component_name: str = DATA) -> bytes:
         """Gets data of the specified object.

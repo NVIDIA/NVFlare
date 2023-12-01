@@ -33,17 +33,24 @@ from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes, zip_directory_to_
 
 class _JobFilter(ABC):
     @abstractmethod
-    def filter_job(self, meta: dict) -> bool:
+    def filter_job(self, meta: dict, job_id: str) -> bool:
         pass
+
+    def is_job_skipped(self, job_id: str) -> bool:
+        return False
 
 
 class _StatusFilter(_JobFilter):
     def __init__(self, status_to_check):
         self.result = []
+        if not isinstance(status_to_check, list):
+            # turning to list
+            status_to_check = [status_to_check]
         self.status_to_check = status_to_check
 
-    def filter_job(self, meta: dict):
-        if meta[JobMetaKey.STATUS] == self.status_to_check:
+    def filter_job(self, meta: dict, job_id: str):
+        status = meta.get(JobMetaKey.STATUS.value)
+        if status in self.status_to_check:
             self.result.append(job_from_meta(meta))
         return True
 
@@ -52,25 +59,53 @@ class _AllJobsFilter(_JobFilter):
     def __init__(self):
         self.result = []
 
-    def filter_job(self, meta: dict):
+    def filter_job(self, meta: dict, job_id: str):
         self.result.append(job_from_meta(meta))
         return True
 
 
 class _ReviewerFilter(_JobFilter):
-    def __init__(self, reviewer_name, fl_ctx: FLContext):
+    def __init__(self, reviewer_name):
         """Not used yet, for use in future implementations."""
         self.result = []
         self.reviewer_name = reviewer_name
 
-    def filter_job(self, meta: dict):
+    def filter_job(self, meta: dict, job_id: str):
         approvals = meta.get(JobMetaKey.APPROVALS)
         if not approvals or self.reviewer_name not in approvals:
             self.result.append(job_from_meta(meta))
         return True
 
 
-# TODO:: use try block around storage calls
+class _ScheduleJobFilter(_JobFilter):
+
+    """
+    This filter is optimized for selecting jobs to schedule since it is used so frequently (every 1 sec).
+    """
+
+    def __init__(self):
+        self.result = []
+        self.skipped_jobs = {}  # job id => bool for quick lookup.
+
+    def is_job_skipped(self, job_id) -> bool:
+        return job_id in self.skipped_jobs
+
+    def filter_job(self, meta: dict, job_id: str):
+        status = meta.get(JobMetaKey.STATUS.value)
+        if status == RunStatus.SUBMITTED.value:
+            self.result.append(job_from_meta(meta))
+        elif status:
+            # skip this job in all future calls (so the meta file of this job won't be read)
+            self.skipped_jobs[job_id] = True
+        return True
+
+    def reset(self):
+        self.result = []
+
+    def get_result(self):
+        result = self.result
+        self.reset()
+        return result
 
 
 class SimpleJobDefManager(JobDefManagerSpec):
@@ -79,6 +114,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
         self.uri_root = uri_root
         os.makedirs(uri_root, exist_ok=True)
         self.job_store_id = job_store_id
+        self._schedule_job_filter = _ScheduleJobFilter()
 
     def _get_job_store(self, fl_ctx):
         engine = fl_ctx.get_engine()
@@ -242,28 +278,47 @@ class SimpleJobDefManager(JobDefManagerSpec):
         self._scan(job_filter, fl_ctx)
         return job_filter.result
 
+    def get_jobs_to_schedule(self, fl_ctx: FLContext) -> List[Job]:
+        self._schedule_job_filter.reset()
+        self._scan(self._schedule_job_filter, fl_ctx)
+        return self._schedule_job_filter.get_result()
+
     def _scan(self, job_filter: _JobFilter, fl_ctx: FLContext):
         store = self._get_job_store(fl_ctx)
         jid_paths = store.list_objects(self.uri_root)
         if not jid_paths:
             return
 
+        total_jobs = len(jid_paths)
+        meta_reads = 0
         for jid_path in jid_paths:
             jid = pathlib.PurePath(jid_path).name
-
-            meta = store.get_meta(self.job_uri(jid))
-            if meta:
-                ok = job_filter.filter_job(meta)
-                if not ok:
-                    break
+            if not job_filter.is_job_skipped(jid):
+                # only read meta file if not to be skipped!
+                meta_reads += 1
+                meta = store.get_meta(self.job_uri(jid))
+                if meta:
+                    ok = job_filter.filter_job(meta, jid)
+                    if not ok:
+                        break
+        self.log_debug(fl_ctx, f"read {meta_reads} of {total_jobs} jobs")
 
     def get_jobs_by_status(self, status, fl_ctx: FLContext) -> List[Job]:
+        """Get jobs that are in the specified status
+
+        Args:
+            status: a single status value or a list of status values
+            fl_ctx: the FL context
+
+        Returns: list of jobs that are in specified status
+
+        """
         job_filter = _StatusFilter(status)
         self._scan(job_filter, fl_ctx)
         return job_filter.result
 
     def get_jobs_waiting_for_review(self, reviewer_name: str, fl_ctx: FLContext) -> List[Job]:
-        job_filter = _ReviewerFilter(reviewer_name, fl_ctx)
+        job_filter = _ReviewerFilter(reviewer_name)
         self._scan(job_filter, fl_ctx)
         return job_filter.result
 

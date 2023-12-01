@@ -398,7 +398,7 @@ class JobRunner(FLComponent):
                 if not isinstance(engine.server.server_state, HotState):
                     time.sleep(1.0)
                     continue
-                approved_jobs = job_manager.get_jobs_by_status(RunStatus.SUBMITTED, fl_ctx)
+                approved_jobs = job_manager.get_jobs_to_schedule(fl_ctx)
                 self.log_debug(
                     fl_ctx, f"{fl_ctx.get_identity_name()} Got approved_jobs: {approved_jobs} from the job_manager"
                 )
@@ -543,12 +543,7 @@ class JobRunner(FLComponent):
 
     @staticmethod
     def _get_all_running_jobs(job_manager, fl_ctx):
-        all_jobs = []
-        dispatched_jobs = job_manager.get_jobs_by_status(RunStatus.DISPATCHED, fl_ctx)
-        all_jobs.extend(dispatched_jobs)
-        running_jobs = job_manager.get_jobs_by_status(RunStatus.RUNNING, fl_ctx)
-        all_jobs.extend(running_jobs)
-        return all_jobs
+        return job_manager.get_jobs_by_status([RunStatus.RUNNING, RunStatus.DISPATCHED], fl_ctx)
 
     def stop_run(self, job_id: str, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
