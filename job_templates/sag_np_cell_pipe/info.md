@@ -1,11 +1,11 @@
 # Job Template Information Card
 
-## sag_pt
-    name = "sag_pt"
-    description = "Scatter and Gather Workflow using pytorch" 
+## sag_np_cell_pipe
+    name = "sag_np_cell_pipe"
+    description = "Scatter and Gather Workflow using NumPy" 
     class_name  =  "ScatterAndGather"
     controller_type = "server"
     executor_type = "launcher_executor"
     contributor = "NVIDIA"
-    init_publish_date = "2023-09-11"
+    init_publish_date = "2023-11-29"
     last_updated_date = "2023-11-29" # yyyy-mm-dd

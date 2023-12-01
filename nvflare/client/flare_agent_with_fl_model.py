@@ -12,8 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .config import ConfigKey
 
-SYS_ATTRS = (ConfigKey.JOB_ID, ConfigKey.SITE_NAME)
-CONFIG_DATA_EXCHANGE = "config_data_exchange.json"
-CONFIG_METRICS_EXCHANGE = "config_metrics_exchange.json"
+from nvflare.apis.shareable import Shareable
+from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+
+from .flare_agent import FlareAgent
+
+
+class FlareAgentWithFLModel(FlareAgent):
+    def shareable_to_task_data(self, shareable: Shareable) -> FLModel:
+        model = FLModelUtils.from_shareable(shareable)
+        return model
+
+    def task_result_to_shareable(self, result: FLModel, rc) -> Shareable:
+        shareable = FLModelUtils.to_shareable(result)
+        shareable.set_return_code(rc)
+        return shareable

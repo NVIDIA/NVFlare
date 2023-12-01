@@ -99,12 +99,39 @@ Then we can create the job:
 
 ```bash
 nvflare job create -force -j ./jobs/np_loop -w sag_np -sd ./code/ \
--f config_fed_client.conf app_script=train_loop.py params_transfer_type=FULL launch_once=true \
+-f config_fed_client.conf app_script=train_loop.py params_transfer_type=FULL launch_once=true
 ```
 
 Then we can run it using the NVFlare Simulator:
 
 ```bash
 nvflare simulator -n 2 -t 2 ./jobs/np_loop -w np_loop_workspace
+```
+
+## Using CellPipe instead of FilePipe
+
+We can use `CellPipe` instead of `FilePipe` to communicate between NVFlare client and external process.
+
+The `FilePipe` utilizes the file system for communication, involving read and write operations to a file.
+On the other hand, the `CellPipe` leverages the `Cell` from NVFlare's foundation layer (f3) for communication.
+This allows it to make use of drivers from the f3 layer, such as TCP, GRPC, HTTP, and any customized drivers.
+
+It is advisable to opt for `CellPipe` in scenarios where there is a high frequency of data exchange or
+when the file system is beyond your control.
+
+On the contrary, if the NVFlare client and the external system/process share a common file system,
+and the data exchange does not require high frequency, `FilePipe` is a more straightforward option.
+
+Let's create the job:
+
+```bash
+nvflare job create -force -j ./jobs/np_loop_cell_pipe -w sag_np_cell_pipe -sd ./code/ \
+-f config_fed_client.conf app_script=train_loop.py params_transfer_type=FULL launch_once=true
+```
+
+Then we can run it using the NVFlare Simulator:
+
+```bash
+nvflare simulator -n 2 -t 2 ./jobs/np_loop_cell_pipe -w np_loop_cell_pipe_workspace
 ```
 
