@@ -99,6 +99,10 @@ class _CellInfo:
 
 
 class CellPipe(Pipe):
+    """
+    CellPipe is an implementation of `Pipe` that utilizes the `Cell` from NVFlare's foundation layer (f3) to
+    do the communication.
+    """
 
     _lock = threading.Lock()
     _cells_info = {}  # (root_url, site_name, token) => _CellInfo
@@ -160,7 +164,7 @@ class CellPipe(Pipe):
         Args:
             mode: passive or active mode
             site_name: name of the FLARE site
-            token: unique id to guarantee the uniqueness of cell FQCN.
+            token: unique id to guarantee the uniqueness of cell's FQCN.
             root_url: the root url of the cellnet that the pipe's cell will join
             secure_mode: whether connection to the root is secure (TLS)
             workspace_dir: the directory that contains startup for joining the cellnet. Required only in secure_mode

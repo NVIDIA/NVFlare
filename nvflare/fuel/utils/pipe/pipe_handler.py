@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import logging
 import threading
 import time
@@ -109,7 +110,9 @@ class PipeHandler(object):
         self.msg_cb = None
         self.msg_cb_args = None
         self.msg_cb_kwargs = None
-        self._other_end_is_up = threading.Event()
+        self.peer_is_up_or_dead = threading.Event()
+        self._pause = False
+        self._last_heartbeat_received_time = None
 
     def set_status_cb(self, cb, *args, **kwargs):
         """Set CB for status handling. When the peer status is changed (ABORT, END, GONE), this CB is called.
@@ -210,7 +213,7 @@ class PipeHandler(object):
             close_pipe: whether to close the monitored pipe.
         """
         self.asked_to_stop = True
-        self._other_end_is_up.clear()
+        self.peer_is_up_or_dead.clear()
         pipe = self.pipe
         self.pipe = None
         if pipe and close_pipe:
@@ -219,9 +222,6 @@ class PipeHandler(object):
     @staticmethod
     def _make_event_message(topic: str, data):
         return Message.new_request(topic, data)
-
-    def wait_for_other_end(self, timeout: Optional[float] = None):
-        self._other_end_is_up.wait(timeout)
 
     def send_to_peer(self, msg: Message, timeout=None, abort_signal: Signal = None) -> bool:
         """Sends a message to peer.
@@ -282,24 +282,38 @@ class PipeHandler(object):
             self._add_message(self._make_event_message(Topic.PEER_GONE, f"read error: {secure_format_exception(e)}"))
 
     def _try_read(self):
-        last_heartbeat_received_time = time.time()
+        self._last_heartbeat_received_time = time.time()
         last_heartbeat_sent_time = 0.0
         while not self.asked_to_stop:
             now = time.time()
+
+            if self._pause:
+                time.sleep(self.read_interval)
+                continue
+
             msg = self.pipe.receive()
+
             if msg:
-                last_heartbeat_received_time = now
-                if msg.topic not in [Topic.END, Topic.ABORT, Topic.PEER_GONE]:
-                    self._other_end_is_up.set()
-                if msg.topic != Topic.HEARTBEAT:
+                self._last_heartbeat_received_time = now
+                # if receive any messages even if Topic is END or ABORT or PEER_GONE
+                #    we still set peer_is_up_or_dead, as we no longer need to wait
+                self.peer_is_up_or_dead.set()
+                if msg.topic != Topic.HEARTBEAT and not self.asked_to_stop:
                     self._add_message(msg)
                 if msg.topic in [Topic.END, Topic.ABORT]:
                     break
             else:
                 # is peer gone?
-                if self.heartbeat_timeout and now - last_heartbeat_received_time > self.heartbeat_timeout:
-                    self.logger.error(f"read timeout after {self.heartbeat_timeout} secs")
-                    self._add_message(self._make_event_message(Topic.PEER_GONE, "missing heartbeat"))
+                if (
+                    self.heartbeat_timeout
+                    and now - self._last_heartbeat_received_time > self.heartbeat_timeout
+                    and not self.asked_to_stop
+                ):
+                    self._add_message(
+                        self._make_event_message(
+                            Topic.PEER_GONE, f"missing heartbeat after {self.heartbeat_timeout} secs"
+                        )
+                    )
                     break
 
             # send heartbeat to the peer
@@ -325,3 +339,13 @@ class PipeHandler(object):
                 return self.messages.popleft()
             else:
                 return None
+
+    def pause(self):
+        """Stops heartbeat checking and sending."""
+        self._pause = True
+
+    def resume(self):
+        """Resumes heartbeat checking and sending."""
+        if self._pause:
+            self._pause = False
+            self._last_heartbeat_received_time = time.time()

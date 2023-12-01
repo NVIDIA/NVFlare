@@ -17,14 +17,14 @@ from typing import Optional
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, FLMetaKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.fuel.utils.constants import PipeChannelName
 from nvflare.fuel.utils.pipe.pipe import Message, Pipe
-from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler
+from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler, Topic
 from nvflare.fuel.utils.validation_utils import check_non_negative_int, check_positive_number, check_str
 from nvflare.security.logging import secure_format_exception
 
@@ -114,9 +114,6 @@ class TaskExchanger(Executor):
         self.logger.info(f"pipe status changed to {msg.topic}")
         self.pipe_handler.stop()
 
-    def stop(self, task_name: str, fl_ctx: FLContext):
-        pass
-
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         """
         The TaskExchanger always sends the Shareable to the peer, and expects to receive a Shareable object from the
@@ -128,6 +125,12 @@ class TaskExchanger(Executor):
         TaskExchanger generic and can be reused for any applications (e.g. Shareable based, DXO based, or any custom
         data based).
         """
+        if not self.check_input_shareable(task_name, shareable, fl_ctx):
+            self.log_error(fl_ctx, "bad input task shareable")
+            return make_reply(ReturnCode.BAD_TASK_DATA)
+
+        shareable.set_header(FLMetaKey.JOB_ID, fl_ctx.get_job_id())
+        shareable.set_header(FLMetaKey.SITE_NAME, fl_ctx.get_identity_name())
         task_id = shareable.get_header(key=FLContextKey.TASK_ID)
 
         # send to peer
@@ -150,13 +153,13 @@ class TaskExchanger(Executor):
                 # notify peer that the task is aborted
                 self.log_debug(fl_ctx, f"task '{task_name}' is aborted.")
                 self.pipe_handler.notify_abort(task_id)
-                self.stop(task_name, fl_ctx)
                 self.pipe_handler.stop()
                 return make_reply(ReturnCode.TASK_ABORTED)
 
             if self.pipe_handler.asked_to_stop:
                 self.log_debug(fl_ctx, "task pipe stopped!")
-                self.stop(task_name, fl_ctx)
+                self.pipe_handler.notify_abort(task_id)
+                abort_signal.trigger("task pipe stopped!")
                 return make_reply(ReturnCode.TASK_ABORTED)
 
             reply: Optional[Message] = self.pipe_handler.get_next()
@@ -166,7 +169,7 @@ class TaskExchanger(Executor):
                     self.log_error(fl_ctx, f"task '{task_name}' timeout after {self.task_wait_time} secs")
                     # also tell peer to abort the task
                     self.pipe_handler.notify_abort(task_id)
-                    self.stop(task_name, fl_ctx)
+                    abort_signal.trigger(f"task '{task_name}' timeout after {self.task_wait_time} secs")
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
             elif reply.msg_type != Message.REPLY:
                 self.log_warning(
@@ -190,13 +193,59 @@ class TaskExchanger(Executor):
                     result = reply.data
                     if not isinstance(result, Shareable):
                         self.log_error(fl_ctx, f"bad task result from peer: expect Shareable but got {type(result)}")
-                        result = make_reply(ReturnCode.EXECUTION_EXCEPTION)
-                        return result
+                        return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+
                     current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
                     if current_round:
                         result.set_header(AppConstants.CURRENT_ROUND, current_round)
+
+                    if not self.check_output_shareable(task_name, result, fl_ctx):
+                        self.log_error(fl_ctx, "bad task result from peer")
+                        return make_reply(ReturnCode.EXECUTION_EXCEPTION)
                     return result
                 except Exception as ex:
                     self.log_error(fl_ctx, f"Failed to convert result: {secure_format_exception(ex)}")
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
             time.sleep(self.result_poll_interval)
+
+    def check_input_shareable(self, task_name: str, shareable: Shareable, fl_ctx: FLContext) -> bool:
+        """Checks input shareable before execute.
+
+        Returns:
+            True, if input shareable looks good; False, otherwise.
+        """
+        return True
+
+    def check_output_shareable(self, task_name: str, shareable: Shareable, fl_ctx: FLContext) -> bool:
+        """Checks output shareable after execute.
+
+        Returns:
+            True, if output shareable looks good; False, otherwise.
+        """
+        return True
+
+    def ask_peer_to_end(self, fl_ctx: FLContext) -> bool:
+        req = Message.new_request(topic=Topic.END, data="END")
+        has_been_read = self.pipe_handler.send_to_peer(req, timeout=self.peer_read_timeout)
+        if self.peer_read_timeout and not has_been_read:
+            self.log_warning(
+                fl_ctx,
+                f"3rd party does not read END msg in {self.peer_read_timeout} secs!",
+            )
+            return False
+        return True
+
+    def peer_is_up_or_dead(self) -> bool:
+        return self.pipe_handler.peer_is_up_or_dead.is_set()
+
+    def clear_pipe(self):
+        if self.pipe:
+            self.pipe.clear()
+
+    def pause_pipe_handler(self):
+        """Stops pipe_handler heartbeat."""
+        self.pipe_handler.pause()
+
+    def resume_pipe_handler(self):
+        """Resumes pipe_handler heartbeat."""
+        self.pipe_handler.resume()

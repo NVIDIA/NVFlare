@@ -12,16 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from abc import ABC, abstractmethod
+from typing import Any
+
+from nvflare.apis.dxo import from_shareable
+from nvflare.apis.filter import Filter
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import Shareable
 
 
-class ExchangeTask:
-    def __init__(self, task_name: str, task_id: str, data: Any, meta: Optional[dict] = None, return_code: str = "ok"):
-        self.task_name = task_name
-        self.task_id = task_id
-        self.meta = meta
-        self.data = data
-        self.return_code = return_code
+class ParamsConverter(Filter, ABC):
+    def process(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
+        dxo = from_shareable(shareable)
+        dxo.data = self.convert(dxo.data)
+        dxo.update_shareable(shareable)
+        return shareable
 
-    def __str__(self):
-        return f"Task(name:{self.task_name},id:{self.task_id})"
+    @abstractmethod
+    def convert(self, params: Any) -> Any:
+        pass
