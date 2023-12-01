@@ -209,8 +209,11 @@ class FLModelUtils:
         return FLModelUtils.get_meta_prop(model, MetaKey.CONFIGS)
 
     @staticmethod
-    def update_model(model: FLModel, model_update: FLModel) -> FLModel:
-        model.meta.update(model_update.meta)
+    def update_model(model: FLModel, model_update: FLModel, replace_meta: bool = True) -> FLModel:
+        if replace_meta:
+            model.meta = model_update.meta
+        else:
+            model.meta.update(model_update.meta)
         if model_update.params_type == ParamsType.FULL:
             model.params = model_update.params
         elif model_update.params_type == ParamsType.DIFF:
