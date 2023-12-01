@@ -40,14 +40,84 @@ class TestExperimental:
             def __init__(self):
                 print("I am a test class")
 
-        with pytest.warns(Warning, match=r"Call to experimental class TestClass."):
+        with pytest.warns(Warning, match=r"Use of experimental class TestClass."):
             _ = TestClass()
 
     def test_experimental_class_with_string(self):
-        @experimental("please use NewTestClass")
+        @experimental("Because it's experimental")
         class TestClass:
             def __init__(self):
                 print("I am a test class")
 
-        with pytest.warns(Warning, match=r"Call to experimental class TestClass \(please use NewTestClass\)."):
+        with pytest.warns(Warning, match=r"Use of experimental class TestClass \(Because it's experimental\)."):
             _ = TestClass()
+
+    def test_experimental_class_inheritance_one_arg(self):
+        @experimental
+        class BaseClass:
+            def __init__(self):
+                print("I am a base class")
+
+        class TestClass(BaseClass):
+            def __init__(self):
+                super().__init__()
+                print("I am a test class")
+
+        with pytest.warns(Warning, match=r"Use of experimental class BaseClass."):
+            _ = TestClass()
+
+    def test_experimental_class_inheritance_with_string(self):
+        @experimental("Because it's experimental")
+        class BaseClass:
+            def __init__(self):
+                print("I am a base class")
+
+        class TestClass(BaseClass):
+            def __init__(self):
+                super().__init__()
+                print("I am a test class")
+
+        with pytest.warns(Warning, match=r"Use of experimental class BaseClass \(Because it's experimental\)."):
+            _ = TestClass()
+
+    def test_experimental_class_inheritance_one_arg2(self):
+        @experimental
+        class BaseClass:
+            def __init__(self):
+                print("I am a base class")
+
+        @experimental
+        class TestClass(BaseClass):
+            def __init__(self):
+                super().__init__()
+                print("I am a test class")
+
+        with pytest.warns(Warning, match=r"Use of experimental class BaseClass.") and pytest.warns(
+            Warning, match=r"Use of experimental class TestClass."
+        ):
+            _ = TestClass()
+
+    def test_experimental_class_inheritance_with_string2(self):
+        @experimental("Because it's experimental")
+        class BaseClass:
+            def __init__(self):
+                print("I am a base class")
+
+        @experimental("Because it's also experimental")
+        class TestClass(BaseClass):
+            def __init__(self):
+                super().__init__()
+                print("I am a test class")
+
+        with pytest.warns(
+            Warning, match=r"Use of experimental class BaseClass \(Because it's experimental\)."
+        ) and pytest.warns(Warning, match=r"Use of experimental class TestClass \(Because it's also experimental\)."):
+            _ = TestClass()
+
+    def test_experimental_func_with_non_string(self):
+        with pytest.raises(TypeError):
+            a = {"test"}
+
+            @experimental(a)
+            def test_f():
+                print("test")
