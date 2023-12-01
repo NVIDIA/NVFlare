@@ -287,8 +287,6 @@ We illustrate both vertical and horizontal federated learning with XGBoost, alon
 Migration to 2.4.0: Notes and Tips
 **********************************
 
-Coming Soon
-
 FLARE 2.4.0 introduces a few API and behavior changes. This migration guide will help you to migrate from the previous NVFLARE version to the current version.
 
 FLARE API Parity
@@ -317,7 +315,8 @@ The old structure puts the server's result dict directly at the top level of the
 To make it consistent between server and client results, we've change to put the server's result as an item keyed on "server".
 If any code is based on the old return structure of FLAdminAPI, please update it accordingly.
 
-.. code-block:: python
+.. code-block:: json
+
     {
       "server": { # new "server" key for server result dict
         "ScatterAndGather": {
@@ -359,9 +358,11 @@ The POC command has been upgraded in 2.4.0:
 - Remove "--" for action commands, change to subcommands
 - new ``-d`` docker and ``-he`` Homomorphic encryption options
 - ``nvflare poc prepare`` generates ``.nvflare/config.conf`` to store location of POC workspace, takes precedent over environment variable ``NVFLARE_POC_WORKSPACE``
+- In the previous version, the startup kits are located directly under default POC workspace at ``/tmp/nvflare/poc``. In the 2.4.0, the startup kit is now under ``/tmp/nvflare/poc/example_project/prod_00/`` to follow the production provision default structure.
 - Multi-org and multi-role support
 
 .. code-block:: none
+
   nvflare poc -h
   usage: nvflare poc [-h] [--prepare] [--start] [--stop] [--clean] {prepare,prepare-jobs-dir,start,stop,clean} ...
 

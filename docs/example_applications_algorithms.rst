@@ -23,22 +23,21 @@ NVIDIA FLARE has several tutorials and examples to help you get started with fed
 
 The following tutorials and quickstart guides walk you through some of these examples:
 
-  1. **Hello World** introduction to NVFlare.
+  1. **Step-By-Step Example Series**
 
-     1.1. Deep Learning to Federated Learning
-          * :github_nvflare_link:`Deep Learning to Federated Learning (GitHub) <examples/hello-world/ml-to-fl>` - Example for converting Deep Learning (DL) to Federated Learning (FL).
-
-     1.2. Step-by-Step Examples
-          * :github_nvflare_link:`Step-by-Step Examples (GitHub) <examples/hello-world/step-by-step>` - Step-by-step examples for running a federated learning project with NVFlare.
+    * :github_nvflare_link:`Step-by-Step Examples (GitHub) <examples/hello-world/step-by-step>` - Step-by-step examples series with CIFAR-10 and HIGGS to showcase to showcase different FLARE features, workflows, and APIs.
 
   2. **Hello World Examples** which can be run from the :github_nvflare_link:`hello_world notebook <examples/hello-world/hello_world.ipynb>`.
 
-     2.1. Workflows
+     2.1. Deep Learning to Federated Learning
+          * :github_nvflare_link:`Deep Learning to Federated Learning (GitHub) <examples/hello-world/ml-to-fl>` - Example for converting Deep Learning (DL) to Federated Learning (FL) using the Client API.
+
+     2.2. Workflows
           * :ref:`Hello Scatter and Gather <hello_scatter_and_gather>` - Example using the Scatter And Gather (SAG) workflow with a Numpy trainer
           * :ref:`Hello Cross-Site Validation <hello_cross_val>` - Example using the Cross Site Model Eval workflow with a Numpy trainer
           * :github_nvflare_link:`Hello Cyclic Weight Transfer (GitHub) <examples/hello-world/hello-cyclic>` - Example using the CyclicController workflow to implement `Cyclic Weight Transfer <https://pubmed.ncbi.nlm.nih.gov/29617797/>`_ with TensorFlow as the deep learning training framework
 
-     2.2. Deep Learning
+     2.3. Deep Learning
           * :ref:`Hello PyTorch <hello_pt>` - Example image classifier using FedAvg and PyTorch as the deep learning training framework
           * :ref:`Hello TensorFlow <hello_tf2>` - Example image classifier using FedAvg and TensorFlow as the deep learning training frameworks
 
@@ -49,11 +48,11 @@ The following tutorials and quickstart guides walk you through some of these exa
     * :github_nvflare_link:`NVFLARE in POC Mode <examples/tutorials/setup_poc.ipynb>` - Shows how to use :ref:`POC mode <poc_command>` to test the features of a full FLARE deployment on a single machine.
     * :github_nvflare_link:`Job CLI Tutorial <examples/tutorials/job_cli.ipynb>` - Walks through the different commands of the Job CLI and showcases syntax and example usages.
 
-  1. **FL Algorithms**
+  4. **FL Algorithms**
 
     * :github_nvflare_link:`Federated Learning with CIFAR-10 (GitHub) <examples/advanced/cifar10>` - Includes examples of using FedAvg, FedProx, FedOpt, SCAFFOLD, homomorphic encryption, and streaming of TensorBoard metrics to the server during training
 
-  1. **Traditional ML examples**
+  5. **Traditional ML examples**
 
     * :github_nvflare_link:`Federated Linear Model with Scikit-learn (GitHub) <examples/advanced/sklearn-linear>` - For an example of using NVIDIA FLARE with `scikit-learn <https://scikit-learn.org/>`_, a widely used open-source machine learning library that supports supervised and unsupervised learning.
     * :github_nvflare_link:`Federated K-Means Clustering with Scikit-learn (GitHub) <examples/advanced/sklearn-kmeans>` - NVIDIA FLARE with `scikit-learn <https://scikit-learn.org/>`_ and k-Means.
@@ -78,6 +77,8 @@ The following tutorials and quickstart guides walk you through some of these exa
   8. **Federated Site Policies**
 
     * :github_nvflare_link:`Federated Policies (Github) <examples/advanced/federated-policies/README.rst>` - Discuss the federated site policies for authorization, resource and data privacy management
+    * :github_nvflare_link:`Custome Authentication (Github) <examples/advanced/custom_authentication/README.rst>` - Show the custom authentication policy and secure mode.
+    * :github_nvflare_link:`Job-Level Authorization (Github) <examples/advanced//job-level-authorization/README.rst>` - Show the job-level authorization policy and secure mode.
 
   9. **Experiment Tracking**
 
@@ -101,13 +102,14 @@ The following tutorials and quickstart guides walk you through some of these exa
 
   13. **Graph Neural Network (GNN) **
 
-    * `Federated GNN on Graph Dataset using Inductive Learning <https://github.com/NVIDIA/NVFlare/tree/399411e30b9add9e8a257a7a25b7e93f6d18f9a3/examples/advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning>`_ - Example using GNNs for Protein Classification and Financial Transaction Classification with GraphSAGE
+    * :github_nvflare_link:`Protein Classification <examples/advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning>` - Example using GNNs for Protein Classification using `PPI <http://snap.stanford.edu/graphsage/#code>`_ dataset using GraphSAGE.
+    * :github_nvflare_link:`Financial Transaction Classification <examples/advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning>` - Example using GNNs for Financial Transaction Classification with `Elliptic++ <https://github.com/git-disl/EllipticPlusPlus>`_ using GraphSAGE.
 
   14. **Financial Applications**
 
     * :github_nvflare_link:`Financial Application with Federated XGBoost Methods <examples/advanced/finance>` Example using XGBoost in various ways to train a federated model to perform fraud detection with a finance dataset.
 
-For the complete collection of example applications, see https://github.com/NVIDIA/NVFlare/tree/main/examples.
+For the complete collection of example applications, see the :github_nvflare_link:`examples directory <examples>`.
 
 Setting up a virtual environment for examples and notebooks
 ===========================================================

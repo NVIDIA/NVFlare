@@ -4,17 +4,12 @@
 Client API
 ##########
 
-NVFlare Client API provides an easy way for users to convert their centralized, local
-training code into a federated learning code.
+The FLARE Client API provides an easy way for users to convert their centralized, local
+training code into federated learning code with the following benefits:
 
-It brings the following benefits:
-
-* Enable a quicker start by reducing the number of new NVFlare specific concepts
-   a user has to learn when first working with Federated Learning using NVFlare.
-
-* Enable easy adaptation from existing local training code using different framework
-   (pytorch, pytorch lightning, huggingface) to run the application in a
-   federated setting by just few lines of code changes
+* Only requires a few lines of code changes, without the need to restructure the code or implement a new class
+* Reduces the number of new FLARE specific concepts exposed to users
+* Easy adaptation from existing local training code using different frameworks (PyTorch, PyTorch Lightning, HuggingFace)
 
 Core concept
 ============
@@ -33,22 +28,24 @@ conceptually trained on more data.
 
 One of the popular federated learning workflow, "FedAvg" is like this:
 
-#. Server site initialize an initial model
-#. For each round:
+The general structure of Federated Learning algorithms involve the following steps:
 
-   #. server sends the global model to clients
-   #. each client starts with this global model and train on their own data
+#. controller site initializes an initial model
+#. For each round (global iteration):
+
+   #. controller sends the global model to clients
+   #. each client starts with this global model and trains on their own data
    #. each client sends back their trained model
-   #. server aggregates all the models and produces a new global model
+   #. controller aggregates all the models and produces a new global model
 
 On the client side, the training workflow is:
 
-#. get a model from server side
-#. local training
-#. send a trained model to server side
+#. receive model from controller
+#. perform local training on received model, evaluate global model for model selection
+#. send new model back to controller
 
 To be able to support different training frameworks, we define a standard data structure called "FLModel"
-for the local training code to exchange information with NVFlare system.
+for the local training code to exchange information with the FLARE system.
 
 We explain its attributes below:
 
@@ -58,16 +55,14 @@ We explain its attributes below:
    :linenos:
    :caption: fl_model.py
 
-Users only need to get the required information from this data structure,
-run local training, and put the results back into this data structure to be aggregated on the aggregator side.
-
+Users only need to obtain the required information from this received FLModel,
+run local training, and put the results in a new FLModel to send back to the controller.
 
 For a general use case, there are three essential methods for the Client API:
 
 * `init()`: Initializes NVFlare Client API environment.
 * `receive()`: Receives model from NVFlare side.
 * `send()`: Sends the model to NVFlare side.
-
 
 Users can use these APIs to change their centralized training code to federated learning, for example:
 
@@ -80,6 +75,8 @@ Users can use these APIs to change their centralized training code to federated 
     new_params = local_train(input_model.params)
     output_model = flare.FLModel(params=new_params)
     flare.send(output_model)
+
+See below for more in-depth information about all of the Client API functionalities.
 
 Client API Module
 =================
@@ -115,28 +112,28 @@ Transfer_type is how to transfer the model, FULL means send it as it is, DIFF me
 
 nvflare.client.receive
 ----------------------
-Description: receive FLModel from NVFlare side
-Arguments:
+- Description: receive FLModel from NVFlare side
+- Arguments:
 
-- Timeout (Optional[float]): timeout to receive an FLModel
+  - Timeout (Optional[float]): timeout to receive an FLModel
 
-Returns: FLModel
+- Returns: FLModel
+
 Usage:
 
-.. code-block:: python
-
-   model = nvflare.client.receive()
+``model = nvflare.client.receive()``
 
 nvflare.client.send
 -------------------
 
-Description: send back the FLModel to NVFlare side
-Arguments:
+- Description: send back the FLModel to NVFlare side
+- Arguments:
 
-- fl_model (FLModel): FLModel to be sent
-- clear_registry (bool): whether to clear the model registry after send
+  - fl_model (FLModel): FLModel to be sent
+  - clear_registry (bool): whether to clear the model registry after send
 
-Returns: None
+- Returns: None
+
 Usage:
 
 ``nvflare.client.send(model=FLModel(xxx))``
@@ -162,10 +159,9 @@ System's metadata includes:
 nvflare.client.get_job_id
 -------------------------
 
-Description: gets the NVFlare job id
-Arguments: None
-Returns:
-JOB_ID (str)
+- Description: gets the NVFlare job id
+- Arguments: None
+- Returns: JOB_ID (str)
 
 Usage:
 
@@ -174,10 +170,9 @@ Usage:
 nvflare.client.get_total_rounds
 -------------------------------
 
-Description: gets the total_rounds of the current NVFlare job
-Arguments: None
-Returns:
-total_rounds (int)
+- Description: gets the total_rounds of the current NVFlare job
+- Arguments: None
+- Returns: total_rounds (int)
 
 Usage:
 
@@ -185,10 +180,9 @@ Usage:
 
 nvflare.client.get_identity
 ---------------------------
-Description: gets the NVFlare site name that this process is running on
-Arguments: None
-Returns:
-identity (str)
+- Description: gets the NVFlare site name that this process is running on
+- Arguments: None
+- Returns: identity (str)
 
 Usage:
 
@@ -197,9 +191,9 @@ Usage:
 nvflare.client.clear
 --------------------
 
-Description: clears the model registry
-Arguments: None
-Returns: None
+- Description: clears the model registry
+- Arguments: None
+- Returns: None
 
 Usage:
 
@@ -208,10 +202,9 @@ Usage:
 nvflare.client.get_config
 -------------------------
 
-Description: gets the model registry config
-Arguments: None
-Returns:
-identity (dict)
+- Description: gets the model registry config
+- Arguments: None
+- Returns: identity (dict)
 
 Usage:
 
@@ -220,9 +213,9 @@ Usage:
 nvflare.client.is_running
 -------------------------
 
-Description: check if FLARE job is still running in the case of launching once
-Arguments: None
-Returns: bool
+- Description: check if FLARE job is still running in the case of launching once
+- Arguments: None
+- Returns: bool
 
 Usage:
 
@@ -276,6 +269,7 @@ Usage:
 Client Decorator Module
 =======================
 nvflare.client.train
+--------------------
 
 Use cases:
 
@@ -283,7 +277,7 @@ Use cases:
 
    @nvflare.client.train
    def my_train(input_model=None, device="cuda:0"):
-      …
+      ...
       return new_model
 
 NVFlare will pass the FLModel received from the NVFlare server side to the first argument of the "decorated" method.
@@ -291,6 +285,7 @@ The return value needs to be an FLModel object, we will send it directly to the 
 
 
 nvflare.client.evaluate
+-----------------------
 
 Use cases:
 
@@ -298,7 +293,7 @@ Use cases:
 
    @nvflare.client.evaluate
    def my_eval(input_model, device="cuda:0"):
-      …
+      ...
       return metrics
 
 NVFlare will pass the model received from the NVFlare server side to the first argument of the "decorated" method.
@@ -308,10 +303,11 @@ The decorated "my_eval" method needs to be run BEFORE the training method, so th
 Lightning Integration
 =====================
 nvflare.client.lightning.patch
+------------------------------
 
-Description: patch the PyTorch Lightning Trainer object
-Arguments: trainer
-Returns: not return anything
+- Description: patch the PyTorch Lightning Trainer object
+- Arguments: trainer
+- Returns: None
 
 Usage:
 
@@ -333,7 +329,7 @@ Note that if users want to pass additional information to NVFlare server side VI
          self.model = Net()
          self.train_acc = Accuracy(task="multiclass", num_classes=NUM_CLASSES)
          self.valid_acc = Accuracy(task="multiclass", num_classes=NUM_CLASSES)
-         self.__fl_meta__ = {“CUSTOM_VAR”: “VALUE_OF_THE_VAR”}
+         self.__fl_meta__ = {"CUSTOM_VAR": "VALUE_OF_THE_VAR"}
 
 Examples
 ========
