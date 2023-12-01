@@ -52,3 +52,8 @@ These include:
 * Federated Kmeans
 * Federated SVM
 * Federated Horizontal XGBoost
+
+These examples demostrate:
+* How to use the NVFlare Client APIs to convert the traditional machine learning code to federated learning code. Most of them contains local training scripts as baselines for comparison.
+* How different machine learning methods can be applied to the same problem. Different behaviors and accuracies can be observed, as a reference for choosing the right method for the problem.
+* How federated learning impacts different machine learning methods. Some methods are more sensitive to the federated learning process, and some are less.
