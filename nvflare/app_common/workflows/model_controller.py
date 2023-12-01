@@ -71,7 +71,11 @@ class ModelController(Controller, FLComponentWrapper):
         check_non_negative_int("num_rounds", num_rounds)
         check_non_negative_int("persist_every_n_rounds", persist_every_n_rounds)
         check_str("persistor_id", persistor_id)
-
+        if not isinstance(task_check_period, (int, float)):
+            raise TypeError(f"task_check_period must be an int or float but got {type(task_check_period)}")
+        elif task_check_period <= 0:
+            raise ValueError("task_check_period must be greater than 0.")
+        self._task_check_period = task_check_period
         self.persistor_id = persistor_id
         self.persistor = None
 

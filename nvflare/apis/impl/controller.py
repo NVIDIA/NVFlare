@@ -92,16 +92,11 @@ class Controller(Responder, ControllerSpec, ABC):
         self._all_done = False
         self._task_lock = Lock()
         self._task_monitor = threading.Thread(target=self._monitor_tasks, args=())
+        self._task_check_period = task_check_period
         self._dead_client_reports = {}  # clients that reported the job is dead on it: name => report time
         self._dead_clients_lock = Lock()  # need lock since dead_clients can be modified from different threads
         # make sure _check_tasks, process_task_request, process_submission does not interfere with each other
         self._controller_lock = Lock()
-
-        if not isinstance(task_check_period, (int, float)):
-            raise TypeError(f"task_check_period must be an int or float but got {type(task_check_period)}")
-        elif task_check_period <= 0:
-            raise ValueError("task_check_period must be greater than 0.")
-        self._task_check_period = task_check_period
 
     def initialize_run(self, fl_ctx: FLContext):
         """Called by runners to initialize controller with information in fl_ctx.
