@@ -211,10 +211,11 @@ class ModelController(Controller, FLComponentWrapper):
             abort_signal=self.abort_signal,
         )
 
-        if len(self._results) != self._min_clients:
-            self.warning(
-                f"Number of results ({len(self._results)}) is different from min_clients ({self._min_clients})."
-            )
+        if targets is not None:
+            if len(self._results) != self._min_clients:
+                self.warning(
+                    f"Number of results ({len(self._results)}) is different from min_clients ({self._min_clients})."
+                )
 
         # de-refernce the internel results before returning
         results = self._results

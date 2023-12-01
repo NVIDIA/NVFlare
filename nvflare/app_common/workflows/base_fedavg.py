@@ -170,7 +170,6 @@ class BaseFedAvg(FedAvgModelControllerSpec):
         self.model = FLModelUtils.update_model(self.model, aggr_result)
 
         self.fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self.model, private=True, sticky=True)
-        self.fl_ctx.sync_sticky()
         self.event(AppEventType.AFTER_SHAREABLE_TO_LEARNABLE)
 
     def run(self):
