@@ -100,12 +100,12 @@ class BaseFedAvg(FedAvgModelControllerSpec):
         self._min_clients = min_clients
 
         clients = self.engine.get_clients()
-        random.shuffle(clients)
-
         if len(clients) < self._min_clients:
             self._min_clients = len(clients)
 
-        clients = clients[0 : self._min_clients]
+        if self._min_clients < len(clients):
+            random.shuffle(clients)
+            clients = clients[0 : self._min_clients]
 
         return clients
 
@@ -114,7 +114,7 @@ class BaseFedAvg(FedAvgModelControllerSpec):
         empty_clients = []
         for _result in results:
             if not _result.params:
-                empty_clients.append(_result.meta.get("client_name", "unkown"))
+                empty_clients.append(_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN))
 
         if len(empty_clients) > 0:
             raise ValueError(f"Result from client(s) {empty_clients} is empty!")
@@ -126,7 +126,7 @@ class BaseFedAvg(FedAvgModelControllerSpec):
             aggregation_helper.add(
                 data=_result.params,
                 weight=_result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0),
-                contributor_name=_result.meta.get("client_name", "unkown"),
+                contributor_name=_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN),
                 contribution_round=_result.meta.get("current_round", None),
             )
 

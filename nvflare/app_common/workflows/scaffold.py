@@ -20,7 +20,7 @@ import numpy as np
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-from nvflare.app_common.app_constant import AlgorithmConstants
+from nvflare.app_common.app_constant import AlgorithmConstants, AppConstants
 
 from .base_fedavg import BaseFedAvg
 
@@ -94,13 +94,13 @@ def scaffold_aggregate_fn(results: List[FLModel]) -> FLModel:
         aggregation_helper.add(
             data=_result.params,
             weight=_result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0),
-            contributor_name=_result.meta.get("client_name", "unkown"),
+            contributor_name=_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN),
             contribution_round=_result.meta.get("current_round", None),
         )
         crtl_aggregation_helper.add(
             data=_result.meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF],
             weight=_result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0),
-            contributor_name=_result.meta.get("client_name", "unkown"),
+            contributor_name=_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN),
             contribution_round=_result.meta.get("current_round", None),
         )
 
