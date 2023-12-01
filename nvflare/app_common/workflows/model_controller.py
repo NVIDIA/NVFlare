@@ -24,16 +24,15 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
-from nvflare.app_common.abstract.model import ModelLearnableKey, make_model_learnable
+from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fl_component_wrapper import FLComponentWrapper
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.fuel.utils.experimental import experimental
+from nvflare.fuel.utils.validation_utils import check_non_negative_int, check_positive_int, check_str
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
-
-from .scatter_and_gather import _check_non_neg_int
 
 
 @experimental
@@ -68,21 +67,10 @@ class ModelController(Controller, FLComponentWrapper):
         super().__init__(task_check_period=task_check_period)
 
         # Check arguments
-        if not isinstance(min_clients, int):
-            raise TypeError("min_clients must be int but got {}".format(type(min_clients)))
-        elif min_clients <= 0:
-            raise ValueError("min_clients must be greater than 0.")
-
-        _check_non_neg_int(num_rounds, "num_rounds")
-        _check_non_neg_int(persist_every_n_rounds, "persist_every_n_rounds")
-
-        if not isinstance(persistor_id, str):
-            raise TypeError("persistor_id must be a string but got {}".format(type(persistor_id)))
-
-        if not isinstance(task_check_period, (int, float)):
-            raise TypeError(f"task_check_period must be an int or float but got {type(task_check_period)}")
-        elif task_check_period <= 0:
-            raise ValueError("task_check_period must be greater than 0.")
+        check_positive_int("min_clients", min_clients)
+        check_non_negative_int("num_rounds", num_rounds)
+        check_non_negative_int("persist_every_n_rounds", persist_every_n_rounds)
+        check_str("persistor_id", persistor_id)
 
         self.persistor_id = persistor_id
         self.persistor = None
@@ -118,6 +106,13 @@ class ModelController(Controller, FLComponentWrapper):
         # initialize global model
         if self.persistor:
             global_weights = self.persistor.load(self.fl_ctx)
+
+            if not isinstance(global_weights, ModelLearnable):
+                self.panic(
+                    f"Expected global weights to be of type `ModelLearnable` but received {type(global_weights)}"
+                )
+                return
+
             if global_weights.is_empty():
                 if not self.allow_empty_global_weights:
                     # if empty not allowed, further check whether it is available from fl_ctx
@@ -129,6 +124,13 @@ class ModelController(Controller, FLComponentWrapper):
                     params=global_weights[ModelLearnableKey.WEIGHTS],
                     meta=global_weights[ModelLearnableKey.META],
                 )
+            elif self.allow_empty_global_weights:
+                self.model = FLModel(params_type=ParamsType.FULL, params={})
+            else:
+                self.panic(
+                    f"Neither `persistor` {self.persistor_id} or `fl_ctx` returned a global model! If this was intended, set `self.allow_empty_global_weights` to `True`."
+                )
+                return
         else:
             self.model = FLModel(params_type=ParamsType.FULL, params={})
 
@@ -172,8 +174,8 @@ class ModelController(Controller, FLComponentWrapper):
 
         if not isinstance(task_name, str):
             raise TypeError("train_task_name must be a string but got {}".format(type(task_name)))
-        _check_non_neg_int(timeout, "timeout")
-        _check_non_neg_int(wait_time_after_min_received, "wait_time_after_min_received")
+        check_non_negative_int("timeout", timeout)
+        check_non_negative_int("wait_time_after_min_received", wait_time_after_min_received)
 
         # Create train_task
         data_shareable = self._build_shareable(data)
@@ -210,7 +212,10 @@ class ModelController(Controller, FLComponentWrapper):
                 f"Number of results ({len(self._results)}) is different from min_clients ({self._min_clients})."
             )
 
-        return self._results
+        # de-refernce the internel results before returning
+        results = self._results
+        self._results = []
+        return results
 
     def _prepare_task_data(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
         fl_ctx.set_prop(AppConstants.TRAIN_SHAREABLE, client_task.task.data, private=True, sticky=False)

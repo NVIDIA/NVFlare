@@ -17,10 +17,11 @@ from abc import abstractmethod
 from typing import List
 
 from nvflare.apis.fl_constant import FLMetaKey
-from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
+from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.security.logging import secure_format_exception
 
 from .model_controller import ModelController
@@ -166,14 +167,7 @@ class BaseFedAvg(FedAvgModelControllerSpec):
     def update_model(self, aggr_result):
         self.event(AppEventType.BEFORE_SHAREABLE_TO_LEARNABLE)
 
-        self.model.meta = aggr_result.meta
-        if aggr_result.params_type == ParamsType.FULL:
-            self.model.params = aggr_result.params
-        elif aggr_result.params_type == ParamsType.DIFF:
-            for v_name, v_value in aggr_result.params.items():
-                self.model.params[v_name] = self.model.params[v_name] + v_value
-        else:
-            raise RuntimeError(f"params_type {aggr_result.params_type} not supported!")
+        self.model = FLModelUtils.update_model(self.model, aggr_result)
 
         self.fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self.model, private=True, sticky=True)
         self.fl_ctx.sync_sticky()
