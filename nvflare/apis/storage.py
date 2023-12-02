@@ -97,11 +97,12 @@ class StorageSpec(ABC):
         pass
 
     @abstractmethod
-    def list_objects(self, path: str) -> List[str]:
+    def list_objects(self, path: str, skip_mark=None) -> List[str]:
         """Lists all objects in the specified path.
 
         Args:
             path: the path to the objects
+            skip_mark: skip the objects with this specified mark
 
         Returns:
             list of URIs of objects
@@ -182,6 +183,20 @@ class StorageSpec(ABC):
 
         Args:
             uri: URI of the object
+
+        """
+        pass
+
+    @abstractmethod
+    def mark_object(self, uri: str, mark: str, data=None):
+        """Mark an object with specified mark and data
+
+        Args:
+            uri: URI of the object
+            mark: mark to be placed on the object
+            data: data associated with the mark.
+
+        Returns: None
 
         """
         pass

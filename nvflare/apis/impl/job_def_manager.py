@@ -30,14 +30,20 @@ from nvflare.apis.storage import WORKSPACE, StorageException, StorageSpec
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes
 
+_OBJ_MARK_SCHEDULED = "scheduled"
+
+
+class JobInfo:
+    def __init__(self, meta: dict, job_id: str, uri: str):
+        self.meta = meta
+        self.job_id = job_id
+        self.uri = uri
+
 
 class _JobFilter(ABC):
     @abstractmethod
-    def filter_job(self, meta: dict, job_id: str) -> bool:
+    def filter_job(self, info: JobInfo) -> bool:
         pass
-
-    def is_job_skipped(self, job_id: str) -> bool:
-        return False
 
 
 class _StatusFilter(_JobFilter):
@@ -48,10 +54,10 @@ class _StatusFilter(_JobFilter):
             status_to_check = [status_to_check]
         self.status_to_check = status_to_check
 
-    def filter_job(self, meta: dict, job_id: str):
-        status = meta.get(JobMetaKey.STATUS.value)
+    def filter_job(self, info: JobInfo):
+        status = info.meta.get(JobMetaKey.STATUS.value)
         if status in self.status_to_check:
-            self.result.append(job_from_meta(meta))
+            self.result.append(job_from_meta(info.meta))
         return True
 
 
@@ -59,8 +65,8 @@ class _AllJobsFilter(_JobFilter):
     def __init__(self):
         self.result = []
 
-    def filter_job(self, meta: dict, job_id: str):
-        self.result.append(job_from_meta(meta))
+    def filter_job(self, info: JobInfo):
+        self.result.append(job_from_meta(info.meta))
         return True
 
 
@@ -70,10 +76,10 @@ class _ReviewerFilter(_JobFilter):
         self.result = []
         self.reviewer_name = reviewer_name
 
-    def filter_job(self, meta: dict, job_id: str):
-        approvals = meta.get(JobMetaKey.APPROVALS)
+    def filter_job(self, info: JobInfo):
+        approvals = info.meta.get(JobMetaKey.APPROVALS)
         if not approvals or self.reviewer_name not in approvals:
-            self.result.append(job_from_meta(meta))
+            self.result.append(job_from_meta(info.meta))
         return True
 
 
@@ -83,29 +89,18 @@ class _ScheduleJobFilter(_JobFilter):
     This filter is optimized for selecting jobs to schedule since it is used so frequently (every 1 sec).
     """
 
-    def __init__(self):
+    def __init__(self, store):
+        self.store = store
         self.result = []
-        self.skipped_jobs = {}  # job id => bool for quick lookup.
 
-    def is_job_skipped(self, job_id) -> bool:
-        return job_id in self.skipped_jobs
-
-    def filter_job(self, meta: dict, job_id: str):
-        status = meta.get(JobMetaKey.STATUS.value)
+    def filter_job(self, info: JobInfo):
+        status = info.meta.get(JobMetaKey.STATUS.value)
         if status == RunStatus.SUBMITTED.value:
-            self.result.append(job_from_meta(meta))
+            self.result.append(job_from_meta(info.meta))
         elif status:
             # skip this job in all future calls (so the meta file of this job won't be read)
-            self.skipped_jobs[job_id] = True
+            self.store.mark_object(uri=info.uri, mark=_OBJ_MARK_SCHEDULED)
         return True
-
-    def reset(self):
-        self.result = []
-
-    def get_result(self):
-        result = self.result
-        self.reset()
-        return result
 
 
 class SimpleJobDefManager(JobDefManagerSpec):
@@ -114,7 +109,6 @@ class SimpleJobDefManager(JobDefManagerSpec):
         self.uri_root = uri_root
         os.makedirs(uri_root, exist_ok=True)
         self.job_store_id = job_store_id
-        self._schedule_job_filter = _ScheduleJobFilter()
 
     def _get_job_store(self, fl_ctx):
         engine = fl_ctx.get_engine()
@@ -279,29 +273,25 @@ class SimpleJobDefManager(JobDefManagerSpec):
         return job_filter.result
 
     def get_jobs_to_schedule(self, fl_ctx: FLContext) -> List[Job]:
-        self._schedule_job_filter.reset()
-        self._scan(self._schedule_job_filter, fl_ctx)
-        return self._schedule_job_filter.get_result()
+        job_filter = _ScheduleJobFilter(self._get_job_store(fl_ctx))
+        self._scan(job_filter, fl_ctx, skip_mark=_OBJ_MARK_SCHEDULED)
+        return job_filter.result
 
-    def _scan(self, job_filter: _JobFilter, fl_ctx: FLContext):
+    def _scan(self, job_filter: _JobFilter, fl_ctx: FLContext, skip_mark=None):
         store = self._get_job_store(fl_ctx)
-        jid_paths = store.list_objects(self.uri_root)
-        if not jid_paths:
+        obj_uris = store.list_objects(self.uri_root, skip_mark)
+        self.log_debug(fl_ctx, f"objects to scan: {len(obj_uris)}")
+        if not obj_uris:
             return
 
-        total_jobs = len(jid_paths)
-        meta_reads = 0
-        for jid_path in jid_paths:
-            jid = pathlib.PurePath(jid_path).name
-            if not job_filter.is_job_skipped(jid):
-                # only read meta file if not to be skipped!
-                meta_reads += 1
-                meta = store.get_meta(self.job_uri(jid))
-                if meta:
-                    ok = job_filter.filter_job(meta, jid)
-                    if not ok:
-                        break
-        self.log_debug(fl_ctx, f"read {meta_reads} of {total_jobs} jobs")
+        for uri in obj_uris:
+            jid = pathlib.PurePath(uri).name
+            job_uri = self.job_uri(jid)
+            meta = store.get_meta(job_uri)
+            if meta:
+                ok = job_filter.filter_job(JobInfo(meta, jid, job_uri))
+                if not ok:
+                    break
 
     def get_jobs_by_status(self, status, fl_ctx: FLContext) -> List[Job]:
         """Get jobs that are in the specified status

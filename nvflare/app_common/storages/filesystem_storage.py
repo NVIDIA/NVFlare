@@ -97,6 +97,9 @@ class FilesystemStorage(StorageSpec):
         self.root_dir = root_dir
         self.uri_root = uri_root
 
+    def _object_path(self, uri: str):
+        return os.path.join(self.root_dir, uri.lstrip(self.uri_root))
+
     def _save_data(self, data, destination: str):
         if isinstance(data, bytes):
             _write(destination, data)
@@ -128,7 +131,7 @@ class FilesystemStorage(StorageSpec):
             IOError: if error writing the object
 
         """
-        full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
+        full_uri = self._object_path(uri)
 
         if _object_exists(full_uri) and not overwrite_existing:
             raise StorageException("object {} already exists and overwrite_existing is False".format(uri))
@@ -163,7 +166,7 @@ class FilesystemStorage(StorageSpec):
         Raises StorageException when the object does not exit.
 
         """
-        full_dir_path = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
+        full_dir_path = self._object_path(uri)
         if not os.path.isdir(full_dir_path):
             raise StorageException(f"path {full_dir_path} is not a valid directory.")
 
@@ -193,7 +196,7 @@ class FilesystemStorage(StorageSpec):
             IOError: if error writing the object
 
         """
-        full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
+        full_uri = self._object_path(uri)
 
         if not _object_exists(full_uri):
             raise StorageException("object {} does not exist".format(uri))
@@ -205,11 +208,12 @@ class FilesystemStorage(StorageSpec):
             prev_meta.update(meta)
             _write(os.path.join(full_uri, META), _encode_meta(prev_meta))
 
-    def list_objects(self, path: str) -> List[str]:
+    def list_objects(self, path: str, skip_mark=None) -> List[str]:
         """List all objects in the specified path.
 
         Args:
             path: the path uri to the objects
+            skip_mark: skip the objects with this specified mark
 
         Returns:
             list of URIs of objects
@@ -219,13 +223,19 @@ class FilesystemStorage(StorageSpec):
             StorageException: if path does not exist or is not a valid directory.
 
         """
-        full_dir_path = os.path.join(self.root_dir, path.lstrip(self.uri_root))
+        full_dir_path = self._object_path(path)
         if not os.path.isdir(full_dir_path):
             raise StorageException(f"path {full_dir_path} is not a valid directory.")
 
-        return [
-            os.path.join(path, f) for f in os.listdir(full_dir_path) if _object_exists(os.path.join(full_dir_path, f))
-        ]
+        result = []
+        gen = os.scandir(full_dir_path)
+        for e in gen:
+            assert isinstance(e, os.DirEntry)
+            obj_dir = os.path.join(full_dir_path, e.name)
+            if _object_exists(obj_dir):
+                if not skip_mark or not os.path.exists(os.path.join(obj_dir, skip_mark)):
+                    result.append(os.path.join(path, e.name))
+        return result
 
     def get_meta(self, uri: str) -> dict:
         """Gets meta of the specified object.
@@ -241,7 +251,7 @@ class FilesystemStorage(StorageSpec):
             StorageException: if object does not exist
 
         """
-        full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
+        full_uri = self._object_path(uri)
 
         if not _object_exists(full_uri):
             raise StorageException("object {} does not exist".format(uri))
@@ -263,7 +273,7 @@ class FilesystemStorage(StorageSpec):
             StorageException: if object does not exist
 
         """
-        full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
+        full_uri = self._object_path(uri)
 
         if not StorageSpec.is_valid_component(component_name):
             raise StorageException(f"{component_name } is not a valid component for storage object.")
@@ -274,7 +284,7 @@ class FilesystemStorage(StorageSpec):
         return _read(os.path.join(full_uri, component_name))
 
     def get_data_for_download(self, uri: str, component_name: str = DATA, download_file: str = None):
-        full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
+        full_uri = self._object_path(uri)
 
         if not StorageSpec.is_valid_component(component_name):
             raise StorageException(f"{component_name } is not a valid component for storage object.")
@@ -304,7 +314,7 @@ class FilesystemStorage(StorageSpec):
             StorageException: if object does not exist
 
         """
-        full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
+        full_uri = self._object_path(uri)
 
         if not _object_exists(full_uri):
             raise StorageException("object {} does not exist".format(uri))
@@ -322,7 +332,7 @@ class FilesystemStorage(StorageSpec):
             StorageException: if object does not exist
 
         """
-        full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
+        full_uri = self._object_path(uri)
 
         if not _object_exists(full_uri):
             raise StorageException("object {} does not exist".format(uri))
@@ -330,3 +340,10 @@ class FilesystemStorage(StorageSpec):
         shutil.rmtree(full_uri)
 
         return full_uri
+
+    def mark_object(self, uri: str, mark: str, data=None):
+        full_path = self._object_path(uri)
+        mark_file = os.path.join(full_path, mark)
+        with open(mark_file, "w") as f:
+            if data:
+                f.write(data)
