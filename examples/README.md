@@ -85,6 +85,10 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 | [swarm](./hello-world/step-by-step/cifar10/swarm/swarm.ipynb)                                                        | CIFAR10 |  client | Client API | PyTorch | Example for swarm learning and client-controlled cross-site evaluation using [SwarmClientController](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.ccwf.swarm_client_ctl.html) and [CrossSiteEvalClientController](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.ccwf.cse_client_ctl.html) controller workflows. |
 | [image_stats](./hello-world/step-by-step/cifar10/stats/image_stats.ipynb)                                                        | CIFAR10 | server | Executor | Pandas | Example for federated stats image histogram calculation. |
 | [tabular_stats](./hello-world/step-by-step/higgs/stats/tabular_stats.ipynb)                                                        | HIGGS | server | Executor |Pandas | Example for federated stats tabular histogram calculation. |
+| [sklearn_linear](./hello-world/step-by-step/higgs/sklearn-linear/sklearn_linear.ipynb)                                           | HIGGS | server | Client API |sklearn | Example for federated linear model (logistic regression on binary classification) learning on tabular data. |
+| [sklearn_svm](./hello-world/step-by-step/higgs/sklearn-svm/sklearn_svm.ipynb)                                                     | HIGGS | server | Client API | sklearn | Example for federated SVM model learning on tabular data. |
+| [sklearn_kmeans](./hello-world/step-by-step/higgs/sklearn-kmeans/sklearn_kmeans.ipynb)                                           | HIGGS | server | Client API |sklearn | Example for federated k-Means clustering on tabular data. |
+| [xgboost](./hello-world/step-by-step/higgs/xgboost/xgboost_horizontal.ipynb)                                                        | HIGGS | server | Client API |XGBoost | Example for federated horizontal xgboost learning on tabular data with bagging collaboration. |
 
 ## 2. Hello World Examples
 | Example                                                                                                                                | Framework    | Summary                                                                                                                                                         |
@@ -139,7 +143,9 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 ## 8. Federated Policies
 | Example                                                                                                                                | Summary                                                                                                                                                         |
 |----------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [Federated Policies](./advanced/federated-policies/README.rst)                                                                         | Discuss the federated site policies for authorization, resource and data privacy management.                                                                    |
+| [Federated Policies](./advanced/federated-policies/README.rst)                                                                         | Discuss the federated site policies for authorization, resource and data privacy management.
+| [Custom Authentication](./advanced/custom_authentication/README.rst)                                                                         | Demonstrate the custom authentication policy and secure mode.
+| [Job-Level Authorization](./advanced/job-level-authorization/README.md)                                                                         | Demonstrate the job-level authorization policy and secure mode.
 
 ## 9. Experiment tracking
 | Example                                                                                                                                | Framework    | Summary                                                                                                                                                         |
@@ -171,7 +177,8 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 
 | Example                               | Framework      | Summary                                                                                                                  |
 |---------------------------------------|----------------|--------------------------------------------------------------------------------------------------------------------------|
-| [Federated GNN on Graph Dataset using Inductive Learning](./advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning) | PyTorch Geometric  | Example using GNNs for Protein Classification and Financial Transaction Classification with GraphSAGE |
+| [Protein Classification](./advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning) | PyTorch Geometric  | Example using GNNs for Protein Classification using [PPI](http://snap.stanford.edu/graphsage/#code) dataset using GraphSAGE. |
+| [Financial Transaction Classification](./advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning) | PyTorch Geometric  | Example using GNNs for Financial Transaction Classification with [Elliptic++](https://github.com/git-disl/EllipticPlusPlus) dataset using GraphSAGE. |
 
 ## 14. Financial Applications
 

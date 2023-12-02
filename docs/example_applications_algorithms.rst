@@ -36,6 +36,8 @@ The following tutorials and quickstart guides walk you through some of these exa
           * :ref:`Hello Scatter and Gather <hello_scatter_and_gather>` - Example using the Scatter And Gather (SAG) workflow with a Numpy trainer
           * :ref:`Hello Cross-Site Validation <hello_cross_val>` - Example using the Cross Site Model Eval workflow with a Numpy trainer
           * :github_nvflare_link:`Hello Cyclic Weight Transfer (GitHub) <examples/hello-world/hello-cyclic>` - Example using the CyclicController workflow to implement `Cyclic Weight Transfer <https://pubmed.ncbi.nlm.nih.gov/29617797/>`_ with TensorFlow as the deep learning training framework
+          * :github_nvflare_link:`Swarm Learning <examples/advanced/swarm_learning>` - Example using Swarm Learning and Client-Controlled Cross-site Evaluation workflows.
+          * :github_nvflare_link:`Client-Controlled Cyclic Weight Transfer <examples/hello-world/step-by-step/cifar10/cyclic_ccwf>` - Example using Client-Controlled Cyclic workflow using Client API.
 
      2.3. Deep Learning
           * :ref:`Hello PyTorch <hello_pt>` - Example image classifier using FedAvg and PyTorch as the deep learning training framework
@@ -77,8 +79,8 @@ The following tutorials and quickstart guides walk you through some of these exa
   8. **Federated Site Policies**
 
     * :github_nvflare_link:`Federated Policies (Github) <examples/advanced/federated-policies/README.rst>` - Discuss the federated site policies for authorization, resource and data privacy management
-    * :github_nvflare_link:`Custome Authentication (Github) <examples/advanced/custom_authentication/README.rst>` - Show the custom authentication policy and secure mode.
-    * :github_nvflare_link:`Job-Level Authorization (Github) <examples/advanced//job-level-authorization/README.rst>` - Show the job-level authorization policy and secure mode.
+    * :github_nvflare_link:`Custom Authentication (Github) <examples/advanced/custom_authentication/README.rst>` - Show the custom authentication policy and secure mode.
+    * :github_nvflare_link:`Job-Level Authorization (Github) <examples/advanced/job-level-authorization/README.md>` - Show the job-level authorization policy and secure mode.
 
   9. **Experiment Tracking**
 
@@ -103,7 +105,7 @@ The following tutorials and quickstart guides walk you through some of these exa
   13. **Graph Neural Network (GNN) **
 
     * :github_nvflare_link:`Protein Classification <examples/advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning>` - Example using GNNs for Protein Classification using `PPI <http://snap.stanford.edu/graphsage/#code>`_ dataset using GraphSAGE.
-    * :github_nvflare_link:`Financial Transaction Classification <examples/advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning>` - Example using GNNs for Financial Transaction Classification with `Elliptic++ <https://github.com/git-disl/EllipticPlusPlus>`_ using GraphSAGE.
+    * :github_nvflare_link:`Financial Transaction Classification <examples/advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning>` - Example using GNNs for Financial Transaction Classification with `Elliptic++ <https://github.com/git-disl/EllipticPlusPlus>`_ dataset using GraphSAGE.
 
   14. **Financial Applications**
 

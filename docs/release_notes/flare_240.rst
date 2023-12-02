@@ -135,7 +135,7 @@ Three commonly used types of client-side controlled workflows are provided:
 - :ref:`ccwf_swarm_learning`: randomly select clients as client-side controller and aggregrators, where then Scatter and Gather with FedAvg is performed.
 - :ref:`ccwf_cross_site_evaluation`: allow clients to evaluate other sites' models.
 
-See :github_nvflare_link:`swarm learning <examples/hello-world/step-by-step/cifar10/cyclic_ccwf>` for examples using these client-controlled workflows.
+See :github_nvflare_link:`swarm learning <examples/advanced/swarm_learning>` and :github_nvflare_link:`client-controlled cyclic <examples/hello-world/step-by-step/cifar10/cyclic_ccwf>` for examples using these client-controlled workflows.
 
 MLFlow and WandB Experiment Tracking Support
 ============================================
