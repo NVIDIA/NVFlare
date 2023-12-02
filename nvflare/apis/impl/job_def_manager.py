@@ -293,7 +293,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
                 if not ok:
                     break
 
-    def get_jobs_by_status(self, status, fl_ctx: FLContext) -> List[Job]:
+    def get_jobs_by_status(self, status: Union[RunStatus, List[RunStatus]], fl_ctx: FLContext) -> List[Job]:
         """Get jobs that are in the specified status
 
         Args:
