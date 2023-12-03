@@ -30,7 +30,7 @@ from nvflare.apis.storage import WORKSPACE, StorageException, StorageSpec
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes
 
-_OBJ_MARK_SCHEDULED = "scheduled"
+_OBJ_TAG_SCHEDULED = "scheduled"
 
 
 class JobInfo:
@@ -99,7 +99,7 @@ class _ScheduleJobFilter(_JobFilter):
             self.result.append(job_from_meta(info.meta))
         elif status:
             # skip this job in all future calls (so the meta file of this job won't be read)
-            self.store.mark_object(uri=info.uri, mark=_OBJ_MARK_SCHEDULED)
+            self.store.tag_object(uri=info.uri, tag=_OBJ_TAG_SCHEDULED)
         return True
 
 
@@ -274,12 +274,12 @@ class SimpleJobDefManager(JobDefManagerSpec):
 
     def get_jobs_to_schedule(self, fl_ctx: FLContext) -> List[Job]:
         job_filter = _ScheduleJobFilter(self._get_job_store(fl_ctx))
-        self._scan(job_filter, fl_ctx, skip_mark=_OBJ_MARK_SCHEDULED)
+        self._scan(job_filter, fl_ctx, skip_tag=_OBJ_TAG_SCHEDULED)
         return job_filter.result
 
-    def _scan(self, job_filter: _JobFilter, fl_ctx: FLContext, skip_mark=None):
+    def _scan(self, job_filter: _JobFilter, fl_ctx: FLContext, skip_tag=None):
         store = self._get_job_store(fl_ctx)
-        obj_uris = store.list_objects(self.uri_root, skip_mark)
+        obj_uris = store.list_objects(self.uri_root, without_tag=skip_tag)
         self.log_debug(fl_ctx, f"objects to scan: {len(obj_uris)}")
         if not obj_uris:
             return

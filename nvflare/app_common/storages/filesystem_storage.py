@@ -208,12 +208,12 @@ class FilesystemStorage(StorageSpec):
             prev_meta.update(meta)
             _write(os.path.join(full_uri, META), _encode_meta(prev_meta))
 
-    def list_objects(self, path: str, skip_mark=None) -> List[str]:
+    def list_objects(self, path: str, without_tag=None) -> List[str]:
         """List all objects in the specified path.
 
         Args:
             path: the path uri to the objects
-            skip_mark: skip the objects with this specified mark
+            without_tag: if set, skip the objects with this specified tag
 
         Returns:
             list of URIs of objects
@@ -228,12 +228,16 @@ class FilesystemStorage(StorageSpec):
             raise StorageException(f"path {full_dir_path} is not a valid directory.")
 
         result = []
+
+        # Use scandir instead of listdir.
+        # According to https://peps.python.org/pep-0471/#os-scandir, scandir is more memory-efficient than listdir
+        # when iterating very large directories.
         gen = os.scandir(full_dir_path)
         for e in gen:
-            assert isinstance(e, os.DirEntry)
+            # assert isinstance(e, os.DirEntry)
             obj_dir = os.path.join(full_dir_path, e.name)
             if _object_exists(obj_dir):
-                if not skip_mark or not os.path.exists(os.path.join(obj_dir, skip_mark)):
+                if not without_tag or not os.path.exists(os.path.join(obj_dir, without_tag)):
                     result.append(os.path.join(path, e.name))
         return result
 
@@ -341,9 +345,9 @@ class FilesystemStorage(StorageSpec):
 
         return full_uri
 
-    def mark_object(self, uri: str, mark: str, data=None):
+    def tag_object(self, uri: str, tag: str, data=None):
         full_path = self._object_path(uri)
-        mark_file = os.path.join(full_path, mark)
+        mark_file = os.path.join(full_path, tag)
         with open(mark_file, "w") as f:
             if data:
                 f.write(data)
