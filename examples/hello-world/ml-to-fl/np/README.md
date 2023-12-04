@@ -147,9 +147,10 @@ nvflare simulator -n 2 -t 2 ./jobs/np_loop_cell_pipe -w np_loop_cell_pipe_worksp
 ## Launch once for the whole job and with metrics streaming
 
 Sometimes we want to stream the training progress.
-We add flare.log to [./code/train_loop.py](./code/train_loop.py)
 
-Then we can create the job:
+We can use the flare.log method to do that: [./code/train_metrics.py](./code/train_metrics.py)
+
+After that, we can set up the job using the sag_np_metrics template:
 
 ```bash
 nvflare job create -force -j ./jobs/np_metrics -w sag_np_metrics -sd ./code/ \
@@ -157,8 +158,13 @@ nvflare job create -force -j ./jobs/np_metrics -w sag_np_metrics -sd ./code/ \
 -f config_fed_server.conf expected_data_kind=WEIGHT_DIFF
 ```
 
-Then we can run it using the NVFlare Simulator:
+Once the job is set up, we can run it using the NVFlare Simulator:
 
 ```bash
 nvflare simulator -n 2 -t 2 ./jobs/np_metrics -w np_metrics_workspace
 ```
+
+Keep in mind that the difference between sag_np_cell_pipe and sag_np_metrics is the
+addition of components like "metrics_pipe," "metric_relayer," and "event_to_fed."
+These components allow values from an external process to be sent back to the server.
+
