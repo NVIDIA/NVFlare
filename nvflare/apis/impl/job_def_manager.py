@@ -30,21 +30,34 @@ from nvflare.apis.storage import WORKSPACE, StorageException, StorageSpec
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes
 
+_OBJ_TAG_SCHEDULED = "scheduled"
+
+
+class JobInfo:
+    def __init__(self, meta: dict, job_id: str, uri: str):
+        self.meta = meta
+        self.job_id = job_id
+        self.uri = uri
+
 
 class _JobFilter(ABC):
     @abstractmethod
-    def filter_job(self, meta: dict) -> bool:
+    def filter_job(self, info: JobInfo) -> bool:
         pass
 
 
 class _StatusFilter(_JobFilter):
     def __init__(self, status_to_check):
         self.result = []
+        if not isinstance(status_to_check, list):
+            # turning to list
+            status_to_check = [status_to_check]
         self.status_to_check = status_to_check
 
-    def filter_job(self, meta: dict):
-        if meta[JobMetaKey.STATUS] == self.status_to_check:
-            self.result.append(job_from_meta(meta))
+    def filter_job(self, info: JobInfo):
+        status = info.meta.get(JobMetaKey.STATUS.value)
+        if status in self.status_to_check:
+            self.result.append(job_from_meta(info.meta))
         return True
 
 
@@ -52,25 +65,42 @@ class _AllJobsFilter(_JobFilter):
     def __init__(self):
         self.result = []
 
-    def filter_job(self, meta: dict):
-        self.result.append(job_from_meta(meta))
+    def filter_job(self, info: JobInfo):
+        self.result.append(job_from_meta(info.meta))
         return True
 
 
 class _ReviewerFilter(_JobFilter):
-    def __init__(self, reviewer_name, fl_ctx: FLContext):
+    def __init__(self, reviewer_name):
         """Not used yet, for use in future implementations."""
         self.result = []
         self.reviewer_name = reviewer_name
 
-    def filter_job(self, meta: dict):
-        approvals = meta.get(JobMetaKey.APPROVALS)
+    def filter_job(self, info: JobInfo):
+        approvals = info.meta.get(JobMetaKey.APPROVALS)
         if not approvals or self.reviewer_name not in approvals:
-            self.result.append(job_from_meta(meta))
+            self.result.append(job_from_meta(info.meta))
         return True
 
 
-# TODO:: use try block around storage calls
+class _ScheduleJobFilter(_JobFilter):
+
+    """
+    This filter is optimized for selecting jobs to schedule since it is used so frequently (every 1 sec).
+    """
+
+    def __init__(self, store):
+        self.store = store
+        self.result = []
+
+    def filter_job(self, info: JobInfo):
+        status = info.meta.get(JobMetaKey.STATUS.value)
+        if status == RunStatus.SUBMITTED.value:
+            self.result.append(job_from_meta(info.meta))
+        elif status:
+            # skip this job in all future calls (so the meta file of this job won't be read)
+            self.store.tag_object(uri=info.uri, tag=_OBJ_TAG_SCHEDULED)
+        return True
 
 
 class SimpleJobDefManager(JobDefManagerSpec):
@@ -242,28 +272,43 @@ class SimpleJobDefManager(JobDefManagerSpec):
         self._scan(job_filter, fl_ctx)
         return job_filter.result
 
-    def _scan(self, job_filter: _JobFilter, fl_ctx: FLContext):
+    def get_jobs_to_schedule(self, fl_ctx: FLContext) -> List[Job]:
+        job_filter = _ScheduleJobFilter(self._get_job_store(fl_ctx))
+        self._scan(job_filter, fl_ctx, skip_tag=_OBJ_TAG_SCHEDULED)
+        return job_filter.result
+
+    def _scan(self, job_filter: _JobFilter, fl_ctx: FLContext, skip_tag=None):
         store = self._get_job_store(fl_ctx)
-        jid_paths = store.list_objects(self.uri_root)
-        if not jid_paths:
+        obj_uris = store.list_objects(self.uri_root, without_tag=skip_tag)
+        self.log_debug(fl_ctx, f"objects to scan: {len(obj_uris)}")
+        if not obj_uris:
             return
 
-        for jid_path in jid_paths:
-            jid = pathlib.PurePath(jid_path).name
-
-            meta = store.get_meta(self.job_uri(jid))
+        for uri in obj_uris:
+            jid = pathlib.PurePath(uri).name
+            job_uri = self.job_uri(jid)
+            meta = store.get_meta(job_uri)
             if meta:
-                ok = job_filter.filter_job(meta)
+                ok = job_filter.filter_job(JobInfo(meta, jid, job_uri))
                 if not ok:
                     break
 
-    def get_jobs_by_status(self, status, fl_ctx: FLContext) -> List[Job]:
+    def get_jobs_by_status(self, status: Union[RunStatus, List[RunStatus]], fl_ctx: FLContext) -> List[Job]:
+        """Get jobs that are in the specified status
+
+        Args:
+            status: a single status value or a list of status values
+            fl_ctx: the FL context
+
+        Returns: list of jobs that are in specified status
+
+        """
         job_filter = _StatusFilter(status)
         self._scan(job_filter, fl_ctx)
         return job_filter.result
 
     def get_jobs_waiting_for_review(self, reviewer_name: str, fl_ctx: FLContext) -> List[Job]:
-        job_filter = _ReviewerFilter(reviewer_name, fl_ctx)
+        job_filter = _ReviewerFilter(reviewer_name)
         self._scan(job_filter, fl_ctx)
         return job_filter.result
 

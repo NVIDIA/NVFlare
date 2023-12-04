@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import ast
 import json
 import os
 import random
@@ -42,7 +41,7 @@ def random_data():
 
 
 def random_meta():
-    return {random.getrandbits(8): random.getrandbits(8) for _ in range(32)}
+    return {random_string(20): random.getrandbits(8) for _ in range(32)}
 
 
 ROOT_DIR = os.path.abspath(os.sep)
@@ -95,7 +94,7 @@ class TestStorage:
 
                 with open(os.path.join(test_filepath, "meta"), "wb") as f:
                     meta = random_meta()
-                    f.write(json.dumps(str(meta)).encode("utf-8"))
+                    f.write(json.dumps(meta).encode("utf-8"))
 
                 storage.create_object(filepath, data, meta, overwrite_existing=True)
 
@@ -109,7 +108,7 @@ class TestStorage:
                 with open(os.path.join(test_dir_path, "data"), "rb") as f:
                     data = f.read()
                 with open(os.path.join(test_dir_path, "meta"), "rb") as f:
-                    meta = ast.literal_eval(json.loads(f.read().decode("utf-8")))
+                    meta = json.loads(f.read().decode("utf-8"))
 
                 assert storage.get_data(dir_path) == data
                 assert storage.get_detail(dir_path)[1] == data

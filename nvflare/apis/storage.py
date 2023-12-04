@@ -97,11 +97,12 @@ class StorageSpec(ABC):
         pass
 
     @abstractmethod
-    def list_objects(self, path: str) -> List[str]:
+    def list_objects(self, path: str, without_tag=None) -> List[str]:
         """Lists all objects in the specified path.
 
         Args:
             path: the path to the objects
+            without_tag: skip the objects with this specified tag
 
         Returns:
             list of URIs of objects
@@ -182,6 +183,20 @@ class StorageSpec(ABC):
 
         Args:
             uri: URI of the object
+
+        """
+        pass
+
+    @abstractmethod
+    def tag_object(self, uri: str, tag: str, data=None):
+        """Tag an object with specified tag and data.
+
+        Args:
+            uri: URI of the object
+            tag: tag to be placed on the object
+            data: data associated with the tag.
+
+        Returns: None
 
         """
         pass
