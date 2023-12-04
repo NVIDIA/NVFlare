@@ -145,6 +145,7 @@ class JobDefManagerSpec(FLComponent, ABC):
         """
         pass
 
+    @abstractmethod
     def get_jobs_to_schedule(self, fl_ctx: FLContext) -> List[Job]:
         """Get job candidates for scheduling.
 
