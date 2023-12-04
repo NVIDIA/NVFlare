@@ -40,8 +40,8 @@
         }
     },
     {
-        "id": "metrics_retriever",
-        "path": "nvflare.app_common.metrics_exchange.metrics_retriever.MetricsRetriever",
+        "id": "metric_relayer",
+        "path": "nvflare.app_common.metrics_exchange.memory_metric_relayer.MemoryMetricRelayer",
         "args": {
             "metrics_exchanger_id": "metrics_exchanger"
         }
