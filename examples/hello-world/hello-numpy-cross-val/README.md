@@ -32,7 +32,7 @@ app_server  app_site-1  app_site-2  log.txt
 
 ## Introduction
 
-The "hello-numpy-cross-val-only" and "hello-numpy-cross-val-only-list-models" jobs show how to run the NVFlare cross-site validation without the training workflow, making use of the previous run results. The first one uses the default single server model. The second enables a list of server models. 
+The "hello-numpy-cross-val-only" and "hello-numpy-cross-val-only-list-models" jobs show how to run the NVFlare cross-site validation without the training workflow, making use of the previous run results. The first one uses the default single server model. The second enables a list of server models. You can provide / use your own previous trained models for the cross-validation.
 
 ### Previous run best global model and local best model
 
@@ -45,6 +45,6 @@ Define two OS system variable "SERVER_MODEL_DIR" and "CLIENT_MODEL_DIR" to point
 For example, define the system variable "SERVER_MODEL_DIR" like this:
 
 ```
-export SERVER_MODEL_DIR="Server_Model_Location"
+export SERVER_MODEL_DIR="/path/to/model/location/at/server-side"
 ```
 
