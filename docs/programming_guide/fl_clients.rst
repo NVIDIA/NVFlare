@@ -8,7 +8,7 @@ FLARE Clients are workers in the FL system that perform tasks.
 We provide different levels of abstraction for writing FL Client code to support use cases ranging from complete customizability to easy user adaption.
 Here is a general overview of the key ideas and use cases of each FL Client type ordered from most FLARE-specific to least FLARE-specific:
 
-**Executors**
+**Executor**
 
 An :ref:`executor` is an FLComponent for clients used for executing tasks, wherein the execute method receives and returns a Shareable object given a task name.
 Executors are the most flexible for defining custom logic and tasks, as with a custom executor and controller, any form of computation can be performed.
@@ -33,8 +33,15 @@ Additionally, options for using decorators or PyTorch Lightning are also availab
 
 As of version 2.4.0, we recommend users start with the Client API, and to consider the other Client types for more specific cases as required.
 
+**3rd-Party System Integration**
 
-Refer to each page below for more details.
+The :ref:`3rd_party_integration` pattern allows for a seamless integration between the FLARE system and a third-party external training system.
+This is especially useful with pre-existing ML/DL training system infrastructure that cannot be easily adapted to the FLARE client.
+
+With the use of the :mod:`FlareAgent <nvflare.client.flare_agent>` and :mod:`TaskExchanger <nvflare.app_common.executors.task_exchanger>`, users can easily enable any 3rd-party system to receive tasks and submit results back to the server.
+
+
+For more details about each client type, refer to each page below.
 
 .. toctree::
    :maxdepth: 3
@@ -42,3 +49,4 @@ Refer to each page below for more details.
    fl_clients/executor
    fl_clients/model_learner
    fl_clients/client_api
+   fl_clients/3rd_party_integration

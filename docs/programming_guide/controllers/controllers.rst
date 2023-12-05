@@ -11,7 +11,7 @@ Controller/Worker Interactions
 NVFlare's collaborative computing is achieved through the Controller/Worker interactions. The following diagram
 shows how the Controller and Worker interact.
 
-.. image:: ../resources/Controller.png
+.. image:: ../../resources/Controller.png
     :height: 300px
 
 The Controller is a python object that controls or coordinates the Workers to get a job done. The controller is run on

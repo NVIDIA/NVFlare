@@ -49,7 +49,7 @@ for the local training code to exchange information with the FLARE system.
 
 We explain its attributes below:
 
-.. literalinclude:: ../../nvflare/app_common/abstract/fl_model.py
+.. literalinclude:: ../../../nvflare/app_common/abstract/fl_model.py
    :language: python
    :lines: 41-67
    :linenos:
@@ -154,7 +154,6 @@ System's metadata includes:
 
 - identity
 - Job_id
-- Total_rounds
 
 nvflare.client.get_job_id
 -------------------------
@@ -166,17 +165,6 @@ nvflare.client.get_job_id
 Usage:
 
 ``job_id = nvflare.client.get_job_id()``
-
-nvflare.client.get_total_rounds
--------------------------------
-
-- Description: gets the total_rounds of the current NVFlare job
-- Arguments: None
-- Returns: total_rounds (int)
-
-Usage:
-
-``total_rounds = nvflare.client.get_total_rounds()``
 
 nvflare.client.get_identity
 ---------------------------
@@ -330,6 +318,26 @@ Note that if users want to pass additional information to NVFlare server side VI
          self.train_acc = Accuracy(task="multiclass", num_classes=NUM_CLASSES)
          self.valid_acc = Accuracy(task="multiclass", num_classes=NUM_CLASSES)
          self.__fl_meta__ = {"CUSTOM_VAR": "VALUE_OF_THE_VAR"}
+
+Configuration and Installation
+==============================
+
+In the client_config.json, in order to launch the training script we use the :class:`SubprocessLauncher<nvflare.app_common.launchers.subprocess_launcher.SubprocessLauncher>` component.
+The defined ``script`` is invoked, and ``launch_once`` can be set to either launch once for the whole job, or launch a process for each task received from the server.
+
+A corresponding :class:`LauncherExecutor<nvflare.app_common.executors.launcher_executor.LauncherExecutor>` is used as the executor to handle the tasks and peform the data exchange using the pipe.
+For the Pipe component we provide implementations of :class:`FilePipe<nvflare.fuel.utils.pipe.file_pipe>` and :class:`CellPipe<nvflare.fuel.utils.pipe.cell_pipe>`.
+
+.. literalinclude:: ../../../job_templates/sag_pt/config_fed_client.conf
+    :language: json
+
+For example configurations, take a look at the :github_nvflare_link:`job_templates <job_templates>` directory for templates using the launcher and Client API.
+
+.. note::
+   In that case that the user does not need to launch the process via the SubprocessLauncher and instead has their own external training system, this would involve using
+   the :ref:`3rd_party_integration`, which is based on the same underlying mechanisms.
+   Rather than a LauncherExecutor, the parent class :class:`TaskExchanger<nvflare.app_common.executors.task_exchanger>` would be used to handle the tasks and enable pipe data exchange.
+   Additionally, the :class:`FlareAgent<nvflare.client.flare_agent>` would be used to communicate with the Flare Client Job Cell to get the tasks and submit the result.
 
 Examples
 ========

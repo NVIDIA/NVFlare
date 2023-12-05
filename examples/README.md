@@ -75,6 +75,7 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 ## 1. Step-by-Step Examples
 | Example | Dataset | Controller-Type | Client Category | Framework | Summary |
 |---------|---------|-----------------|-----------------|-----------|---------|
+| [image_stats](./hello-world/step-by-step/cifar10/stats/image_stats.ipynb)                                                        | CIFAR10 | server | Executor | Pandas | Example for federated stats image histogram calculation. |
 | [sag](./hello-world/step-by-step/cifar10/sag/sag.ipynb)                                                                                   | CIFAR10 | server | Client API| PyTorch | Example for FedAvg with [ScatterAndGather](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.scatter_and_gather.html) controller workflow using the Client API. |
 | [sag_with_deploy_map](./hello-world/step-by-step/cifar10/sag_with_deploy_map/sag_deploy_map.ipynb)                                                        |   CIFAR10   | server | Client API | PyTorch | Example showcasing site-specific configurations and deploy_map. |
 | [sag_executor](./hello-world/step-by-step/cifar10/sag_executor/sag_executor.ipynb)                                                        | CIFAR10 | server | Executor | PyTorch | Example with [ScatterAndGather](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.scatter_and_gather.html) using an Executor. |
@@ -83,7 +84,6 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 | [cyclic](./hello-world/step-by-step/cifar10/cyclic/cyclic.ipynb)                                                        | CIFAR10 | server | Client API | PyTorch | Example for cyclic weight transfer using [CyclicController](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.cyclic_ctl.html) controller workflow. |
 | [cyclic_ccwf](./hello-world/step-by-step/cifar10/cyclic_ccwf/cyclic_ccwf.ipynb)                                                        | CIFAR10 | client| Client API | PyTorch | Example for client-controlled cyclic weight transfer using [CyclicClientController](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.ccwf.cyclic_client_ctl.html) controller workflow. |
 | [swarm](./hello-world/step-by-step/cifar10/swarm/swarm.ipynb)                                                        | CIFAR10 |  client | Client API | PyTorch | Example for swarm learning and client-controlled cross-site evaluation using [SwarmClientController](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.ccwf.swarm_client_ctl.html) and [CrossSiteEvalClientController](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.ccwf.cse_client_ctl.html) controller workflows. |
-| [image_stats](./hello-world/step-by-step/cifar10/stats/image_stats.ipynb)                                                        | CIFAR10 | server | Executor | Pandas | Example for federated stats image histogram calculation. |
 | [tabular_stats](./hello-world/step-by-step/higgs/stats/tabular_stats.ipynb)                                                        | HIGGS | server | Executor |Pandas | Example for federated stats tabular histogram calculation. |
 | [sklearn_linear](./hello-world/step-by-step/higgs/sklearn-linear/sklearn_linear.ipynb)                                           | HIGGS | server | Client API |sklearn | Example for federated linear model (logistic regression on binary classification) learning on tabular data. |
 | [sklearn_svm](./hello-world/step-by-step/higgs/sklearn-svm/sklearn_svm.ipynb)                                                     | HIGGS | server | Client API | sklearn | Example for federated SVM model learning on tabular data. |
@@ -172,6 +172,7 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 | [Parameter Efficient Fine Turning](../integration/nemo/examples/peft) | NeMo  | Example utilizing NeMo's PEFT methods to adapt a LLM to a downstream task. |
 | [Prompt-Tuning Example](../integration/nemo/examples/prompt_learning) | NeMo  | Example for using FLARE with NeMo for prompt learning.|
 | [Supervised Fine Tuning (SFT)](../integration/nemo/examples/supervised_fine_tuning) | NeMo  | Example to fine-tune all parameters of a LLM on supervised data. |
+| [LLM Tuning via HuggingFace SFT Trainer](./advanced/llm_hf) | NeMo  | Example for using FLARE with a HuggingFace trainer for LLM tuning tasks. |
 
 ## 13. Graph Neural Network (GNN)
 
