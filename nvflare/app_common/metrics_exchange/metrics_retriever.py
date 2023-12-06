@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from queue import Queue
-
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.metrics_exchange.metrics_exchanger import MetricsExchanger
@@ -49,11 +47,9 @@ class MetricsRetriever(MetricRelay):
         )
         self.metrics_exchanger_id = metrics_exchanger_id
 
-        self.x_queue = Queue()
-        self.y_queue = Queue()
-
     def _create_metrics_exchanger(self):
-        pipe = MemoryPipe(x_queue=self.x_queue, y_queue=self.y_queue, mode=Mode.ACTIVE)
+        pipe = MemoryPipe(token=self.pipe.token, mode=Mode.ACTIVE)
+        pipe.open(self.pipe_channel_name)
 
         # init pipe handler
         pipe_handler = PipeHandler(
@@ -67,14 +63,10 @@ class MetricsRetriever(MetricRelay):
         return metrics_exchanger
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
+        super().handle_event(event_type, fl_ctx)
         if event_type == EventType.ABOUT_TO_START_RUN:
             engine = fl_ctx.get_engine()
             # inserts MetricsExchanger into engine components
             metrics_exchanger = self._create_metrics_exchanger()
             all_components = engine.get_all_components()
             all_components[self.metrics_exchanger_id] = metrics_exchanger
-            # inserts MemoryPipe into engine components
-            pipe = MemoryPipe(x_queue=self.x_queue, y_queue=self.y_queue, mode=Mode.PASSIVE)
-            all_components[self.pipe_id] = pipe
-
-        super().handle_event(event_type, fl_ctx)
