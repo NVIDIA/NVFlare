@@ -29,7 +29,7 @@ from multiprocessing.connection import Client
 from urllib.parse import urlparse
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import JobConstants, MachineStatus, RunProcessKey, WorkspaceConstants
+from nvflare.apis.fl_constant import JobConstants, MachineStatus, RunnerTask, RunProcessKey, WorkspaceConstants
 from nvflare.apis.job_def import ALL_SITES, JobMetaKey
 from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
 from nvflare.apis.workspace import Workspace
@@ -491,7 +491,7 @@ class SimulatorClientRunner(FLComponent):
             lock = threading.Lock()
             timeout = self.kv_list.get("simulator_worker_timeout", 60.0)
             for i in range(self.args.threads):
-                executor.submit(lambda p: self.run_client_thread(*p), [self.args.threads, gpu, lock, timeout])
+                executor.submit(lambda p: self.run_client_thread(*p), [self.args.threads, gpu, lock, i, timeout])
 
             # wait for the server and client running thread to finish.
             executor.shutdown()
@@ -513,7 +513,7 @@ class SimulatorClientRunner(FLComponent):
             # Ignore the exception for the simulator client shutdown
             self.logger.warn(f"Exception happened to client{client.name} during shutdown ")
 
-    def run_client_thread(self, num_of_threads, gpu, lock, timeout=60):
+    def run_client_thread(self, num_of_threads, gpu, lock, rank, timeout=60):
         stop_run = False
         interval = 1
         client_to_run = None  # indicates the next client to run
@@ -533,8 +533,12 @@ class SimulatorClientRunner(FLComponent):
                 client.simulate_running = False
         except Exception as e:
             self.logger.error(f"run_client_thread error: {secure_format_exception(e)}")
+        finally:
+            if rank == 0:
+                for client in self.federated_clients:
+                    self.do_one_task(client, num_of_threads, gpu, lock, timeout=timeout, task_name=RunnerTask.END_RUN)
 
-    def do_one_task(self, client, num_of_threads, gpu, lock, timeout=60.0):
+    def do_one_task(self, client, num_of_threads, gpu, lock, timeout=60.0, task_name=RunnerTask.TASK_EXEC):
         open_port = get_open_ports(1)[0]
         command = (
             sys.executable
@@ -554,6 +558,8 @@ class SimulatorClientRunner(FLComponent):
             + str(client.cell.get_root_url_for_child())
             + " --parent_url "
             + str(client.cell.get_internal_listener_url())
+            + " --task_name "
+            + str(task_name)
         )
         if gpu:
             command += " --gpu " + str(gpu)
