@@ -13,9 +13,10 @@
 # limitations under the License.
 
 import os
+
 import numpy as np
 
-from nvflare.app_common.abstract.model import make_model_learnable, ModelLearnableKey
+from nvflare.app_common.abstract.model import ModelLearnableKey, make_model_learnable
 from nvflare.app_common.np.constants import NPConstants
 
 SERVER_MODEL_DIR = "models/server"
