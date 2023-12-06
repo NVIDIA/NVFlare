@@ -9,6 +9,8 @@ including papers using NVIDIA FLARE's predecessor libraries included in the `Cla
 
 Publications: 2023
 ------------------
+* **2023-10** `Communication-Efficient Vertical Federated Learning with Limited Overlapping Samples <https://arxiv.org/abs/2303.16270>`__ (`ICCV 2023 <https://iccv2023.thecvf.com/>`__)
+* **2023-10** `FedBPT: Efficient Federated Black-box Prompt Tuning for Large Language Models <https://arxiv.org/abs/2310.01467>`__ (preprint)
 * **2023-10** `ConDistFL: Conditional Distillation for Federated Learning from Partially Annotated Data <https://arxiv.org/abs/2308.04070>`__ (`DeCaF @ MICCAI 2023 <https://decaf-workshop.github.io/decaf-2023/>`__)
 * **2023-06** `Fair Federated Medical Image Segmentation via Client Contribution Estimation <https://arxiv.org/abs/2303.16520>`__ (`CVPR 2023 <https://cvpr2023.thecvf.com/Conferences/2023/>`__)
 * **2023-03** `FLARE: Federated Learning from Simulation to Real-World <https://arxiv.org/abs/2210.13291>`__ (`IEEE Data Eng. Bull. March 2023, Vol. 46, No. 1, <http://sites.computer.org/debull/A23mar/issue1.htm>`__)
@@ -43,22 +45,37 @@ Blogs & Videos
 ==============
 NVIDIA FLARE related blogs and other media.
 
+Blogs & Videos: 2023
+--------------------
+* **2023-09** `Preventing Health Data Leaks with Federated Learning Using NVIDIA FLARE <https://developer.nvidia.com/blog/preventing-health-data-leaks-with-federated-learning-using-nvidia-flare/>`__ (Roche Technical Blog)
+* **2023-07** `Adapting LLMs to Downstream Tasks Using Federated Learning on Distributed Datasets <https://developer.nvidia.com/blog/adapting-llms-to-downstream-tasks-using-federated-learning-on-distributed-datasets/>`__ (NVIDIA Technical Blog)
+* **2023-06** `Boost Your AI Workflows with Federated Learning Enabled by NVIDIA FLARE <https://developer.nvidia.com/blog/boost-your-ai-workflows-with-federated-learning-enabled-by-nvidia-flare/>`__ (NVIDIA Technical Blog)
+* **2023-06** `Applying Federated Learning to Traditional Machine Learning Methods <https://developer.nvidia.com/blog/applying-federated-learning-to-traditional-machine-learning-methods/>`__ (NVIDIA Technical Blog)
+* **2023-02** `AI/ML for Business Executives <https://medium.com/my-aiml/ai-ml-for-business-executives-january-february-2023-9044c2cabf53>`__ (Medium Blog)
+* **2023-01** `FATE, Flower, PySyft & Co. — Federated Learning Frameworks in Python <https://medium.com/elca-it/flower-pysyft-co-federated-learning-frameworks-in-python-b1a8eda68b0d>`__ (Medium Blog)
+
 Blogs & Videos: 2022
 --------------------
+
 * **2022-10** `Federated Learning from Simulation to Production with NVIDIA FLARE <https://developer.nvidia.com/blog/federated-learning-from-simulation-to-production-with-nvidia-flare/?ncid=so-nvsh-705336#cid=ix11_so-nvsh_en-us>`__ (NVIDIA Technical Blog)
+* **2022-08** `Using Federated Learning to Bridge Data Silos in Financial Services <https://developer.nvidia.com/blog/using-federated-learning-to-bridge-data-silos-in-financial-services/>`__ (NVIDIA Technical Blog)
 * **2022-06** `Experimenting with Novel Distributed Applications Using NVIDIA Flare 2.1 <https://developer.nvidia.com/blog/experimenting-with-novel-distributed-applications-using-nvidia-flare-2-1/>`__ (NVIDIA Technical Blog)
+* **2022-03** `Flywheel & NVIDIA FLARE Demo <https://youtu.be/v-EKZC4yvY4?si=5U_xZ_WKKb8AkCgT>`__ (`Flywheel <https://flywheel.io/>`__  Video)
 
 Blogs & Videos: 2021
 --------------------
 * **2021-11** `Creating Robust and Generalizable AI Models with NVIDIA FLARE <https://developer.nvidia.com/blog/creating-robust-and-generalizable-ai-models-with-nvidia-flare/>`__ (NVIDIA Technical Blog)
-* **2021-09** `Federated Learning for Medical AI and Triaging COVID-19 Patients <https://www.youtube.com/watch?v=cOXVrtkv6FE>`__ (NVIDIA video)
+* **2021-11** `Federated Learning for Healthcare AI: NVIDIA and Rhino Health Accelerate Research Collaborations <https://youtu.be/ytmwx1V0XK0?si=hP7Cvg15aXjkDNd6>`__ (`Rhino Health <https://www.rhinohealth.com/>`__ Video)
+* **2021-11** `Federated Learning With FLARE: NVIDIA Brings Collaborative AI to Healthcare and Beyond <https://blogs.nvidia.com/blog/federated-learning-ai-nvidia-flare/>`__ (NVIDIA Blog)
+* **2021-09** `Federated Learning for Medical AI and Triaging COVID-19 Patients <https://www.youtube.com/watch?v=cOXVrtkv6FE>`__ (NVIDIA Video)
 * **2021-06** `Federated Learning with Homomorphic Encryption <https://developer.nvidia.com/blog/federated-learning-with-homomorphic-encryption/>`__ (NVIDIA Technical Blog)
+* **2021-05** `Applying a MLOps approach to Federated learning using ML Flow with NV Flare: A Healthcare use case <https://medium.com/dataroots/applying-a-mlops-approach-to-federated-learning-using-ml-flow-with-nv-flare-a-healthcare-use-case-b703f46224ef>`__ (Medium Blog)
 
 Blogs & Videos: 2019
 --------------------
 * **2019-12** `Federated Learning powered by NVIDIA Clara <https://developer.nvidia.com/blog/federated-learning-clara/>`__ (NVIDIA Technical Blog)
 * **2019-10** `What is federated learning - in Chinese <https://blogs.nvidia.com.tw/2019/10/13/what-is-federated-learning/>`__ (NVIDIA Technical Blog)
-* **2019-10** `NVIDIA Research: First Privacy-Preserving Federated Learning System for Medical Imaging <https://www.youtube.com/watch?v=Jy7ozgwovgg>`__ (NVIDIA video)
+* **2019-10** `NVIDIA Research: First Privacy-Preserving Federated Learning System for Medical Imaging <https://www.youtube.com/watch?v=Jy7ozgwovgg>`__ (NVIDIA Video)
 
 Talks
 =====
@@ -66,6 +83,7 @@ Recent talks and Webinars covering federated learning research and NVIDIA FLARE.
 
 Talks: 2023
 -----------
+* **2023-07** `Federated Learning <https://youtu.be/4ezr1MfpEWs?si=ZSaNteIxEuYjXlgi>`__ (`MONAI MIDL Meetup 2023 <https://2023.midl.io/monai-workshop>`__)
 * **2023-01** `MONAI Federated Learning APIs (and their use with NVIDIA FLARE) <https://youtu.be/18Fmmyx-QXE>`__ (`MONAI Bootcamp 2023 <https://events.nvidia.com/janmonaibootcamp>`__)
 
 Talks: 2022
