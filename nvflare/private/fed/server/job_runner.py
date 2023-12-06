@@ -501,11 +501,7 @@ class JobRunner(FLComponent):
     def update_unfinished_jobs(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
-        all_jobs = []
-        dispatched_jobs = job_manager.get_jobs_by_status(RunStatus.DISPATCHED, fl_ctx)
-        all_jobs.extend(dispatched_jobs)
-        running_jobs = job_manager.get_jobs_by_status(RunStatus.RUNNING, fl_ctx)
-        all_jobs.extend(running_jobs)
+        all_jobs = job_manager.get_jobs_by_status([RunStatus.RUNNING, RunStatus.DISPATCHED], fl_ctx)
 
         for job in all_jobs:
             try:
