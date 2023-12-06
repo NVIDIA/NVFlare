@@ -12,8 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from abc import ABC, abstractmethod
 
-class ExchangeFormat:
-    RAW = "raw"
-    PYTORCH = "pytorch"
-    NUMPY = "numpy"
+
+class ClientAPIExportable(ABC):
+    """Should export attributes for client api to read."""
+
+    @abstractmethod
+    def export_for_client_api(self) -> dict:
+        """Exports information to the client api"""
+        pass

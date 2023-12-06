@@ -16,23 +16,23 @@ import copy
 import time
 
 import nvflare.client as flare
+from nvflare.client.tracking import MLflowWriter
 
 
 def train(input_arr, current_round, epochs=3):
+    writer = MLflowWriter()
     output_arr = copy.deepcopy(input_arr)
     num_of_data = 2000
     batch_size = 16
     num_of_batches = num_of_data // batch_size
     for i in range(epochs):
         for j in range(num_of_batches):
-            value = global_step = current_round * num_of_batches * epochs + i * num_of_batches + j
-            # use global_step as mock scalar to log
-            print(f"logging record: {value}")
-            flare.log(
-                key="loss_for_each_batch",
-                value=value,
-                data_type=flare.AnalyticsDataType.SCALAR,
-                global_step=global_step,
+            global_step = current_round * num_of_batches * epochs + i * num_of_batches + j
+            print(f"logging record: {global_step}")
+            writer.log_metric(
+                key="global_step",
+                value=global_step,
+                step=global_step,
             )
         # mock training with plus 1
         output_arr += 1

@@ -22,6 +22,9 @@ from net import Net
 # (1) import nvflare client API
 import nvflare.client as flare
 
+# (optional) metrics
+from nvflare.client.tracking import TBWriter
+
 # (optional) set a fix place so we don't need to download everytime
 DATASET_PATH = "/tmp/nvflare/data"
 # (optional) We change to use GPU to speed things up.
@@ -46,6 +49,7 @@ def main():
     # (2) initializes NVFlare client API
     flare.init()
 
+    summary_writer = TBWriter()
     while flare.is_running():
         # (3) receives FLModel from NVFlare
         input_model = flare.receive()
@@ -83,12 +87,8 @@ def main():
                 if i % 2000 == 1999:  # print every 2000 mini-batches
                     print(f"[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
                     global_step = input_model.current_round * steps + epoch * len(trainloader) + i
-                    flare.log(
-                        key="loss_for_each_batch",
-                        value=running_loss,
-                        data_type=flare.AnalyticsDataType.SCALAR,
-                        global_step=global_step,
-                    )
+
+                    summary_writer.add_scalar(tag="loss_for_each_batch", scalar=running_loss, global_step=global_step)
                     running_loss = 0.0
 
         print("Finished Training")

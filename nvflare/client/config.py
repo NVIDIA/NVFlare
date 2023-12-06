@@ -14,10 +14,15 @@
 
 import json
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
-from nvflare.app_common.data_exchange.constants import ExchangeFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
+
+
+class ExchangeFormat:
+    RAW = "raw"
+    PYTORCH = "pytorch"
+    NUMPY = "numpy"
 
 
 class TransferType(str, Enum):
@@ -36,8 +41,10 @@ class ConfigKey:
     PIPE_CHANNEL_NAME = "pipe_name"
     PIPE_CLASS = "pipe_class"
     PIPE_ARGS = "pipe_args"
-    SITE_NAME = "site_name"
-    JOB_ID = "job_id"
+    SITE_NAME = "SITE_NAME"
+    JOB_ID = "JOB_ID"
+    TASK_EXCHANGE = "TASK_EXCHANGE"
+    METRICS_EXCHANGE = "METRICS_EXCHANGE"
 
 
 class ClientConfig:
@@ -45,9 +52,16 @@ class ClientConfig:
 
     Example:
         {
-            "exchange_path": "./",
-            "exchange_format": "pytorch",
-            "transfer_type": "FULL"
+            "site_name": "site-1",
+            "job_id": xxxxx,
+            "task_exchange": {
+                "exchange_format": "pytorch",
+                "transfer_type": "FULL",
+                "pipe_class": "FilePipe"
+            },
+            "metrics_exchange": {
+                "pipe_class": "CellPipe"
+            }
         }
     """
 
@@ -59,26 +73,29 @@ class ClientConfig:
     def get_config(self):
         return self.config
 
-    def get_supported_topics(self) -> List[str]:
-        return [
-            self.config[k]
-            for k in [ConfigKey.TRAIN_TASK_NAME, ConfigKey.EVAL_TASK_NAME, ConfigKey.SUBMIT_MODEL_TASK_NAME]
-        ]
+    def get_pipe_channel_name(self, section: str) -> str:
+        return self.config[section][ConfigKey.PIPE_CHANNEL_NAME]
 
-    def get_pipe_channel_name(self) -> str:
-        return self.config[ConfigKey.PIPE_CHANNEL_NAME]
+    def get_pipe_args(self, section: str) -> dict:
+        return self.config[section][ConfigKey.PIPE_ARGS]
 
-    def get_pipe_args(self) -> dict:
-        return self.config[ConfigKey.PIPE_ARGS]
-
-    def get_pipe_class(self) -> str:
-        return self.config[ConfigKey.PIPE_CLASS]
+    def get_pipe_class(self, section: str) -> str:
+        return self.config[section][ConfigKey.PIPE_CLASS]
 
     def get_exchange_format(self) -> ExchangeFormat:
-        return self.config[ConfigKey.EXCHANGE_FORMAT]
+        return self.config[ConfigKey.TASK_EXCHANGE][ConfigKey.EXCHANGE_FORMAT]
 
     def get_transfer_type(self):
-        return self.config.get(ConfigKey.TRANSFER_TYPE, "FULL")
+        return self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.TRANSFER_TYPE, "FULL")
+
+    def get_train_task(self):
+        return self.config[ConfigKey.TASK_EXCHANGE][ConfigKey.TRAIN_TASK_NAME]
+
+    def get_eval_task(self):
+        return self.config[ConfigKey.TASK_EXCHANGE][ConfigKey.EVAL_TASK_NAME]
+
+    def get_submit_model_task(self):
+        return self.config[ConfigKey.TASK_EXCHANGE][ConfigKey.SUBMIT_MODEL_TASK_NAME]
 
     def to_json(self, config_file: str):
         with open(config_file, "w") as f:

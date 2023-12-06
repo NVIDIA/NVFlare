@@ -12,15 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 from typing import Optional
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.data_exchange.constants import ExchangeFormat
-from nvflare.app_common.data_exchange.piper import Piper
 from nvflare.app_common.executors.launcher_executor import LauncherExecutor
-from nvflare.client.config import ClientConfig, ConfigKey, TransferType
-from nvflare.client.constants import CONFIG_DATA_EXCHANGE
+from nvflare.app_common.widgets.client_api_configurator import ClientAPIConfigurator
+from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType
 
 
 class ClientAPILauncherExecutor(LauncherExecutor):
@@ -102,23 +99,18 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         super().initialize(fl_ctx)
 
     def prepare_config_for_launch(self, fl_ctx: FLContext):
-        workspace = fl_ctx.get_engine().get_workspace()
-        app_dir = workspace.get_app_dir(fl_ctx.get_job_id())
-        config_file = os.path.join(app_dir, workspace.config_folder, CONFIG_DATA_EXCHANGE)
+        task_exchange_attributes = {
+            ConfigKey.TRAIN_WITH_EVAL: self._train_with_evaluation,
+            ConfigKey.EXCHANGE_FORMAT: self._params_exchange_format,
+            ConfigKey.TRANSFER_TYPE: self._params_transfer_type,
+            ConfigKey.TRAIN_TASK_NAME: self._train_task_name,
+            ConfigKey.EVAL_TASK_NAME: self._evaluate_task_name,
+            ConfigKey.SUBMIT_MODEL_TASK_NAME: self._submit_model_task_name,
+            ConfigKey.PIPE_CHANNEL_NAME: self.get_pipe_channel_name(),
+            ConfigKey.PIPE_CLASS: ClientAPIConfigurator.get_external_pipe_class(self.get_pipe()),
+            ConfigKey.PIPE_ARGS: ClientAPIConfigurator.get_external_pipe_args(self.get_pipe()),
+        }
 
-        # prepare config exchange for data exchanger
-        client_config = ClientConfig()
-        config_dict = client_config.config
-        config_dict[ConfigKey.TRAIN_WITH_EVAL] = self._train_with_evaluation
-        config_dict[ConfigKey.EXCHANGE_FORMAT] = self._params_exchange_format
-        config_dict[ConfigKey.TRANSFER_TYPE] = self._params_transfer_type
-        config_dict[ConfigKey.TRAIN_TASK_NAME] = self._train_task_name
-        config_dict[ConfigKey.EVAL_TASK_NAME] = self._evaluate_task_name
-        config_dict[ConfigKey.SUBMIT_MODEL_TASK_NAME] = self._submit_model_task_name
-
-        config_dict[ConfigKey.PIPE_CHANNEL_NAME] = self.pipe_channel_name
-        config_dict[ConfigKey.PIPE_CLASS] = Piper.get_external_pipe_class(self.pipe_id, fl_ctx)
-        config_dict[ConfigKey.PIPE_ARGS] = Piper.get_external_pipe_args(self.pipe_id, fl_ctx)
-        config_dict[ConfigKey.SITE_NAME] = fl_ctx.get_identity_name()
-        config_dict[ConfigKey.JOB_ID] = fl_ctx.get_job_id()
-        client_config.to_json(config_file)
+        ClientAPIConfigurator.write_config_to_file(
+            config_data={ConfigKey.TASK_EXCHANGE: task_exchange_attributes}, fl_ctx=fl_ctx
+        )

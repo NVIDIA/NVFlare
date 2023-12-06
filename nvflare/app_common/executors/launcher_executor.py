@@ -24,8 +24,8 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.launcher import Launcher, LauncherRunStatus
+from nvflare.app_common.abstract.params_converter import ParamsConverter
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.data_exchange.params_converter import ParamsConverter
 from nvflare.app_common.executors.task_exchanger import TaskExchanger
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.fuel.utils.validation_utils import check_object_type

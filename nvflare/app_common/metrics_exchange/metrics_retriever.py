@@ -17,14 +17,13 @@ from queue import Queue
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.metrics_exchange.metrics_exchanger import MetricsExchanger
+from nvflare.app_common.widgets.metric_relay import MetricRelay
 from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.pipe.memory_pipe import MemoryPipe
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler
 
-from .metric_relayer import MetricRelayer
 
-
-class MemoryMetricRelayer(MetricRelayer):
+class MetricsRetriever(MetricRelay):
     def __init__(
         self,
         metrics_exchanger_id: str,
@@ -33,7 +32,15 @@ class MemoryMetricRelayer(MetricRelayer):
         heartbeat_interval: float = 5.0,
         heartbeat_timeout: float = 30.0,
     ):
-        """Metrics receiver with memory pipe."""
+        """Metrics retriever.
+
+        Please do not use this class.
+
+        This class creates `MetricsExchanger` that is used by
+        class `LogWriterForMetricsExchanger` and the classes that extends it.
+        This exists just for compatibility of `LogWriterForMetricsExchanger`.
+        We will re-factor those classes later.
+        """
         super().__init__(
             pipe_id=pipe_id,
             read_interval=read_interval,

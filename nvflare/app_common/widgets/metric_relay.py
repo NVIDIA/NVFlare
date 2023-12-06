@@ -12,18 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from nvflare.apis.client_api_exportable import ClientAPIExportable
 from nvflare.apis.dxo import DXO
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.utils.analytix_utils import send_analytic_dxo
 from nvflare.app_common.tracking.tracker_types import ANALYTIC_EVENT_TYPE
+from nvflare.app_common.widgets.client_api_configurator import ClientAPIConfigurator
+from nvflare.client.config import ConfigKey
 from nvflare.fuel.utils.constants import PipeChannelName
 from nvflare.fuel.utils.pipe.pipe import Message, Pipe
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler
+from nvflare.widgets.widget import Widget
 
 
-class MetricRelayer(FLComponent):
+class MetricRelay(Widget, ClientAPIExportable):
     def __init__(
         self,
         pipe_id: str,
@@ -77,4 +80,12 @@ class MetricRelayer(FLComponent):
     def _pipe_msg_cb(self, msg: Message):
         if not isinstance(msg.data, DXO):
             self.logger.error(f"bad metric data: expect DXO but got {type(msg.data)}")
-        send_analytic_dxo(self, msg.data, self._fl_ctx, self._event_type)
+        send_analytic_dxo(self, msg.data, self._fl_ctx, self._event_type, fire_fed_event=True)
+
+    def export_for_client_api(self) -> dict:
+        config_dict = {
+            ConfigKey.PIPE_CHANNEL_NAME: self.pipe_channel_name,
+            ConfigKey.PIPE_CLASS: ClientAPIConfigurator.get_external_pipe_class(self.pipe),
+            ConfigKey.PIPE_ARGS: ClientAPIConfigurator.get_external_pipe_args(self.pipe),
+        }
+        return {ConfigKey.METRICS_EXCHANGE: config_dict}

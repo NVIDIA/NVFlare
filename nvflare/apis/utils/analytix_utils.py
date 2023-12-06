@@ -22,7 +22,9 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.tracking.tracker_types import ANALYTIC_EVENT_TYPE, LogWriterName
 
 
-def send_analytic_dxo(comp: FLComponent, dxo: DXO, fl_ctx: FLContext, event_type: str = ANALYTIC_EVENT_TYPE):
+def send_analytic_dxo(
+    comp: FLComponent, dxo: DXO, fl_ctx: FLContext, event_type: str = ANALYTIC_EVENT_TYPE, fire_fed_event: bool = False
+):
     """Sends analytic dxo.
 
     Sends analytic dxo by firing an event (of type "analytix_log_stats" by default unless otherwise specified)
@@ -41,8 +43,12 @@ def send_analytic_dxo(comp: FLComponent, dxo: DXO, fl_ctx: FLContext, event_type
     if not isinstance(fl_ctx, FLContext):
         raise TypeError(f"expect fl_ctx to be an instance of FLContext, but got {type(fl_ctx)}")
 
-    fl_ctx.set_prop(key=FLContextKey.EVENT_DATA, value=dxo.to_shareable(), private=True, sticky=False)
-    comp.fire_event(event_type=event_type, fl_ctx=fl_ctx)
+    shareable = dxo.to_shareable()
+    fl_ctx.set_prop(key=FLContextKey.EVENT_DATA, value=shareable, private=True, sticky=False)
+    if not fire_fed_event:
+        comp.fire_event(event_type=event_type, fl_ctx=fl_ctx)
+    else:
+        comp.fire_fed_event(event_type=event_type, event_data=shareable, fl_ctx=fl_ctx)
 
 
 def create_analytic_dxo(

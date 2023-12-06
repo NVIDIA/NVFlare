@@ -18,15 +18,14 @@ from typing import Any, Dict, Optional, Tuple, Union
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.app_common.abstract.fl_model import FLModel
-from nvflare.app_common.data_exchange.constants import ExchangeFormat
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 from nvflare.fuel.utils.pipe.file_pipe import FilePipe
 from nvflare.fuel.utils.pipe.pipe import Pipe
 
-from .config import ClientConfig, ConfigKey, from_file
-from .constants import CONFIG_DATA_EXCHANGE, CONFIG_METRICS_EXCHANGE
+from .config import ClientConfig, ConfigKey, ExchangeFormat, from_file
+from .constants import CLIENT_API_CONFIG
 from .flare_agent import FlareAgentException
 from .flare_agent_with_fl_model import FlareAgentWithFLModel
 from .model_registry import ModelRegistry
@@ -48,14 +47,14 @@ def _create_client_config(config: Union[str, Dict]) -> ClientConfig:
     return client_config
 
 
-def _create_pipe_using_config(client_config: ClientConfig) -> Tuple[Pipe, str]:
-    pipe_class = client_config.get_pipe_class()
+def _create_pipe_using_config(client_config: ClientConfig, section: str) -> Tuple[Pipe, str]:
+    pipe_class = client_config.get_pipe_class(section)
     if pipe_class not in PIPE_CLASS_MAPPING:
         raise RuntimeError(f"Pipe class {pipe_class} is not supported.")
 
-    pipe_args = client_config.get_pipe_args()
+    pipe_args = client_config.get_pipe_args(section)
     pipe = PIPE_CLASS_MAPPING[pipe_class]["pipe_class"](**pipe_args)
-    pipe_channel_name = client_config.get_pipe_channel_name()
+    pipe_channel_name = client_config.get_pipe_channel_name(section)
     return pipe, pipe_channel_name
 
 
@@ -68,15 +67,13 @@ def _register_tensor_decomposer():
 
 
 def init(
-    config: Union[str, Dict] = f"config/{CONFIG_DATA_EXCHANGE}",
-    config_metrics: Union[str, Dict] = f"config/{CONFIG_METRICS_EXCHANGE}",
+    config: Union[str, Dict] = f"config/{CLIENT_API_CONFIG}",
     rank: Optional[str] = None,
 ):
     """Initializes NVFlare Client API environment.
 
     Args:
         config (str or dict): configuration file or config dictionary.
-        config_metrics (str or dict): configuration file or config dictionary for metrics exchange.
         rank (str): local rank of the process.
             It is only useful when the training script has multiple worker processes. (for example multi GPU)
     """
@@ -89,13 +86,6 @@ def init(
         raise RuntimeError("Can't call init twice.")
 
     client_config = _create_client_config(config=config)
-    client_config_metrics = None
-    try:
-        client_config_metrics = _create_client_config(config=config_metrics)
-    except Exception as e:
-        print(
-            f"ignoring setup metrics exchange due to exception: {e}. You can safely ignore this message if you are not using flare.log api."
-        )
 
     flare_agent = None
     try:
@@ -103,10 +93,14 @@ def init(
             if client_config.get_exchange_format() == ExchangeFormat.PYTORCH:
                 _register_tensor_decomposer()
 
-            pipe, task_channel_name = _create_pipe_using_config(client_config=client_config)
+            pipe, task_channel_name = _create_pipe_using_config(
+                client_config=client_config, section=ConfigKey.TASK_EXCHANGE
+            )
             metric_pipe, metric_channel_name = None, ""
-            if client_config_metrics:
-                metric_pipe, metric_channel_name = _create_pipe_using_config(client_config=client_config_metrics)
+            if ConfigKey.METRICS_EXCHANGE in client_config.config:
+                metric_pipe, metric_channel_name = _create_pipe_using_config(
+                    client_config=client_config, section=ConfigKey.METRICS_EXCHANGE
+                )
 
             flare_agent = FlareAgentWithFLModel(
                 pipe=pipe,
@@ -197,21 +191,21 @@ def is_train() -> bool:
     model_registry = get_model_registry()
     if model_registry.rank != "0":
         raise RuntimeError("only rank 0 can call is_train!")
-    return model_registry.task_name == model_registry.config.config[ConfigKey.TRAIN_TASK_NAME]
+    return model_registry.task_name == model_registry.config.get_train_task()
 
 
 def is_evaluate() -> bool:
     model_registry = get_model_registry()
     if model_registry.rank != "0":
         raise RuntimeError("only rank 0 can call is_evaluate!")
-    return model_registry.task_name == model_registry.config.config[ConfigKey.EVAL_TASK_NAME]
+    return model_registry.task_name == model_registry.config.get_eval_task()
 
 
 def is_submit_model() -> bool:
     model_registry = get_model_registry()
     if model_registry.rank != "0":
         raise RuntimeError("only rank 0 can call is_submit_model!")
-    return model_registry.task_name == model_registry.config.config[ConfigKey.SUBMIT_MODEL_TASK_NAME]
+    return model_registry.task_name == model_registry.config.get_submit_model_task()
 
 
 def log(key: str, value: Any, data_type: AnalyticsDataType, **kwargs):
