@@ -34,9 +34,13 @@ app_server  app_site-1  app_site-2  log.txt
 
 The "hello-numpy-cross-val-only" and "hello-numpy-cross-val-only-list-models" jobs show how to run the NVFlare cross-site validation without the training workflow, making use of the previous run results. The first one uses the default single server model. The second enables a list of server models. You can provide / use your own previous trained models for the cross-validation.
 
-### Previous run best global model and local best model
+### Generate the previous run best global model and local best model
 
-The previous run best global model and best local model are stored in the "server" and "client" sub-folder separately under the "models" folder. 
+Run the following command to generate the pre-trained models:
+
+```
+python pre_train_models.py 
+```
 
 ### How to run the Job
 
