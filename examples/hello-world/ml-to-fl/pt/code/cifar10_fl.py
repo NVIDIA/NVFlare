@@ -23,7 +23,7 @@ from net import Net
 import nvflare.client as flare
 
 # (optional) metrics
-from nvflare.client.tracking import TBWriter
+from nvflare.client.tracking import SummaryWriter
 
 # (optional) set a fix place so we don't need to download everytime
 DATASET_PATH = "/tmp/nvflare/data"
@@ -49,7 +49,7 @@ def main():
     # (2) initializes NVFlare client API
     flare.init()
 
-    summary_writer = TBWriter()
+    summary_writer = SummaryWriter()
     while flare.is_running():
         # (3) receives FLModel from NVFlare
         input_model = flare.receive()

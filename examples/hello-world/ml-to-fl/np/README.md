@@ -146,9 +146,17 @@ nvflare simulator -n 2 -t 2 ./jobs/np_loop_cell_pipe -w np_loop_cell_pipe_worksp
 
 ## Launch once for the whole job and with metrics streaming
 
-Sometimes we want to stream the training progress.
+Sometimes we want to stream the training progress to the server.
 
-We can use the flare.log method to do that: [./code/train_metrics.py](./code/train_metrics.py)
+We have several ways of doing that:
+
+  - `SummaryWriter` mimics Tensorboard `SummaryWriter`'s `add_scalar`, `add_scalars` method
+  - `WandBWriter` mimics Weights And Biases's `log` method
+  - `MLflowWriter` mimics MLflow's tracking api
+  - `flare.log` is the underlying common pattern that can be directly used as well, you need to figure out the
+    corresponding `AnalyticsDataType` for your value
+
+We showcase `MLflowWriter` in [./code/train_metrics.py](./code/train_metrics.py)
 
 After that, we can set up the job using the sag_np_metrics template:
 

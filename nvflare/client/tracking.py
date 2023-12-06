@@ -20,7 +20,7 @@ from nvflare.app_common.tracking.tracker_types import LogWriterName
 from .api import log
 
 
-class TBWriter:
+class SummaryWriter:
     """Mimics Tensorboard apis."""
 
     def add_scalar(self, tag: str, scalar: float, global_step: Optional[int] = None, **kwargs):
@@ -84,10 +84,6 @@ class MLflowWriter:
     MLflowWriter the same as they would use mlflow. MLflowWriter will send log records to
     the receiver.
     """
-
-    def get_writer_name(self) -> LogWriterName:
-        """Returns "MLFLOW"."""
-        return LogWriterName.MLFLOW
 
     def log_param(self, key: str, value: any) -> None:
         """Log a parameter (e.g. model hyperparameter) under the current run.
