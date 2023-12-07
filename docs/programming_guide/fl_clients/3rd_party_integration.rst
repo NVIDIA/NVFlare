@@ -75,41 +75,15 @@ The following is an example of this usage pattern.
                 break
 
             print(f"got task: {task}")
-            rc, meta, result = train(task.meta, task.data)
+            rc, meta, result = train(task.data) # peform train task
             submitted = agent.submit_result(TaskResult(data=result, meta=meta, return_code=rc))
             print(f"result submitted: {submitted}")
 
         agent.stop()
 
 
-    def train(meta, model):
-        current_round = meta.get(MetaKey.CURRENT_ROUND)
-        total_rounds = meta.get(MetaKey.TOTAL_ROUND)
-
-        # Ensure that data is of type weights. Extract model data
-        np_data = model
-
-        # Display properties.
-        print(f"Model: \n{np_data}")
-        print(f"Current Round: {current_round}")
-        print(f"Total Rounds: {total_rounds}")
-
-        # Doing some dummy training.
-        if np_data:
-            if NUMPY_KEY in np_data:
-                np_data[NUMPY_KEY] += 1.0
-            else:
-                print("error: numpy_key not found in model.")
-                return RC.BAD_TASK_DATA, None, None
-        else:
-            print("No model weights found in shareable.")
-            return RC.BAD_TASK_DATA, None, None
-
-        # Save local numpy model
-        print(f"Model after training: {np_data}")
-
-        # Prepare a DXO for our updated model. Create shareable and return
-        return RC.OK, {MetaKey.NUM_STEPS_CURRENT_ROUND: 1}, np_data
+    def train(model):
+        ...
 
     if __name__ == "__main__":
         main()
@@ -226,7 +200,7 @@ The enable adhoc direct connections between the FL client and the Trainer, confi
     "adhoc": {
       "scheme": "tcp",
       "resources": {
-        "host": "nvcj",
+        "host": "nvclient",
         "secure": true
       }
     }
@@ -302,7 +276,7 @@ Verification
 The FL client (TaskExchanger) and your trainer process (FlareAgent) do not have to be started at exactly the same time. Whichever is started first will wait for the other for ``heartbeat_timeout`` seconds.
 Once they both are started and connected, you can verify they are directly connected using the Admin's cell commands.
 
-The following example shows two clients (red, blue) connected to their NDAS external trainers via the agent_id "ndas_1":
+The following example shows two clients (red, blue) connected to their external trainers via the agent_id "ext_trainer_1":
 
 .. code-block:: shell
 
@@ -319,22 +293,22 @@ The following example shows two clients (red, blue) connected to their NDAS exte
   Done [21695 usecs] 2023-10-16 19:28:37.523651
 
 The ``cells`` command lists all cells. Notice that the job 44c08365-e829-4bc1-a034-cda5a252fe73 is running on both "blue" and "red" clients.
-Also notice that there are two corresponding NDAS cells (red-ndas_1, and blue-ndas1).
+Also notice that there are two corresponding ext_trainer cells (red-ext_trainer_1, and blue-ext_trainer1).
 
 .. code-block:: shell
 
-  > peers blue--ndas_1
+  > peers blue--ext_trainer_1
   server
   blue.44c08365-e829-4bc1-a034-cda5a252fe73
   Total Agents: 2
   Done [14526 usecs] 2023-10-16 19:28:44.407505
 
 The ``peers`` command shows the cells directly connected to the specified cell.
-Here you see that the blue-ndas_1 is directly connected to two cells: the server and the FL client (blue.44c08365-e829-4bc1-a034-cda5a252fe73).
+Here you see that the blue-ext_trainer_1 is directly connected to two cells: the server and the FL client (blue.44c08365-e829-4bc1-a034-cda5a252fe73).
 
 .. code-block:: shell
 
-  > conns blue--ndas_1
+  > conns blue--ext_trainer_1
   {
     "bb_ext_connector": {
       "url": "grpc://server:8002",
@@ -343,13 +317,13 @@ Here you see that the blue-ndas_1 is directly connected to two cells: the server
     },
     "adhoc_connectors": {
       "blue.44c08365-e829-4bc1-a034-cda5a252fe73": {
-        "url": "stcp://nvcj:11947",
+        "url": "stcp://nvclient:11947",
         "handle": "CH00002",
         "type": "connector"
       }
     }
   }
 
-The ``conns`` command shows the connectors on the specified cell. Here you see that blue--ndas_1 has two connectors:
-one connects the server on ``grpc://server:8002``, and another connects to ``blue.44c08365-e829-4bc1-a034-cda5a252fe73 on stcp://nvcj:11947``.
+The ``conns`` command shows the connectors on the specified cell. Here you see that blue--ext_trainer_1 has two connectors:
+one connects the server on ``grpc://server:8002``, and another connects to ``blue.44c08365-e829-4bc1-a034-cda5a252fe73 on stcp://nvclient:11947``.
 Note that this port is opened by the FL client dynamically.

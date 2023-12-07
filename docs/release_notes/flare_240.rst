@@ -229,7 +229,7 @@ Misc. Features
 - Run Model Evaluation Without Training
 
   - In the 2.4.0 release, users can now run cross-validation without having to re-run the training.
-  - `Enable re-run cross-validation without training workflow (WIP) <https://github.com/NVIDIA/NVFlare/pull/2035>`_.
+  - See the example for :github_nvflare_link:`run cross-site validation without training <examples/hello-world/hello-numpy-cross-val#run-cross-site-validation-using-the-previous-trained-results>`.
 
 - Communication Enhancements
 

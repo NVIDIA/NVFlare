@@ -80,6 +80,10 @@ FLARE provides a wealth of built-in implementations for various federated learni
 
 - **Feature Tutorials**
 
+  - Simulator, FLARE API, POC mode, Job CLI
+  - ML-to-FL FLARE Client API
+  - Step-by-step progressive series
+
 **Built for integration**
 
 FLARE offers multiple integration options with third-party systems, with the Flare Agent providing a seamless and straightforward approach.
