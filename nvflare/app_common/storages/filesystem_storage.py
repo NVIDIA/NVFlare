@@ -59,6 +59,21 @@ def _object_exists(uri: str):
     return all((os.path.isabs(uri), os.path.isdir(uri), data_exists, meta_exists))
 
 
+def _encode_meta(meta: dict) -> bytes:
+    return json.dumps(meta).encode("utf-8")
+
+
+def _decode_meta(data: bytes) -> dict:
+    s = data.decode("utf-8")
+    if s.startswith('"'):
+        # this is in old format
+        result = ast.literal_eval(json.loads(s))
+    else:
+        # this is json string
+        result = json.loads(s)
+    return result
+
+
 @validate_class_methods_args
 class FilesystemStorage(StorageSpec):
     def __init__(self, root_dir=os.path.abspath(os.sep), uri_root="/"):
@@ -111,7 +126,7 @@ class FilesystemStorage(StorageSpec):
         tmp_data_path = data_path + "_" + str(uuid.uuid4())
         _write(tmp_data_path, data)
         try:
-            _write(meta_path, json.dumps(str(meta)).encode("utf-8"))
+            _write(meta_path, _encode_meta(meta))
         except Exception as e:
             os.remove(tmp_data_path)
             raise e
@@ -139,11 +154,11 @@ class FilesystemStorage(StorageSpec):
             raise StorageException("object {} does not exist".format(uri))
 
         if replace:
-            _write(os.path.join(full_uri, "meta"), json.dumps(str(meta)).encode("utf-8"))
+            _write(os.path.join(full_uri, "meta"), _encode_meta(meta))
         else:
             prev_meta = self.get_meta(uri)
             prev_meta.update(meta)
-            _write(os.path.join(full_uri, "meta"), json.dumps(str(prev_meta)).encode("utf-8"))
+            _write(os.path.join(full_uri, "meta"), _encode_meta(prev_meta))
 
     def update_data(self, uri: str, data: bytes):
         """Updates the data of the specified object.
@@ -165,11 +180,12 @@ class FilesystemStorage(StorageSpec):
 
         _write(os.path.join(full_uri, "data"), data)
 
-    def list_objects(self, path: str) -> List[str]:
+    def list_objects(self, path: str, without_tag=None) -> List[str]:
         """List all objects in the specified path.
 
         Args:
             path: the path uri to the objects
+            without_tag: if set, skip the objects with this specified tag
 
         Returns:
             list of URIs of objects
@@ -183,9 +199,19 @@ class FilesystemStorage(StorageSpec):
         if not os.path.isdir(full_dir_path):
             raise StorageException(f"path {full_dir_path} is not a valid directory.")
 
-        return [
-            os.path.join(path, f) for f in os.listdir(full_dir_path) if _object_exists(os.path.join(full_dir_path, f))
-        ]
+        result = []
+
+        # Use scandir instead of listdir.
+        # According to https://peps.python.org/pep-0471/#os-scandir, scandir is more memory-efficient than listdir
+        # when iterating very large directories.
+        gen = os.scandir(full_dir_path)
+        for e in gen:
+            # assert isinstance(e, os.DirEntry)
+            obj_dir = os.path.join(full_dir_path, e.name)
+            if _object_exists(obj_dir):
+                if not without_tag or not os.path.exists(os.path.join(obj_dir, without_tag)):
+                    result.append(os.path.join(path, e.name))
+        return result
 
     def get_meta(self, uri: str) -> dict:
         """Gets meta of the specified object.
@@ -206,7 +232,7 @@ class FilesystemStorage(StorageSpec):
         if not _object_exists(full_uri):
             raise StorageException("object {} does not exist".format(uri))
 
-        return ast.literal_eval(json.loads(_read(os.path.join(full_uri, "meta")).decode("utf-8")))
+        return _decode_meta(_read(os.path.join(full_uri, "meta")))
 
     def get_data(self, uri: str) -> bytes:
         """Gets data of the specified object.
@@ -269,3 +295,10 @@ class FilesystemStorage(StorageSpec):
         shutil.rmtree(full_uri)
 
         return full_uri
+
+    def tag_object(self, uri: str, tag: str, data=None):
+        full_path = self._object_path(uri)
+        mark_file = os.path.join(full_path, tag)
+        with open(mark_file, "w") as f:
+            if data:
+                f.write(data)
