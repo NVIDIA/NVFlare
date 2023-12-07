@@ -26,9 +26,9 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.apis.utils.task_utils import apply_filters
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
-from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.private.fed.client.client_engine_executor_spec import ClientEngineExecutorSpec, TaskAssignment
+from nvflare.private.fed.tbi import TBI
 from nvflare.private.json_configer import ConfigError
 from nvflare.private.privacy_manager import Scope
 from nvflare.security.logging import secure_format_exception
@@ -115,7 +115,7 @@ class ClientRunnerConfig(object):
             self.handlers.append(component)
 
 
-class ClientRunner(FLComponent):
+class ClientRunner(TBI):
     def __init__(
         self,
         config: ClientRunnerConfig,
@@ -130,7 +130,7 @@ class ClientRunner(FLComponent):
             engine: ClientEngine object
         """
 
-        FLComponent.__init__(self)
+        TBI.__init__(self)
         self.task_router = config.task_router
         self.task_data_filters = config.task_data_filters
         self.task_result_filters = config.task_result_filters
@@ -142,8 +142,11 @@ class ClientRunner(FLComponent):
         self.task_lock = threading.Lock()
         self.running_tasks = {}  # task_id => TaskAssignment
 
-        self.task_check_timeout = 5.0
-        self.task_check_interval = 5.0
+        self.task_check_timeout = self.get_positive_float_var(ConfigVarName.TASK_CHECK_TIMEOUT, 5.0)
+        self.task_check_interval = self.get_positive_float_var(ConfigVarName.TASK_CHECK_INTERVAL, 5.0)
+        self.job_heartbeat_interval = self.get_positive_float_var(ConfigVarName.JOB_HEARTBEAT_INTERVAL, 30.0)
+        self.get_task_timeout = self.get_positive_float_var(ConfigVarName.GET_TASK_TIMEOUT, None)
+        self.submit_task_result_timeout = self.get_positive_float_var(ConfigVarName.SUBMIT_TASK_RESULT_TIMEOUT, None)
         self._register_aux_message_handlers(engine)
 
     def find_executor(self, task_name):
@@ -414,30 +417,24 @@ class ClientRunner(FLComponent):
                 task_fetch_interval, _ = self.fetch_and_run_one_task(fl_ctx)
             time.sleep(task_fetch_interval)
 
-    def _send_job_heartbeat(self, interval=30.0):
-        sleep_time = 1.0
-        wait_times = int(interval / sleep_time)
-        if wait_times == 0:
-            wait_times = 1
+    def _send_job_heartbeat(self):
         request = Shareable()
+        last_heartbeat_sent_time = 0.0
         while not self.run_abort_signal.triggered:
-            with self.engine.new_context() as fl_ctx:
-                self.engine.send_aux_request(
-                    targets=[FQCN.ROOT_SERVER],
-                    topic=ReservedTopic.JOB_HEART_BEAT,
-                    request=request,
-                    timeout=0,
-                    fl_ctx=fl_ctx,
-                    optional=True,
-                )
+            if time.time() - last_heartbeat_sent_time > self.job_heartbeat_interval:
+                with self.engine.new_context() as fl_ctx:
+                    self.engine.send_aux_request(
+                        targets=[FQCN.ROOT_SERVER],
+                        topic=ReservedTopic.JOB_HEART_BEAT,
+                        request=request,
+                        timeout=0,
+                        fl_ctx=fl_ctx,
+                        optional=True,
+                    )
+                last_heartbeat_sent_time = time.time()
 
-                # we want to send the HB every "interval" secs.
-                # but we don't want to sleep that long since it will block us from checking abort signal.
-                # hence we only sleep 1 sec, and check the abort signal.
-                for i in range(wait_times):
-                    time.sleep(sleep_time)
-                    if self.run_abort_signal.triggered:
-                        break
+            # sleep very short time so that we can check stop condition (e.g. abort signal)
+            time.sleep(0.2)
 
     def fetch_and_run_one_task(self, fl_ctx) -> (float, bool):
         """Fetches and runs a task.
@@ -447,7 +444,7 @@ class ClientRunner(FLComponent):
         """
         default_task_fetch_interval = self.default_task_fetch_interval
         self.log_debug(fl_ctx, "fetching task from server ...")
-        task = self.engine.get_task_assignment(fl_ctx)
+        task = self.engine.get_task_assignment(fl_ctx, self.get_task_timeout)
 
         if not task:
             self.log_debug(fl_ctx, "no task received - will try in {} secs".format(default_task_fetch_interval))
@@ -518,7 +515,7 @@ class ClientRunner(FLComponent):
 
         # try to send the result
         self.log_info(fl_ctx, "start to send task result to server")
-        reply_sent = self.engine.send_task_result(result, fl_ctx)
+        reply_sent = self.engine.send_task_result(result, fl_ctx, timeout=self.submit_task_result_timeout)
         if reply_sent:
             self.log_info(fl_ctx, "task result sent to server")
             return _TASK_CHECK_RESULT_OK
@@ -588,12 +585,12 @@ class ClientRunner(FLComponent):
                 self.running_tasks = {}
 
     def init_run(self, app_root, args):
-        sync_timeout = ConfigService.get_float_var(
-            name=ConfigVarName.RUNNER_SYNC_TIMEOUT,
+        sync_timeout = self.get_positive_float_var(
+            var_name=ConfigVarName.RUNNER_SYNC_TIMEOUT,
             default=2.0,
         )
-        max_sync_tries = ConfigService.get_int_var(
-            name=ConfigVarName.MAX_RUNNER_SYNC_TRIES,
+        max_sync_tries = self.get_positive_int_var(
+            var_name=ConfigVarName.MAX_RUNNER_SYNC_TRIES,
             default=30,
         )
         target = "server"
@@ -652,6 +649,9 @@ class ClientRunner(FLComponent):
             self.fire_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
             self.log_info(fl_ctx, "ABOUT_TO_END_RUN fired")
 
+            self.check_end_run_readiness(fl_ctx)
+
+            # now ready to end run
             self.fire_event(EventType.END_RUN, fl_ctx)
             self.log_info(fl_ctx, "END_RUN fired")
 

@@ -11,17 +11,3 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-from typing import Any, Optional
-
-
-class ExchangeTask:
-    def __init__(self, task_name: str, task_id: str, data: Any, meta: Optional[dict] = None, return_code: str = "ok"):
-        self.task_name = task_name
-        self.task_id = task_id
-        self.meta = meta
-        self.data = data
-        self.return_code = return_code
-
-    def __str__(self):
-        return f"Task(name:{self.task_name},id:{self.task_id})"

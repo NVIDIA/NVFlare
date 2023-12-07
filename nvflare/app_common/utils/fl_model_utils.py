@@ -13,7 +13,6 @@
 # limitations under the License.
 
 
-from abc import ABC, abstractmethod
 from typing import Any, Optional
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
@@ -41,17 +40,9 @@ params_type_to_data_kind = {
 data_kind_to_params_type = {v: k for k, v in params_type_to_data_kind.items()}
 
 
-class ParamsConverter(ABC):
-    """This class converts params from one format to the other."""
-
-    @abstractmethod
-    def convert(self, params: Any) -> Any:
-        pass
-
-
 class FLModelUtils:
     @staticmethod
-    def to_shareable(fl_model: FLModel, params_converter: Optional[ParamsConverter] = None) -> Shareable:
+    def to_shareable(fl_model: FLModel) -> Shareable:
         """From FLModel to NVFlare side shareable.
 
         This is a temporary solution to converts FLModel to the shareable of existing style,
@@ -68,13 +59,11 @@ class FLModelUtils:
             data_kind = params_type_to_data_kind.get(fl_model.params_type)
             if data_kind is None:
                 raise ValueError(f"Invalid ParamsType: ({fl_model.params_type}).")
-            if params_converter is not None:
-                fl_model.params = params_converter.convert(fl_model.params)
 
             if fl_model.metrics is None:
                 dxo = DXO(data_kind, data=fl_model.params, meta={})
             else:
-                # if both params and metrics are presented, will be treated as initial evaluation on the global model
+                # if both params and metrics are presented, will be treated as evaluation on the global model
                 dxo = DXO(data_kind, data=fl_model.params, meta={MetaKey.INITIAL_METRICS: fl_model.metrics})
         else:
             dxo = DXO(DataKind.METRICS, data=fl_model.metrics, meta={})
@@ -93,9 +82,7 @@ class FLModelUtils:
         return shareable
 
     @staticmethod
-    def from_shareable(
-        shareable: Shareable, params_converter: Optional[ParamsConverter] = None, fl_ctx: Optional[FLContext] = None
-    ) -> FLModel:
+    def from_shareable(shareable: Shareable, fl_ctx: Optional[FLContext] = None) -> FLModel:
         """From NVFlare side shareable to FLModel.
 
         This is a temporary solution to converts the shareable of existing style to FLModel,
@@ -119,9 +106,10 @@ class FLModelUtils:
                 if params_type is None:
                     raise ValueError(f"Invalid shareable with dxo that has data kind: {dxo.data_kind}")
                 params_type = ParamsType(params_type)
-                if params_converter:
-                    dxo.data = params_converter.convert(dxo.data)
+
                 params = dxo.data
+                if MetaKey.INITIAL_METRICS in meta:
+                    metrics = meta[MetaKey.INITIAL_METRICS]
         except:
             # this only happens in cross-site eval right now
             submit_model_name = shareable.get_header(AppConstants.SUBMIT_MODEL_NAME)
@@ -130,13 +118,16 @@ class FLModelUtils:
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
         total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS, None)
         validate_type = shareable.get_header(AppConstants.VALIDATE_TYPE, None)
-
         if validate_type is not None:
             meta[MetaKey.VALIDATE_TYPE] = validate_type
 
-        if fl_ctx is not None:
-            meta[MetaKey.JOB_ID] = fl_ctx.get_job_id()
-            meta[MetaKey.SITE_NAME] = fl_ctx.get_identity_name()
+        job_id = shareable.get_header(MetaKey.JOB_ID, None)
+        if job_id is not None:
+            meta[MetaKey.JOB_ID] = job_id
+
+        site_name = shareable.get_header(MetaKey.SITE_NAME, None)
+        if site_name is not None:
+            meta[MetaKey.SITE_NAME] = site_name
 
         result = FLModel(
             params_type=params_type,

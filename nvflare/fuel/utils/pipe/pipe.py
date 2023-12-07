@@ -122,3 +122,8 @@ class Pipe(ABC):
 
         """
         pass
+
+    @abstractmethod
+    def can_resend(self) -> bool:
+        """Whether the pipe is able to resend a message."""
+        pass

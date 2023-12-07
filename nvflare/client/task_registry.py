@@ -14,23 +14,19 @@
 
 from typing import Any, Dict, Optional
 
-from nvflare.app_common.abstract.exchange_task import ExchangeTask
-from nvflare.app_common.data_exchange.data_exchanger import DataExchanger
-
 from .config import ClientConfig
 from .constants import SYS_ATTRS
+from .flare_agent import RC, FlareAgent, Task
 
 
 class TaskRegistry:
     """This class is used to remember attributes that need to share for a user code."""
 
-    def __init__(
-        self, config: ClientConfig, rank: Optional[str] = None, data_exchanger: Optional[DataExchanger] = None
-    ):
-        self.data_exchanger = data_exchanger
+    def __init__(self, config: ClientConfig, rank: Optional[str] = None, flare_agent: Optional[FlareAgent] = None):
+        self.flare_agent = flare_agent
         self.config = config
 
-        self.received_task: Optional[ExchangeTask] = None
+        self.received_task: Optional[Task] = None
         self.task_name: str = ""
         self.cache_loaded = False
         self.sys_info = {}
@@ -40,13 +36,10 @@ class TaskRegistry:
         self.rank = rank
 
     def _receive(self, timeout: Optional[float] = None):
-        if not self.data_exchanger:
-            return None
+        if not self.flare_agent:
+            return
 
-        _, task = self.data_exchanger.receive_data(timeout)
-
-        if not isinstance(task, ExchangeTask):
-            raise RuntimeError("received data is not an ExchangeTask")
+        task = self.flare_agent.get_task(timeout)
 
         if task.data is None:
             raise RuntimeError("no received task.data")
@@ -58,24 +51,19 @@ class TaskRegistry:
     def set_task_name(self, task_name: str):
         self.task_name = task_name
 
-    def get_task(self, timeout: Optional[float] = None) -> Optional[ExchangeTask]:
-        try:
-            if not self.cache_loaded:
-                self._receive(timeout)
-            return self.received_task
-        except:
-            return None
+    def get_task(self, timeout: Optional[float] = None) -> Optional[Task]:
+        if not self.cache_loaded:
+            self._receive(timeout)
+        return self.received_task
 
     def get_sys_info(self) -> Dict:
         return self.sys_info
 
-    def submit_task(self, data: Any, meta: dict, return_code: str) -> None:
-        if not self.data_exchanger or not self.task_name or self.received_task is None:
+    def submit_task(self, data: Any, return_code: str = RC.OK) -> None:
+        if not self.flare_agent or not self.task_name or self.received_task is None:
             return None
-        task = ExchangeTask(
-            task_name=self.task_name, task_id=self.received_task.task_id, data=data, meta=meta, return_code=return_code
-        )
-        self.data_exchanger.submit_data(data=task)
+
+        self.flare_agent.submit_result(result=data, rc=return_code)
 
     def clear(self):
         self.received_task = None
@@ -85,5 +73,5 @@ class TaskRegistry:
         return f"{self.__class__.__name__}(config: {self.config.get_config()})"
 
     def __del__(self):
-        if self.data_exchanger:
-            self.data_exchanger.finalize(close_pipe=False)
+        if self.flare_agent:
+            self.flare_agent.stop()

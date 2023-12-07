@@ -117,12 +117,13 @@ class ConnectorManager:
 
     def is_adhoc_allowed(self, c1: FqcnInfo, c2: FqcnInfo) -> bool:
         """
-        Is adhoc connection allowed between the two cells?
-        Args:
-            c1:
-            c2:
+        Is ad-hoc connection allowed between the two cells?
 
-        Returns:
+        Args:
+            c1: FQCN info of cell one
+            c2: FQCN info of cell two. c2 will offer listener if ad-hoc is allowed.
+
+        Returns: whether ad-hoc connection is allowed between the two cells
 
         """
         if not self.adhoc_allowed:
@@ -132,10 +133,7 @@ class ConnectorManager:
             # same family
             return False
 
-        # we only allow gen2 (or above) cells to directly connect
-        if c1.gen >= 2 and c2.gen >= 2:
-            return True
-        return False
+        return True
 
     @staticmethod
     def _validate_conn_config(config: dict, key: str) -> Union[None, dict]:

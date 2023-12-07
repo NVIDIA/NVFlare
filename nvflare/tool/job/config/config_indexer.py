@@ -33,7 +33,7 @@ class KeyIndex:
     component_name: Optional[str] = None
 
 
-def build_reverse_order_index(input_config_file_path: str) -> Tuple:
+def build_reverse_order_index(input_config_file_path: str) -> Tuple[str, ConfigTree, List[str], Dict]:
     # use pyhocon to load config
     config_dir = os.path.dirname(input_config_file_path)
     config_dir = None if not config_dir else config_dir

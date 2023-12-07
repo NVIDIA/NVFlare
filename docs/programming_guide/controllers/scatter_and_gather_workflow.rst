@@ -45,5 +45,5 @@ Below is the signature for an aggregator.
 
 Example with Scatter and Gather Workflow
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-See the `Hello Numpy Scatter and Gather Example <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-numpy-sag>`_ for an example application with
+See the :github_nvflare_link:`Hello Numpy Scatter and Gather Example <examples/hello-world/hello-numpy-sag>` for an example application with
 the scatter and gather workflow.

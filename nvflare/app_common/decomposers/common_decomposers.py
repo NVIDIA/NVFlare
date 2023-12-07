@@ -20,7 +20,6 @@ from typing import Any
 
 import numpy as np
 
-from nvflare.app_common.abstract.exchange_task import ExchangeTask
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.learnable import Learnable
 from nvflare.app_common.abstract.model import ModelLearnable
@@ -28,33 +27,6 @@ from nvflare.app_common.widgets.event_recorder import _CtxPropReq, _EventReq, _E
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.decomposer import Decomposer, DictDecomposer, Externalizer, Internalizer
-
-
-class ExchangeTaskDecomposer(fobs.Decomposer):
-    def supported_type(self):
-        return ExchangeTask
-
-    def decompose(self, b: ExchangeTask, manager: DatumManager = None) -> Any:
-        externalizer = Externalizer(manager)
-        return (
-            b.task_id,
-            b.task_name,
-            externalizer.externalize(b.data),
-            externalizer.externalize(b.meta),
-            b.return_code,
-        )
-
-    def recompose(self, data: tuple, manager: DatumManager = None) -> ExchangeTask:
-        assert isinstance(data, tuple)
-        task_id, task_name, task_data, meta, return_code = data
-        internalizer = Internalizer(manager)
-        return ExchangeTask(
-            task_name=task_name,
-            task_id=task_id,
-            data=internalizer.internalize(task_data),
-            meta=internalizer.internalize(meta),
-            return_code=return_code,
-        )
 
 
 class FLModelDecomposer(fobs.Decomposer):

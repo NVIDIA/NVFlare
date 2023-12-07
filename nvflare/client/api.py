@@ -17,19 +17,25 @@ from typing import Dict, Optional, Union
 
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.data_exchange.constants import ExchangeFormat
-from nvflare.app_common.data_exchange.data_exchanger import DataExchangeException, DataExchanger
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.import_utils import optional_import
+from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 from nvflare.fuel.utils.pipe.file_pipe import FilePipe
 
 from .config import ClientConfig, ConfigKey, from_file
-from .constants import CONFIG_EXCHANGE
+from .constants import CONFIG_DATA_EXCHANGE
+from .flare_agent import FlareAgentException
+from .flare_agent_with_fl_model import FlareAgentWithFLModel
 from .model_registry import ModelRegistry
 
 PROCESS_MODEL_REGISTRY = None
+PIPE_CLASS_MAPPING = {
+    "FilePipe": {"pipe_class": FilePipe, "need_to_close_pipe": False},
+    "CellPipe": {"pipe_class": CellPipe, "need_to_close_pipe": True},
+}
 
 
-def init(config: Union[str, Dict] = f"config/{CONFIG_EXCHANGE}", rank: Optional[str] = None):
+def init(config: Union[str, Dict] = f"config/{CONFIG_DATA_EXCHANGE}", rank: Optional[str] = None):
     """Initializes NVFlare Client API environment.
 
     Args:
@@ -39,46 +45,42 @@ def init(config: Union[str, Dict] = f"config/{CONFIG_EXCHANGE}", rank: Optional[
     """
     global PROCESS_MODEL_REGISTRY  # Declare PROCESS_MODEL_REGISTRY as global
 
-    try:
-        if rank is None:
-            rank = os.environ.get("RANK", "0")
+    if rank is None:
+        rank = os.environ.get("RANK", "0")
 
-        if PROCESS_MODEL_REGISTRY:
-            raise RuntimeError("Can't call init twice.")
+    if PROCESS_MODEL_REGISTRY:
+        raise RuntimeError("Can't call init twice.")
 
-        if isinstance(config, str):
-            client_config = from_file(config_file=config)
-        elif isinstance(config, dict):
-            client_config = ClientConfig(config=config)
-        else:
-            raise ValueError("config should be either a string or dictionary.")
+    if isinstance(config, str):
+        client_config = from_file(config_file=config)
+    elif isinstance(config, dict):
+        client_config = ClientConfig(config=config)
+    else:
+        raise ValueError("config should be either a string or dictionary.")
 
-        dx = None
-        if rank == "0":
-            if client_config.get_exchange_format() == ExchangeFormat.PYTORCH:
-                tensor_decomposer, ok = optional_import(
-                    module="nvflare.app_opt.pt.decomposers", name="TensorDecomposer"
-                )
-                if ok:
-                    fobs.register(tensor_decomposer)
-                else:
-                    raise RuntimeError(f"Can't import TensorDecomposer for format: {ExchangeFormat.PYTORCH}")
-
-            pipe_args = client_config.get_pipe_args()
-            if client_config.get_pipe_class() == "FilePipe":
-                pipe = FilePipe(**pipe_args)
+    flare_agent = None
+    if rank == "0":
+        if client_config.get_exchange_format() == ExchangeFormat.PYTORCH:
+            tensor_decomposer, ok = optional_import(module="nvflare.app_opt.pt.decomposers", name="TensorDecomposer")
+            if ok:
+                fobs.register(tensor_decomposer)
             else:
-                raise RuntimeError(f"Pipe class {client_config.get_pipe_class()} is not supported.")
+                raise RuntimeError(f"Can't import TensorDecomposer for format: {ExchangeFormat.PYTORCH}")
 
-            dx = DataExchanger(
-                supported_topics=client_config.get_supported_topics(),
-                pipe=pipe,
-                pipe_name=client_config.get_pipe_name(),
-            )
+        pipe_class = client_config.get_pipe_class()
+        if pipe_class not in PIPE_CLASS_MAPPING:
+            raise RuntimeError(f"Pipe class {pipe_class} is not supported.")
 
-        PROCESS_MODEL_REGISTRY = ModelRegistry(client_config, rank, dx)
-    except Exception as e:
-        print(f"Exception {e} happens in flare.init()")
+        pipe_args = client_config.get_pipe_args()
+        pipe = PIPE_CLASS_MAPPING[pipe_class]["pipe_class"](**pipe_args)
+        close_pipe = PIPE_CLASS_MAPPING[pipe_class]["need_to_close_pipe"]
+
+        flare_agent = FlareAgentWithFLModel(
+            pipe=pipe, task_channel_name=client_config.get_pipe_channel_name(), close_pipe=close_pipe
+        )
+        flare_agent.start()
+
+    PROCESS_MODEL_REGISTRY = ModelRegistry(client_config, rank, flare_agent)
 
 
 def _get_model_registry() -> ModelRegistry:
@@ -139,11 +141,6 @@ def get_job_id() -> str:
     return sys_info.get(ConfigKey.JOB_ID, "")
 
 
-def get_total_rounds() -> int:
-    sys_info = system_info()
-    return sys_info.get(ConfigKey.TOTAL_ROUNDS, 0)
-
-
 def get_site_name() -> str:
     sys_info = system_info()
     return sys_info.get(ConfigKey.SITE_NAME, "")
@@ -153,7 +150,7 @@ def is_running() -> bool:
     try:
         receive()
         return True
-    except DataExchangeException:
+    except FlareAgentException:
         return False
 
 

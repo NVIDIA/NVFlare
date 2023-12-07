@@ -15,15 +15,14 @@
 
 # https://github.com/microsoft/pylance-release/issues/856
 
+from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.app_common.abstract.fl_model import FLModel as FLModel
 from nvflare.app_common.abstract.fl_model import ParamsType as ParamsType
 
-from .api import DataExchangeException as DataExchangeException
 from .api import clear as clear
 from .api import get_config as get_config
 from .api import get_job_id as get_job_id
 from .api import get_site_name as get_site_name
-from .api import get_total_rounds as get_total_rounds
 from .api import init as init
 from .api import is_evaluate as is_evaluate
 from .api import is_running as is_running

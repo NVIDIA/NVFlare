@@ -254,31 +254,33 @@ class FederatedClientBase:
             except FLCommunicationError:
                 self.communicator.heartbeat_done = True
 
-    def fetch_execute_task(self, project_name, fl_ctx: FLContext):
+    def fetch_execute_task(self, project_name, fl_ctx: FLContext, timeout=None):
         """Fetch a task from the server.
 
         Args:
             project_name: FL study project name
             fl_ctx: FLContext
+            timeout: timeout for the getTask message sent tp server
 
         Returns:
             A CurrentTask message from server
         """
         try:
             self.logger.debug("Starting to fetch execute task.")
-            task = self.communicator.pull_task(self.servers, project_name, self.token, self.ssid, fl_ctx)
+            task = self.communicator.pull_task(project_name, self.token, self.ssid, fl_ctx, timeout=timeout)
 
             return task
         except FLCommunicationError as e:
             self.logger.info(secure_format_exception(e))
 
-    def push_execute_result(self, project_name, shareable: Shareable, fl_ctx: FLContext):
+    def push_execute_result(self, project_name, shareable: Shareable, fl_ctx: FLContext, timeout=None):
         """Submit execution results of a task to server.
 
         Args:
             project_name: FL study project name
             shareable: Shareable object
             fl_ctx: FLContext
+            timeout: how long to wait for reply from server
 
         Returns:
             A FederatedSummary message from the server.
@@ -287,7 +289,6 @@ class FederatedClientBase:
             self.logger.info("Starting to push execute result.")
             execute_task_name = fl_ctx.get_prop(FLContextKey.TASK_NAME)
             return_code = self.communicator.submit_update(
-                self.servers,
                 project_name,
                 self.token,
                 self.ssid,
@@ -295,6 +296,7 @@ class FederatedClientBase:
                 self.client_name,
                 shareable,
                 execute_task_name,
+                timeout=timeout,
             )
 
             return return_code
@@ -339,18 +341,18 @@ class FederatedClientBase:
         """Sends a heartbeat from the client to the server."""
         return self.send_heartbeat(self._get_project_name(), interval)
 
-    def pull_task(self, fl_ctx: FLContext):
+    def pull_task(self, fl_ctx: FLContext, timeout=None):
         """Fetch remote models and update the local client's session."""
-        result = self.fetch_execute_task(self._get_project_name(), fl_ctx)
+        result = self.fetch_execute_task(self._get_project_name(), fl_ctx, timeout)
         if result:
             shareable = result.payload
             return True, shareable.get_header(ServerCommandKey.TASK_NAME), shareable
         else:
             return False, None, None
 
-    def push_results(self, shareable: Shareable, fl_ctx: FLContext):
+    def push_results(self, shareable: Shareable, fl_ctx: FLContext, timeout=None):
         """Push the local model to multiple servers."""
-        return self.push_execute_result(self._get_project_name(), shareable, fl_ctx)
+        return self.push_execute_result(self._get_project_name(), shareable, fl_ctx, timeout)
 
     def register(self, fl_ctx: FLContext):
         """Push the local model to multiple servers."""

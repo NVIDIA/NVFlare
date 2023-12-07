@@ -32,6 +32,7 @@ NVFLARE implements security measures in the following areas (see each section be
    security/serialization
    security/data_privacy_protection
    security/auditing
+   security/unsafe_component_detection
 
 All other security concerns must be handled by the site's IT security infrastructure. These include, but are not limited to:
 

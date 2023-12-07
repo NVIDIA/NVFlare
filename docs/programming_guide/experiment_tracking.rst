@@ -118,7 +118,7 @@ site name. In the WandB implementation, we have to leverage multiprocess and let
 Examples Overview
 *****************
 
-The `experiment tracking examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/experiment-tracking>`_
+The :github_nvflare_link:`experiment tracking examples <examples/advanced/experiment-tracking>`
 illustrate how to leverage different writers and receivers. All examples are based upon the hello-pt example.
 
 The example in the "tensorboard" directory shows how to use the Tensorboard Tracking Tool (for both the
@@ -128,15 +128,15 @@ Under the "mlflow" directory, the "hello-pt-mlflow" job shows how to use MLflow 
 and receiver. The "hello-pt-tb-mlflow" job shows how to use the Tensorboard Sender, while the receiver is MLflow.
 See :ref:`experiment_tracking_mlflow` for details.
 
-Under the `wandb <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/experiment-tracking/wandb>`_ directory, the
+Under the :github_nvflare_link:`wandb <examples/advanced/experiment-tracking/wandb>` directory, the
 "hello-pt-wandb" job shows how to use Weights and Biases for experiment tracking with
 the WandBWriter and WandBReceiver to log metrics.
 
 MONAI Integration
 =================
 
-`Integration with MONAI <https://github.com/NVIDIA/NVFlare/tree/main/integration/monai>`_ uses the `NVFlareStatsHandler`
+:github_nvflare_link:`Integration with MONAI <integration/monai>` uses the `NVFlareStatsHandler`
 :class:`LogWriterForMetricsExchanger <nvflare.app_common.tracking.LogWriterForMetricsExchanger>` to connect to
 :class:`MetricsRetriever <nvflare.app_common.metrics_exchange.MetricsRetriever>`. See the job
-`spleen_ct_segmentation_local <https://github.com/NVIDIA/NVFlare/tree/main/integration/monai/examples/spleen_ct_segmentation_local/jobs/spleen_ct_segmentation_local>`_
+:github_nvflare_link:`spleen_ct_segmentation_local <integration/monai/examples/spleen_ct_segmentation_local/jobs/spleen_ct_segmentation_local>`
 for more details on this configuration.
