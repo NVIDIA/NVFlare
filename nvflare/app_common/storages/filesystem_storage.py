@@ -297,6 +297,15 @@ class FilesystemStorage(StorageSpec):
         return full_uri
 
     def tag_object(self, uri: str, tag: str, data=None):
+        """Tag an object with specified tag and data.
+
+        Args:
+            uri: URI of the object
+            tag: tag to be placed on the object
+            data: data associated with the tag.
+
+        Returns: None
+        """
         full_path = self._object_path(uri)
         mark_file = os.path.join(full_path, tag)
         with open(mark_file, "w") as f:
