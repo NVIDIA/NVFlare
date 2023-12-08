@@ -179,11 +179,12 @@ class S3Storage(StorageSpec):
         except MinioException as e:
             raise StorageException("error putting object into bucket: {}".format(secure_format_exception(e)))
 
-    def list_objects(self, path: str) -> List[str]:
+    def list_objects(self, path: str, without_tag=None) -> List[str]:
         """List all objects in the specified path.
 
         Args:
             path: the path to the objects
+            without_tag: skip the objects with this specified tag
 
         Returns:
             list of URIs of objects
@@ -292,3 +293,14 @@ class S3Storage(StorageSpec):
             self.s3_client.remove_object(self.bucket_name, uri)
         except MinioException as e:
             raise StorageException(f"error removing object ({uri}): {secure_format_exception(e)}.")
+
+    def tag_object(self, uri: str, tag: str, data=None):
+        """Tag an object with specified tag and data.
+        Args:
+            uri: URI of the object
+            tag: tag to be placed on the object
+            data: data associated with the tag.
+
+        Returns: None
+        """
+        pass

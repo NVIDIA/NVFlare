@@ -324,8 +324,8 @@ class JobRunner(FLComponent):
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
         if job_manager:
             while not self.ask_to_stop:
-                # approved_jobs = job_manager.get_jobs_by_status(RunStatus.APPROVED, fl_ctx)
-                approved_jobs = job_manager.get_jobs_by_status(RunStatus.SUBMITTED, fl_ctx)
+                time.sleep(1.0)
+                approved_jobs = job_manager.get_jobs_to_schedule(fl_ctx)
                 if self.scheduler:
                     (ready_job, sites) = self.scheduler.schedule_job(job_candidates=approved_jobs, fl_ctx=fl_ctx)
                     if ready_job:
@@ -376,8 +376,6 @@ class JobRunner(FLComponent):
                                 self.log_error(
                                     fl_ctx, f"Failed to run the Job ({ready_job.job_id}): {secure_format_exception(e)}"
                                 )
-
-                time.sleep(1.0)
         else:
             self.log_error(fl_ctx, "There's no Job Manager defined. Won't be able to run the jobs.")
 
