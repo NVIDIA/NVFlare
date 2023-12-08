@@ -1,16 +1,16 @@
 .. _executor:
 
-Executors
-=========
+Executor
+========
 
-.. image:: ../resources/Executor.png
+.. image:: ../../resources/Executor.png
     :height: 300px
 
 An :class:`Executor<nvflare.apis.executor.Executor>` in NVIDIA FLARE is a type of FLComponent for FL clients that has an
 ``execute`` method that produces a Shareable from an input Shareable. The ``execute`` method also takes a str for
 task_name, FLContext, and abort_signal.
 
-.. literalinclude:: ../../nvflare/apis/executor.py
+.. literalinclude:: ../../../nvflare/apis/executor.py
     :language: python
     :lines: 24-
 
@@ -64,7 +64,7 @@ sub-worker processes. Any component which listens to the event in the sub-worker
 accordingly. Also, any event fired by the FL component in the sub-worker processes will be relayed by the
 MultiProcessExecutor to all other components to handle.
 
-.. image:: ../resources/multi_process_executor.png
+.. image:: ../../resources/multi_process_executor.png
     :height: 400px
 
 MultiProcessExecutor keeps the same FL Executor API signature. When turning the FL executor into
