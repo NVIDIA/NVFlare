@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import random
-from abc import abstractmethod
 from typing import List
 
 from nvflare.apis.fl_constant import FLMetaKey
@@ -27,7 +26,7 @@ from nvflare.security.logging import secure_format_exception
 from .model_controller import ModelController
 
 
-class FedAvgModelControllerSpec(ModelController):
+class BaseFedAvg(ModelController):
     """The base controller for FedAvg Workflow. *Note*: This class is based on the experimental `ModelController`.
 
     Implements [FederatedAveraging](https://arxiv.org/abs/1602.05629).
@@ -35,57 +34,6 @@ class FedAvgModelControllerSpec(ModelController):
     Each client sends it's updated weights after local training which is aggregated.
     Next, the global model is updated.
     The model_persistor also saves the model after training.
-
-    The below abstract routines need to be implemented by the derived classes.
-
-        - def sample_clients(self, min_clients)
-        - def aggregate(self, results: List[FLModel], aggregate_fn=None) -> FLModel
-        - def update_model(self, aggr_result)
-        - def run(self)
-    """
-
-    # To be implemented by derived classes
-    @abstractmethod
-    def sample_clients(self, min_clients):
-        """Called by the `run` routine to get a list of available clients.
-
-        Args:
-            min_clients: number of clients to return.
-
-        Returns: list of clients.
-
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def aggregate(self, results: List[FLModel], aggregate_fn=None) -> FLModel:
-        """Called by the `run` routine to aggregate the training results of clients.
-
-        Args:
-            results: a list of FLModel containing training results of the clients.
-            aggregate_fn: a function that turns the list of FLModel into one resulting (aggregated) FLModel.
-
-        Returns: aggregated FLModel.
-
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def update_model(self, aggr_result):
-        """Called by the `run` routine to update the current global model (self.model) given the aggregated result.
-
-        Args:
-            aggr_result: aggregated FLModel.
-
-        Returns: None.
-
-        """
-        raise NotImplementedError
-
-
-class BaseFedAvg(FedAvgModelControllerSpec):
-    """Controller for FedAvg Workflow. *Note*: This class is based on the experimental `ModelController`.
-    Implements [FederatedAveraging](https://arxiv.org/abs/1602.05629).
 
     Provides the default implementations for the follow routines:
         - def sample_clients(self, min_clients)
@@ -98,6 +46,14 @@ class BaseFedAvg(FedAvgModelControllerSpec):
     """
 
     def sample_clients(self, min_clients):
+        """Called by the `run` routine to get a list of available clients.
+
+        Args:
+            min_clients: number of clients to return.
+
+        Returns: list of clients.
+
+        """
         self._min_clients = min_clients
 
         clients = self.engine.get_clients()
@@ -141,6 +97,15 @@ class BaseFedAvg(FedAvgModelControllerSpec):
         return aggr_result
 
     def aggregate(self, results: List[FLModel], aggregate_fn=None) -> FLModel:
+        """Called by the `run` routine to aggregate the training results of clients.
+
+        Args:
+            results: a list of FLModel containing training results of the clients.
+            aggregate_fn: a function that turns the list of FLModel into one resulting (aggregated) FLModel.
+
+        Returns: aggregated FLModel.
+
+        """
         self.debug("Start aggregation.")
         self.event(AppEventType.BEFORE_AGGREGATION)
         self._check_results(results)
@@ -165,12 +130,17 @@ class BaseFedAvg(FedAvgModelControllerSpec):
         return aggr_result
 
     def update_model(self, aggr_result):
+        """Called by the `run` routine to update the current global model (self.model) given the aggregated result.
+
+        Args:
+            aggr_result: aggregated FLModel.
+
+        Returns: None.
+
+        """
         self.event(AppEventType.BEFORE_SHAREABLE_TO_LEARNABLE)
 
         self.model = FLModelUtils.update_model(self.model, aggr_result)
 
         self.fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self.model, private=True, sticky=True)
         self.event(AppEventType.AFTER_SHAREABLE_TO_LEARNABLE)
-
-    def run(self):
-        raise NotImplementedError

@@ -196,6 +196,11 @@ class FLModelUtils:
 
     @staticmethod
     def update_model(model: FLModel, model_update: FLModel, replace_meta: bool = True) -> FLModel:
+        if model.params_type != ParamsType.FULL:
+            raise RuntimeError(
+                f"params_type {model_update.params_type} `model` not supported! Expected `ParamsType.FULL`."
+            )
+
         if replace_meta:
             model.meta = model_update.meta
         else:
@@ -206,5 +211,5 @@ class FLModelUtils:
             for v_name, v_value in model_update.params.items():
                 model.params[v_name] = model.params[v_name] + v_value
         else:
-            raise RuntimeError(f"params_type {model_update.params_type} not supported!")
+            raise RuntimeError(f"params_type {model_update.params_type} of `model_update` not supported!")
         return model
