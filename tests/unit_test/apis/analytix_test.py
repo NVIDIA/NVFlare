@@ -16,8 +16,8 @@ import pytest
 
 from nvflare.apis.analytix import _DATA_TYPE_KEY, AnalyticsData, AnalyticsDataType
 from nvflare.apis.dxo import DXO, DataKind
+from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.app_common.tracking.tracker_types import LogWriterName, TrackConst
-from nvflare.app_common.widgets.streaming import create_analytic_dxo
 
 FROM_DXO_TEST_CASES = [
     ("hello", 3.0, 1, AnalyticsDataType.SCALAR),

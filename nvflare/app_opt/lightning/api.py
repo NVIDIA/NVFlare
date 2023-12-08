@@ -20,9 +20,9 @@ from torch import Tensor
 
 from nvflare.app_common.abstract.fl_model import FLModel, MetaKey
 from nvflare.client.api import (
-    _get_model_registry,
     clear,
     get_config,
+    get_model_registry,
     init,
     is_evaluate,
     is_submit_model,
@@ -150,7 +150,7 @@ class FLCallback(Callback):
 
     def _receive_model(self, trainer) -> FLModel:
         """Receives model from NVFlare."""
-        registry = _get_model_registry()
+        registry = get_model_registry()
         model = None
         _is_training = False
         _is_evaluation = False

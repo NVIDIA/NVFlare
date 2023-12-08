@@ -20,8 +20,8 @@ from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.utils.analytix_utils import create_analytic_dxo, send_analytic_dxo
 from nvflare.app_common.tracking.tracker_types import LogWriterName, TrackConst
-from nvflare.app_common.widgets.streaming import create_analytic_dxo, send_analytic_dxo
 
 INVALID_TEST_CASES = [
     (list(), dict(), FLContext(), TypeError, f"expect comp to be an instance of FLComponent, but got {type(list())}"),
