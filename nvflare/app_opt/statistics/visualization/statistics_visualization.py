@@ -17,6 +17,17 @@ from typing import Dict
 from nvflare.fuel.utils.import_utils import optional_import
 
 
+def convert_data(feature_metrics) -> dict:
+    converted = {}
+    for statistic in feature_metrics:
+        converted[statistic] = {}
+        for site in feature_metrics[statistic]:
+            for ds in feature_metrics[statistic][site]:
+                site_dataset = f"{site}-{ds}"
+                converted[statistic][site_dataset] = feature_metrics[statistic][site][ds]
+    return converted
+
+
 class Visualization:
     def import_modules(self):
         display, import_flag = optional_import(module="IPython.display", name="display")
@@ -27,17 +38,23 @@ class Visualization:
             print(pd.failure)
         return display, pd
 
-    def show_stats(self, data, white_list_features=[]):
+    def show_stats(self, data, white_list_features=None):
+        if white_list_features is None:
+            white_list_features = []
+
         display, pd = self.import_modules()
         all_features = [k for k in data]
         target_features = self._get_target_features(all_features, white_list_features)
         for feature in target_features:
             print(f"\n{feature}\n")
             feature_metrics = data[feature]
-            df = pd.DataFrame.from_dict(feature_metrics)
+            converted = convert_data(feature_metrics)
+            df = pd.DataFrame.from_dict(converted)
             display(df)
 
-    def show_histograms(self, data, display_format="sample_count", white_list_features=[], plot_type="both"):
+    def show_histograms(self, data, display_format="sample_count", white_list_features=None, plot_type="both"):
+        if white_list_features is None:
+            white_list_features = []
         feature_dfs = self.get_histogram_dataframes(data, display_format, white_list_features)
         self.show_dataframe_plots(feature_dfs, plot_type)
 
@@ -54,7 +71,9 @@ class Visualization:
             else:
                 print(f"not supported plot type: '{plot_type}'")
 
-    def get_histogram_dataframes(self, data, display_format="sample_count", white_list_features=[]) -> Dict:
+    def get_histogram_dataframes(self, data, display_format="sample_count", white_list_features=None) -> Dict:
+        if white_list_features is None:
+            white_list_features = []
         display, pd = self.import_modules()
         (hists, edges) = self._prepare_histogram_data(data, display_format, white_list_features)
         all_features = [k for k in edges]
@@ -69,7 +88,9 @@ class Visualization:
 
         return feature_dfs
 
-    def _prepare_histogram_data(self, data, display_format="sample_count", white_list_features=[]):
+    def _prepare_histogram_data(self, data, display_format="sample_count", white_list_features=None):
+        if white_list_features is None:
+            white_list_features = []
         all_features = [k for k in data]
         target_features = self._get_target_features(all_features, white_list_features)
 
@@ -77,7 +98,8 @@ class Visualization:
         feature_edges = {}
 
         for feature in target_features:
-            xs = data[feature]["histogram"]
+            converted = convert_data(data[feature])
+            xs = converted["histogram"]
             hists = {}
             feature_edges[feature] = []
             for i, ds in enumerate(xs):
@@ -103,7 +125,10 @@ class Visualization:
             sum_value += bucket[2]
         return sum_value
 
-    def _get_target_features(self, all_features, white_list_features=[]):
+    def _get_target_features(self, all_features, white_list_features=None):
+        if white_list_features is None:
+            white_list_features = []
+
         target_features = white_list_features
         if not white_list_features:
             target_features = all_features
