@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib
 import os
 from typing import Any, Dict, Optional, Tuple, Union
 
@@ -20,8 +21,6 @@ from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.import_utils import optional_import
-from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
-from nvflare.fuel.utils.pipe.file_pipe import FilePipe
 from nvflare.fuel.utils.pipe.pipe import Pipe
 
 from .config import ClientConfig, ConfigKey, ExchangeFormat, from_file
@@ -31,10 +30,6 @@ from .flare_agent_with_fl_model import FlareAgentWithFLModel
 from .model_registry import ModelRegistry
 
 PROCESS_MODEL_REGISTRY = None
-PIPE_CLASS_MAPPING = {
-    "FilePipe": {"pipe_class": FilePipe},
-    "CellPipe": {"pipe_class": CellPipe},
-}
 
 
 def _create_client_config(config: Union[str, Dict]) -> ClientConfig:
@@ -48,12 +43,13 @@ def _create_client_config(config: Union[str, Dict]) -> ClientConfig:
 
 
 def _create_pipe_using_config(client_config: ClientConfig, section: str) -> Tuple[Pipe, str]:
-    pipe_class = client_config.get_pipe_class(section)
-    if pipe_class not in PIPE_CLASS_MAPPING:
-        raise RuntimeError(f"Pipe class {pipe_class} is not supported.")
+    pipe_class_name = client_config.get_pipe_class(section)
+    module_name, _, class_name = pipe_class_name.rpartition(".")
+    module = importlib.import_module(module_name)
+    pipe_class = getattr(module, class_name)
 
     pipe_args = client_config.get_pipe_args(section)
-    pipe = PIPE_CLASS_MAPPING[pipe_class]["pipe_class"](**pipe_args)
+    pipe = pipe_class(**pipe_args)
     pipe_channel_name = client_config.get_pipe_channel_name(section)
     return pipe, pipe_channel_name
 

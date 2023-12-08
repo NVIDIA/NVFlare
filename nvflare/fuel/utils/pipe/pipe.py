@@ -15,8 +15,9 @@
 import re
 import uuid
 from abc import ABC, abstractmethod
-from typing import Any, Union
+from typing import Any, Tuple, Union
 
+from nvflare.fuel.utils.attributes_exportable import AttributesExportable, ExportMode
 from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.validation_utils import check_str
 
@@ -62,7 +63,7 @@ class Message:
         return f"Message(topic={self.topic}, msg_id={self.msg_id}, req_id={self.req_id}, msg_type={self.msg_type})"
 
 
-class Pipe(ABC):
+class Pipe(AttributesExportable, ABC):
     def __init__(self, mode: Mode):
         """Creates the pipe.
 
@@ -127,3 +128,11 @@ class Pipe(ABC):
     def can_resend(self) -> bool:
         """Whether the pipe is able to resend a message."""
         pass
+
+    def export(self, export_mode: str) -> Tuple[str, dict]:
+        if export_mode == ExportMode.SELF:
+            mode = self.mode
+        else:
+            mode = Mode.ACTIVE if self.mode == Mode.PASSIVE else Mode.PASSIVE
+
+        return f"{self.__module__}.{self.__class__.__name__}", {"mode": mode}

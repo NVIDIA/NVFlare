@@ -15,7 +15,7 @@
 import logging
 import queue
 import threading
-from typing import Union
+from typing import Tuple, Union
 
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
@@ -23,6 +23,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.utils.attributes_exportable import ExportMode
 from nvflare.fuel.utils.config_service import search_file
 from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.validation_utils import check_object_type, check_str
@@ -273,3 +274,21 @@ class CellPipe(Pipe):
                 return
             self.ci.close_pipe(self)
             self.closed = True
+
+    def export(self, export_mode: str) -> Tuple[str, dict]:
+        if export_mode == ExportMode.SELF:
+            mode = self.mode
+            root_url = self.root_url
+        else:
+            mode = Mode.ACTIVE if self.mode == Mode.PASSIVE else Mode.PASSIVE
+            root_url = self.cell.get_root_url_for_child()
+
+        export_args = {
+            "mode": mode,
+            "site_name": self.site_name,
+            "token": self.token,
+            "root_url": root_url,
+            "secure_mode": self.cell.core_cell.secure,
+            "workspace_dir": self.workspace_dir,
+        }
+        return f"{self.__module__}.{self.__class__.__name__}", export_args
