@@ -12,23 +12,22 @@ The POC command allows users to try out the features of NVFlare in a proof of co
 Syntax and Usage
 =================
 
-The POC command has been reorgaznied in version 2.4 to have the subcommands ``prepare``, ``start``, ``stop``, and ``clean`` (``prepare-examples``
-should happen in prepare now).
+The POC command has been reorgaznied in version 2.4 to have the subcommands ``prepare``, ``prepare-jobs-dir``, ``start``, ``stop``, and ``clean``.
 
 .. code-block:: none
 
   nvflare poc -h
   
-  usage: nvflare poc [-h]  {prepare,prepare-examples,start,stop,clean} ...
+  usage: nvflare poc [-h]  {prepare,prepare-jobs-dir,start,stop,clean} ...
   
   options:
     -h, --help            show this help message and exit
   
   poc:
-   {prepare,prepare-examples,start,stop,clean}
+   {prepare,prepare-jobs-dir,start,stop,clean}
                         poc subcommand
     prepare             prepare poc environment by provisioning local project
-    prepare-examples    prepare examples
+    prepare-jobs-dir    prepare jobs directory
     start               start services in poc mode
     stop                stop services in poc mode
     clean               clean up poc workspace
@@ -41,7 +40,7 @@ The detailed options for ``nvflare poc prepare``:
 
   nvflare poc prepare -h
   
-  usage: nvflare poc prepare [-h] [-n [NUMBER_OF_CLIENTS]] [-c [CLIENTS ...]] [-e [EXAMPLES]] [-he] [-i [PROJECT_INPUT]] [-d [DOCKER_IMAGE]] [-debug]
+  usage: nvflare poc prepare [-h] [-n [NUMBER_OF_CLIENTS]] [-c [CLIENTS ...]] [-he] [-i [PROJECT_INPUT]] [-d [DOCKER_IMAGE]] [-debug]
 
   options:
     -h, --help            show this help message and exit
@@ -49,8 +48,6 @@ The detailed options for ``nvflare poc prepare``:
                           number of sites or clients, default to 2
     -c [CLIENTS ...], --clients [CLIENTS ...]
                           Space separated client names. If specified, number_of_clients argument will be ignored.
-    -e [EXAMPLES], --examples [EXAMPLES]
-                          examples directory
     -he, --he             enable homomorphic encryption.
     -i [PROJECT_INPUT], --project_input [PROJECT_INPUT]
                           project.yaml file path, If specified, 'number_of_clients','clients' and 'docker' specific options will be ignored.
@@ -58,16 +55,31 @@ The detailed options for ``nvflare poc prepare``:
                           generate docker.sh based on the docker_image, used in '--prepare' command. and generate docker.sh 'start/stop' commands will start with docker.sh
     -debug, --debug       debug is on
 
+nvflare poc prepare-jobs-dir
+----------------------------
+The detailed options for ``nvflare poc prepare-jobs-dir``:
+
+.. code-block:: none
+
+  nvflare poc prepare-jobs-dir -h
+
+  usage: nvflare poc prepare-jobs-dir [-h] [-j [JOBS_DIR]] [-debug]
+
+  optional arguments:
+    -h, --help            show this help message and exit
+    -j [JOBS_DIR], --jobs_dir [JOBS_DIR]
+                        jobs directory
+    -debug, --debug       debug is on
 
 .. note::
 
-    The "-e" option is new in version 2.4 for linking to the examples in the code base. Previously, you could
+    The "-j" option is new in version 2.4 for linking to the job directory in the code base. Previously, you could
     optionally define an ``NVFLARE_HOME`` environment variable to point to a local NVFlare directory to create a symbolic
     link to point the transfer directory to the examples in the code base. For example, if the the NVFlare GitHub
     repository is cloned under ~/projects, then you could set ``NVFLARE_HOME=~/projects/NVFlare``. If the NVFLARE_HOME
     environment variable was not set, you could manually copy the examples to the transfer directory.
 
-    Now, the "-e" option takes precedence over the ``NVFLARE_HOME`` environment variable, but the ``NVFLARE_HOME`` environment
+    Now, the "-j" option takes precedence over the ``NVFLARE_HOME`` environment variable, but the ``NVFLARE_HOME`` environment
     variable can still be used.
 
 

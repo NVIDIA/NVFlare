@@ -19,12 +19,11 @@ which are explained in more detail in their own sections linked below.
    :maxdepth: 1
 
    user_guide/nvflare_cli
-   user_guide/client_api
+   user_guide/configurations
    user_guide/dashboard_api
    user_guide/dashboard_ui
    user_guide/nvflare_security
    user_guide/docker_compose
    user_guide/helm_chart
-   user_guide/logging_configuration
    user_guide/confidential_computing
    user_guide/hierarchy_unification_bridge

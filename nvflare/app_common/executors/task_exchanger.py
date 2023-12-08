@@ -249,3 +249,11 @@ class TaskExchanger(Executor):
     def resume_pipe_handler(self):
         """Resumes pipe_handler heartbeat."""
         self.pipe_handler.resume()
+
+    def get_pipe(self):
+        """Gets pipe."""
+        return self.pipe
+
+    def get_pipe_channel_name(self):
+        """Gets pipe_channel_name."""
+        return self.pipe_channel_name

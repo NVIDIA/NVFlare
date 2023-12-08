@@ -16,65 +16,15 @@ from abc import ABC, abstractmethod
 from threading import Lock
 from typing import List, Optional
 
-from nvflare.apis.analytix import AnalyticsData, AnalyticsDataType
-from nvflare.apis.dxo import DXO
+from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import EventScope, FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.app_common.tracking.tracker_types import LogWriterName, TrackConst
+from nvflare.apis.utils.analytix_utils import create_analytic_dxo, send_analytic_dxo
+from nvflare.app_common.tracking.tracker_types import ANALYTIC_EVENT_TYPE, LogWriterName, TrackConst
 from nvflare.fuel.utils.deprecated import deprecated
 from nvflare.widgets.widget import Widget
-
-ANALYTIC_EVENT_TYPE = "analytix_log_stats"
-
-
-def send_analytic_dxo(comp: FLComponent, dxo: DXO, fl_ctx: FLContext, event_type: str = ANALYTIC_EVENT_TYPE):
-    """Sends analytic dxo.
-
-    Sends analytic dxo by firing an event (of type "analytix_log_stats" by default unless otherwise specified)
-    with the dxo in the fl_ctx.
-
-    Args:
-        comp (FLComponent): An FLComponent.
-        dxo (DXO): analytic data in dxo.
-        fl_ctx (FLContext): fl context info.
-        event_type (str): Event type.
-    """
-    if not isinstance(comp, FLComponent):
-        raise TypeError(f"expect comp to be an instance of FLComponent, but got {type(comp)}")
-    if not isinstance(dxo, DXO):
-        raise TypeError(f"expect dxo to be an instance of DXO, but got {type(dxo)}")
-    if not isinstance(fl_ctx, FLContext):
-        raise TypeError(f"expect fl_ctx to be an instance of FLContext, but got {type(fl_ctx)}")
-
-    fl_ctx.set_prop(key=FLContextKey.EVENT_DATA, value=dxo.to_shareable(), private=True, sticky=False)
-    comp.fire_event(event_type=event_type, fl_ctx=fl_ctx)
-
-
-def create_analytic_dxo(
-    tag: str,
-    value,
-    data_type: AnalyticsDataType,
-    writer: LogWriterName = LogWriterName.TORCH_TB,
-    **kwargs,
-) -> DXO:
-    """Creates the analytic DXO.
-
-    Args:
-        tag (str): the tag associated with this value.
-        value: the analytic data.
-        data_type: (AnalyticsDataType): analytic data type.
-        writer (LogWriterName): syntax of the sender: such TensorBoard or MLflow
-        kwargs: additional arguments to be passed into the receiver side's function.
-
-    Returns:
-        A DXO object that contains the analytic data.
-    """
-    data = AnalyticsData(key=tag, value=value, data_type=data_type, sender=writer, **kwargs)
-    dxo = data.to_dxo()
-    return dxo
 
 
 class AnalyticsSender(Widget):

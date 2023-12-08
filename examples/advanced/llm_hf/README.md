@@ -50,9 +50,10 @@ python3 ./utils/hf_sft_peft.py --output_path ./workspace_centralized/llama2-7b-d
 ### Pre: Launch Modes
 Before we start adapting the local training script to federated application, we first need to understand the launch modes of NVFlare client API.
 In our [client settings](../../../job_templates/sag_pt/config_fed_client.conf), we have two launch modes by switching the `--launch_once` flag:
-* If launch_once is true, the executor will only call launcher.launch_task once for the whole job
-* If launch_once is false, the executor will call launcher.launch_task everytime it receives a task from server
-So if it is false, the executor will create new objects every round. If it is true, the executor will reuse the same objects for all rounds.
+* If launch_once is true, the SubprocessLauncher will launch an external process once for the whole job
+* If launch_once is false, the SubprocessLauncher will launch an external process everytime it receives a task from server
+So if it is false, the SubprocessLauncher will create new processes every round.
+If it is true, the SubprocessLauncher will reuse the same process for all rounds.
 
 Turning `launch_once` to `false` can be useful in some scenarios like quick prototyping, but for the application of LLM where setup stage can take significant resources, we would want to only setup once. Hence, the below steps are for `launch_once = true` scenario.
 

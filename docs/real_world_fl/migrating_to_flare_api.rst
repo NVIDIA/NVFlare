@@ -91,19 +91,40 @@ This section has a summary of the commands then goes through each command and sh
 and the new way with FLARE API.
 
 .. csv-table::
-    :header: Command for FLAdminAPI,Command for FLARE API,Differences
+    :header: FLAdminAPI,FLARE API,Version Added,Notes
     :widths: 15, 15, 30, 30
 
-    check_status(),get_system_info(),Simplified and reformatted output, see below for details
-    submit_job(),submit_job(),Simplified output, see below for details
-    list_job(),list_job(),Simplified output, see below for details
-    wait_until_server_status(),monitor_job(),Changed the arg names and function, see below for details
-    download_job(),download_job_result(),Simplified output, see below for details
-    clone_job(),clone_job(),Simplified output, see below for details
-    abort_job(),abort_job(),Simplified output, see below for details
-    delete_job(),delete_job(),Simplified output, see below for details
-    All other commands,api.do_command(),The underlying AdminAPI's do_command() can be used for all other previous commands
-
+    check_status,get_system_info,2.3.0,Simplified and reformatted output (see below for details)
+    submit_job,submit_job,2.3.0,Simplified output (see below for details)
+    list_job,list_job,2.3.0,Simplified output (see below for details)
+    wait_until_server_status,monitor_job,2.3.0,Changed the arg names and function (see below for details)
+    download_job,download_job_result,2.3.0,Simplified output (see below for details)
+    clone_job,clone_job,2.3.0,Simplified output (see below for details)
+    abort_job,abort_job,2.3.0,Simplified output (see below for details)
+    delete_job,delete_job,2.3.0,Simplified output (see below for details)
+    check_status,get_client_job_status,2.4.0,only for client
+    restart,restart,2.4.0,
+    shutdown,shutdown,2.4.0,
+    set_timeout,set_timeout,2.4.0,changed to session-based
+    list_sp,list_sp,2.4.0,
+    get_active_sp,get_active_sp,2.4.0,
+    promote_sp,promote_sp,2.4.0,
+    get_available_apps_to_upload,get_available_apps_to_upload,2.4.0,
+    shutdown_system,shutdown_system,2.4.0,
+    ls_target,ls_target,2.4.0,
+    cat_target,cat_target,2.4.0,
+    ,tail_target,2.4.0,added for consistency
+    tail_target_log,tail_target_log,2.4.0,
+    ,head_target,2.4.0,new
+    ,head_target_log,2.4.0,new
+    grep_target,grep_target,2.4.0,
+    get_working_directory,get_working_directory,2.4.0,
+    show_stats,show_stats,2.4.0,return structure changed
+    show_errors,show_errors,2.4.0,return structure changed
+    reset_errors,reset_errors,2.4.0,
+    get_connected_client_list,get_connected_client_list,2.4.0,
+    abort,,2.4.0,obsolete
+    remove_client,,2.4.0,not exposed
 
 Get System Info from Check Status
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -421,14 +442,7 @@ With the FLARE API, ``delete_job()``:
 
     sess.delete_job(job_id)
 
-
-.. _migrating_all_other_fladminapi_commands_to_flare_api:
-
 Migrating All Other FLAdminAPI Commands to FLARE API
 ----------------------------------------------------
-For all other commands, there are not yet specific commands in the FLARE API. With the underlying api, however, you
-can submit any previous command that could be executed from the Admin Console with ``do_command()``:
-
-.. code-block:: python
-
-    sess.api.do_command(COMMAND_AS_STRING)
+The remaining FLAdminAPI commands have been added to the FLARE API in 2.4.0.
+For more details, see the notes in the table above, and the :mod:`FLARE API<nvflare.fuel.flare_api.flare_api>` definitions.

@@ -146,6 +146,18 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
+    def get_jobs_to_schedule(self, fl_ctx: FLContext) -> List[Job]:
+        """Get job candidates for scheduling.
+
+        Args:
+            fl_ctx: FL context
+
+        Returns: list of jobs for scheduling
+
+        """
+        pass
+
+    @abstractmethod
     def get_all_jobs(self, fl_ctx: FLContext) -> List[Job]:
         """Gets all Jobs in the system.
 
@@ -158,11 +170,11 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def get_jobs_by_status(self, run_status: RunStatus, fl_ctx: FLContext) -> List[Job]:
+    def get_jobs_by_status(self, run_status: Union[RunStatus, List[RunStatus]], fl_ctx: FLContext) -> List[Job]:
         """Gets Jobs of a specified status.
 
         Args:
-            run_status (RunStatus): status to filter for
+            run_status: status to filter for: a single or a list of status values
             fl_ctx (FLContext): FLContext information
 
         Returns:

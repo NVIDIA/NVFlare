@@ -384,34 +384,44 @@ class StatisticsController(Controller):
         for statistic in filtered_client_statistics:
             for client in self.client_statistics[statistic]:
                 for ds in self.client_statistics[statistic][client]:
-                    client_dataset = f"{client}-{ds}"
                     for feature_name in self.client_statistics[statistic][client][ds]:
                         if feature_name not in result:
                             result[feature_name] = {}
                         if statistic not in result[feature_name]:
                             result[feature_name][statistic] = {}
 
+                        if client not in result[feature_name][statistic]:
+                            result[feature_name][statistic][client] = {}
+
+                        if ds not in result[feature_name][statistic][client]:
+                            result[feature_name][statistic][client][ds] = {}
+
                         if statistic == StC.STATS_HISTOGRAM:
                             hist: Histogram = self.client_statistics[statistic][client][ds][feature_name]
                             buckets = StatisticsController._apply_histogram_precision(hist.bins, self.precision)
-                            result[feature_name][statistic][client_dataset] = buckets
+                            result[feature_name][statistic][client][ds] = buckets
                         else:
-                            result[feature_name][statistic][client_dataset] = round(
+                            result[feature_name][statistic][client][ds] = round(
                                 self.client_statistics[statistic][client][ds][feature_name], self.precision
                             )
 
         precision = self.precision
         for statistic in filtered_global_statistics:
             for ds in self.global_statistics[statistic]:
-                global_dataset = f"{StC.GLOBAL}-{ds}"
                 for feature_name in self.global_statistics[statistic][ds]:
+                    if StC.GLOBAL not in result[feature_name][statistic]:
+                        result[feature_name][statistic][StC.GLOBAL] = {}
+
+                    if ds not in result[feature_name][statistic][StC.GLOBAL]:
+                        result[feature_name][statistic][StC.GLOBAL][ds] = {}
+
                     if statistic == StC.STATS_HISTOGRAM:
                         hist: Histogram = self.global_statistics[statistic][ds][feature_name]
                         buckets = StatisticsController._apply_histogram_precision(hist.bins, self.precision)
-                        result[feature_name][statistic][global_dataset] = buckets
+                        result[feature_name][statistic][StC.GLOBAL][ds] = buckets
                     else:
                         result[feature_name][statistic].update(
-                            {global_dataset: round(self.global_statistics[statistic][ds][feature_name], precision)}
+                            {StC.GLOBAL: {ds: round(self.global_statistics[statistic][ds][feature_name], precision)}}
                         )
 
         return result

@@ -6,7 +6,7 @@ We will demonstrate how to send back model parameters or model parameters differ
   2. [Send model parameters differences back to the NVFlare server](#send-model-parameters-differences-back-to-the-nvflare-server)
 
 
-By default, our LauncherExecutor is going to launch the script once for a job.
+By default, the "SubprocessLauncher" is going to launch the script once for a job.
 
 If your data setup is taking a long time, you don't want to launch the whole training script every round.
 (This implies that the dataset will be loaded again every round and all the cache will be lost for each round).
@@ -14,7 +14,7 @@ If your data setup is taking a long time, you don't want to launch the whole tra
 On the other hand, if your system is very resource limited, and you don't want the training process to live throughout the whole
 job training, you can use "launch_once=False".
 
-We demonstrate how to launch training script once and have training script keeps exchanging training parameters with NVFlare LauncherExecutor:
+We demonstrate how to launch training script once and have training script keeps exchanging training parameters with NVFlare:
 
   1. [Launch once for the whole job](#launch-once-for-the-whole-job)
 
@@ -91,7 +91,7 @@ nvflare simulator -n 2 -t 2 ./jobs/np_param_diff_transfer_full -w np_param_diff_
 In some training scenarios, the data loading is taking a lot of time.
 And throughout the whole training job, we only want to load/set up the data once.
 
-In that case, we could use the "launch_once" option of "LauncherExecutor" and wraps our training script into a loop.
+In that case, we could use the "launch_once" option of "SubprocessLauncher" and wraps our training script into a loop.
 
 We wrap the [./code/train_full.py](./code/train_full.py) into a loop: [./code/train_loop.py](./code/train_loop.py)
 
@@ -108,21 +108,30 @@ Then we can run it using the NVFlare Simulator:
 nvflare simulator -n 2 -t 2 ./jobs/np_loop -w np_loop_workspace
 ```
 
-## Using CellPipe instead of FilePipe
+## Data exchange mechanism
 
-We can use `CellPipe` instead of `FilePipe` to communicate between NVFlare client and external process.
+The underlying communication between the external process and NVFlare client is facilitated by the `Pipe` class.
 
-The `FilePipe` utilizes the file system for communication, involving read and write operations to a file.
-On the other hand, the `CellPipe` leverages the `Cell` from NVFlare's foundation layer (f3) for communication.
-This allows it to make use of drivers from the f3 layer, such as TCP, GRPC, HTTP, and any customized drivers.
+Two distinct types of `Pipe` are implemented:
 
-It is advisable to opt for `CellPipe` in scenarios where there is a high frequency of data exchange or
-when the file system is beyond your control.
+1. FilePipe:
+   - The `FilePipe` utilizes the file system for communication, involving read and write operations to a file.
+   - Suitable when the NVFlare client and the external system/process share a common file system.
+   - Ideal for scenarios where data exchange frequency is not high; however, it may not be efficient for high-frequency exchanges.
 
-On the contrary, if the NVFlare client and the external system/process share a common file system,
-and the data exchange does not require high frequency, `FilePipe` is a more straightforward option.
+2. CellPipe:
+    - The `CellPipe` leverages the `Cell` from NVFlare's foundation layer (f3) for communication. 
+      This allows it to make use of drivers from the f3 layer, such as TCP, GRPC, HTTP, and any customized drivers.
 
-Let's create the job:
+    - Recommended for scenarios with a high frequency of data exchange (for example metrics logging)
+      or when the file system is beyond your control.
+
+You can also implement your own `Pipe`, please refer to https://github.com/NVIDIA/NVFlare/blob/main/nvflare/fuel/utils/pipe/pipe.py
+
+So far, we have demonstrated how to use the `FilePipe`.
+The following example illustrates how to use the `CellPipe`.
+
+First, let's create the job using the sag_np_cell_pipe template
 
 ```bash
 nvflare job create -force -j ./jobs/np_loop_cell_pipe -w sag_np_cell_pipe -sd ./code/ \
@@ -134,4 +143,36 @@ Then we can run it using the NVFlare Simulator:
 ```bash
 nvflare simulator -n 2 -t 2 ./jobs/np_loop_cell_pipe -w np_loop_cell_pipe_workspace
 ```
+
+## Launch once for the whole job and with metrics streaming
+
+Sometimes we want to stream the training progress to the server.
+
+We have several ways of doing that:
+
+  - `SummaryWriter` mimics Tensorboard `SummaryWriter`'s `add_scalar`, `add_scalars` method
+  - `WandBWriter` mimics Weights And Biases's `log` method
+  - `MLflowWriter` mimics MLflow's tracking api
+  - `flare.log` is the underlying common pattern that can be directly used as well, you need to figure out the
+    corresponding `AnalyticsDataType` for your value
+
+We showcase `MLflowWriter` in [./code/train_metrics.py](./code/train_metrics.py)
+
+After that, we can set up the job using the sag_np_metrics template:
+
+```bash
+nvflare job create -force -j ./jobs/np_metrics -w sag_np_metrics -sd ./code/ \
+-f config_fed_client.conf app_script=train_metrics.py params_transfer_type=DIFF launch_once=true \
+-f config_fed_server.conf expected_data_kind=WEIGHT_DIFF
+```
+
+Once the job is set up, we can run it using the NVFlare Simulator:
+
+```bash
+nvflare simulator -n 2 -t 2 ./jobs/np_metrics -w np_metrics_workspace
+```
+
+Keep in mind that the difference between sag_np_cell_pipe and sag_np_metrics is the
+addition of components like "metrics_pipe," "metric_relayer," and "event_to_fed."
+These components allow values from an external process to be sent back to the server.
 

@@ -1,6 +1,6 @@
-##########################
+**************************
 What's New in FLARE v2.4.0
-##########################
+**************************
 
 Usability Improvements
 ======================
@@ -52,7 +52,8 @@ The 3rd-Party Integration Pattern
 In certain scenarios, users face challenges when attempting to moving the training logic to the FLARE client side due to pre-existing ML/DL training system infrastructure.
 In the 2.4.0 release, we introduce the Third-Party Integration Pattern, which allows the FLARE system and a third-party external training system to seamlessly exchange model parameters without requiring a tightly integrated system.
 
-See the documentation (coming soon) for more details.
+See the :ref:`3rd_party_integration` documentation for more details.
+
 
 Job Templates and CLI
 ---------------------
@@ -71,7 +72,7 @@ The ModelLearner is introduced for a simplifed user experience in cases requirin
 Users exclusively interact with the FLModel object, which includes weights, optimizer, metrics, and metadata, while FLARE-specific concepts remain hidden to users.
 The ModelLearner defines standard learning functions, such as ``train()``, ``validate()``, and ``submit_model()`` that can be subclassed for easy adaptation.
 
-See the API definitions of :github_nvflare_link:`ModelLearner <nvflare/app_common/abstract/model_learner.py>` and
+See the :ref:`model_learner` documentation and API definitions of :github_nvflare_link:`ModelLearner <nvflare/app_common/abstract/model_learner.py>` and
 :github_nvflare_link:`FLModel <nvflare/app_common/abstract/fl_model.py>` for more detail.
 
 Step-by-Step Example Series
@@ -92,15 +93,14 @@ Each example will build upon previous ones to showcase different features, workf
 - cyclic_ccwf: client-controlled cyclic weight transfer workflow with client-side controller.
 - swarm: swarm learning and client-side cross-site evaluation with Client API.
 - sag_with_mlflow (coming soon): MLFlow experiment tracking logs with the Client API in scatter & gather workflows.
-- sag_with_he (coming soon): scatter and gather workflow with Client API and Homomorphic Encryption (HE)
 
-**HIGGS Examples (coming soon):**
+**HIGGS Examples:**
 
-- stats
-- scikit_learn linear
-- kmeans
-- svm
-- xgboost
+- tabular_stats: federated stats tabular histogram calculation.
+- scikit_learn: federated linear model (logistic regression on binary classification) learning on tabular data.
+- sklearn_svm: federated SVM model learning on tabular data.
+- sklearn_kmeans: federated k-Means clustering on tabular data.
+- xgboost: federated horizontal xgboost learning on tabular data with bagging collaboration.
 
 Streaming APIs
 ==============
@@ -108,7 +108,7 @@ To support large language models (LLMs), the 2.4.0 release introduces the stream
 The addition of a new streaming layer designed to handle large objects allows us to divide the large model into 1M chunks and stream them to the target.
 We provide built-in streamers for Objects, Bytes, Files, and Blobs, providing a versatile solution for efficient object streaming between different endpoints.
 
-See the :ref:`notes_on_large_models` documentation for more insights on working with large models in FLARE.
+Refer to the :mod:`nvflare.fuel.f3.stream_cell` api for more details, and the :ref:`notes_on_large_models` documentation for insights on working with large models in FLARE.
 
 Expanding Federated Learning Workflows
 ======================================
@@ -135,7 +135,7 @@ Three commonly used types of client-side controlled workflows are provided:
 - :ref:`ccwf_swarm_learning`: randomly select clients as client-side controller and aggregrators, where then Scatter and Gather with FedAvg is performed.
 - :ref:`ccwf_cross_site_evaluation`: allow clients to evaluate other sites' models.
 
-See :github_nvflare_link:`swarm learning <examples/hello-world/step-by-step/cifar10/cyclic_ccwf>` for examples using these client-controlled workflows.
+See :github_nvflare_link:`swarm learning <examples/advanced/swarm_learning>` and :github_nvflare_link:`client-controlled cyclic <examples/hello-world/step-by-step/cifar10/cyclic_ccwf>` for examples using these client-controlled workflows.
 
 MLFlow and WandB Experiment Tracking Support
 ============================================
@@ -167,7 +167,7 @@ Improved Job Configuration File Processing
 - OS Environment Variables - OS environment variables can be referenced via the dollar sign
 - Parameterized Variable Definition - for creating configuration templates that can be reused and resolved into different concrete configurations
 
-See more details in the enhanced job config file processing documentation (coming soon)
+See more details in the :ref:`configuration_files` documentation.
 
 POC Command Upgrade
 ===================
@@ -229,7 +229,7 @@ Misc. Features
 - Run Model Evaluation Without Training
 
   - In the 2.4.0 release, users can now run cross-validation without having to re-run the training.
-  - `Enable re-run cross-validation without training workflow (WIP) <https://github.com/NVIDIA/NVFlare/pull/2035>`_.
+  - See the example for :github_nvflare_link:`run cross-site validation without training <examples/hello-world/hello-numpy-cross-val#run-cross-site-validation-using-the-previous-trained-results>`.
 
 - Communication Enhancements
 
@@ -256,14 +256,15 @@ We've added several examples to demonstrate how to work with federated LLM:
 - :github_nvflare_link:`Parameter Efficient Fine Turning <integration/nemo/examples/peft>` utilizing NeMo's PEFT methods to adapt a LLM to a downstream task.
 - :github_nvflare_link:`Prompt-Tuning Example <integration/nemo/examples/prompt_learning>` for using FLARE with NeMo for prompt learning.
 - :github_nvflare_link:`Supervised Fine Tuning (SFT) <integration/nemo/examples/supervised_fine_tuning>` to fine-tune all parameters of a LLM on supervised data.
+- :github_nvflare_link:`LLM Tuning via HuggingFace SFT Trainer <examples/advanced/llm_hf>` for using FLARE with a HuggingFace trainer for LLM tuning tasks.
 
 Vertical Federated XGBoost
 --------------------------
-With the 2.0 release of :github_nvflare_link:`XGBoost <examples/advanced/vertical_xgboost>`.
+With the 2.0 release of `XGBoost <https://github.com/dmlc/xgboost>`_, we are able to demonstrate the :github_nvflare_link:`vertical xgboost example <examples/advanced/vertical_xgboost>`.
 We use Private Set Intersection and XGBoost's new federated learning support to perform classification on vertically split HIGGS data (where sites share overlapping data samples but contain different features).
 
-GNN Examples
-------------
+Graph Neural Networks (GNNs)
+----------------------------
 We added two examples using GraphSage to demonstrate how to train `Federated GNN on
 Graph Dataset using Inductive Learning <https://github.com/NVIDIA/NVFlare/tree/399411e30b9add9e8a257a7a25b7e93f6d18f9a3/examples/advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning>`_.
 
@@ -283,7 +284,142 @@ To demonstrate how to perform Fraud Detection in financial applications, we intr
 to train a model in a federated manner with a `finance dataset <https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud>`_.
 We illustrate both vertical and horizontal federated learning with XGBoost, along with histogram and tree-based approaches.
 
+**********************************
 Migration to 2.4.0: Notes and Tips
-==================================
+**********************************
 
-Coming Soon
+FLARE 2.4.0 introduces a few API and behavior changes. This migration guide will help you to migrate from the previous NVFLARE version to the current version.
+
+FLARE API Parity
+================
+In FLARE 2.3.0, an intial version of the FLARE API was implemented as a redesigend FLAdminAPI, however we only included a subset of the functions.
+In FLARE 2.4.0, the FLARE API has been enhanced to include the remaining functions of the FLAdminAPI, so that the FLAdminAPI can sunset.
+
+See the :ref:`migrating_to_flare_api` for more details on the added functions.
+
+Timeout Handling
+----------------
+
+In the 2.4.0 release, improvements have been to made to the timeout handling for commands involving Admin Server communication with FL Clients and awaiting responses.
+Previously, a fixed global timeout value was used on the Admin Server, however this value was sometimes not enough if a command took a long time
+(e.g. ``cat server log.txt`` command may take time to transfer the large log file).
+In this case, the user could use the ``set_timeout`` command to change the default timeout value of the Admin Server, however this command had the drawback of being global, and would affect all users.
+The global effect of this command meant one user setting a very small timeout value could cause all user commands to fail.
+
+To address this, the ``set_timeout`` command has been changed to be session specific.
+Additionally a new ``unset_timeout`` command has been added to revert to use the Admin Server's default timeout for the session.
+
+Changes to ``show_stats`` and ``show_errors``
+---------------------------------------------
+
+The old structure puts the server's result dict directly at the top level of the overall result dict, while each client's result dict is placed as an item keyed on the client name.
+To make it consistent between server and client results, we've change to put the server's result as an item keyed on "server".
+If any code is based on the old return structure of FLAdminAPI, please update it accordingly.
+
+.. code-block:: json
+
+    {
+      "server": { # new "server" key for server result dict
+        "ScatterAndGather": {
+          "tasks": {
+            "train": [
+              "site-1",
+              "site-2"
+            ]
+          },
+          "phase": "train",
+          "current_round": 2,
+          "num_rounds": 50
+        },
+        "ServerRunner": {
+          "job_id": "3ad5bdef-db12-4ffb-9362-0ff163973f7d",
+          "status": "started",
+          "workflow": "scatter_and_gather"
+        }
+      },
+      "site-1": {
+        "ClientRunner": {
+          "job_id": "3ad5bdef-db12-4ffb-9362-0ff163973f7d",
+          "current_task_name": "None",
+          "status": "started"
+        }
+      },
+      "site-2": {
+        "ClientRunner": {
+          "job_id": "3ad5bdef-db12-4ffb-9362-0ff163973f7d",
+          "current_task_name": "train",
+          "status": "started"
+        }
+      }
+    }
+
+POC Command Upgrade
+===================
+The POC command has been upgraded in 2.4.0:
+
+- Remove "--" for action commands, change to subcommands
+- new ``-d`` docker and ``-he`` Homomorphic encryption options
+- ``nvflare poc prepare`` generates ``.nvflare/config.conf`` to store location of POC workspace, takes precedent over environment variable ``NVFLARE_POC_WORKSPACE``
+- In the previous version, the startup kits are located directly under default POC workspace at ``/tmp/nvflare/poc``. In the 2.4.0, the startup kit is now under ``/tmp/nvflare/poc/example_project/prod_00/`` to follow the production provision default structure.
+- Multi-org and multi-role support
+
+.. code-block:: none
+
+  nvflare poc -h
+  usage: nvflare poc [-h] [--prepare] [--start] [--stop] [--clean] {prepare,prepare-jobs-dir,start,stop,clean} ...
+
+  optional arguments:
+    -h, --help            show this help message and exit
+    --prepare             deprecated, suggest use 'nvflare poc prepare'
+    --start               deprecated, suggest use 'nvflare poc start'
+    --stop                deprecated, suggest use 'nvflare poc stop'
+    --clean               deprecated, suggest use 'nvflare poc clean'
+
+  poc:
+    {prepare,prepare-jobs-dir,start,stop,clean}
+                          poc subcommand
+      prepare             prepare poc environment by provisioning local project
+      prepare-jobs-dir    prepare jobs directory
+      start               start services in poc mode
+      stop                stop services in poc mode
+      clean               clean up poc workspace
+
+Refer to :ref:`poc_command` for more details.
+
+Secure Messaging
+================
+
+A new ``secure`` argument has been added for ``send_aux_request()`` in :class:`ServerEngineSpec<nvflare.apis.server_engine_spec.ServerEngineSpec>`,
+and :class:`ClientEngineExecutorSpec<nvflare.private.fed.client.client_engine_executor_spec.ClientEngineExecutorSpec>`.
+
+``secure`` is an optional boolean to determine whether the aux request should be sent in a secure way.
+One such use case is for secure peer-to-peer messaging, such as in the client-controlled workflows.
+
+.. code-block:: python
+
+   @abstractmethod
+    def send_aux_request(
+        self,
+        targets: Union[None, str, List[str]],
+        topic: str,
+        request: Shareable,
+        timeout: float,
+        fl_ctx: FLContext,
+        optional=False,
+        secure: bool = False,
+    ) -> dict:
+        """Send a request to Server via the aux channel.
+        Implementation: simply calls the ClientAuxRunner's send_aux_request method.
+        Args:
+            targets: aux messages targets. None or empty list means the server.
+            topic: topic of the request
+            request: request to be sent
+            timeout: number of secs to wait for replies. 0 means fire-and-forget.
+            fl_ctx: FL context
+            optional: whether the request is optional
+            secure: should the request sent in the secure way
+        Returns:
+            a dict of reply Shareable in the format of:
+                { site_name: reply_shareable }
+        """
+        pass
