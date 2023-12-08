@@ -1,5 +1,6 @@
 cryptography>=36.0.0
 Flask==2.2.5
+Werkzeug==2.2.2
 Flask-JWT-Extended==4.4.3
 Flask-SQLAlchemy==2.5.1
 SQLAlchemy==1.4.31
