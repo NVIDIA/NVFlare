@@ -225,6 +225,12 @@ class PTFileModelPersistor(ModelPersistor):
         self.persistence_manager = PTModelPersistenceFormatManager(data, default_train_conf=self.default_train_conf)
         return self.persistence_manager.to_model_learnable(self.exclude_vars)
 
+    def _get_persistence_manager(self, fl_ctx: FLContext):
+        if not self.persistence_manager:
+            self.load_model(fl_ctx)
+
+        return self.persistence_manager
+
     def handle_event(self, event: str, fl_ctx: FLContext):
         if event == EventType.START_RUN:
             self._initialize(fl_ctx)
@@ -232,7 +238,7 @@ class PTFileModelPersistor(ModelPersistor):
             # save the current model as the best model, or the global best model if available
             ml = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
             if ml:
-                self.persistence_manager.update(ml)
+                self._get_persistence_manager(fl_ctx).update(ml)
             self.save_model_file(self._best_ckpt_save_path)
 
     def save_model_file(self, save_path: str):
@@ -240,7 +246,7 @@ class PTFileModelPersistor(ModelPersistor):
         torch.save(save_dict, save_path)
 
     def save_model(self, ml: ModelLearnable, fl_ctx: FLContext):
-        self.persistence_manager.update(ml)
+        self._get_persistence_manager(fl_ctx).update(ml)
         self.save_model_file(self._ckpt_save_path)
 
     def get_model(self, model_file: str, fl_ctx: FLContext) -> ModelLearnable:
@@ -253,6 +259,9 @@ class PTFileModelPersistor(ModelPersistor):
             return None
 
         location = desc.location
+        return self.get_model_from_location(location, fl_ctx)
+
+    def get_model_from_location(self, location, fl_ctx):
         try:
             # device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
             # Use the "cpu" to load the global model weights, avoid GPU out of memory
@@ -261,26 +270,28 @@ class PTFileModelPersistor(ModelPersistor):
             persistence_manager = PTModelPersistenceFormatManager(data, default_train_conf=self.default_train_conf)
             return persistence_manager.to_model_learnable(self.exclude_vars)
         except Exception:
-            self.log_exception(fl_ctx, "error loading checkpoint from {}".format(model_file))
+            self.log_exception(fl_ctx, "error loading checkpoint from {}".format(location))
             return {}
 
     def get_model_inventory(self, fl_ctx: FLContext) -> Dict[str, ModelDescriptor]:
         model_inventory = {}
         location = os.path.join(self.log_dir, self.global_model_file_name)
         if os.path.exists(location):
-            model_inventory[self.global_model_file_name] = ModelDescriptor(
+            _, tail = os.path.split(self.global_model_file_name)
+            model_inventory[tail] = ModelDescriptor(
                 name=self.global_model_file_name,
                 location=location,
-                model_format=self.persistence_manager.get_persist_model_format(),
+                model_format=self._get_persistence_manager(fl_ctx).get_persist_model_format(),
                 props={},
             )
 
         location = os.path.join(self.log_dir, self.best_global_model_file_name)
         if os.path.exists(location):
-            model_inventory[self.best_global_model_file_name] = ModelDescriptor(
+            _, tail = os.path.split(self.best_global_model_file_name)
+            model_inventory[tail] = ModelDescriptor(
                 name=self.best_global_model_file_name,
                 location=location,
-                model_format=self.persistence_manager.get_persist_model_format(),
+                model_format=self._get_persistence_manager(fl_ctx).get_persist_model_format(),
                 props={},
             )
 

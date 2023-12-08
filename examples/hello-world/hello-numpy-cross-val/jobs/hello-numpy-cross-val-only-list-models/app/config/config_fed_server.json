@@ -1,0 +1,39 @@
+{
+  "format_version": 2,
+  "model_dir": "{$SERVER_MODEL_DIR}",
+  "server": {
+    "heart_beat_timeout": 600
+  },
+  "task_data_filters": [],
+  "task_result_filters": [],
+  "components": [
+    {
+      "id": "model_locator",
+      "path": "nvflare.app_common.np.np_model_locator.NPModelLocator",
+      "args": {
+        "model_dir": "{model_dir}",
+        "model_names": {
+          "server_model_1": "server_1.npy",
+          "server_model_2": "server_2.npy"
+        }
+      }
+    },
+    {
+      "id": "json_generator",
+      "path": "nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator",
+      "args": {}
+    }
+  ],
+  "workflows": [
+    {
+      "id": "cross_site_model_eval",
+      "path": "nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval",
+      "args": {
+        "model_locator_id": "model_locator",
+        "submit_model_timeout": 600,
+        "validation_timeout": 6000,
+        "cleanup_models": false
+      }
+    }
+  ]
+}

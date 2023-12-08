@@ -467,3 +467,10 @@ class SystemVarName:
     JOB_ID = "JOB_ID"  # Job ID
     ROOT_URL = "ROOT_URL"  # the URL of the Service Provider (server)
     SECURE_MODE = "SECURE_MODE"  # whether the system is running in secure mode
+
+
+class RunnerTask:
+
+    INIT = "init"
+    TASK_EXEC = "task_exec"
+    END_RUN = "end_run"

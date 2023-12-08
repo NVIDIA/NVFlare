@@ -143,3 +143,36 @@ Then we can run it using the NVFlare Simulator:
 ```bash
 nvflare simulator -n 2 -t 2 ./jobs/np_loop_cell_pipe -w np_loop_cell_pipe_workspace
 ```
+
+## Launch once for the whole job and with metrics streaming
+
+Sometimes we want to stream the training progress to the server.
+
+We have several ways of doing that:
+
+  - `SummaryWriter` mimics Tensorboard `SummaryWriter`'s `add_scalar`, `add_scalars` method
+  - `WandBWriter` mimics Weights And Biases's `log` method
+  - `MLflowWriter` mimics MLflow's tracking api
+  - `flare.log` is the underlying common pattern that can be directly used as well, you need to figure out the
+    corresponding `AnalyticsDataType` for your value
+
+We showcase `MLflowWriter` in [./code/train_metrics.py](./code/train_metrics.py)
+
+After that, we can set up the job using the sag_np_metrics template:
+
+```bash
+nvflare job create -force -j ./jobs/np_metrics -w sag_np_metrics -sd ./code/ \
+-f config_fed_client.conf app_script=train_metrics.py params_transfer_type=DIFF launch_once=true \
+-f config_fed_server.conf expected_data_kind=WEIGHT_DIFF
+```
+
+Once the job is set up, we can run it using the NVFlare Simulator:
+
+```bash
+nvflare simulator -n 2 -t 2 ./jobs/np_metrics -w np_metrics_workspace
+```
+
+Keep in mind that the difference between sag_np_cell_pipe and sag_np_metrics is the
+addition of components like "metrics_pipe," "metric_relayer," and "event_to_fed."
+These components allow values from an external process to be sent back to the server.
+

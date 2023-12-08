@@ -15,6 +15,8 @@
 from enum import Enum
 
 from nvflare.apis.dxo import DXO, DataKind
+
+# TODO: api should not depend on app_common
 from nvflare.app_common.tracking.tracker_types import LogWriterName, TrackConst
 
 _DATA_TYPE_KEY = "analytics_data_type"

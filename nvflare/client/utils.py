@@ -14,7 +14,7 @@
 
 from typing import Dict
 
-from nvflare.app_common.data_exchange.constants import ExchangeFormat
+from .config import ExchangeFormat
 
 
 def numerical_params_diff(original: Dict, new: Dict) -> Dict:

@@ -52,7 +52,8 @@ The 3rd-Party Integration Pattern
 In certain scenarios, users face challenges when attempting to moving the training logic to the FLARE client side due to pre-existing ML/DL training system infrastructure.
 In the 2.4.0 release, we introduce the Third-Party Integration Pattern, which allows the FLARE system and a third-party external training system to seamlessly exchange model parameters without requiring a tightly integrated system.
 
-See the documentation (coming soon) for more details.
+See the :ref:`3rd_party_integration` documentation for more details.
+
 
 Job Templates and CLI
 ---------------------
@@ -92,15 +93,14 @@ Each example will build upon previous ones to showcase different features, workf
 - cyclic_ccwf: client-controlled cyclic weight transfer workflow with client-side controller.
 - swarm: swarm learning and client-side cross-site evaluation with Client API.
 - sag_with_mlflow (coming soon): MLFlow experiment tracking logs with the Client API in scatter & gather workflows.
-- sag_with_he (coming soon): scatter and gather workflow with Client API and Homomorphic Encryption (HE)
 
-**HIGGS Examples (coming soon):**
+**HIGGS Examples:**
 
-- stats
-- scikit_learn linear
-- kmeans
-- svm
-- xgboost
+- tabular_stats: federated stats tabular histogram calculation.
+- scikit_learn: federated linear model (logistic regression on binary classification) learning on tabular data.
+- sklearn_svm: federated SVM model learning on tabular data.
+- sklearn_kmeans: federated k-Means clustering on tabular data.
+- xgboost: federated horizontal xgboost learning on tabular data with bagging collaboration.
 
 Streaming APIs
 ==============
@@ -108,7 +108,7 @@ To support large language models (LLMs), the 2.4.0 release introduces the stream
 The addition of a new streaming layer designed to handle large objects allows us to divide the large model into 1M chunks and stream them to the target.
 We provide built-in streamers for Objects, Bytes, Files, and Blobs, providing a versatile solution for efficient object streaming between different endpoints.
 
-See the :ref:`notes_on_large_models` documentation for more insights on working with large models in FLARE.
+Refer to the :mod:`nvflare.fuel.f3.stream_cell` api for more details, and the :ref:`notes_on_large_models` documentation for insights on working with large models in FLARE.
 
 Expanding Federated Learning Workflows
 ======================================
@@ -229,7 +229,7 @@ Misc. Features
 - Run Model Evaluation Without Training
 
   - In the 2.4.0 release, users can now run cross-validation without having to re-run the training.
-  - `Enable re-run cross-validation without training workflow (WIP) <https://github.com/NVIDIA/NVFlare/pull/2035>`_.
+  - See the example for :github_nvflare_link:`run cross-site validation without training <examples/hello-world/hello-numpy-cross-val#run-cross-site-validation-using-the-previous-trained-results>`.
 
 - Communication Enhancements
 
@@ -256,10 +256,11 @@ We've added several examples to demonstrate how to work with federated LLM:
 - :github_nvflare_link:`Parameter Efficient Fine Turning <integration/nemo/examples/peft>` utilizing NeMo's PEFT methods to adapt a LLM to a downstream task.
 - :github_nvflare_link:`Prompt-Tuning Example <integration/nemo/examples/prompt_learning>` for using FLARE with NeMo for prompt learning.
 - :github_nvflare_link:`Supervised Fine Tuning (SFT) <integration/nemo/examples/supervised_fine_tuning>` to fine-tune all parameters of a LLM on supervised data.
+- :github_nvflare_link:`LLM Tuning via HuggingFace SFT Trainer <examples/advanced/llm_hf>` for using FLARE with a HuggingFace trainer for LLM tuning tasks.
 
 Vertical Federated XGBoost
 --------------------------
-With the 2.0 release of :github_nvflare_link:`XGBoost <examples/advanced/vertical_xgboost>`.
+With the 2.0 release of `XGBoost <https://github.com/dmlc/xgboost>`_, we are able to demonstrate the :github_nvflare_link:`vertical xgboost example <examples/advanced/vertical_xgboost>`.
 We use Private Set Intersection and XGBoost's new federated learning support to perform classification on vertically split HIGGS data (where sites share overlapping data samples but contain different features).
 
 Graph Neural Networks (GNNs)
@@ -355,6 +356,7 @@ If any code is based on the old return structure of FLAdminAPI, please update it
 POC Command Upgrade
 ===================
 The POC command has been upgraded in 2.4.0:
+
 - Remove "--" for action commands, change to subcommands
 - new ``-d`` docker and ``-he`` Homomorphic encryption options
 - ``nvflare poc prepare`` generates ``.nvflare/config.conf`` to store location of POC workspace, takes precedent over environment variable ``NVFLARE_POC_WORKSPACE``

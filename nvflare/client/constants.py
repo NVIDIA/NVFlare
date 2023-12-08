@@ -15,5 +15,4 @@
 from .config import ConfigKey
 
 SYS_ATTRS = (ConfigKey.JOB_ID, ConfigKey.SITE_NAME)
-CONFIG_DATA_EXCHANGE = "config_data_exchange.json"
-CONFIG_METRICS_EXCHANGE = "config_metrics_exchange.json"
+CLIENT_API_CONFIG = "client_api_config.json"

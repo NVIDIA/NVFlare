@@ -101,8 +101,10 @@ The following tutorials and quickstart guides walk you through some of these exa
     * :github_nvflare_link:`Parameter Efficient Fine Turning <integration/nemo/examples/peft>` - Example utilizing NeMo's PEFT methods to adapt a LLM to a downstream task.
     * :github_nvflare_link:`Prompt-Tuning Example <integration/nemo/examples/prompt_learning>` - Example for using FLARE with NeMo for prompt learning.
     * :github_nvflare_link:`Supervised Fine Tuning (SFT) <integration/nemo/examples/supervised_fine_tuning>` - Example to fine-tune all parameters of a LLM on supervised data.
+    * :github_nvflare_link:`LLM Tuning via HuggingFace SFT Trainer <examples/advanced/llm_hf>` - Example for using FLARE with a HuggingFace trainer for LLM tuning tasks.
 
-  13. **Graph Neural Network (GNN) **
+
+  13. **Graph Neural Network (GNN)**
 
     * :github_nvflare_link:`Protein Classification <examples/advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning>` - Example using GNNs for Protein Classification using `PPI <http://snap.stanford.edu/graphsage/#code>`_ dataset using GraphSAGE.
     * :github_nvflare_link:`Financial Transaction Classification <examples/advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning>` - Example using GNNs for Financial Transaction Classification with `Elliptic++ <https://github.com/git-disl/EllipticPlusPlus>`_ dataset using GraphSAGE.

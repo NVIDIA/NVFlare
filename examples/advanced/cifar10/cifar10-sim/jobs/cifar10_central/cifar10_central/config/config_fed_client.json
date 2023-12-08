@@ -25,7 +25,7 @@
   "components": [
     {
       "id": "cifar10-learner",
-      "path": "pt.learners.cifar10_model_learner.CIFAR10ModelLearner",
+      "path": "pt.learners.CIFAR10ModelLearner",
       "args": {
         "aggregation_epochs": "{AGGREGATION_EPOCHS}",
         "lr": 1e-2,
