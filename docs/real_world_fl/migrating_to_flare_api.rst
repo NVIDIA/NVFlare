@@ -203,7 +203,7 @@ path to the job to submit as a string. For ``submit_job()`` with FLAdminAPI:
 
 .. code-block:: python
 
-    path_to_example_job = "/workspace/NVFlare/examples/hello-numpy-sag"
+    path_to_example_job = "/workspace/NVFlare/examples/hello-world/hello-numpy-sag"
     runner.api.submit_job(path_to_example_job)
 
 .. code-block:: bash
@@ -226,7 +226,7 @@ value to use later.
 
 .. code-block:: python
 
-    path_to_example_job = "/workspace/NVFlare/examples/hello-numpy-sag"
+    path_to_example_job = "/workspace/NVFlare/examples/hello-world/hello-numpy-sag"
     job_id = sess.submit_job(path_to_example_job)
     print(job_id + " was submitted")
 
