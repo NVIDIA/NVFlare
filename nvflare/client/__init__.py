@@ -15,7 +15,7 @@
 
 # https://github.com/microsoft/pylance-release/issues/856
 
-from nvflare.apis.analytix import AnalyticsDataType
+from nvflare.apis.analytix import AnalyticsDataType as AnalyticsDataType
 from nvflare.app_common.abstract.fl_model import FLModel as FLModel
 from nvflare.app_common.abstract.fl_model import ParamsType as ParamsType
 
@@ -28,6 +28,7 @@ from .api import is_evaluate as is_evaluate
 from .api import is_running as is_running
 from .api import is_submit_model as is_submit_model
 from .api import is_train as is_train
+from .api import log as log
 from .api import receive as receive
 from .api import send as send
 from .api import system_info as system_info

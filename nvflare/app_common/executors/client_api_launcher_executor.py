@@ -16,11 +16,10 @@ import os
 from typing import Optional
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.data_exchange.constants import ExchangeFormat
-from nvflare.app_common.data_exchange.piper import Piper
 from nvflare.app_common.executors.launcher_executor import LauncherExecutor
-from nvflare.client.config import ClientConfig, ConfigKey, TransferType
-from nvflare.client.constants import CONFIG_DATA_EXCHANGE
+from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType, write_config_to_file
+from nvflare.client.constants import CLIENT_API_CONFIG
+from nvflare.fuel.utils.attributes_exportable import ExportMode
 
 
 class ClientAPILauncherExecutor(LauncherExecutor):
@@ -45,6 +44,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         to_nvflare_converter_id: Optional[str] = None,
         params_exchange_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
+        config_file_name: str = CLIENT_API_CONFIG,
     ) -> None:
         """Initializes the ClientAPILauncherExecutor.
 
@@ -72,6 +72,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             params_exchange_format (ExchangeFormat): What format to exchange the parameters.
             params_transfer_type (TransferType): How to transfer the parameters. FULL means the whole model parameters are sent.
                 DIFF means that only the difference is sent.
+            config_file_name (str): The config file name to write attributes into, the client api will read in this file.
         """
         LauncherExecutor.__init__(
             self,
@@ -96,29 +97,40 @@ class ClientAPILauncherExecutor(LauncherExecutor):
 
         self._params_exchange_format = params_exchange_format
         self._params_transfer_type = params_transfer_type
+        self._config_file_name = config_file_name
 
     def initialize(self, fl_ctx: FLContext) -> None:
         self.prepare_config_for_launch(fl_ctx)
         super().initialize(fl_ctx)
 
     def prepare_config_for_launch(self, fl_ctx: FLContext):
-        workspace = fl_ctx.get_engine().get_workspace()
-        app_dir = workspace.get_app_dir(fl_ctx.get_job_id())
-        config_file = os.path.join(app_dir, workspace.config_folder, CONFIG_DATA_EXCHANGE)
+        pipe_export_class, pipe_export_args = self.pipe.export(ExportMode.PEER)
+        task_exchange_attributes = {
+            ConfigKey.TRAIN_WITH_EVAL: self._train_with_evaluation,
+            ConfigKey.EXCHANGE_FORMAT: self._params_exchange_format,
+            ConfigKey.TRANSFER_TYPE: self._params_transfer_type,
+            ConfigKey.TRAIN_TASK_NAME: self._train_task_name,
+            ConfigKey.EVAL_TASK_NAME: self._evaluate_task_name,
+            ConfigKey.SUBMIT_MODEL_TASK_NAME: self._submit_model_task_name,
+            ConfigKey.PIPE_CHANNEL_NAME: self.get_pipe_channel_name(),
+            ConfigKey.PIPE: {
+                ConfigKey.CLASS_NAME: pipe_export_class,
+                ConfigKey.ARG: pipe_export_args,
+            },
+        }
 
-        # prepare config exchange for data exchanger
-        client_config = ClientConfig()
-        config_dict = client_config.config
-        config_dict[ConfigKey.TRAIN_WITH_EVAL] = self._train_with_evaluation
-        config_dict[ConfigKey.EXCHANGE_FORMAT] = self._params_exchange_format
-        config_dict[ConfigKey.TRANSFER_TYPE] = self._params_transfer_type
-        config_dict[ConfigKey.TRAIN_TASK_NAME] = self._train_task_name
-        config_dict[ConfigKey.EVAL_TASK_NAME] = self._evaluate_task_name
-        config_dict[ConfigKey.SUBMIT_MODEL_TASK_NAME] = self._submit_model_task_name
+        config_data = {
+            ConfigKey.TASK_EXCHANGE: task_exchange_attributes,
+            ConfigKey.SITE_NAME: fl_ctx.get_identity_name(),
+            ConfigKey.JOB_ID: fl_ctx.get_job_id(),
+        }
 
-        config_dict[ConfigKey.PIPE_CHANNEL_NAME] = self.pipe_channel_name
-        config_dict[ConfigKey.PIPE_CLASS] = Piper.get_external_pipe_class(self.pipe_id, fl_ctx)
-        config_dict[ConfigKey.PIPE_ARGS] = Piper.get_external_pipe_args(self.pipe_id, fl_ctx)
-        config_dict[ConfigKey.SITE_NAME] = fl_ctx.get_identity_name()
-        config_dict[ConfigKey.JOB_ID] = fl_ctx.get_job_id()
-        client_config.to_json(config_file)
+        config_file_path = self._get_external_config_file_path(fl_ctx)
+        write_config_to_file(config_data=config_data, config_file_path=config_file_path)
+
+    def _get_external_config_file_path(self, fl_ctx: FLContext):
+        engine = fl_ctx.get_engine()
+        workspace = engine.get_workspace()
+        app_config_directory = workspace.get_app_config_dir(fl_ctx.get_job_id())
+        config_file_path = os.path.join(app_config_directory, self._config_file_name)
+        return config_file_path

@@ -17,6 +17,7 @@ from nvflare.fuel.utils.import_utils import optional_import
 pytorch_lightning, ok = optional_import(module="pytorch_lightning")
 
 if ok:
+    from nvflare.apis.analytix import AnalyticsDataType as AnalyticsDataType
     from nvflare.app_common.abstract.fl_model import FLModel as FLModel
     from nvflare.app_common.abstract.fl_model import ParamsType as ParamsType
     from nvflare.app_opt.lightning import FLCallback as FLCallback
@@ -25,5 +26,6 @@ if ok:
     from nvflare.client import get_job_id as get_job_id
     from nvflare.client import get_site_name as get_site_name
     from nvflare.client import is_running as is_running
+    from nvflare.client import log as log
     from nvflare.client import receive as receive
     from nvflare.client import system_info as system_info

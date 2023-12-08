@@ -21,7 +21,7 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.app_common.widgets.streaming import create_analytic_dxo, send_analytic_dxo
+from nvflare.app_common.tracking.analytic_utils import create_analytic_dxo, send_analytic_dxo
 
 
 class CustomExecutor(Executor):
