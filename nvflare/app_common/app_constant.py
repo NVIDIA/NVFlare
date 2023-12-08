@@ -14,7 +14,6 @@
 
 
 class ExecutorTasks:
-
     TRAIN = "train"
     VALIDATE = "validate"
     CROSS_VALIDATION = "__cross_validation"
@@ -23,7 +22,6 @@ class ExecutorTasks:
 
 
 class AppConstants(object):
-
     CONFIG_PATH = "config_path"
     MODEL_NETWORK = "model_network"
     MULTI_GPU = "multi_gpu"
@@ -119,27 +117,25 @@ class AppConstants(object):
     SUBMIT_MODEL_NAME = "submit_model_name"
     VALIDATE_TYPE = "_validate_type"
 
+    CLIENT_UNKNOWN = "unknown"
+
 
 class EnvironmentKey(object):
-
     CHECKPOINT_DIR = "APP_CKPT_DIR"
     CHECKPOINT_FILE_NAME = "APP_CKPT"
 
 
 class DefaultCheckpointFileName(object):
-
     GLOBAL_MODEL = "FL_global_model.pt"
     BEST_GLOBAL_MODEL = "best_FL_global_model.pt"
 
 
 class ModelName(object):
-
     BEST_MODEL = "best_model"
     FINAL_MODEL = "final_model"
 
 
 class ModelFormat(object):
-
     PT_CHECKPOINT = "pt_checkpoint"
     TORCH_SCRIPT = "torch_script"
     PT_ONNX = "pt_onnx"
@@ -148,13 +144,11 @@ class ModelFormat(object):
 
 
 class ValidateType(object):
-
     BEFORE_TRAIN_VALIDATE = "before_train_validate"
     MODEL_VALIDATE = "model_validate"
 
 
 class AlgorithmConstants(object):
-
     SCAFFOLD_CTRL_DIFF = "scaffold_c_diff"
     SCAFFOLD_CTRL_GLOBAL = "scaffold_c_global"
     SCAFFOLD_CTRL_AGGREGATOR_ID = "scaffold_ctrl_aggregator"

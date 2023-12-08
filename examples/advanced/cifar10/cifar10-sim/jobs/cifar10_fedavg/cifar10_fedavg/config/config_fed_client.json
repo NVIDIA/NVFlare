@@ -23,7 +23,7 @@
     "components": [
         {
             "id": "cifar10-learner",
-            "path": "pt.learners.cifar10_model_learner.CIFAR10ModelLearner",
+            "path": "pt.learners.CIFAR10ModelLearner",
             "args": {
                 "train_idx_root": "{TRAIN_SPLIT_ROOT}",
                 "aggregation_epochs": "{AGGREGATION_EPOCHS}",
