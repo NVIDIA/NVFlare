@@ -384,7 +384,6 @@ class StatisticsController(Controller):
         for statistic in filtered_client_statistics:
             for client in self.client_statistics[statistic]:
                 for ds in self.client_statistics[statistic][client]:
-                    # client_dataset = f"{client}-{ds}"
                     for feature_name in self.client_statistics[statistic][client][ds]:
                         if feature_name not in result:
                             result[feature_name] = {}
@@ -409,7 +408,6 @@ class StatisticsController(Controller):
         precision = self.precision
         for statistic in filtered_global_statistics:
             for ds in self.global_statistics[statistic]:
-                # global_dataset = f"{StC.GLOBAL}-{ds}"
                 for feature_name in self.global_statistics[statistic][ds]:
                     if StC.GLOBAL not in result[feature_name][statistic]:
                         result[feature_name][statistic][StC.GLOBAL] = {}
@@ -423,7 +421,7 @@ class StatisticsController(Controller):
                         result[feature_name][statistic][StC.GLOBAL][ds] = buckets
                     else:
                         result[feature_name][statistic].update(
-                            {StC.GLOBAL: {ds: round(self.global_statistics[statistic][ds][feature_name], precision)} }
+                            {StC.GLOBAL: {ds: round(self.global_statistics[statistic][ds][feature_name], precision)}}
                         )
 
         return result
