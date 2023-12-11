@@ -359,7 +359,7 @@ with an overseer, server, two clients, and one admin client:
 
 .. code-block:: shell
 
-    $ nvflare poc prepare -n 2
+    $ nvflare poc --prepare -n 2
 
 For more details, see :ref:`poc_command`.
 
@@ -373,12 +373,12 @@ to start the server and client systems and an admin console:
 
 .. code-block::
 
-  nvflare poc start
+  nvflare poc --start
 
 To start the server and client systems without an admin console:
 
 .. code-block::
 
-  nvflare poc start -ex admin@nvidia.com
+  nvflare poc --start -ex admin@nvidia.com
 
 For more details, see :ref:`poc_command`.
