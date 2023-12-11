@@ -1,31 +1,14 @@
-# Example for Job-level authorization
+# Example of site authentication integration with keycloak
 
 # Overview
 
-The purpose of this example is to demonstrate following features of NVFlare,
+In this example, We demonstrate the NVFLARE's capability of supporting site-specific authentication, using KeyCloak integration as example.
 
-1. Run NVFlare in secure mode
-2. Demonstrate the ability to integrate with KeyCloak third-party user authentication for managing the NVFlare system. 
+NVFLARE is agnostic to the 3rd party authentication mechanism, each client can have its own authentication system, user can replace KeyCloak with LDAP or any other authentication systems.
 
-## System Requirements
+## System Requirements and Installation 
 
-1. Install Python and set up a Virtual Environment,
-```
-python3 -m venv nvflare-env
-source nvflare-env/bin/activate
-```
-2. Install NVFlare
-```
-pip install nvflare
-```
-3. The example is part of the NVFlare source code. The source code can be obtained like this,
-```
-git clone https://github.com/NVIDIA/NVFlare.git
-```
-4. TLS requires domain names. Please add the following line in the `/etc/hosts` file,
-```
-127.0.0.1	server1
-```
+For installation of NVFlare, please refer to: https://nvflare.readthedocs.io/en/main/getting_started.html
 
 ### Setup
 
@@ -84,7 +67,7 @@ At the prompt, enter the user email `myuser@example.com`, and then provide the p
 
 ### User authentication when running jobs
 
-With this system set up, the `aite_a` will require additional user authentication when submitting and running a job. `site_b` does not have this additional security requirement. Any admin user can submit and run the job.
+With this system set up, the `site_a` will require additional user authentication when submitting and running a job. `site_b` does not have this additional security requirement. Any admin user can submit and run the job.
 
 Let's choose the `hello-numpy-sag` job from the `hello-world` examples. For demonstrating purpose, let's change the `min_clients` in the job meta.json to 1.  
 
