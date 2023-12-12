@@ -31,20 +31,44 @@ Download and install the KeyCloak following the instruction guide from https://w
 * Add the client "myclient"
 * The KeyCLoak will be running at http://localhost:8080/
 
-### Set up Client side authentication requirement
+### Set up FL Client Job Authorization Requirement
 
 ```
 cp -r site/local/* /tmp/nvflare/poc/keycloak-site-authentication/prod_00/site_a/local/* 
 ```
-This will set up site_a with additional user security authentication to the KeyCloak.
+
+In the local/custom/resources.json config file, it contains the following additional security handler:
+
+```
+    {
+      "id": "security_handler",
+      "path": "keycloak_security_handler.CustomSecurityHandler"
+    }
+```
+
+The CustomSecurityHandler in the custom/keycloak_security_handler.py contains the logic to validate the admin user's KeyCloak access token when the admin user submits a job, or scheduler picks up an already submitted job from the admin user. If the access token is invalid, the job will not be authorized to run.
 
 ### Set up Admin user authentication
 
 ```
 cp -r admin/local/* /tmp/nvflare/poc/keycloak-site-authentication/prod_00/myuser@example.co/local/* 
 ```
-This will set up admin user myuser@example.com to acquire KeyCloak access_token when starting the admin tool.
 
+In the local/custom/resources.json config file, it contains the following admin event handler. the "orgs" arg provides a list of site names, and it's corresponding KeyCloak access_token URLs:
+
+```
+      {
+        "id": "auth",
+        "path": "admin_auth.AdminAuth",
+        "args": {
+          "orgs": {
+            "site-a": "http://localhost:8080/realms/myrealm/protocol/openid-connect/token"
+          }
+        }
+      }
+```
+
+The AdminAuth event handler in the custom/admin_auth.py has the logic to acquire the KeyCloak access tokens to each individual site. When the admin user submits a job, it will set the tokens in the FLContext.
 
 ### Starting NVFlare
 
@@ -65,15 +89,15 @@ cd /tmp/nvflare/poc/job-level-authorization/prod_00/myuser@example.com
 At the prompt, enter the user email `myuser@example.com`, and then provide the password to `site_a` KeyCloak.
 
 
-### User authentication when running jobs
+### Require authenticated admin user when running jobs
 
-With this system set up, the `site_a` will require additional user authentication when submitting and running a job. `site_b` does not have this additional security requirement. Any admin user can submit and run the job.
+With this system set up, the `site_a` will require only the authenticated admin user to be able to submit and run a job. `site_b` does not have this additional security requirement. Any admin user can submit and run the job.
 
 Let's choose the `hello-numpy-sag` job from the `hello-world` examples. For demonstrating purpose, let's change the `min_clients` in the job meta.json to 1.  
 
 #### Authenticated admin user
 
-* `myuser@example.com` corrected authenticated to `site_a` KeyCloak system. When he submitting the job, the `hello-numpy-sag` job is successfully running on both `site_a` and `site_b`.
+* `myuser@example.com` is successfully authenticated to `site_a` KeyCloak system. The `hello-numpy-sag` job is successfully submitted and run on both `site_a` and `site_b`.
 
 #### Un-authenticated admin user
 
