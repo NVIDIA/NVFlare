@@ -163,7 +163,7 @@ You've successfully built and run your first numpy federated learning system.
 You now have a decent grasp of the main FL concepts, and are ready to start exploring how NVIDIA FLARE can be applied to many other tasks.
 
 The full application for this exercise can be found in
-:github_nvflare_link:`examples/hello-numpy-sag <examples/hello-world/hello-numpy-sag>`,
+:github_nvflare_link:`examples/hello-world/hello-numpy-sag <examples/hello-world/hello-numpy-sag>`,
 with the client and server components implemented in the :github_nvflare_link:`nvflare/app-common/np <nvflare/app_common/np>` folder of the NVFlare code tree.
 
 Previous Versions of Hello Scatter and Gather
