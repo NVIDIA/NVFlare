@@ -23,8 +23,8 @@ from net import Net
 
 # (1) import nvflare client API
 import nvflare.client as flare
-from nvflare.client.tracking import MLflowWriter
 from nvflare.app_common.app_constant import ModelName
+from nvflare.client.tracking import MLflowWriter
 
 # (optional) set a fix place so we don't need to download everytime
 CIFAR10_ROOT = "/tmp/nvflare/data/cifar10"
