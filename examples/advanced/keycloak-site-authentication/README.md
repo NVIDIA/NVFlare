@@ -50,6 +50,14 @@ Download and install the KeyCloak following the instruction guide from https://w
 cp -r site/local/* /tmp/nvflare/poc/keycloak-site-authentication/prod_00/site_a/local/* 
 ```
 
+Save the KeyCloak public_key in the `/tmp/nvflare/poc/keycloak-site-authentication/prod_00/site_a/local/public_key.pem` file, with the following format:
+
+```
+-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAre3kQxqOfTJ7LLRwlpotw47goqSsuyFOg9Ihx5IXDMbO8HTGuGQcdDVJaYJQYphfhp2qdw+1o6qVN2yPBxwiBWju/XZQMPbCXRBu2bVDffWJVMoelLDbr3uY9hCgYgmB7qYpDdNOmxb2+xIlg/x0q+vrRRMtdd8SGicvjg0mQSEEF4a7QOSwuDnwBX8+bMOXfyB5qQJlakNVND1Bc+MjDENkHLtImVowX9XZcz8M6Ap9Eq1z2agl6lmFxTLtZroTE6IQS/dFYPVy4rZ1Zuy5cvs/3j+SYzlplH/iP3qZs8UiKrTJMmfIuLmDbP3hEAOsEmQ/M3lRxnE4wuGxvel5rwIDAQAB
+-----END PUBLIC KEY-----
+```
+
 In the local/custom/resources.json config file, it contains the following additional security handler:
 
 ```

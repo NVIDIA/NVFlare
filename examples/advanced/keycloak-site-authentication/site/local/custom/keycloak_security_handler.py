@@ -14,9 +14,8 @@
 
 from typing import Tuple
 
-import json
 import jwt
-import requests
+import os
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
@@ -33,14 +32,15 @@ class CustomSecurityHandler(FLComponent):
                 fl_ctx.set_prop(FLContextKey.AUTHORIZATION_RESULT, False, sticky=False)
                 fl_ctx.set_prop(FLContextKey.AUTHORIZATION_REASON, reason, sticky=False)
 
-    def _validate_token(self, token):
+    def _validate_token(self, token, fl_ctx: FLContext):
         try:
-            response = requests.get("http://localhost:8080/realms/myrealm")
-            public_key = "-----BEGIN PUBLIC KEY-----\n" + \
-                         json.loads(response.text).get("public_key") + \
-                         "\n-----END PUBLIC KEY-----"
+            workspace_root = fl_ctx.get_prop(FLContextKey.WORKSPACE_ROOT)
+            public_key_file = os.path.join(workspace_root, "local/public_key.pem")
+            with open(public_key_file, "r") as f:
+                public_key = f.read()
 
-            access_token_json = jwt.decode(token, public_key, options={"verify_signature": False})
+            access_token_json = jwt.decode(token, public_key, algorithms=["RS256"],
+                                           audience="account", options={"verify_signature": True})
             user_name = access_token_json.get("preferred_username")
             if user_name:
                 token_valid = True
@@ -61,7 +61,7 @@ class CustomSecurityHandler(FLComponent):
             site_name = fl_ctx.get_identity_name()
             site_auth_token = auth_tokens.get(site_name).split(":")[1]
 
-            if not self._validate_token(site_auth_token):
+            if not self._validate_token(site_auth_token, fl_ctx):
                 return False, f"Not authorized to execute command: {command}"
             else:
                 return True, ""
