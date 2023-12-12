@@ -137,8 +137,8 @@ Three commonly used types of client-side controlled workflows are provided:
 
 See :github_nvflare_link:`swarm learning <examples/advanced/swarm_learning>` and :github_nvflare_link:`client-controlled cyclic <examples/hello-world/step-by-step/cifar10/cyclic_ccwf>` for examples using these client-controlled workflows.
 
-MLFlow and WandB Experiment Tracking Support
-============================================
+MLFlow and Weights & Biases Experiment Tracking Support
+=======================================================
 We expand our experiment tracking support with MLFLow and Weights & Biases systems.
 The detailed documentation on these features can be found in :ref:`experiment_tracking`, and examples can be found at FL Experiment Tracking with
 :github_nvflare_link:`MLFlow <examples/advanced/experiment-tracking/mlflow>` and
@@ -357,7 +357,7 @@ POC Command Upgrade
 ===================
 The POC command has been upgraded in 2.4.0:
 
-- Remove "--" for action commands, change to subcommands
+- Remove ``--`` for action commands, change to subcommands
 - new ``-d`` docker and ``-he`` Homomorphic encryption options
 - ``nvflare poc prepare`` generates ``.nvflare/config.conf`` to store location of POC workspace, takes precedent over environment variable ``NVFLARE_POC_WORKSPACE``
 - In the previous version, the startup kits are located directly under default POC workspace at ``/tmp/nvflare/poc``. In the 2.4.0, the startup kit is now under ``/tmp/nvflare/poc/example_project/prod_00/`` to follow the production provision default structure.
@@ -423,3 +423,18 @@ One such use case is for secure peer-to-peer messaging, such as in the client-co
                 { site_name: reply_shareable }
         """
         pass
+
+Stats Result Format
+===================
+In :class:`StatisticsController<nvflare.app_common.workflows.statistics_controller.StatisticsController>`,
+the result dictionary format originally concatenated "site" and "dataset" to support visualization.
+In 2.4.0 this has now been changed so "site" and "dataset" have their own keys in the result dictionary.
+
+``result = {feature: {statistic: {site-dataset: value}}}``
+
+to
+
+``result =  feature: {statistic: {site: {dataset: value}}}}``
+
+To continue to support the visualization needs, the site-dataset concatenation logic has instead been moved to
+:class:`Visualization<nvflare.app_opt.statistics.visualization.statistics_visualization.Visualization>`.

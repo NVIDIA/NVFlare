@@ -4,16 +4,15 @@
 NVIDIA FLARE Overview
 #####################
 
-**NVIDIA FLARE**
-
-(NVIDIA Federated Learning Application Runtime Environment) is a domain-agnostic, open-source,
+**NVIDIA FLARE** (NVIDIA Federated Learning Application Runtime Environment) is a domain-agnostic, open-source,
 extensible SDK that allows researchers, data scientists and data engineers to adapt existing ML/DL and compute workflows to a federated paradigm.
 With the FLARE platform, developers can create a secure and privacy-preserving solution for decentralized data computing, facilitating distributed multi-party collaboration.
 
 Key Features
 ============
 
-**Federated Computing**
+Federated Computing
+-------------------
 
 At its core, FLARE serves as a federated computing framework, with applications such as Federated Learning and Federated Analytics built upon this foundation.
 Notably, it is agnostic to datasets, workloads, and domains. In contrast to centralized data lake solutions that necessitate copying data to a central location, FLARE brings computing capabilities directly to distributed datasets.
@@ -21,7 +20,8 @@ This approach ensures that data remains within the compute node, with only pre-a
 Moreover, FLARE is system agnostic, offering easy integration with various data processing frameworks through the implementation of the FLARE client.
 This client facilitates deployment in sub-processes, Docker containers, Kubernetes pods, HPC, or specialized systems.
 
-**Built for productivity**
+Built for productivity
+----------------------
 
 FLARE is designed for maximum productivity, providing a range of tools to enhance user experience and research efficiency at different stages of the development process:
 
@@ -35,7 +35,8 @@ FLARE is designed for maximum productivity, providing a range of tools to enhanc
 - **Cloud Deployment CLI:** Allows users to start and deploy FLARE on cloud service providers (AWS or Azure) with a single CLI command.
 - **ML Experiment Tracking Support:** Enables users to log to TensorBoard, MLFlow, and Weights & Biases for comprehensive experiment tracking.
 
-**Built for security & privacy**
+Built for security & privacy
+----------------------------
 
 FLARE prioritizes robust security and privacy preservation:
 
@@ -46,16 +47,19 @@ FLARE prioritizes robust security and privacy preservation:
 - **Audit Logs:** Provides audit logs for increased transparency and accountability.
 - **Federated Learning Algorithms:** Incorporates advanced algorithms for privacy preservation, including Differential Privacy, Homomorphic Encryption, and Multi-party Private Set Intersection (PSI).
 
-**Built for concurrency & scalability**
+Built for concurrency & scalability
+-----------------------------------
 
 FLARE is designed for optimal concurrency, supporting resource-based multi-job execution when the necessary resources are available. This concurrent run capability enhances the efficiency of job execution within the framework.
 Additionally, for setups involving devices across multiple regions, FLARE offers FL HUB (Hierarchical Unified Bridge) features. These features enable the establishment of a tiered federated learning system, enhancing flexibility and scalability in multi-region configurations.
 
-**Built for customization**
+Built for customization
+-----------------------
 
 FLARE is structured in layers, with each layer composed of customizable components. This modular design ensures that every layer is easily pluggable, allowing for seamless customization.
 
-**Rich examples repository**
+Rich examples repository
+------------------------
 
 FLARE provides a wealth of built-in implementations for various federated learning workflows, along with numerous examples, showcasing diverse algorithms. Examples include:
 
@@ -84,12 +88,14 @@ FLARE provides a wealth of built-in implementations for various federated learni
   - ML-to-FL FLARE Client API
   - Step-by-step progressive series
 
-**Built for integration**
+Built for integration
+---------------------
 
 FLARE offers multiple integration options with third-party systems, with the Flare Agent providing a seamless and straightforward approach.
 This allows FLARE to collaborate effortlessly with third-party systems, irrespective of the programming languages and technologies they are built upon.
 
-**Built for production**
+Built for production
+--------------------
 
 The FLARE SDK is designed for robust, production-scale deployment in real-world federated learning and computing scenarios.
 It has found applications in various industries, including healthcare, financial services, and self-driving cars.
@@ -104,7 +110,7 @@ Atop this foundation lie the building blocks for federated learning applications
 Adjacent to this central stack are tools facilitating experimentation and simulation with the FL Simulator and POC CLI, complemented by a set of tools designed for the deployment and management of production workflows.
 
 .. image:: resources/flare_overview.png
-    :height: 300px
+    :height: 500px
 
 Design Principles
 =================

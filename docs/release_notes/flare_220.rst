@@ -19,7 +19,7 @@ To accomplish these goals, a set of key new tools and features were developed, i
  - :ref:`preflight_check`
  - Site-policy management
  - Federated XGboost <https://github.com/NVIDIA/NVFlare/tree/main/examples/xgboost>
- - Federated Statistics <https://github.com/NVIDIA/NVFlare/tree/main/examples/federated_statistics>
+ - Federated Statistics <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/federated-statistics>
  - MONAI Integration <https://github.com/NVIDIA/NVFlare/tree/main/integration/monai>
 
 The sections below provide an overview of these features.  For more detailed documentation and usage information, refer to the :ref:`User Guide <user_guide>` and :ref:`Programming Guide <programming_guide>`.

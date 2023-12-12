@@ -232,7 +232,7 @@ Congratulations!
 You've successfully built and run your first federated learning system.
 
 The full source code for this exercise can be found in
-:github_nvflare_link:`examples/hello-pt <examples/hello-world/hello-pt/>`.
+:github_nvflare_link:`examples/hello-world/hello-pt <examples/hello-world/hello-pt/>`.
 
 Previous Versions of Hello PyTorch
 ----------------------------------
