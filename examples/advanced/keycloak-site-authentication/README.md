@@ -6,13 +6,26 @@ In this example, We demonstrate the NVFLARE's capability of supporting site-spec
 
 NVFLARE is agnostic to the 3rd party authentication mechanism, each client can have its own authentication system, user can replace KeyCloak with LDAP or any other authentication systems.
 
-## System Requirements and Installation 
+## Getting Started: Quick Start
 
-For installation of NVFlare, please refer to: https://nvflare.readthedocs.io/en/main/getting_started.html
+### Install NVFLARE
+
+```
+python3 -m pip install nvflare
+```
+
+Clone NVFLARE repo to get examples, switch main branch (latest stable branch)
+
+```
+git clone https://github.com/NVIDIA/NVFlare.git
+cd NVFlare
+git switch main
+```
 
 ### Setup
 
 ```
+cd examples/advanced/keycloak-site-authentication
 nvflare poc prepare -i project.yml -c site_a site_b
 ```
 
