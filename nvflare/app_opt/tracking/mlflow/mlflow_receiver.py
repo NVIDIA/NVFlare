@@ -75,7 +75,7 @@ class MLflowReceiver(AnalyticsReceiver):
         if events is None:
             events = ["fed." + ANALYTIC_EVENT_TYPE]
         super().__init__(events=events)
-        self.artifact_location = artifact_location
+        self.artifact_location = artifact_location if artifact_location is not None else "artifacts"
         self.fl_ctx = None
 
         self.kwargs = kwargs if kwargs else {}
