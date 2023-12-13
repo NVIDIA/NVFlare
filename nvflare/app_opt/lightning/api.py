@@ -44,7 +44,7 @@ def patch(trainer: pl.Trainer, restore_state: bool = True, load_state_dict_stric
         trainer: the PyTorch Lightning trainer.
         restore_state: whether to restore optimizer and learning rate scheduler states. Defaults to `True`.
         load_state_dict_strict: exposes `strict` argument of `torch.nn.Module.load_state_dict()` used load the received model. Defaults to `True`.
-        See https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.load_state_dict for details.
+            See https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.load_state_dict for details.
     """
     fl_callback = FLCallback(rank=trainer.global_rank, load_state_dict_strict=load_state_dict_strict)
     callbacks = trainer.callbacks
@@ -68,7 +68,7 @@ class FLCallback(Callback):
         Args:
             rank: global rank of the PyTorch Lightning trainer.
             load_state_dict_strict: exposes `strict` argument of `torch.nn.Module.load_state_dict()` used load the received model. Defaults to `True`.
-            See https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.load_state_dict for details.
+                See https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.load_state_dict for details.
         """
         super(FLCallback, self).__init__()
         init(rank=str(rank))
