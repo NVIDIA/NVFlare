@@ -180,6 +180,7 @@ def _prepare_jobs_dir(jobs_dir: str, workspace: str, config_packages: Optional[T
 
 
 def get_prod_dir(workspace, project_name: str = DEFAULT_PROJECT_NAME):
+    project_name = project_name if project_name else DEFAULT_PROJECT_NAME
     prod_dir = os.path.join(workspace, project_name, "prod_00")
     return prod_dir
 
@@ -417,7 +418,6 @@ def save_startup_kit_dir_config(workspace, project_name):
         config_str = hocon_to_string(ConfigFormat.PYHOCON, config)
     else:
         config_str = conf
-
     with open(dst, "w") as file:
         file.write(f"{config_str}\n")
 
@@ -458,7 +458,7 @@ def _prepare_poc(
     result = False
     if os.path.exists(workspace):
         answer = input(
-            f"This will delete poc folder in {workspace} directory and create a new one. Is it OK to proceed? (y/N) "
+            f"This will delete poc workspace directory: '{workspace}' and create a new one. Is it OK to proceed? (y/N) "
         )
         if answer.strip().upper() == "Y":
             from pathlib import Path
@@ -485,8 +485,9 @@ def _prepare_poc(
         )
         result = True
 
-    project_name = project_config.get("name") if project_config else None
-    save_startup_kit_dir_config(workspace, project_name)
+    if result:
+        project_name = project_config.get("name") if project_config else DEFAULT_PROJECT_NAME
+        save_startup_kit_dir_config(workspace, project_name)
     return result
 
 
