@@ -48,6 +48,8 @@ class AdminAuth(EventHandler):
             token = json.loads(response.text).get("access_token")
         except:
             token = None
+        # if the customer needs to have the behavior not allowing the admin user to even start the admin tool in
+        # case failed to acquire the access_token, it can raise an exception here.
         return f"{user_name}:{token}"
 
     def _authenticate_user_to_all_sites(self, ctx: EventContext):
