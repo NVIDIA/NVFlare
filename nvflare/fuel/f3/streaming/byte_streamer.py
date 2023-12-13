@@ -177,7 +177,10 @@ class ByteStreamer:
         else:
             payload = wrap_view(task.buffer)[0 : task.buffer_size]
 
-        message = Message(task.headers, payload)
+        message = Message(None, payload)
+
+        if task.headers:
+            message.add_headers(task.headers)
 
         message.add_headers(
             {
@@ -220,7 +223,11 @@ class ByteStreamer:
                 task.stream_future.set_exception(error)
 
             if notify:
-                message = Message(task.headers)
+                message = Message(None, None)
+
+                if task.headers:
+                    message.add_headers(task.headers)
+
                 message.add_headers(
                     {
                         StreamHeaderKey.STREAM_ID: task.sid,
