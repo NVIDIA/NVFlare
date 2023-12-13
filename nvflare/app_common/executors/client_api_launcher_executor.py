@@ -29,7 +29,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         launcher_id: Optional[str] = None,
         launch_timeout: Optional[float] = None,
         task_wait_timeout: Optional[float] = None,
-        last_result_transfer_timeout: float = 5.0,
+        last_result_transfer_timeout: float = 300.0,
         peer_read_timeout: Optional[float] = None,
         monitor_interval: float = 0.01,
         read_interval: float = 0.001,

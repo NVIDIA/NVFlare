@@ -195,7 +195,7 @@ class FilePipe(Pipe):
             elif os.path.isdir(tmp_path):
                 shutil.rmtree(tmp_path)
             else:
-                raise RuntimeError(f"cannot removed unsupported path: '{tmp_path}'")
+                raise RuntimeError(f"cannot remove unsupported path: '{tmp_path}'")
             msg.data = data
             msg.sent_time = create_time
             msg.received_time = time.time()
