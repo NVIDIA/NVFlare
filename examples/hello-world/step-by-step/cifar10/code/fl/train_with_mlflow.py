@@ -88,7 +88,7 @@ def main():
 
     # (2) initialize NVFlare client API
     flare.init()
-    writer = MLflowWriter()
+    mlflow = MLflowWriter()
 
     # (3) run continously when launch_once=true
     while flare.is_running():
@@ -97,6 +97,12 @@ def main():
         input_model = flare.receive()
         client_id = flare.system_info().get("site_name", None)
 
+        # Based on different "task" we will do different things
+        # for "train" task (flare.is_train()) we use the received model to do training
+        # and send back updated model
+        # for "evaluate" task (flare.is_evaluate()) we use the received model to do evaluation
+        # and send back the evaluation metrics
+        # for "submit_model" task (flare.is_submit_model()) we just need to send back the local model
         # (5) performing train task on received model
         if flare.is_train():
             print(f"({client_id}) round={input_model.current_round}/{input_model.total_rounds-1}")
@@ -132,7 +138,7 @@ def main():
                     running_loss += loss.item()
                     if i % 2000 == 1999:  # print every 2000 mini-batches
                         print(f"({client_id}) [{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
-                        writer.log_metric("loss", running_loss, i)
+                        mlflow.log_metric("loss", running_loss / 2000, i)
                         running_loss = 0.0
 
             print(f"({client_id}) Finished Training")
