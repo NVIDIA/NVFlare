@@ -53,7 +53,7 @@ This command will run the same ``hello-numpy-sag`` app on the server and 8 clien
 
 .. code-block:: python
 
-    nvflare simulator NVFlare/examples/hello-numpy-sag/app -w /tmp/nvflare/workspace_folder/ -n 8 -t 1
+    nvflare simulator NVFlare/examples/hello-world/hello-numpy-sag/jobs/hello-numpy-sag -w /tmp/nvflare/workspace_folder/ -n 8 -t 1
 
 .. raw:: html
 
@@ -749,7 +749,7 @@ This command will run the job following the meta.json in the job. The executing 
 
 .. code-block:: python
 
-    nvflare simulator NVFlare/examples/hello-numpy-sag -w /tmp/nvflare/workspace_folder/ -c client0,client1,client2,client3 -t 1
+    nvflare simulator NVFlare/examples/hello-world/hello-numpy-sag/jobs/hello-numpy-sag -w /tmp/nvflare/workspace_folder/ -c client0,client1,client2,client3 -t 1
 
 Note that the ``-n`` option is used to specify the number of clients like in the previous section above, but it is checked only if the ``-c`` option is not used.
 The with the ``-n`` option, clients are automatically created up to the number provided after ``-n``, and they are named site-1, site-2, site-3, etc.
@@ -764,7 +764,7 @@ in meta.json to run.
 
 .. code-block:: python
 
-    nvflare simulator NVFlare/examples/hello-numpy-sag -w /tmp/nvflare/workspace_folder/ -t 1
+    nvflare simulator NVFlare/examples/hello-world/hello-numpy-sag/jobs/hello-numpy-sag -w /tmp/nvflare/workspace_folder/ -t 1
 
 
 .. note::

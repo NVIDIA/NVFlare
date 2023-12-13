@@ -30,16 +30,6 @@
             }
         },
         {
-            "id": "shareable_generator",
-            "name": "FullModelShareableGenerator",
-            "args": {}
-        },
-        {
-            "id": "aggregator",
-            "name": "InTimeAccumulateWeightedAggregator",
-            "args": {}
-        },
-        {
             "id": "model_selector",
             "name": "IntimeModelSelector",
             "args": {}
@@ -59,18 +49,12 @@
     ],
     "workflows": [
         {
-            "id": "scatter_gather_ctl",
-            "name": "ScatterAndGather",
+            "id": "fedavg_ctl",
+            "name": "FedAvg",
             "args": {
                 "min_clients": "{min_clients}",
                 "num_rounds": "{num_rounds}",
-                "start_round": 0,
-                "wait_time_after_min_received": 10,
-                "aggregator_id": "aggregator",
-                "persistor_id": "persistor",
-                "shareable_generator_id": "shareable_generator",
-                "train_task_name": "train",
-                "train_timeout": 0
+                "persistor_id": "persistor"
             }
         },
         {

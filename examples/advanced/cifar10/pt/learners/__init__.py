@@ -12,8 +12,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-class ExchangeFormat:
-    RAW = "raw"
-    PYTORCH = "pytorch"
-    NUMPY = "numpy"
+from .cifar10_model_learner import CIFAR10ModelLearner
+from .cifar10_scaffold_model_learner import CIFAR10ScaffoldModelLearner

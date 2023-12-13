@@ -19,7 +19,9 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import model_learnable_to_dxo
 from nvflare.app_common.abstract.model_locator import ModelLocator
+from nvflare.app_opt.pt.decomposers import TensorDecomposer
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+from nvflare.fuel.utils import fobs
 
 
 class PTFileModelLocator(ModelLocator):
@@ -47,6 +49,7 @@ class PTFileModelLocator(ModelLocator):
             raise ValueError(
                 f"pt_persistor_id component must be PTFileModelPersistor. " f"But got: {type(self.model_persistor)}"
             )
+        fobs.register(TensorDecomposer)
 
     def get_model_names(self, fl_ctx: FLContext) -> List[str]:
         """Returns the list of model names that should be included from server in cross site validation.add().

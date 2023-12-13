@@ -32,8 +32,10 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.learner_spec import Learner
 from nvflare.app_common.app_constant import AppConstants, ModelName, ValidateType
 from nvflare.app_opt.pt.fedproxloss import PTFedProxLoss
+from nvflare.fuel.utils.deprecated import deprecated
 
 
+@deprecated("Please use 'CIFAR10ModelLearner'")
 class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
     def __init__(
         self,

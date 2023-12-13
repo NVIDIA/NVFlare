@@ -13,10 +13,10 @@
 # limitations under the License.
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.data_exchange.constants import ExchangeFormat
 from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
 from nvflare.app_opt.pt.decomposers import TensorDecomposer
 from nvflare.app_opt.pt.params_converter import NumpyToPTParamsConverter, PTToNumpyParamsConverter
+from nvflare.client.config import ExchangeFormat
 from nvflare.fuel.utils import fobs
 
 

@@ -74,6 +74,7 @@ class FlareAgent:
         task_channel_name=PipeChannelName.TASK,
         metric_channel_name=PipeChannelName.METRIC,
         close_pipe: bool = True,
+        close_metric_pipe: bool = True,
     ):
         """Constructor of Flare Agent. The agent is responsible for communicating with the Flare Client Job cell (CJ)
         to get task and to submit task result.
@@ -115,6 +116,7 @@ class FlareAgent:
         self.task_lock = threading.Lock()
         self.asked_to_stop = False
         self._close_pipe = close_pipe
+        self._close_metric_pipe = close_metric_pipe
 
     def start(self):
         """Start the agent. This method must be called to enable CJ/Agent communication.
@@ -148,7 +150,7 @@ class FlareAgent:
         self.asked_to_stop = True
         self.pipe_handler.stop(self._close_pipe)
         if self.metric_pipe_handler:
-            self.metric_pipe_handler.stop(self._close_pipe)
+            self.metric_pipe_handler.stop(self._close_metric_pipe)
 
     def shareable_to_task_data(self, shareable: Shareable):
         """Convert the Shareable object received from the TaskExchanger to an app-friendly format.
@@ -287,7 +289,7 @@ class FlareAgent:
         reply = Message.new_reply(topic=current_task.task_name, req_msg_id=current_task.msg_id, data=result)
         return self.pipe_handler.send_to_peer(reply, self.submit_result_timeout)
 
-    def log_metric(self, record: DXO):
+    def log(self, record: DXO):
         if not self.metric_pipe_handler:
             raise RuntimeError("metric pipe is not available")
 

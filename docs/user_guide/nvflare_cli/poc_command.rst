@@ -13,6 +13,7 @@ Syntax and Usage
 =================
 
 The POC command has been reorgaznied in version 2.4 to have the subcommands ``prepare``, ``prepare-jobs-dir``, ``start``, ``stop``, and ``clean``.
+
 .. code-block:: none
 
   nvflare poc -h

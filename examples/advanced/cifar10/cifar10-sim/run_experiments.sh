@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-export PYTHONPATH=${PWD}/..
+export PYTHONPATH=${PYTHONPATH}:${PWD}/..
 
 # download dataset
 ./prepare_data.sh

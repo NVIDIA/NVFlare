@@ -17,7 +17,7 @@ from inspect import signature
 
 from nvflare.app_common.abstract.fl_model import FLModel
 
-from .api import _get_model_registry, is_train
+from .api import get_model_registry, is_train
 
 
 def _replace_func_args(func, kwargs, model: FLModel):
@@ -33,7 +33,7 @@ def train(
     def decorator(train_fn):
         @functools.wraps(train_fn)
         def wrapper(*args, **kwargs):
-            model_registry = _get_model_registry()
+            model_registry = get_model_registry()
             input_model = model_registry.get_model()
 
             # Replace func arguments
@@ -68,7 +68,7 @@ def evaluate(
     def decorator(eval_fn):
         @functools.wraps(eval_fn)
         def wrapper(*args, **kwargs):
-            model_registry = _get_model_registry()
+            model_registry = get_model_registry()
             input_model = model_registry.get_model()
 
             _replace_func_args(eval_fn, kwargs, input_model)

@@ -193,3 +193,23 @@ class FLModelUtils:
     @staticmethod
     def get_configs(model: FLModel) -> Optional[dict]:
         return FLModelUtils.get_meta_prop(model, MetaKey.CONFIGS)
+
+    @staticmethod
+    def update_model(model: FLModel, model_update: FLModel, replace_meta: bool = True) -> FLModel:
+        if model.params_type != ParamsType.FULL:
+            raise RuntimeError(
+                f"params_type {model_update.params_type} of `model` not supported! Expected `ParamsType.FULL`."
+            )
+
+        if replace_meta:
+            model.meta = model_update.meta
+        else:
+            model.meta.update(model_update.meta)
+        if model_update.params_type == ParamsType.FULL:
+            model.params = model_update.params
+        elif model_update.params_type == ParamsType.DIFF:
+            for v_name, v_value in model_update.params.items():
+                model.params[v_name] = model.params[v_name] + v_value
+        else:
+            raise RuntimeError(f"params_type {model_update.params_type} of `model_update` not supported!")
+        return model

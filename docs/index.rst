@@ -8,13 +8,12 @@ NVIDIA FLARE
 
    flare_overview
    whats_new
-   key_features
    getting_started
    example_applications_algorithms
    real_world_fl
    user_guide
-   best_practices
    programming_guide
+   best_practices
    faq
    publications_and_talks
    contributing
