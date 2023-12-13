@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import getpass
+import json
+
 import requests
 
 from nvflare.fuel.hci.client.event import EventContext, EventHandler, EventPropKey, EventType
@@ -28,17 +29,20 @@ class AdminAuth(EventHandler):
         self.passwords = {}
 
     def _get_passwords_to_all_sites(self):
+        # This example asks the admin user to type in the password to each org.
         for org_name, _ in self.orgs.items():
-            password = getpass.getpass(f'Password to {org_name}:')
+            password = getpass.getpass(f"Password to {org_name}:")
             self.passwords[org_name] = password
 
     def _auth_org(self, user_name: str, org_name: str, endpoint: str) -> str:
         try:
+            # The access token query depending on the KeyCloak user and client set up.
+            # We set up the user using the same admin user name for demonstrating.
             payload = {
-                'client_id': 'myclient',
-                'username': user_name,
-                'password': self.passwords[org_name],
-                'grant_type': 'password'
+                "client_id": "myclient",
+                "username": user_name,
+                "password": self.passwords[org_name],
+                "grant_type": "password",
             }
             response = requests.post(endpoint, data=payload)
             token = json.loads(response.text).get("access_token")

@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from typing import Tuple
 
 import jwt
-import os
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
@@ -39,8 +39,13 @@ class CustomSecurityHandler(FLComponent):
             with open(public_key_file, "r") as f:
                 public_key = f.read()
 
-            access_token_json = jwt.decode(token, public_key, algorithms=["RS256"],
-                                           audience="account", options={"verify_signature": True})
+            # This JWT decode is depending on the KeyCloak set up, which uses the proper algorithm and audience for
+            # the access token decode.
+            access_token_json = jwt.decode(
+                token, public_key, algorithms=["RS256"], audience="account", options={"verify_signature": True}
+            )
+            # access_token_json contains more information regarding the access token. The sample code here
+            # only extracts the "preferred_username" for demonstrating purpose to indicate token valid or not.
             user_name = access_token_json.get("preferred_username")
             if user_name:
                 token_valid = True
