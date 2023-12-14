@@ -38,6 +38,8 @@ All the startup kits will be generated in this folder,
 
 Download and install the KeyCloak following the instruction guide from https://www.keycloak.org/getting-started/getting-started-zip. Key steps for the installation:
 
+<!-- markdown-link-check-disable -->
+
 * Start the KeyCLoak by running "bin/kc.sh start-dev"
 * Set up the realm called "myrealm"
 * Setup the user "myuser@example.com"
@@ -127,4 +129,4 @@ Let's choose the `hello-numpy-sag` job from the `hello-world` examples. For demo
 * The job can successfully run on `site-b`.
 * `list_jobs -d JOB_ID` command will show "job_deploy_detail" information of this job.
 
-
+<!-- markdown-link-check-enable -->
