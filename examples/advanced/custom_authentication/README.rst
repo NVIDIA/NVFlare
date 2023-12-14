@@ -1,4 +1,4 @@
-Example for Federated Policies
+Example of Custom Client Registration Authentication
 ==============================
 
 
@@ -79,4 +79,4 @@ Site_b
 ____
     cd /tmp/nvflare/poc/custom_authentication/prod_00/site_a
     ./startup/start.sh
-* site_b is NOT able to start and register to the server. It's blocked by the ServerCustomSecurityHandler logic.
+* site_b is NOT able to start and register to the server. It's blocked by the ServerCustomSecurityHandler logic during the client registration.
