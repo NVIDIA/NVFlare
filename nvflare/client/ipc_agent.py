@@ -18,7 +18,8 @@ import time
 import traceback
 from typing import Union
 
-from nvflare.client import common_decomposers, defs
+from nvflare.app_common.decomposers import numpy_decomposers
+from nvflare.client import defs
 from nvflare.fuel.f3.cellnet.cell import Cell, Message
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
@@ -108,7 +109,7 @@ class IPCAgent(defs.FlareAgent):
             topic="*",
             cb=self._msg_received,
         )
-        common_decomposers.register()
+        numpy_decomposers.register()
 
     def start(self):
         """Start the agent. This method must be called to enable CJ/Agent communication.

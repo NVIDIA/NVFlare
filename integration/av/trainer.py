@@ -43,7 +43,7 @@ def main():
         workspace_dir=args.workspace,
         secure_mode=True,
         submit_result_timeout=2.0,
-        flare_site_heartbeat_timeout=120.0,
+        flare_site_heartbeat_timeout=None,  # waiting forever
     )
 
     snapshot_file_name = f"{args.site_name}_{args.agent_id}_snapshot.dat"
