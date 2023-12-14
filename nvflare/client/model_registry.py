@@ -67,8 +67,10 @@ class ModelRegistry(TaskRegistry):
                         model.params_type = ParamsType.DIFF
                     except Exception as e:
                         raise RuntimeError(f"params diff function failed: {e}")
-            elif model.metrics is None:
-                raise RuntimeError("the model to send does not have either params or metrics")
+
+        if model.params is None and model.metrics is None:
+            raise RuntimeError("the model to send does not have either params or metrics")
+
         self.submit_task(model)
 
     def clear(self):
