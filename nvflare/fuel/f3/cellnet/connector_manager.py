@@ -128,9 +128,9 @@ class ConnectorManager:
         if not self.adhoc_allowed:
             return False
 
-        if c1.root == c2.root:
-            # same family
-            return False
+        # if c1.root == c2.root:
+        #     # same family
+        #     return False
 
         # we only allow gen2 (or above) cells to directly connect
         # if c1.gen >= 2 and c2.gen >= 2:

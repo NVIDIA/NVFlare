@@ -29,6 +29,9 @@ from nvflare.fuel.f3.cellnet.cell import Cell, Message, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.cell import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.cell import new_message
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
+from nvflare.security.logging import secure_format_traceback
+
+_SHORT_SLEEP_TIME = 0.2
 
 
 class _TaskContext:
@@ -51,30 +54,38 @@ class IPCExchanger(Executor):
     def __init__(
         self,
         send_task_timeout=5.0,
-        agent_ready_timeout=60.0,
-        agent_heartbeat_timeout=600.0,
-        agent_is_child=False,
+        resend_task_interval=2.0,
+        agent_connection_timeout=60.0,
+        agent_heartbeat_timeout=None,
+        agent_heartbeat_interval=5.0,
+        agent_ack_timeout=5.0,
+        agent_id=None,
     ):
         """Constructor of IPCExchanger
 
         Args:
             send_task_timeout: when sending task to Agent, how long to wait for response
-            agent_ready_timeout: how long to wait for the agent to be connected
-            agent_heartbeat_timeout: max time allowed to miss heartbeats from the agent
-            agent_is_child: whether the agent will be a child cell.
+            resend_task_interval: when failed to send task to agent, how often to resend
+            agent_heartbeat_timeout: time allowed to miss heartbeat ack from agent before stopping
+            agent_connection_timeout: time allowed to miss heartbeat ack from agent for considering it disconnected
+            agent_heartbeat_interval: how often to send heartbeats to the agent
+            agent_ack_timeout: how long to wait for agent ack (for heartbeat and bye messages)
+            agent_id: the unique ID of the agent. If not specified, will get it from job's meta
         """
         Executor.__init__(self)
         self.flare_agent_fqcn = None
-        self.agent_ready_waiter = threading.Event()
-        self.agent_ready_timeout = agent_ready_timeout
+        self.agent_ack_timeout = agent_ack_timeout
+        self.agent_heartbeat_interval = agent_heartbeat_interval
         self.agent_heartbeat_timeout = agent_heartbeat_timeout
+        self.agent_connection_timeout = agent_connection_timeout
         self.send_task_timeout = send_task_timeout
-        self.agent_is_child = agent_is_child
-        self.internal_listener_url = None
+        self.resend_task_interval = resend_task_interval
+        self.agent_id = agent_id
         self.last_agent_ack_time = time.time()
         self.engine = None
         self.cell = None
         self.is_done = False
+        self.is_connected = False
         self.task_ctx = None
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
@@ -89,25 +100,19 @@ class IPCExchanger(Executor):
             )
 
             # get meta
-            meta = fl_ctx.get_prop(FLContextKey.JOB_META)
-            assert isinstance(meta, dict)
-            agent_id = meta.get(defs.JOB_META_KEY_AGENT_ID)
-            if not agent_id:
-                self.system_panic(reason=f"missing {defs.JOB_META_KEY_AGENT_ID} from job meta", fl_ctx=fl_ctx)
-                return
+            if not self.agent_id:
+                meta = fl_ctx.get_prop(FLContextKey.JOB_META)
+                assert isinstance(meta, dict)
+                agent_id = meta.get(defs.JOB_META_KEY_AGENT_ID)
+                if not agent_id:
+                    self.system_panic(reason=f"missing {defs.JOB_META_KEY_AGENT_ID} from job meta", fl_ctx=fl_ctx)
+                    return
+                self.agent_id = agent_id
 
             client_name = fl_ctx.get_identity_name()
-            self.flare_agent_fqcn = defs.agent_site_fqcn(client_name, agent_id)
-
-            if self.agent_is_child:
-                job_id = fl_ctx.get_job_id()
-                self.flare_agent_fqcn = defs.agent_site_fqcn(client_name, agent_id, job_id)
-                self.cell.make_internal_listener()
-                self.internal_listener_url = self.cell.get_internal_listener_url()
-                self.logger.info(f"URL for Agent: {self.internal_listener_url}")
-
+            self.flare_agent_fqcn = defs.agent_site_fqcn(client_name, self.agent_id)
             self.log_info(fl_ctx, f"Flare Agent FQCN: {self.flare_agent_fqcn}")
-            t = threading.Thread(target=self._maintain, daemon=True)
+            t = threading.Thread(target=self._monitor, daemon=True)
             t.start()
         elif event_type == EventType.END_RUN:
             self.is_done = True
@@ -122,96 +127,79 @@ class IPCExchanger(Executor):
             target=self.flare_agent_fqcn,
             request=new_message(),
             optional=True,
-            timeout=2.0,
+            timeout=self.agent_ack_timeout,
         )
         if reply:
             rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
             if rc != CellReturnCode.OK:
                 self.logger.warning(f"return code from agent {self.flare_agent_fqcn} for bye: {rc}")
 
-    def _maintain(self):
+    def _monitor(self):
         # try to connect the flare agent
         self.logger.info(f"waiting for flare agent {self.flare_agent_fqcn} ...")
         assert isinstance(self.cell, Cell)
-        start_time = time.time()
-        while not self.is_done:
-            self.logger.info(f"ping {self.flare_agent_fqcn}")
-            reply = self.cell.send_request(
-                channel=defs.CHANNEL,
-                topic=defs.TOPIC_HELLO,
-                target=self.flare_agent_fqcn,
-                request=new_message(),
-                timeout=2.0,
-                optional=True,
-            )
 
-            rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
-            if rc == CellReturnCode.OK:
-                self.logger.info(f"connected to agent {self.flare_agent_fqcn}")
-                self.agent_ready_waiter.set()
-                break
-
-            self.logger.info(f"get reply: {reply.headers}")
-            if time.time() - start_time > self.agent_ready_timeout:
-                # cannot connect to agent!
-                with self.engine.new_context() as fl_ctx:
-                    self.system_panic(
-                        reason=f"cannot connect to agent {self.flare_agent_fqcn} after {self.agent_ready_timeout} secs",
-                        fl_ctx=fl_ctx,
-                    )
-                self.is_done = True
-                return
-            time.sleep(2.0)
-
-        # agent is now connected - heartbeats
         last_hb_time = 0
-        hb_interval = 10.0
         while True:
             if self.is_done:
                 return
 
-            if time.time() - last_hb_time > hb_interval:
+            if time.time() - last_hb_time > self.agent_heartbeat_interval:
                 reply = self.cell.send_request(
                     channel=defs.CHANNEL,
                     topic=defs.TOPIC_HEARTBEAT,
                     target=self.flare_agent_fqcn,
                     request=new_message(),
-                    timeout=1.5,
+                    timeout=self.agent_ack_timeout,
+                    optional=True,
                 )
                 last_hb_time = time.time()
                 rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
                 if rc == CellReturnCode.OK:
-                    self.last_agent_ack_time = time.time()
+                    self.last_agent_ack_time = last_hb_time
+                    if not self.is_connected:
+                        self.logger.info(f"agent {self.flare_agent_fqcn} connected")
+                        self.is_connected = True
+                else:
+                    since_last_ack = last_hb_time - self.last_agent_ack_time
+                    if since_last_ack > self.agent_connection_timeout:
+                        if self.is_connected:
+                            self.logger.warning(
+                                f"agent {self.flare_agent_fqcn} disconnected: "
+                                f"no heartbeat for {self.agent_connection_timeout} secs"
+                            )
+                            self.is_connected = False
 
-            if time.time() - self.last_agent_ack_time > self.agent_heartbeat_timeout:
-                with self.engine.new_context() as fl_ctx:
-                    self.system_panic(
-                        reason=f"agent dead: no heartbeat for {self.agent_heartbeat_timeout} secs",
-                        fl_ctx=fl_ctx,
-                    )
-                self.is_done = True
-                return
+                    if self.agent_heartbeat_timeout and since_last_ack > self.agent_heartbeat_timeout:
+                        self.is_done = True
+                        with self.engine.new_context() as fl_ctx:
+                            self.system_panic(
+                                f"agent {self.flare_agent_fqcn} is dead: "
+                                f"no heartbeat for {self.agent_heartbeat_timeout} secs",
+                                fl_ctx=fl_ctx,
+                            )
+                        return
 
             # sleep only small amount of time, so we can check other conditions frequently
-            time.sleep(0.2)
+            time.sleep(_SHORT_SLEEP_TIME)
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        # wait for flare agent
-        while True:
-            if self.is_done or abort_signal.triggered:
-                return make_reply(ReturnCode.TASK_ABORTED)
-
-            # wait for agent to be ready
-            # we only wait for short time, so we could check other conditions (is_done, abort_signal)
-            if self.agent_ready_waiter.wait(0.5):
-                break
-
         task_id = shareable.get_header(key=FLContextKey.TASK_ID)
         current_task = self.task_ctx
         if current_task:
             # still working on previous task!
             self.log_error(fl_ctx, f"got new task {task_name=} {task_id=} while still working on {current_task}")
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
+
+        # wait for flare agent
+        while True:
+            if self.is_done or abort_signal.triggered:
+                return make_reply(ReturnCode.TASK_ABORTED)
+
+            if self.is_connected:
+                break
+            else:
+                time.sleep(_SHORT_SLEEP_TIME)
 
         self.task_ctx = _TaskContext(task_name, task_id, fl_ctx)
         result = self._do_execute(task_name, shareable, fl_ctx, abort_signal)
@@ -224,6 +212,8 @@ class IPCExchanger(Executor):
         task_name = task_ctx.task_name
         task_id = task_ctx.task_id
         task_ctx.send_rc = ReturnCode.OK
+        last_send_time = 0
+
         while True:
             if self.is_done or abort_signal.triggered:
                 self.log_info(fl_ctx, "task aborted - ask agent to abort the task")
@@ -239,38 +229,38 @@ class IPCExchanger(Executor):
                 # this could happen only when we thought the previous send didn't succeed, but it actually did!
                 return
 
-            self.log_info(fl_ctx, f"try to send task to {self.flare_agent_fqcn}")
-            start = time.time()
-            reply = self.cell.send_request(
-                channel=defs.CHANNEL,
-                topic=defs.TOPIC_GET_TASK,
-                request=msg,
-                target=self.flare_agent_fqcn,
-                timeout=self.send_task_timeout,
-            )
-
-            rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
-            if rc == CellReturnCode.OK:
-                self.log_info(fl_ctx, f"Sent task to {self.flare_agent_fqcn} in {time.time() - start} secs")
-                return
-            elif rc == CellReturnCode.INVALID_REQUEST:
-                self.log_error(fl_ctx, f"Task rejected by {self.flare_agent_fqcn}: {rc}")
-                task_ctx.send_rc = ReturnCode.BAD_REQUEST_DATA
-                return
-            else:
-                self.log_error(fl_ctx, f"Failed to send task to {self.flare_agent_fqcn}: {rc}. Will keep trying.")
-            time.sleep(2.0)
+            if self.is_connected and time.time() - last_send_time > self.resend_task_interval:
+                self.log_info(fl_ctx, f"try to send task to {self.flare_agent_fqcn}")
+                start = time.time()
+                reply = self.cell.send_request(
+                    channel=defs.CHANNEL,
+                    topic=defs.TOPIC_GET_TASK,
+                    request=msg,
+                    target=self.flare_agent_fqcn,
+                    timeout=self.send_task_timeout,
+                )
+                last_send_time = time.time()
+                rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
+                if rc == CellReturnCode.OK:
+                    self.log_info(fl_ctx, f"Sent task to {self.flare_agent_fqcn} in {time.time() - start} secs")
+                    return
+                elif rc == CellReturnCode.INVALID_REQUEST:
+                    self.log_error(fl_ctx, f"Task rejected by {self.flare_agent_fqcn}: {rc}")
+                    task_ctx.send_rc = ReturnCode.BAD_REQUEST_DATA
+                    return
+                else:
+                    self.log_error(
+                        fl_ctx,
+                        f"Failed to send task to {self.flare_agent_fqcn}: {rc}. "
+                        "Will retry in {self.resend_task_interval} secs",
+                    )
+            time.sleep(_SHORT_SLEEP_TIME)
 
     def _do_execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         try:
             dxo = from_shareable(shareable)
         except:
-            self.log_error(fl_ctx, "Unable to extract dxo from shareable.")
-            return make_reply(ReturnCode.BAD_TASK_DATA)
-
-        # Ensure data kind is weights.
-        if dxo.data_kind != DataKind.WEIGHTS:
-            self.log_error(fl_ctx, f"data_kind expected WEIGHTS but got {dxo.data_kind} instead.")
+            self.log_error(fl_ctx, f"Unable to extract dxo from shareable: {secure_format_traceback()}")
             return make_reply(ReturnCode.BAD_TASK_DATA)
 
         # send to flare agent
@@ -308,9 +298,8 @@ class IPCExchanger(Executor):
 
         # wait for result
         self.log_info(fl_ctx, f"Waiting for result from {self.flare_agent_fqcn}")
-        waiter_timeout = 0.5
         while True:
-            if task_ctx.result_waiter.wait(timeout=waiter_timeout):
+            if task_ctx.result_waiter.wait(timeout=_SHORT_SLEEP_TIME):
                 # result available
                 break
             else:
@@ -324,7 +313,7 @@ class IPCExchanger(Executor):
                     return make_reply(ReturnCode.TASK_ABORTED)
 
         # convert the result
-        if task_ctx.result_rc != defs.RC.OK:
+        if task_ctx.result_rc not in [defs.RC.OK, defs.RC.EARLY_TERMINATION]:
             return make_reply(task_ctx.result_rc)
 
         result = task_ctx.result
@@ -335,7 +324,9 @@ class IPCExchanger(Executor):
             data=result.get(defs.PayloadKey.DATA),
             meta=meta,
         )
-        return dxo.to_shareable()
+        s = dxo.to_shareable()
+        s.set_return_code(task_ctx.result_rc)
+        return s
 
     def _ask_agent_to_abort_task(self, task_name, task_id):
         msg = new_message(
@@ -367,13 +358,22 @@ class IPCExchanger(Executor):
     def _receive_result(self, request: Message) -> Union[None, Message]:
         sender = request.get_header(MessageHeaderKey.ORIGIN)
         task_id = request.get_header(defs.MsgHeader.TASK_ID)
+
+        # When the agent is restarted, it sends a result to us, in case we are waiting for the result
+        # of the current task. In this case, the task_id is empty.
         task_ctx = self.task_ctx
         if not task_ctx:
+            # we are not waiting for any result
+            if not task_id:
+                # this was sent by the agent when it's started or restarted - just ignore
+                return make_cell_reply(CellReturnCode.OK)
+
             self.logger.error(f"received result from {sender} for task {task_id} while not waiting for result!")
             return make_cell_reply(CellReturnCode.INVALID_REQUEST)
 
+        # the agent could send us valid result after restarted
         fl_ctx = task_ctx.fl_ctx
-        if task_id != task_ctx.task_id:
+        if task_id and task_id != task_ctx.task_id:
             self.log_error(fl_ctx, f"received task id {task_id} != expected {task_ctx.task_id}")
             return make_cell_reply(CellReturnCode.INVALID_REQUEST)
 

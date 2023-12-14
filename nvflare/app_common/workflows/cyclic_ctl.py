@@ -16,6 +16,7 @@ import gc
 import random
 
 from nvflare.apis.client import Client
+from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import ClientTask, Controller, Task
 from nvflare.apis.shareable import Shareable
@@ -48,6 +49,7 @@ class CyclicController(Controller):
         persist_every_n_rounds: int = 1,
         snapshot_every_n_rounds: int = 1,
         order: str = RelayOrder.FIXED,
+        allow_early_termination=False,
     ):
         """A sample implementation to demonstrate how to use relay method for Cyclic Federated Learning.
 
@@ -69,6 +71,7 @@ class CyclicController(Controller):
                 If RANDOM means random order for every round.
                 If RANDOM_WITHOUT_SAME_IN_A_ROW means every round the order gets shuffled but a client will never be
                 run twice in a row (in different round).
+            allow_early_termination: whether to allow early workflow termination from clients
 
         Raises:
             TypeError: when any of input arguments does not have correct type
@@ -94,6 +97,7 @@ class CyclicController(Controller):
         self._start_round = 0
         self._end_round = self._start_round + self._num_rounds
         self._current_round = 0
+        self._is_done = False
         self._last_learnable = None
         self.persistor_id = persistor_id
         self.shareable_generator_id = shareable_generator_id
@@ -106,6 +110,7 @@ class CyclicController(Controller):
         self._participating_clients = None
         self._last_client = None
         self._order = order
+        self._allow_early_termination = allow_early_termination
 
     def start_controller(self, fl_ctx: FLContext):
         self.log_debug(fl_ctx, "starting controller")
@@ -150,19 +155,48 @@ class CyclicController(Controller):
         # will get the updated shareable
         task = client_task.task
 
-        # update the global learnable with the received result (shareable)
-        # e.g. the received result could be weight_diffs, the learnable could be full weights.
-        self._last_learnable = self.shareable_generator.shareable_to_learnable(client_task.result, fl_ctx)
+        result = client_task.result
+        if isinstance(result, Shareable):
+            # update the global learnable with the received result (shareable)
+            # e.g. the received result could be weight_diffs, the learnable could be full weights.
+            rc = result.get_return_code()
+            try:
+                self._last_learnable = self.shareable_generator.shareable_to_learnable(result, fl_ctx)
+            except Exception as ex:
+                if rc != ReturnCode.EARLY_TERMINATION:
+                    self.log_error(fl_ctx, f"exception {secure_format_exception(ex)} from shareable_to_learnable")
+                else:
+                    self.log_warning(
+                        fl_ctx,
+                        f"ignored {secure_format_exception(ex)} from shareable_to_learnable in early termination",
+                    )
+
+            if rc == ReturnCode.EARLY_TERMINATION:
+                if self._allow_early_termination:
+                    # the workflow is done
+                    self.cancel_task(task)
+                    self.log_info(fl_ctx, f"Stopping workflow due to {rc} from client {client_task.client.name}")
+                    self._is_done = True
+                    return
+                else:
+                    self.log_warning(
+                        fl_ctx,
+                        f"Ignored {rc} from client {client_task.client.name} because early termination is not allowed",
+                    )
 
         # prepare task shareable data for next client
         task.data = self.shareable_generator.learnable_to_shareable(self._last_learnable, fl_ctx)
         task.data.set_header(AppConstants.CURRENT_ROUND, self._current_round)
+        task.data.set_header(AppConstants.NUM_ROUNDS, self._num_rounds)
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         try:
             self.log_debug(fl_ctx, "Cyclic starting.")
 
             for self._current_round in range(self._start_round, self._end_round):
+                if self._is_done:
+                    return
+
                 if abort_signal.triggered:
                     return
 
@@ -176,6 +210,7 @@ class CyclicController(Controller):
 
                 shareable = self.shareable_generator.learnable_to_shareable(self._last_learnable, fl_ctx)
                 shareable.set_header(AppConstants.CURRENT_ROUND, self._current_round)
+                shareable.set_header(AppConstants.NUM_ROUNDS, self._num_rounds)
 
                 task = Task(
                     name=self.task_name,

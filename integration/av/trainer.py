@@ -14,8 +14,10 @@
 
 import argparse
 import logging
+import os.path
+import pickle
 
-from nvflare.client.defs import RC, AgentClosed, MetaKey, TaskResult
+from nvflare.client.defs import RC, AgentClosed, MetaKey, TaskResult, Task
 from nvflare.client.ipc_agent import IPCAgent
 
 NUMPY_KEY = "numpy_key"
@@ -30,42 +32,70 @@ def main():
     parser.add_argument("--workspace", "-w", type=str, help="workspace folder", required=False, default=".")
     parser.add_argument("--site_name", "-s", type=str, help="flare site name", required=True)
     parser.add_argument("--agent_id", "-a", type=str, help="agent id", required=True)
-    parser.add_argument("--job_id", "-j", type=str, help="flare job id", required=False, default="")
-    parser.add_argument("--site_url", "-u", type=str, help="flare site url", required=False, default="")
+    parser.add_argument("--site_url", "-u", type=str, help="flare site url", required=True)
 
     args = parser.parse_args()
 
     agent = IPCAgent(
-        root_url="grpc://server:8002",
+        flare_site_url=args.site_url,
         flare_site_name=args.site_name,
         agent_id=args.agent_id,
         workspace_dir=args.workspace,
         secure_mode=True,
         submit_result_timeout=2.0,
         flare_site_heartbeat_timeout=120.0,
-        job_id=args.job_id,
-        flare_site_url=args.site_url,
     )
 
-    agent.start()
+    snapshot_file_name = f"{args.site_name}_{args.agent_id}_snapshot.dat"
 
-    while True:
+    agent.start()
+    if os.path.exists(snapshot_file_name):
+        # finish previous round
+        print(f"recover training from {snapshot_file_name}")
+        task = pickle.load(open(snapshot_file_name, "rb"))
+        rc, meta, result = train(task)
+        agent.submit_result(TaskResult(data=result, meta=meta, return_code=rc))
+        os.remove(snapshot_file_name)
+
+    done = False
+    while not done:
         print("getting task ...")
         try:
             task = agent.get_task()
         except AgentClosed:
-            print("agent closed - exit")
+            print("agent closed")
             break
 
         print(f"got task: {task}")
-        rc, meta, result = train(task.meta, task.data)
+
+        # create a snapshot, so we can recover in case the training fails
+        pickle.dump(task, open(snapshot_file_name, "wb"))
+
+        current_round = task.meta.get(MetaKey.CURRENT_ROUND)
+
+        # simulate crash
+        if current_round == 2:
+            print(f"training crashed at round {current_round}")
+            done = True
+            continue
+
+        rc, meta, result = train(task)
+        if current_round == 10:
+            rc = RC.EARLY_TERMINATION
+            print(f"Early termination at round {current_round}")
+            done = True
         submitted = agent.submit_result(TaskResult(data=result, meta=meta, return_code=rc))
+        os.remove(snapshot_file_name)
         print(f"result submitted: {submitted}")
 
+    print("stopping agent")
     agent.stop()
+    print("TRAINER DONE")
 
 
-def train(meta, model):
+def train(task: Task):
+    meta = task.meta
+    model = task.data
     current_round = meta.get(MetaKey.CURRENT_ROUND)
     total_rounds = meta.get(MetaKey.TOTAL_ROUND)
 
