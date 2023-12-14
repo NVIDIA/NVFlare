@@ -17,7 +17,7 @@ import logging
 import os.path
 import pickle
 
-from nvflare.client.defs import RC, AgentClosed, MetaKey, TaskResult, Task
+from nvflare.client.defs import RC, AgentClosed, MetaKey, Task, TaskResult
 from nvflare.client.ipc_agent import IPCAgent
 
 NUMPY_KEY = "numpy_key"
