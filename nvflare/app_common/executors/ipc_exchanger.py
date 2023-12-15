@@ -101,12 +101,23 @@ class IPCExchanger(Executor):
 
             # get meta
             if not self.agent_id:
+                agent_id = None
                 meta = fl_ctx.get_prop(FLContextKey.JOB_META)
-                assert isinstance(meta, dict)
-                agent_id = meta.get(defs.JOB_META_KEY_AGENT_ID)
+                if isinstance(meta, dict):
+                    agent_id = meta.get(defs.JOB_META_KEY_AGENT_ID)
+
                 if not agent_id:
                     self.system_panic(reason=f"missing {defs.JOB_META_KEY_AGENT_ID} from job meta", fl_ctx=fl_ctx)
                     return
+
+                if not isinstance(agent_id, str):
+                    self.system_panic(
+                        reason=f"invalid {defs.JOB_META_KEY_AGENT_ID} from job meta: {agent_id}. "
+                        f"must be str but got {type(agent_id)}",
+                        fl_ctx=fl_ctx,
+                    )
+                    return
+
                 self.agent_id = agent_id
 
             client_name = fl_ctx.get_identity_name()
