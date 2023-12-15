@@ -2,3 +2,5 @@ nvflare>=2.3.0
 pandas
 xgboost>=2.0.0
 scikit-learn
+torch
+tensorboard
