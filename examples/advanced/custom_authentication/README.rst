@@ -10,6 +10,8 @@ The purpose of this example is to demonstrate following features of NVFlare,
 1. Run NVFlare in secure mode
 2. Demonstrate custom authentication policy
 
+During the client registering to the server process, customer can build an event handler to listen to the EventType.CLIENT_REGISTERED event, and inject additional logic to verify and process the client registration. If a particular client does not meet certain criteria, the server can reject the client registration.
+
 System Requirements
 -------------------
 
