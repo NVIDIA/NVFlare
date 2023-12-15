@@ -20,6 +20,7 @@ import socket
 import subprocess
 import sys
 import time
+from pathlib import Path
 from typing import Dict, List, Optional, OrderedDict, Tuple
 
 import yaml
@@ -180,6 +181,7 @@ def _prepare_jobs_dir(jobs_dir: str, workspace: str, config_packages: Optional[T
 
 
 def get_prod_dir(workspace, project_name: str = DEFAULT_PROJECT_NAME):
+    project_name = project_name if project_name else DEFAULT_PROJECT_NAME
     prod_dir = os.path.join(workspace, project_name, "prod_00")
     return prod_dir
 
@@ -455,13 +457,11 @@ def _prepare_poc(
         print(f"prepare poc at {workspace} with {project_conf_path}")
 
     project_config = None
-    result = False
     if os.path.exists(workspace):
         answer = input(
-            f"This will delete poc folder in {workspace} directory and create a new one. Is it OK to proceed? (y/N) "
+            f"This will delete poc workspace directory: '{workspace}' and create a new one. Is it OK to proceed? (y/N) "
         )
         if answer.strip().upper() == "Y":
-            from pathlib import Path
 
             workspace_path = Path(workspace)
             project_file = Path(project_conf_path)
@@ -473,26 +473,19 @@ def _prepare_poc(
                 )
 
             shutil.rmtree(workspace, ignore_errors=True)
-            project_config = prepare_poc_provision(
-                clients, number_of_clients, workspace, docker_image, use_he, project_conf_path, examples_dir
-            )
-            result = True
         else:
-            result = False
-    else:
-        project_config = prepare_poc_provision(
-            clients, number_of_clients, workspace, docker_image, use_he, project_conf_path, examples_dir
-        )
-        result = True
+            return False
+
+    project_config = prepare_poc_provision(
+        clients, number_of_clients, workspace, docker_image, use_he, project_conf_path, examples_dir
+    )
 
     project_name = project_config.get("name") if project_config else None
     save_startup_kit_dir_config(workspace, project_name)
-    return result
+    return True
 
 
 def get_home_dir():
-    from pathlib import Path
-
     return Path.home()
 
 
