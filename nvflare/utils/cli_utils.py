@@ -228,7 +228,7 @@ def hocon_to_string(target_fmt: ConfigFormat, dst_config: ConfigTree):
     if target_fmt == ConfigFormat.JSON:
         return HOCONConverter.to_json(dst_config)
     elif target_fmt == ConfigFormat.PYHOCON:
-        return HOCONConverter.to_hocon(dst_config)
+        return HOCONConverter.to_hocon(config=dst_config, level=1)
     elif target_fmt == ConfigFormat.OMEGACONF:
         from nvflare.fuel_opt.utils.omegaconf_loader import OmegaConfLoader
 
