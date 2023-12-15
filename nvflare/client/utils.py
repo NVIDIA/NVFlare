@@ -25,8 +25,8 @@ def numerical_params_diff(original: Dict, new: Dict) -> Dict:
         new: A dict of numerical values.
 
     Returns:
-        A dict with same key as original dict,
-        value are the difference between original and new.
+        A dict with common keys that exist in both original dict and new dict,
+        values are the difference between original and new.
     """
     diff_dict = {}
     for k in original:
@@ -38,6 +38,8 @@ def numerical_params_diff(original: Dict, new: Dict) -> Dict:
             diff = new[k] - original[k]
 
         diff_dict[k] = diff
+    if diff_dict == {}:
+        raise RuntimeError("no common keys between original and new dict, parameters difference are empty.")
     return diff_dict
 
 
