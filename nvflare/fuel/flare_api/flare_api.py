@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import os
 import time
 from typing import List, Optional
@@ -20,7 +19,7 @@ from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
-from nvflare.fuel.hci.client.api import AdminAPI, APIStatus, ResultKey
+from nvflare.fuel.hci.client.api import AdminAPI, APIStatus, ProtoKey, ResultKey
 from nvflare.fuel.hci.client.overseer_service_finder import ServiceFinderByOverseer
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
 
@@ -140,7 +139,7 @@ class Session(SessionSpec):
                 raise NoConnection(f"cannot connect to FLARE in {timeout} seconds")
             time.sleep(0.5)
 
-    def _do_command(self, command: str):
+    def _do_command(self, command: str, enforce_meta=True):
         if self.api.closed:
             raise SessionClosed("session closed")
 
@@ -151,26 +150,24 @@ class Session(SessionSpec):
 
         # check meta status first
         meta = result.get(ResultKey.META, None)
-        if not meta:
-            raise InternalError("missing meta from result")
+        if meta:
+            if not isinstance(meta, dict):
+                raise InternalError(f"meta must be dict but got {type(meta)}")
 
-        if not isinstance(meta, dict):
-            raise InternalError(f"meta must be dict but got {type(meta)}")
-
-        cmd_status = meta.get(MetaKey.STATUS)
-        info = meta.get(MetaKey.INFO, "")
-        if cmd_status == MetaStatusValue.INVALID_JOB_DEFINITION:
-            raise InvalidJobDefinition(f"invalid job definition: {info}")
-        elif cmd_status == MetaStatusValue.NOT_AUTHORIZED:
-            raise AuthorizationError(f"user not authorized for the action '{command}: {info}'")
-        elif cmd_status == MetaStatusValue.SYNTAX_ERROR:
-            raise InternalError(f"protocol error: {info}")
-        elif cmd_status == MetaStatusValue.INVALID_JOB_ID:
-            raise JobNotFound(f"no such job: {info}")
-        elif cmd_status == MetaStatusValue.JOB_RUNNING:
-            raise JobNotDone(f"job {info} is still running")
-        elif cmd_status != MetaStatusValue.OK:
-            raise InternalError(f"server internal error ({cmd_status}): {info}")
+            cmd_status = meta.get(MetaKey.STATUS)
+            info = meta.get(MetaKey.INFO, "")
+            if cmd_status == MetaStatusValue.INVALID_JOB_DEFINITION:
+                raise InvalidJobDefinition(f"invalid job definition: {info}")
+            elif cmd_status == MetaStatusValue.NOT_AUTHORIZED:
+                raise AuthorizationError(f"user not authorized for the action '{command}: {info}'")
+            elif cmd_status == MetaStatusValue.SYNTAX_ERROR:
+                raise InternalError(f"protocol error: {info}")
+            elif cmd_status == MetaStatusValue.INVALID_JOB_ID:
+                raise JobNotFound(f"no such job: {info}")
+            elif cmd_status == MetaStatusValue.JOB_RUNNING:
+                raise JobNotDone(f"job {info} is still running")
+            elif cmd_status != MetaStatusValue.OK:
+                raise InternalError(f"server internal error ({cmd_status}): {info}")
 
         status = result.get(ResultKey.STATUS, None)
         if not status:
@@ -189,6 +186,9 @@ class Session(SessionSpec):
         elif status != APIStatus.SUCCESS:
             details = result.get(ResultKey.DETAILS, "")
             raise RuntimeError(f"runtime error encountered: {status}: {details}")
+
+        if enforce_meta and not meta:
+            raise InternalError("missing meta from result")
 
         return result
 
@@ -396,6 +396,17 @@ class Session(SessionSpec):
                 jobs.append(job_info)
 
         return SystemInfo(server_info=server_info, client_info=clients, job_info=jobs)
+
+    def get_cell_conn_info(self, fqcn: str):
+        reply = self._do_command(f"conns {fqcn}", enforce_meta=False)
+
+        # reply is a dict
+        items = reply.get(ProtoKey.DATA)
+        if not items:
+            return None
+        item = items[0]
+        assert isinstance(item, dict)
+        return item.get("data")
 
     def monitor_job(
         self, job_id: str, timeout: float = 0.0, poll_interval: float = 2.0, cb=None, *cb_args, **cb_kwargs

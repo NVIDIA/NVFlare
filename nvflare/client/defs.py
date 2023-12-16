@@ -13,6 +13,7 @@
 # limitations under the License.
 from abc import ABC, abstractmethod
 
+from nvflare.apis.fl_constant import ReturnCode as RC
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 
 CHANNEL = "flare_agent"
@@ -25,12 +26,6 @@ TOPIC_BYE = "bye"
 TOPIC_ABORT = "abort"
 
 JOB_META_KEY_AGENT_ID = "agent_id"
-
-
-class RC:
-    OK = "OK"
-    BAD_TASK_DATA = "BAD_TASK_DATA"
-    EXECUTION_EXCEPTION = "EXECUTION_EXCEPTION"
 
 
 class MsgHeader:
@@ -57,11 +52,20 @@ class MetaKey:
 
 
 class Task:
+
+    NEW = 0
+    FETCHED = 1
+    PROCESSED = 2
+
     def __init__(self, task_name: str, task_id: str, meta: dict, data):
         self.task_name = task_name
         self.task_id = task_id
         self.meta = meta
         self.data = data
+        self.status = Task.NEW
+        self.last_send_result_time = None
+        self.aborted = False
+        self.already_received = False
 
     def __str__(self):
         return f"'{self.task_name} {self.task_id}'"
@@ -142,8 +146,9 @@ class FlareAgent(ABC):
         pass
 
 
-def agent_site_fqcn(site_name: str, agent_id: str, job_id=None):
-    if not job_id:
-        return f"{site_name}--{agent_id}"
-    else:
-        return FQCN.join([site_name, job_id, agent_id])
+def agent_site_fqcn(site_name: str, agent_id: str):
+    # add the "-" prefix to the agent_id to make a child of the site
+    # this prefix will make the agent site's FQCN < the CJ's FQCN
+    # this is necessary to enable ad-hoc connections between CJ and agent, where CJ listens
+    # with ad-hoc connection, the cell with greater FQCN listens.
+    return FQCN.join([site_name, f"-{agent_id}"])

@@ -118,6 +118,7 @@ class ConnectorManager:
     def is_adhoc_allowed(self, c1: FqcnInfo, c2: FqcnInfo) -> bool:
         """
         Is adhoc connection allowed between the two cells?
+
         Args:
             c1:
             c2:
@@ -128,14 +129,7 @@ class ConnectorManager:
         if not self.adhoc_allowed:
             return False
 
-        if c1.root == c2.root:
-            # same family
-            return False
-
-        # we only allow gen2 (or above) cells to directly connect
-        # if c1.gen >= 2 and c2.gen >= 2:
-        #     return True
-        # return False
+        # The ad-hoc policy may change in the future.
         return True
 
     @staticmethod

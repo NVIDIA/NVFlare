@@ -326,10 +326,13 @@ class Cell(MessageReceiver, EndpointMonitor):
         self.secure = secure
         self.logger.debug(f"{self.my_info.fqcn}: max_msg_size={self.max_msg_size}")
 
-        if not root_url:
-            raise ValueError(f"{self.my_info.fqcn}: root_url not provided")
+        if not root_url and not parent_url:
+            raise ValueError(f"{self.my_info.fqcn}: neither root_url nor parent_url is provided")
 
         if self.my_info.is_root and self.my_info.is_on_server:
+            if not root_url:
+                raise ValueError(f"{self.my_info.fqcn}: root_url is required for server-side cells but not provided")
+
             if isinstance(root_url, list):
                 for url in root_url:
                     if not _validate_url(url):
@@ -338,13 +341,16 @@ class Cell(MessageReceiver, EndpointMonitor):
                 if not _validate_url(root_url):
                     raise ValueError(f"{self.my_info.fqcn}: invalid Root URL '{root_url}'")
                 root_url = [root_url]
-        else:
+        elif root_url:
             if isinstance(root_url, list):
                 # multiple urls are available - randomly pick one
                 root_url = random.choice(root_url)
                 self.logger.info(f"{self.my_info.fqcn}: use Root URL {root_url}")
             if not _validate_url(root_url):
                 raise ValueError(f"{self.my_info.fqcn}: invalid Root URL '{root_url}'")
+
+        if parent_url and not _validate_url(parent_url):
+            raise ValueError(f"{self.my_info.fqcn}: invalid Parent URL '{parent_url}'")
 
         self.root_url = root_url
         self.create_internal_listener = create_internal_listener
@@ -1784,7 +1790,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         if msg_type in [MessageType.REQ, MessageType.REPLY]:
             from_cell = message.get_header(MessageHeaderKey.FROM_CELL)
             oi = FqcnInfo(origin)
-            if from_cell != origin and not same_family(oi, self.my_info):
+            if from_cell != origin:
                 # this is a forwarded message, so no direct path from the origin to me
                 conn_url = message.get_header(MessageHeaderKey.CONN_URL)
                 if conn_url:
