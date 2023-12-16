@@ -179,21 +179,14 @@ class ByteStreamer:
 
         message = Message(None, payload)
 
-        if task.offset == 0:
-            # User headers are only included in the first chunk
-            if task.headers:
-                message.add_headers(task.headers)
-
-            message.add_headers(
-                {
-                    StreamHeaderKey.CHANNEL: task.channel,
-                    StreamHeaderKey.TOPIC: task.topic,
-                    StreamHeaderKey.SIZE: task.stream.get_size(),
-                }
-            )
+        if task.headers:
+            message.add_headers(task.headers)
 
         message.add_headers(
             {
+                StreamHeaderKey.CHANNEL: task.channel,
+                StreamHeaderKey.TOPIC: task.topic,
+                StreamHeaderKey.SIZE: task.stream.get_size(),
                 StreamHeaderKey.STREAM_ID: task.sid,
                 StreamHeaderKey.DATA_TYPE: StreamDataType.FINAL if final else StreamDataType.CHUNK,
                 StreamHeaderKey.SEQUENCE: task.seq,
@@ -231,6 +224,10 @@ class ByteStreamer:
 
             if notify:
                 message = Message(None, None)
+
+                if task.headers:
+                    message.add_headers(task.headers)
+
                 message.add_headers(
                     {
                         StreamHeaderKey.STREAM_ID: task.sid,
@@ -239,7 +236,9 @@ class ByteStreamer:
                         StreamHeaderKey.ERROR_MSG: str(error),
                     }
                 )
-                self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_DATA_TOPIC, task.target, message, secure=task.secure)
+                self.cell.fire_and_forget(
+                    STREAM_CHANNEL, STREAM_DATA_TOPIC, task.target, message, secure=task.secure, optional=True
+                )
         else:
             # Result is the number of bytes streamed
             if task.stream_future:

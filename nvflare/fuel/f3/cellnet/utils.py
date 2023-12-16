@@ -31,6 +31,7 @@ msg_mapping = {
     "TP": MessageHeaderKey.TOPIC,
     "SCH": StreamHeaderKey.CHANNEL,
     "STP": StreamHeaderKey.TOPIC,
+    "SEQ": StreamHeaderKey.SEQUENCE,
 }
 
 
@@ -74,10 +75,10 @@ def get_msg_header_value(m, k):
 def format_log_message(fqcn: str, message: Message, log: str) -> str:
     context = [f"[ME={shorten_fqcn(fqcn)}"]
     for k, v in cell_mapping.items():
-        string = f"{k}=" + shorten_fqcn(get_msg_header_value(message, v))
+        string = f"{k}={shorten_fqcn(get_msg_header_value(message, v))}"
         context.append(string)
     for k, v in msg_mapping.items():
-        string = f"{k}=" + get_msg_header_value(message, v)
+        string = f"{k}={get_msg_header_value(message, v)}"
         context.append(string)
     return " ".join(context) + f"] {log}"
 
