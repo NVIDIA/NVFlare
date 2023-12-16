@@ -1,4 +1,4 @@
-Example for Federated Policies
+Example of Custom Client Registration Authentication
 ==============================
 
 
@@ -9,6 +9,8 @@ The purpose of this example is to demonstrate following features of NVFlare,
 
 1. Run NVFlare in secure mode
 2. Demonstrate custom authentication policy
+
+During the client registering to the server process, customer can build an event handler to listen to the EventType.CLIENT_REGISTERED event, and inject additional logic to verify and process the client registration. If a particular client does not meet certain criteria, the server can reject the client registration.
 
 System Requirements
 -------------------
@@ -79,4 +81,4 @@ Site_b
 ____
     cd /tmp/nvflare/poc/custom_authentication/prod_00/site_a
     ./startup/start.sh
-* site_b is NOT able to start and register to the server. It's blocked by the ServerCustomSecurityHandler logic.
+* site_b is NOT able to start and register to the server. It's blocked by the ServerCustomSecurityHandler logic during the client registration.
