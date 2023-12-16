@@ -58,7 +58,8 @@
         "id": "metric_relay",
         "path": "nvflare.app_common.widgets.metric_relay.MetricRelay",
         "args": {
-          "pipe_id": "metrics_relay_pipe"
+          "pipe_id": "metrics_relay_pipe",
+          "fed_event": false
         }
     },
     {
