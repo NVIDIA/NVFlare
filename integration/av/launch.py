@@ -39,7 +39,7 @@ def main():
     cp_url = conn_info["int_listener"]["url"]
     print(f"Got CP URL {cp_url}")
 
-    launch_cmd = f"python trainer.py -w {args.site_workspace} -s {args.site_name} -a {args.agent_id} -u {cp_url}"
+    launch_cmd = f"python av_trainer.py -w {args.site_workspace} -s {args.site_name} -a {args.agent_id} -u {cp_url}"
     print(f"Launching: {launch_cmd}")
 
     new_env = os.environ.copy()

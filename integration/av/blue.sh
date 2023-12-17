@@ -1,0 +1,1 @@
+python av_trainer.py -w bluesw -s blue -a ndas_1 -u stcp://nvcj:18002
