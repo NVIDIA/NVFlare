@@ -20,35 +20,35 @@ exclude_extensions = [".md", ".rst", ".pyc", "__pycache__"]
 
 nvflight_packages = {
     "nvflare": {
-        "includes": ["_version.py"],
-        "excludes": ["*"]
+        "include": ["_version.py"],
+        "exclude": ["*"]
     },
     "nvflare/apis": {
-        "includes": ["__init__.py", "fl_constant.py"],
-        "excludes": ["*"]
+        "include": ["__init__.py", "fl_constant.py"],
+        "exclude": ["*"]
     },
     "nvflare/app_common": {
-        "includes": ["__init__.py"],
-        "excludes": ["*"]
+        "include": ["__init__.py"],
+        "exclude": ["*"]
     },
     "nvflare/app_common/decomposers": {
-        "includes": ["__init__.py", "numpy_decomposers.py"],
-        "excludes": ["*"]
+        "include": ["__init__.py", "numpy_decomposers.py"],
+        "exclude": ["*"]
     },
     "nvflare/client": {
-        "includes": ["__init__.py", "defs.py", "ipc_agent.py"],
-        "excludes": ["*"]
+        "include": ["__init__.py", "defs.py", "ipc_agent.py"],
+        "exclude": ["*"]
     },
     "nvflare/fuel": {
-        "includes": ["__init__.py"],
-        "excludes": ["*"]
+        "include": ["__init__.py"],
+        "exclude": ["*"]
     },
     "nvflare/fuel/common": {
-        "includes": ["*"],
-        "excludes": []
+        "include": ["*"],
+        "exclude": []
     },
     "nvflare/fuel/f3": {
-        "includes": ["__init__.py",
+        "include": ["__init__.py",
                      "comm_error.py",
                      "connection.py",
                      "endpoint.py",
@@ -57,39 +57,39 @@ nvflight_packages = {
                      "comm_config.py",
                      "communicator.py",
                      "message.py"],
-        "excludes": ["*"]
+        "exclude": ["*"]
     },
     "nvflare/fuel/f3/cellnet": {
-        "includes": ["*"],
-        "excludes": []
+        "include": ["*"],
+        "exclude": []
     },
     "nvflare/fuel/f3/drivers": {
-        "includes": ["*"],
-        "excludes": ["grpc", "aio_grpc_driver.py", "aio_https_driver.py", "grpc_driver.py"]
+        "include": ["*"],
+        "exclude": ["grpc", "aio_grpc_driver.py", "aio_https_driver.py", "grpc_driver.py"]
     },
     "nvflare/fuel/f3/sfm": {
-        "includes": ["*"],
-        "excludes": []
+        "include": ["*"],
+        "exclude": []
     },
     "nvflare/fuel/hci": {
-        "includes": ["__init__.py", "security.py"],
-        "excludes": ["*"]
+        "include": ["__init__.py", "security.py"],
+        "exclude": ["*"]
     },
     "nvflare/fuel/utils": {
-        "includes": ["*"],
-        "excludes": ["fobs"]
+        "include": ["*"],
+        "exclude": ["fobs"]
     },
     "nvflare/fuel/utils/fobs": {
-        "includes": ["*"],
-        "excludes": []
+        "include": ["*"],
+        "exclude": []
     },
     "nvflare/fuel/utils/fobs/decomposers": {
-        "includes": ["*"],
-        "excludes": []
+        "include": ["*"],
+        "exclude": []
     },
     "nvflare/security": {
-        "includes": ["__init__.py", "logging.py"],
-        "excludes": []
+        "include": ["__init__.py", "logging.py"],
+        "exclude": []
     },
 }
 
@@ -105,31 +105,31 @@ def package_selected_files(package_info: dict):
     results = {}
 
     for p, package_rule in package_info.items():
-        includes = package_rule["includes"]
-        excludes = package_rule["excludes"]
+        include = package_rule["include"]
+        exclude = package_rule["exclude"]
         paths = []
-        for include_item in includes:
+        for include_item in include:
             item_path = os.path.join(p, include_item)
             if all_items != include_item:
-                if all_items in excludes:
+                if all_items in exclude:
                     # excluded everything except for included items
                     if os.path.isfile(item_path) and not should_exclude(item_path):
                         paths.append(item_path)
-                elif include_item not in excludes:
+                elif include_item not in exclude:
                     paths.append(item_path)
             else:
-                if all_items in excludes:
+                if all_items in exclude:
                     # excluded everything except for included items
                     if os.path.isfile(item_path):
                         paths.append(item_path)
                 else:
                     # include everything in the package except excluded items
                     for root, dirs, files in os.walk(p):
-                        if should_exclude(root) or os.path.basename(root) in excludes:
+                        if should_exclude(root) or os.path.basename(root) in exclude:
                             continue
 
                         for f in files:
-                            if not should_exclude(f) and f not in excludes:
+                            if not should_exclude(f) and f not in exclude:
                                 paths.append(os.path.join(root, f))
         results[p] = paths
     return results
