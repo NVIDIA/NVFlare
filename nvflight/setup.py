@@ -17,7 +17,6 @@ import os
 
 from setuptools import find_packages, setup
 
-# read the contents of your README file
 this_directory = os.path.abspath(os.path.dirname(__file__))
 
 today = datetime.date.today().timetuple()
