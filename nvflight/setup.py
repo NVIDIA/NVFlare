@@ -40,10 +40,10 @@ version = os.environ.get("NVFLIGHT_VERSION")
 
 if release == "1":
     package_dir = {"nvflare": "nvflare"}
-    package_name = "nvflare-flight"
+    package_name = "nvflare-light"
 else:
     package_dir = {"nvflare": "nvflare"}
-    package_name = "nvflare-flight-nightly"
+    package_name = "nvflare-light-nightly"
 
 setup(
     name=package_name,
