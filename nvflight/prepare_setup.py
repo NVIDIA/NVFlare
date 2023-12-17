@@ -139,7 +139,6 @@ def create_empty_file(file_path):
     try:
         with open(file_path, 'w'):
             pass  # This block is intentionally left empty
-        print(f"Empty file created at: {file_path}")
     except Exception as e:
         print(f"Error creating empty file: {e}")
 
@@ -158,7 +157,6 @@ def copy_files(package_paths: dict, target_dir: str):
 
 
 def prepare_setup(setup_dir: str):
-    print(f"setup dir = {setup_dir}")
     if os.path.isdir(setup_dir):
         shutil.rmtree(setup_dir)
 
