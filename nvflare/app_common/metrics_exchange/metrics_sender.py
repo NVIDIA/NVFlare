@@ -18,13 +18,13 @@ from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
+from nvflare.app_common.widgets.streaming import AnalyticsSender
 from nvflare.fuel.utils.constants import PipeChannelName
 from nvflare.fuel.utils.pipe.pipe import Message, Pipe
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler
-from nvflare.widgets.widget import Widget
 
 
-class MetricsSender(Widget):
+class MetricsSender(AnalyticsSender):
     def __init__(
         self,
         pipe_id: str = "_memory_pipe",
@@ -34,26 +34,26 @@ class MetricsSender(Widget):
         topic: str = "metrics",
         pipe_channel_name=PipeChannelName.METRIC,
     ):
-        self.pipe_id = pipe_id
+        super().__init__()
+        self._pipe_id = pipe_id
         self._read_interval = read_interval
         self._heartbeat_interval = heartbeat_interval
         self._heartbeat_timeout = heartbeat_timeout
         self._pipe_handler = None
         self._topic = topic
-        self.pipe_channel_name = pipe_channel_name
+        self._pipe_channel_name = pipe_channel_name
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.ABOUT_TO_START_RUN:
-            engine = fl_ctx.get_engine()
-            pipe = engine.get_component(self.pipe_id)
+            self.engine = fl_ctx.get_engine()
+            pipe = self.engine.get_component(self._pipe_id)
             if not isinstance(pipe, Pipe):
-                self.log_error(fl_ctx, f"component {self.pipe_id} must be Pipe but got {type(pipe)}")
-                self.system_panic(f"bad component {self.pipe_id}", fl_ctx)
+                self.log_error(fl_ctx, f"component {self._pipe_id} must be Pipe but got {type(pipe)}")
+                self.system_panic(f"bad component {self._pipe_id}", fl_ctx)
                 return
 
-            pipe.open(self.pipe_channel_name)
+            pipe.open(self._pipe_channel_name)
 
-            # init pipe handler
             self._pipe_handler = PipeHandler(
                 pipe,
                 read_interval=self._read_interval,

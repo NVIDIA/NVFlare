@@ -36,6 +36,7 @@ class LogWriter(FLComponent, ABC):
                 self.sender = engine.get_component(self.metrics_sender_id)
                 if self.sender is None:
                     self.system_panic("Cannot load MetricsSender!", fl_ctx=fl_ctx)
+                self.sender.writer = self.get_writer_name()
             else:
                 self.sender = AnalyticsSender(self.event_type, self.get_writer_name())
                 self.sender.engine = engine
