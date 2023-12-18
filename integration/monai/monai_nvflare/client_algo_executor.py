@@ -57,7 +57,7 @@ class ClientAlgoExecutor(Executor):
 
         Args:
             client_algo_id (str): id pointing to the client_algo object
-            stats_sender_id (str, optional): id pointing to the LogWriterForMetricsExchanger object
+            stats_sender_id (str, optional): id pointing to the LogWriter object
             train_task (str, optional): label to dispatch train task. Defaults to AppConstants.TASK_TRAIN.
             submit_model_task (str, optional): label to dispatch submit model task. Defaults to AppConstants.TASK_SUBMIT_MODEL.
             validate_task (str, optional): label to dispatch validation task. Defaults to AppConstants.TASK_VALIDATION.

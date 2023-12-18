@@ -36,19 +36,34 @@
         "id": "log_writer",
         "path": "monai_nvflare.nvflare_stats_handler.NVFlareStatsHandler",
         "args": {
-          "metrics_exchanger_id": "metrics_exchanger"
+          "metrics_sender_id": "metrics_sender"
         }
     },
     {
-        "id": "metrics_retriever",
-        "path": "nvflare.app_common.metrics_exchange.metrics_retriever.MetricsRetriever",
+        "id": "metrics_sender",
+        "path": "nvflare.app_common.metrics_exchange.metrics_sender.MetricsSender",
         "args": {
-          "metrics_exchanger_id": "metrics_exchanger",
-          "pipe_id": "metrics_pipe"
+          "pipe_id": "metrics_sender_pipe"
+        }
+    },
+      {
+        "id": "metrics_sender_pipe",
+        "path": "nvflare.fuel.utils.pipe.memory_pipe.MemoryPipe",
+        "args": {
+          "mode": "ACTIVE",
+          "token": "{JOB_ID}"
         }
     },
     {
-        "id": "metrics_pipe",
+        "id": "metric_relay",
+        "path": "nvflare.app_common.widgets.metric_relay.MetricRelay",
+        "args": {
+          "pipe_id": "metrics_relay_pipe",
+          "fed_event": false
+        }
+    },
+    {
+        "id": "metrics_relay_pipe",
         "path": "nvflare.fuel.utils.pipe.memory_pipe.MemoryPipe",
         "args": {
           "mode": "PASSIVE",

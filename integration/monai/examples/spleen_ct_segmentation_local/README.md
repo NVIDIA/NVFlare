@@ -30,7 +30,7 @@ Download the MONAI bundle as `./jobs/${JOB_NAME}/app/config/spleen_ct_segmentati
 
 ```
 JOB_NAME=spleen_ct_segmentation_local
-python3 -m monai.bundle download --name "spleen_ct_segmentation" --version "0.4.6" --bundle_dir ./jobs/${JOB_NAME}/app/config
+python3 -m monai.bundle download --name "spleen_ct_segmentation" --version "0.5.4" --bundle_dir ./jobs/${JOB_NAME}/app/config
 ``` 
 
 In this example, `JOB_NAME` can be either `spleen_ct_segmentation_local` or `spleen_ct_segmentation_he`, depending on the configuration you would like to run (see below).

@@ -22,17 +22,24 @@ from nvflare.app_common.widgets.streaming import ANALYTIC_EVENT_TYPE, AnalyticsS
 
 
 class LogWriter(FLComponent, ABC):
-    def __init__(self, event_type: str = ANALYTIC_EVENT_TYPE):
+    def __init__(self, event_type: str = ANALYTIC_EVENT_TYPE, metrics_sender_id: str = None):
         super().__init__()
-        self.sender = self.load_log_sender(event_type)
+        self.event_type = event_type
+        self.metrics_sender_id = metrics_sender_id
+        self.sender = None
         self.engine = None
-
-    def load_log_sender(self, event_type: str = ANALYTIC_EVENT_TYPE) -> AnalyticsSender:
-        return AnalyticsSender(event_type, self.get_writer_name())
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.ABOUT_TO_START_RUN:
-            self.sender.engine = fl_ctx.get_engine()
+            engine = fl_ctx.get_engine()
+            if self.metrics_sender_id:
+                self.sender = engine.get_component(self.metrics_sender_id)
+                if self.sender is None:
+                    self.system_panic("Cannot load MetricsSender!", fl_ctx=fl_ctx)
+                self.sender.writer = self.get_writer_name()
+            else:
+                self.sender = AnalyticsSender(self.event_type, self.get_writer_name())
+                self.sender.engine = engine
 
     @abstractmethod
     def get_writer_name(self) -> LogWriterName:
