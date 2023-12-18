@@ -34,8 +34,8 @@ release_package = find_packages(
 
 package_data = {"": ["*.yml", "*.config"], }
 
-release = os.environ.get("NVFLIGHT_RELEASE")
-version = os.environ.get("NVFLIGHT_VERSION")
+release = os.environ.get("NVFL_RELEASE")
+version = os.environ.get("NVFL_VERSION")
 
 if release == "1":
     package_dir = {"nvflare": "nvflare"}

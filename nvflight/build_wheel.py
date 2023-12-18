@@ -43,7 +43,7 @@ if os.path.isdir(dist_dir):
     shutil.rmtree(dist_dir)
 
 env = os.environ.copy()
-env['NVFLIGHT_VERSION'] = version
+env['NVFL_VERSION'] = version
 
 cmd_str = "python setup.py -v sdist bdist_wheel"
 cmd = cmd_str.split(" ")
