@@ -31,6 +31,7 @@ program to a federated learning training program. The example will include:
 * Swarm Learning Workflow with NVFLARE Client APIs
 * SAG with NVFLARE model learner APIs
 * SAG with NVFLARE Executor APIs
+* SAG with NVFLARE Client APIs + MLflow
 
 
 ## Binary classification with tabular data using HIGGS dataset  

@@ -24,6 +24,7 @@ from net import Net
 # (1) import nvflare client API
 import nvflare.client as flare
 from nvflare.app_common.app_constant import ModelName
+from nvflare.client.tracking import MLflowWriter
 
 # (optional) set a fix place so we don't need to download everytime
 CIFAR10_ROOT = "/tmp/nvflare/data/cifar10"
@@ -87,6 +88,7 @@ def main():
 
     # (2) initialize NVFlare client API
     flare.init()
+    mlflow = MLflowWriter()
 
     # (3) run continously when launch_once=true
     while flare.is_running():
@@ -137,6 +139,7 @@ def main():
                     running_loss += loss.item()
                     if i % 2000 == 1999:  # print every 2000 mini-batches
                         print(f"({client_id}) [{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
+                        mlflow.log_metric("loss", running_loss / 2000, i)
                         running_loss = 0.0
 
             print(f"({client_id}) Finished Training")
