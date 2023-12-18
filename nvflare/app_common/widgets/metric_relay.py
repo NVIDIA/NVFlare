@@ -36,6 +36,7 @@ class MetricRelay(Widget, AttributesExportable):
         heartbeat_timeout=30.0,
         pipe_channel_name=PipeChannelName.METRIC,
         event_type: str = ANALYTIC_EVENT_TYPE,
+        fed_event: bool = True,
     ):
         super().__init__()
         self.pipe_id = pipe_id
@@ -47,6 +48,7 @@ class MetricRelay(Widget, AttributesExportable):
         self.pipe_handler = None
         self._fl_ctx = None
         self._event_type = event_type
+        self._fed_event = fed_event
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.ABOUT_TO_START_RUN:
@@ -81,7 +83,7 @@ class MetricRelay(Widget, AttributesExportable):
     def _pipe_msg_cb(self, msg: Message):
         if not isinstance(msg.data, DXO):
             self.logger.error(f"bad metric data: expect DXO but got {type(msg.data)}")
-        send_analytic_dxo(self, msg.data, self._fl_ctx, self._event_type, fire_fed_event=True)
+        send_analytic_dxo(self, msg.data, self._fl_ctx, self._event_type, fire_fed_event=self._fed_event)
 
     def export(self, export_mode: str) -> Tuple[str, dict]:
         pipe_export_class, pipe_export_args = self.pipe.export(export_mode)

@@ -23,7 +23,7 @@ from monai.config import IgniteInfo
 from monai.utils import is_scalar, min_version, optional_import
 
 from nvflare.apis.analytix import AnalyticsDataType
-from nvflare.app_common.tracking.log_writer_me import LogWriterForMetricsExchanger
+from nvflare.app_common.tracking.log_writer import LogWriter
 from nvflare.app_common.tracking.tracker_types import LogWriterName
 
 Events, _ = optional_import("ignite.engine", IgniteInfo.OPT_IMPORT_VERSION, min_version, "Events")
@@ -40,11 +40,11 @@ ANALYTIC_EVENT_TYPE = "analytix_log_stats"
 DEFAULT_TAG = "Loss"
 
 
-class NVFlareStatsHandler(LogWriterForMetricsExchanger):
+class NVFlareStatsHandler(LogWriter):
     """
-    NVFlareStatsHandler defines a set of Ignite Event-handlers for all the NVFlare ``LogWriterForMetricsExchanger`` logics.
+    NVFlareStatsHandler defines a set of Ignite Event-handlers for all the NVFlare ``LogWriter`` logics.
     It can be used for any Ignite Engine(trainer, validator and evaluator).
-    And it can support both epoch level and iteration level with pre-defined LogWriterForMetricsExchanger event sender.
+    And it can support both epoch level and iteration level with pre-defined LogWriter event sender.
     The expected data source is Ignite ``engine.state.output`` and ``engine.state.metrics``.
 
     Default behaviors:
@@ -64,7 +64,7 @@ class NVFlareStatsHandler(LogWriterForMetricsExchanger):
         state_attributes: Sequence[str] | None = None,
         state_attributes_type: AnalyticsDataType | None = None,
         tag_name: str = DEFAULT_TAG,
-        metrics_exchanger_id: str = None,
+        metrics_sender_id: str = None,
     ) -> None:
         """
         Args:
@@ -92,10 +92,10 @@ class NVFlareStatsHandler(LogWriterForMetricsExchanger):
             state_attributes_type: the type of the expected attributes from `engine.state`.
                 Only required when `state_attributes` is not None.
             tag_name: when iteration output is a scalar, tag_name is used to plot, defaults to ``'Loss'``.
-            metrics_exchanger_id (str): provided for LogWriter to get MetricsExchanger
+            metrics_sender_id (str): provided for LogWriter to get MetricsExchanger
         """
 
-        super().__init__(metrics_exchanger_id=metrics_exchanger_id)
+        super().__init__(metrics_sender_id=metrics_sender_id)
         self.iteration_log = iteration_log
         self.epoch_log = epoch_log
         self.output_transform = output_transform
@@ -156,7 +156,7 @@ class NVFlareStatsHandler(LogWriterForMetricsExchanger):
             step: index of current step.
 
         """
-        self.send_log(key=tag, value=value, data_type=data_type, global_step=step)
+        self.sender.add(tag=tag, value=value, data_type=data_type, global_step=step)
 
     def _default_epoch_sender(self, engine: Engine) -> None:
         """

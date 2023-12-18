@@ -1,6 +1,6 @@
 ## 3D spleen CT segmentation - Simulation
 In the following, we show an example of running MONAI-bundle configurations with NVFlare using the
-[FL simulator](https://nvflare.readthedocs.io/en/main/user_guide/fl_simulator.html).
+[FL simulator](https://nvflare.readthedocs.io/en/main/user_guide/nvflare_cli/fl_simulator.html).
 
 For an example with real-world deployment settings, see [here](../spleen_ct_segmentation_local/README.md).
 
@@ -18,7 +18,7 @@ Download the MONAI bundle as `./${JOB_NAME}/app/config/spleen_ct_segmentation`.
 
 ```
 JOB_NAME=job
-python3 -m monai.bundle download --name "spleen_ct_segmentation" --version "0.4.6" --bundle_dir ./${JOB_NAME}/app/config
+python3 -m monai.bundle download --name "spleen_ct_segmentation" --version "0.5.4" --bundle_dir ./${JOB_NAME}/app/config
 ``` 
 
 In this example, `JOB_NAME` can be either `job`, `job_multi_gpu` or `job_stats`, depending on the configuration you would like to run (see below).
