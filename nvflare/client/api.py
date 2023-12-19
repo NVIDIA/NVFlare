@@ -79,7 +79,8 @@ def init(
         rank = os.environ.get("RANK", "0")
 
     if PROCESS_MODEL_REGISTRY:
-        raise RuntimeError("Can't call init twice.")
+        print("Warning: called init() more than once. The subsequence calls are ignored")
+        return
 
     client_config = _create_client_config(config=config)
 
