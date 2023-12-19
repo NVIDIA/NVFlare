@@ -238,10 +238,6 @@ class TaskExchanger(Executor):
     def peer_is_up_or_dead(self) -> bool:
         return self.pipe_handler.peer_is_up_or_dead.is_set()
 
-    def clear_pipe(self):
-        if self.pipe:
-            self.pipe.clear()
-
     def pause_pipe_handler(self):
         """Stops pipe_handler heartbeat."""
         self.pipe_handler.pause()
