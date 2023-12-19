@@ -12,7 +12,7 @@ the 3rd-party system uses the :mod:`FlareAgent<nvflare.client.flare_agent>` to i
 This integration pattern is illustrated in the diagram below:
 
 .. image:: ../resources/3rd_party_integration_diagram.png
-    :height: 300px
+    :height: 400px
 
 Requirements
 ============

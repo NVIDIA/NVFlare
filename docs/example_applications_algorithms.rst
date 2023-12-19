@@ -97,6 +97,7 @@ Privacy preserving algorithms in NVIDIA FLARE are implemented as :ref:`filters <
   * :github_nvflare_link:`Federated Policies (Github) <examples/advanced/federated-policies/README.rst>` - Discuss the federated site policies for authorization, resource and data privacy management
   * :github_nvflare_link:`Custom Authentication (Github) <examples/advanced/custom_authentication/README.rst>` - Show the custom authentication policy and secure mode.
   * :github_nvflare_link:`Job-Level Authorization (Github) <examples/advanced/job-level-authorization/README.md>` - Show the job-level authorization policy and secure mode.
+  * :github_nvflare_link:`KeyCloak Site Authentication Integration (Github) <examples/advanced/keycloak-site-authentication/README.md>` - Demonstrate KeyCloak integration for supporting site-specific authentication.
 
 10. Experiment Tracking
 =======================
@@ -104,6 +105,7 @@ Privacy preserving algorithms in NVIDIA FLARE are implemented as :ref:`filters <
   * :github_nvflare_link:`FL Experiment Tracking with TensorBoard Streaming <examples/advanced/experiment-tracking/tensorboard>` - Example building on Hello PyTorch with TensorBoard streaming from clients to server
   * :github_nvflare_link:`FL Experiment Tracking with MLflow <examples/advanced/experiment-tracking/mlflow>` - Example integrating Hello PyTorch with MLflow with streaming from clients to server
   * :github_nvflare_link:`FL Experiment Tracking with Weights and Biases <examples/advanced/experiment-tracking/wandb>` - Example integrating Hello PyTorch with Weights and Biases streaming capability from clients to server.
+  * :github_nvflare_link:`MONAI FLARE Integration Experiment Tracking <integration/monai/examples/spleen_ct_segmentation_local#51-experiment-tracking-with-mlflow>` - Example using FLARE and MONAI integration with experiment tracking streaming from clients to server.
 
   .. toctree::
     :maxdepth: 1
@@ -111,8 +113,8 @@ Privacy preserving algorithms in NVIDIA FLARE are implemented as :ref:`filters <
     examples/tensorboard_streaming
     examples/fl_experiment_tracking_mlflow
 
-11. NLP
-=======
+1.  Natural Language Processing (NLP)
+=====================================
 
   * :github_nvflare_link:`NLP-NER (Github) <examples/advanced/nlp-ner/README.md>` - Illustrates both `BERT <https://github.com/google-research/bert>`_ and `GPT-2 <https://github.com/openai/gpt-2>`_ models from `Hugging Face <https://huggingface.co/>`_ (`BERT-base-uncased <https://huggingface.co/bert-base-uncased>`_, `GPT-2 <https://huggingface.co/gpt2>`_) on a Named Entity Recognition (NER) task using the `NCBI disease dataset <https://pubmed.ncbi.nlm.nih.gov/24393765/>`_.
 

@@ -146,6 +146,7 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 | [Federated Policies](./advanced/federated-policies/README.rst)                                                                         | Discuss the federated site policies for authorization, resource and data privacy management.
 | [Custom Authentication](./advanced/custom_authentication/README.rst)                                                                         | Demonstrate the custom authentication policy and secure mode.
 | [Job-Level Authorization](./advanced/job-level-authorization/README.md)                                                                         | Demonstrate the job-level authorization policy and secure mode.
+| [KeyCloak Site Authentication Integration](./advanced/keycloak-site-authentication/README.md)                                                     | Demonstrate KeyCloak integration for supporting site-specific authentication.
 
 ## 9. Experiment tracking
 | Example                                                                                                                                | Framework    | Summary                                                                                                                                                         |
@@ -153,6 +154,7 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 | [Hello PyTorch with TensorBoard Streaming](./advanced/experiment-tracking/tensorboard/README.md)                             | PyTorch      | Example building upon [Hello PyTorch](./hello-world/hello-pt/README.md) showcasing the [TensorBoard](https://tensorflow.org/tensorboard) streaming capability from the clients to the server.  |
 | [FL Experiment Tracking with MLflow](./advanced/experiment-tracking/mlflow/README.md)                             | PyTorch      | Example integrating [Hello PyTorch](./hello-world/hello-pt/README.md) with MLflow streaming capability from clients to the server.  |
 | [FL Experiment Tracking with Weights and Biases](./advanced/experiment-tracking/wandb/README.md)                             | PyTorch      | Example integrating [Hello PyTorch](./hello-world/hello-pt/README.md) with Weights and Biases streaming capability from clients to the server.  |
+| [MONAI FLARE Integration Experiment Tracking](../integration/monai/examples/spleen_ct_segmentation_local/README.md#51-experiment-tracking-with-mlflow)   | MONAI      | Example using FLARE and MONAI integration with experiment tracking streaming from clients to server.  |
 
 ## 10. NLP
 | Example                                                                               | Summary                                                                                                                                                         |

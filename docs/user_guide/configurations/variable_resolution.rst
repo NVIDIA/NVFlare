@@ -99,6 +99,7 @@ FLARE predefined the following System Variables that are also available for you 
 
 - SITE_NAME - the name of the site (server ot FL client)
 - WORKSPACE - the directory of the site's workspace
+- JOB_ID - Job ID
 - ROOT_URL - the url for connecting to the FL server
 - SECURE_MODE - whether the communication is in secure mode
 

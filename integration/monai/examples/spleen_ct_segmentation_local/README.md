@@ -86,7 +86,7 @@ Skip to 4.1 below for provisioning with homomorphic encryption and using the `st
 To run FL experiments in POC mode, create your local FL workspace the below command.
 In the following experiments, we will be using 2 clients. Press y and enter when prompted.
 
-### 3.2 Crate POC workspace
+### 3.2 Create POC workspace
 ```
 nvflare poc prepare -n 2
 ```
@@ -149,14 +149,26 @@ For details about resource management and consumption, please refer to the [docu
 > **Note:** Full FL training could take several hours for this task.
 > To speed up your experimentation, you can reduce the `num_rounds` value in `config_fed_server.json`, e.g. to 5 rounds.
 
-### 5.1 Experiment tracking with MLflow
-Experiment tracking with MLflow now uses `NVFlareStatsHandler` to stream events
-to the FL server to write to MLflow. The `spleen_ct_segmentation_local` job should be configured to automatically log
-metrics to MLflow through the FL server.
+### 5.1 FLARE-MONAI Integration Experiment tracking
+Experiment tracking for the FLARE-MONAI integration now uses `NVFlareStatsHandler` to provide a set of Ignite Event-handlers to support both iteration and epoch-level events for automatic metric streaming.
+In this example, the `spleen_ct_segmentation_local` job is configured to automatically log metrics to MLflow through the FL server.
+
+The `config_fed_client.json` contains the `NVFlareStatsHandler`, `MetricsSender`, and `MetricRelay` (with their respective pipes) to send the metrics to the server side as federated events.
+Then in `config_fed_server.json`, the `MLflowReceiver` is configured for the server to receive the results in "mlruns" or via the tracking uri if specified.
+
+View the results by running the following command at the `mlruns/` directory in the workspace:
+
+```
+mlflow ui --port 5000
+```
+
+> **_NOTE:_** The receiver on the server side can be easily configured to support other experiment tracking formats.
+> In addition to the `MLflowReceiver`, the `WandBReceiver` and `TBAnalyticsReceiver` can also be used in `config_fed_server.json` for Tensorboard and > Weights & Biases experiment tracking streaming to the server.
+
+### 5.2 MONAI Experiment tracking with MLflow
 
 The `spleen_ct_segmentation_loc_non_agg` job is the previous configuration that uses MONAI's experiment [tracking feature](https://github.com/Project-MONAI/tutorials/tree/main/experiment_management)
 with clients logging to the MLflow tracking server without going through the FL server.
-
 For `spleen_ct_segmentation_loc_non_agg`, an MLflow server is expected, so in a new terminal, start the mlflow server with:
 
 ```
@@ -167,7 +179,7 @@ You can access the MLflow dashboard in your browser using the default tracking u
 
 Next, submit the job.
 
-### 5.2 Federated averaging
+### 5.3 Federated averaging
 
 To run FedAvg using with the Job CLI, submit the job with:
 
@@ -199,7 +211,7 @@ Once the training started, you can the experiment curves for the local clients i
 
 ![MLflow dashboard](./mlflow.png)
 
-### 5.3 Secure aggregation using homomorphic encryption
+### 5.4 Secure aggregation using homomorphic encryption
 
 Next we run FedAvg using homomorphic encryption (HE) for secure aggregation on the server.
 

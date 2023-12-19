@@ -92,7 +92,7 @@ Each example will build upon previous ones to showcase different features, workf
 - cyclic: cyclic weight transfer workflow with server-side controller.
 - cyclic_ccwf: client-controlled cyclic weight transfer workflow with client-side controller.
 - swarm: swarm learning and client-side cross-site evaluation with Client API.
-- sag_with_mlflow (coming soon): MLFlow experiment tracking logs with the Client API in scatter & gather workflows.
+- sag_with_mlflow: MLflow experiment tracking logs with the Client API in scatter & gather workflows.
 
 **HIGGS Examples:**
 
@@ -265,8 +265,7 @@ We use Private Set Intersection and XGBoost's new federated learning support to 
 
 Graph Neural Networks (GNNs)
 ----------------------------
-We added two examples using GraphSage to demonstrate how to train `Federated GNN on
-Graph Dataset using Inductive Learning <https://github.com/NVIDIA/NVFlare/tree/399411e30b9add9e8a257a7a25b7e93f6d18f9a3/examples/advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning>`_.
+We added two examples using GraphSage to demonstrate how to train :github_nvflare_link:`Federated GNN on Graph Dataset using Inductive Learning <examples/advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning>`.
 
 **Protein Classification:** to classify protein roles based on their cellular functions from gene ontology.
 The dataset we are using is PPI (`protein-protein interaction <http://snap.stanford.edu/graphsage/#code>`_) graphs, where each graph represents a specific human tissue.
@@ -284,11 +283,49 @@ To demonstrate how to perform Fraud Detection in financial applications, we intr
 to train a model in a federated manner with a `finance dataset <https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud>`_.
 We illustrate both vertical and horizontal federated learning with XGBoost, along with histogram and tree-based approaches.
 
+KeyCloak Site Authentication Integration
+----------------------------------------
+FLARE is agnostic to the 3rd party authentication mechanism, and each client can have its own authentication system.
+We demonstrate FLARE's support of site-specific authentication using KeyCloak.
+The :github_nvflare_link:`KeyCloak Site Authentication Integration <examples/advanced/keycloak-site-authentication>` example is configured so the admin user will need additional user authentication to submit and run a job.
+
+
 **********************************
 Migration to 2.4.0: Notes and Tips
 **********************************
 
 FLARE 2.4.0 introduces a few API and behavior changes. This migration guide will help you to migrate from the previous NVFLARE version to the current version.
+
+Job Format: meta.json
+=====================
+In FLARE 2.4.0, users must have a meta.json configuration file defined in their jobs.
+Legacy app definitions should be updated to the job format to include a meta.json file with a deployment map and any number of app folders (containing config/ and custom/).
+Here is a basic job structure with a single app:
+
+.. code-block:: shell
+
+  ├── my_job
+  │   ├── app
+  │   │   ├── config
+  │   │   │   ├── config_client.json
+  │   │   │   └── config_server.json
+  │   │   └── custom
+  │   └── meta.json
+
+Here is the default meta.json which can be edited accordingly:
+
+.. code-block:: json
+
+  {
+    "name": "my_job",
+    "resource_spec": {},
+    "min_clients" : 2,
+    "deploy_map": {
+      "app": [
+        "@ALL"
+      ]
+    }
+  }
 
 FLARE API Parity
 ================
@@ -358,6 +395,7 @@ POC Command Upgrade
 The POC command has been upgraded in 2.4.0:
 
 - Remove ``--`` for action commands, change to subcommands
+- POC is now using "production mode", the admin user name is now "admin@nvidia.com" instead of "admin" from previous releases.
 - new ``-d`` docker and ``-he`` Homomorphic encryption options
 - ``nvflare poc prepare`` generates ``.nvflare/config.conf`` to store location of POC workspace, takes precedent over environment variable ``NVFLARE_POC_WORKSPACE``
 - In the previous version, the startup kits are located directly under default POC workspace at ``/tmp/nvflare/poc``. In the 2.4.0, the startup kit is now under ``/tmp/nvflare/poc/example_project/prod_00/`` to follow the production provision default structure.

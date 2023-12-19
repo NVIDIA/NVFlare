@@ -108,6 +108,24 @@ The GRPC driver's details are defined in the "options" section within the "grpc"
 
 Note that since FLARE has built general messaging management for all drivers, you shouldn't need to configure GRPC options in most cases.
 
+GRPC Driver Selection
+---------------------
+
+GRPC is the default scheme for communication between FL clients and the server.
+FLARE provides two implementations of GRPC drivers, one uses GRPC's asyncio version (AIO), another uses GRPC's non-asyncio version (non-AIO).
+The default driver is the non-AIO version.
+
+According to GRPC documentation, the AIO GRPC is slightly more efficient.
+But the main advantage is that it can handle many more simultaneous connections on the server side, and there is no need to configure the "num_workers" parameter.
+
+Unfortunately the AIO GRPC client-side library is not stable under difficult network conditions where disconnects happen frequently.
+The non-AIO GRPC library seems very stable.
+
+If your network is stable and you have many clients and/or many concurrent jobs, you should consider using the AIO version of the GRPC driver.
+This is done by setting use_aio_grpc to true:
+
+``"use_aio_grpc": true``
+
 Ad-hoc Connections
 ==================
 
@@ -206,31 +224,13 @@ In this example, we changed to use "grpc" as the communication scheme.
 
 The syntax and meanings of the properties are exactly the same as the "adhoc" configurations.
 
-GRPC Driver Selection
-=====================
-
-GRPC is the default scheme for communication between FL clients and the server.
-FLARE provides two implementations of GRPC drivers, one uses GRPC's asyncio version (AIO), another uses GRPC's non-asyncio version (non-AIO).
-The default driver is the non-AIO version.
-
-According to GRPC documentation, the AIO GRPC is slightly more efficient.
-But the main advantage is that it can handle many more simultaneous connections on the server side, and there is no need to configure the "num_workers" parameter.
-
-Unfortunately the AIO GRPC client-side library is not stable under difficult network conditions where disconnects happen frequently.
-The non-AIO GRPC library seems very stable.
-
-If your network is stable and you have many clients and/or many concurrent jobs, you should consider using the AIO version of the GRPC driver.
-This is done by setting use_aio_grpc to true:
-
-``"use_aio_grpc": true``
-
 Messaging Parameters
 ====================
 
 FLARE's messaging functions should work well with default configuration settings. However you may find it necessary to tune some parameters under some circumstances.
 This section describes all parameters that you can configure.
                                                                    
-The parameters can be specified in <site_workspace>/local/comm_config.json file or using environment variables as described in the beginning of this document.
+The messaging parameters can be specified in <site_workspace>/local/comm_config.json file as first-level elements, or by using environment variables as described in the beginning of this document.
 
 This is an example of comm_config.json file with default values for all the parameters,
 
@@ -267,7 +267,7 @@ The communication_timeout parameter should be adjusted as following on clients i
     },
   }
 
-Here are the detailed description of each parameter,
+Here are the detailed description of each messaging parameter,
 
 comm_driver_path
 ----------------
