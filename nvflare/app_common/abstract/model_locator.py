@@ -32,7 +32,7 @@ class ModelLocator(FLComponent):
         pass
 
     def locate_model(self, model_name, fl_ctx: FLContext) -> DXO:
-        """Locate a single model by it's name.
+        """Locate a single model by its name.
 
         Args:
             model_name (str): Name of the model.
