@@ -72,7 +72,7 @@ class FLCallback(Callback):
         """
         super(FLCallback, self).__init__()
         init(rank=str(rank))
-        self.train_with_evaluation = get_config().get(ConfigKey.TRAIN_WITH_EVAL, False)
+        self.train_with_evaluation = get_config().get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.TRAIN_WITH_EVAL, False)
         self.current_round = None
         self.metrics = None
         self.total_local_epochs = 0
