@@ -24,7 +24,7 @@ class NumpyToKerasModelParamsConverter(ParamsConverter):
     The result can be used by ```keras_model.get_layer(layer_name).set_weights(layer_weights)```
     """
 
-    def convert(self, params: Any) -> Any:
+    def convert(self, params: Any, fl_ctx) -> Any:
         """Unflattens layer weights dict."""
         return unflat_layer_weights_dict(params)
 
@@ -36,6 +36,6 @@ class KerasModelToNumpyParamsConverter(ParamsConverter):
     The layer_weights is from ```layer.get_weights()```
     """
 
-    def convert(self, params: Any) -> Any:
+    def convert(self, params: Any, fl_ctx) -> Any:
         """Flattens layer weights dict."""
         return flat_layer_weights_dict(params)

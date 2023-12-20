@@ -24,10 +24,10 @@ from nvflare.apis.shareable import Shareable
 class ParamsConverter(Filter, ABC):
     def process(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
         dxo = from_shareable(shareable)
-        dxo.data = self.convert(dxo.data)
+        dxo.data = self.convert(dxo.data, fl_ctx)
         dxo.update_shareable(shareable)
         return shareable
 
     @abstractmethod
-    def convert(self, params: Any) -> Any:
+    def convert(self, params: Any, fl_ctx: FLContext) -> Any:
         pass

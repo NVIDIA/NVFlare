@@ -20,10 +20,10 @@ from nvflare.app_common.abstract.params_converter import ParamsConverter
 
 
 class NumpyToPTParamsConverter(ParamsConverter):
-    def convert(self, params: Dict) -> Dict:
+    def convert(self, params: Dict, fl_ctx) -> Dict:
         return {k: torch.as_tensor(v) for k, v in params.items()}
 
 
 class PTToNumpyParamsConverter(ParamsConverter):
-    def convert(self, params: Dict) -> Dict:
+    def convert(self, params: Dict, fl_ctx) -> Dict:
         return {k: v.cpu().numpy() for k, v in params.items()}
