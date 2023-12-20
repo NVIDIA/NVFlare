@@ -17,8 +17,6 @@ import logging
 import os.path
 import pickle
 
-from integration.av.av_model import AVModel
-from integration.av.utils import unwrap_dict, wrap_with_dict
 from nvflare.client.defs import RC, AgentClosed, MetaKey, Task, TaskResult
 from nvflare.client.ipc_agent import IPCAgent
 
@@ -74,13 +72,13 @@ def main():
         current_round = task.meta.get(MetaKey.CURRENT_ROUND)
 
         # simulate crash
-        if current_round == 2:
+        if current_round == 10:
             print(f"training crashed at round {current_round}")
             done = True
             continue
 
         rc, meta, result = train(task)
-        if current_round == 10:
+        if current_round == 20:
             rc = RC.EARLY_TERMINATION
             print(f"Early termination at round {current_round}")
             done = True
@@ -96,19 +94,15 @@ def main():
 def train(task: Task):
     print(f"got task: {task.meta=} {task.data=}")
     meta = task.meta
-    serialized_layers = unwrap_dict(task.data)  # contains serialized layers
+    layers = task.data
     current_round = meta.get(MetaKey.CURRENT_ROUND)
     total_rounds = meta.get(MetaKey.TOTAL_ROUND)
 
-    # Ensure that data is of type weights. Extract model data
-    layers = AVModel.deserialize_layers(serialized_layers)
-
-    # Display properties.
     print(f"Layers: \n{layers}")
     print(f"Current Round: {current_round}")
     print(f"Total Rounds: {total_rounds}")
 
-    # the "weights" is a dict of layer_name => list of numbers
+    # the "layers" is a dict of layer_name => list of numbers
     # Doing some dummy training.
     if layers:
         for _, w in layers.items():
@@ -122,7 +116,7 @@ def train(task: Task):
     print(f"Layers after training: {layers}")
 
     meta = {MetaKey.NUM_STEPS_CURRENT_ROUND: 1, MetaKey.DATA_KIND: "full"}
-    return RC.OK, meta, wrap_with_dict(AVModel.serialize_layers(layers))
+    return RC.OK, meta, layers
 
 
 if __name__ == "__main__":

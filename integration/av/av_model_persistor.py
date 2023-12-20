@@ -12,13 +12,12 @@ class AVModelPersistor(SimpleModelPersistor):
         if not os.path.isfile(file_path):
             raise ValueError(f"model file {file_path} does not exist")
         self.output_path = output_path
-        self.model = None
 
-    def load_model(self) -> Any:
+    def read_model(self) -> Any:
         print(f"loading model from {self.file_path}")
         return AVModel.load(self.file_path)
 
-    def save_model(self, model_obj: Any):
+    def write_model(self, model_obj: Any):
         assert isinstance(model_obj, AVModel)
         model_obj.save(self.output_path)
         print(f"saved model in {self.output_path}")

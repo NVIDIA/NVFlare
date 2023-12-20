@@ -19,10 +19,9 @@ from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.learnable import Learnable
+from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
-
-from .utils import unwrap_dict, wrap_with_dict
 
 
 class SimpleShareableGenerator(ShareableGenerator, ABC):
@@ -59,11 +58,13 @@ class SimpleShareableGenerator(ShareableGenerator, ABC):
 
     def learnable_to_shareable(self, learnable: Learnable, fl_ctx: FLContext) -> Shareable:
         self.fl_ctx = fl_ctx
-        trainable_weights, trainable_meta = self.model_to_trainable(unwrap_dict(learnable))
+        print(f"{learnable=}")
+        base_model_obj = learnable.get(ModelLearnableKey.WEIGHTS)
+        trainable_weights, trainable_meta = self.model_to_trainable(base_model_obj)
         print(f"trainable weights: {trainable_weights}")
         dxo = DXO(
-            data_kind=DataKind.WEIGHTS,
-            data=wrap_with_dict(trainable_weights),
+            data_kind=DataKind.APP_DEFINED,
+            data={DataKind.APP_DEFINED: trainable_weights},
             meta=trainable_meta,
         )
         print(f"learnable_to_shareable: {dxo.data}")
@@ -72,14 +73,19 @@ class SimpleShareableGenerator(ShareableGenerator, ABC):
     def shareable_to_learnable(self, shareable: Shareable, fl_ctx: FLContext) -> Learnable:
         self.fl_ctx = fl_ctx
         base_model_learnable = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
+
         if not base_model_learnable:
             self.system_panic(reason="No global base model!", fl_ctx=fl_ctx)
             return base_model_learnable
 
+        if not isinstance(base_model_learnable, ModelLearnable):
+            raise ValueError(f"expect global model to be ModelLearnable but got {type(base_model_learnable)}")
+        base_model_obj = base_model_learnable.get(ModelLearnableKey.WEIGHTS)
+
         dxo = from_shareable(shareable)
-        trained_weights = unwrap_dict(dxo.data)
+        if dxo.data_kind != DataKind.APP_DEFINED:
+            raise ValueError(f"expect DXO DataKind to be APP_DEFINED but got {dxo.data_kind}")
+        trained_weights = dxo.data.get(DataKind.APP_DEFINED)
         trained_meta = dxo.meta
-        model_obj = self.apply_weights_to_model(
-            model_obj=unwrap_dict(base_model_learnable), weights=trained_weights, meta=trained_meta
-        )
-        return Learnable(wrap_with_dict(model_obj))
+        model_obj = self.apply_weights_to_model(model_obj=base_model_obj, weights=trained_weights, meta=trained_meta)
+        return make_model_learnable(model_obj, {})

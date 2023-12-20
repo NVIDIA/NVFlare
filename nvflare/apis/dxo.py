@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import copy
+import traceback
 from typing import List, Union
 
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
@@ -28,6 +29,7 @@ class DataKind(object):
     COLLECTION = "COLLECTION"  # Dict or List of DXO objects
     STATISTICS = "STATISTICS"
     PSI = "PSI"
+    APP_DEFINED = "APP_DEFINED"  # data format is app defined
 
 
 class MetaKey(object):

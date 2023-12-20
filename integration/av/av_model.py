@@ -33,11 +33,3 @@ class AVModel:
     def load(cls, file_name: str):
         data = json.load(open(file_name, "r"))
         return cls(meta=data.get("meta", {}), frozen_layers=data.get("frozen", {}), free_layers=data.get("free", {}))
-
-    @classmethod
-    def serialize_layers(cls, layers):
-        return json.dumps(layers)
-
-    @classmethod
-    def deserialize_layers(cls, layers):
-        return json.loads(layers)

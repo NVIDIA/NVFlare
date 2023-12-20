@@ -16,19 +16,17 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.learnable import Learnable
-from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
-
-from .utils import unwrap_dict, wrap_with_dict
+from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
+from nvflare.app_common.abstract.model_persistor import ModelPersistor
 
 
-class SimpleModelPersistor(LearnablePersistor, ABC):
+class SimpleModelPersistor(ModelPersistor, ABC):
     def __init__(self):
-        LearnablePersistor.__init__(self)
+        ModelPersistor.__init__(self)
         self.fl_ctx = None
 
     @abstractmethod
-    def load_model(self) -> Any:
+    def read_model(self) -> Any:
         """Load model object.
 
         Returns: a model object
@@ -36,7 +34,7 @@ class SimpleModelPersistor(LearnablePersistor, ABC):
         pass
 
     @abstractmethod
-    def save_model(self, model_obj: Any):
+    def write_model(self, model_obj: Any):
         """Save the model object
 
         Args:
@@ -47,11 +45,11 @@ class SimpleModelPersistor(LearnablePersistor, ABC):
         """
         pass
 
-    def load(self, fl_ctx: FLContext) -> Learnable:
+    def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
         self.fl_ctx = fl_ctx
-        model = self.load_model()
-        return Learnable(wrap_with_dict(model))
+        model = self.read_model()
+        return make_model_learnable(weights=model, meta_props={})
 
-    def save(self, learnable: Learnable, fl_ctx: FLContext):
+    def save_model(self, learnable: ModelLearnable, fl_ctx: FLContext):
         self.fl_ctx = fl_ctx
-        self.save_model(unwrap_dict(learnable))
+        self.write_model(learnable.get(ModelLearnableKey.WEIGHTS))
