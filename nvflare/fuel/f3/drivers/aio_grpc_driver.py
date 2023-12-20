@@ -228,6 +228,7 @@ class Server:
         self.driver = driver
         self.connector = connector
         self.grpc_server = grpc.aio.server(options=options)
+        self.grpc_server_stop_grace = 0.5
         servicer = Servicer(self, aio_ctx)
         add_StreamerServicer_to_server(servicer, self.grpc_server)
         params = connector.params
@@ -258,7 +259,15 @@ class Server:
 
     async def shutdown(self):
         try:
-            await self.grpc_server.stop(grace=0.5)
+            await self.grpc_server.stop(grace=self.grpc_server_stop_grace)
+
+            # Note that self.grpc_server.stop returns immediately. Since we gave 0.5 grace time for RPCs to end,
+            # we wait here until RPCs are done or aborted.
+            # Without this, we may run into "excepthook" error at the end of the program since the GRPC server isn't
+            # properly shutdown.
+            await asyncio.sleep(self.grpc_server_stop_grace)
+            self.grpc_server = None
+            self.logger.debug("GRPC Server is stopped!")
         except Exception as ex:
             self.logger.debug(f"exception shutdown server: {secure_format_exception(ex)}")
 
@@ -388,7 +397,10 @@ class AioGrpcDriver(BaseDriver):
 
         if self.server:
             aio_ctx = AioContext.get_global_context()
+            self.logger.debug("Start shutting down AIO grpc server ...")
             aio_ctx.run_coro(self.server.shutdown())
+            time.sleep(self.server.grpc_server_stop_grace + 0.1)
+            self.logger.debug("Finished shutting down AIO grpc server")
 
     @staticmethod
     def get_urls(scheme: str, resources: dict) -> (str, str):
