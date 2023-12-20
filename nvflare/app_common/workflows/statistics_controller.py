@@ -420,8 +420,8 @@ class StatisticsController(Controller):
                         buckets = StatisticsController._apply_histogram_precision(hist.bins, self.precision)
                         result[feature_name][statistic][StC.GLOBAL][ds] = buckets
                     else:
-                        result[feature_name][statistic].update(
-                            {StC.GLOBAL: {ds: round(self.global_statistics[statistic][ds][feature_name], precision)}}
+                        result[feature_name][statistic][StC.GLOBAL].update(
+                            {ds: round(self.global_statistics[statistic][ds][feature_name], precision)}
                         )
 
         return result

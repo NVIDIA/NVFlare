@@ -16,25 +16,32 @@ NVIDIA FLARE has several tutorials and examples to help you get started with fed
 =======================
 Can be run from the :github_nvflare_link:`hello_world notebook <examples/hello-world/hello_world.ipynb>`.
 
-    2.1. Deep Learning to Federated Learning
-        * :github_nvflare_link:`Deep Learning to Federated Learning (GitHub) <examples/hello-world/ml-to-fl>` - Example for converting Deep Learning (DL) to Federated Learning (FL) using the Client API.
+.. toctree::
+  :maxdepth: 1
+  :hidden:
 
-    2.2. Workflows
-        * :ref:`Hello Scatter and Gather <hello_scatter_and_gather>` - Example using the Scatter And Gather (SAG) workflow with a Numpy trainer
-        * :ref:`Hello Cross-Site Validation <hello_cross_val>` - Example using the Cross Site Model Eval workflow with a Numpy trainer
-        * :github_nvflare_link:`Hello Cyclic Weight Transfer (GitHub) <examples/hello-world/hello-cyclic>` - Example using the CyclicController workflow to implement `Cyclic Weight Transfer <https://pubmed.ncbi.nlm.nih.gov/29617797/>`_ with TensorFlow as the deep learning training framework
-        * :github_nvflare_link:`Swarm Learning <examples/advanced/swarm_learning>` - Example using Swarm Learning and Client-Controlled Cross-site Evaluation workflows.
-        * :github_nvflare_link:`Client-Controlled Cyclic Weight Transfer <examples/hello-world/step-by-step/cifar10/cyclic_ccwf>` - Example using Client-Controlled Cyclic workflow using Client API.
+  examples/hello_world_examples
 
-    2.3. Deep Learning
-        * :ref:`Hello PyTorch <hello_pt>` - Example image classifier using FedAvg and PyTorch as the deep learning training framework
-        * :ref:`Hello TensorFlow <hello_tf2>` - Example image classifier using FedAvg and TensorFlow as the deep learning training frameworks
+2.1. Deep Learning to Federated Learning
+----------------------------------------
 
-  .. toctree::
-    :maxdepth: 1
-    :hidden:
+  * :github_nvflare_link:`Deep Learning to Federated Learning (GitHub) <examples/hello-world/ml-to-fl>` - Example for converting Deep Learning (DL) to Federated Learning (FL) using the Client API.
 
-    examples/hello_world_examples
+2.2. Workflows
+--------------
+
+  * :ref:`Hello Scatter and Gather <hello_scatter_and_gather>` - Example using the Scatter And Gather (SAG) workflow with a Numpy trainer
+  * :ref:`Hello Cross-Site Validation <hello_cross_val>` - Example using the Cross Site Model Eval workflow with a Numpy trainer
+  * :github_nvflare_link:`Hello Cyclic Weight Transfer (GitHub) <examples/hello-world/hello-cyclic>` - Example using the CyclicController workflow to implement `Cyclic Weight Transfer <https://pubmed.ncbi.nlm.nih.gov/29617797/>`_ with TensorFlow as the deep learning training framework
+  * :github_nvflare_link:`Swarm Learning <examples/advanced/swarm_learning>` - Example using Swarm Learning and Client-Controlled Cross-site Evaluation workflows.
+  * :github_nvflare_link:`Client-Controlled Cyclic Weight Transfer <examples/hello-world/step-by-step/cifar10/cyclic_ccwf>` - Example using Client-Controlled Cyclic workflow using Client API.
+
+2.3. Deep Learning
+------------------
+
+  * :ref:`Hello PyTorch <hello_pt>` - Example image classifier using FedAvg and PyTorch as the deep learning training framework
+  * :ref:`Hello TensorFlow <hello_tf2>` - Example image classifier using FedAvg and TensorFlow as the deep learning training frameworks
+
 
 3. Tutorial Notebooks
 =====================
@@ -81,15 +88,16 @@ Privacy preserving algorithms in NVIDIA FLARE are implemented as :ref:`filters <
 8. Federated Statistics
 =======================
 
-  * :ref:`Federated Statistic Overview <federated_statistics>` - Discuss the overall federated statistics features
+  * :ref:`Federated Statistic Overview <federated_statistics>` - Discuss the overall federated statistics features.
   * :github_nvflare_link:`Federated Statistics for medical imaging (Github) <examples/advanced/federated-statistics/image_stats/README.md>` - Example of gathering local image histogram to compute the global dataset histograms.
   * :github_nvflare_link:`Federated Statistics for tabular data with DataFrame (Github) <examples/advanced/federated-statistics/df_stats/README.md>` - Example of gathering local statistics summary from Pandas DataFrame to compute the global dataset statistics.
   * :github_nvflare_link:`Federated Statistics with Monai Statistics integration for Spleen CT Image (Github) <integration/monai/examples/README.md>` - Example demonstrated Monai statistics integration and few other features in federated statistics
   
   .. toctree::
     :maxdepth: 1
+    :hidden:
 
-    examples/federated_statistics
+    examples/federated_statistics_overview
 
 9. Federated Site Policies
 ==========================
@@ -102,19 +110,20 @@ Privacy preserving algorithms in NVIDIA FLARE are implemented as :ref:`filters <
 10. Experiment Tracking
 =======================
 
-  * :github_nvflare_link:`FL Experiment Tracking with TensorBoard Streaming <examples/advanced/experiment-tracking/tensorboard>` - Example building on Hello PyTorch with TensorBoard streaming from clients to server
-  * :github_nvflare_link:`FL Experiment Tracking with MLflow <examples/advanced/experiment-tracking/mlflow>` - Example integrating Hello PyTorch with MLflow with streaming from clients to server
+  * :github_nvflare_link:`FL Experiment Tracking with TensorBoard Streaming <examples/advanced/experiment-tracking/tensorboard>` - :ref:`(documentation) <tensorboard_streaming>` - Example building on Hello PyTorch with TensorBoard streaming from clients to server
+  * :github_nvflare_link:`FL Experiment Tracking with MLflow <examples/advanced/experiment-tracking/mlflow>` - :ref:`(documentation) <experiment_tracking_mlflow>`- Example integrating Hello PyTorch with MLflow with streaming from clients to server
   * :github_nvflare_link:`FL Experiment Tracking with Weights and Biases <examples/advanced/experiment-tracking/wandb>` - Example integrating Hello PyTorch with Weights and Biases streaming capability from clients to server.
   * :github_nvflare_link:`MONAI FLARE Integration Experiment Tracking <integration/monai/examples/spleen_ct_segmentation_local#51-experiment-tracking-with-mlflow>` - Example using FLARE and MONAI integration with experiment tracking streaming from clients to server.
 
   .. toctree::
     :maxdepth: 1
+    :hidden:
 
     examples/tensorboard_streaming
     examples/fl_experiment_tracking_mlflow
 
-1.  Natural Language Processing (NLP)
-=====================================
+11.  Natural Language Processing (NLP)
+======================================
 
   * :github_nvflare_link:`NLP-NER (Github) <examples/advanced/nlp-ner/README.md>` - Illustrates both `BERT <https://github.com/google-research/bert>`_ and `GPT-2 <https://github.com/openai/gpt-2>`_ models from `Hugging Face <https://huggingface.co/>`_ (`BERT-base-uncased <https://huggingface.co/bert-base-uncased>`_, `GPT-2 <https://huggingface.co/gpt2>`_) on a Named Entity Recognition (NER) task using the `NCBI disease dataset <https://pubmed.ncbi.nlm.nih.gov/24393765/>`_.
 
