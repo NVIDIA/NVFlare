@@ -1147,18 +1147,18 @@ azure_start_svr_sh: |
   if [ $container = true ]
   then
     echo "Installing and lauching container in $VM_NAME, may take a few minutes."
-    scripts=$(cat <<- 'EOF'
-    sudo apt-get update && \
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl gnupg lsb-release && \
-    sudo mkdir -p /etc/apt/keyrings && \
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
-    echo \
-    "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-    $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && \
-    sudo apt-get update && \
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io
+    scripts=$(cat << 'EOF'
+  sudo apt-get update && \
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl gnupg lsb-release && \
+  sudo mkdir -p /etc/apt/keyrings && \
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+  echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+  sudo apt-get update && \
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io
   EOF
-    )
+  )
     az vm run-command invoke \
       --output json \
       --resource-group $RESOURCE_GROUP \
@@ -1180,9 +1180,7 @@ azure_start_svr_sh: |
       --command-id RunShellScript \
       --name $VM_NAME \
       --scripts \
-      "docker run -d -v ${DEST_FOLDER}:${DEST_FOLDER} --network host ${DOCKER_OPTION} ${image_name} \
-      /bin/bash -c \"python -u -m nvflare.private.fed.app.server.server_train -m ${DEST_FOLDER} \
-      -s fed_server.json --set secure_train=true config_folder=config org={~~ORG~~} \" " > /tmp/vm_create.json 2>&1 
+      "docker run -d -v ${DEST_FOLDER}:${DEST_FOLDER} --network host ${DOCKER_OPTION} ${image_name} /bin/bash -c \"python -u -m nvflare.private.fed.app.server.server_train -m ${DEST_FOLDER} -s fed_server.json --set secure_train=true config_folder=config org={~~ORG~~} \" " > /tmp/vm_create.json 2>&1 
       report_status "$?" "launching container"
   else
     echo "Installing packages in $VM_NAME, may take a few minutes."
@@ -1192,15 +1190,7 @@ azure_start_svr_sh: |
       --command-id RunShellScript \
       --name $VM_NAME \
       --scripts \
-      "echo ${DEST_FOLDER} && \
-      wget -q https://bootstrap.pypa.io/get-pip.py && \
-      python3 get-pip.py && \
-      python3 -m pip install --ignore-installed nvflare && \
-      touch ${DEST_FOLDER}/startup/requirements.txt && \
-      python3 -m pip install -r ${DEST_FOLDER}/startup/requirements.txt && \
-      ${DEST_FOLDER}/startup/start.sh && \
-      sleep 20 && \
-      cat ${DEST_FOLDER}/log.txt" > /tmp/vm_create.json
+      "echo ${DEST_FOLDER} && wget -q https://bootstrap.pypa.io/get-pip.py && python3 get-pip.py && python3 -m pip install --ignore-installed nvflare && touch ${DEST_FOLDER}/startup/requirements.txt && python3 -m pip install -r ${DEST_FOLDER}/startup/requirements.txt && ${DEST_FOLDER}/startup/start.sh && sleep 20 && cat ${DEST_FOLDER}/log.txt" > /tmp/vm_create.json
     report_status "$?" "installing packages"
   fi
   echo "System was provisioned"
@@ -1334,17 +1324,17 @@ azure_start_cln_sh: |
   then
     echo "Installing and lauching container in $VM_NAME, may take a few minutes."
     scripts=$(cat <<- 'EOF'
-    sudo apt-get update && \
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl gnupg lsb-release && \
-    sudo mkdir -p /etc/apt/keyrings && \
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
-    echo \
-    "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-    $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && \
-    sudo apt-get update && \
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io
+  sudo apt-get update && \
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl gnupg lsb-release && \
+  sudo mkdir -p /etc/apt/keyrings && \
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+  echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+  sudo apt-get update && \
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io
   EOF
-    )
+  )
     az vm run-command invoke \
       --output json \
       --resource-group $RESOURCE_GROUP \
@@ -1352,7 +1342,6 @@ azure_start_cln_sh: |
       --name $VM_NAME \
       --scripts \
       "$scripts" > /tmp/docker_engine.json
-      sudo usermod -aG docker $ADMIN_USERNAME" > /tmp/docker_engine.json
     report_status "$?" "installing docker engine"
     az vm run-command invoke \
       --output json \
@@ -1367,9 +1356,7 @@ azure_start_cln_sh: |
       --command-id RunShellScript \
       --name $VM_NAME \
       --scripts \
-      "docker run -d -v ${DEST_FOLDER}:${DEST_FOLDER} ${image_name} \
-      /bin/bash -c \"python -u -m nvflare.private.fed.app.client.client_train -m ${DEST_FOLDER} \
-      -s fed_client.json --set uid={~~SITE~~} secure_train=true config_folder=config org={~~ORG~~} \" " > /tmp/vm_create.json 2>&1 
+      "docker run -d -v ${DEST_FOLDER}:${DEST_FOLDER} ${image_name} /bin/bash -c \"python -u -m nvflare.private.fed.app.client.client_train -m ${DEST_FOLDER} -s fed_client.json --set uid={~~SITE~~} secure_train=true config_folder=config org={~~ORG~~} \" " > /tmp/vm_create.json 2>&1 
       report_status "$?" "launching container"
   else
     echo "Installing packages in $VM_NAME, may take a few minutes."
@@ -1379,15 +1366,7 @@ azure_start_cln_sh: |
       --command-id RunShellScript \
       --name $VM_NAME \
       --scripts \
-      "echo ${DEST_FOLDER} && \
-      wget -q https://bootstrap.pypa.io/get-pip.py && \
-      python3 get-pip.py && \
-      python3 -m pip install --ignore-installed nvflare && \
-      touch ${DEST_FOLDER}/startup/requirements.txt && \
-      python3 -m pip install -r ${DEST_FOLDER}/startup/requirements.txt && \
-      ${DEST_FOLDER}/startup/start.sh && \
-      sleep 20 && \
-      cat ${DEST_FOLDER}/log.txt" > /tmp/vm_create.json
+      "echo ${DEST_FOLDER} && wget -q https://bootstrap.pypa.io/get-pip.py && python3 get-pip.py && python3 -m pip install --ignore-installed nvflare && touch ${DEST_FOLDER}/startup/requirements.txt && python3 -m pip install -r ${DEST_FOLDER}/startup/requirements.txt && ${DEST_FOLDER}/startup/start.sh && sleep 20 && cat ${DEST_FOLDER}/log.txt" > /tmp/vm_create.json
     report_status "$?" "installing packages"
   fi
   echo "System was provisioned"
@@ -1521,12 +1500,7 @@ azure_start_dsb_sh: |
     --command-id RunShellScript \
     --name $VM_NAME \
     --scripts \
-    "echo ${DEST_FOLDER} && \
-    wget -q https://bootstrap.pypa.io/get-pip.py && \
-    python3 get-pip.py && \
-    python3 -m pip install --ignore-installed {~~NVFLARE~~} && \
-    mkdir -p ${DEST_FOLDER}/cert && \
-    chown -R ${ADMIN_USERNAME} ${DEST_FOLDER}" > /tmp/nvflare.json && \
+    "echo ${DEST_FOLDER} && wget -q https://bootstrap.pypa.io/get-pip.py && python3 get-pip.py && python3 -m pip install --ignore-installed {~~NVFLARE~~} && mkdir -p ${DEST_FOLDER}/cert && chown -R ${ADMIN_USERNAME} ${DEST_FOLDER}" > /tmp/nvflare.json
   report_status "$?" "installing nvflare"
 
   echo "Checking if certificate (web.crt) and private key (web.key) are available"
@@ -1548,8 +1522,7 @@ azure_start_dsb_sh: |
     --command-id RunShellScript \
     --name $VM_NAME \
     --scripts \
-    "cd ${DEST_FOLDER} && \
-     python3 -m nvflare.dashboard.cli --start -f ${DEST_FOLDER} --cred ${credential} {~~START_OPT~~}" > /tmp/dashboard.json
+    "cd ${DEST_FOLDER} && python3 -m nvflare.dashboard.cli --start -f ${DEST_FOLDER} --cred ${credential} {~~START_OPT~~}" > /tmp/dashboard.json
 
   # credential=$(jq -r .value[0].message /tmp/dashboard.json | grep "Project admin")
   # echo "The VM was created with user: ${ADMIN_USERNAME} and password: ${PASSWORD}"
