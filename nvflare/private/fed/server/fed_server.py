@@ -779,6 +779,9 @@ class FederatedServer(BaseServer):
         return self.overseer_agent
 
     def _check_server_state(self, overseer_agent):
+        if self.status != ServerStatus.STARTED:
+            return
+
         if overseer_agent.is_shutdown():
             self.engine.shutdown_server()
             return
