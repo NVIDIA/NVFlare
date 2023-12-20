@@ -196,6 +196,7 @@ class Server:
 
     def shutdown(self):
         self.grpc_server.stop(grace=0.5)
+        self.grpc_server = None
 
 
 class GrpcDriver(BaseDriver):
