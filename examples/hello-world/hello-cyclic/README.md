@@ -9,7 +9,8 @@ You can follow the [hello_world notebook](../hello_world.ipynb) or the following
 
 ### 1. Install NVIDIA FLARE
 
-Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions.
+Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions to install NVFlare.
+
 Install additional requirements:
 
 ```
@@ -17,6 +18,12 @@ pip3 install tensorflow
 ```
 
 ### 2. Run the experiment
+
+Prepare the data first:
+
+```
+bash ./prepare_data.sh
+```
 
 Use nvflare simulator to run the hello-examples:
 
