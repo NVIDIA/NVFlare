@@ -396,6 +396,11 @@ class LauncherExecutor(TaskExchanger):
                             f"launcher completed {task_name} with status {run_status} at time {self._launcher_finish_time}",
                         )
 
+                    if run_status == LauncherRunStatus.COMPLETE_FAILED:
+                        msg = f"Launcher failed with at time {self._launcher_finish_time} "
+                        self._abort_signal.trigger(msg)
+                        break
+
                 if not self._launcher_finish:
                     continue
 
