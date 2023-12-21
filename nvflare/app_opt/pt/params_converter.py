@@ -14,6 +14,7 @@
 
 from typing import Dict
 
+import numpy as np
 import torch
 
 from nvflare.app_common.abstract.params_converter import ParamsConverter
@@ -21,9 +22,17 @@ from nvflare.app_common.abstract.params_converter import ParamsConverter
 
 class NumpyToPTParamsConverter(ParamsConverter):
     def convert(self, params: Dict, fl_ctx) -> Dict:
-        return {k: torch.as_tensor(v) for k, v in params.items()}
+        tensor_shapes = fl_ctx.get_prop("tensor_shapes")
+        if tensor_shapes:
+            return {
+                k: torch.as_tensor(np.reshape(v, tensor_shapes[k])) if k in tensor_shapes else torch.as_tensor(v)
+                for k, v in params.items()
+            }
+        else:
+            return {k: torch.as_tensor(v) for k, v in params.items()}
 
 
 class PTToNumpyParamsConverter(ParamsConverter):
     def convert(self, params: Dict, fl_ctx) -> Dict:
+        fl_ctx.set_prop("tensor_shapes", {k: v.shape for k, v in params.items()})
         return {k: v.cpu().numpy() for k, v in params.items()}
