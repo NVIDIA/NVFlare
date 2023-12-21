@@ -1,0 +1,16 @@
+# A faithful reproduction of the ESM-2 architecture and training parameters originally developed by META-ai
+# using NVIDIA NeMo building blocks. Original model https://github.com/facebookresearch/esm
+
+defaults:
+  - base_config
+
+name: esm2-8M
+
+model:
+  seq_length: 1024
+  num_layers: 6
+  hidden_size: 320
+  num_attention_heads: 20
+
+  tokenizer:
+    model_name: "facebook/esm2_t6_8M_UR50D"
