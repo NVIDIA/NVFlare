@@ -22,6 +22,7 @@ from nvflare.private.fed.server.fed_server import FederatedServer
 from nvflare.private.fed.server.job_runner import JobRunner
 from nvflare.private.fed.server.run_manager import RunManager
 from nvflare.private.fed.server.server_cmd_modules import ServerCommandModules
+from nvflare.private.fed.server.server_status import ServerStatus
 
 
 class ServerDeployer:
@@ -121,6 +122,7 @@ class ServerDeployer:
             services.engine.fire_event(EventType.SYSTEM_BOOTSTRAP, fl_ctx)
 
             threading.Thread(target=self._start_job_runner, args=[job_runner, fl_ctx]).start()
+            services.status = ServerStatus.STARTED
 
             services.engine.fire_event(EventType.SYSTEM_START, fl_ctx)
             print("deployed FL server trainer.")
