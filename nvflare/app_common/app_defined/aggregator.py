@@ -19,17 +19,27 @@ from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.aggregator import Aggregator
+from nvflare.app_common.abstract.model import ModelLearnableKey
+from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 
+from .component_base import ComponentBase
 
-class SimpleAggregator(Aggregator, ABC):
+
+class AppDefinedAggregator(Aggregator, ComponentBase, ABC):
     def __init__(self):
         Aggregator.__init__(self)
-        self.fl_ctx = None
+        ComponentBase.__init__(self)
+        self.current_round = None
+        self.base_model_obj = None
 
     def handle_event(self, event_type, fl_ctx: FLContext):
         if event_type == AppEventType.ROUND_STARTED:
             self.fl_ctx = fl_ctx
+            self.current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
+            base_model_learnable = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
+            if isinstance(base_model_learnable, dict):
+                self.base_model_obj = base_model_learnable.get(ModelLearnableKey.WEIGHTS)
             self.reset()
 
     @abstractmethod
@@ -63,5 +73,5 @@ class SimpleAggregator(Aggregator, ABC):
             data={DataKind.APP_DEFINED: aggregated_result},
             meta=aggregated_meta,
         )
-        print(f"learnable_to_shareable: {dxo.data}")
+        self.debug(f"learnable_to_shareable: {dxo.data}")
         return dxo.to_shareable()

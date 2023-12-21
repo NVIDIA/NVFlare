@@ -23,11 +23,14 @@ from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey,
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 
+from .component_base import ComponentBase
 
-class SimpleShareableGenerator(ShareableGenerator, ABC):
+
+class AppDefinedShareableGenerator(ShareableGenerator, ComponentBase, ABC):
     def __init__(self):
         ShareableGenerator.__init__(self)
-        self.fl_ctx = None
+        ComponentBase.__init__(self)
+        self.current_round = None
 
     @abstractmethod
     def model_to_trainable(self, model_obj: Any) -> (Any, dict):
@@ -58,20 +61,22 @@ class SimpleShareableGenerator(ShareableGenerator, ABC):
 
     def learnable_to_shareable(self, learnable: Learnable, fl_ctx: FLContext) -> Shareable:
         self.fl_ctx = fl_ctx
-        print(f"{learnable=}")
+        self.current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
+        self.debug(f"{learnable=}")
         base_model_obj = learnable.get(ModelLearnableKey.WEIGHTS)
         trainable_weights, trainable_meta = self.model_to_trainable(base_model_obj)
-        print(f"trainable weights: {trainable_weights}")
+        self.debug(f"trainable weights: {trainable_weights}")
         dxo = DXO(
             data_kind=DataKind.APP_DEFINED,
             data={DataKind.APP_DEFINED: trainable_weights},
             meta=trainable_meta,
         )
-        print(f"learnable_to_shareable: {dxo.data}")
+        self.debug(f"learnable_to_shareable: {dxo.data}")
         return dxo.to_shareable()
 
     def shareable_to_learnable(self, shareable: Shareable, fl_ctx: FLContext) -> Learnable:
         self.fl_ctx = fl_ctx
+        self.current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         base_model_learnable = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
 
         if not base_model_learnable:

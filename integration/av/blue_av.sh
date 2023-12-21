@@ -1,0 +1,1 @@
+python launch.py -p av_trainer -sw bluesw -s blue -a ndas_1 -uw /Users/yanc/NVFlare/sandbox/workspace/test/prod_00/admin@nvidia.com -u admin@nvidia.com

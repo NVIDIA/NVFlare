@@ -14,29 +14,38 @@
 
 from typing import Any
 
-from .av_model import AVModel
-from .simple_shareable_generator import SimpleShareableGenerator
+from nvflare.app_common.app_defined.shareable_generator import AppDefinedShareableGenerator
+
+from .av_model import META_IS_DIFF, AVModel
 
 
-class AVShareableGenerator(SimpleShareableGenerator):
+class AVShareableGenerator(AppDefinedShareableGenerator):
     def model_to_trainable(self, model_obj: Any) -> (dict, dict):
         if not isinstance(model_obj, AVModel):
             raise ValueError(f"model object must be AVModel but got {type(model_obj)}")
 
-        # Note: the weights returned must be serializable since it will be sent to clients
         return model_obj.free_layers, model_obj.meta
 
     def apply_weights_to_model(self, model_obj: Any, weights: Any, meta: dict) -> Any:
-        # the "weights" is received from client. it has to be deserialized before processing
         if not isinstance(model_obj, AVModel):
             raise ValueError(f"model object must be AVModel but got {type(model_obj)}")
         layers = weights
 
-        print(f"apply layers to model: {layers}")
+        self.info(f"apply layers to model: {layers=}, {meta=}")
 
         # process received layers
         # this should be done based on meta information.
         # for example, if the "weights" contains diff, you need to add it to the based model.
-        model_obj.free_layers = layers
+        if not meta.get(META_IS_DIFF):
+            model_obj.free_layers = layers
+        else:
+            # apply diffs
+            free_layers = model_obj.free_layers
+            meta.pop(META_IS_DIFF)
+            for k, v in free_layers.items():
+                for i, w in enumerate(v):
+                    v[i] += layers[k][i]
+
         model_obj.meta.update(meta)
+        self.info(f"aggregated full model: {model_obj.free_layers}")
         return model_obj

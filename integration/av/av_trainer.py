@@ -17,6 +17,7 @@ import logging
 import os.path
 import pickle
 
+from integration.av.av_model import META_IS_DIFF
 from nvflare.client.defs import RC, AgentClosed, MetaKey, Task, TaskResult
 from nvflare.client.ipc_agent import IPCAgent
 
@@ -115,7 +116,7 @@ def train(task: Task):
     # Save local numpy model
     print(f"Layers after training: {layers}")
 
-    meta = {MetaKey.NUM_STEPS_CURRENT_ROUND: 1, MetaKey.DATA_KIND: "full"}
+    meta = {MetaKey.NUM_STEPS_CURRENT_ROUND: 1, META_IS_DIFF: False}
     return RC.OK, meta, layers
 
 

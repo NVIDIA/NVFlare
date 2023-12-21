@@ -27,6 +27,7 @@ def main():
     parser.add_argument("--site_name", "-s", type=str, help="flare site name", required=True)
     parser.add_argument("--site_workspace", "-sw", type=str, help="site workspace folder", required=True)
     parser.add_argument("--agent_id", "-a", type=str, help="agent id", required=True)
+    parser.add_argument("--program", "-p", type=str, help="program to launch", required=False, default="av_trainer")
 
     args = parser.parse_args()
     print("logging in to FLARE Admin ...")
@@ -39,7 +40,8 @@ def main():
     cp_url = conn_info["int_listener"]["url"]
     print(f"Got CP URL {cp_url}")
 
-    launch_cmd = f"python av_trainer.py -w {args.site_workspace} -s {args.site_name} -a {args.agent_id} -u {cp_url}"
+    program = args.program
+    launch_cmd = f"python {program}.py -w {args.site_workspace} -s {args.site_name} -a {args.agent_id} -u {cp_url}"
     print(f"Launching: {launch_cmd}")
 
     new_env = os.environ.copy()

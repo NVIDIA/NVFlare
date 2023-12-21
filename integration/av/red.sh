@@ -1,1 +1,0 @@
-python launch.py -sw redsw -s red -a ndas_1 -uw /Users/yanc/NVFlare/sandbox/workspace/test/prod_00/admin@nvidia.com -u admin@nvidia.com

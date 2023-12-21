@@ -14,6 +14,8 @@
 
 import json
 
+META_IS_DIFF = "is_diff"
+
 
 class AVModel:
     def __init__(self, meta, frozen_layers, free_layers):

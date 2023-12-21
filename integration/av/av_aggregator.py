@@ -14,52 +14,59 @@
 import copy
 from typing import Any
 
-from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.app_defined.aggregator import AppDefinedAggregator
 
-from .simple_aggregator import SimpleAggregator
+from .av_model import META_IS_DIFF, AVModel
 
 
-class AVAggregator(SimpleAggregator):
+class AVAggregator(AppDefinedAggregator):
     def __init__(self):
-        SimpleAggregator.__init__(self)
-        self.current_result = {}
+        AppDefinedAggregator.__init__(self)
+        self.accumulated_diff = {}
         self.current_meta = {}
         self.num_clients = 0
 
     def processing_training_result(self, client_name: str, trained_weights: Any, trained_meta: dict) -> bool:
         if not isinstance(trained_weights, dict):
-            self.log_error(
-                self.fl_ctx, f"invalid result from client {client_name}: expect dict but got {type(trained_weights)}"
-            )
+            self.error(f"invalid result from client {client_name}: expect dict but got {type(trained_weights)}")
             return False
 
-        current_round = self.fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
+        free_layers = self.base_model_obj.free_layers
+        self.info(f"Round {self.current_round}: received result from client {client_name}: {trained_weights}")
+        self.info(f"Round {self.current_round}: current base: {free_layers}")
+        self.info(f"Round {self.current_round}: current diff: {self.accumulated_diff}")
 
-        print(f"====== Round {current_round}: received result from client {client_name}: {trained_weights}")
-        print(f"====== Round {current_round}: current result: {self.current_result}")
-        for k, v in trained_weights.items():
-            if k in self.current_result:
+        if not trained_meta.get(META_IS_DIFF):
+            # compute weight diff from base model
+            assert isinstance(self.base_model_obj, AVModel)
+            for k, v in trained_weights.items():
                 for i, w in enumerate(v):
-                    self.current_result[k][i] += w
+                    v[i] -= free_layers[k][i]
+
+        for k, v in trained_weights.items():
+            if k in self.accumulated_diff:
+                for i, w in enumerate(v):
+                    self.accumulated_diff[k][i] += w
             else:
-                self.current_result[k] = copy.deepcopy(trained_weights[k])
+                self.accumulated_diff[k] = copy.deepcopy(trained_weights[k])
 
         self.current_meta.update(trained_meta)
         self.num_clients += 1
-        print(f"accumulated after client {self.num_clients}: {self.current_result}")
+        self.info(f"accumulated diffs after client {self.num_clients}: {self.accumulated_diff}")
         return True
 
     def reset(self):
-        self.current_result = {}
+        self.accumulated_diff = {}
         self.current_meta = {}
         self.num_clients = 0
 
     def aggregate_training_result(self) -> (Any, dict):
-        result = self.current_result
+        result = self.accumulated_diff
         meta = self.current_meta
         if self.num_clients > 0:
             for k, v in result.items():
                 for i, w in enumerate(v):
                     v[i] = w / self.num_clients
-        print(f"after aggregated: {result}")
+        self.info(f"Round {self.current_round} aggregated diff: {result}")
+        meta[META_IS_DIFF] = True
         return result, meta

@@ -19,11 +19,13 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 
+from .component_base import ComponentBase
 
-class SimpleModelPersistor(ModelPersistor, ABC):
+
+class AppDefinedModelPersistor(ModelPersistor, ComponentBase, ABC):
     def __init__(self):
         ModelPersistor.__init__(self)
-        self.fl_ctx = None
+        ComponentBase.__init__(self)
 
     @abstractmethod
     def read_model(self) -> Any:
