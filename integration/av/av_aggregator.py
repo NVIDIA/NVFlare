@@ -27,10 +27,11 @@ class AVAggregator(AppDefinedAggregator):
         self.num_clients = 0
 
     def processing_training_result(self, client_name: str, trained_weights: Any, trained_meta: dict) -> bool:
-        if not isinstance(trained_weights, dict):
-            self.error(f"invalid result from client {client_name}: expect dict but got {type(trained_weights)}")
+        if not isinstance(trained_weights, AVModel):
+            self.error(f"invalid result from client {client_name}: expect AVModel but got {type(trained_weights)}")
             return False
 
+        trained_weights = trained_weights.free_layers
         free_layers = self.base_model_obj.free_layers
         self.info(f"Round {self.current_round}: received result from client {client_name}: {trained_weights}")
         self.info(f"Round {self.current_round}: current base: {free_layers}")
@@ -69,4 +70,4 @@ class AVAggregator(AppDefinedAggregator):
                     v[i] = w / self.num_clients
         self.info(f"Round {self.current_round} aggregated diff: {result}")
         meta[META_IS_DIFF] = True
-        return result, meta
+        return AVModel({}, {}, result), meta

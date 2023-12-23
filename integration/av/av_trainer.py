@@ -17,7 +17,7 @@ import logging
 import os.path
 import pickle
 
-from integration.av.av_model import META_IS_DIFF
+from integration.av.av_model import META_IS_DIFF, AVModel, AVModelDecomposer
 from nvflare.client.defs import RC, AgentClosed, MetaKey, Task, TaskResult
 from nvflare.client.ipc_agent import IPCAgent
 
@@ -44,6 +44,7 @@ def main():
         submit_result_timeout=2.0,
         flare_site_heartbeat_timeout=None,  # waiting forever
     )
+    AVModelDecomposer.register_decomposers()
 
     snapshot_file_name = f"{args.site_name}_{args.agent_id}_snapshot.dat"
 
@@ -95,7 +96,12 @@ def main():
 def train(task: Task):
     print(f"got task: {task.meta=} {task.data=}")
     meta = task.meta
-    layers = task.data
+    model = task.data
+
+    if not isinstance(model, AVModel):
+        raise ValueError(f"task data must be AVModel but got {type(model)}")
+    layers = model.free_layers
+
     current_round = meta.get(MetaKey.CURRENT_ROUND)
     total_rounds = meta.get(MetaKey.TOTAL_ROUND)
 
@@ -117,7 +123,7 @@ def train(task: Task):
     print(f"Layers after training: {layers}")
 
     meta = {MetaKey.NUM_STEPS_CURRENT_ROUND: 1, META_IS_DIFF: False}
-    return RC.OK, meta, layers
+    return RC.OK, meta, AVModel({}, {}, layers)
 
 
 if __name__ == "__main__":

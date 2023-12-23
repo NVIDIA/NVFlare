@@ -57,8 +57,6 @@ class AppDefinedAggregator(Aggregator, ComponentBase, ABC):
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
         dxo = from_shareable(shareable)
         trained_weights = dxo.data
-        if dxo.data_kind == DataKind.APP_DEFINED:
-            trained_weights = trained_weights.get(DataKind.APP_DEFINED)
         trained_meta = dxo.meta
         self.fl_ctx = fl_ctx
         peer_ctx = fl_ctx.get_peer_context()
@@ -70,7 +68,7 @@ class AppDefinedAggregator(Aggregator, ComponentBase, ABC):
         aggregated_result, aggregated_meta = self.aggregate_training_result()
         dxo = DXO(
             data_kind=DataKind.APP_DEFINED,
-            data={DataKind.APP_DEFINED: aggregated_result},
+            data=aggregated_result,
             meta=aggregated_meta,
         )
         self.debug(f"learnable_to_shareable: {dxo.data}")

@@ -280,7 +280,6 @@ class IPCExchanger(Executor):
         task_id = task_ctx.task_id
         data = dxo.data
         if dxo.data_kind == DataKind.APP_DEFINED:
-            data = data.get(DataKind.APP_DEFINED)
             is_app_defined = True
         if not data:
             data = {}
@@ -337,7 +336,6 @@ class IPCExchanger(Executor):
         data = result.get(defs.PayloadKey.DATA)
         if is_app_defined:
             data_kind = DataKind.APP_DEFINED
-            data = {DataKind.APP_DEFINED: data}
         else:
             data_kind = meta.get(defs.MetaKey.DATA_KIND, DataKind.WEIGHTS)
 

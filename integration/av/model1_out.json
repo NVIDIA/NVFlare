@@ -32,7 +32,7 @@
         "NUM_STEPS_CURRENT_ROUND": 1,
         "create_time": "2023-12-18",
         "created_by": "yan",
-        "data_kind": "full",
+        "is_diff": false,
         "model_name": "test"
     }
 }

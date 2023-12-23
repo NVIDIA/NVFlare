@@ -20,16 +20,21 @@ from .av_model import META_IS_DIFF, AVModel
 
 
 class AVShareableGenerator(AppDefinedShareableGenerator):
-    def model_to_trainable(self, model_obj: Any) -> (dict, dict):
+    def model_to_trainable(self, model_obj: Any) -> (Any, dict):
         if not isinstance(model_obj, AVModel):
             raise ValueError(f"model object must be AVModel but got {type(model_obj)}")
 
-        return model_obj.free_layers, model_obj.meta
+        # only send free layers!
+        return AVModel({}, {}, model_obj.free_layers), model_obj.meta
 
     def apply_weights_to_model(self, model_obj: Any, weights: Any, meta: dict) -> Any:
         if not isinstance(model_obj, AVModel):
             raise ValueError(f"model object must be AVModel but got {type(model_obj)}")
-        layers = weights
+
+        if not isinstance(weights, AVModel):
+            raise ValueError(f"weights object must be AVModel but got {type(weights)}")
+
+        layers = weights.free_layers
 
         self.info(f"apply layers to model: {layers=}, {meta=}")
 

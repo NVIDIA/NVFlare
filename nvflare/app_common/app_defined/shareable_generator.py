@@ -68,7 +68,7 @@ class AppDefinedShareableGenerator(ShareableGenerator, ComponentBase, ABC):
         self.debug(f"trainable weights: {trainable_weights}")
         dxo = DXO(
             data_kind=DataKind.APP_DEFINED,
-            data={DataKind.APP_DEFINED: trainable_weights},
+            data=trainable_weights,
             meta=trainable_meta,
         )
         self.debug(f"learnable_to_shareable: {dxo.data}")
@@ -88,9 +88,7 @@ class AppDefinedShareableGenerator(ShareableGenerator, ComponentBase, ABC):
         base_model_obj = base_model_learnable.get(ModelLearnableKey.WEIGHTS)
 
         dxo = from_shareable(shareable)
-        if dxo.data_kind != DataKind.APP_DEFINED:
-            raise ValueError(f"expect DXO DataKind to be APP_DEFINED but got {dxo.data_kind}")
-        trained_weights = dxo.data.get(DataKind.APP_DEFINED)
+        trained_weights = dxo.data
         trained_meta = dxo.meta
         model_obj = self.apply_weights_to_model(model_obj=base_model_obj, weights=trained_weights, meta=trained_meta)
         return make_model_learnable(model_obj, {})

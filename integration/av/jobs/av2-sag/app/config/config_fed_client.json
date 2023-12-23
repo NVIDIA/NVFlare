@@ -1,0 +1,25 @@
+{
+  "format_version": 2,
+  "executors": [
+    {
+      "tasks": [
+        "train"
+      ],
+      "executor": {
+        "path": "nvflare.app_common.executors.ipc_exchanger.IPCExchanger",
+        "args": {
+          "agent_id": "ndas_1"
+        }
+      }
+    }
+  ],
+  "task_result_filters": [],
+  "task_data_filters": [],
+  "components": [
+    {
+      "id": "decomp",
+      "path": "integration.av.decomposer_installer.AVDecomposerInstaller",
+      "args": {}
+    }
+  ]
+}

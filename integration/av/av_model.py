@@ -13,6 +13,9 @@
 # limitations under the License.
 
 import json
+from typing import Any
+
+from nvflare.fuel.utils import fobs
 
 META_IS_DIFF = "is_diff"
 
@@ -35,3 +38,27 @@ class AVModel:
     def load(cls, file_name: str):
         data = json.load(open(file_name, "r"))
         return cls(meta=data.get("meta", {}), frozen_layers=data.get("frozen", {}), free_layers=data.get("free", {}))
+
+
+class AVModelDecomposer(fobs.Decomposer):
+
+    _registered = False
+
+    def supported_type(self):
+        return AVModel
+
+    def decompose(self, target: Any) -> Any:
+        assert isinstance(target, AVModel)
+        return {"meta": target.meta, "frozen": target.frozen_layers, "free": target.free_layers}
+
+    def recompose(self, data: Any) -> AVModel:
+        assert isinstance(data, dict)
+        return AVModel(
+            meta=data.get("meta", {}), frozen_layers=data.get("frozen", {}), free_layers=data.get("free", {})
+        )
+
+    @classmethod
+    def register_decomposers(cls):
+        if not cls._registered:
+            fobs.register(cls)
+            cls._registered = True
