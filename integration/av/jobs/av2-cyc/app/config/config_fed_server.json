@@ -1,0 +1,38 @@
+{
+  "format_version": 2,
+  "task_data_filters": [],
+  "task_result_filters": [],
+  "components": [
+    {
+      "id": "persistor",
+      "path": "integration.av.av_model_persistor.AVModelPersistor",
+      "args": {
+        "file_path": "/Users/yanc/NVFlare/integration/av/model1.json",
+        "output_path": "/Users/yanc/NVFlare/integration/av/model1_out.json"
+      }
+    },
+    {
+      "id": "shareable_generator",
+      "path": "integration.av.av_shareable_generator.AVShareableGenerator",
+      "args": {}
+    },
+    {
+      "id": "decomp",
+      "path": "integration.av.decomposer_installer.AVDecomposerInstaller",
+      "args": {}
+    }
+  ],
+  "workflows": [
+    {
+      "id": "cyclic_ctl",
+      "path": "nvflare.app_common.workflows.cyclic_ctl.CyclicController",
+      "args": {
+        "num_rounds": 100,
+        "persistor_id": "persistor",
+        "shareable_generator_id": "shareable_generator",
+        "task_name": "train",
+        "allow_early_termination": true
+      }
+    }
+  ]
+}
