@@ -414,6 +414,7 @@ class FLMetaKey:
     FILTER_HISTORY = "filter_history"
     CONFIGS = "configs"
     VALIDATE_TYPE = "validate_type"
+    START_ROUND = "start_round"
     CURRENT_ROUND = "current_round"
     TOTAL_ROUNDS = "total_rounds"
     JOB_ID = "job_id"

@@ -19,7 +19,6 @@ from nvflare.apis.analytix import AnalyticsDataType as AnalyticsDataType
 from nvflare.app_common.abstract.fl_model import FLModel as FLModel
 from nvflare.app_common.abstract.fl_model import ParamsType as ParamsType
 
-from .api import clear as clear
 from .api import get_config as get_config
 from .api import get_job_id as get_job_id
 from .api import get_site_name as get_site_name

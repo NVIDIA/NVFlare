@@ -11,25 +11,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-import importlib
 import os
 from typing import Any, Dict, Optional, Tuple
 
 from nvflare.apis.analytix import AnalyticsDataType
-from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.app_common.abstract.fl_model import FLModel
-from nvflare.fuel.utils import fobs
-from nvflare.fuel.utils.import_utils import optional_import
-from nvflare.fuel.utils.pipe.pipe import Pipe
+from nvflare.fuel.data_event.data_bus import DataBus
 
-from .config import ClientConfig, ConfigKey, ExchangeFormat, from_file
+from .api_spec import CLIENT_API_KEY, CLIENT_API_TYPE_KEY, APISpec
 from .constants import CLIENT_API_CONFIG
-from .flare_agent import FlareAgentException
-from .flare_agent_with_fl_model import FlareAgentWithFLModel
-from .model_registry import ModelRegistry
-
-PROCESS_MODEL_REGISTRY = None
+from .sub_process.process_api import ExecProcessComm
 
 
 def _create_client_config(config: str) -> ClientConfig:
@@ -140,11 +131,11 @@ def receive(timeout: Optional[float] = None) -> Optional[FLModel]:
             nvflare.client.receive()
 
     """
-    model_registry = get_model_registry()
-    return model_registry.get_model(timeout)
+    global client_api
+    return client_api.receive(timeout)
 
 
-def send(fl_model: FLModel, clear_registry: bool = True) -> None:
+def send(model: FLModel, clear_cache: bool = True) -> None:
     """Sends the model to NVFlare side.
 
     Args:
@@ -177,7 +168,6 @@ def clear():
     model_registry = get_model_registry()
     model_registry.clear()
 
-
 def system_info() -> Dict:
     """Gets NVFlare system information.
 
@@ -197,11 +187,12 @@ def system_info() -> Dict:
             sys_info = nvflare.client.system_info()
 
     """
-    model_registry = get_model_registry()
-    return model_registry.get_sys_info()
+    global client_api
+    return client_api.system_info()
 
 
 def get_config() -> Dict:
+
     """Gets the ClientConfig dictionary.
 
     Returns:
@@ -372,3 +363,4 @@ def log(key: str, value: Any, data_type: AnalyticsDataType, **kwargs) -> bool:
     flare_agent = model_registry.flare_agent
     dxo = create_analytic_dxo(tag=key, value=value, data_type=data_type, **kwargs)
     return flare_agent.log(dxo)
+

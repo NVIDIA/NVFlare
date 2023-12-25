@@ -41,7 +41,9 @@ class ConfigKey:
     PIPE = "pipe"
     CLASS_NAME = "CLASS_NAME"
     ARG = "ARG"
+    # todo: reduce duplicate SITE_NAME is also defined at FLMetaKey.SITE_NAME
     SITE_NAME = "SITE_NAME"
+    TASK_NAME = "TASK_NAME"
     JOB_ID = "JOB_ID"
     TASK_EXCHANGE = "TASK_EXCHANGE"
     METRICS_EXCHANGE = "METRICS_EXCHANGE"
@@ -121,7 +123,7 @@ class ClientConfig:
             config = {}
         self.config = config
 
-    def get_config(self):
+    def get_config(self) -> Dict:
         return self.config
 
     def get_pipe_channel_name(self, section: str) -> str:
