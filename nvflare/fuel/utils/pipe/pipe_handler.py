@@ -19,7 +19,7 @@ from collections import deque
 from typing import Optional
 
 from nvflare.apis.signal import Signal
-from nvflare.fuel.utils.pipe.pipe import Message, Pipe
+from nvflare.fuel.utils.pipe.pipe import Message, Pipe, Topic
 from nvflare.fuel.utils.validation_utils import (
     check_callable,
     check_non_negative_number,
@@ -27,14 +27,6 @@ from nvflare.fuel.utils.validation_utils import (
     check_positive_number,
 )
 from nvflare.security.logging import secure_format_exception
-
-
-class Topic(object):
-
-    ABORT = "_ABORT_"
-    END = "_END_"
-    HEARTBEAT = "_HEARTBEAT_"
-    PEER_GONE = "_PEER_GONE_"
 
 
 class PipeHandler(object):
