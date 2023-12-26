@@ -62,6 +62,7 @@ class PipeHandler(object):
         heartbeat_timeout=30.0,
         resend_interval=2.0,
         max_resends=None,
+        default_request_timeout=5.0,
     ):
         """
         Constructor of the PipeHandler.
@@ -75,6 +76,7 @@ class PipeHandler(object):
             resend_interval: how often to resend a message if failing to send. None means no resend.
                 Note that if the pipe does not support resending, then no resend.
             max_resends: max number of resends. None means no limit.
+            default_request_timeout: default timeout for request if timeout not specified
         """
         check_positive_number("read_interval", read_interval)
         check_positive_number("heartbeat_interval", heartbeat_interval)
@@ -89,6 +91,7 @@ class PipeHandler(object):
         self.read_interval = read_interval
         self.heartbeat_interval = heartbeat_interval
         self.heartbeat_timeout = heartbeat_timeout
+        self.default_request_timeout = default_request_timeout
         self.resend_interval = resend_interval
         self.max_resends = max_resends
         self.messages = deque([])
@@ -164,6 +167,8 @@ class PipeHandler(object):
             return False
 
         if not timeout or not pipe.can_resend() or not self.resend_interval:
+            if not timeout:
+                timeout = self.default_request_timeout
             return pipe.send(msg, timeout)
 
         num_sends = 0
@@ -186,6 +191,12 @@ class PipeHandler(object):
             self.logger.info(f"will resend '{msg.topic}' in {self.resend_interval} secs")
             start_wait = time.time()
             while True:
+                if self.asked_to_stop:
+                    return False
+
+                if abort_signal and abort_signal.triggered:
+                    return False
+
                 if time.time() - start_wait > self.resend_interval:
                     break
                 time.sleep(0.1)
