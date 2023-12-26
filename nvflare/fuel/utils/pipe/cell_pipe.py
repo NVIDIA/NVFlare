@@ -28,7 +28,7 @@ from nvflare.fuel.utils.config_service import search_file
 from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.validation_utils import check_object_type, check_str
 
-from .pipe import Message, Pipe
+from .pipe import Message, Pipe, Topic
 
 SSL_ROOT_CERT = "rootCA.pem"
 _PREFIX = "cell_pipe."
@@ -215,21 +215,28 @@ class CellPipe(Pipe):
             if self.closed:
                 raise BrokenPipeError("pipe closed")
 
+            optional = False
+            if msg.topic in [Topic.END, Topic.ABORT, Topic.HEARTBEAT]:
+                optional = True
+
             reply = self.cell.send_request(
                 channel=self.channel,
                 topic=msg.topic,
                 target=self.peer_fqcn,
                 request=_to_cell_message(msg),
                 timeout=timeout,
+                optional=optional,
             )
             if reply:
                 rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
                 if rc == ReturnCode.OK:
                     return True
                 else:
-                    self.logger.error(
-                        f"failed to send '{msg.topic}' to '{self.peer_fqcn}' in channel '{self.channel}': {rc}"
-                    )
+                    err = f"failed to send '{msg.topic}' to '{self.peer_fqcn}' in channel '{self.channel}': {rc}"
+                    if optional:
+                        self.logger.debug(err)
+                    else:
+                        self.logger.error(err)
                     return False
             else:
                 return False

@@ -22,6 +22,14 @@ from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.validation_utils import check_str
 
 
+class Topic(object):
+
+    ABORT = "_ABORT_"
+    END = "_END_"
+    HEARTBEAT = "_HEARTBEAT_"
+    PEER_GONE = "_PEER_GONE_"
+
+
 class Message:
 
     REQUEST = "REQ"
