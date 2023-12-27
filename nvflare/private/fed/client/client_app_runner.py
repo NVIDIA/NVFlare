@@ -19,13 +19,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.admin_defs import Message
-from nvflare.private.defs import (
-    CellChannel,
-    EngineConstant,
-    RequestHeader,
-    TrainingTopic,
-    new_cell_message,
-)
+from nvflare.private.defs import CellChannel, EngineConstant, RequestHeader, TrainingTopic, new_cell_message
 from nvflare.private.fed.app.fl_conf import create_privacy_manager
 from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
