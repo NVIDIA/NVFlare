@@ -17,10 +17,10 @@ import os
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import (
     CellChannel,
-    CellMessageHeaderKeys,
     EngineConstant,
     RequestHeader,
     TrainingTopic,
@@ -61,12 +61,14 @@ class ClientAppRunner(Runner):
         self.sync_up_parents_process(federated_client)
 
         federated_client.start_overseer_agent()
-        self.notify_job_status(federated_client, args.job_id, ClientStatus.STARTED)
+        kv_list = parse_vars(args.set)
+        notify_timeout = kv_list.get("notify_timeout", 5.0)
+        self.notify_job_status(federated_client, args.job_id, ClientStatus.STARTED, timeout=notify_timeout)
         federated_client.status = ClientStatus.STARTED
 
         self.client_runner.run(app_root, args)
 
-        self.notify_job_status(federated_client, args.job_id, ClientStatus.STOPPED)
+        self.notify_job_status(federated_client, args.job_id, ClientStatus.STOPPED, timeout=notify_timeout)
         federated_client.status = ClientStatus.STOPPED
         federated_client.stop_cell()
 
@@ -140,7 +142,7 @@ class ClientAppRunner(Runner):
         with run_manager.new_context() as fl_ctx:
             run_manager.get_all_clients_from_server(fl_ctx)
 
-    def notify_job_status(self, federated_client, job_id, status):
+    def notify_job_status(self, federated_client, job_id, status, timeout=5.0):
         message = Message(topic=TrainingTopic.NOTIFY_JOB_STATUS, body="")
         message.set_header(RequestHeader.JOB_ID, str(job_id))
         message.set_header(RequestHeader.JOB_STATUS, status)
@@ -150,7 +152,7 @@ class ClientAppRunner(Runner):
             channel=CellChannel.CLIENT_MAIN,
             topic="client_job",
             request=new_cell_message({}, message),
-            timeout=5.0,
+            timeout=timeout,
         )
 
     def close(self):
