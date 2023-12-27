@@ -62,11 +62,13 @@ class TrainingTopic(object):
     CANCEL_RESOURCE = "scheduler.cancel_resource"
     START_JOB = "train.start_job"
     GET_SCOPES = "train.get_scopes"
+    NOTIFY_JOB_STATUS = "train.notify_job_status"
 
 
 class RequestHeader(object):
 
     JOB_ID = "job_id"
+    JOB_STATUS = "job_status"
     TOPIC = "topic"
     JOB_META = "job_meta"
     APP_NAME = "app_name"

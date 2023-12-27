@@ -175,3 +175,17 @@ class ScopeInfoProcessor(RequestProcessor):
         result = {ScopeInfoKey.SCOPE_NAMES: scope_names, ScopeInfoKey.DEFAULT_SCOPE: default_scope_name}
         result = json.dumps(result)
         return ok_reply(topic=f"reply_{req.topic}", body=result)
+
+
+class NotifyJobStatusProcessor(RequestProcessor):
+    def get_topics(self) -> [str]:
+        return [TrainingTopic.NOTIFY_JOB_STATUS]
+
+    def process(self, req: Message, app_ctx) -> Message:
+        engine = app_ctx
+        if not isinstance(engine, ClientEngineInternalSpec):
+            raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
+        job_id = req.get_header(RequestHeader.JOB_ID)
+        job_status = req.get_header(RequestHeader.JOB_STATUS)
+        result = engine.notify_job_status(job_id, job_status)
+        return ok_reply(topic=f"reply_{req.topic}", body=result)

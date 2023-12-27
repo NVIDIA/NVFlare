@@ -206,7 +206,7 @@ class ProcessExecutor(ClientExecutor):
                 RunProcessKey.LISTEN_PORT: listen_port,
                 RunProcessKey.CONNECTION: None,
                 RunProcessKey.CHILD_PROCESS: process,
-                RunProcessKey.STATUS: ClientStatus.STARTED,
+                RunProcessKey.STATUS: ClientStatus.STARTING,
             }
 
         thread = threading.Thread(
@@ -214,6 +214,12 @@ class ProcessExecutor(ClientExecutor):
             args=(client, job_id, allocated_resource, token, resource_manager, args.workspace),
         )
         thread.start()
+
+    def notify_job_status(self, job_id, job_status):
+        with self.lock:
+            run_process = self.run_processes.get(job_id)
+            if run_process:
+                run_process[RunProcessKey.STATUS] = job_status
 
     def check_status(self, job_id):
         """Checks the status of the running client.
@@ -226,24 +232,8 @@ class ProcessExecutor(ClientExecutor):
         """
         try:
             with self.lock:
-                data = {}
-                fqcn = FQCN.join([self.client.client_name, job_id])
-                request = new_cell_message({}, data)
-                return_data = self.client.cell.send_request(
-                    target=fqcn,
-                    channel=CellChannel.CLIENT_COMMAND,
-                    topic=AdminCommandNames.CHECK_STATUS,
-                    request=request,
-                    optional=True,
-                )
-                return_code = return_data.get_header(MessageHeaderKey.RETURN_CODE)
-                if return_code == ReturnCode.OK:
-                    status_message = return_data.payload
-                    self.logger.debug("check status from process listener......")
-                    return status_message
-                else:
-                    process_status = ClientStatus.NOT_STARTED
-                    return get_status_message(process_status)
+                process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED)
+                return get_status_message(process_status)
         except Exception as e:
             self.logger.error(f"check_status execution exception: {secure_format_exception(e)}.")
             secure_log_traceback()

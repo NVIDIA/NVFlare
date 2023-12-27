@@ -17,7 +17,15 @@ import os
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
-from nvflare.private.defs import EngineConstant
+from nvflare.private.admin_defs import Message
+from nvflare.private.defs import (
+    CellChannel,
+    CellMessageHeaderKeys,
+    EngineConstant,
+    RequestHeader,
+    TrainingTopic,
+    new_cell_message,
+)
 from nvflare.private.fed.app.fl_conf import create_privacy_manager
 from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
@@ -53,8 +61,13 @@ class ClientAppRunner(Runner):
         self.sync_up_parents_process(federated_client)
 
         federated_client.start_overseer_agent()
+        self.notify_job_status(federated_client, args.job_id, ClientStatus.STARTED)
         federated_client.status = ClientStatus.STARTED
+
         self.client_runner.run(app_root, args)
+
+        self.notify_job_status(federated_client, args.job_id, ClientStatus.STOPPED)
+        federated_client.status = ClientStatus.STOPPED
         federated_client.stop_cell()
 
     @staticmethod
@@ -126,6 +139,19 @@ class ClientAppRunner(Runner):
         run_manager = federated_client.run_manager
         with run_manager.new_context() as fl_ctx:
             run_manager.get_all_clients_from_server(fl_ctx)
+
+    def notify_job_status(self, federated_client, job_id, status):
+        message = Message(topic=TrainingTopic.NOTIFY_JOB_STATUS, body="")
+        message.set_header(RequestHeader.JOB_ID, str(job_id))
+        message.set_header(RequestHeader.JOB_STATUS, status)
+
+        federated_client.cell.send_request(
+            target=federated_client.client_name,
+            channel=CellChannel.CLIENT_MAIN,
+            topic="client_job",
+            request=new_cell_message({}, message),
+            timeout=5.0,
+        )
 
     def close(self):
         if self.command_agent:
