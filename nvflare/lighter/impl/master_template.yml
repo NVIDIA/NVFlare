@@ -1735,12 +1735,12 @@ aws_start_svr_sh: |
   report_status "$?" "Only one NVFL server VM and its security group is allowed.  $SECURITY_GROUP exists and thus creating duplicate security group"
   sg_id=$(echo $sg_result | jq -r .GroupId)
   my_public_ip=$(dig +short myip.opendns.com @resolver1.opendns.com)
-  if [ "$?" -ne 0 ]
-    then
-      echo "getting my public IP failed, please manually configure the inbound rule to limit SSH access"
-      aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr 0.0.0.0/0 > /tmp/sec_grp.log
-    else
-      aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr ${my_public_ip}/32 > /tmp/sec_grp.log
+  if [ "$?" -eq 0 ] && [[ "$my_public_ip" =~ ^(([1-9]?[0-9]|1[0-9][0-9]|2([0-4][0-9]|5[0-5]))\.){3}([1-9]?[0-9]|1[0-9][0-9]|2([0-4][0-9]|5[0-5]))$ ]]
+  then
+    aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr ${my_public_ip}/32 > /tmp/sec_grp.log
+  else
+    echo "getting my public IP failed, please manually configure the inbound rule to limit SSH access"
+    aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr 0.0.0.0/0 > /tmp/sec_grp.log
   fi
   aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 8002-8003 --cidr 0.0.0.0/0 >> /tmp/sec_grp.log
   report_status "$?" "creating security group rules"
@@ -1871,12 +1871,12 @@ aws_start_cln_sh: |
   sg_id=$(aws ec2 create-security-group --group-name $SECURITY_GROUP --description "NVFlare security group" | jq -r .GroupId)
   report_status "$?" "creating security group"
   my_public_ip=$(dig +short myip.opendns.com @resolver1.opendns.com)
-  if [ "$?" -ne 0 ]
-    then
-      echo "getting my public IP failed, please manually limit the inbound rule on SSH access"
-      aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr 0.0.0.0/0 > /tmp/sec_grp.log
-    else
-      aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr ${my_public_ip}/32 > /tmp/sec_grp.log
+  if [ "$?" -eq 0 ] && [[ "$my_public_ip" =~ ^(([1-9]?[0-9]|1[0-9][0-9]|2([0-4][0-9]|5[0-5]))\.){3}([1-9]?[0-9]|1[0-9][0-9]|2([0-4][0-9]|5[0-5]))$ ]]
+  then
+    aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr ${my_public_ip}/32 > /tmp/sec_grp.log
+  else
+    echo "getting my public IP failed, please manually configure the inbound rule to limit SSH access"
+    aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr 0.0.0.0/0 > /tmp/sec_grp.log
   fi
   report_status "$?" "creating security group rules"
 
@@ -1970,12 +1970,12 @@ aws_start_dsb_sh: |
   report_status "$?" "creating security group"
   echo "Security group id: ${sg_id}"
   my_public_ip=$(dig +short myip.opendns.com @resolver1.opendns.com)
-  if [ "$?" -ne 0 ]
-    then
-      echo "getting my public IP failed, please manually limit the inbound rule on SSH access"
-      aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr 0.0.0.0/0 > /tmp/sec_grp.log
-    else
-      aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr ${my_public_ip}/32 > /tmp/sec_grp.log
+  if [ "$?" -eq 0 ] && [[ "$my_public_ip" =~ ^(([1-9]?[0-9]|1[0-9][0-9]|2([0-4][0-9]|5[0-5]))\.){3}([1-9]?[0-9]|1[0-9][0-9]|2([0-4][0-9]|5[0-5]))$ ]]
+  then
+    aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr ${my_public_ip}/32 > /tmp/sec_grp.log
+  else
+    echo "getting my public IP failed, please manually configure the inbound rule to limit SSH access"
+    aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr 0.0.0.0/0 > /tmp/sec_grp.log
   fi
   aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 443 --cidr 0.0.0.0/0 >> /tmp/sec_grp.log
   report_status "$?" "creating security group rules"
