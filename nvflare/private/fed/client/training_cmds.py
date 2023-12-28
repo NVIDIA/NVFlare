@@ -187,5 +187,5 @@ class NotifyJobStatusProcessor(RequestProcessor):
             raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
         job_id = req.get_header(RequestHeader.JOB_ID)
         job_status = req.get_header(RequestHeader.JOB_STATUS)
-        result = engine.notify_job_status(job_id, job_status)
-        return ok_reply(topic=f"reply_{req.topic}", body=result)
+        engine.notify_job_status(job_id, job_status)
+        return ok_reply(topic=f"reply_{req.topic}", body=f"notify status: {job_status}")

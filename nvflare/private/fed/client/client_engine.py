@@ -170,7 +170,6 @@ class ClientEngine(ClientEngineInternalSpec):
 
     def notify_job_status(self, job_id: str, job_status):
         self.client_executor.notify_job_status(job_id, job_status)
-        return f"Job {job_id} has started."
 
     def get_client_name(self):
         return self.client.client_name

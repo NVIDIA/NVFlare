@@ -14,10 +14,11 @@
 import logging
 import os
 
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import CellChannel, EngineConstant, RequestHeader, TrainingTopic, new_cell_message
 from nvflare.private.fed.app.fl_conf import create_privacy_manager
@@ -55,8 +56,9 @@ class ClientAppRunner(Runner):
         self.sync_up_parents_process(federated_client)
 
         federated_client.start_overseer_agent()
-        kv_list = parse_vars(args.set)
-        notify_timeout = kv_list.get("notify_timeout", 5.0)
+        notify_timeout = ConfigService.get_float_var(
+            name="notify_timeout", conf=SystemConfigs.APPLICATION_CONF, default=5.0
+        )
         self.notify_job_status(federated_client, args.job_id, ClientStatus.STARTED, timeout=notify_timeout)
         federated_client.status = ClientStatus.STARTED
 
@@ -144,7 +146,7 @@ class ClientAppRunner(Runner):
         federated_client.cell.send_request(
             target=federated_client.client_name,
             channel=CellChannel.CLIENT_MAIN,
-            topic="client_job",
+            topic=message.topic,
             request=new_cell_message({}, message),
             timeout=timeout,
         )
