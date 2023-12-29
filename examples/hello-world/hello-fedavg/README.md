@@ -123,8 +123,8 @@ This is the same as FLARE Client API configuration
 
 ### server-side configuration
 
-  Server side controller is really simple, all we need is to user WFController with newly defined workflow class
-```KM```
+  Server side controller is really simple, all we need is to use WFController with newly defined workflow class
+
 
 ```
 {
@@ -136,19 +136,17 @@ This is the same as FLARE Client API configuration
   workflows = [
       {
         id = "fed_avg"
-        path = "nvflare.app_common.workflows.wf_controller.WFController"
+        path = "nvflare.app_opt.pt.wf_controller.PTWFController"
         args {
+            comm_msg_pull_interval = 5
             task_name = "train"
-            wf_class_path = "fedavg_wf.FedAvg",
+            wf_class_path = "fedavg_pt.PTFedAvg",
             wf_args {
                 min_clients = 2
                 num_rounds = 10
                 output_path = "/tmp/nvflare/fedavg/mode.pth"
-                model_format = "torch"
-                early_stop_metrics {
-                    accuracy = 55
-                }
-
+                stop_cond = "accuracy >= 55"
+                model_selection_rule = "accuracy >="
             }
         }
       }
@@ -166,5 +164,6 @@ This is the same as FLARE Client API configuration
 assume current working directory is at ```hello-fedavg``` directory 
 
 ```
-nvflare simulator job -w /tmp/nvflare/km/job -n 2 -t 2
+nvflare simulator -n 2 -t 2 jobs/fedavg -w /tmp/fedavg
+
 ```
