@@ -201,6 +201,9 @@ class FLModelUtils:
 
     @staticmethod
     def update_model(model: FLModel, model_update: FLModel, replace_meta: bool = True) -> FLModel:
+
+        model.metrics = model_update.metrics
+
         if model.params_type != ParamsType.FULL:
             raise RuntimeError(f"params_type {model.params_type} of `model` not supported! Expected `ParamsType.FULL`.")
 
