@@ -109,8 +109,8 @@ This is the same as FLARE Client API configuration
 
 ### server-side configuration
 
-  Server side controller is really simple, all we need is to user WFController with newly defined workflow class
-```KM```
+  Server side controller is really simple, all we need is to use WFController with newly defined workflow class
+ 
 
 ```
 {
@@ -125,7 +125,7 @@ This is the same as FLARE Client API configuration
         path = "nvflare.app_common.workflows.wf_controller.WFController"
         args {
             task_name = "train"
-            wf_class_path = "km_wf.KM",
+            wf_class_path = "kaplan_meier.KM",
             wf_args {
                 min_clients = 2
                 output_path = "/tmp/nvflare/km/km.json"
@@ -138,6 +138,7 @@ This is the same as FLARE Client API configuration
 
 }
 
+
 ```
 
 
@@ -146,7 +147,7 @@ This is the same as FLARE Client API configuration
 assume current working directory is at ```hello-km``` directory 
 
 ```
-nvflare simulator job -w /tmp/nvflare/km/job -n 2 -t 2
+nvflare simulator -n 2 -t 2 jobs/kaplan-meier -w /tmp/km
 ```
 
 
