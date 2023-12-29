@@ -91,8 +91,6 @@ class WFController(ErrorHandlingController):
         wf_comm_api.set_result_pull_interval(self.comm_msg_pull_interval)
         wf_comm_api.meta.update({SITE_NAMES: self.get_site_names()})
 
-        print(f"\n \n  {wf_comm_api.meta=}")
-
     def find_wf_comm_in_wf(self):
         attr_objs = [getattr(self.wf, attr_name, None) for attr_name in dir(self.wf)]
         wf_comm_attrs = [attr for attr in attr_objs if isinstance(attr, WFCommAPI)]

@@ -13,8 +13,9 @@
 # limitations under the License.
 import gc
 import logging
+import os
 import random
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 import torch
 from net import Net
@@ -73,11 +74,6 @@ class FedCyclic(WF):
         # (1) instantiate flare_comm
         self.flare_comm = WFCommAPI()
 
-    def init_model(self):
-        net = Net()
-        model = FLModel(params=net.state_dict(), params_type=ParamsType.FULL)
-        return model
-
     def run(self):
 
         self.last_model = self.init_model()
@@ -104,7 +100,7 @@ class FedCyclic(WF):
             gc.collect()
 
         self.save_model(self.last_model, self.output_path)
-        self.logger.info("Cyclic ended.")
+        self.logger.info("\n fed cyclic ended \n")
 
     def relay_and_wait(self, last_model: FLModel, targets: List[str], current_round):
         msg_payload = {
@@ -118,6 +114,11 @@ class FedCyclic(WF):
         # (2) relay_and_wait and wait
         results = self.flare_comm.relay_and_wait(msg_payload)
         return results
+
+    def init_model(self):
+        net = Net()
+        model = FLModel(params=net.state_dict(), params_type=ParamsType.FULL)
+        return model
 
     def check_inputs(self):
         if not isinstance(self.num_rounds, int):
