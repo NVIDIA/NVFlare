@@ -1,7 +1,6 @@
 # FedAvg: simplified
 
-This example illustrates two features:
-* How to use the new Flare Communicator API to contract a workflow: no need to write a controller.  
+This example illustrates  How to use the new Workflow Communication API to contract a workflow: no need to write a controller.  
 
 ## FLARE Workflow Communicator API
 
