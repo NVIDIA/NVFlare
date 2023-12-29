@@ -15,7 +15,7 @@
 import time
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, OperatorMethod, Task, TaskOperatorKey
@@ -34,6 +34,8 @@ from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import (
     CMD,
     CMD_ABORT,
     CMD_BROADCAST,
+    CMD_RELAY,
+    CMD_SEND,
     CMD_STOP,
     DATA,
     MIN_RESPONSES,
@@ -41,6 +43,7 @@ from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import (
     RESULT,
     SITE_NAMES,
     STATUS,
+    TARGET_SITES,
 )
 from nvflare.app_common.workflows.wf_comm.wf_queue import WFQueue
 from nvflare.app_common.workflows.wf_comm.wf_spec import WF
@@ -87,6 +90,8 @@ class WFController(ErrorHandlingController):
         wf_comm_api.set_queue(self.wf_queue)
         wf_comm_api.set_result_pull_interval(self.comm_msg_pull_interval)
         wf_comm_api.meta.update({SITE_NAMES: self.get_site_names()})
+
+        print(f"\n \n  {wf_comm_api.meta=}")
 
     def find_wf_comm_in_wf(self):
         attr_objs = [getattr(self.wf, attr_name, None) for attr_name in dir(self.wf)]
@@ -166,10 +171,11 @@ class WFController(ErrorHandlingController):
                         pay_load = item.get(PAYLOAD)
 
                         current_round = self.prepare_round_info(fl_ctx, pay_load)
-                        task, min_responses = self.get_payload_task(pay_load)
+                        task, min_responses, targets = self.get_payload_task(pay_load)
 
                         self.broadcast_and_wait(
                             task=task,
+                            targets=targets,
                             min_responses=min_responses,
                             wait_time_after_min_received=0,
                             fl_ctx=fl_ctx,
@@ -178,7 +184,21 @@ class WFController(ErrorHandlingController):
                         self.fire_event(AppEventType.ROUND_DONE, fl_ctx)
                         self.log_info(fl_ctx, f"Round {current_round} finished.")
 
-                    elif cmd == "SEND":
+                    elif cmd == CMD_RELAY:
+                        pay_load = item.get(PAYLOAD)
+                        current_round = self.prepare_round_info(fl_ctx, pay_load)
+                        task, min_responses, targets = self.get_payload_task(pay_load)
+
+                        self.relay_and_wait(
+                            task=task,
+                            targets=targets,
+                            fl_ctx=fl_ctx,
+                            abort_signal=abort_signal,
+                        )
+                        self.fire_event(AppEventType.ROUND_DONE, fl_ctx)
+                        self.log_info(fl_ctx, f"Round {current_round} finished.")
+
+                    elif cmd == CMD_SEND:
                         raise NotImplementedError
                     else:
                         abort_signal.trigger(f"Unknown command '{cmd}'")
@@ -205,11 +225,12 @@ class WFController(ErrorHandlingController):
             self.fire_event(AppEventType.ROUND_STARTED, fl_ctx)
         return current_round
 
-    def get_payload_task(self, pay_load) -> Tuple[Task, int]:
+    def get_payload_task(self, pay_load) -> Tuple[Task, int, List[str]]:
         min_responses = pay_load.get(MIN_RESPONSES)
         current_round = pay_load.get(AppConstants.CURRENT_ROUND, 0)
         start_round = pay_load.get(AppConstants.START_ROUND, 0)
         num_rounds = pay_load.get(AppConstants.NUM_ROUNDS, 1)
+        targets = pay_load.get(TARGET_SITES, self.get_site_names())
 
         data = pay_load.get(DATA, {})
         data_shareable = self.get_shareable(data)
@@ -234,7 +255,7 @@ class WFController(ErrorHandlingController):
             result_received_cb=self._result_received_cb,
         )
 
-        return task, min_responses
+        return task, min_responses, targets
 
     def get_shareable(self, data):
         if isinstance(data, FLModel):
@@ -266,7 +287,7 @@ class WFController(ErrorHandlingController):
             self.wf_queue.ask_abort(f"error code {rc} occurred")
             self.handle_client_errors(rc, client_task, fl_ctx)
         else:
-            self.log_warning(f"ignore result with return code: {rc}")
+            self.log_warning(fl_ctx, f"ignore result with return code: {rc}")
 
         # Cleanup task result
         client_task.result = None

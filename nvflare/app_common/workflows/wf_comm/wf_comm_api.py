@@ -22,6 +22,7 @@ from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import (
     CMD,
     CMD_ABORT,
     CMD_BROADCAST,
+    CMD_RELAY,
     CMD_SEND,
     CMD_STOP,
     MIN_RESPONSES,
@@ -74,6 +75,7 @@ class WFCommAPI(WFCommAPISpec):
         return self.wait(min_responses)
 
     def get_site_names(self):
+        print(f"{self.meta =}")
         return self.meta.get(SITE_NAMES)
 
     def wait(self, min_responses):
@@ -88,6 +90,19 @@ class WFCommAPI(WFCommAPISpec):
             else:
                 # self.logger.info(f"no result available, sleep {self.result_pull_interval} sec")
                 time.sleep(self.result_pull_interval)
+
+    def relay_and_wait(self, msg_payload: Dict):
+        self.relay(msg_payload)
+        min_responses = msg_payload.get(MIN_RESPONSES, 1)
+        return self.wait(min_responses)
+
+    def relay(self, msg_payload: Dict):
+        self._check_wf_queue()
+        message = {
+            CMD: CMD_RELAY,
+            PAYLOAD: msg_payload,
+        }
+        self.wf_queue.put_ctrl_msg(message)
 
     def _get_results(self) -> dict:
         items_size = self.wf_queue.result_size()
@@ -111,7 +126,7 @@ class WFCommAPI(WFCommAPISpec):
                 one_site_result = item.get(PAYLOAD)
                 for task, site_result in one_site_result.items():
                     task_result = batch_result.get(task, {})
-                    self.check_result(site_result)
+                    self._check_result(site_result)
                     rc = site_result.get(STATUS)
                     if rc == ReturnCode.OK:
                         result = site_result.get(RESULT, {})
@@ -126,7 +141,7 @@ class WFCommAPI(WFCommAPISpec):
 
         return batch_result
 
-    def check_result(self, site_result):
+    def _check_result(self, site_result):
 
         if site_result is None:
             raise RuntimeError("expecting site_result to be dictionary, but get None")

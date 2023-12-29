@@ -17,6 +17,7 @@ import traceback
 from typing import Callable, Dict, Optional
 
 from net import Net
+
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
@@ -40,13 +41,13 @@ update_model = FLModelUtils.update_model
 
 class FedAvg(WF):
     def __init__(
-            self,
-            min_clients: int,
-            num_rounds: int,
-            output_path: str,
-            start_round: int = 1,
-            stop_cond: str = None,
-            model_selection_rule: str = None,
+        self,
+        min_clients: int,
+        num_rounds: int,
+        output_path: str,
+        start_round: int = 1,
+        stop_cond: str = None,
+        model_selection_rule: str = None,
     ):
         super(FedAvg, self).__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -202,7 +203,7 @@ class FedAvg(WF):
         return op_fn(value, target)
 
     def is_curr_mode_better(
-            self, best_model: FLModel, curr_model: FLModel, target_metric: str, op_fn: Callable
+        self, best_model: FLModel, curr_model: FLModel, target_metric: str, op_fn: Callable
     ) -> bool:
         curr_metrics = curr_model.metrics
         if curr_metrics is None:
