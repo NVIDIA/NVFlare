@@ -20,6 +20,7 @@ CMD_SEND = "SEND"
 CMD_STOP = "STOP"
 CMD_ABORT = "ABORT"
 CMD_BROADCAST = "BROADCAST"
+CMD_RELAY = "RELAY"
 PAYLOAD = "PAYLOAD"
 SITE_NAMES = "SITE_NAMES"
 
@@ -34,11 +35,20 @@ NUM_ROUNDS = "num_rounds"
 STATUS = "status"
 RESULT = "result"
 DATA = "data"
+TARGET_SITES = "target_sizes"
 
 
 class WFCommAPISpec(ABC):
     @abstractmethod
     def broadcast_and_wait(self, msg_payload: Dict):
+        pass
+
+    @abstractmethod
+    def send_and_wait(self, msg_payload: Dict):
+        pass
+
+    @abstractmethod
+    def relay_and_wait(self, msg_payload: Dict):
         pass
 
     @abstractmethod
@@ -50,7 +60,7 @@ class WFCommAPISpec(ABC):
         pass
 
     @abstractmethod
-    def send_and_wait(self, msg_payload: Dict):
+    def relay(self, msg_payload: Dict):
         pass
 
     @abstractmethod
