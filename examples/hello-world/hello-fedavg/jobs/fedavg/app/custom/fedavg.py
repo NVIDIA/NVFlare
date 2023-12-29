@@ -17,7 +17,6 @@ import traceback
 from typing import Callable, Dict, Optional
 
 from net import Net
-
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
@@ -41,13 +40,13 @@ update_model = FLModelUtils.update_model
 
 class FedAvg(WF):
     def __init__(
-        self,
-        min_clients: int,
-        num_rounds: int,
-        output_path: str,
-        start_round: int = 1,
-        stop_cond: str = None,
-        model_selection_rule: str = None,
+            self,
+            min_clients: int,
+            num_rounds: int,
+            output_path: str,
+            start_round: int = 1,
+            stop_cond: str = None,
+            model_selection_rule: str = None,
     ):
         super(FedAvg, self).__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -72,38 +71,34 @@ class FedAvg(WF):
         self.flare_comm = WFCommAPI()
 
     def run(self):
-        try:
-            self.logger.info("start Fed Avg Workflow\n \n")
+        self.logger.info("start Fed Avg Workflow\n \n")
 
-            start = self.start_round
-            end = self.start_round + self.num_rounds
+        start = self.start_round
+        end = self.start_round + self.num_rounds
 
-            model = self.init_model()
-            for current_round in range(start, end):
+        model = self.init_model()
+        for current_round in range(start, end):
 
-                self.logger.info(f"Round {current_round}/{self.num_rounds} started. {start=}, {end=}")
-                self.current_round = current_round
+            self.logger.info(f"Round {current_round}/{self.num_rounds} started. {start=}, {end=}")
+            self.current_round = current_round
 
-                if self.should_stop(model.metrics, self.stop_criteria):
-                    self.logger.info(f"stop at {current_round}/{self.num_rounds}, early stop condition satisfied.")
-                    break
+            if self.should_stop(model.metrics, self.stop_criteria):
+                self.logger.info(f"stop at {current_round}/{self.num_rounds}, early stop condition satisfied.")
+                break
 
-                sag_results = self.scatter_and_gather(model, current_round)
+            sag_results = self.scatter_and_gather(model, current_round)
 
-                aggr_result = self.aggr_fn(sag_results)
+            aggr_result = self.aggr_fn(sag_results)
 
-                self.logger.info(f"aggregate metrics = {aggr_result.metrics}")
+            self.logger.info(f"aggregate metrics = {aggr_result.metrics}")
 
-                model = update_model(model, aggr_result)
+            model = update_model(model, aggr_result)
 
-                self.select_best_model(model)
+            self.select_best_model(model)
 
-            self.save_model(self.best_model, self.output_path)
+        self.save_model(self.best_model, self.output_path)
 
-            self.logger.info("end Fed Avg Workflow\n \n")
-        except Exception as e:
-            print(f"\n\n =============== {traceback.format_exc()} ")
-            raise e
+        self.logger.info("end Fed Avg Workflow\n \n")
 
     def init_model(self):
         net = Net()
@@ -207,7 +202,7 @@ class FedAvg(WF):
         return op_fn(value, target)
 
     def is_curr_mode_better(
-        self, best_model: FLModel, curr_model: FLModel, target_metric: str, op_fn: Callable
+            self, best_model: FLModel, curr_model: FLModel, target_metric: str, op_fn: Callable
     ) -> bool:
         curr_metrics = curr_model.metrics
         if curr_metrics is None:

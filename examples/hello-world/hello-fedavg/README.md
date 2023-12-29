@@ -44,41 +44,33 @@ With this new API writing the new workflow is really simple:
 ```
 
 class FedAvg(WF):
-    def __init__(self,
-                 min_clients: int,
-                 num_rounds: int,
-                 output_path: str,
-                 start_round: int = 1,
-                 early_stop_metrics: dict = None,
-                 model_format: str = None
-                 ):
+    def __init__(
+            self,
+            min_clients: int,
+            num_rounds: int,
+            output_path: str,
+            start_round: int = 1,
+            stop_cond: str = None,
+            model_selection_rule: str = None,
+    ):
         super(FedAvg, self).__init__()
-        self.logger = logging.getLogger(self.__class__.__name__)
         
-        <skip .... init code .... >
- 
+        <skip init code>
+        
         # (1) init flare_comm
-        self.flare_comm = WFComm(result_check_interval=10)
-        self.flare_comm.init(self)
-        
-  
+        self.flare_comm = WFCommAPI()
+
     def run(self):
-
         self.logger.info("start Fed Avg Workflow\n \n")
-
-        net = Net()
-        model = FLModel(params=net.state_dict(), params_type=ParamsType.FULL)
 
         start = self.start_round
         end = self.start_round + self.num_rounds
 
+        model = self.init_model()
         for current_round in range(start, end):
-            if self.should_early_stop(model.metrics, self.early_stop_metrics):
-                break
 
+            self.logger.info(f"Round {current_round}/{self.num_rounds} started. {start=}, {end=}")
             self.current_round = current_round
-
-            self.logger.info(f"Round {current_round}/{self.num_rounds} started.")
 
             sag_results = self.scatter_and_gather(model, current_round)
 
@@ -91,6 +83,10 @@ class FedAvg(WF):
             self.select_best_model(model)
 
         self.save_model(self.best_model, self.output_path)
+
+        self.logger.info("end Fed Avg Workflow\n \n")
+
+
 ```
 Scatter and Gather (SAG): 
 
