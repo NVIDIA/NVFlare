@@ -43,10 +43,14 @@ class WFQueue:
         return self.result_queue.qsize()
 
     def get_ctrl_msg(self):
-        return self.ctrl_queue.get()
+        item = self.ctrl_queue.get()
+        self.ctrl_queue.task_done()
+        return item
 
     def get_result(self):
-        return self.result_queue.get()
+        item = self.result_queue.get()
+        self.result_queue.task_done()
+        return item
 
     def stop(self, msg: Optional[str] = None):
         msg = msg if msg else {}

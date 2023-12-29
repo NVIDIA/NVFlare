@@ -75,7 +75,6 @@ class WFCommAPI(WFCommAPISpec):
         return self.wait(min_responses)
 
     def get_site_names(self):
-        print(f"{self.meta =}")
         return self.meta.get(SITE_NAMES)
 
     def wait(self, min_responses):
