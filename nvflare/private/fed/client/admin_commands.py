@@ -145,6 +145,8 @@ class ShowStatsCommand(CommandProcessor):
         Returns: show_stats command message
 
         """
+        print("====== ShowStatsCommand: process")
+
         engine = fl_ctx.get_engine()
         collector = engine.get_widget(WidgetID.INFO_COLLECTOR)
         if not collector:
@@ -157,6 +159,8 @@ class ShowStatsCommand(CommandProcessor):
 
         if not result:
             result = "No stats info"
+
+        print(f"====== ShowStatsCommand: process result: {result}")
         return result
 
 

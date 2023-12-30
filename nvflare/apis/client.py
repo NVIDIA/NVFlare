@@ -15,12 +15,17 @@
 import time
 
 
+class ClientPropKey:
+
+    FQCN = "fqcn"
+
+
 class Client:
     def __init__(self, name, token) -> None:
         """Init Client.
 
         Represents a client, and is managed by the client manager.
-        The token is a uuid used for authorization.
+        The token is an uuid used for authorization.
 
         Args:
             name: client name
@@ -42,3 +47,9 @@ class Client:
 
     def get_prop(self, name, default=None):
         return self.props.get(name, default)
+
+    def set_fqcn(self, value: str):
+        self.set_prop(ClientPropKey.FQCN, value)
+
+    def get_fqcn(self):
+        return self.get_prop(ClientPropKey.FQCN)

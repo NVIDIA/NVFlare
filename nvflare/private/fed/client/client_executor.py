@@ -227,7 +227,8 @@ class ProcessExecutor(ClientExecutor):
         try:
             with self.lock:
                 data = {}
-                fqcn = FQCN.join([self.client.client_name, job_id])
+                client_fqcn = self.client.cell.get_fqcn()
+                fqcn = FQCN.join([client_fqcn, job_id])
                 request = new_cell_message({}, data)
                 return_data = self.client.cell.send_request(
                     target=fqcn,
@@ -261,7 +262,8 @@ class ProcessExecutor(ClientExecutor):
         try:
             with self.lock:
                 data = {}
-                fqcn = FQCN.join([self.client.client_name, job_id])
+                client_fqcn = self.client.cell.get_fqcn()
+                fqcn = FQCN.join([client_fqcn, job_id])
                 request = new_cell_message({}, data)
                 return_data = self.client.cell.send_request(
                     target=fqcn,
@@ -293,7 +295,8 @@ class ProcessExecutor(ClientExecutor):
         try:
             with self.lock:
                 data = {"command": AdminCommandNames.SHOW_ERRORS, "data": {}}
-                fqcn = FQCN.join([self.client.client_name, job_id])
+                client_fqcn = self.client.cell.get_fqcn()
+                fqcn = FQCN.join([client_fqcn, job_id])
                 request = new_cell_message({}, data)
                 return_data = self.client.cell.send_request(
                     target=fqcn,
@@ -322,7 +325,8 @@ class ProcessExecutor(ClientExecutor):
         try:
             with self.lock:
                 data = {"command": AdminCommandNames.RESET_ERRORS, "data": {}}
-                fqcn = FQCN.join([self.client.client_name, job_id])
+                client_fqcn = self.client.cell.get_fqcn()
+                fqcn = FQCN.join([client_fqcn, job_id])
                 request = new_cell_message({}, data)
                 self.client.cell.fire_and_forget(
                     targets=fqcn,
@@ -352,7 +356,8 @@ class ProcessExecutor(ClientExecutor):
                     try:
                         child_process = self.run_processes[job_id][RunProcessKey.CHILD_PROCESS]
                         data = {}
-                        fqcn = FQCN.join([self.client.client_name, job_id])
+                        client_fqcn = self.client.cell.get_fqcn()
+                        fqcn = FQCN.join([client_fqcn, job_id])
                         request = new_cell_message({}, data)
                         self.client.cell.fire_and_forget(
                             targets=fqcn,
@@ -419,7 +424,8 @@ class ProcessExecutor(ClientExecutor):
             process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED)
             if process_status == ClientStatus.STARTED:
                 data = {"command": AdminCommandNames.ABORT_TASK, "data": {}}
-                fqcn = FQCN.join([self.client.client_name, job_id])
+                client_fqcn = self.client.cell.get_fqcn()
+                fqcn = FQCN.join([client_fqcn, job_id])
                 request = new_cell_message({}, data)
                 self.client.cell.fire_and_forget(
                     targets=fqcn,

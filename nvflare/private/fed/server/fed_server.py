@@ -364,6 +364,8 @@ class FederatedServer(BaseServer):
             if job_id in self.engine.run_processes:
                 clients = self.engine.run_processes[job_id].get(RunProcessKey.PARTICIPANTS)
                 return_data = {ServerCommandKey.CLIENTS: clients, ServerCommandKey.JOB_ID: job_id}
+                for t, c in clients.items():
+                    self.logger.info(f"sending client {t}: {c.name=} {c.props=}")
             else:
                 return_data = {ServerCommandKey.CLIENTS: None, ServerCommandKey.JOB_ID: job_id}
 
@@ -505,7 +507,7 @@ class FederatedServer(BaseServer):
                 if client and client.token:
                     self.tokens[client.token] = self.task_meta_info(client.name)
                     if self.admin_server:
-                        self.admin_server.client_heartbeat(client.token, client.name)
+                        self.admin_server.client_heartbeat(client.token, client.name, client.get_fqcn())
 
                     headers = {
                         CellMessageHeaderKeys.TOKEN: client.token,
@@ -575,10 +577,11 @@ class FederatedServer(BaseServer):
             token = request.get_header(CellMessageHeaderKeys.TOKEN)
             client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
 
-            if self.client_manager.heartbeat(token, client_name, fl_ctx):
+            client_fqcn = request.get_header(MessageHeaderKey.ORIGIN)
+            if self.client_manager.heartbeat(token, client_name, client_fqcn, fl_ctx):
                 self.tokens[token] = self.task_meta_info(client_name)
             if self.admin_server:
-                self.admin_server.client_heartbeat(token, client_name)
+                self.admin_server.client_heartbeat(token, client_name, client_fqcn)
 
             abort_runs = self._sync_client_jobs(request, token)
             reply = self._generate_reply(

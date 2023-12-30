@@ -61,6 +61,7 @@ from nvflare.private.scheduler_constants import ShareableHeader
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
+from nvflare.private.aux_runner import AuxMsgTarget
 
 from .client_manager import ClientManager
 from .job_runner import JobRunner
@@ -507,13 +508,32 @@ class ServerEngine(ServerEngineInternalSpec):
         secure=False,
     ) -> dict:
         try:
+            msg_targets = []
             if not targets:
-                targets = []
-                for t in self.get_clients():
-                    targets.append(t.name)
-            if targets:
+                for c in self.get_clients():
+                    msg_targets.append(AuxMsgTarget.client_target(c))
+            elif not isinstance(targets, list):
+                raise TypeError(f"invalid targets type {type(targets)}")
+            else:
+                # check targets
+                for t in targets:
+                    if not isinstance(t, str):
+                        raise TypeError(f"target name must be str but got {type(t)}")
+
+                    if t.lower() == "server":
+                        msg_targets.append(AuxMsgTarget.server_target())
+                    else:
+                        c = self.get_client_from_name(t)
+                        if c:
+                            self.logger.info(f"adding target {c.name}: FQCN={c.get_fqcn()}; Prop={c.props}")
+                            msg_targets.append(AuxMsgTarget.client_target(c))
+                        else:
+                            self.logger.error(f"invalid target {t}")
+                            return {}
+
+            if msg_targets:
                 return self.run_manager.aux_runner.send_aux_request(
-                    targets=targets,
+                    targets=msg_targets,
                     topic=topic,
                     request=request,
                     timeout=timeout,
@@ -536,7 +556,7 @@ class ServerEngine(ServerEngineInternalSpec):
             clients = self._retrieve_clients_data(job_id)
             if clients:
                 self.client_manager.clients = clients
-                self.logger.debug(f"received participating clients {clients}")
+                self.logger.info(f"received participating clients {clients}")
                 return
 
             if time.time() - start >= max_wait:
@@ -569,6 +589,10 @@ class ServerEngine(ServerEngineInternalSpec):
         clients = data.get(ServerCommandKey.CLIENTS, None)
         if clients is None:
             self.logger.error(f"parent failed to return clients info for job {job_id}")
+
+        assert isinstance(clients, dict)
+        for t, c in clients.items():
+            self.logger.info(f"retrieved client {t}: {c.name=} {c.token=} {c.props=}")
         return clients
 
     def update_job_run_status(self):

@@ -16,6 +16,7 @@ import time
 from threading import Lock
 from typing import List
 
+from nvflare.apis.client import Client
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
@@ -24,8 +25,22 @@ from nvflare.fuel.f3.cellnet.core_cell import Message, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.core_cell import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.private.defs import CellChannel
-from nvflare.private.fed.utils.fed_utils import get_target_names
 from nvflare.security.logging import secure_format_traceback
+
+
+class AuxMsgTarget:
+
+    def __init__(self, name: str, fqcn: str):
+        self.name = name
+        self.fqcn = fqcn
+
+    @staticmethod
+    def server_target():
+        return AuxMsgTarget(FQCN.ROOT_SERVER, FQCN.ROOT_SERVER)
+
+    @staticmethod
+    def client_target(client: Client):
+        return AuxMsgTarget(client.name, client.get_fqcn())
 
 
 class AuxRunner(FLComponent):
@@ -143,7 +158,7 @@ class AuxRunner(FLComponent):
 
     def send_aux_request(
         self,
-        targets: list,
+        targets: List[AuxMsgTarget],      # AuxMsgTargets of targets
         topic: str,
         request: Shareable,
         timeout: float,
@@ -152,15 +167,6 @@ class AuxRunner(FLComponent):
         optional: bool = False,
         secure: bool = False,
     ) -> dict:
-        target_names = get_target_names(targets)
-
-        if not target_names:
-            return {}
-
-        _, invalid_names = self.engine.validate_targets(target_names)
-        if invalid_names:
-            raise ValueError(f"invalid target(s): {invalid_names}")
-
         try:
             return self._send_to_cell(
                 targets=targets,
@@ -184,7 +190,7 @@ class AuxRunner(FLComponent):
 
     def _send_to_cell(
         self,
-        targets: List[str],
+        targets: List[AuxMsgTarget],
         channel: str,
         topic: str,
         request: Shareable,
@@ -197,7 +203,7 @@ class AuxRunner(FLComponent):
         """Send request to the job cells of other target sites.
 
         Args:
-            targets (list): list of client names that the request will be sent to
+            targets (list): list of client AuxMsgTarget that the request will be sent to
             channel (str): channel of the request
             topic (str): topic of the request
             request (Shareable): request
@@ -227,16 +233,13 @@ class AuxRunner(FLComponent):
             time.sleep(0.01)
         self.logger.debug(f"Got cell in {time.time() - start} secs")
 
-        target_names = []
-        for t in targets:
-            if not isinstance(t, str):
-                raise ValueError(f"invalid target name {t}: expect str but got {type(t)}")
-            if t not in target_names:
-                target_names.append(t)
-
         target_fqcns = []
-        for name in target_names:
-            target_fqcns.append(FQCN.join([name, job_id]))
+        fqcn_to_name = {}
+        for t in targets:
+            # targeting job cells!
+            job_cell_fqcn = FQCN.join([t.fqcn, job_id])
+            target_fqcns.append(job_cell_fqcn)
+            fqcn_to_name[job_cell_fqcn] = t.name
 
         cell_msg = Message(payload=request)
         if timeout > 0:
@@ -252,10 +255,10 @@ class AuxRunner(FLComponent):
 
             replies = {}
             if cell_replies:
-                for k, v in cell_replies.items():
+                for reply_cell_fqcn, v in cell_replies.items():
                     assert isinstance(v, Message)
                     rc = v.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
-                    client_name = FQCN.get_root(k)
+                    client_name = fqcn_to_name[reply_cell_fqcn]
                     if rc == CellReturnCode.OK:
                         result = v.payload
                         if not isinstance(result, Shareable):

@@ -75,6 +75,21 @@ class DXODecomposer(Decomposer):
         return DXO(data_kind=dk, meta=internalizer.internalize(m), data=internalizer.internalize(d))
 
 
+class ClientDecomposer(Decomposer):
+    def supported_type(self):
+        return Client
+
+    def decompose(self, target: Client, datum_manager=None) -> Any:
+        return target.name, target.token, target.props
+
+    def recompose(self, data: Any, datum_manager=None) -> Client:
+        assert isinstance(data, tuple)
+        name, token, props = data
+        client = Client(name, token)
+        client.props = props
+        return client
+
+
 def register():
     if register.registered:
         return
@@ -82,8 +97,9 @@ def register():
     fobs.register(DictDecomposer(Shareable))
 
     fobs.register(DXODecomposer)
+    fobs.register(ClientDecomposer)
 
-    fobs.register_data_classes(Client, RunSnapshot, Signal, Namespace, Datum, DatumRef)
+    fobs.register_data_classes(RunSnapshot, Signal, Namespace, Datum, DatumRef)
 
     fobs.register_folder(os.path.dirname(__file__), __package__)
 

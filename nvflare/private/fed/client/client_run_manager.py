@@ -16,6 +16,7 @@ import logging
 import time
 from typing import Dict, List, Optional, Union
 
+from nvflare.apis.client import Client
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, ServerCommandKey, ServerCommandNames, SiteType
 from nvflare.apis.fl_context import FLContext, FLContextManager
@@ -24,7 +25,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
-from nvflare.private.aux_runner import AuxRunner
+from nvflare.private.aux_runner import AuxRunner, AuxMsgTarget
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.fed_utils import create_job_processing_context_properties
@@ -203,19 +204,45 @@ class ClientRunManager(ClientEngineExecutorSpec):
         secure=False,
     ) -> dict:
         if not targets:
-            targets = [FQCN.ROOT_SERVER]
+            msg_targets = [AuxMsgTarget.server_target()]
+        elif isinstance(targets, str):
+            if targets == SiteType.ALL:
+                msg_targets = [AuxMsgTarget.server_target()]
+                for _, c in self.all_clients.items():
+                    if c.name != self.client.client_name:
+                        msg_targets.append(AuxMsgTarget.client_target(c))
+            elif targets.lower() == "server":
+                # a single target
+                msg_targets = [AuxMsgTarget.server_target()]
+            else:
+                # must be a valid client
+                c = self.get_client_from_name(targets)
+                if not c:
+                    self.logger.error(f"invalid targe {targets}")
+                    return {}
+                msg_targets = [AuxMsgTarget.client_target(c)]
+        elif not isinstance(targets, list):
+            raise TypeError(f"invalid targets type {type(targets)}")
         else:
-            if isinstance(targets, str):
-                if targets == SiteType.ALL:
-                    targets = [FQCN.ROOT_SERVER]
-                    for _, t in self.all_clients.items():
-                        if t.name != self.client.client_name:
-                            targets.append(t.name)
+            # make sure every target is valid
+            msg_targets = []
+            for t in targets:
+                if not isinstance(t, str):
+                    raise TypeError(f"target name must be str but got {type(t)}")
+
+                if t.lower() == "server":
+                    msg_targets.append(AuxMsgTarget.server_target())
                 else:
-                    targets = [targets]
-        if targets:
+                    c = self.get_client_from_name(t)
+                    if c:
+                        msg_targets.append(AuxMsgTarget.client_target(c))
+                    else:
+                        self.logger.error(f"invalid target {t}")
+                        return {}
+
+        if msg_targets:
             return self.aux_runner.send_aux_request(
-                targets, topic, request, timeout, fl_ctx, optional=optional, secure=secure
+                msg_targets, topic, request, timeout, fl_ctx, optional=optional, secure=secure
             )
         else:
             return {}

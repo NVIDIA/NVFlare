@@ -66,26 +66,27 @@ def send_requests(
         return []
 
     target_msgs = {}
-    name_to_token = {}
-    name_to_req = {}
+    fqcn_to_client = {}
+    fqcn_to_req = {}
     for token, req in requests.items():
         client = clients.get(token)
         if not client:
             continue
 
         if job_id:
-            fqcn = FQCN.join([client.name, job_id])
+            fqcn = FQCN.join([client.fqcn, job_id])
             channel = CellChannel.CLIENT_COMMAND
             optional = True
         else:
-            fqcn = client.name
+            fqcn = client.fqcn
             channel = CellChannel.CLIENT_MAIN
-        target_msgs[client.name] = TargetMessage(
+
+        target_msgs[fqcn] = TargetMessage(
             target=fqcn, channel=channel, topic=command, message=new_cell_message({}, req)
         )
 
-        name_to_token[client.name] = token
-        name_to_req[client.name] = req
+        fqcn_to_client[fqcn] = client
+        fqcn_to_req[fqcn] = req
 
     if not target_msgs:
         return []
@@ -97,11 +98,12 @@ def send_requests(
     else:
         result = []
         replies = cell.broadcast_multi_requests(target_msgs, timeout_secs, optional=optional)
-        for name, reply in replies.items():
+        for fqcn, reply in replies.items():
             assert isinstance(reply, CellMessage)
+            client = fqcn_to_client[fqcn]
             result.append(
                 ClientReply(
-                    client_token=name_to_token[name], client_name=name, req=name_to_req[name], reply=reply.payload
+                    client_token=client.token, client_name=client.name, req=fqcn_to_req[fqcn], reply=reply.payload
                 )
             )
         return result

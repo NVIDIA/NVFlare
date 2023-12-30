@@ -309,7 +309,7 @@ class ServerSideController(Controller):
         self.log_info(fl_ctx, f"Workflow {self.workflow_id} finished on all clients")
 
         # ask all clients to end the workflow
-        self.log_info(fl_ctx, f"asking all clients to end workflow {self.workflow_id}")
+        self.log_info(fl_ctx, f"asking all clients {self.participating_clients} to end workflow {self.workflow_id}")
         engine = fl_ctx.get_engine()
         end_wf_request = Shareable()
         resp = engine.send_aux_request(

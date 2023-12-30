@@ -700,7 +700,7 @@ class ClientRunner(TBI):
         return make_reply(ReturnCode.OK)
 
     def _handle_do_task(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
-        self.log_info(fl_ctx, "received aux request to do task")
+        self.log_info(fl_ctx, f"received aux request to do task {topic}")
         task_name = request.get_header(ReservedHeaderKey.TASK_NAME)
         task_id = request.get_header(ReservedHeaderKey.TASK_ID)
         task = TaskAssignment(name=task_name, task_id=task_id, data=request)

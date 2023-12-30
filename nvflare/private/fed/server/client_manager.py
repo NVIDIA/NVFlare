@@ -21,8 +21,7 @@ from typing import Optional
 from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.fuel.f3.cellnet.defs import MessagePropKey
-from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.private.defs import CellMessageHeaderKeys
 
 
@@ -84,6 +83,7 @@ class ClientManager:
             context.set_prop(
                 FLContextKey.UNAUTHENTICATED, "Requested task does not match the current server task", sticky=False
             )
+            self.logger.error(f"login_client failed: {client_login.get_header(CellMessageHeaderKeys.PROJECT_NAME)}")
             return None
         return self.authenticated_client(client_login, context)
 
@@ -132,14 +132,15 @@ class ClientManager:
         client = self.clients.get(client_name)
 
         if not client:
-            fqcn = request.get_prop(MessagePropKey.ENDPOINT).conn_props.get(DriverParams.PEER_CN.value)
-            if fqcn and fqcn != client_name:
-                context.set_prop(
-                    FLContextKey.UNAUTHENTICATED,
-                    f"Requested fqcn:{fqcn} does not match the client_name: {client_name}",
-                    sticky=False,
-                )
-                return None
+            # fqcn = request.get_prop(MessagePropKey.ENDPOINT).conn_props.get(DriverParams.PEER_CN.value)
+            # if fqcn and fqcn != client_name:
+            #     self.logger.error(f"Requested fqcn:{fqcn} does not match the client_name: {client_name}")
+            #     context.set_prop(
+            #         FLContextKey.UNAUTHENTICATED,
+            #         f"Requested fqcn:{fqcn} does not match the client_name: {client_name}",
+            #         sticky=False,
+            #     )
+            #     return None
 
             with self.lock:
                 clients_to_be_removed = [token for token, client in self.clients.items() if client.name == client_name]
@@ -148,6 +149,9 @@ class ClientManager:
                     self.logger.info(f"Client: {client_name} already registered. Re-login the client with a new token.")
 
             client = Client(client_name, str(uuid.uuid4()))
+            client_fqcn = request.get_header(MessageHeaderKey.ORIGIN)
+            client.set_fqcn(client_fqcn)
+            self.logger.info(f"authenticated client {client_name}: {client_fqcn=}")
 
         if len(self.clients) >= self.max_num_clients:
             context.set_prop(FLContextKey.UNAUTHENTICATED, "Maximum number of clients reached", sticky=False)
@@ -176,7 +180,7 @@ class ClientManager:
         # TODO: change the name of this method
         return task == self.project_name
 
-    def heartbeat(self, token, client_name, fl_ctx):
+    def heartbeat(self, token, client_name, client_fqcn, fl_ctx):
         """Update the heartbeat of the client.
 
         Args:
@@ -213,6 +217,7 @@ class ClientManager:
                         return False
 
                 client = Client(client_name, token)
+                client.set_fqcn(client_fqcn)
                 client.last_connect_time = time.time()
                 # self._set_instance_name(client)
                 self.clients.update({token: client})

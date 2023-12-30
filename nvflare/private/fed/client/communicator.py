@@ -15,6 +15,7 @@
 import logging
 import socket
 import time
+import traceback
 from typing import List, Optional
 
 from nvflare.apis.filter import Filter
@@ -121,11 +122,12 @@ class Communicator:
                 raise RuntimeError("Client cell could not be created. Failed to login the client.")
             time.sleep(0.5)
 
-        while not self.cell.is_cell_connected(FQCN.ROOT_SERVER):
-            time.sleep(0.1)
-            if time.time() - start > 30.0:
-                raise FLCommunicationError("error:Could not connect to the server for client_registration.")
+        # while not self.cell.is_cell_connected(FQCN.ROOT_SERVER):
+        #     time.sleep(0.1)
+        #     if time.time() - start > 30.0:
+        #         raise FLCommunicationError("error:Could not connect to the server for client_registration.")
 
+        self.logger.info("Trying to register with server ...")
         while True:
             try:
                 result = self.cell.send_request(
@@ -135,7 +137,9 @@ class Communicator:
                     request=login_message,
                     timeout=self.maint_msg_timeout,
                 )
+
                 return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
+                self.logger.info(f"register RC: {return_code}")
                 if return_code == ReturnCode.UNAUTHENTICATED:
                     unauthenticated = result.get_header(MessageHeaderKey.ERROR)
                     raise FLCommunicationError("error:client_registration " + unauthenticated)
@@ -148,6 +152,7 @@ class Communicator:
                     break
 
             except Exception as ex:
+                traceback.print_exc()
                 raise FLCommunicationError("error:client_registration", ex)
 
         return token, ssid

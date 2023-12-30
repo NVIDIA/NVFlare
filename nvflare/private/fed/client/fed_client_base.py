@@ -169,13 +169,26 @@ class FederatedClientBase:
                 thread.start()
 
     def _create_cell(self, location, scheme):
+        root_url = scheme + "://" + location
+        bridge_fqcn = self.client_args.get("bridge_fqcn")
+        bridge_url = self.client_args.get("bridge_url")
+        if bridge_fqcn:
+            base_fqcn = FQCN.join([bridge_fqcn, self.client_name])
+            root_url = None  # do not connect to server if bridge is used
+        else:
+            base_fqcn = self.client_name
+
         if self.args.job_id:
-            fqcn = FQCN.join([self.client_name, self.args.job_id])
+            # I am CJ
+            me = "CJ"
+            my_fqcn = FQCN.join([base_fqcn, self.args.job_id])
             parent_url = self.args.parent_url
             create_internal_listener = False
         else:
-            fqcn = self.client_name
-            parent_url = None
+            # I am CP
+            me = "CP"
+            my_fqcn = base_fqcn
+            parent_url = bridge_url
             create_internal_listener = True
         if self.secure_train:
             root_cert = self.client_args[SecureTrainConst.SSL_ROOT_CERT]
@@ -189,9 +202,11 @@ class FederatedClientBase:
             }
         else:
             credentials = {}
+
+        self.logger.info(f"{me=}: {my_fqcn=} {root_url=} {parent_url=}")
         self.cell = Cell(
-            fqcn=fqcn,
-            root_url=scheme + "://" + location,
+            fqcn=my_fqcn,
+            root_url=root_url,
             secure=self.secure_train,
             credentials=credentials,
             create_internal_listener=create_internal_listener,
