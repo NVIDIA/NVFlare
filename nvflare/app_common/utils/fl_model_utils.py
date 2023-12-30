@@ -205,6 +205,9 @@ class FLModelUtils:
             model.meta = model_update.meta
         else:
             model.meta.update(model_update.meta)
+
+        model.metrics = model_update.metrics
+
         if model_update.params_type == ParamsType.FULL:
             model.params = model_update.params
         elif model_update.params_type == ParamsType.DIFF:
