@@ -42,6 +42,7 @@ class MessageHeaderKey:
     RETURN_REASON = CELLNET_PREFIX + "return_reason"
     SECURE = CELLNET_PREFIX + "secure"
     PAYLOAD_LEN = CELLNET_PREFIX + "payload_len"
+    CLEAR_PAYLOAD_LEN = CELLNET_PREFIX + "clear_payload_len"
     ENCRYPTED = CELLNET_PREFIX + "encrypted"
     OPTIONAL = CELLNET_PREFIX + "optional"
 
