@@ -13,16 +13,13 @@
 # limitations under the License.
 
 import logging
-import traceback
 from typing import Callable, Dict, Optional
 
 from net import Net
-
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.app_common.utils.math_utils import parse_compare_criteria, parse_compare_operator
-from nvflare.app_common.workflows.wf_comm.wf_comm_api import WFCommAPI
 from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import (
     CURRENT_ROUND,
     DATA,
@@ -31,7 +28,7 @@ from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import (
     START_ROUND,
 )
 from nvflare.app_common.workflows.wf_comm.wf_spec import WF
-from nvflare.security.logging import secure_format_exception
+from nvflare.security.logging import secure_format_traceback
 
 update_model = FLModelUtils.update_model
 
@@ -167,8 +164,7 @@ class FedAvg(WF):
             )
             return aggr_result
         except Exception as e:
-            traceback_str = traceback.format_exc()
-            raise RuntimeError(f"Exception in aggregate call: {secure_format_exception(e, traceback_str)}")
+            raise RuntimeError(f"Exception in aggregate call: {secure_format_traceback()}")
 
     def select_best_model(self, curr_model: FLModel):
         if self.best_model is None:

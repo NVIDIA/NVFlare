@@ -19,7 +19,6 @@ from nvflare.app_common.workflows.wf_comm.wf_comm_api import WFCommAPI
 
 
 class WF(ABC):
-
     def __init__(self):
         self.flare_comm: Optional[WFCommAPI] = None
 
