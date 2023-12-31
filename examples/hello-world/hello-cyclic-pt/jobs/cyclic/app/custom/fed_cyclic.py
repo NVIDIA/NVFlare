@@ -18,8 +18,8 @@ import random
 from typing import List, Optional
 
 import torch
-from net import Net
 
+from net import Net
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.app_common.workflows.wf_comm.wf_comm_api import WFCommAPI
@@ -50,12 +50,12 @@ SUPPORTED_ORDERS = (RelayOrder.FIXED, RelayOrder.RANDOM, RelayOrder.RANDOM_WITHO
 
 class FedCyclic(WF):
     def __init__(
-        self,
-        output_path: str,
-        num_rounds: int = 5,
-        start_round: int = 0,
-        task_name="train",
-        order: str = RelayOrder.FIXED,
+            self,
+            output_path: str,
+            num_rounds: int = 5,
+            start_round: int = 0,
+            task_name="train",
+            order: str = RelayOrder.FIXED,
     ):
         super(FedCyclic, self).__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -70,9 +70,6 @@ class FedCyclic(WF):
         self.part_sites = None
 
         self.check_inputs()
-
-        # (1) instantiate flare_comm
-        self.flare_comm = WFCommAPI()
 
     def run(self):
 

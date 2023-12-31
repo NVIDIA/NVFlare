@@ -51,7 +51,6 @@ class KM(WF):
         self.output_path = output_path
         self.min_clients = min_clients
         self.num_rounds = 1
-        self.flare_comm = WFCommAPI()
 
     def run(self):
         results = self.start_km_analysis()
@@ -63,13 +62,25 @@ class KM(WF):
 The base class ```WF``` is define as
 
 ```
+
 class WF(ABC):
+
+    def __init__(self):
+        self.flare_comm: Optional[WFCommAPI] = None
+
+    def setup_wf_comm_api(self, flare_comm: WFCommAPI):
+        self.flare_comm = flare_comm
 
     @abstractmethod
     def run(self):
-        raise NotImplemented
+        raise NotImplementedError
+
 ```
-is mainly make sure user define ```run()``` method
+has two expectations:
+* Make sure user define ```run()``` method
+* make sure a class field of WFCommAPI and be able to dynamically populated at runtime
+  via setup_wf_comm_api() method
+
 
 for Kaplan-Meier analysis, it literal involves
 
