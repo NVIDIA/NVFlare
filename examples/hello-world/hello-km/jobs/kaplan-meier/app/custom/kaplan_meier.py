@@ -40,7 +40,6 @@ class KM(WF):
         self.output_path = output_path
         self.min_clients = min_clients
         self.num_rounds = 1
-        self.flare_comm = WFCommAPI()
 
     def run(self):
         results = self.start_km_analysis()

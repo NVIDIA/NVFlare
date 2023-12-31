@@ -64,6 +64,7 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
     ):
         super().__init__()
 
+        self.wf = None
         self.clients = None
         self.task_timeout = task_timeout
         self.task_name = task_name
@@ -71,7 +72,6 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
         self.wf_class_path = wf_class_path
         self.wf_args = wf_args
         self.wf_queue: WFQueue = WFQueue(ctrl_queue=Queue(), result_queue=Queue())
-        self.wf: WF = class_utils.instantiate_class(self.wf_class_path, self.wf_args)
         self._thread_pool_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix=self.__class__.__name__)
 
         self.engine = None
@@ -88,10 +88,12 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
         self.log_info(fl_ctx, "workflow controller started")
 
     def setup_wf_queue(self):
-        wf_comm_api = self.find_wf_comm_in_wf()
-        wf_comm_api.set_queue(self.wf_queue)
-        wf_comm_api.set_result_pull_interval(self.comm_msg_pull_interval)
-        wf_comm_api.meta.update({SITE_NAMES: self.get_site_names()})
+        self.wf: WF = class_utils.instantiate_class(self.wf_class_path, self.wf_args)
+        comm_api = WFCommAPI()
+        comm_api.set_queue(self.wf_queue)
+        comm_api.set_result_pull_interval(self.comm_msg_pull_interval)
+        comm_api.meta.update({SITE_NAMES: self.get_site_names()})
+        self.wf.setup_wf_comm_api(comm_api)
 
     def find_wf_comm_in_wf(self):
         attr_objs = [getattr(self.wf, attr_name, None) for attr_name in dir(self.wf)]

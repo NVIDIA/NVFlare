@@ -55,9 +55,6 @@ class FedAvg(WF):
         super(FedAvg, self).__init__()
         
         <skip init code>
-        
-        # (1) init flare_comm
-        self.flare_comm = WFCommAPI()
 
     def run(self):
         self.logger.info("start Fed Avg Workflow\n \n")
@@ -103,17 +100,27 @@ SAG is simply ask WFController to broadcast the model to all clients
         results = self.flare_comm.broadcast_and_wait(msg_payload)
         return results
 ```
-
 The base class ```WF``` is define as
 
 ```
+
 class WF(ABC):
+
+    def __init__(self):
+        self.flare_comm: Optional[WFCommAPI] = None
+
+    def setup_wf_comm_api(self, flare_comm: WFCommAPI):
+        self.flare_comm = flare_comm
 
     @abstractmethod
     def run(self):
-        raise NotImplemented
+        raise NotImplementedError
+
 ```
-is mainly make sure user define ```run()``` method
+has two expectations:
+* Make sure user define ```run()``` method
+* make sure a class field of WFCommAPI and be able to dynamically populated at runtime
+  via setup_wf_comm_api() method
  
 ## Configurations
 

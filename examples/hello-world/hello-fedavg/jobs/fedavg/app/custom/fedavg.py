@@ -68,9 +68,6 @@ class FedAvg(WF):
         else:
             self.metric_comp_rule = None
 
-        # (1) init flare_comm
-        self.flare_comm = WFCommAPI()
-
     def run(self):
         self.logger.info("start Fed Avg Workflow\n \n")
 

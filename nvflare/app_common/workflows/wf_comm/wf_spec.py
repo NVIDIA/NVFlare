@@ -13,9 +13,19 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
+from typing import Optional
+
+from nvflare.app_common.workflows.wf_comm.wf_comm_api import WFCommAPI
 
 
 class WF(ABC):
+
+    def __init__(self):
+        self.flare_comm: Optional[WFCommAPI] = None
+
+    def setup_wf_comm_api(self, flare_comm: WFCommAPI):
+        self.flare_comm = flare_comm
+
     @abstractmethod
     def run(self):
         raise NotImplementedError
