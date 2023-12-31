@@ -19,7 +19,7 @@ from queue import Queue
 from typing import Dict, List, Tuple
 
 from nvflare.apis.client import Client
-from nvflare.apis.controller_spec import ClientTask, OperatorMethod, Task, TaskOperatorKey, ControllerSpec
+from nvflare.apis.controller_spec import ClientTask, ControllerSpec, OperatorMethod, Task, TaskOperatorKey
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import ReturnCode
@@ -55,12 +55,12 @@ from nvflare.security.logging import secure_format_traceback
 
 class BaseWFController(FLComponent, ControllerSpec, ABC):
     def __init__(
-            self,
-            task_name: str,
-            wf_class_path: str,
-            wf_args: Dict,
-            task_timeout: int = 0,
-            comm_msg_pull_interval: float = 0.2,
+        self,
+        task_name: str,
+        wf_class_path: str,
+        wf_args: Dict,
+        task_timeout: int = 0,
+        comm_msg_pull_interval: float = 0.2,
     ):
         super().__init__()
 
@@ -129,7 +129,7 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
             self._thread_pool_executor.shutdown()
 
     def process_result_of_unknown_task(
-            self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
+        self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
     ):
         pass
 
@@ -292,17 +292,14 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
     def get_site_names(self):
         return [client.name for client in self.clients]
 
-    def handle_client_errors(self,
-                             rc: str,
-                             client_task: ClientTask,
-                             fl_ctx: FLContext):
+    def handle_client_errors(self, rc: str, client_task: ClientTask, fl_ctx: FLContext):
         abort = ABORT_WHEN_IN_ERROR[rc]
         if abort:
             self.wf_queue.ask_abort(f"error code {rc} occurred")
             self.log_error(fl_ctx, f"error code = {rc}")
             self.system_panic(
-                    f"Failed in client-site for {client_task.client.name} during task {client_task.task.name}.",
-                    fl_ctx=fl_ctx,
+                f"Failed in client-site for {client_task.client.name} during task {client_task.task.name}.",
+                fl_ctx=fl_ctx,
             )
             self.log_error(fl_ctx, f"Execution failed for {client_task.client.name}")
         else:

@@ -22,15 +22,14 @@ from nvflare.app_common.common_workflows.base_wf_controller import BaseWFControl
 
 class WFController(BaseWFController, Controller):
     def __init__(
-            self,
-            task_name: str,
-            wf_class_path: str,
-            wf_args: Dict,
-            task_timeout: int = 0,
-            comm_msg_pull_interval: float = 0.2,
+        self,
+        task_name: str,
+        wf_class_path: str,
+        wf_args: Dict,
+        task_timeout: int = 0,
+        comm_msg_pull_interval: float = 0.2,
     ):
         super().__init__(task_name, wf_class_path, wf_args, task_timeout, comm_msg_pull_interval)
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         self.start_workflow(abort_signal, fl_ctx)
-
