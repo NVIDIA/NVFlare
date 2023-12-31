@@ -95,14 +95,6 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
         comm_api.meta.update({SITE_NAMES: self.get_site_names()})
         self.wf.setup_wf_comm_api(comm_api)
 
-    def find_wf_comm_in_wf(self):
-        attr_objs = [getattr(self.wf, attr_name, None) for attr_name in dir(self.wf)]
-        wf_comm_attrs = [attr for attr in attr_objs if isinstance(attr, WFCommAPI)]
-        if wf_comm_attrs:
-            return wf_comm_attrs[0]
-        else:
-            raise RuntimeError(f"missing required attribute with type of 'WFCommAPI' in {self.wf.__class__.__name__}")
-
     def start_workflow(self, abort_signal, fl_ctx):
         try:
             future = self._thread_pool_executor.submit(self.ctrl_msg_loop, fl_ctx=fl_ctx, abort_signal=abort_signal)
