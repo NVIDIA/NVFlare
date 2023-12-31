@@ -20,7 +20,6 @@ from typing import Dict
 from km_analysis import kaplan_meier_analysis
 
 from nvflare.app_common.abstract.fl_model import FLModel
-from nvflare.app_common.workflows.wf_comm.wf_comm_api import WFCommAPI
 from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import (
     CURRENT_ROUND,
     DATA,
