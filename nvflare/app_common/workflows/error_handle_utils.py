@@ -21,4 +21,3 @@ ABORT_WHEN_IN_ERROR = {
     ReturnCode.TASK_DATA_FILTER_ERROR: True,
     ReturnCode.TASK_RESULT_FILTER_ERROR: True,
 }
-
