@@ -943,7 +943,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         payload_len = len(message.payload)
         message.add_headers(
             {
-                MessageHeaderKey.PAYLOAD_LEN: payload_len,
+                MessageHeaderKey.CLEAR_PAYLOAD_LEN: payload_len,
                 MessageHeaderKey.ENCRYPTED: True,
             }
         )
@@ -968,7 +968,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         if not origin:
             raise RuntimeError("Message origin missing")
 
-        payload_len = message.get_header(MessageHeaderKey.PAYLOAD_LEN)
+        payload_len = message.get_header(MessageHeaderKey.CLEAR_PAYLOAD_LEN)
         origin_cert = self.cert_ex.get_certificate(origin)
         message.payload = self.credential_manager.decrypt(origin_cert, message.payload)
         if len(message.payload) != payload_len:
