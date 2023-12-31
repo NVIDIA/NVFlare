@@ -75,8 +75,6 @@ class FedCyclic(WF):
 
         self.last_model = self.init_model()
 
-        # note: this one must be within run() method, not in the __init__() method
-        # as some values are injected at runtime during run()
         self.part_sites = self.flare_comm.get_site_names()
 
         if len(self.part_sites) <= 1:
