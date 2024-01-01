@@ -19,10 +19,20 @@ import uuid
 from typing import Optional
 
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, SecureTrainConst
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import Shareable
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.private.defs import CellMessageHeaderKeys
+from nvflare.private.fed.utils.identity_utils import (
+    CNMismatch,
+    IdentityVerifier,
+    InvalidAsserterCert,
+    InvalidCNSignature,
+    MissingCN,
+    load_crt_bytes,
+)
+from nvflare.security.logging import secure_format_exception
 
 
 class ClientManager:
@@ -40,6 +50,7 @@ class ClientManager:
         self.max_num_clients = max_num_clients
         self.clients = dict()  # token => Client
         self.lock = threading.Lock()
+        self.id_verifier = None
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -118,6 +129,30 @@ class ClientManager:
             client = self.clients.get(token)
         return client
 
+    def _get_id_verifier(self, fl_ctx: FLContext):
+        if not self.id_verifier:
+            server_config = fl_ctx.get_prop(FLContextKey.SERVER_CONFIG)
+            if not server_config:
+                self.logger.error(f"missing {FLContextKey.SERVER_CONFIG} in FL context")
+                return None
+
+            if not isinstance(server_config, list):
+                self.logger.error(f"expect server_config to be list but got {type(server_config)}")
+                return None
+
+            server1 = server_config[0]
+            if not isinstance(server1, dict):
+                self.logger.error(f"expect server config data to be dict but got {type(server1)}")
+                return None
+
+            root_cert_file = server1.get(SecureTrainConst.SSL_ROOT_CERT)
+            if not root_cert_file:
+                self.logger.error(f"missing {SecureTrainConst.SSL_ROOT_CERT} in server config")
+                return None
+
+            self.id_verifier = IdentityVerifier(root_cert_file=root_cert_file)
+        return self.id_verifier
+
     def authenticated_client(self, request, context) -> Optional[Client]:
         """Use SSL certificate for authenticate the client.
 
@@ -130,6 +165,10 @@ class ClientManager:
         """
         client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
         client = self.clients.get(client_name)
+        shareable = request.payload
+        if not isinstance(shareable, Shareable):
+            self.logger.error(f"payload must be Shareable but got {type(shareable)}")
+            return None
 
         if not client:
             # fqcn = request.get_prop(MessagePropKey.ENDPOINT).conn_props.get(DriverParams.PEER_CN.value)
@@ -141,6 +180,34 @@ class ClientManager:
             #         sticky=False,
             #     )
             #     return None
+
+            secure_mode = context.get_prop(FLContextKey.SECURE_MODE, False)
+            if secure_mode:
+                # verify client identity
+                asserter_cert_data = shareable.get("cert")
+                if not asserter_cert_data:
+                    self.logger.error("missing client cert in register request")
+                    return None
+
+                signature = shareable.get("signature")
+                if not signature:
+                    self.logger.error("missing signature in register request")
+                    return None
+
+                asserter_cert = load_crt_bytes(asserter_cert_data)
+                id_verifier = self._get_id_verifier(context)
+
+                try:
+                    id_verifier.verify_common_name(
+                        asserted_cn=client_name,
+                        asserter_cert=asserter_cert,
+                        signature=signature,
+                    )
+                except Exception as ex:
+                    self.logger.error(f"failed to verify client identity: {secure_format_exception(ex)}")
+                    return None
+
+                self.logger.info(f"identity verified for client '{client_name}'")
 
             with self.lock:
                 clients_to_be_removed = [token for token, client in self.clients.items() if client.name == client_name]

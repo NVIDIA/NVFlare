@@ -25,7 +25,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
-from nvflare.private.aux_runner import AuxRunner, AuxMsgTarget
+from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.fed_utils import create_job_processing_context_properties

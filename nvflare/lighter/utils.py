@@ -33,6 +33,8 @@ def generate_password(passlen=16):
 
 
 def sign_one(content, signing_pri_key):
+    if isinstance(content, str):
+        content = content.encode("utf-8")  # to bytes
     signature = signing_pri_key.sign(
         data=content,
         padding=padding.PSS(
@@ -44,10 +46,35 @@ def sign_one(content, signing_pri_key):
     return b64encode(signature).decode("utf-8")
 
 
+def verify_one(content, signature, public_key):
+    if isinstance(content, str):
+        content = content.encode("utf-8")  # to bytes
+    if isinstance(signature, str):
+        signature = b64decode(signature.encode("utf-8"))  # decode to bytes
+    public_key.verify(
+        signature=signature,
+        data=content,
+        padding=padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
+        algorithm=hashes.SHA256(),
+    )
+
+
+def verify_cert(cert_to_be_verified, root_ca_public_key):
+    root_ca_public_key.verify(
+        cert_to_be_verified.signature,
+        cert_to_be_verified.tbs_certificate_bytes,
+        padding.PKCS1v15(),
+        cert_to_be_verified.signature_hash_algorithm,
+    )
+
+
 def load_private_key_file(file_path):
     with open(file_path, "rt") as f:
-        pri_key = serialization.load_pem_private_key(f.read().encode("ascii"), password=None, backend=default_backend())
-    return pri_key
+        return load_private_key(f.read())
+
+
+def load_private_key(data: str):
+    return serialization.load_pem_private_key(data.encode("ascii"), password=None, backend=default_backend())
 
 
 def sign_folders(folder, signing_pri_key, crt_path, max_depth=9999):
@@ -58,25 +85,17 @@ def sign_folders(folder, signing_pri_key, crt_path, max_depth=9999):
         for file in files:
             if file == ".__nvfl_sig.json" or file == ".__nvfl_submitter.crt":
                 continue
-            signature = signing_pri_key.sign(
-                data=open(os.path.join(root, file), "rb").read(),
-                padding=padding.PSS(
-                    mgf=padding.MGF1(hashes.SHA256()),
-                    salt_length=padding.PSS.MAX_LENGTH,
-                ),
-                algorithm=hashes.SHA256(),
+            signature = sign_one(
+                content=open(os.path.join(root, file), "rb").read(),
+                signing_pri_key=signing_pri_key,
             )
-            signatures[file] = b64encode(signature).decode("utf-8")
+            signatures[file] = signature
         for folder in folders:
-            signature = signing_pri_key.sign(
-                data=folder.encode("utf-8"),
-                padding=padding.PSS(
-                    mgf=padding.MGF1(hashes.SHA256()),
-                    salt_length=padding.PSS.MAX_LENGTH,
-                ),
-                algorithm=hashes.SHA256(),
+            signature = sign_one(
+                content=folder,
+                signing_pri_key=signing_pri_key,
             )
-            signatures[folder] = b64encode(signature).decode("utf-8")
+            signatures[folder] = signature
 
         json.dump(signatures, open(os.path.join(root, ".__nvfl_sig.json"), "wt"))
         shutil.copyfile(crt_path, os.path.join(root, ".__nvfl_submitter.crt"))
@@ -95,31 +114,27 @@ def verify_folder_signature(src_folder, root_ca_path):
                 public_key = cert.public_key()
             except:
                 continue  # TODO: shall return False
-            root_ca_public_key.verify(
-                cert.signature, cert.tbs_certificate_bytes, padding.PKCS1v15(), cert.signature_hash_algorithm
-            )
-            for k in signatures:
-                signatures[k] = b64decode(signatures[k].encode("utf-8"))
+            verify_cert(cert_to_be_verified=cert, root_ca_public_key=root_ca_public_key)
             for file in files:
                 if file == ".__nvfl_sig.json" or file == ".__nvfl_submitter.crt":
                     continue
                 signature = signatures.get(file)
                 if signature:
-                    public_key.verify(
+                    verify_one(
+                        content=open(os.path.join(root, file), "rb").read(),
                         signature=signature,
-                        data=open(os.path.join(root, file), "rb").read(),
-                        padding=padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
-                        algorithm=hashes.SHA256(),
+                        public_key=public_key,
                     )
+
             for folder in folders:
                 signature = signatures.get(folder)
                 if signature:
-                    public_key.verify(
+                    verify_one(
+                        content=folder,
                         signature=signature,
-                        data=folder.encode("utf-8"),
-                        padding=padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
-                        algorithm=hashes.SHA256(),
+                        public_key=public_key,
                     )
+
         return True
     except Exception as e:
         return False
@@ -130,15 +145,11 @@ def sign_all(content_folder, signing_pri_key):
     for f in os.listdir(content_folder):
         path = os.path.join(content_folder, f)
         if os.path.isfile(path):
-            signature = signing_pri_key.sign(
-                data=open(path, "rb").read(),
-                padding=padding.PSS(
-                    mgf=padding.MGF1(hashes.SHA256()),
-                    salt_length=padding.PSS.MAX_LENGTH,
-                ),
-                algorithm=hashes.SHA256(),
+            signature = sign_one(
+                content=open(path, "rb").read(),
+                signing_pri_key=signing_pri_key,
             )
-            signatures[f] = b64encode(signature).decode("utf-8")
+            signatures[f] = signature
     return signatures
 
 

@@ -21,7 +21,7 @@ from typing import List, Optional
 from nvflare.apis.filter import Filter
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_constant import ReturnCode as ShareableRC
-from nvflare.apis.fl_constant import ServerCommandKey, ServerCommandNames
+from nvflare.apis.fl_constant import SecureTrainConst, ServerCommandKey, ServerCommandNames
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.shareable import Shareable
@@ -31,6 +31,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import format_size
 from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, SpecialTaskName, new_cell_message
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
+from nvflare.private.fed.utils.identity_utils import IdentityAsserter
 from nvflare.security.logging import secure_format_exception
 
 
@@ -107,6 +108,21 @@ class Communicator:
         shareable = Shareable()
         shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
         shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
+
+        secure_mode = fl_ctx.get_prop(FLContextKey.SECURE_MODE, False)
+        if secure_mode:
+            client_config = fl_ctx.get_prop(FLContextKey.CLIENT_CONFIG)
+            if not client_config:
+                raise RuntimeError(f"missing {FLContextKey.CLIENT_CONFIG} in FL Context")
+            private_key_file = client_config.get(SecureTrainConst.PRIVATE_KEY)
+            cert_file = client_config.get(SecureTrainConst.SSL_CERT)
+            id_asserter = IdentityAsserter(private_key_file=private_key_file, cert_file=cert_file)
+            cn_signature = id_asserter.sign_common_name(asserted_cn=client_name)
+            with open(cert_file, "rb") as f:
+                cert_data = f.read()
+            shareable["cert"] = cert_data
+            shareable["signature"] = cn_signature
+            self.logger.info(f"sent identity info for client {client_name}")
 
         headers = {
             CellMessageHeaderKeys.CLIENT_NAME: client_name,

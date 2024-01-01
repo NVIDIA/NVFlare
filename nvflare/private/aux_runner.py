@@ -25,11 +25,10 @@ from nvflare.fuel.f3.cellnet.core_cell import Message, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.core_cell import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.private.defs import CellChannel
-from nvflare.security.logging import secure_format_traceback
+from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 
 class AuxMsgTarget:
-
     def __init__(self, name: str, fqcn: str):
         self.name = name
         self.fqcn = fqcn
@@ -158,7 +157,7 @@ class AuxRunner(FLComponent):
 
     def send_aux_request(
         self,
-        targets: List[AuxMsgTarget],      # AuxMsgTargets of targets
+        targets: List[AuxMsgTarget],
         topic: str,
         request: Shareable,
         timeout: float,
@@ -167,6 +166,24 @@ class AuxRunner(FLComponent):
         optional: bool = False,
         secure: bool = False,
     ) -> dict:
+        """Send aux request to specified targets.
+
+        Args:
+            targets: a list of AuxMsgTarget(s)
+            topic: topic of the message
+            request: the request to be sent
+            timeout: timeout of the request
+            fl_ctx: FL context data
+            bulk_send: whether to bulk send
+            optional: whether the request is optional
+            secure: whether to use P2P message encryption
+
+        Returns: a dict of target_name => reply
+
+        Note: each AuxMsgTarget in "targets" has the target's name and FQCN.
+        The returned dict is keyed on the client Name, not client FQCN (which can be multiple levels).
+
+        """
         try:
             return self._send_to_cell(
                 targets=targets,
@@ -179,9 +196,11 @@ class AuxRunner(FLComponent):
                 optional=optional,
                 secure=secure,
             )
-        except Exception:
+        except Exception as ex:
             if optional:
-                self.logger.debug(f"Failed to send aux message {topic} to targets: {targets}")
+                self.logger.debug(
+                    f"Failed to send aux message {topic} to targets: {targets}: {secure_format_exception(ex)}"
+                )
                 self.logger.debug(secure_format_traceback())
             else:
                 self.logger.error(f"Failed to send aux message {topic} to targets: {targets}")

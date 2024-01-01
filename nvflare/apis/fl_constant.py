@@ -153,6 +153,7 @@ class FLContextKey(object):
     JOB_PARTICIPANTS = "__job_participants"
     JOB_BLOCK_REASON = "__job_block_reason"  # why the job should be blocked from scheduling
     SSID = "__ssid__"
+
     CLIENT_TOKEN = "__client_token"
     AUTHORIZATION_RESULT = "_authorization_result"
     AUTHORIZATION_REASON = "_authorization_reason"
@@ -174,6 +175,8 @@ class FLContextKey(object):
     FILTER_DIRECTION = "__filter_dir__"
     ROOT_URL = "__root_url__"  # the URL for accessing the FL Server
     NOT_READY_TO_END_RUN = "not_ready_to_end_run__"  # component sets this to indicate it's not ready to end run yet
+    CLIENT_CONFIG = "__client_config__"
+    SERVER_CONFIG = "__server_config__"
 
 
 class ReservedTopic(object):

@@ -20,7 +20,7 @@ import sys
 import time
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, JobConstants, SiteType, WorkspaceConstants
+from nvflare.apis.fl_constant import FLContextKey, JobConstants, SecureTrainConst, SiteType, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
@@ -103,13 +103,26 @@ def main(args):
 
         client_engine = ClientEngine(federated_client, args, rank)
 
+        with client_engine.new_context() as fl_ctx:
+            fl_ctx.set_prop(
+                key=FLContextKey.CLIENT_CONFIG,
+                value=deployer.client_config,
+                private=True,
+                sticky=True,
+            )
+            fl_ctx.set_prop(
+                key=FLContextKey.SECURE_MODE,
+                value=deployer.secure_train,
+                private=True,
+                sticky=True,
+            )
+
         while federated_client.cell is None:
             print("Waiting client cell to be created ....")
             time.sleep(1.0)
 
         with client_engine.new_context() as fl_ctx:
             client_engine.fire_event(EventType.SYSTEM_BOOTSTRAP, fl_ctx)
-
             client_engine.fire_event(EventType.BEFORE_CLIENT_REGISTER, fl_ctx)
             federated_client.register(fl_ctx)
             fl_ctx.set_prop(FLContextKey.CLIENT_TOKEN, federated_client.token)
@@ -121,7 +134,7 @@ def main(args):
 
         federated_client.start_heartbeat(interval=kv_list.get("heart_beat_interval", 10.0))
 
-        admin_agent = create_admin_agent(deployer.req_processors, federated_client, client_engine)
+        create_admin_agent(deployer.req_processors, federated_client, client_engine)
 
         while federated_client.status != ClientStatus.STOPPED:
             time.sleep(1.0)

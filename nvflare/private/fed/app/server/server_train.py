@@ -20,7 +20,7 @@ import os
 import sys
 import time
 
-from nvflare.apis.fl_constant import JobConstants, SiteType, WorkspaceConstants
+from nvflare.apis.fl_constant import FLContextKey, JobConstants, SiteType, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
@@ -100,7 +100,6 @@ def main(args):
         privacy_manager = create_privacy_manager(workspace, names_only=True, is_server=True)
         PrivacyService.initialize(privacy_manager)
 
-        admin_server = None
         try:
             # Deploy the FL server
             services = deployer.deploy(args)
@@ -119,7 +118,21 @@ def main(args):
             services.set_admin_server(admin_server)
 
             # mpm.add_cleanup_cb(admin_server.stop)
-
+            with services.engine.new_context() as fl_ctx:
+                fl_ctx.set_prop(
+                    key=FLContextKey.SERVER_CONFIG,
+                    value=deployer.server_config,
+                    private=True,
+                    sticky=True,
+                )
+                print(f"set {FLContextKey.SERVER_CONFIG}: {deployer.server_config}")
+                fl_ctx.set_prop(
+                    key=FLContextKey.SECURE_MODE,
+                    value=deployer.secure_train,
+                    private=True,
+                    sticky=True,
+                )
+                print(f"set {FLContextKey.SECURE_MODE}: {deployer.secure_train}")
         finally:
             deployer.close()
 

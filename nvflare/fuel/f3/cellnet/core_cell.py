@@ -239,28 +239,26 @@ class CertificateExchanger:
 
         cert = self.credential_manager.get_certificate(target)
         if cert:
+            print(f"==== CERT CACHED for {target}")
             return cert
 
+        print(f"==== Exchange cert with {target}")
         cert = self.exchange_certificate(target)
-        self.credential_manager.save_certificate(target, cert)
-
         return cert
 
     def exchange_certificate(self, target: str) -> bytes:
-        root = FQCN.get_root(target)
-        req = self.credential_manager.create_request(root)
-        response = self.core_cell.send_request(_SM_CHANNEL, _SM_TOPIC, root, Message(None, req))
+        req = self.credential_manager.create_request()
+        response = self.core_cell.send_request(_SM_CHANNEL, _SM_TOPIC, target, Message(None, req))
         reply = response.payload
 
         if not reply:
             error_code = response.get_header(MessageHeaderKey.RETURN_CODE)
-            raise RuntimeError(f"Cert exchanged to {root} failed: {error_code}")
+            raise RuntimeError(f"Cert exchanged to {target} failed: {error_code}")
 
-        return self.credential_manager.process_response(reply)
+        return self.credential_manager.process_response(response)
 
     def _handle_cert_request(self, request: Message):
-
-        reply = self.credential_manager.process_request(request.payload)
+        reply = self.credential_manager.process_request(request)
         return Message(None, reply)
 
 
