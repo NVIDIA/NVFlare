@@ -18,7 +18,6 @@ import random
 from typing import List, Optional
 
 import torch
-
 from net import Net
 
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType

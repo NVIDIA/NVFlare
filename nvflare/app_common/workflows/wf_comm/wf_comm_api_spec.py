@@ -13,7 +13,9 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Dict
+from typing import Dict, List, Optional, Tuple
+
+from nvflare.app_common.abstract.fl_model import FLModel
 
 CMD = "COMMAND"
 CMD_SEND = "SEND"
@@ -26,6 +28,7 @@ SITE_NAMES = "SITE_NAMES"
 
 # note same as app_constant constant (todo: we only need one constant definition)
 MIN_RESPONSES = "min_responses"
+RESP_MAX_WAIT_TIME = "resp_max_wait_time"
 START_ROUND = "start_round"
 CURRENT_ROUND = "current_round"
 CONTRIBUTION_ROUND = "contribution_round"
@@ -52,7 +55,7 @@ class WFCommAPISpec(ABC):
         pass
 
     @abstractmethod
-    def broadcast(self, msg_payload):
+    def broadcast(self, msg_payload: Dict):
         pass
 
     @abstractmethod
@@ -64,9 +67,35 @@ class WFCommAPISpec(ABC):
         pass
 
     @abstractmethod
-    def get_site_names(self):
+    def get_site_names(self) -> List[str]:
         pass
 
     @abstractmethod
-    def wait(self, min_responses):
+    def wait_all(self, min_responses: int, resp_max_wait_time: Optional[float]) -> Dict[str, Dict[str, FLModel]]:
+        """
+        wait for result
+        Args:
+            min_responses: if min_responses or more sites are received, then the result will return
+            resp_max_wait_time: the max wait time after the 1st site response is received. This is used to deal
+            with really late site result arrival, instead of waiting forever, we set a timeout.
+            if resp_max_wait_time is None, it will not timeout
+
+        Returns:
+            all results with min_response
+        """
+        pass
+
+    @abstractmethod
+    def wait_one(self, resp_max_wait_time: Optional[float] = None) -> Tuple[str, str, FLModel]:
+        """
+        wait for result
+        Args:
+            resp_max_wait_time: the max wait time after the 1st site response is received. This is used to deal
+            with really late site result arrival, instead of waiting forever, we set a timeout.
+            if resp_max_wait_time is None, it will not timeout
+
+        Returns:
+            Tuple of task_name, site_name, FLModel
+        """
+
         pass
