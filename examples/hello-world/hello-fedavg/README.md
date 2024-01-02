@@ -7,17 +7,10 @@ This example illustrates  How to use the new Workflow Communication API to contr
 The Flare workflow Communicator API only has small set methods
 
 ```
+
 class WFCommAPISpec(ABC):
     @abstractmethod
     def broadcast_and_wait(self, msg_payload: Dict):
-        pass
-
-    @abstractmethod
-    def broadcast(self, msg_payload):
-        pass
-
-    @abstractmethod
-    def send(self, msg_payload: Dict):
         pass
 
     @abstractmethod
@@ -25,12 +18,33 @@ class WFCommAPISpec(ABC):
         pass
 
     @abstractmethod
-    def get_site_names(self):
+    def relay_and_wait(self, msg_payload: Dict):
         pass
 
     @abstractmethod
-    def wait(self, min_responses):
+    def broadcast(self, msg_payload: Dict):
         pass
+
+    @abstractmethod
+    def send(self, msg_payload: Dict):
+        pass
+
+    @abstractmethod
+    def relay(self, msg_payload: Dict):
+        pass
+
+    @abstractmethod
+    def get_site_names(self) -> List[str]:
+        pass
+
+    @abstractmethod
+    def wait_all(self, min_responses: int, resp_max_wait_time: Optional[float]) -> Dict[str, Dict[str, FLModel]]:
+        pass
+
+    @abstractmethod
+    def wait_one(self, resp_max_wait_time: Optional[float] = None) -> Tuple[str, str, FLModel]:
+        pass
+
 ```
 
 

@@ -29,7 +29,11 @@ class WFCommAPISpec(ABC):
         pass
 
     @abstractmethod
-    def wait(self, min_responses):
+    def wait_all(self, min_responses: int, resp_max_wait_time: Optional[float]) -> Dict[str, Dict[str, FLModel]]:
+        pass
+
+    @abstractmethod
+    def wait_one(self, resp_max_wait_time: Optional[float] = None) -> Tuple[str, str, FLModel]:
         pass
 ```
 
