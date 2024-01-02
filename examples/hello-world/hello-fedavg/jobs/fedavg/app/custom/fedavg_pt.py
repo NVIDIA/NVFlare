@@ -18,6 +18,9 @@ from fedavg import FedAvg
 
 from nvflare.app_common.abstract.fl_model import FLModel
 
+# to use in_time aggregate version of FedAvg
+# you change the import to 'from fedavg_intime import FedAvg'
+
 
 class PTFedAvg(FedAvg):
     def __init__(

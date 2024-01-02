@@ -13,8 +13,9 @@
 # limitations under the License.
 
 import logging
-import sys
-from typing import Callable, Dict, Optional
+import time
+import traceback
+from typing import Callable, Dict, Optional, Tuple
 
 from net import Net
 
@@ -48,17 +49,17 @@ class FedAvg(WF):
         start_round: int = 1,
         stop_cond: str = None,
         model_selection_rule: str = None,
-        resp_max_wait_time: float = 5,
+        resp_max_wait_time: float = 5.0,
     ):
         super(FedAvg, self).__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
 
         self.output_path = output_path
         self.min_clients = min_clients
-        self.resp_max_wait_time = resp_max_wait_time
         self.num_rounds = num_rounds
         self.start_round = start_round
         self.current_round = start_round
+        self.resp_max_wait_time = resp_max_wait_time
         self.best_model: Optional[FLModel] = None
         if stop_cond:
             self.stop_criteria = parse_compare_criteria(stop_cond)
@@ -85,13 +86,13 @@ class FedAvg(WF):
             if self.should_stop(model.metrics, self.stop_criteria):
                 self.logger.info(f"stop at {current_round}/{self.num_rounds}, early stop condition satisfied.")
                 break
-            sag_results = self.scatter_and_gather(model, current_round)
 
-            aggr_result = self.aggr_fn(sag_results)
+            self.scatter(model, current_round)
+
+            self.logger.info("gather and aggregate")
+            aggr_result = self.gather_and_aggr(self.in_time_aggr_fn)
 
             self.logger.info(f"aggregate metrics = {aggr_result.metrics}")
-
-            print("model size =", sys.getsizeof(model.params))
 
             model = update_model(model, aggr_result)
 
@@ -106,8 +107,7 @@ class FedAvg(WF):
         model = FLModel(params=net.state_dict(), params_type=ParamsType.FULL)
         return model
 
-    def scatter_and_gather(self, model: FLModel, current_round):
-
+    def scatter(self, model: FLModel, current_round):
         msg_payload = {
             MIN_RESPONSES: self.min_clients,
             RESP_MAX_WAIT_TIME: self.resp_max_wait_time,
@@ -118,45 +118,73 @@ class FedAvg(WF):
         }
 
         # (2) broadcast and wait
-        results = self.flare_comm.broadcast_and_wait(msg_payload)
-        print(f"{results=}")
-        return results
+        self.flare_comm.broadcast(msg_payload)
 
-    def aggr_fn(self, sag_result: Dict[str, Dict[str, FLModel]]) -> FLModel:
+    def gather_and_aggr(self, in_time_aggr_fn: Callable):
+        responses = 0
+        start = None
+        aggr_model = None
+        aggr_params_helper = WeightedAggregationHelper()
+        aggr_metrics_helper = WeightedAggregationHelper()
+        helpers = (aggr_params_helper, aggr_metrics_helper)
 
-        self.logger.info("fed avg aggregate \n")
+        while True:
+            if responses >= self.min_clients:
+                return aggr_model
+            else:
+                time.sleep(0.2)
 
-        if not sag_result:
-            raise RuntimeError("input is None or empty")
+            max_timeout = self.resp_max_wait_time if start else None
+            self.logger.warning(f"{max_timeout=}, {responses=}, {self.min_clients=}")
+            try:
+                item = self.flare_comm.wait_one(max_timeout)
+            except RuntimeError as e:
+                self.logger.error(traceback.format_exc())
+                break
 
-        # we only have one task
-        task_name, task_result = next(iter(sag_result.items()))
+            task_name, site_name, model = item
+            aggr_model = in_time_aggr_fn(helpers, aggr_model, site_name, model)
+            start = time.time() if start is None else start
+            responses += 1
 
-        self.logger.info(f"aggregating {len(task_result)} update(s) at round {self.current_round}")
+        if responses < self.min_clients:
+            raise RuntimeError(
+                f"not enough responses {responses} compare with min responses requirement {self.min_clients} within the max allowed time {self.resp_max_wait_time} seconds"
+            )
+        else:
+            return aggr_model
+
+    def in_time_aggr_fn(self, helpers: Tuple, prev_mode: FLModel, site_name: str, fl_model: FLModel) -> FLModel:
+
+        self.logger.info("Fed Avg in time aggregate \n")
+        if not fl_model:
+            raise RuntimeError("model must not be None")
+
+        self.logger.info(f"aggregating update at round {self.current_round}")
+
+        self.logger.info(f"site={site_name}  {fl_model.metrics=}")
+
+        if prev_mode is None:
+            self.logger.info(f"aggr_metrics={fl_model.metrics}")
+            return fl_model
 
         try:
-            aggr_params_helper = WeightedAggregationHelper()
-            aggr_metrics_helper = WeightedAggregationHelper()
-            params_type = None
-            for site, fl_model in task_result.items():
-                if params_type is None:
-                    params_type = fl_model.params_type
+            params_type = fl_model.params_type
+            aggr_params_helper, aggr_metrics_helper = helpers
 
-                aggr_params_helper.add(
-                    data=fl_model.params,
-                    weight=self.current_round,
-                    contributor_name=site,
-                    contribution_round=self.current_round,
-                )
+            aggr_params_helper.add(
+                data=fl_model.params,
+                weight=self.current_round,
+                contributor_name=site_name,
+                contribution_round=self.current_round,
+            )
 
-                self.logger.info(f"site={site}  {fl_model.metrics=}")
-
-                aggr_metrics_helper.add(
-                    data=fl_model.metrics,
-                    weight=self.current_round,
-                    contributor_name=site,
-                    contribution_round=self.current_round,
-                )
+            aggr_metrics_helper.add(
+                data=fl_model.metrics,
+                weight=self.current_round,
+                contributor_name=site_name,
+                contribution_round=self.current_round,
+            )
 
             aggr_params = aggr_params_helper.get_result()
             aggr_metrics = aggr_metrics_helper.get_result()
@@ -173,6 +201,7 @@ class FedAvg(WF):
                 },
             )
             return aggr_result
+
         except Exception as e:
             raise RuntimeError(f"Exception in aggregate call: {secure_format_traceback()}")
 

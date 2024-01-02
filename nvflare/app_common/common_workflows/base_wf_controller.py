@@ -97,13 +97,13 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
 
     def start_workflow(self, abort_signal, fl_ctx):
         try:
-            future = self._thread_pool_executor.submit(self.ctrl_msg_loop, fl_ctx=fl_ctx, abort_signal=abort_signal)
+            self._thread_pool_executor.submit(self.ctrl_msg_loop, fl_ctx=fl_ctx, abort_signal=abort_signal)
             self.wf.run()
             self.stop_msg_queue("job completed", fl_ctx)
-            future.result()
         except Exception as e:
             error_msg = secure_format_traceback()
             self.log_error(fl_ctx, error_msg)
+            self.wf_queue.ask_abort(error_msg)
             self.system_panic(error_msg, fl_ctx=fl_ctx)
         finally:
             wait_time = self.comm_msg_pull_interval + 0.05

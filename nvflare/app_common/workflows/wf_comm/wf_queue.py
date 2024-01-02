@@ -14,7 +14,7 @@
 
 
 from queue import Queue
-from typing import Optional
+from typing import Dict, Optional
 
 from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import CMD, CMD_ABORT, CMD_STOP, PAYLOAD
 
@@ -42,13 +42,13 @@ class WFQueue:
     def result_size(self) -> int:
         return self.result_queue.qsize()
 
-    def get_ctrl_msg(self):
+    def get_ctrl_msg(self) -> Dict:
         item = self.ctrl_queue.get()
         self.ctrl_queue.task_done()
         return item
 
-    def get_result(self):
-        item = self.result_queue.get()
+    def get_result(self, timeout: Optional[float] = None) -> Dict:
+        item = self.result_queue.get(timeout=timeout)
         self.result_queue.task_done()
         return item
 
