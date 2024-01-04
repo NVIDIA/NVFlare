@@ -554,6 +554,8 @@ class SwarmClientController(ClientSideController):
 
         self.log_info(fl_ctx, f"Round {current_round} started.")
 
+        task_data.set_header(FLContextKey.TASK_NAME, name)
+
         # Some shareable generators assume the base model (GLOBAL_MODEL) is always available, which is true for
         # server-controlled fed-avg. But this is not true for swarm learning.
         # To make these generators happy, we create an empty global model here if not present.
