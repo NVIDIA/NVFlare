@@ -28,6 +28,7 @@ class DataKind(object):
     COLLECTION = "COLLECTION"  # Dict or List of DXO objects
     STATISTICS = "STATISTICS"
     PSI = "PSI"
+    APP_DEFINED = "APP_DEFINED"  # data format is app defined
 
 
 class MetaKey(object):
@@ -120,7 +121,7 @@ class DXO(object):
         if self.data is None:
             return "missing data"
 
-        if not isinstance(self.data, dict):
+        if self.data_kind != DataKind.APP_DEFINED and not isinstance(self.data, dict):
             return "invalid data: expect dict but got {}".format(type(self.data))
 
         if self.meta is not None and not isinstance(self.meta, dict):

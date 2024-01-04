@@ -275,9 +275,12 @@ class IPCExchanger(Executor):
             return make_reply(ReturnCode.BAD_TASK_DATA)
 
         # send to flare agent
+        is_app_defined = False
         task_ctx = self.task_ctx
         task_id = task_ctx.task_id
         data = dxo.data
+        if dxo.data_kind == DataKind.APP_DEFINED:
+            is_app_defined = True
         if not data:
             data = {}
         meta = dxo.meta
@@ -329,10 +332,16 @@ class IPCExchanger(Executor):
 
         result = task_ctx.result
         meta = result.get(defs.PayloadKey.META)
-        data_kind = meta.get(defs.MetaKey.DATA_KIND, DataKind.WEIGHTS)
+
+        data = result.get(defs.PayloadKey.DATA)
+        if is_app_defined:
+            data_kind = DataKind.APP_DEFINED
+        else:
+            data_kind = meta.get(defs.MetaKey.DATA_KIND, DataKind.WEIGHTS)
+
         dxo = DXO(
             data_kind=data_kind,
-            data=result.get(defs.PayloadKey.DATA),
+            data=data,
             meta=meta,
         )
         s = dxo.to_shareable()
