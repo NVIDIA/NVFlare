@@ -366,7 +366,7 @@ def add_he_builder(use_he: bool, project_config: OrderedDict):
             "path": "nvflare.lighter.impl.he.HEBuilder",
             "args": {},
         }
-        project_config["builders"].append(he_builder)
+        project_config["builders"].insert(-1, he_builder)
 
     return project_config
 
