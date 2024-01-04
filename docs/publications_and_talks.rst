@@ -68,6 +68,7 @@ Blogs & Videos: 2021
 * **2021-11** `Federated Learning for Healthcare AI: NVIDIA and Rhino Health Accelerate Research Collaborations <https://youtu.be/ytmwx1V0XK0?si=hP7Cvg15aXjkDNd6>`__ (`Rhino Health <https://www.rhinohealth.com/>`__ Video)
 * **2021-11** `Federated Learning With FLARE: NVIDIA Brings Collaborative AI to Healthcare and Beyond <https://blogs.nvidia.com/blog/federated-learning-ai-nvidia-flare/>`__ (NVIDIA Blog)
 * **2021-09** `Federated Learning for Medical AI and Triaging COVID-19 Patients <https://www.youtube.com/watch?v=cOXVrtkv6FE>`__ (NVIDIA Video)
+* **2021-09** `Federated Learning for Healthcare Using NVIDIA Clara <https://developer.download.nvidia.com/CLARA/Federated-Learning-Training-for-Healthcare-Using-NVIDIA-Clara.pdf>`__ (NVIDIA White Paper)
 * **2021-06** `Federated Learning with Homomorphic Encryption <https://developer.nvidia.com/blog/federated-learning-with-homomorphic-encryption/>`__ (NVIDIA Technical Blog)
 * **2021-05** `Applying a MLOps approach to Federated learning using ML Flow with NV Flare: A Healthcare use case <https://medium.com/dataroots/applying-a-mlops-approach-to-federated-learning-using-ml-flow-with-nv-flare-a-healthcare-use-case-b703f46224ef>`__ (Medium Blog)
 
