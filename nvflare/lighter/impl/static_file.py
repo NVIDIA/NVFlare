@@ -241,6 +241,8 @@ class StaticFileBuilder(Builder):
         # config["servers"][0]["service"]["target"] = f"{server_name}:{fed_learn_port}"
         config["servers"][0]["service"]["scheme"] = self.scheme
         config["servers"][0]["name"] = self.project_name
+        config["servers"][0]["host"] = server_name
+
         # config["enable_byoc"] = client.enable_byoc
         replacement_dict = {
             "client_name": f"{client.subject}",

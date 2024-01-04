@@ -239,10 +239,8 @@ class CertificateExchanger:
 
         cert = self.credential_manager.get_certificate(target)
         if cert:
-            print(f"==== CERT CACHED for {target}")
             return cert
 
-        print(f"==== Exchange cert with {target}")
         cert = self.exchange_certificate(target)
         return cert
 

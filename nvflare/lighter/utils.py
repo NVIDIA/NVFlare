@@ -32,21 +32,31 @@ def generate_password(passlen=16):
     return p
 
 
-def sign_one(content, signing_pri_key):
+def sign_content(content, signing_pri_key, return_str=True):
     if isinstance(content, str):
         content = content.encode("utf-8")  # to bytes
     signature = signing_pri_key.sign(
         data=content,
-        padding=padding.PSS(
-            mgf=padding.MGF1(hashes.SHA256()),
-            salt_length=padding.PSS.MAX_LENGTH,
-        ),
-        algorithm=hashes.SHA256(),
+        padding=_content_padding(),
+        algorithm=_content_hash_algo(),
     )
-    return b64encode(signature).decode("utf-8")
+
+    # signature is bytes
+    if return_str:
+        return b64encode(signature).decode("utf-8")
+    else:
+        return signature
 
 
-def verify_one(content, signature, public_key):
+def _content_padding():
+    return padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH)
+
+
+def _content_hash_algo():
+    return hashes.SHA256()
+
+
+def verify_content(content, signature, public_key):
     if isinstance(content, str):
         content = content.encode("utf-8")  # to bytes
     if isinstance(signature, str):
@@ -54,8 +64,8 @@ def verify_one(content, signature, public_key):
     public_key.verify(
         signature=signature,
         data=content,
-        padding=padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
-        algorithm=hashes.SHA256(),
+        padding=_content_padding(),
+        algorithm=_content_hash_algo(),
     )
 
 
@@ -85,13 +95,13 @@ def sign_folders(folder, signing_pri_key, crt_path, max_depth=9999):
         for file in files:
             if file == ".__nvfl_sig.json" or file == ".__nvfl_submitter.crt":
                 continue
-            signature = sign_one(
+            signature = sign_content(
                 content=open(os.path.join(root, file), "rb").read(),
                 signing_pri_key=signing_pri_key,
             )
             signatures[file] = signature
         for folder in folders:
-            signature = sign_one(
+            signature = sign_content(
                 content=folder,
                 signing_pri_key=signing_pri_key,
             )
@@ -120,7 +130,7 @@ def verify_folder_signature(src_folder, root_ca_path):
                     continue
                 signature = signatures.get(file)
                 if signature:
-                    verify_one(
+                    verify_content(
                         content=open(os.path.join(root, file), "rb").read(),
                         signature=signature,
                         public_key=public_key,
@@ -129,7 +139,7 @@ def verify_folder_signature(src_folder, root_ca_path):
             for folder in folders:
                 signature = signatures.get(folder)
                 if signature:
-                    verify_one(
+                    verify_content(
                         content=folder,
                         signature=signature,
                         public_key=public_key,
@@ -145,7 +155,7 @@ def sign_all(content_folder, signing_pri_key):
     for f in os.listdir(content_folder):
         path = os.path.join(content_folder, f)
         if os.path.isfile(path):
-            signature = sign_one(
+            signature = sign_content(
                 content=open(path, "rb").read(),
                 signing_pri_key=signing_pri_key,
             )

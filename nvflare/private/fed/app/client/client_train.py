@@ -111,6 +111,12 @@ def main(args):
                 sticky=True,
             )
             fl_ctx.set_prop(
+                key=FLContextKey.SERVER_CONFIG,
+                value=deployer.server_config,
+                private=True,
+                sticky=True,
+            )
+            fl_ctx.set_prop(
                 key=FLContextKey.SECURE_MODE,
                 value=deployer.secure_train,
                 private=True,

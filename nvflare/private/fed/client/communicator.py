@@ -16,6 +16,7 @@ import logging
 import socket
 import time
 import traceback
+import uuid
 from typing import List, Optional
 
 from nvflare.apis.filter import Filter
@@ -31,7 +32,8 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import format_size
 from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, SpecialTaskName, new_cell_message
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
-from nvflare.private.fed.utils.identity_utils import IdentityAsserter
+from nvflare.private.fed.utils.identity_utils import IdentityAsserter, IdentityVerifier, load_crt_bytes
+from nvflare.private.defs import IdentityChallengeKey
 from nvflare.security.logging import secure_format_exception
 
 
@@ -92,6 +94,53 @@ class Communicator:
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
+    def _challenge_server(self, client_name, expected_host, root_cert_file):
+        # ask server for its info and make sure that it matches expected host
+        my_nonce = str(uuid.uuid4())
+        headers = {
+            IdentityChallengeKey.COMMON_NAME: client_name,
+            IdentityChallengeKey.NONCE: my_nonce
+        }
+        challenge = new_cell_message(headers, None)
+        result = self.cell.send_request(
+            target=FQCN.ROOT_SERVER,
+            channel=CellChannel.SERVER_MAIN,
+            topic=CellChannelTopic.Challenge,
+            request=challenge,
+            timeout=self.maint_msg_timeout,
+        )
+        return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
+        error = result.get_header(MessageHeaderKey.ERROR, "")
+        self.logger.info(f"challenge result: {return_code} {error}")
+        if return_code != ReturnCode.OK:
+            if return_code in [ReturnCode.TARGET_UNREACHABLE, ReturnCode.COMM_ERROR]:
+                # trigger retry
+                return None
+            err = result.get_header(MessageHeaderKey.ERROR, "")
+            raise FLCommunicationError(f"failed to challenge server: {return_code}: {err}")
+
+        reply = result.payload
+        assert isinstance(reply, Shareable)
+        server_nonce = reply.get(IdentityChallengeKey.NONCE)
+        cert_bytes = reply.get(IdentityChallengeKey.CERT)
+        server_cert = load_crt_bytes(cert_bytes)
+        server_signature = reply.get(IdentityChallengeKey.SIGNATURE)
+        server_cn = reply.get(IdentityChallengeKey.COMMON_NAME)
+
+        if server_cn != expected_host:
+            raise FLCommunicationError(f"expected host is '{expected_host}' but got '{server_cn}'")
+
+        id_verifier = IdentityVerifier(root_cert_file=root_cert_file)
+        id_verifier.verify_common_name(
+            asserter_cert=server_cert,
+            asserted_cn=server_cn,
+            nonce=my_nonce,
+            signature=server_signature
+        )
+
+        self.logger.info(f"verified server host '{expected_host}'")
+        return server_nonce
+
     def client_registration(self, client_name, project_name, fl_ctx: FLContext):
         """Client's metadata used to authenticate and communicate.
 
@@ -104,6 +153,13 @@ class Communicator:
             The client's token
 
         """
+        start = time.time()
+        while not self.cell:
+            self.logger.info("Waiting for the client cell to be created.")
+            if time.time() - start > 15.0:
+                raise RuntimeError("Client cell could not be created. Failed to login the client.")
+            time.sleep(0.5)
+
         local_ip = _get_client_ip()
         shareable = Shareable()
         shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
@@ -111,17 +167,39 @@ class Communicator:
 
         secure_mode = fl_ctx.get_prop(FLContextKey.SECURE_MODE, False)
         if secure_mode:
+            server_config = fl_ctx.get_prop(FLContextKey.SERVER_CONFIG)
+            if not server_config:
+                raise RuntimeError(f"missing {FLContextKey.SERVER_CONFIG} in FL Context")
+
+            print(f"===== SERVER CONFIG: {server_config}")
+            server0 = server_config[0]
+            expected_host = server0.get("host")
+            if not expected_host:
+                raise RuntimeError("missing 'host' in server config")
+
             client_config = fl_ctx.get_prop(FLContextKey.CLIENT_CONFIG)
             if not client_config:
                 raise RuntimeError(f"missing {FLContextKey.CLIENT_CONFIG} in FL Context")
             private_key_file = client_config.get(SecureTrainConst.PRIVATE_KEY)
             cert_file = client_config.get(SecureTrainConst.SSL_CERT)
+            root_cert_file = client_config.get(SecureTrainConst.SSL_ROOT_CERT)
+
+            while True:
+                server_nonce = self._challenge_server(client_name, expected_host, root_cert_file)
+                if server_nonce is None and not self.should_stop:
+                    # retry
+                    self.logger.info(f"re-challenge after {self.client_register_interval} seconds")
+                    time.sleep(self.client_register_interval)
+                else:
+                    break
+
             id_asserter = IdentityAsserter(private_key_file=private_key_file, cert_file=cert_file)
-            cn_signature = id_asserter.sign_common_name(asserted_cn=client_name)
-            with open(cert_file, "rb") as f:
-                cert_data = f.read()
-            shareable["cert"] = cert_data
-            shareable["signature"] = cn_signature
+            cn_signature = id_asserter.sign_common_name(
+                nonce=server_nonce
+            )
+            shareable[IdentityChallengeKey.CERT] = id_asserter.cert_data
+            shareable[IdentityChallengeKey.SIGNATURE] = cn_signature
+            shareable[IdentityChallengeKey.COMMON_NAME] = id_asserter.cn
             self.logger.info(f"sent identity info for client {client_name}")
 
         headers = {
@@ -130,19 +208,6 @@ class Communicator:
             CellMessageHeaderKeys.PROJECT_NAME: project_name,
         }
         login_message = new_cell_message(headers, shareable)
-
-        start = time.time()
-        while not self.cell:
-            self.logger.info("Waiting for the client cell to be created.")
-            if time.time() - start > 15.0:
-                raise RuntimeError("Client cell could not be created. Failed to login the client.")
-            time.sleep(0.5)
-
-        # while not self.cell.is_cell_connected(FQCN.ROOT_SERVER):
-        #     time.sleep(0.1)
-        #     if time.time() - start > 30.0:
-        #         raise FLCommunicationError("error:Could not connect to the server for client_registration.")
-
         self.logger.info("Trying to register with server ...")
         while True:
             try:
@@ -157,8 +222,9 @@ class Communicator:
                 return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
                 self.logger.info(f"register RC: {return_code}")
                 if return_code == ReturnCode.UNAUTHENTICATED:
-                    unauthenticated = result.get_header(MessageHeaderKey.ERROR)
-                    raise FLCommunicationError("error:client_registration " + unauthenticated)
+                    reason = result.get_header(MessageHeaderKey.ERROR)
+                    self.logger.error(f"registration rejected: {reason}")
+                    raise FLCommunicationError("error:client_registration " + reason)
 
                 token = result.get_header(CellMessageHeaderKeys.TOKEN)
                 ssid = result.get_header(CellMessageHeaderKeys.SSID)

@@ -23,7 +23,7 @@ from nvflare.apis.fl_constant import FLContextKey, SecureTrainConst
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
-from nvflare.private.defs import CellMessageHeaderKeys
+from nvflare.private.defs import CellMessageHeaderKeys, IdentityChallengeKey
 from nvflare.private.fed.utils.identity_utils import (
     CNMismatch,
     IdentityVerifier,
@@ -171,37 +171,28 @@ class ClientManager:
             return None
 
         if not client:
-            # fqcn = request.get_prop(MessagePropKey.ENDPOINT).conn_props.get(DriverParams.PEER_CN.value)
-            # if fqcn and fqcn != client_name:
-            #     self.logger.error(f"Requested fqcn:{fqcn} does not match the client_name: {client_name}")
-            #     context.set_prop(
-            #         FLContextKey.UNAUTHENTICATED,
-            #         f"Requested fqcn:{fqcn} does not match the client_name: {client_name}",
-            #         sticky=False,
-            #     )
-            #     return None
-
             secure_mode = context.get_prop(FLContextKey.SECURE_MODE, False)
             if secure_mode:
                 # verify client identity
-                asserter_cert_data = shareable.get("cert")
+                asserter_cert_data = shareable.get(IdentityChallengeKey.CERT)
                 if not asserter_cert_data:
                     self.logger.error("missing client cert in register request")
                     return None
 
-                signature = shareable.get("signature")
+                signature = shareable.get(IdentityChallengeKey.SIGNATURE)
                 if not signature:
                     self.logger.error("missing signature in register request")
                     return None
 
                 asserter_cert = load_crt_bytes(asserter_cert_data)
                 id_verifier = self._get_id_verifier(context)
-
+                reg = context.get_prop("reg_session")
                 try:
                     id_verifier.verify_common_name(
                         asserted_cn=client_name,
                         asserter_cert=asserter_cert,
                         signature=signature,
+                        nonce=reg.nonce,
                     )
                 except Exception as ex:
                     self.logger.error(f"failed to verify client identity: {secure_format_exception(ex)}")

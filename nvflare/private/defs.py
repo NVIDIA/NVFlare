@@ -150,6 +150,7 @@ class CellChannel:
 
 class CellChannelTopic:
 
+    Challenge = "challenge"
     Register = "register"
     Quit = "quit"
     GET_TASK = "get_task"
@@ -184,6 +185,14 @@ class JobFailureMsgKey:
     JOB_ID = "job_id"
     CODE = "code"
     REASON = "reason"
+
+
+class IdentityChallengeKey:
+
+    NONCE = "nonce"
+    CERT = "cert"
+    SIGNATURE = "signature"
+    COMMON_NAME = "cn"
 
 
 def new_cell_message(headers: dict, payload=None):

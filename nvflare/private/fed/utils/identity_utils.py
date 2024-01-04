@@ -15,7 +15,7 @@
 from cryptography.x509.oid import NameOID
 
 from nvflare.lighter.impl.cert import load_crt, load_crt_bytes
-from nvflare.lighter.utils import load_private_key_file, sign_one, verify_cert, verify_one
+from nvflare.lighter.utils import load_private_key_file, sign_content, verify_cert, verify_content
 from nvflare.security.logging import secure_format_exception
 
 
@@ -53,16 +53,16 @@ def load_cert_bytes(data: bytes):
 
 class IdentityAsserter:
     def __init__(self, private_key_file: str, cert_file: str):
+        with open(cert_file, "rb") as f:
+            self.cert_data = f.read()
         self.private_key_file = private_key_file
         self.pri_key = load_private_key_file(private_key_file)
         self.cert_file = cert_file
-        self.cert = load_cert_file(cert_file)
+        self.cert = load_cert_bytes(self.cert_data)
+        self.cn = get_cn_from_cert(self.cert)
 
-    def sign_common_name(self, asserted_cn: str) -> str:
-        cn = get_cn_from_cert(self.cert)
-        if cn != asserted_cn:
-            raise CNMismatch(f"asserted_cn {asserted_cn} != CN from cert {cn}")
-        return sign_one(cn, self.pri_key)
+    def sign_common_name(self, nonce: str) -> str:
+        return sign_content(self.cn+nonce, self.pri_key, return_str=False)
 
 
 class IdentityVerifier:
@@ -70,7 +70,7 @@ class IdentityVerifier:
         self.root_cert = load_cert_file(root_cert_file)
         self.root_public_key = self.root_cert.public_key()
 
-    def verify_common_name(self, asserted_cn: str, asserter_cert, signature) -> bool:
+    def verify_common_name(self, asserted_cn: str, nonce: str, asserter_cert, signature) -> bool:
         # verify asserter_cert
         try:
             verify_cert(
@@ -89,7 +89,7 @@ class IdentityVerifier:
 
         assert isinstance(cn, str)
         try:
-            verify_one(content=cn, signature=signature, public_key=asserter_public_key)
+            verify_content(content=cn+nonce, signature=signature, public_key=asserter_public_key)
         except Exception as ex:
             raise InvalidCNSignature(f"cannot verify common name signature: {secure_format_exception(ex)}")
         return True

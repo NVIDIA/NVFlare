@@ -525,7 +525,6 @@ class ServerEngine(ServerEngineInternalSpec):
                     else:
                         c = self.get_client_from_name(t)
                         if c:
-                            self.logger.info(f"adding target {c.name}: FQCN={c.get_fqcn()}; Prop={c.props}")
                             msg_targets.append(AuxMsgTarget.client_target(c))
                         else:
                             self.logger.error(f"invalid target {t}")
@@ -601,7 +600,7 @@ class ServerEngine(ServerEngineInternalSpec):
             data = {"execution_error": execution_error}
             job_id = fl_ctx.get_job_id()
             request = new_cell_message({CellMessageHeaderKeys.JOB_ID: job_id}, data)
-            return_data = self.server.cell.fire_and_forget(
+            self.server.cell.fire_and_forget(
                 targets=FQCN.ROOT_SERVER,
                 channel=CellChannel.SERVER_PARENT_LISTENER,
                 topic=ServerCommandNames.UPDATE_RUN_STATUS,
@@ -710,8 +709,8 @@ class ServerEngine(ServerEngineInternalSpec):
                 command_name=ServerCommandNames.SHOW_STATS,
                 command_data={},
             )
-        except Exception:
-            self.logger.error(f"Failed to show_stats for JOB: {job_id}")
+        except Exception as ex:
+            self.logger.error(f"Failed to show_stats for JOB: {job_id}: {secure_format_exception(ex)}")
 
         if stats is None:
             stats = {}
@@ -725,8 +724,8 @@ class ServerEngine(ServerEngineInternalSpec):
                 command_name=ServerCommandNames.GET_ERRORS,
                 command_data={},
             )
-        except Exception:
-            self.logger.error(f"Failed to get_errors for JOB: {job_id}")
+        except Exception as ex:
+            self.logger.error(f"Failed to get_errors for JOB: {job_id}: {secure_format_exception(ex)}")
 
         if errors is None:
             errors = {}
@@ -740,8 +739,8 @@ class ServerEngine(ServerEngineInternalSpec):
                 command_name=ServerCommandNames.RESET_ERRORS,
                 command_data={},
             )
-        except Exception:
-            self.logger.error(f"Failed to reset_errors for JOB: {job_id}")
+        except Exception as ex:
+            self.logger.error(f"Failed to reset_errors for JOB: {job_id}: {secure_format_exception(ex)}")
 
         return f"reset the server error stats for job: {job_id}"
 

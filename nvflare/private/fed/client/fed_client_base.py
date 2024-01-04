@@ -82,7 +82,7 @@ class FederatedClientBase:
         self.cell = cell
         self.net_agent = None
         self.args = args
-        self.engine_create_timeout = client_args.get("engine_create_timeout", 15.0)
+        self.engine_create_timeout = client_args.get("engine_create_timeout", 30.0)
         self.cell_check_frequency = client_args.get("cell_check_frequency", 0.005)
 
         self.communicator = Communicator(
