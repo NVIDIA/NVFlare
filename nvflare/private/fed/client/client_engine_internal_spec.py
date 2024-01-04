@@ -71,6 +71,19 @@ class ClientEngineInternalSpec(ClientEngineSpec, ABC):
         pass
 
     @abstractmethod
+    def notify_job_status(self, job_id: str, job_status):
+        """Notify the engine what's the client job's new status.
+
+        Args:
+            job_id: job_id
+            job_status: Client job status
+
+        Returns:
+
+        """
+        pass
+
+    @abstractmethod
     def abort_app(self, job_id: str) -> str:
         """Aborts the app execution for the specified run.
 

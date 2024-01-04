@@ -168,6 +168,9 @@ class ClientEngine(ClientEngineInternalSpec):
 
         return "Start the client app..."
 
+    def notify_job_status(self, job_id: str, job_status):
+        self.client_executor.notify_job_status(job_id, job_status)
+
     def get_client_name(self):
         return self.client.client_name
 

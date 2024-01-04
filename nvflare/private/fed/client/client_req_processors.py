@@ -22,6 +22,7 @@ from .training_cmds import (  # StartClientMGpuProcessor,; SetRunNumberProcessor
     ClientStatusProcessor,
     DeleteRunNumberProcessor,
     DeployProcessor,
+    NotifyJobStatusProcessor,
     RestartClientProcessor,
     ScopeInfoProcessor,
     ShutdownClientProcessor,
@@ -50,6 +51,7 @@ class ClientRequestProcessors:
         CancelResourceProcessor(),
         ReportResourcesProcessor(),
         ReportEnvProcessor(),
+        NotifyJobStatusProcessor(),
     ]
 
     @staticmethod
