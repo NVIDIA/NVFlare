@@ -31,7 +31,7 @@ from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 np.random.seed(77)
 
 
-def prepare_data(num_of_clients: int = 2, bin_days: int = 7):
+def prepare_data(num_of_clients: int = 5, bin_days: int = 7):
     # Load data
     data_x, data_y = load_veterans_lung_cancer()
     # Get total data count
@@ -57,11 +57,43 @@ def prepare_data(num_of_clients: int = 2, bin_days: int = 7):
     return event_clients, time_clients
 
 
-def save(result: dict):
+def details_save(kmf):
+    # Get the survival function at all observed time points
+    survival_function_at_all_times = kmf.survival_function_
+    # Get the timeline (time points)
+    timeline = survival_function_at_all_times.index.values
+    # Get the KM estimate
+    km_estimate = survival_function_at_all_times["KM_estimate"].values
+    # Get the event count at each time point
+    event_count = kmf.event_table.iloc[:, 0].values  # Assuming the first column is the observed events
+    # Get the survival rate at each time point (using the 1st column of the survival function)
+    survival_rate = 1 - survival_function_at_all_times.iloc[:, 0].values
+    # Return the results
+    results = {
+        "timeline": timeline.tolist(),
+        "km_estimate": km_estimate.tolist(),
+        "event_count": event_count.tolist(),
+        "survival_rate": survival_rate.tolist(),
+    }
     file_path = os.path.join(os.getcwd(), "km_global.json")
-    print(f"save the result to {file_path} \n")
+    print(f"save the details of KM analysis result to {file_path} \n")
     with open(file_path, "w") as json_file:
-        json.dump(result, json_file, indent=4)
+        json.dump(results, json_file, indent=4)
+
+
+def plot_and_save(kmf):
+    # Plot and save the Kaplan-Meier survival curve
+    plt.figure()
+    plt.title("Federated HE")
+    kmf.plot_survival_function()
+    plt.ylim(0, 1)
+    plt.ylabel("prob")
+    plt.xlabel("time")
+    plt.legend("", frameon=False)
+    plt.tight_layout()
+    file_path = os.path.join(os.getcwd(), "km_curve_fl.png")
+    print(f"save the curve plot to {file_path} \n")
+    plt.savefig(file_path)
 
 
 def main():
@@ -164,36 +196,12 @@ def main():
             # Fit the model
             kmf.fit(durations=time_unfold, event_observed=event_unfold)
 
-            # Plot and save the Kaplan-Meier survival curve
-            plt.figure()
-            plt.title("Federated HE")
-            kmf.plot_survival_function()
-            plt.ylim(0, 1)
-            plt.ylabel("prob")
-            plt.xlabel("time")
-            plt.legend("", frameon=False)
-            plt.tight_layout()
-            plt.savefig(os.path.join(os.getcwd(), "km_curve_fl.png"))
+            # Plot and save the KM curve
+            print("plot KM curve!!!!!!!!!!!!")
+            plot_and_save(kmf)
 
-            # Save global result to a json file
-            # Get the survival function at all observed time points
-            survival_function_at_all_times = kmf.survival_function_
-            # Get the timeline (time points)
-            timeline = survival_function_at_all_times.index.values
-            # Get the KM estimate
-            km_estimate = survival_function_at_all_times["KM_estimate"].values
-            # Get the event count at each time point
-            event_count = kmf.event_table.iloc[:, 0].values  # Assuming the first column is the observed events
-            # Get the survival rate at each time point (using the 1st column of the survival function)
-            survival_rate = 1 - survival_function_at_all_times.iloc[:, 0].values
-            # Return the results
-            results = {
-                "timeline": timeline.tolist(),
-                "km_estimate": km_estimate.tolist(),
-                "event_count": event_count.tolist(),
-                "survival_rate": survival_rate.tolist(),
-            }
-            save(results)
+            # Save details of the KM result to a json file
+            details_save(kmf)
 
             # Send a simple response to server
             response = FLModel(params={}, params_type=ParamsType.FULL)

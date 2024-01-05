@@ -41,12 +41,14 @@ python baseline_kaplan_meier.py
 ```
 By default, this will generate a KM curve image `km_curve_baseline.png` under the current working directory.
 
-Then we run the federated job with simulator
+Then we run a 5-client federated job with simulator 
 ```commandline
-nvflare simulator -w workspace_km_he -n 2 -t 2 jobs/kaplan-meier-he
+nvflare simulator -w workspace_km_he -n 5 -t 5 jobs/kaplan-meier-he
 ```
 By default, this will generate a KM curve image `km_curve_fl.png` under each client's directory.
 
 ## Display Result
 
-By comparing the two curves, we can observe that the two are identical.
+By comparing the two curves, we can observe that the two are identical:
+![KM survival baseline](figs/km_curve_baseline.png)
+![KM survival fl](figs/km_curve_fl.png)
