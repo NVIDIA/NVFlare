@@ -65,7 +65,7 @@ nvflight_packages = {
     },
     "nvflare/fuel/f3/drivers": {
         "include": ["*"],
-        "exclude": ["grpc", "aio_grpc_driver.py", "aio_https_driver.py", "grpc_driver.py"]
+        "exclude": ["grpc", "aio_grpc_driver.py", "aio_http_driver.py", "grpc_driver.py"]
     },
     "nvflare/fuel/f3/sfm": {
         "include": ["*"],
