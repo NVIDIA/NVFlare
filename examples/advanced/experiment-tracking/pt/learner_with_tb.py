@@ -43,7 +43,7 @@ from nvflare.app_opt.pt.model_persistence_format_manager import PTModelPersisten
 class PTLearner(Learner):
     def __init__(
         self,
-        data_path="/tmp/nvflare/tensorboard-streaming",
+        data_path="~/data",
         lr=0.01,
         epochs=5,
         exclude_vars=None,
@@ -52,6 +52,7 @@ class PTLearner(Learner):
         """Simple PyTorch Learner that trains and validates a simple network on the CIFAR10 dataset.
 
         Args:
+            data_path (str): Path that the data will be stored at. Defaults to "~/data".
             lr (float, optional): Learning rate. Defaults to 0.01
             epochs (int, optional): Epochs. Defaults to 5
             exclude_vars (list): List of variables to exclude during model loading.
@@ -71,6 +72,10 @@ class PTLearner(Learner):
         self.loss = None
         self.device = None
         self.model = None
+        # Epoch counter
+        self.epoch_of_start_time = 0
+        self.epoch_global = 0
+
         self.data_path = data_path
         self.lr = lr
         self.epochs = epochs
@@ -135,6 +140,8 @@ class PTLearner(Learner):
         # local_train returns early if abort_signal is triggered.
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
+        
+        self.epoch_of_start_time += self.epochs
 
         # Save the local model after training.
         self.save_local_model(fl_ctx)
@@ -152,6 +159,7 @@ class PTLearner(Learner):
         # Basic training
         for epoch in range(self.epochs):
             self.model.train()
+            self.epoch_global = self.epoch_of_start_time + epoch
             running_loss = 0.0
             for i, batch in enumerate(self.train_loader):
                 if abort_signal.triggered:
@@ -173,12 +181,12 @@ class PTLearner(Learner):
                     running_loss = 0.0
 
                 # Stream training loss at each step
-                current_step = len(self.train_loader) * epoch + i
+                current_step = self.n_iterations * self.epoch_global + i
                 self.writer.add_scalar("train_loss", cost.item(), current_step)
 
             # Stream validation accuracy at the end of each epoch
             metric = self.local_validate(abort_signal)
-            self.writer.add_scalar("validation_accuracy", metric, epoch)
+            self.writer.add_scalar("validation_accuracy", metric, self.epoch_global)
 
     def get_model_for_validation(self, model_name: str, fl_ctx: FLContext) -> Shareable:
         run_dir = fl_ctx.get_engine().get_workspace().get_run_dir(fl_ctx.get_job_id())
