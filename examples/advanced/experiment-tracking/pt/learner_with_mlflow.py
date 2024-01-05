@@ -67,7 +67,7 @@ class PTLearner(Learner):
         # Epoch counter
         self.epoch_of_start_time = 0
         self.epoch_global = 0
-        
+
         self.data_path = data_path
         self.lr = lr
         self.epochs = epochs
@@ -137,9 +137,9 @@ class PTLearner(Learner):
         # local_train returns early if abort_signal is triggered.
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
-        
+
         self.epoch_of_start_time += self.epochs
-        
+
         # Save the local model after training.
         self.save_local_model(fl_ctx)
 

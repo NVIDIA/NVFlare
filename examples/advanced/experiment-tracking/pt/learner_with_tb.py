@@ -140,7 +140,7 @@ class PTLearner(Learner):
         # local_train returns early if abort_signal is triggered.
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
-        
+
         self.epoch_of_start_time += self.epochs
 
         # Save the local model after training.
