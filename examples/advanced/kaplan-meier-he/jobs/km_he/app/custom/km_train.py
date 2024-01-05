@@ -164,7 +164,7 @@ def main():
             # Fit the model
             kmf.fit(durations=time_unfold, event_observed=event_unfold)
 
-            # Plot and save KM curve
+            # Plot and save the Kaplan-Meier survival curve
             plt.figure()
             plt.title("Federated HE")
             kmf.plot_survival_function()
