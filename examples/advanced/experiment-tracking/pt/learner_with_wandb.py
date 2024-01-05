@@ -24,7 +24,7 @@ from torchvision.datasets import CIFAR10
 from torchvision.transforms import Compose, Normalize, ToTensor
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
-from nvflare.apis.fl_constant import ReservedKey, ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
@@ -64,9 +64,6 @@ class PTLearner(Learner):
         self.loss = None
         self.device = None
         self.model = None
-        # Epoch counter
-        self.epoch_of_start_time = 0
-        self.epoch_global = 0
 
         self.data_path = data_path
         self.lr = lr
@@ -132,8 +129,6 @@ class PTLearner(Learner):
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
 
-        self.epoch_of_start_time += self.epochs
-
         # Save the local model after training.
         self.save_local_model(fl_ctx)
 
@@ -172,12 +167,13 @@ class PTLearner(Learner):
                     running_loss = 0.0
 
                 # Stream training loss at each step
-                current_step = self.n_iterations * self.epoch_global + i
+                current_round = fl_ctx.get_prop(FLContextKey.TASK_DATA).get_header("current_round")
+                current_step = self.n_iterations * self.epochs * current_round + self.n_iterations * epoch + i
                 self.writer.log({"train_loss": cost.item()}, current_step)
 
             # Stream validation accuracy at the end of each epoch
             metric = self.local_validate(abort_signal)
-            self.writer.log({"validation_accuracy": metric}, self.epoch_global)
+            self.writer.log({"validation_accuracy": metric}, self.epochs * current_round + epoch)
 
     def get_model_for_validation(self, model_name: str, fl_ctx: FLContext) -> Shareable:
         run_dir = fl_ctx.get_engine().get_workspace().get_run_dir(fl_ctx.get_job_id())
