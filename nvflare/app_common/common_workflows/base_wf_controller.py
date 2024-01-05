@@ -105,16 +105,6 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
             self.log_error(fl_ctx, error_msg)
             self.wf_queue.ask_abort(error_msg)
             self.system_panic(error_msg, fl_ctx=fl_ctx)
-            # ask all clients to end run!
-            self.engine.send_aux_request(
-                targets=None,
-                topic=ReservedTopic.END_RUN,
-                request=Shareable(),
-                timeout=0.0,
-                fl_ctx=fl_ctx,
-                optional=True,
-                secure=False,
-            )
         finally:
             wait_time = self.comm_msg_pull_interval + 0.05
             self.stop_msg_queue("job finished", fl_ctx, wait_time)
