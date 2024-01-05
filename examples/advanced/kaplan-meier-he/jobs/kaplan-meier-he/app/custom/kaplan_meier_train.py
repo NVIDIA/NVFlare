@@ -197,7 +197,6 @@ def main():
             kmf.fit(durations=time_unfold, event_observed=event_unfold)
 
             # Plot and save the KM curve
-            print("plot KM curve!!!!!!!!!!!!")
             plot_and_save(kmf)
 
             # Save details of the KM result to a json file
