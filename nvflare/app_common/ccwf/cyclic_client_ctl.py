@@ -13,7 +13,7 @@
 # limitations under the License.
 import random
 
-from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
@@ -87,6 +87,8 @@ class CyclicClientController(ClientSideController):
         # the original weights (GLOBAL_MODEL prop) are needed.
         global_weights = self.shareable_generator.shareable_to_learnable(data, fl_ctx)
         fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, global_weights, private=True, sticky=True)
+
+        data.set_header(FLContextKey.TASK_NAME, name)
 
         # execute the task
         result = self.execute_learn_task(data, fl_ctx, abort_signal)

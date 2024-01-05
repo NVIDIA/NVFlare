@@ -93,7 +93,7 @@ def main():
 
         # (4) receive FLModel from NVFlare
         input_model = flare.receive()
-        client_id = flare.system_info().get("site_name", None)
+        client_id = flare.get_site_name()
 
         # Based on different "task" we will do different things
         # for "train" task (flare.is_train()) we use the received model to do training and/or evaluation
@@ -104,7 +104,7 @@ def main():
         # for "submit_model" task (flare.is_submit_model()) we just need to send back the local model
         # (5) performing train task on received model
         if flare.is_train():
-            print(f"({client_id}) round={input_model.current_round}/{input_model.total_rounds-1}")
+            print(f"({client_id}) current_round={input_model.current_round}, total_rounds={input_model.total_rounds}")
 
             # (5.1) loads model from NVFlare
             net.load_state_dict(input_model.params)
