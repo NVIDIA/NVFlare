@@ -456,6 +456,9 @@ class ConfigVarName:
     # client: timeout for submitTaskResult requests
     SUBMIT_TASK_RESULT_TIMEOUT = "submit_task_result_timeout"
 
+    # these vars are set in Server's startup config (fed_server.json)
+    MAX_REG_DURATION = "max_reg_duration"
+
 
 class SystemVarName:
     """

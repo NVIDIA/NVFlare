@@ -26,6 +26,7 @@ from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import (
+    ConfigVarName,
     FLContextKey,
     MachineStatus,
     RunProcessKey,
@@ -33,6 +34,7 @@ from nvflare.apis.fl_constant import (
     ServerCommandKey,
     ServerCommandNames,
     SnapshotKey,
+    SystemConfigs,
     WorkspaceConstants,
 )
 from nvflare.apis.fl_context import FLContext
@@ -50,21 +52,22 @@ from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes
 from nvflare.ha.overseer_agent import HttpOverseerAgent
 from nvflare.private.defs import (
     CellChannel,
     CellChannelTopic,
     CellMessageHeaderKeys,
+    IdentityChallengeKey,
     JobFailureMsgKey,
     new_cell_message,
-    IdentityChallengeKey,
 )
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_runner import ServerRunner
+from nvflare.private.fed.utils.identity_utils import IdentityAsserter
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.fed_event import ServerFedEventRunner
-from nvflare.private.fed.utils.identity_utils import IdentityAsserter
 
 from .client_manager import ClientManager
 from .run_manager import RunManager
@@ -263,7 +266,6 @@ class BaseServer(ABC):
 
 
 class RegSession:
-
     def __init__(self, client_name: str):
         self.client_name = client_name
         self.nonce = str(uuid.uuid4())
@@ -374,6 +376,31 @@ class FederatedServer(BaseServer):
             topic="*",
             cb=self._listen_command,
         )
+
+        self.max_reg_duration = ConfigService.get_float_var(
+            name=ConfigVarName.MAX_REG_DURATION,
+            conf=SystemConfigs.RESOURCES_CONF,
+            default=60.0,
+        )
+
+        self.logger.info(f"max_reg_duration={self.max_reg_duration}")
+
+        # set up a thread to regularly check expired reg sessions
+        reg_checker = threading.Thread(target=self._check_regs, daemon=True)
+        reg_checker.start()
+
+    def _check_regs(self):
+        while True:
+            with self.reg_lock:
+                expired_regs = []
+                now = time.time()
+                for client_name, reg in self.name_to_reg.items():
+                    if now - reg.start_time > self.max_reg_duration:
+                        self.logger.warning(f"dropped expired reg session: not done in {self.max_reg_duration} secs")
+                        expired_regs.append(client_name)
+                for c in expired_regs:
+                    self.name_to_reg.pop(c, None)
+            time.sleep(5.0)
 
     def _listen_command(self, request: Message) -> Message:
         job_id = request.get_header(CellMessageHeaderKeys.JOB_ID)
@@ -514,28 +541,24 @@ class FederatedServer(BaseServer):
 
                 private_key_file = server1.get(SecureTrainConst.PRIVATE_KEY)
 
-                self.id_asserter = IdentityAsserter(
-                    private_key_file=private_key_file,
-                    cert_file=cert_file
-                )
+                self.id_asserter = IdentityAsserter(private_key_file=private_key_file, cert_file=cert_file)
         return self.id_asserter
+
+    def _ready_for_registration(self, fl_ctx: FLContext):
+        self._before_service(fl_ctx)
+        state_check = self.server_state.register(fl_ctx)
+        return self._handle_state_check(state_check, fl_ctx)
 
     def client_challenge(self, request: Message) -> Message:
         with self.reg_lock:
             with self.engine.new_context() as fl_ctx:
-                self._before_service(fl_ctx)
-
-                state_check = self.server_state.register(fl_ctx)
-                error = self._handle_state_check(state_check, fl_ctx)
+                error = self._ready_for_registration(fl_ctx)
                 if error is not None:
                     return make_cellnet_reply(rc=F3ReturnCode.COMM_ERROR, error=error)
 
                 secure_mode = fl_ctx.get_prop(FLContextKey.SECURE_MODE, False)
                 if not secure_mode:
-                    return make_cellnet_reply(
-                        rc=F3ReturnCode.UNAUTHENTICATED,
-                        error="server is not in secure mode"
-                    )
+                    return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error="server is not in secure mode")
 
             client_name = request.get_header(IdentityChallengeKey.COMMON_NAME)
             self.logger.info(f"received challenge request from {client_name}: me={id(self)}")
@@ -567,6 +590,10 @@ class FederatedServer(BaseServer):
         """
 
         with self.engine.new_context() as fl_ctx:
+            error = self._ready_for_registration(fl_ctx)
+            if error is not None:
+                return make_cellnet_reply(rc=F3ReturnCode.COMM_ERROR, error=error)
+
             try:
                 secure_mode = fl_ctx.get_prop(FLContextKey.SECURE_MODE, False)
                 if secure_mode:
@@ -579,20 +606,11 @@ class FederatedServer(BaseServer):
 
                     fl_ctx.set_prop(key="reg_session", value=reg, private=True, sticky=False)
 
-                self._before_service(fl_ctx)
-
-                state_check = self.server_state.register(fl_ctx)
-
-                error = self._handle_state_check(state_check, fl_ctx)
-                if error is not None:
-                    return make_cellnet_reply(rc=F3ReturnCode.COMM_ERROR, error=error)
-
                 data = request.payload
                 shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
                 fl_ctx.set_peer_context(shared_fl_ctx)
 
                 self.engine.fire_event(EventType.CLIENT_REGISTERED, fl_ctx=fl_ctx)
-
                 exceptions = fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
                 if exceptions:
                     for _, exception in exceptions.items():

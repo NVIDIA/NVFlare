@@ -62,7 +62,7 @@ class IdentityAsserter:
         self.cn = get_cn_from_cert(self.cert)
 
     def sign_common_name(self, nonce: str) -> str:
-        return sign_content(self.cn+nonce, self.pri_key, return_str=False)
+        return sign_content(self.cn + nonce, self.pri_key, return_str=False)
 
 
 class IdentityVerifier:
@@ -89,7 +89,7 @@ class IdentityVerifier:
 
         assert isinstance(cn, str)
         try:
-            verify_content(content=cn+nonce, signature=signature, public_key=asserter_public_key)
+            verify_content(content=cn + nonce, signature=signature, public_key=asserter_public_key)
         except Exception as ex:
             raise InvalidCNSignature(f"cannot verify common name signature: {secure_format_exception(ex)}")
         return True

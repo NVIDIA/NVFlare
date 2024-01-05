@@ -30,10 +30,16 @@ from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.fuel.f3.cellnet.core_cell import FQCN, CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import format_size
-from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, SpecialTaskName, new_cell_message
+from nvflare.private.defs import (
+    CellChannel,
+    CellChannelTopic,
+    CellMessageHeaderKeys,
+    IdentityChallengeKey,
+    SpecialTaskName,
+    new_cell_message,
+)
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
 from nvflare.private.fed.utils.identity_utils import IdentityAsserter, IdentityVerifier, load_crt_bytes
-from nvflare.private.defs import IdentityChallengeKey
 from nvflare.security.logging import secure_format_exception
 
 
@@ -97,10 +103,7 @@ class Communicator:
     def _challenge_server(self, client_name, expected_host, root_cert_file):
         # ask server for its info and make sure that it matches expected host
         my_nonce = str(uuid.uuid4())
-        headers = {
-            IdentityChallengeKey.COMMON_NAME: client_name,
-            IdentityChallengeKey.NONCE: my_nonce
-        }
+        headers = {IdentityChallengeKey.COMMON_NAME: client_name, IdentityChallengeKey.NONCE: my_nonce}
         challenge = new_cell_message(headers, None)
         result = self.cell.send_request(
             target=FQCN.ROOT_SERVER,
@@ -132,10 +135,7 @@ class Communicator:
 
         id_verifier = IdentityVerifier(root_cert_file=root_cert_file)
         id_verifier.verify_common_name(
-            asserter_cert=server_cert,
-            asserted_cn=server_cn,
-            nonce=my_nonce,
-            signature=server_signature
+            asserter_cert=server_cert, asserted_cn=server_cn, nonce=my_nonce, signature=server_signature
         )
 
         self.logger.info(f"verified server host '{expected_host}'")
@@ -194,9 +194,7 @@ class Communicator:
                     break
 
             id_asserter = IdentityAsserter(private_key_file=private_key_file, cert_file=cert_file)
-            cn_signature = id_asserter.sign_common_name(
-                nonce=server_nonce
-            )
+            cn_signature = id_asserter.sign_common_name(nonce=server_nonce)
             shareable[IdentityChallengeKey.CERT] = id_asserter.cert_data
             shareable[IdentityChallengeKey.SIGNATURE] = cn_signature
             shareable[IdentityChallengeKey.COMMON_NAME] = id_asserter.cn
