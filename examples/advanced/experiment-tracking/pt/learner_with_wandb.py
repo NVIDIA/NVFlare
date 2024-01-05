@@ -143,9 +143,9 @@ class PTLearner(Learner):
 
     def local_train(self, fl_ctx, abort_signal):
         # Basic training
+        current_round = fl_ctx.get_prop(FLContextKey.TASK_DATA).get_header("current_round")
         for epoch in range(self.epochs):
             self.model.train()
-            self.epoch_global = self.epoch_of_start_time + epoch
             running_loss = 0.0
             for i, batch in enumerate(self.train_loader):
                 if abort_signal.triggered:
@@ -167,7 +167,6 @@ class PTLearner(Learner):
                     running_loss = 0.0
 
                 # Stream training loss at each step
-                current_round = fl_ctx.get_prop(FLContextKey.TASK_DATA).get_header("current_round")
                 current_step = self.n_iterations * self.epochs * current_round + self.n_iterations * epoch + i
                 self.writer.log({"train_loss": cost.item()}, current_step)
 
