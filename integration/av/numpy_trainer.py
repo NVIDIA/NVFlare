@@ -71,19 +71,7 @@ def main():
         # create a snapshot, so we can recover in case the training fails
         pickle.dump(task, open(snapshot_file_name, "wb"))
 
-        current_round = task.meta.get(MetaKey.CURRENT_ROUND)
-
-        # simulate crash
-        if current_round == 2:
-            print(f"training crashed at round {current_round}")
-            done = True
-            continue
-
         rc, meta, result = train(task)
-        if current_round == 10:
-            rc = RC.EARLY_TERMINATION
-            print(f"Early termination at round {current_round}")
-            done = True
         submitted = agent.submit_result(TaskResult(data=result, meta=meta, return_code=rc))
         os.remove(snapshot_file_name)
         print(f"result submitted: {submitted}")

@@ -1,0 +1,50 @@
+{
+  "format_version": 2,
+  "min_clients": 2,
+  "wait_time": 20,
+  "task_data_filters": [],
+  "task_result_filters": [],
+  "components": [
+    {
+      "id": "persistor",
+      "path": "integration.av.av_model_persistor.AVModelPersistor",
+      "args": {
+        "file_path": "/Users/yanc/NVFlare/integration/av/model1.json",
+        "output_path": "/Users/yanc/NVFlare/integration/av/model1_sag_out.json"
+      }
+    },
+    {
+      "id": "shareable_generator",
+      "path": "integration.av.av_shareable_generator.AVShareableGenerator",
+      "args": {}
+    },
+    {
+      "id": "aggregator",
+      "path": "integration.av.av_aggregator.AVAggregator",
+      "args": {}
+    },
+    {
+      "id": "decomp",
+      "path": "integration.av.decomposer_installer.AVDecomposerInstaller",
+      "args": {}
+    }
+  ],
+  "workflows": [
+    {
+      "id": "sag_ctl",
+      "path": "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
+      "args": {
+        "min_clients": "{min_clients}",
+        "num_rounds": 9,
+        "start_round": 0,
+        "wait_time_after_min_received": "{wait_time}",
+        "aggregator_id": "aggregator",
+        "persistor_id": "persistor",
+        "shareable_generator_id": "shareable_generator",
+        "train_task_name": "train",
+        "train_timeout": 6000,
+        "ignore_result_error": true
+      }
+    }
+  ]
+}
