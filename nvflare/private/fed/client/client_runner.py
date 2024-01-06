@@ -561,7 +561,7 @@ class ClientRunner(TBI):
                 self.log_error(fl_ctx, f"server rejected task_check: {rc}")
                 return _TASK_CHECK_RESULT_TRY_AGAIN
             elif rc == ReturnCode.TASK_UNKNOWN:
-                self.log_error(fl_ctx, f"task no longer exists on server: {rc}")
+                self.log_debug(fl_ctx, f"task no longer exists on server: {rc}")
                 return _TASK_CHECK_RESULT_TASK_GONE
             else:
                 # this should never happen
