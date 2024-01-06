@@ -181,7 +181,7 @@ class PTLearner(Learner):
 
             # Stream validation accuracy at the end of each epoch
             metric = self.local_validate(abort_signal)
-            self.writer.add_scalar("validation_accuracy", metric, self.epochs * current_round + epoch)
+            self.writer.add_scalar("validation_accuracy", metric, current_step)
 
     def get_model_for_validation(self, model_name: str, fl_ctx: FLContext) -> Shareable:
         run_dir = fl_ctx.get_engine().get_workspace().get_run_dir(fl_ctx.get_job_id())
