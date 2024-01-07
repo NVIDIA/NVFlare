@@ -22,7 +22,7 @@ from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, ControllerSpec, OperatorMethod, Task, TaskOperatorKey
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import ReturnCode, ReservedTopic
+from nvflare.apis.fl_constant import ReservedTopic, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
@@ -176,7 +176,6 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
 
                         current_round = self.prepare_round_info(fl_ctx, pay_load)
                         task, min_responses, targets = self.get_payload_task(pay_load)
-
                         self.broadcast_and_wait(
                             task=task,
                             targets=targets,
@@ -230,7 +229,7 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
         return current_round
 
     def get_payload_task(self, pay_load) -> Tuple[Task, int, List[str]]:
-        min_responses = pay_load.get(MIN_RESPONSES)
+        min_responses = pay_load.get(MIN_RESPONSES, 0)
         current_round = pay_load.get(AppConstants.CURRENT_ROUND, 0)
         start_round = pay_load.get(AppConstants.START_ROUND, 0)
         num_rounds = pay_load.get(AppConstants.NUM_ROUNDS, 1)
@@ -253,7 +252,6 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
             name=self.task_name,
             data=data_shareable,
             operator=operator,
-            props={},
             timeout=self.task_timeout,
             before_task_sent_cb=None,
             result_received_cb=self._result_received_cb,
@@ -277,13 +275,13 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
 
         client_name = client_task.client.name
         task_name = client_task.task.name
-        result = client_task.result
-        rc = result.get_return_code()
+        client_result = client_task.result
+        rc = client_result.get_return_code()
         results: Dict[str, any] = {STATUS: rc}
 
         if rc == ReturnCode.OK:
             self.log_info(fl_ctx, f"Received result entries from client:{client_name} for task {task_name}")
-            fl_model = FLModelUtils.from_shareable(result)
+            fl_model = FLModelUtils.from_shareable(client_result)
             results[RESULT] = {client_name: fl_model}
             payload = {CMD: RESULT, PAYLOAD: {task_name: results}}
             self.wf_queue.put_result(payload)

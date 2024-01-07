@@ -14,6 +14,7 @@
 
 from typing import Dict, List, Optional
 
+from nvflare.apis.dxo import from_shareable
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
@@ -53,29 +54,35 @@ class StatisticsTaskHandler(TaskHandler):
         self.log_info(fl_ctx, f"Executing task '{task_name}' for client: '{client_name}'")
         result = Shareable()
         statistics_result = {}
+        if StC.STATS_TARGET_STATISTICS in shareable:
+            inputs = shareable
+        else:
+            dxo = from_shareable(shareable)
+            inputs = dxo.data
+
         if task_name == StC.FED_STATS_PRE_RUN:
             # initial handshake
-            target_statistics: List[StatisticConfig] = fobs.loads(shareable.get(StC.STATS_TARGET_STATISTICS))
+            target_statistics: List[StatisticConfig] = fobs.loads(inputs.get(StC.STATS_TARGET_STATISTICS))
             return self.pre_run(target_statistics)
 
         elif task_name == StC.FED_STATS_TASK:
             ds_features = self.get_numeric_features()
-            statistics_task = shareable.get(StC.STATISTICS_TASK_KEY)
-            target_statistics: List[StatisticConfig] = fobs.loads(shareable.get(StC.STATS_TARGET_STATISTICS))
+            statistics_task = inputs.get(StC.STATISTICS_TASK_KEY)
+            target_statistics: List[StatisticConfig] = fobs.loads(inputs.get(StC.STATS_TARGET_STATISTICS))
             if StC.STATS_FAILURE_COUNT not in target_statistics:
                 target_statistics.append(StatisticConfig(StC.STATS_FAILURE_COUNT, {}))
 
             for tm in target_statistics:
                 fn = self.statistic_functions()[tm.name]
                 statistics_result[tm.name] = {}
-                self._populate_result_statistics(statistics_result, ds_features, tm, shareable, fl_ctx, fn)
+                self._populate_result_statistics(statistics_result, ds_features, tm, inputs, fl_ctx, fn)
 
             # always add count for data privacy needs
             if StC.STATS_COUNT not in statistics_result:
                 tm = StatisticConfig(StC.STATS_COUNT, {})
                 fn = self.get_count
                 statistics_result[tm.name] = {}
-                self._populate_result_statistics(statistics_result, ds_features, tm, shareable, fl_ctx, fn)
+                self._populate_result_statistics(statistics_result, ds_features, tm, inputs, fl_ctx, fn)
 
             result[StC.STATISTICS_TASK_KEY] = statistics_task
             if statistics_task == StC.STATS_1st_STATISTICS:

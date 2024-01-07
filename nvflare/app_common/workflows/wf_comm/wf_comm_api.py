@@ -51,7 +51,7 @@ class WFCommAPI(WFCommAPISpec):
     def set_queue(self, wf_queue: WFQueue):
         self.wf_queue = wf_queue
 
-    def broadcast_and_wait(self, msg_payload: Dict):
+    def broadcast_and_wait(self, msg_payload: Dict) -> Dict[str, Dict[str, FLModel]]:
         self.broadcast(msg_payload)
         min_responses = msg_payload.get(MIN_RESPONSES, 0)
         resp_max_wait_time = msg_payload.get(RESP_MAX_WAIT_TIME, 5)
@@ -90,9 +90,6 @@ class WFCommAPI(WFCommAPISpec):
                 items_size = self.wf_queue.result_size()
                 acc_size = items_size + acc_size
                 time_waited = time.time() - start
-                self.logger.info(
-                    f"\n\n {items_size=}, {acc_size=}, {min_responses=}, {time_waited=}, {resp_max_wait_time=}"
-                )
                 if time_waited < resp_max_wait_time and acc_size >= min_responses:
                     return self._get_results()
                 else:

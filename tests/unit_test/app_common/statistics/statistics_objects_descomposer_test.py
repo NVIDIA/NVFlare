@@ -25,6 +25,7 @@ from nvflare.app_common.abstract.statistics_spec import (
     StatisticConfig,
 )
 from nvflare.app_common.app_constant import StatisticsConstants
+from nvflare.app_common.statistics.fed_stats_utils import get_target_statistics
 from nvflare.app_common.statistics.statisitcs_objects_decomposer import (
     BinDecomposer,
     BinRangeDecomposer,
@@ -95,12 +96,9 @@ class TestStatisticConfigDecomposer:
             }
         """
         config_dict = json.loads(config)
-        from nvflare.app_common.workflows.statistics_controller import StatisticsController
 
         ordered_statistics = StatisticsConstants.ordered_statistics[StatisticsConstants.STATS_1st_STATISTICS]
-        target_configs: List[StatisticConfig] = StatisticsController._get_target_statistics(
-            config_dict, ordered_statistics
-        )
+        target_configs: List[StatisticConfig] = get_target_statistics(config_dict, ordered_statistics)
         o = fobs.dumps(target_configs)
         target_configs1 = fobs.loads(o)
         assert target_configs == target_configs1

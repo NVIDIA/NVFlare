@@ -23,9 +23,10 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import ClientTask, Controller, Task
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.app_common.abstract.statistics_spec import Bin, Histogram, StatisticConfig
+from nvflare.app_common.abstract.statistics_spec import StatisticConfig
 from nvflare.app_common.abstract.statistics_writer import StatisticsWriter
 from nvflare.app_common.app_constant import StatisticsConstants as StC
+from nvflare.app_common.statistics.fed_stats_utils import combine_all_statistics, prepare_inputs
 from nvflare.app_common.statistics.numeric_stats import get_global_stats
 from nvflare.app_common.statistics.statisitcs_objects_decomposer import fobs_registration
 from nvflare.fuel.utils import fobs
@@ -243,7 +244,8 @@ class StatisticsController(Controller):
     def statistics_task_flow(self, abort_signal: Signal, fl_ctx: FLContext, statistic_task: str):
 
         self.log_info(fl_ctx, f"start prepare inputs for task {statistic_task}")
-        inputs = self._prepare_inputs(statistic_task)
+        input_data = prepare_inputs(self.statistic_configs, statistic_task, self.global_statistics)
+        inputs = self._dict_to_shareable(input_data)
         results_cb_fn = self._get_result_cb(statistic_task)
 
         self.log_info(fl_ctx, f"task: {self.task_name} statistics_flow for {statistic_task} started.")
@@ -367,129 +369,17 @@ class StatisticsController(Controller):
             self.system_panic(f"not all required {self.min_clients} received, abort the job.", fl_ctx)
         else:
             self.log_info(fl_ctx, "combine all clients' statistics")
-            ds_stats = self._combine_all_statistics()
+            ds_stats = combine_all_statistics(
+                self.statistic_configs, self.global_statistics, self.client_statistics, self.precision
+            )
             self.log_info(fl_ctx, "save statistics result to persistence store")
             writer: StatisticsWriter = fl_ctx.get_engine().get_component(self.writer_id)
             writer.save(ds_stats, overwrite_existing=True, fl_ctx=fl_ctx)
 
-    def _combine_all_statistics(self):
-        result = {}
-        filtered_client_statistics = [
-            statistic for statistic in self.client_statistics if statistic in self.statistic_configs
-        ]
-        filtered_global_statistics = [
-            statistic for statistic in self.global_statistics if statistic in self.statistic_configs
-        ]
-
-        for statistic in filtered_client_statistics:
-            for client in self.client_statistics[statistic]:
-                for ds in self.client_statistics[statistic][client]:
-                    for feature_name in self.client_statistics[statistic][client][ds]:
-                        if feature_name not in result:
-                            result[feature_name] = {}
-                        if statistic not in result[feature_name]:
-                            result[feature_name][statistic] = {}
-
-                        if client not in result[feature_name][statistic]:
-                            result[feature_name][statistic][client] = {}
-
-                        if ds not in result[feature_name][statistic][client]:
-                            result[feature_name][statistic][client][ds] = {}
-
-                        if statistic == StC.STATS_HISTOGRAM:
-                            hist: Histogram = self.client_statistics[statistic][client][ds][feature_name]
-                            buckets = StatisticsController._apply_histogram_precision(hist.bins, self.precision)
-                            result[feature_name][statistic][client][ds] = buckets
-                        else:
-                            result[feature_name][statistic][client][ds] = round(
-                                self.client_statistics[statistic][client][ds][feature_name], self.precision
-                            )
-
-        precision = self.precision
-        for statistic in filtered_global_statistics:
-            for ds in self.global_statistics[statistic]:
-                for feature_name in self.global_statistics[statistic][ds]:
-                    if StC.GLOBAL not in result[feature_name][statistic]:
-                        result[feature_name][statistic][StC.GLOBAL] = {}
-
-                    if ds not in result[feature_name][statistic][StC.GLOBAL]:
-                        result[feature_name][statistic][StC.GLOBAL][ds] = {}
-
-                    if statistic == StC.STATS_HISTOGRAM:
-                        hist: Histogram = self.global_statistics[statistic][ds][feature_name]
-                        buckets = StatisticsController._apply_histogram_precision(hist.bins, self.precision)
-                        result[feature_name][statistic][StC.GLOBAL][ds] = buckets
-                    else:
-                        result[feature_name][statistic][StC.GLOBAL].update(
-                            {ds: round(self.global_statistics[statistic][ds][feature_name], precision)}
-                        )
-
-        return result
-
-    @staticmethod
-    def _apply_histogram_precision(bins: List[Bin], precision) -> List[Bin]:
-        buckets = []
-        for bucket in bins:
-            buckets.append(
-                Bin(
-                    round(bucket.low_value, precision),
-                    round(bucket.high_value, precision),
-                    bucket.sample_count,
-                )
-            )
-        return buckets
-
-    @staticmethod
-    def _get_target_statistics(statistic_configs: dict, ordered_statistics: list) -> List[StatisticConfig]:
-        # make sure the execution order of the statistics calculation
-        targets = []
-        if statistic_configs:
-            for statistic in statistic_configs:
-                # if target statistic has histogram, we are not in 2nd statistic task
-                # we only need to estimate the global min/max if we have histogram statistic,
-                # If the user provided the global min/max for a specified feature, then we do nothing
-                # if the user did not provide the global min/max for the feature, then we need to ask
-                # client to provide the local estimated min/max for that feature.
-                # then we used the local estimate min/max to estimate global min/max.
-                # to do that, we calculate the local min/max in 1st statistic task.
-                # in all cases, we will still send the STATS_MIN/MAX tasks, but client executor may or may not
-                # delegate to stats generator to calculate the local min/max depends on if the global bin ranges
-                # are specified. to do this, we send over the histogram configuration when calculate the local min/max
-                if statistic == StC.STATS_HISTOGRAM and statistic not in ordered_statistics:
-                    targets.append(StatisticConfig(StC.STATS_MIN, statistic_configs[StC.STATS_HISTOGRAM]))
-                    targets.append(StatisticConfig(StC.STATS_MAX, statistic_configs[StC.STATS_HISTOGRAM]))
-
-                if statistic == StC.STATS_STDDEV and statistic in ordered_statistics:
-                    targets.append(StatisticConfig(StC.STATS_VAR, {}))
-
-                for rm in ordered_statistics:
-                    if rm == statistic:
-                        targets.append(StatisticConfig(statistic, statistic_configs[statistic]))
-        return targets
-
-    def _prepare_inputs(self, statistic_task: str) -> Shareable:
+    def _dict_to_shareable(self, input_data: dict) -> Shareable:
         inputs = Shareable()
-        target_statistics: List[StatisticConfig] = StatisticsController._get_target_statistics(
-            self.statistic_configs, StC.ordered_statistics[statistic_task]
-        )
-
-        for tm in target_statistics:
-            if tm.name == StC.STATS_HISTOGRAM:
-                if StC.STATS_MIN in self.global_statistics:
-                    inputs[StC.STATS_MIN] = self.global_statistics[StC.STATS_MIN]
-                if StC.STATS_MAX in self.global_statistics:
-                    inputs[StC.STATS_MAX] = self.global_statistics[StC.STATS_MAX]
-
-            if tm.name == StC.STATS_VAR:
-                if StC.STATS_COUNT in self.global_statistics:
-                    inputs[StC.STATS_GLOBAL_COUNT] = self.global_statistics[StC.STATS_COUNT]
-                if StC.STATS_MEAN in self.global_statistics:
-                    inputs[StC.STATS_GLOBAL_MEAN] = self.global_statistics[StC.STATS_MEAN]
-
-        inputs[StC.STATISTICS_TASK_KEY] = statistic_task
-
-        inputs[StC.STATS_TARGET_STATISTICS] = fobs.dumps(target_statistics)
-
+        for key, value in input_data.items():
+            inputs[key] = value
         return inputs
 
     @staticmethod

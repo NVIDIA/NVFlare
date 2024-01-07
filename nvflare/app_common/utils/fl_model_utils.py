@@ -11,8 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-
+import logging
 from typing import Any, Optional
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
@@ -41,6 +40,8 @@ data_kind_to_params_type = {v: k for k, v in params_type_to_data_kind.items()}
 
 
 class FLModelUtils:
+    logger = logging.getLogger("FLModelUtils")
+
     @staticmethod
     def to_shareable(fl_model: FLModel) -> Shareable:
         """From FLModel to NVFlare side shareable.
@@ -55,8 +56,11 @@ class FLModelUtils:
             raise ValueError("FLModel without params and metrics is NOT supported.")
         elif fl_model.params is not None:
             if fl_model.params_type is None:
-                raise ValueError(f"Invalid ParamsType: ({fl_model.params_type}).")
-            data_kind = params_type_to_data_kind.get(fl_model.params_type)
+                # raise ValueError(f"Invalid ParamsType: ({fl_model.params_type}).")
+                FLModelUtils.logger.warning("Invalid ParamsType None, replaced with the FULL params type")
+                fl_model.params_type = ParamsType.FULL
+
+            data_kind = params_type_to_data_kind.get(fl_model.params_type.value)
             if data_kind is None:
                 raise ValueError(f"Invalid ParamsType: ({fl_model.params_type}).")
 
@@ -103,15 +107,20 @@ class FLModelUtils:
                 metrics = dxo.data
             else:
                 params_type = data_kind_to_params_type.get(dxo.data_kind)
+                params = dxo.data
                 if params_type is None:
-                    raise ValueError(f"Invalid shareable with dxo that has data kind: {dxo.data_kind}")
+                    if params is None:
+                        raise ValueError(f"Invalid shareable with dxo that has data kind: {dxo.data_kind}")
+                    else:
+                        params_type = ParamsType.FULL
+
                 params_type = ParamsType(params_type)
 
-                params = dxo.data
                 if MetaKey.INITIAL_METRICS in meta:
                     metrics = meta[MetaKey.INITIAL_METRICS]
         except:
             # this only happens in cross-site eval right now
+            # todo: need to fix this. swallow exception to get here, seems really weired.
             submit_model_name = shareable.get_header(AppConstants.SUBMIT_MODEL_NAME)
             meta[MetaKey.SUBMIT_MODEL_NAME] = submit_model_name
 

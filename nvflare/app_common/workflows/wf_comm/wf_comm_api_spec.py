@@ -38,7 +38,7 @@ NUM_ROUNDS = "num_rounds"
 STATUS = "status"
 RESULT = "result"
 DATA = "data"
-TARGET_SITES = "target_sizes"
+TARGET_SITES = "target_sites"
 
 
 class WFCommAPISpec(ABC):

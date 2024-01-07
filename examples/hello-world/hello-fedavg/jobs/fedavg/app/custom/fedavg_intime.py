@@ -30,6 +30,7 @@ from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import (
     NUM_ROUNDS,
     RESP_MAX_WAIT_TIME,
     START_ROUND,
+    TARGET_SITES,
 )
 from nvflare.app_common.workflows.wf_comm.wf_spec import WF
 from nvflare.security.logging import secure_format_traceback
@@ -114,6 +115,7 @@ class FedAvg(WF):
             CURRENT_ROUND: current_round,
             NUM_ROUNDS: self.num_rounds,
             START_ROUND: self.start_round,
+            TARGET_SITES: None,
             DATA: model,
         }
 

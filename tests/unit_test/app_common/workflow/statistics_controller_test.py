@@ -16,6 +16,7 @@ from typing import List
 
 from nvflare.app_common.abstract.statistics_spec import StatisticConfig
 from nvflare.app_common.app_constant import StatisticsConstants as SC
+from nvflare.app_common.statistics.fed_stats_utils import get_target_statistics, prepare_inputs
 from nvflare.app_common.workflows.statistics_controller import StatisticsController
 from nvflare.fuel.utils import fobs
 
@@ -37,7 +38,7 @@ class TestStatisticsController:
 
     def test_target_statistics(self):
 
-        target_statistics: List[StatisticConfig] = StatisticsController._get_target_statistics(
+        target_statistics: List[StatisticConfig] = get_target_statistics(
             self.stats_controller.statistic_configs, SC.ordered_statistics[SC.STATS_1st_STATISTICS]
         )
 
@@ -48,7 +49,7 @@ class TestStatisticsController:
             else:
                 assert mc.config == {"*": {"bins": 10}, "Age": {"bins": 5, "range": [0, 120]}}
 
-        target_statistics: List[StatisticConfig] = StatisticsController._get_target_statistics(
+        target_statistics: List[StatisticConfig] = get_target_statistics(
             self.stats_controller.statistic_configs, SC.ordered_statistics[SC.STATS_2nd_STATISTICS]
         )
 
@@ -78,9 +79,11 @@ class TestStatisticsController:
         assert second_spent > 0.5 * 4
 
     def test_prepare_input(self):
-        xs = self.stats_controller._prepare_inputs(SC.STATS_1st_STATISTICS)
+        xs = prepare_inputs(
+            self.stats_controller.statistic_configs, SC.STATS_1st_STATISTICS, self.stats_controller.global_statistics
+        )
         assert xs[SC.STATISTICS_TASK_KEY] == SC.STATS_1st_STATISTICS
-        seq = StatisticsController._get_target_statistics(
+        seq = get_target_statistics(
             self.stats_controller.statistic_configs, SC.ordered_statistics[SC.STATS_1st_STATISTICS]
         )
         rhs = [mc.name for mc in seq]
@@ -99,7 +102,9 @@ class TestStatisticsController:
 
         assert self.stats_controller.global_statistics != {}
 
-        xs = self.stats_controller._prepare_inputs(SC.STATS_2nd_STATISTICS)
+        xs = prepare_inputs(
+            self.stats_controller.statistic_configs, SC.STATS_2nd_STATISTICS, self.stats_controller.global_statistics
+        )
         assert xs[SC.STATISTICS_TASK_KEY] == SC.STATS_2nd_STATISTICS
         rhs = SC.ordered_statistics[SC.STATS_2nd_STATISTICS]
         rhs.sort()
