@@ -283,6 +283,7 @@ class LauncherExecutor(TaskExchanger):
                 return True
 
             if self.launcher.check_run_status(task_name, fl_ctx) != LauncherRunStatus.RUNNING:
+                self.log_error(fl_ctx, f"run status is not {LauncherRunStatus.RUNNING}")
                 return False
 
             time.sleep(0.1)

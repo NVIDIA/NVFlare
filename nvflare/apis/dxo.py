@@ -29,6 +29,7 @@ class DataKind(object):
     COLLECTION = "COLLECTION"  # Dict or List of DXO objects
     STATISTICS = "STATISTICS"
     PSI = "PSI"
+    RAW = "RAW"
 
 
 class MetaKey(FLMetaKey):
