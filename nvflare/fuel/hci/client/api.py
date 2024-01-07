@@ -249,11 +249,12 @@ class _TryLogin(State):
 
 
 class _Operate(State):
-    def __init__(self, api, sess_check_interval):
+    def __init__(self, api, sess_check_interval, auto_login_delay):
         State.__init__(self, _STATE_NAME_OPERATE)
         self.api = api
         self.last_sess_check_time = None
         self.sess_check_interval = sess_check_interval
+        self.auto_login_delay = auto_login_delay
 
     def enter(self):
         self.api.server_sess_active = True
@@ -273,6 +274,7 @@ class _Operate(State):
 
         if new_host != cur_host or new_port != cur_port or cur_ssid != new_ssid:
             # need to re-login
+            time.sleep(self.auto_login_delay)
             api.fire_session_event(EventType.SP_ADDR_CHANGED, f"Server address changed to {new_host}:{new_port}")
             return _STATE_NAME_LOGIN
 
@@ -310,6 +312,7 @@ class AdminAPI(AdminAPISpec):
         debug: bool = False,
         session_timeout_interval=None,
         session_status_check_interval=None,
+        auto_login_delay: int = 5,
         auto_login_max_tries: int = 5,
         event_handlers=None,
     ):
@@ -418,11 +421,13 @@ class AdminAPI(AdminAPISpec):
         # create the FSM for session monitoring
         if auto_login_max_tries < 0 or auto_login_max_tries > MAX_AUTO_LOGIN_TRIES:
             raise ValueError(f"auto_login_max_tries is out of range: [0, {MAX_AUTO_LOGIN_TRIES}]")
+        if auto_login_delay < 5.0:
+            raise ValueError(f"auto_login_delay must be more than 5.0. Got value: {auto_login_delay}]")
         self.auto_login_max_tries = auto_login_max_tries
         fsm = FSM("session monitor")
         fsm.add_state(_WaitForServerAddress(self))
         fsm.add_state(_TryLogin(self))
-        fsm.add_state(_Operate(self, session_status_check_interval))
+        fsm.add_state(_Operate(self, session_status_check_interval, auto_login_delay))
         self.fsm = fsm
 
         self.session_timeout_interval = session_timeout_interval
