@@ -56,7 +56,6 @@ class FLModelUtils:
             raise ValueError("FLModel without params and metrics is NOT supported.")
         elif fl_model.params is not None:
             if fl_model.params_type is None:
-                # raise ValueError(f"Invalid ParamsType: ({fl_model.params_type}).")
                 fl_model.params_type = ParamsType.FULL
 
             data_kind = params_type_to_data_kind.get(fl_model.params_type.value)
@@ -119,7 +118,6 @@ class FLModelUtils:
                     metrics = meta[MetaKey.INITIAL_METRICS]
         except:
             # this only happens in cross-site eval right now
-            # todo: need to fix this. swallow exception to get here, seems really weired.
             submit_model_name = shareable.get_header(AppConstants.SUBMIT_MODEL_NAME)
             meta[MetaKey.SUBMIT_MODEL_NAME] = submit_model_name
 
@@ -206,7 +204,7 @@ class FLModelUtils:
     def update_model(model: FLModel, model_update: FLModel, replace_meta: bool = True) -> FLModel:
         if model.params_type != ParamsType.FULL:
             raise RuntimeError(
-                f"params_type {model_update.params_type} of `model` not supported! Expected `ParamsType.FULL`."
+                f"params_type {model.params_type} of `model` not supported! Expected `ParamsType.FULL`."
             )
 
         if replace_meta:
