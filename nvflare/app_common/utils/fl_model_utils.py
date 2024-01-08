@@ -11,7 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import logging
+
+
 from typing import Any, Optional
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
@@ -20,6 +21,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.fl_model import FLModel, FLModelConst, MetaKey, ParamsType
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.fuel.utils.validation_utils import check_object_type
+import logging
 
 MODEL_ATTRS = [
     FLModelConst.PARAMS_TYPE,
@@ -203,9 +205,7 @@ class FLModelUtils:
     @staticmethod
     def update_model(model: FLModel, model_update: FLModel, replace_meta: bool = True) -> FLModel:
         if model.params_type != ParamsType.FULL:
-            raise RuntimeError(
-                f"params_type {model.params_type} of `model` not supported! Expected `ParamsType.FULL`."
-            )
+            raise RuntimeError(f"params_type {model.params_type} of `model` not supported! Expected `ParamsType.FULL`.")
 
         if replace_meta:
             model.meta = model_update.meta
