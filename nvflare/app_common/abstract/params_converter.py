@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, List
 
 from nvflare.apis.dxo import from_shareable
 from nvflare.apis.filter import Filter
@@ -22,10 +22,14 @@ from nvflare.apis.shareable import Shareable
 
 
 class ParamsConverter(Filter, ABC):
-    def process(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
-        dxo = from_shareable(shareable)
-        dxo.data = self.convert(dxo.data, fl_ctx)
-        dxo.update_shareable(shareable)
+    def __init__(self, supported_tasks: List[str] = None):
+        self.supported_tasks = supported_tasks
+
+    def process(self, task_name: str, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
+        if not self.supported_tasks or task_name in self.supported_tasks:
+            dxo = from_shareable(shareable)
+            dxo.data = self.convert(dxo.data, fl_ctx)
+            dxo.update_shareable(shareable)
         return shareable
 
     @abstractmethod
