@@ -12,51 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 import json
 import os
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import tenseal as ts
 from lifelines import KaplanMeierFitter
 from lifelines.utils import survival_table_from_events
-from sksurv.datasets import load_veterans_lung_cancer
 
 # (1) import nvflare client API
 import nvflare.client as flare
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 
-# Client training code
 
-np.random.seed(77)
-
-
-def prepare_data(num_of_clients: int = 5, bin_days: int = 7):
-    # Load data
-    data_x, data_y = load_veterans_lung_cancer()
-    # Get total data count
-    total_data_num = data_x.shape[0]
-    print(f"Total data count: {total_data_num}")
-    # Get event and time
-    event = data_y["Status"]
-    time = data_y["Survival_in_days"]
-    # Categorize data to a bin, default is a week (7 days)
-    time = np.ceil(time / bin_days).astype(int)
-    # Shuffle data
-    idx = np.random.permutation(total_data_num)
-    # Split data to clients
-    event_clients = {}
-    time_clients = {}
-    for i in range(num_of_clients):
-        start = int(i * total_data_num / num_of_clients)
-        end = int((i + 1) * total_data_num / num_of_clients)
-        event_i = event[idx[start:end]]
-        time_i = time[idx[start:end]]
-        event_clients["site-" + str(i + 1)] = event_i
-        time_clients["site-" + str(i + 1)] = time_i
-    return event_clients, time_clients
-
-
+# Client code
 def details_save(kmf):
     # Get the survival function at all observed time points
     survival_function_at_all_times = kmf.survival_function_
@@ -97,15 +69,20 @@ def plot_and_save(kmf):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="KM analysis")
+    parser.add_argument("--data_root", type=str, help="Root path for data files")
+    args = parser.parse_args()
+
     flare.init()
 
     site_name = flare.get_site_name()
     print(f"Kaplan-meier analysis for {site_name}")
 
     # get local data
-    event_clients, time_clients = prepare_data()
-    event_local = event_clients[site_name]
-    time_local = time_clients[site_name]
+    data_path = os.path.join(args.data_root, site_name + ".csv")
+    data = pd.read_csv(data_path)
+    event_local = data["event"]
+    time_local = data["time"]
 
     while flare.is_running():
         # receives global message from NVFlare

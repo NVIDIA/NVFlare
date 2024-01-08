@@ -79,7 +79,6 @@ class KM(WF):
         max_idx_global = []
         for site, fl_model in task_result.items():
             max_idx = fl_model.params["max_idx"]
-            print(max_idx)
             max_idx_global.append(max_idx)
         # actual time point as index, so plus 1 for storage
         return max(max_idx_global) + 1

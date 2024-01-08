@@ -41,7 +41,11 @@ python baseline_kaplan_meier.py
 ```
 By default, this will generate a KM curve image `km_curve_baseline.png` under the current working directory.
 
-Then we run a 5-client federated job with simulator 
+Then we run a 5-client federated job with simulator, begin with splitting and generating the data files for each clients:
+```commandline
+python utils/prepare_data.py --out_path "/tmp/flare/dataset/km_data"
+```
+And we can run the federated job:
 ```commandline
 nvflare simulator -w workspace_km_he -n 5 -t 5 jobs/kaplan-meier-he
 ```
