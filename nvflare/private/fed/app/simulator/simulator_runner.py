@@ -29,7 +29,14 @@ from multiprocessing.connection import Client
 from urllib.parse import urlparse
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import JobConstants, MachineStatus, RunnerTask, RunProcessKey, WorkspaceConstants
+from nvflare.apis.fl_constant import (
+    FLMetaKey,
+    JobConstants,
+    MachineStatus,
+    RunnerTask,
+    RunProcessKey,
+    WorkspaceConstants,
+)
 from nvflare.apis.job_def import ALL_SITES, JobMetaKey
 from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
 from nvflare.apis.workspace import Workspace
@@ -344,15 +351,34 @@ class SimulatorRunner(FLComponent):
             process = Process(target=self.run_processs, args=(return_dict,))
             process.start()
             process.join()
-            if process.exitcode == -9:
-                run_status = process.exitcode
-            else:
-                run_status = return_dict["run_status"]
+            run_status = self._get_return_code(return_dict, process, self.workspace)
             return run_status
         except KeyboardInterrupt:
             self.logger.info("KeyboardInterrupt, terminate all the child processes.")
             kill_child_processes(os.getpid())
             return -9
+
+    def _get_return_code(self, return_dict, process, workspace):
+        return_code = return_dict.get("run_status")
+        if return_code:
+            self.logger.info(f"process run_status: {return_code}")
+        else:
+            rc_file = os.path.join(workspace, FLMetaKey.PROCESS_RC_FILE)
+            if os.path.exists(rc_file):
+                try:
+                    with open(rc_file, "r") as f:
+                        return_code = int(f.readline())
+                    os.remove(rc_file)
+                    self.logger.info(f"return_code from process_rc_file: {return_code}")
+                except Exception:
+                    self.logger.warning(
+                        f"Could not get the return_code from {rc_file}, Return the RC from the process:{process.pid}"
+                    )
+                    return_code = process.exitcode
+            else:
+                return_code = process.exitcode
+                self.logger.info(f"return_code from process.exitcode: {return_code}")
+        return return_code
 
     def run_processs(self, return_dict):
         # run_status = self.simulator_run_main()
