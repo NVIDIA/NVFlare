@@ -149,7 +149,7 @@ class LauncherExecutor(TaskExchanger):
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
         if self._from_nvflare_converter is not None:
-            shareable = self._from_nvflare_converter.process(shareable, fl_ctx)
+            shareable = self._from_nvflare_converter.process(task_name, shareable, fl_ctx)
 
         result = super().execute(task_name, shareable, fl_ctx, abort_signal)
 
@@ -161,7 +161,7 @@ class LauncherExecutor(TaskExchanger):
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
         if self._to_nvflare_converter is not None:
-            result = self._to_nvflare_converter.process(result, fl_ctx)
+            result = self._to_nvflare_converter.process(task_name, result, fl_ctx)
 
         self._finalize_external_execution(task_name, shareable, fl_ctx, abort_signal)
 
