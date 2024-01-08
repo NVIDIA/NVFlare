@@ -21,7 +21,6 @@ from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.fl_model import FLModel, FLModelConst, MetaKey, ParamsType
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.fuel.utils.validation_utils import check_object_type
-import logging
 
 MODEL_ATTRS = [
     FLModelConst.PARAMS_TYPE,
@@ -42,8 +41,6 @@ data_kind_to_params_type = {v: k for k, v in params_type_to_data_kind.items()}
 
 
 class FLModelUtils:
-    logger = logging.getLogger("FLModelUtils")
-
     @staticmethod
     def to_shareable(fl_model: FLModel) -> Shareable:
         """From FLModel to NVFlare side shareable.
