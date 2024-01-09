@@ -509,6 +509,8 @@ class SimulatorClientRunner(FLComponent):
         self.build_ctx = build_ctx
         self.kv_list = parse_vars(args.set)
 
+        self.end_run_clients = []
+
     def run(self, gpu):
         try:
             # self.create_clients()
@@ -521,6 +523,13 @@ class SimulatorClientRunner(FLComponent):
 
             # wait for the server and client running thread to finish.
             executor.shutdown()
+
+            for client in self.federated_clients:
+                if client.client_name not in self.end_run_clients:
+                    self.do_one_task(
+                        client, self.args.threads, gpu, lock, timeout=timeout, task_name=RunnerTask.END_RUN
+                    )
+
         except Exception as e:
             self.logger.error(f"SimulatorClientRunner run error: {secure_format_exception(e)}")
         finally:
@@ -554,15 +563,16 @@ class SimulatorClientRunner(FLComponent):
                         client = client_to_run
 
                 client.simulate_running = True
-                stop_run, client_to_run = self.do_one_task(client, num_of_threads, gpu, lock, timeout=timeout)
+                stop_run, client_to_run, end_run_client = self.do_one_task(
+                    client, num_of_threads, gpu, lock, timeout=timeout
+                )
+                if end_run_client:
+                    with lock:
+                        self.end_run_clients.append(end_run_client)
 
                 client.simulate_running = False
         except Exception as e:
             self.logger.error(f"run_client_thread error: {secure_format_exception(e)}")
-        finally:
-            if rank == 0:
-                for client in self.federated_clients:
-                    self.do_one_task(client, num_of_threads, gpu, lock, timeout=timeout, task_name=RunnerTask.END_RUN)
 
     def do_one_task(self, client, num_of_threads, gpu, lock, timeout=60.0, task_name=RunnerTask.TASK_EXEC):
         open_port = get_open_ports(1)[0]
@@ -607,8 +617,11 @@ class SimulatorClientRunner(FLComponent):
         }
         conn.send(data)
 
+        end_run_client = None
         while True:
             stop_run = conn.recv()
+            if stop_run:
+                end_run_client = conn.recv()
 
             with lock:
                 if num_of_threads != len(self.federated_clients):
@@ -621,7 +634,7 @@ class SimulatorClientRunner(FLComponent):
                 conn.send(False)
                 break
 
-        return stop_run, next_client
+        return stop_run, next_client, end_run_client
 
     def _create_connection(self, open_port, timeout=60.0):
         conn = None

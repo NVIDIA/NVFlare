@@ -79,6 +79,7 @@ class ClientTaskWorker(FLComponent):
     def do_one_task(self, client, args):
         interval = 1.0
         stop_run = False
+        end_run_client = None
         # Create the ClientRunManager and ClientRunner for the new client to run
         try:
             if client.run_manager is None:
@@ -105,6 +106,8 @@ class ClientTaskWorker(FLComponent):
 
                         # if any client got the END_RUN event, stop the simulator run.
                         if client_runner.run_abort_signal.triggered:
+                            client_runner.end_run_events_sequence()
+                            end_run_client = client.client_name
                             stop_run = True
                             self.logger.info("End the Simulator run.")
                             break
@@ -121,7 +124,7 @@ class ClientTaskWorker(FLComponent):
             secure_log_traceback()
             stop_run = True
 
-        return interval, stop_run
+        return interval, stop_run, end_run_client
 
     def release_resources(self, client):
         if client.run_manager:
@@ -150,8 +153,10 @@ class ClientTaskWorker(FLComponent):
             self.create_client_engine(client, deploy_args)
 
             while True:
-                interval, stop_run = self.do_one_task(client, args)
+                interval, stop_run, end_run_client = self.do_one_task(client, args)
                 conn.send(stop_run)
+                if stop_run:
+                    conn.send(end_run_client)
 
                 continue_run = conn.recv()
                 if not continue_run:
