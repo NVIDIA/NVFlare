@@ -29,7 +29,7 @@ from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.apis.workspace import Workspace
-from nvflare.app_common.decomposers import common_decomposers
+from nvflare.app_common.decomposers import common_decomposers, numpy_decomposers
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.authz import AuthorizationService
 from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
@@ -217,6 +217,7 @@ def get_scope_info():
 def fobs_initialize():
     flare_decomposers.register()
     common_decomposers.register()
+    numpy_decomposers.register()
     private_decomposers.register()
 
 
