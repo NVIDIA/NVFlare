@@ -427,7 +427,7 @@ class ProcessExecutor(ClientExecutor):
         if child_process:
             child_process.wait()
 
-            return_code = get_return_code(child_process, job_id, workspace)
+            return_code = get_return_code(child_process, job_id, workspace, self.logger)
 
             self.logger.info(f"run ({job_id}): child worker process finished with RC {return_code}")
             if return_code in [ProcessExitCode.UNSAFE_COMPONENT, ProcessExitCode.CONFIG_ERROR]:

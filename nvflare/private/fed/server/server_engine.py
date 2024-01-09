@@ -211,7 +211,7 @@ class ServerEngine(ServerEngineInternalSpec):
                     break
                 time.sleep(0.1)
             with self.lock:
-                return_code = get_return_code(process, job_id, workspace)
+                return_code = get_return_code(process, job_id, workspace, self.logger)
                 # if process exit but with Execution exception
                 if return_code and return_code != 0:
                     self.logger.info(f"Job: {job_id} child process exit with return code {return_code}")
