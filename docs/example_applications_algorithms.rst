@@ -9,8 +9,31 @@ NVIDIA FLARE has several tutorials and examples to help you get started with fed
 1. Step-By-Step Example Series
 ==============================
 
-  * :github_nvflare_link:`Step-by-Step CIFAR-10 Examples (GitHub) <examples/hello-world/step-by-step/cifar10>` - Step-by-step examples series with CIFAR-10 (image data) to showcase to showcase different FLARE features, workflows, and APIs.
-  * :github_nvflare_link:`Step-by-Step HIGGS Examples (GitHub) <examples/hello-world/step-by-step/higgs>` - Step-by-step examples series with HIGGS (tabular data) to showcase to showcase different FLARE features, workflows, and APIs.
+:github_nvflare_link:`Step-by-Step Examples (GitHub) <examples/hello-world/step-by-step/>` - Step-by-step examples series with CIFAR-10 (image data) and HIGGS (tabular data) to showcase different FLARE features, workflows, and APIs.
+
+1.1 CIFAR-10 Image Data Examples
+--------------------------------
+
+  * :github_nvflare_link:`image_stats <examples/hello-world/step-by-step/cifar10/stats/image_stats.ipynb>` - federated statistics (histograms) of CIFAR10.
+  * :github_nvflare_link:`sag <examples/hello-world/step-by-step/cifar10/sag/sag.ipynb>` - scatter and gather (SAG) workflow with PyTorch with Client API.
+  * :github_nvflare_link:`sag_deploy_map <examples/hello-world/step-by-step/cifar10/sag_deploy_map/sag_deploy_map.ipynb>` - scatter and gather workflow with deploy_map configuration for deployment of apps to different sites using the Client API.
+  * :github_nvflare_link:`sag_model_learner <examples/hello-world/step-by-step/cifar10/sag_model_learner/sag_model_learner.ipynb>` - scatter and gather workflow illustrating how to write client code using the ModelLearner.
+  * :github_nvflare_link:`sag_executor <examples/hello-world/step-by-step/cifar10/sag_executor/sag_executor.ipynb>` - scatter and gather workflow demonstrating show to write client-side executors.
+  * :github_nvflare_link:`sag_mlflow <examples/hello-world/step-by-step/cifar10/sag_mlflow/sag_mlflow.ipynb>` - MLflow experiment tracking logs with the Client API in scatter & gather workflows.
+  * :github_nvflare_link:`sag_he <examples/hello-world/step-by-step/cifar10/sag_he/sag_he.ipynb>` - homomorphic encyption using Client API and POC -he mode.
+  * :github_nvflare_link:`cse <examples/hello-world/step-by-step/cifar10/cse/cse.ipynb>` - cross-site evaluation using the Client API.
+  * :github_nvflare_link:`cyclic <examples/hello-world/step-by-step/cifar10/cyclic/cyclic.ipynb>` - cyclic weight transfer workflow with server-side controller.
+  * :github_nvflare_link:`cyclic_ccwf <examples/hello-world/step-by-step/cifar10/cyclic_ccwf/cyclic_ccwf.ipynb>` - client-controlled cyclic weight transfer workflow with client-side controller.
+  * :github_nvflare_link:`swarm <examples/hello-world/step-by-step/cifar10/swarm/swarm.ipynb>` - swarm learning and client-side cross-site evaluation with Client API.
+
+1.2 HIGGS Tabular Data Examples
+-------------------------------
+
+  * :github_nvflare_link:`tabular_stats <examples/hello-world/step-by-step/higgs/stats/tabular_stats.ipynb>`- federated stats tabular histogram calculation.
+  * :github_nvflare_link:`sklearn_linear <examples/hello-world/step-by-step/higgs/sklearn-linear/sklearn_linear.ipynb>`- federated linear model (logistic regression on binary classification) learning on tabular data.
+  * :github_nvflare_link:`sklearn_svm <examples/hello-world/step-by-step/higgs/sklearn-svm/sklearn_svm.ipynb>`- federated SVM model learning on tabular data.
+  * :github_nvflare_link:`sklearn_kmeans <examples/hello-world/step-by-step/higgs/sklearn-kmeans/sklearn_kmeans.ipynb>`- federated k-Means clustering on tabular data.
+  * :github_nvflare_link:`xgboost <examples/hello-world/step-by-step/higgs/xgboost/xgboost_horizontal.ipynb>`- federated horizontal xgboost learning on tabular data with bagging collaboration.
 
 2. Hello World Examples
 =======================
