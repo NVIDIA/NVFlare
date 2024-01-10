@@ -77,7 +77,7 @@ class _ReviewerFilter(_JobFilter):
         self.reviewer_name = reviewer_name
 
     def filter_job(self, info: JobInfo):
-        approvals = info.meta.get(JobMetaKey.APPROVALS)
+        approvals = info.meta.get(JobMetaKey.APPROVALS.value)
         if not approvals or self.reviewer_name not in approvals:
             self.result.append(job_from_meta(info.meta))
         return True

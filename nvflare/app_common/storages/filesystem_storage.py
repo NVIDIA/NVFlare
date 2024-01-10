@@ -94,6 +94,9 @@ class FilesystemStorage(StorageSpec):
         self.root_dir = root_dir
         self.uri_root = uri_root
 
+    def _object_path(self, uri: str):
+        return os.path.join(self.root_dir, uri.lstrip(self.uri_root))
+
     def create_object(self, uri: str, data: bytes, meta: dict, overwrite_existing: bool = False):
         """Creates an object.
 
@@ -112,7 +115,7 @@ class FilesystemStorage(StorageSpec):
             IOError: if error writing the object
 
         """
-        full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
+        full_uri = self._object_path(uri)
 
         if _object_exists(full_uri) and not overwrite_existing:
             raise StorageException("object {} already exists and overwrite_existing is False".format(uri))
@@ -148,7 +151,7 @@ class FilesystemStorage(StorageSpec):
             IOError: if error writing the object
 
         """
-        full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
+        full_uri = self._object_path(uri)
 
         if not _object_exists(full_uri):
             raise StorageException("object {} does not exist".format(uri))
@@ -173,7 +176,7 @@ class FilesystemStorage(StorageSpec):
             IOError: if error writing the object
 
         """
-        full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
+        full_uri = self._object_path(uri)
 
         if not _object_exists(full_uri):
             raise StorageException("object {} does not exist".format(uri))
@@ -195,7 +198,7 @@ class FilesystemStorage(StorageSpec):
             StorageException: if path does not exist or is not a valid directory.
 
         """
-        full_dir_path = os.path.join(self.root_dir, path.lstrip(self.uri_root))
+        full_dir_path = self._object_path(path)
         if not os.path.isdir(full_dir_path):
             raise StorageException(f"path {full_dir_path} is not a valid directory.")
 
@@ -227,7 +230,7 @@ class FilesystemStorage(StorageSpec):
             StorageException: if object does not exist
 
         """
-        full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
+        full_uri = self._object_path(uri)
 
         if not _object_exists(full_uri):
             raise StorageException("object {} does not exist".format(uri))
@@ -248,7 +251,7 @@ class FilesystemStorage(StorageSpec):
             StorageException: if object does not exist
 
         """
-        full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
+        full_uri = self._object_path(uri)
 
         if not _object_exists(full_uri):
             raise StorageException("object {} does not exist".format(uri))
@@ -269,7 +272,7 @@ class FilesystemStorage(StorageSpec):
             StorageException: if object does not exist
 
         """
-        full_uri = os.path.join(self.root_dir, uri.lstrip(self.uri_root))
+        full_uri = self._object_path(uri)
 
         if not _object_exists(full_uri):
             raise StorageException("object {} does not exist".format(uri))
