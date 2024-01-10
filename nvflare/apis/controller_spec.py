@@ -71,7 +71,7 @@ class Task(object):
         name: str,
         data: Shareable,
         props: Optional[Dict] = None,
-        timeout: int = 0,
+        timeout: float = 0.0,
         before_task_sent_cb=None,
         after_task_sent_cb=None,
         result_received_cb=None,
@@ -124,8 +124,8 @@ class Task(object):
                 raise TypeError("props must be None or dict, but got {}.".format(type(props)))
             self.props = props
 
-        if not isinstance(timeout, int):
-            raise TypeError("timeout must be an int, but got {}.".format(type(timeout)))
+        if not isinstance(timeout, (int, float)):
+            raise TypeError("timeout must be an int|float, but got {}.".format(type(timeout)))
 
         if timeout < 0:
             raise ValueError("timeout must be >= 0, but got {}.".format(timeout))
