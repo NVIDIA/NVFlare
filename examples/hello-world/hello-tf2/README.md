@@ -26,10 +26,10 @@ Prepare the data first:
 bash ./prepare_data.sh
 ```
 
-Use nvflare simulator to run the hello-examples:
+Use nvflare simulator to run the hello-examples: (TF2 does not allow multiple processes to be running on a single GPU at the same time. Need to set the simulator threads to 1. "-gpu" option can be used to run multiple concurrent clients.)
 
 ```
-nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 hello-tf2/jobs/hello-tf2
+nvflare simulator -w /tmp/nvflare/ -n 2 -t 1 hello-tf2/jobs/hello-tf2
 ```
 
 ### 3. Access the logs and results
