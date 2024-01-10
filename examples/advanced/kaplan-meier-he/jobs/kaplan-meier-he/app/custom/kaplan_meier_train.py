@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import argparse
+import base64
 import json
 import os
 
@@ -29,6 +30,12 @@ from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 
 
 # Client code
+def read_data(file_name: str):
+    with open(file_name, "rb") as f:
+        data = f.read()
+    return base64.b64decode(data)
+
+
 def details_save(kmf):
     # Get the survival function at all observed time points
     survival_function_at_all_times = kmf.survival_function_
@@ -71,6 +78,7 @@ def plot_and_save(kmf):
 def main():
     parser = argparse.ArgumentParser(description="KM analysis")
     parser.add_argument("--data_root", type=str, help="Root path for data files")
+    parser.add_argument("--he_context_path", type=str, help="Path for the HE context file")
     args = parser.parse_args()
 
     flare.init()
@@ -84,6 +92,11 @@ def main():
     event_local = data["event"]
     time_local = data["time"]
 
+    # HE context
+    # In real-life application, HE context is prepared by secure provisioning
+    he_context_serial = read_data(args.he_context_path)
+    he_context = ts.context_from(he_context_serial)
+
     while flare.is_running():
         # receives global message from NVFlare
         global_msg = flare.receive()
@@ -92,14 +105,7 @@ def main():
 
         if curr_round == 1:
             # First round:
-            # Get HE context from server
-            # Send max index back
-
-            # In real-life application, HE setup is done by secure provisioning
-            he_context_serial = global_msg.params["he_context"]
-            # bytes back to context object
-            he_context = ts.context_from(he_context_serial)
-
+            # Empty payload from server, send max index back
             # Condense local data to histogram
             event_table = survival_table_from_events(time_local, event_local)
             hist_idx = event_table.index.values.astype(int)
@@ -108,7 +114,6 @@ def main():
 
             # Send max to server
             print(f"send max hist index for site = {flare.get_site_name()}")
-            # Send the results to server
             model = FLModel(params={"max_idx": max_hist_idx}, params_type=ParamsType.FULL)
             flare.send(model)
 

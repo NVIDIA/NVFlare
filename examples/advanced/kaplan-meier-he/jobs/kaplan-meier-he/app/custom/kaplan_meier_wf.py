@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import base64
 import logging
 from typing import Dict
 
@@ -31,39 +32,37 @@ from nvflare.app_common.workflows.wf_comm.wf_spec import WF
 
 
 class KM(WF):
-    def __init__(self, min_clients: int):
+    def __init__(self, min_clients: int, he_context_path: str):
         super(KM, self).__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
         self.min_clients = min_clients
+        self.he_context_path = he_context_path
         self.num_rounds = 3
 
     def run(self):
-        he_context, max_idx_results = self.distribute_he_context_collect_max_idx()
+        max_idx_results = self.start_fl_collect_max_idx()
         global_res = self.aggr_max_idx(max_idx_results)
         enc_hist_results = self.distribute_max_idx_collect_enc_stats(global_res)
-        hist_obs_global, hist_cen_global = self.aggr_he_hist(he_context, enc_hist_results)
+        hist_obs_global, hist_cen_global = self.aggr_he_hist(enc_hist_results)
         _ = self.distribute_global_hist(hist_obs_global, hist_cen_global)
 
-    def distribute_he_context_collect_max_idx(self):
-        self.logger.info("send kaplan-meier analysis command to all sites with HE context \n")
+    def read_data(self, file_name: str):
+        with open(file_name, "rb") as f:
+            data = f.read()
+        return base64.b64decode(data)
 
-        context = ts.context(ts.SCHEME_TYPE.BFV, poly_modulus_degree=4096, plain_modulus=1032193)
-        context_serial = context.serialize(save_secret_key=True)
-        # drop private key for server
-        context.make_context_public()
-        # payload data always needs to be wrapped into an FLModel
-        model = FLModel(params={"he_context": context_serial}, params_type=ParamsType.FULL)
-
+    def start_fl_collect_max_idx(self):
+        self.logger.info("send initial message to all sites to start FL \n")
         msg_payload = {
             MIN_RESPONSES: self.min_clients,
             CURRENT_ROUND: 1,
             NUM_ROUNDS: self.num_rounds,
             START_ROUND: 1,
-            DATA: model,
+            DATA: {},
         }
 
         results = self.flare_comm.broadcast_and_wait(msg_payload)
-        return context, results
+        return results
 
     def aggr_max_idx(self, sag_result: Dict[str, Dict[str, FLModel]]):
         self.logger.info("aggregate max histogram index \n")
@@ -99,8 +98,12 @@ class KM(WF):
         results = self.flare_comm.broadcast_and_wait(msg_payload)
         return results
 
-    def aggr_he_hist(self, he_context, sag_result: Dict[str, Dict[str, FLModel]]):
+    def aggr_he_hist(self, sag_result: Dict[str, Dict[str, FLModel]]):
         self.logger.info("aggregate histogram within HE \n")
+
+        # Load HE context
+        he_context_serial = self.read_data(self.he_context_path)
+        he_context = ts.context_from(he_context_serial)
 
         if not sag_result:
             raise RuntimeError("input is None or empty")
