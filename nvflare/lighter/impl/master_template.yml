@@ -286,50 +286,6 @@ default_authz: |
     }
   }
 
-authz_def: |
-  {
-    "rules": {
-      "allow_byoc": {
-        "desc": "allow BYOC in APP",
-        "type": "bool",
-        "default": false
-      },
-      "allow_custom_datalist": {
-        "desc": "allow custom datalist",
-        "default": true
-      }
-    },
-    "rights": {
-      "train_self": {
-        "desc": "do training operations on own site",
-        "default": false,
-        "precond": "selfOrg"
-      },
-      "train_all": {
-        "desc": "do training ops on all sites",
-        "default": false
-      },
-      "view_self": {
-        "desc": "view log files of own org",
-        "default": true,
-        "precond": "selfOrg"
-      },
-      "view_all": {
-        "desc": "view log files of all sites",
-        "default": false
-      },
-      "operate_all": {
-        "desc": "start/stop all sites",
-        "default": false
-      },
-      "operate_self": {
-        "desc": "start/stop own site",
-        "default": false,
-        "precond": "selfOrg"
-      }
-    }
-  }
-
 fl_admin_sh: |
   #!/usr/bin/env bash
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
