@@ -26,6 +26,8 @@ class TemplateBuilder(Builder):
 
     def initialize(self, ctx):
         resource_dir = self.get_resources_dir(ctx)
-        template_file = ctx.get("template_file")
-        template = load_yaml(os.path.join(resource_dir, template_file))
+        template_files = ctx.get("template_files")
+        template = dict()
+        for tplt_file in template_files:
+            template.update(load_yaml(os.path.join(resource_dir, tplt_file)))
         ctx["template"] = template

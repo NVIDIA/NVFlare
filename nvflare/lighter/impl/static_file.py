@@ -18,8 +18,8 @@ import os
 
 import yaml
 
+from nvflare.lighter import utils
 from nvflare.lighter.spec import Builder
-from nvflare.lighter.utils import sh_replace
 
 
 class StaticFileBuilder(Builder):
@@ -61,13 +61,6 @@ class StaticFileBuilder(Builder):
         self.snapshot_persistor = snapshot_persistor
         self.components = components
 
-    def _write(self, file_full_path, content, mode, exe=False):
-        mode = mode + "w"
-        with open(file_full_path, mode) as f:
-            f.write(content)
-        if exe:
-            os.chmod(file_full_path, 0o755)
-
     def get_server_name(self, server):
         return server.name
 
@@ -76,7 +69,7 @@ class StaticFileBuilder(Builder):
 
     def _build_overseer(self, overseer, ctx):
         dest_dir = self.get_kit_dir(overseer, ctx)
-        self._write(
+        utils._write(
             os.path.join(dest_dir, "start.sh"),
             self.template["start_svr_sh"],
             "t",
@@ -95,7 +88,7 @@ class StaticFileBuilder(Builder):
                 privilege_dict[role].append(admin.subject)
             else:
                 privilege_dict[role] = [admin.subject]
-        self._write(
+        utils._write(
             os.path.join(dest_dir, "privilege.yml"),
             yaml.dump(privilege_dict, Dumper=yaml.Dumper),
             "t",
@@ -103,19 +96,19 @@ class StaticFileBuilder(Builder):
         )
 
         if self.docker_image:
-            self._write(
+            utils._write(
                 os.path.join(dest_dir, "docker.sh"),
-                sh_replace(self.template["docker_svr_sh"], replacement_dict),
+                utils.sh_replace(self.template["docker_svr_sh"], replacement_dict),
                 "t",
                 exe=True,
             )
-        self._write(
+        utils._write(
             os.path.join(dest_dir, "gunicorn.conf.py"),
-            sh_replace(self.template["gunicorn_conf_py"], replacement_dict),
+            utils.sh_replace(self.template["gunicorn_conf_py"], replacement_dict),
             "t",
             exe=False,
         )
-        self._write(
+        utils._write(
             os.path.join(dest_dir, "start.sh"),
             self.template["start_ovsr_sh"],
             "t",
@@ -140,11 +133,6 @@ class StaticFileBuilder(Builder):
         server_0["service"]["scheme"] = self.scheme
         server_0["admin_host"] = self.get_server_name(server)
         server_0["admin_port"] = admin_port
-        # if self.download_job_url:
-        #     server_0["download_job_url"] = self.download_job_url
-        # config["enable_byoc"] = server.enable_byoc
-        # if self.app_validator:
-        #     config["app_validator"] = {"path": self.app_validator}
         if self.overseer_agent:
             overseer_agent = copy.deepcopy(self.overseer_agent)
             if overseer_agent.get("overseer_exists", True):
@@ -158,46 +146,36 @@ class StaticFileBuilder(Builder):
                 }
             overseer_agent.pop("overseer_exists", None)
             config["overseer_agent"] = overseer_agent
-        # if self.snapshot_persistor:
-        #     config["snapshot_persistor"] = self.snapshot_persistor
-        # components = server.props.get("components", [])
-        # config["components"] = list()
-        # for comp in components:
-        #     temp_dict = {"id": comp}
-        #     temp_dict.update(components[comp])
-        #     config["components"].append(temp_dict)
-        # provisioned_client_list = list()
-        # for client in self.project.get_participants_by_type("client", first_only=False):
-        #     provisioned_client_list.append(client.name)
-        # config["provisioned_client_list"] = provisioned_client_list
-        self._write(os.path.join(dest_dir, "fed_server.json"), json.dumps(config, indent=2), "t")
+        utils._write(os.path.join(dest_dir, "fed_server.json"), json.dumps(config, indent=2), "t")
         replacement_dict = {
             "admin_port": admin_port,
             "fed_learn_port": fed_learn_port,
             "config_folder": self.config_folder,
             "docker_image": self.docker_image,
             "org_name": server.org,
+            "type": "server",
+            "cln_uid": "",
         }
         if self.docker_image:
-            self._write(
+            utils._write(
                 os.path.join(dest_dir, "docker.sh"),
-                sh_replace(self.template["docker_svr_sh"], replacement_dict),
+                utils.sh_replace(self.template["docker_svr_sh"], replacement_dict),
                 "t",
                 exe=True,
             )
-        self._write(
+        utils._write(
             os.path.join(dest_dir, "start.sh"),
             self.template["start_svr_sh"],
             "t",
             exe=True,
         )
-        self._write(
+        utils._write(
             os.path.join(dest_dir, "sub_start.sh"),
-            sh_replace(self.template["sub_start_svr_sh"], replacement_dict),
+            utils.sh_replace(self.template["sub_start_sh"], replacement_dict),
             "t",
             exe=True,
         )
-        self._write(
+        utils._write(
             os.path.join(dest_dir, "stop_fl.sh"),
             self.template["stop_fl_sh"],
             "t",
@@ -205,29 +183,29 @@ class StaticFileBuilder(Builder):
         )
         # local folder creation
         dest_dir = self.get_local_dir(server, ctx)
-        self._write(
+        utils._write(
             os.path.join(dest_dir, "log.config.default"),
             self.template["log_config"],
             "t",
         )
-        self._write(
+        utils._write(
             os.path.join(dest_dir, "resources.json.default"),
             self.template["local_server_resources"],
             "t",
         )
-        self._write(
+        utils._write(
             os.path.join(dest_dir, "privacy.json.sample"),
             self.template["sample_privacy"],
             "t",
         )
-        self._write(
+        utils._write(
             os.path.join(dest_dir, "authorization.json.default"),
             self.template["default_authz"],
             "t",
         )
 
         # workspace folder file
-        self._write(
+        utils._write(
             os.path.join(self.get_ws_dir(server, ctx), "readme.txt"),
             self.template["readme_fs"],
             "t",
@@ -247,6 +225,8 @@ class StaticFileBuilder(Builder):
             "config_folder": self.config_folder,
             "docker_image": self.docker_image,
             "org_name": client.org,
+            "type": "client",
+            "cln_uid": f"uid={client.subject}",
         }
         if self.overseer_agent:
             overseer_agent = copy.deepcopy(self.overseer_agent)
@@ -266,27 +246,27 @@ class StaticFileBuilder(Builder):
         #     temp_dict.update(components[comp])
         #     config["components"].append(temp_dict)
 
-        self._write(os.path.join(dest_dir, "fed_client.json"), json.dumps(config, indent=2), "t")
+        utils._write(os.path.join(dest_dir, "fed_client.json"), json.dumps(config, indent=2), "t")
         if self.docker_image:
-            self._write(
+            utils._write(
                 os.path.join(dest_dir, "docker.sh"),
-                sh_replace(self.template["docker_cln_sh"], replacement_dict),
+                utils.sh_replace(self.template["docker_cln_sh"], replacement_dict),
                 "t",
                 exe=True,
             )
-        self._write(
+        utils._write(
             os.path.join(dest_dir, "start.sh"),
             self.template["start_cln_sh"],
             "t",
             exe=True,
         )
-        self._write(
+        utils._write(
             os.path.join(dest_dir, "sub_start.sh"),
-            sh_replace(self.template["sub_start_cln_sh"], replacement_dict),
+            utils.sh_replace(self.template["sub_start_sh"], replacement_dict),
             "t",
             exe=True,
         )
-        self._write(
+        utils._write(
             os.path.join(dest_dir, "stop_fl.sh"),
             self.template["stop_fl_sh"],
             "t",
@@ -294,29 +274,29 @@ class StaticFileBuilder(Builder):
         )
         # local folder creation
         dest_dir = self.get_local_dir(client, ctx)
-        self._write(
+        utils._write(
             os.path.join(dest_dir, "log.config.default"),
             self.template["log_config"],
             "t",
         )
-        self._write(
+        utils._write(
             os.path.join(dest_dir, "resources.json.default"),
             self.template["local_client_resources"],
             "t",
         )
-        self._write(
+        utils._write(
             os.path.join(dest_dir, "privacy.json.sample"),
             self.template["sample_privacy"],
             "t",
         )
-        self._write(
+        utils._write(
             os.path.join(dest_dir, "authorization.json.default"),
             self.template["default_authz"],
             "t",
         )
 
         # workspace folder file
-        self._write(
+        utils._write(
             os.path.join(self.get_ws_dir(client, ctx), "readme.txt"),
             self.template["readme_fc"],
             "t",
@@ -335,21 +315,21 @@ class StaticFileBuilder(Builder):
 
         config = self.prepare_admin_config(admin, ctx)
 
-        self._write(os.path.join(dest_dir, "fed_admin.json"), json.dumps(config, indent=2), "t")
+        utils._write(os.path.join(dest_dir, "fed_admin.json"), json.dumps(config, indent=2), "t")
         if self.docker_image:
-            self._write(
+            utils._write(
                 os.path.join(dest_dir, "docker.sh"),
-                sh_replace(self.template["docker_adm_sh"], replacement_dict),
+                utils.sh_replace(self.template["docker_adm_sh"], replacement_dict),
                 "t",
                 exe=True,
             )
-        self._write(
+        utils._write(
             os.path.join(dest_dir, "fl_admin.sh"),
-            sh_replace(self.template["fl_admin_sh"], replacement_dict),
+            utils.sh_replace(self.template["fl_admin_sh"], replacement_dict),
             "t",
             exe=True,
         )
-        self._write(
+        utils._write(
             os.path.join(dest_dir, "readme.txt"),
             self.template["readme_am"],
             "t",
