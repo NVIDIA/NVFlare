@@ -21,7 +21,6 @@ import sys
 import docker
 import nvflare
 from nvflare.apis.utils.format_check import name_check
-from nvflare.dashboard.application.blob import _write
 from nvflare.lighter import tplt_utils, utils
 
 supported_csp = ("azure", "aws")
@@ -146,7 +145,7 @@ def cloud(args):
     dsb_start = template[f"{csp}_start_dsb_sh"]
     version = nvflare.__version__
     replacement_dict = {"NVFLARE": f"nvflare=={version}", "START_OPT": f"-i {args.image}" if args.image else ""}
-    _write(
+    utils._write(
         dest,
         utils.sh_replace(tplt.get_cloud_script_header() + dsb_start, replacement_dict),
         "t",
