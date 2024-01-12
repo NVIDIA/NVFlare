@@ -143,7 +143,8 @@ def parse_args(prog_name: str):
     if argv:
         msg = f"{prog_name} {cmd}: unrecognized arguments: {' '.join(argv)}\n"
         print(f"\nerror: {msg}")
-        sub_cmd_parser.print_help()
+        if sub_cmd_parser:
+            sub_cmd_parser.print_help()
         _parser.exit(2, "\n")
     return _parser, _parser.parse_args(), sub_cmd_parsers
 
