@@ -83,20 +83,21 @@ Each example will build upon previous ones to showcase different features, workf
 
 **CIFAR10 Examples:**
 
-- stats: federated statistics (histograms) of CIFAR10.
+- image_stats: federated statistics (histograms) of CIFAR10.
 - sag: scatter and gather (SAG) workflow with PyTorch with Client API.
-- sag_with_deploy_map: scatter and gather workflow with deploy_map configuration, for deployment of apps to different sites using the Client API.
-- cse: cross-site evaluation using the Client API.
+- sag_deploy_map: scatter and gather workflow with deploy_map configuration, for deployment of apps to different sites using the Client API.
 - sag_model_learner: scatter and gather workflow illustrating how to write client code using the ModelLearner.
 - sag_executor: scatter and gather workflow demonstrating show to write client-side executors.
+- sag_mlflow: MLflow experiment tracking logs with the Client API in scatter & gather workflows.
+- sag_he: homomorphic encyption using Client API and POC -he mode.
+- cse: cross-site evaluation using the Client API.
 - cyclic: cyclic weight transfer workflow with server-side controller.
 - cyclic_ccwf: client-controlled cyclic weight transfer workflow with client-side controller.
 - swarm: swarm learning and client-side cross-site evaluation with Client API.
-- sag_with_mlflow: MLflow experiment tracking logs with the Client API in scatter & gather workflows.
 
 **HIGGS Examples:**
 
-- tabular_stats: federated stats tabular histogram calculation.
+- tabular_stats: federated statistics tabular histogram calculation.
 - scikit_learn: federated linear model (logistic regression on binary classification) learning on tabular data.
 - sklearn_svm: federated SVM model learning on tabular data.
 - sklearn_kmeans: federated k-Means clustering on tabular data.
