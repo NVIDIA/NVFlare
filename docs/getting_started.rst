@@ -63,6 +63,9 @@ establishing a secure, distributed FL workflow.
 Installation
 =============
 
+.. note::
+   The server and client versions of nvflare must match, we do not support cross-version compatibility.
+
 Python Version
 --------------
 
