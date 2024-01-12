@@ -11,13 +11,3 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-from nvflare.app_common.workflows.wf_comm.wf_comm_api import WFCommAPI
-from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import WFCommAPISpec
-from nvflare.fuel.message.message_bus import MessageBus
-
-message_bus = MessageBus()
-
-
-def get_wf_comm_api() -> WFCommAPISpec:
-    return message_bus.receive_messages("wf_comm_api")

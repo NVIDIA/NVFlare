@@ -49,6 +49,7 @@ from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import (
 )
 from nvflare.app_common.workflows.wf_comm.wf_queue import WFQueue
 from nvflare.app_common.workflows.wf_comm.wf_spec import WF
+from nvflare.fuel.message.message_bus import MessageBus
 from nvflare.fuel.utils import class_utils
 from nvflare.security.logging import secure_format_traceback
 
@@ -73,6 +74,7 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
         self.wf_args = wf_args
         self.wf_queue: WFQueue = WFQueue(ctrl_queue=Queue(), result_queue=Queue())
         self._thread_pool_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix=self.__class__.__name__)
+        self.message_bus = MessageBus()
 
         self.engine = None
         self.fl_ctx = None
@@ -93,7 +95,8 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
         comm_api.set_queue(self.wf_queue)
         comm_api.set_result_pull_interval(self.comm_msg_pull_interval)
         comm_api.meta.update({SITE_NAMES: self.get_site_names()})
-        self.wf.setup_wf_comm_api(comm_api)
+        # self.wf.setup_wf_comm_api(comm_api)
+        self.message_bus.send_message("wf_comm_api", comm_api)
 
     def start_workflow(self, abort_signal, fl_ctx):
         try:

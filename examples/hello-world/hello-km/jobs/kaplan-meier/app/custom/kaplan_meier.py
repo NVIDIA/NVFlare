@@ -25,20 +25,22 @@ from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import (
     DATA,
     MIN_RESPONSES,
     NUM_ROUNDS,
-    START_ROUND,
+    START_ROUND, WFCommAPISpec,
 )
 from nvflare.app_common.workflows.wf_comm.wf_spec import WF
+from nvflare.app_common.workflows import wf_comm as flare
 
 # Controller Workflow
 
 
-class KM(WF):
+class KM:
     def __init__(self, min_clients: int, output_path: str):
         super(KM, self).__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
         self.output_path = output_path
         self.min_clients = min_clients
         self.num_rounds = 1
+        self.flare_comm: WFCommAPISpec = flare.get_wf_comm_api()
 
     def run(self):
         results = self.start_km_analysis()
@@ -55,7 +57,6 @@ class KM(WF):
             START_ROUND: 1,
             DATA: {},
         }
-
         results = self.flare_comm.broadcast_and_wait(msg_payload)
         return results
 
