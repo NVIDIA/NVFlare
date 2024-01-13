@@ -53,7 +53,7 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
         wf_args: Dict,
         wf_fn_name: str = "run",
         task_timeout: int = 0,
-        comm_msg_pull_interval: float = 0.2,
+        result_pull_interval: float = 0.2,
     ):
         super().__init__()
 
@@ -61,7 +61,7 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
         self.clients = None
         self.task_timeout = task_timeout
         self.task_name = task_name
-        self.comm_msg_pull_interval = comm_msg_pull_interval
+        self.result_pull_interval = result_pull_interval
         self.wf_class_path = wf_class_path
         self.wf_args = wf_args
         self.wf_fn_name = wf_fn_name
@@ -85,7 +85,7 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
     def publish_comm_api(self):
         comm_api = WFCommAPI()
         comm_api.set_queue(self.wf_queue)
-        comm_api.set_result_pull_interval(self.comm_msg_pull_interval)
+        comm_api.set_result_pull_interval(self.result_pull_interval)
         comm_api.meta.update({SITE_NAMES: self.get_site_names()})
         self.message_bus.send_message("wf_comm_api", comm_api)
 

@@ -29,9 +29,9 @@ class WFController(BaseWFController, Controller):
         wf_args: Dict,
         wf_fn_name: str = "run",
         task_timeout: int = 0,
-        comm_msg_pull_interval: float = 0.2,
+        result_pull_interval: float = 0.2,
     ):
-        super().__init__(task_name, wf_class_path, wf_args, wf_fn_name, task_timeout, comm_msg_pull_interval)
+        super().__init__(task_name, wf_class_path, wf_args, wf_fn_name, task_timeout, result_pull_interval)
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         self.start_workflow(abort_signal, fl_ctx)
