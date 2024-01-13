@@ -18,12 +18,10 @@ from typing import Dict, List, Optional, Tuple
 from nvflare.app_common.abstract.fl_model import FLModel
 
 CMD = "COMMAND"
-CMD_SEND = "SEND"
 CMD_STOP = "STOP"
 CMD_ABORT = "ABORT"
-CMD_BROADCAST = "BROADCAST"
-CMD_RELAY = "RELAY"
 PAYLOAD = "PAYLOAD"
+SEND_ORDER = "SEND_ORDER"
 SITE_NAMES = "SITE_NAMES"
 
 # note same as app_constant constant (todo: we only need one constant definition)

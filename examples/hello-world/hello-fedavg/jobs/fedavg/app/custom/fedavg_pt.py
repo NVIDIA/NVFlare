@@ -14,7 +14,9 @@
 import os
 
 import torch
-from fedavg import FedAvg
+
+# from fedavg import FedAvg
+from fedavg_intime import FedAvg
 
 from nvflare.app_common.abstract.fl_model import FLModel
 

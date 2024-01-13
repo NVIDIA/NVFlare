@@ -11,21 +11,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import threading
 import time
 from abc import ABC
-from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 from typing import Dict, List, Tuple
 
 from nvflare.apis.client import Client
-from nvflare.apis.controller_spec import ClientTask, ControllerSpec, OperatorMethod, Task, TaskOperatorKey
+from nvflare.apis.controller_spec import ClientTask, ControllerSpec, OperatorMethod, SendOrder, Task, TaskOperatorKey
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import ReturnCode, ReservedTopic
+from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
@@ -34,11 +31,6 @@ from nvflare.app_common.workflows.error_handle_utils import ABORT_WHEN_IN_ERROR
 from nvflare.app_common.workflows.wf_comm.wf_comm_api import WFCommAPI
 from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import (
     CMD,
-    CMD_ABORT,
-    CMD_BROADCAST,
-    CMD_RELAY,
-    CMD_SEND,
-    CMD_STOP,
     DATA,
     MIN_RESPONSES,
     PAYLOAD,
@@ -74,7 +66,7 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
         self.wf_class_path = wf_class_path
         self.wf_args = wf_args
         self.wf_fn_name = wf_fn_name
-        self.wf_queue: WFQueue = WFQueue(ctrl_queue=Queue(), result_queue=Queue())
+        self.wf_queue: WFQueue = WFQueue(result_queue=Queue())
         self.message_bus = MessageBus()
 
         self.engine = None
@@ -92,7 +84,7 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
         self.log_info(fl_ctx, "workflow controller started")
 
     def publish_comm_api(self):
-        comm_api = WFCommAPI(self)
+        comm_api = WFCommAPI()
         comm_api.set_queue(self.wf_queue)
         comm_api.set_result_pull_interval(self.comm_msg_pull_interval)
         comm_api.meta.update({SITE_NAMES: self.get_site_names()})
@@ -100,12 +92,10 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
 
     def start_workflow(self, abort_signal, fl_ctx):
         try:
-            wf_thread = threading.Thread(target= self.ctrl_msg_loop, args = (fl_ctx, abort_signal))
-            wf_thread.start()
+            fl_ctx.set_prop("abort_signal", abort_signal)
             func = getattr(self.wf, self.wf_fn_name)
             func()
             self.stop_msg_queue("job completed", fl_ctx)
-            wf_thread.join()
 
         except Exception as e:
             error_msg = secure_format_traceback()
@@ -132,85 +122,68 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
     ):
         pass
 
-    def ctrl_msg_loop(self, fl_ctx: FLContext, abort_signal: Signal):
+    def broadcast_to_peers_and_wait(self, pay_load):
+        abort_signal = self.fl_ctx.get_prop("abort_signal")
+        current_round = self.prepare_round_info(self.fl_ctx, pay_load)
+        task, min_responses, targets = self.get_payload_task(pay_load)
+        self.broadcast_and_wait(
+            task=task,
+            targets=targets,
+            min_responses=min_responses,
+            wait_time_after_min_received=0,
+            fl_ctx=self.fl_ctx,
+            abort_signal=abort_signal,
+        )
+        self.fire_event(AppEventType.ROUND_DONE, self.fl_ctx)
+        self.log_info(self.fl_ctx, f"Round {current_round} finished.")
 
-        if self.wf_queue is None:
-            raise ValueError("WFQueue must provided")
+    def broadcast_to_peers(self, pay_load):
+        task, min_responses, targets = self.get_payload_task(pay_load)
+        self.broadcast(
+            task=task, fl_ctx=self.fl_ctx, targets=targets, min_responses=min_responses, wait_time_after_min_received=0
+        )
 
-        try:
-            while True:
-                if abort_signal.triggered:
-                    break
-                if not self.wf_queue.has_ctrl_msg():
-                    time.sleep(self.comm_msg_pull_interval)
-                else:
-                    item = self.wf_queue.get_ctrl_msg()
-                    if item is None:
-                        self.log_warning(fl_ctx, "Ignore 'None' ctrl comm message")
-                        continue
+    def send_to_peers(self, pay_load, send_order: SendOrder = SendOrder.SEQUENTIAL):
+        task, _, targets = self.get_payload_task(pay_load)
+        self.send(task=task, fl_ctx=self.fl_ctx, targets=targets, send_order=send_order, task_assignment_timeout=0)
 
-                    cmd = item.get(CMD, None)
+    def send_to_peers_and_wait(self, pay_load, send_order: SendOrder = SendOrder.SEQUENTIAL):
+        abort_signal = self.fl_ctx.get_prop("abort_signal")
+        task, _, targets = self.get_payload_task(pay_load)
+        self.send_and_wait(
+            task=task,
+            fl_ctx=self.fl_ctx,
+            targets=targets,
+            send_order=send_order,
+            task_assignment_timeout=0,
+            abort_signal=abort_signal,
+        )
 
-                    if cmd is None:
-                        msg = f"get None command, expecting {CMD} key'"
-                        self.log_error(fl_ctx, msg)
-                        raise ValueError(msg)
+    def relay_to_peers_and_wait(self, pay_load, send_order: SendOrder = SendOrder.SEQUENTIAL):
+        abort_signal = self.fl_ctx.get_prop("abort_signal")
+        task, min_responses, targets = self.get_payload_task(pay_load)
+        self.relay_and_wait(
+            task=task,
+            fl_ctx=self.fl_ctx,
+            targets=targets,
+            send_order=send_order,
+            task_assignment_timeout=0,
+            task_result_timeout=0,
+            dynamic_targets=True,
+            abort_signal=abort_signal,
+        )
 
-                    elif cmd == CMD_STOP:
-                        msg = item.get(PAYLOAD)
-                        self.log_info(fl_ctx, f"receive {CMD_STOP} command, {msg}")
-                        break
-
-                    elif cmd == CMD_ABORT:
-                        msg = item.get(PAYLOAD)
-                        self.log_info(fl_ctx, f"receive {CMD_ABORT} command, {msg}")
-                        raise RuntimeError(msg)
-
-                    elif cmd == CMD_BROADCAST:
-                        pay_load = item.get(PAYLOAD)
-
-                        current_round = self.prepare_round_info(fl_ctx, pay_load)
-                        task, min_responses, targets = self.get_payload_task(pay_load)
-
-                        self.broadcast_and_wait(
-                            task=task,
-                            targets=targets,
-                            min_responses=min_responses,
-                            wait_time_after_min_received=0,
-                            fl_ctx=fl_ctx,
-                            abort_signal=abort_signal,
-                        )
-                        self.fire_event(AppEventType.ROUND_DONE, fl_ctx)
-                        self.log_info(fl_ctx, f"Round {current_round} finished.")
-
-                    elif cmd == CMD_RELAY:
-                        pay_load = item.get(PAYLOAD)
-                        current_round = self.prepare_round_info(fl_ctx, pay_load)
-                        task, min_responses, targets = self.get_payload_task(pay_load)
-
-                        self.relay_and_wait(
-                            task=task,
-                            targets=targets,
-                            fl_ctx=fl_ctx,
-                            abort_signal=abort_signal,
-                        )
-                        self.fire_event(AppEventType.ROUND_DONE, fl_ctx)
-                        self.log_info(fl_ctx, f"Round {current_round} finished.")
-
-                    elif cmd == CMD_SEND:
-                        raise NotImplementedError
-                    else:
-                        abort_signal.trigger(f"Unknown command '{cmd}'")
-                        raise ValueError(f"Unknown command '{cmd}'")
-
-                    if abort_signal.triggered:
-                        self.log_debug(self.fl_ctx, f"task {self.task_name} aborted")
-                        break
-        except Exception as e:
-            error_msg = secure_format_traceback()
-            self.wf_queue.ask_abort(error_msg)
-            self.log_error(fl_ctx, error_msg)
-            self.system_panic(error_msg, fl_ctx=fl_ctx)
+    def relay_to_peers(self, pay_load, send_order: SendOrder = SendOrder.SEQUENTIAL):
+        task, min_responses, targets = self.get_payload_task(pay_load)
+        self.relay(
+            task=task,
+            fl_ctx=self.fl_ctx,
+            targets=targets,
+            send_order=send_order,
+            task_assignment_timeout=0,
+            task_result_timeout=0,
+            dynamic_targets=True,
+        )
 
     def prepare_round_info(self, fl_ctx, pay_load):
         current_round = pay_load.get(AppConstants.CURRENT_ROUND, 0)

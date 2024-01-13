@@ -22,6 +22,7 @@ from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.app_common.utils.math_utils import parse_compare_criteria, parse_compare_operator
+from nvflare.app_common.workflows import wf_comm as flare
 from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import (
     CURRENT_ROUND,
     DATA,
@@ -30,7 +31,6 @@ from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import (
     RESP_MAX_WAIT_TIME,
     START_ROUND,
 )
-from nvflare.app_common.workflows import wf_comm as flare
 from nvflare.security.logging import secure_format_traceback
 
 update_model = FLModelUtils.update_model

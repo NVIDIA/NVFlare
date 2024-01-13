@@ -19,9 +19,10 @@ from typing import List, Optional
 
 import torch
 from net import Net
-from nvflare.app_common.workflows import wf_comm as flare
+
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+from nvflare.app_common.workflows import wf_comm as flare
 from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import (
     CURRENT_ROUND,
     DATA,
@@ -30,7 +31,6 @@ from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import (
     START_ROUND,
     TARGET_SITES,
 )
-from nvflare.app_common.workflows.wf_comm.wf_spec import WF
 
 update_model = FLModelUtils.update_model
 

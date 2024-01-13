@@ -30,6 +30,7 @@ DATASET_PATH = "/tmp/nvflare/data"
 # (optional) We change to use GPU to speed things up.
 # if you want to use CPU, change DEVICE="cpu"
 DEVICE = "cuda:0"
+DEVICE = "cpu"
 
 
 def main():

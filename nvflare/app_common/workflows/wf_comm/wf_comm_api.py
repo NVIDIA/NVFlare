@@ -18,19 +18,16 @@ import time
 from queue import Empty
 from typing import Dict, Optional, Tuple
 
+from nvflare.apis.controller_spec import SendOrder
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import (
     CMD,
     CMD_ABORT,
-    CMD_BROADCAST,
-    CMD_RELAY,
-    CMD_SEND,
     CMD_STOP,
-    MIN_RESPONSES,
     PAYLOAD,
-    RESP_MAX_WAIT_TIME,
     RESULT,
+    SEND_ORDER,
     SITE_NAMES,
     STATUS,
     WFCommAPISpec,
@@ -41,6 +38,7 @@ from nvflare.app_common.workflows.wf_comm.wf_queue import WFQueue
 class WFCommAPI(WFCommAPISpec):
     def __init__(self):
         self.result_pull_interval = 2
+        self.ctrl = None
         self.wf_queue: Optional[WFQueue] = None
         self.meta = {SITE_NAMES: []}
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -48,38 +46,49 @@ class WFCommAPI(WFCommAPISpec):
     def set_result_pull_interval(self, pull_interval: float):
         self.result_pull_interval = pull_interval
 
+    def set_ctrl(self, ctrl):
+        self.ctrl = ctrl
+
     def set_queue(self, wf_queue: WFQueue):
         self.wf_queue = wf_queue
 
+    def get_site_names(self):
+        return self.meta.get(SITE_NAMES)
+
     def broadcast_and_wait(self, msg_payload: Dict):
-        self.broadcast(msg_payload)
-        min_responses = msg_payload.get(MIN_RESPONSES, 0)
-        resp_max_wait_time = msg_payload.get(RESP_MAX_WAIT_TIME, 5)
-        return self.wait_all(min_responses, resp_max_wait_time)
+        self._check_wf_queue()
+        self.ctrl.broadcast_to_peers_and_wait(msg_payload)
+        return self._get_results()
 
     def broadcast(self, msg_payload):
         self._check_wf_queue()
-        message = {
-            CMD: CMD_BROADCAST,
-            PAYLOAD: msg_payload,
-        }
-        self.wf_queue.put_ctrl_msg(message)
+        self.ctrl.broadcast_to_peers(pay_load=msg_payload)
 
     def send(self, msg_payload: Dict):
         self._check_wf_queue()
-        message = {
-            CMD: CMD_SEND,
-            PAYLOAD: msg_payload,
-        }
-        self.wf_queue.put_ctrl_msg(message)
+        send_order_name = msg_payload.get(SEND_ORDER)
+        send_order = SendOrder.SEQUENTIAL if not send_order_name else SendOrder(send_order_name)
+        self.ctrl.send_to_peers(pay_load=msg_payload, send_order=send_order)
 
     def send_and_wait(self, msg_payload: Dict):
-        self.send(msg_payload)
-        min_responses = msg_payload.get(MIN_RESPONSES, 0)
-        return self.wait_all(min_responses)
+        self._check_wf_queue()
+        send_order_name = msg_payload.get(SEND_ORDER)
+        send_order = SendOrder.SEQUENTIAL if not send_order_name else SendOrder(send_order_name)
+        self.ctrl.send_to_peers_and_wait(msg_payload, send_order=send_order)
+        return self._get_results()
 
-    def get_site_names(self):
-        return self.meta.get(SITE_NAMES)
+    def relay_and_wait(self, msg_payload: Dict):
+        self._check_wf_queue()
+        send_order_name = msg_payload.get(SEND_ORDER)
+        send_order = SendOrder.SEQUENTIAL if not send_order_name else SendOrder(send_order_name)
+        self.ctrl.relay_to_peers_and_wait(msg_payload, send_order)
+        return self._get_results()
+
+    def relay(self, msg_payload: Dict):
+        self._check_wf_queue()
+        send_order_name = msg_payload.get(SEND_ORDER)
+        send_order = SendOrder.SEQUENTIAL if not send_order_name else SendOrder(send_order_name)
+        self.ctrl.relay_to_peers(msg_payload, send_order)
 
     def wait_all(self, min_responses: int, resp_max_wait_time: Optional[float] = None) -> Dict[str, Dict[str, FLModel]]:
         acc_size = 0
@@ -112,19 +121,6 @@ class WFCommAPI(WFCommAPISpec):
                         time.sleep(self.result_pull_interval)
             else:
                 time.sleep(self.result_pull_interval)
-
-    def relay_and_wait(self, msg_payload: Dict):
-        self.relay(msg_payload)
-        min_responses = msg_payload.get(MIN_RESPONSES, 1)
-        return self.wait_all(min_responses)
-
-    def relay(self, msg_payload: Dict):
-        self._check_wf_queue()
-        message = {
-            CMD: CMD_RELAY,
-            PAYLOAD: msg_payload,
-        }
-        self.wf_queue.put_ctrl_msg(message)
 
     def wait_one(self, resp_max_wait_time: Optional[float] = None) -> Tuple[str, str, FLModel]:
         try:
