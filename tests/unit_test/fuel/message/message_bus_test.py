@@ -55,6 +55,13 @@ class TestMessageBus(unittest.TestCase):
         user_1_message = self.message_bus.receive_messages("user_1", topic="channel-3")
         self.assertEqual(user_1_message, "3rd greetings from User 1!")
 
+    def test_send_message_and_receive_messages_abnormal(self):
+        user_1_message = self.message_bus.receive_messages("user_1")
+        self.assertEqual(user_1_message, None)
+
+        user_1_message = self.message_bus.receive_messages("user_1", topic="channel")
+        self.assertEqual(user_1_message, None)
+
     def test_fire_event(self):
         result = {"event_received": False}
 

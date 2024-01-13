@@ -30,7 +30,7 @@ from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import (
     RESP_MAX_WAIT_TIME,
     START_ROUND,
 )
-from nvflare.app_common.workflows.wf_comm.wf_spec import WF
+from nvflare.app_common.workflows import wf_comm as flare
 from nvflare.security.logging import secure_format_traceback
 
 update_model = FLModelUtils.update_model
@@ -39,7 +39,7 @@ update_model = FLModelUtils.update_model
 # FedAvg Workflow
 
 
-class FedAvg(WF):
+class FedAvg:
     def __init__(
         self,
         min_clients: int,
@@ -69,6 +69,8 @@ class FedAvg(WF):
             self.metric_comp_rule = parse_compare_operator(model_selection_rule)
         else:
             self.metric_comp_rule = None
+
+        self.flare_comm = flare.get_wf_comm_api()
 
     def run(self):
         self.logger.info("start Fed Avg Workflow\n \n")

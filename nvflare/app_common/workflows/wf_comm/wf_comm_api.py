@@ -93,17 +93,23 @@ class WFCommAPI(WFCommAPISpec):
                 self.logger.info(
                     f"\n\n {items_size=}, {acc_size=}, {min_responses=}, {time_waited=}, {resp_max_wait_time=}"
                 )
-                if time_waited < resp_max_wait_time and acc_size >= min_responses:
-                    return self._get_results()
+                if resp_max_wait_time is not None:
+                    if time_waited < resp_max_wait_time and acc_size >= min_responses:
+                        return self._get_results()
+                    else:
+                        if time_waited < resp_max_wait_time:
+                            self.logger.info(f" wait for more results, sleep {self.result_pull_interval} sec")
+                            time.sleep(self.result_pull_interval)
+                        else:
+                            msg = f"not enough responses {acc_size} compare with min responses requirement {min_responses} within the max allowed time {resp_max_wait_time} seconds"
+                            self.logger.info(msg)
+                            raise RuntimeError(msg)
                 else:
-                    if time_waited < resp_max_wait_time:
+                    if acc_size >= min_responses:
+                        return self._get_results()
+                    else:
                         self.logger.info(f" wait for more results, sleep {self.result_pull_interval} sec")
                         time.sleep(self.result_pull_interval)
-                    else:
-                        msg = f"not enough responses {acc_size} compare with min responses requirement {min_responses} within the max allowed time {resp_max_wait_time} seconds"
-                        self.logger.info(msg)
-                        raise RuntimeError(msg)
-
             else:
                 time.sleep(self.result_pull_interval)
 

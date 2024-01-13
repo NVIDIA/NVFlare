@@ -27,7 +27,6 @@ from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import (
     NUM_ROUNDS,
     START_ROUND, WFCommAPISpec,
 )
-from nvflare.app_common.workflows.wf_comm.wf_spec import WF
 from nvflare.app_common.workflows import wf_comm as flare
 
 # Controller Workflow

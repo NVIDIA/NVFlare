@@ -19,7 +19,7 @@ from typing import List, Optional
 
 import torch
 from net import Net
-
+from nvflare.app_common.workflows import wf_comm as flare
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import (
@@ -47,7 +47,7 @@ class RelayOrder:
 SUPPORTED_ORDERS = (RelayOrder.FIXED, RelayOrder.RANDOM, RelayOrder.RANDOM_WITHOUT_SAME_IN_A_ROW)
 
 
-class FedCyclic(WF):
+class FedCyclic:
     def __init__(
         self,
         output_path: str,
@@ -67,6 +67,8 @@ class FedCyclic(WF):
         self.last_site: Optional[str] = None
         self.last_model: Optional[FLModel] = None
         self.part_sites = None
+
+        self.flare_comm = flare.get_wf_comm_api()
 
         self.check_inputs()
 

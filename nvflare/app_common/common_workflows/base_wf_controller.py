@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import threading
 import time
 from abc import ABC
 from concurrent.futures import ThreadPoolExecutor
@@ -60,6 +60,7 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
         task_name: str,
         wf_class_path: str,
         wf_args: Dict,
+        wf_fn_name: str = "run",
         task_timeout: int = 0,
         comm_msg_pull_interval: float = 0.2,
     ):
@@ -72,8 +73,8 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
         self.comm_msg_pull_interval = comm_msg_pull_interval
         self.wf_class_path = wf_class_path
         self.wf_args = wf_args
+        self.wf_fn_name = wf_fn_name
         self.wf_queue: WFQueue = WFQueue(ctrl_queue=Queue(), result_queue=Queue())
-        self._thread_pool_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix=self.__class__.__name__)
         self.message_bus = MessageBus()
 
         self.engine = None
@@ -81,28 +82,31 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
 
     def start_controller(self, fl_ctx: FLContext):
         self.fl_ctx = fl_ctx
+        self.fl_ctx.set_prop("task_name", self.task_name)
         self.log_info(fl_ctx, "Initializing controller workflow.")
         self.engine = self.fl_ctx.get_engine()
         self.clients = self.engine.get_clients()
-
-        self.setup_wf_queue()
+        self.publish_comm_api()
+        self.wf: WF = class_utils.instantiate_class(self.wf_class_path, self.wf_args)
 
         self.log_info(fl_ctx, "workflow controller started")
 
-    def setup_wf_queue(self):
-        self.wf: WF = class_utils.instantiate_class(self.wf_class_path, self.wf_args)
-        comm_api = WFCommAPI()
+    def publish_comm_api(self):
+        comm_api = WFCommAPI(self)
         comm_api.set_queue(self.wf_queue)
         comm_api.set_result_pull_interval(self.comm_msg_pull_interval)
         comm_api.meta.update({SITE_NAMES: self.get_site_names()})
-        # self.wf.setup_wf_comm_api(comm_api)
         self.message_bus.send_message("wf_comm_api", comm_api)
 
     def start_workflow(self, abort_signal, fl_ctx):
         try:
-            self._thread_pool_executor.submit(self.ctrl_msg_loop, fl_ctx=fl_ctx, abort_signal=abort_signal)
-            self.wf.run()
+            wf_thread = threading.Thread(target= self.ctrl_msg_loop, args = (fl_ctx, abort_signal))
+            wf_thread.start()
+            func = getattr(self.wf, self.wf_fn_name)
+            func()
             self.stop_msg_queue("job completed", fl_ctx)
+            wf_thread.join()
+
         except Exception as e:
             error_msg = secure_format_traceback()
             self.log_error(fl_ctx, error_msg)
@@ -122,8 +126,6 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
 
     def stop_controller(self, fl_ctx: FLContext):
         self.stop_msg_queue("job completed", fl_ctx)
-        if self._thread_pool_executor:
-            self._thread_pool_executor.shutdown()
 
     def process_result_of_unknown_task(
         self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
