@@ -33,59 +33,51 @@ from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import (
     WFCommAPISpec,
 )
 from nvflare.app_common.workflows.wf_comm.wf_queue import WFQueue
+from nvflare.fuel.message.message_bus import MessageBus
 
 
 class WFCommAPI(WFCommAPISpec):
     def __init__(self):
         self.result_pull_interval = 2
-        self.ctrl = None
-        self.wf_queue: Optional[WFQueue] = None
         self.meta = {SITE_NAMES: []}
         self.logger = logging.getLogger(self.__class__.__name__)
 
+        message_bus = MessageBus()
+        self.ctrl = message_bus.receive_messages("controller")
+        self.wf_queue: Optional[WFQueue] = message_bus.receive_messages("wf_queue")
+        self._check_inputs()
+
     def set_result_pull_interval(self, pull_interval: float):
         self.result_pull_interval = pull_interval
-
-    def set_ctrl(self, ctrl):
-        self.ctrl = ctrl
-
-    def set_queue(self, wf_queue: WFQueue):
-        self.wf_queue = wf_queue
 
     def get_site_names(self):
         return self.meta.get(SITE_NAMES)
 
     def broadcast_and_wait(self, msg_payload: Dict):
-        self._check_wf_queue()
         self.ctrl.broadcast_to_peers_and_wait(msg_payload)
         return self._get_results()
 
     def broadcast(self, msg_payload):
-        self._check_wf_queue()
         self.ctrl.broadcast_to_peers(pay_load=msg_payload)
 
     def send(self, msg_payload: Dict):
-        self._check_wf_queue()
         send_order_name = msg_payload.get(SEND_ORDER)
         send_order = SendOrder.SEQUENTIAL if not send_order_name else SendOrder(send_order_name)
         self.ctrl.send_to_peers(pay_load=msg_payload, send_order=send_order)
 
     def send_and_wait(self, msg_payload: Dict):
-        self._check_wf_queue()
         send_order_name = msg_payload.get(SEND_ORDER)
         send_order = SendOrder.SEQUENTIAL if not send_order_name else SendOrder(send_order_name)
         self.ctrl.send_to_peers_and_wait(msg_payload, send_order=send_order)
         return self._get_results()
 
     def relay_and_wait(self, msg_payload: Dict):
-        self._check_wf_queue()
         send_order_name = msg_payload.get(SEND_ORDER)
         send_order = SendOrder.SEQUENTIAL if not send_order_name else SendOrder(send_order_name)
         self.ctrl.relay_to_peers_and_wait(msg_payload, send_order)
         return self._get_results()
 
     def relay(self, msg_payload: Dict):
-        self._check_wf_queue()
         send_order_name = msg_payload.get(SEND_ORDER)
         send_order = SendOrder.SEQUENTIAL if not send_order_name else SendOrder(send_order_name)
         self.ctrl.relay_to_peers(msg_payload, send_order)
@@ -197,6 +189,8 @@ class WFCommAPI(WFCommAPISpec):
         if not all_keys_present:
             raise RuntimeError(f"expecting all keys {keys} present in site_result")
 
-    def _check_wf_queue(self):
+    def _check_inputs(self):
         if self.wf_queue is None:
             raise RuntimeError("missing WFQueue")
+        if self.ctrl is None:
+            raise RuntimeError("missing Controller")

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import time
-from abc import ABC
+from abc import ABC, abstractmethod
 from queue import Queue
 from typing import Dict, List, Tuple
 
@@ -67,6 +67,7 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
         self.wf_fn_name = wf_fn_name
         self.wf_queue: WFQueue = WFQueue(result_queue=Queue())
         self.message_bus = MessageBus()
+        self.message_bus.send_message("wf_queue", self.wf_queue)
 
         self.engine = None
         self.fl_ctx = None
@@ -82,9 +83,13 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
 
         self.log_info(fl_ctx, "workflow controller started")
 
+    @abstractmethod
+    def publish_controller(self):
+        pass
+
     def publish_comm_api(self):
+        self.publish_controller()
         comm_api = WFCommAPI()
-        comm_api.set_queue(self.wf_queue)
         comm_api.set_result_pull_interval(self.result_pull_interval)
         comm_api.meta.update({SITE_NAMES: self.get_site_names()})
         self.message_bus.send_message("wf_comm_api", comm_api)
@@ -102,7 +107,7 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
             self.wf_queue.ask_abort(error_msg)
             self.system_panic(error_msg, fl_ctx=fl_ctx)
         finally:
-            wait_time = self.comm_msg_pull_interval + 0.05
+            wait_time = self.result_pull_interval + 0.05
             self.stop_msg_queue("job finished", fl_ctx, wait_time)
 
     def stop_msg_queue(self, stop_message, fl_ctx, wait_time: float = 0):

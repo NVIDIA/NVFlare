@@ -34,6 +34,16 @@ class TestMessageBus(unittest.TestCase):
 
         self.assertEqual(result["count"], 2)
 
+    def test_singleton_message_bus(self):
+        message_bus1 = MessageBus()
+        message_bus1.send_message("user_1", "Hello from User 1!")
+        user_1_message = message_bus1.receive_messages("user_1")
+        self.assertEqual(user_1_message, "Hello from User 1!")
+
+        message_bus2 = MessageBus()
+        user_1_message = message_bus2.receive_messages("user_1")
+        self.assertEqual(user_1_message, "Hello from User 1!")
+
     def test_send_message_and_receive_messages(self):
         self.message_bus.send_message("user_1", "Hello from User 1!")
         self.message_bus.send_message("user_2", "Greetings from User 2!")
@@ -56,11 +66,11 @@ class TestMessageBus(unittest.TestCase):
         self.assertEqual(user_1_message, "3rd greetings from User 1!")
 
     def test_send_message_and_receive_messages_abnormal(self):
-        user_1_message = self.message_bus.receive_messages("user_1")
-        self.assertEqual(user_1_message, None)
+        user_3_message = self.message_bus.receive_messages("user_3")
+        self.assertEqual(user_3_message, None)
 
-        user_1_message = self.message_bus.receive_messages("user_1", topic="channel")
-        self.assertEqual(user_1_message, None)
+        user_3_message = self.message_bus.receive_messages("user_3", topic="channel")
+        self.assertEqual(user_3_message, None)
 
     def test_fire_event(self):
         result = {"event_received": False}

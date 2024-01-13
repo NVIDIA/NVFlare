@@ -23,12 +23,9 @@ class MessageBus:
         with cls._lock:
             if not cls._instance:
                 cls._instance = super(MessageBus, cls).__new__(cls)
-                # Initialize the message bus here
+                cls._instance.subscribers = {}
+                cls._instance.message_store = {}
         return cls._instance
-
-    def __init__(self):
-        self.subscribers = {}
-        self.message_store = {}
 
     def subscribe(self, topic, callback):
         if topic not in self.subscribers:

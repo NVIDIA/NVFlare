@@ -18,7 +18,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.signal import Signal
 from nvflare.app_common.common_workflows.base_wf_controller import BaseWFController
-from nvflare.app_common.workflows.wf_comm import WFCommAPI
 
 
 class WFController(BaseWFController, Controller):
@@ -33,11 +32,8 @@ class WFController(BaseWFController, Controller):
     ):
         super().__init__(task_name, wf_class_path, wf_args, wf_fn_name, task_timeout, result_pull_interval)
 
+    def publish_controller(self):
+        self.message_bus.send_message("controller", self)
+
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         self.start_workflow(abort_signal, fl_ctx)
-
-    def publish_comm_api(self):
-        super(WFController, self).publish_comm_api()
-        comm_api: WFCommAPI = self.message_bus.receive_messages("wf_comm_api")
-        comm_api.set_ctrl(self)
-        self.message_bus.send_message("wf_comm_api", comm_api)

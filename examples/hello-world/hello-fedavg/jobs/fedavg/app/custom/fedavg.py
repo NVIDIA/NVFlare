@@ -21,7 +21,7 @@ from net import Net
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
-from nvflare.app_common.utils.math_utils import parse_compare_criteria, parse_compare_operator
+from nvflare.app_common.utils.math_utils import parse_compare_criteria
 from nvflare.app_common.workflows import wf_comm as flare
 from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import (
     CURRENT_ROUND,
@@ -47,7 +47,6 @@ class FedAvg:
         output_path: str,
         start_round: int = 1,
         stop_cond: str = None,
-        model_selection_rule: str = None,
         resp_max_wait_time: float = 5,
     ):
         super(FedAvg, self).__init__()
@@ -64,11 +63,6 @@ class FedAvg:
             self.stop_criteria = parse_compare_criteria(stop_cond)
         else:
             self.stop_criteria = None
-
-        if model_selection_rule:
-            self.metric_comp_rule = parse_compare_operator(model_selection_rule)
-        else:
-            self.metric_comp_rule = None
 
         self.flare_comm = flare.get_wf_comm_api()
 
@@ -183,12 +177,12 @@ class FedAvg:
             self.best_model = curr_model
             return
 
-        if self.metric_comp_rule is None:
-            return
-        metric, op_fn = self.metric_comp_rule
-
-        self.logger.info("compare models")
-        if self.is_curr_mode_better(self.best_model, curr_model, metric, op_fn):
+        if self.stop_criteria:
+            metric, _, op_fn = self.stop_criteria
+            self.logger.info("compare models")
+            if self.is_curr_mode_better(self.best_model, curr_model, metric, op_fn):
+                self.best_model = curr_model
+        else:
             self.best_model = curr_model
 
     def save_model(self, model: FLModel, file_path: str):
