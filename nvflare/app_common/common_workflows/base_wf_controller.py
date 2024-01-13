@@ -40,7 +40,6 @@ from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import (
     TARGET_SITES,
 )
 from nvflare.app_common.workflows.wf_comm.wf_queue import WFQueue
-from nvflare.app_common.workflows.wf_comm.wf_spec import WF
 from nvflare.fuel.message.message_bus import MessageBus
 from nvflare.fuel.utils import class_utils
 from nvflare.security.logging import secure_format_traceback
@@ -79,7 +78,7 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
         self.engine = self.fl_ctx.get_engine()
         self.clients = self.engine.get_clients()
         self.publish_comm_api()
-        self.wf: WF = class_utils.instantiate_class(self.wf_class_path, self.wf_args)
+        self.wf = class_utils.instantiate_class(self.wf_class_path, self.wf_args)
 
         self.log_info(fl_ctx, "workflow controller started")
 

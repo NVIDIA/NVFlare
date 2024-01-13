@@ -45,8 +45,9 @@ With this new API writing the new workflow is really simple:
 * Workflow (Server)
 
 ```
+from nvflare.app_common.workflows import wf_comm as flare
 
-class FedCyclic(WF):
+class FedCyclic:
     def __init__(
         self,
         output_path: str,
@@ -56,16 +57,16 @@ class FedCyclic(WF):
         order: str = RelayOrder.FIXED,
     ):
         super(FedCyclic, self).__init__()
+        <... skip init code ...>
         
-        <skip init code>
+        self.flare_comm = flare.get_wf_comm_api()
 
- 
+        self.check_inputs()
+
     def run(self):
 
         self.last_model = self.init_model()
 
-        # note: this one must be within run() method, not in the __init__() method
-        # as some values are injected at runtime during run()
         self.part_sites = self.flare_comm.get_site_names()
 
         if len(self.part_sites) <= 1:
@@ -86,8 +87,7 @@ class FedCyclic(WF):
             gc.collect()
 
         self.save_model(self.last_model, self.output_path)
-        self.logger.info("Cyclic ended.")
-
+        self.logger.info("\n fed cyclic ended \n")
 ```
 
 Relay_and_wait 
@@ -107,28 +107,6 @@ Relay_and_wait
         results = self.flare_comm.relay_and_wait(msg_payload)
         return results
 ```
-
-The base class ```WF``` is define as
-
-```
-
-class WF(ABC):
-
-    def __init__(self):
-        self.flare_comm: Optional[WFCommAPI] = None
-
-    def setup_wf_comm_api(self, flare_comm: WFCommAPI):
-        self.flare_comm = flare_comm
-
-    @abstractmethod
-    def run(self):
-        raise NotImplementedError
-
-```
-has two expectations: 
-* Make sure user define ```run()``` method
-* make sure a class field of WFCommAPI and be able to dynamically populated at runtime
-via setup_wf_comm_api() method
  
 ## Configurations
 

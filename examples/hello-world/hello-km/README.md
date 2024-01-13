@@ -48,13 +48,17 @@ For example for Kaplan-Meier Analysis, we could write a new workflow like this:
 
 ```
 
-class KM(WF):
+from nvflare.app_common.workflows import wf_comm as flare
+
+class KM:
     def __init__(self, min_clients: int, output_path: str):
         super(KM, self).__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
         self.output_path = output_path
         self.min_clients = min_clients
         self.num_rounds = 1
+        
+        self.flare_comm = flare.get_wf_comm_api()
 
     def run(self):
         results = self.start_km_analysis()
@@ -63,30 +67,7 @@ class KM(WF):
 
 ```
 
-The base class ```WF``` is define as
-
-```
-
-class WF(ABC):
-
-    def __init__(self):
-        self.flare_comm: Optional[WFCommAPI] = None
-
-    def setup_wf_comm_api(self, flare_comm: WFCommAPI):
-        self.flare_comm = flare_comm
-
-    @abstractmethod
-    def run(self):
-        raise NotImplementedError
-
-```
-has two expectations:
-* Make sure user define ```run()``` method
-* make sure a class field of WFCommAPI and be able to dynamically populated at runtime
-  via setup_wf_comm_api() method
-
-
-for Kaplan-Meier analysis, it literal involves
+The Kaplan-Meier analysis involves the following steps
 
 * start the analysis --> ask all clients to perform local KM analysis, then wait for results 
 * then aggregate the result to obtain gloabl results
