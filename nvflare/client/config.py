@@ -96,7 +96,7 @@ class ClientConfig:
     def __init__(self, config: Optional[Dict] = None):
         if config is None:
             config = {}
-        self.econfig = config
+        self.config = config
 
     def get_config(self):
         return self.config
