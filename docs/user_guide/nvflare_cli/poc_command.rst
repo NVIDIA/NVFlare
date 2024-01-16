@@ -1,11 +1,9 @@
 .. _poc_command:
 
 *****************************************
-Command for Proof Of Concept (POC) Mode
+Proof Of Concept (POC) Command
 *****************************************
 
-Introduction to the POC Command
-===============================
 
 The POC command allows users to try out the features of NVFlare in a proof of concept deployment on a single machine.
 
