@@ -55,7 +55,7 @@ python3 code/graphsage_protein_local.py --client_id 2
 ```
 Then, we create NVFlare job based on GNN template.
 ```
-nvflare job create -force -j "./jobs/gnn_protein" -w "sag_gnn" -sd "code" \
+nvflare job create -force -j "/tmp/nvflare/jobs/gnn_protein" -w "sag_gnn" -sd "code" \
   -f app_1/config_fed_client.conf app_script="graphsage_protein_fl.py" app_config="--client_id 1 --epochs 10" \
   -f app_2/config_fed_client.conf app_script="graphsage_protein_fl.py" app_config="--client_id 2 --epochs 10" \
   -f app_server/config_fed_server.conf num_rounds=7 key_metric="validation_f1" model_class_path="torch_geometric.nn.GraphSAGE" components[0].args.model.args.in_channels=50  components[0].args.model.args.hidden_channels=64 components[0].args.model.args.num_layers=2 components[0].args.model.args.out_channels=64  
@@ -66,11 +66,11 @@ For server configs, we set the number of rounds for federated training, the key 
 
 With the produced job, we run the federated training on both clients via FedAvg using NVFlare Simulator.
 ```
-nvflare simulator -w /tmp/nvflare/gnn/protein_fl_workspace -n 2 -t 2 ./jobs/gnn_protein
+nvflare simulator -w /tmp/nvflare/gnn/protein_fl_workspace -n 2 -t 2 /tmp/nvflare/jobs/gnn_protein
 ```
 
 #### Financial Transaction Classification
-We first download the Elliptic++ dataset to `data` folder. In this example, we will use the following three files:
+We first download the Elliptic++ dataset to `/tmp/nvflare/datasets/elliptic_pp` folder. In this example, we will use the following three files:
 - `txs_classes.csv`: transaction id and its class (licit or illicit)
 - `txs_edgelist.csv`: connections for transaction ids 
 - `txs_features.csv`: transaction id and its features
@@ -82,14 +82,14 @@ python3 code/graphsage_finance_local.py --client_id 2
 ```
 Similarly, we create NVFlare job based on GNN template.
 ```
-nvflare job create -force -j "./jobs/gnn_finance" -w "sag_gnn" -sd "code" \
+nvflare job create -force -j "/tmp/nvflare/jobs/gnn_finance" -w "sag_gnn" -sd "code" \
   -f app_1/config_fed_client.conf app_script="graphsage_finance_fl.py" app_config="--client_id 1 --epochs 10" \
   -f app_2/config_fed_client.conf app_script="graphsage_finance_fl.py" app_config="--client_id 2 --epochs 10" \
   -f app_server/config_fed_server.conf num_rounds=7 key_metric="validation_auc" model_class_path="pyg_sage.SAGE" components[0].args.model.args.in_channels=165  components[0].args.model.args.hidden_channels=256 components[0].args.model.args.num_layers=3 components[0].args.model.args.num_classes=2  
 ```
 And with the produced job, we run the federated training on both clients via FedAvg using NVFlare Simulator.
 ```
-nvflare simulator -w /tmp/nvflare/gnn/finance_fl_workspace -n 2 -t 2 ./jobs/gnn_finance
+nvflare simulator -w /tmp/nvflare/gnn/finance_fl_workspace -n 2 -t 2 /tmp/nvflare/jobs/gnn_finance
 ```
 
 ###  Results
