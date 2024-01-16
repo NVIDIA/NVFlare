@@ -6,12 +6,44 @@ Example Applications
 NVIDIA FLARE has several tutorials and examples to help you get started with federated learning and to explore certain features in the
 :github_nvflare_link:`examples directory <examples>`.
 
-1. Step-By-Step Example Series
+1. Hello World Examples
+=======================
+Can be run from the :github_nvflare_link:`hello_world notebook <examples/hello-world/hello_world.ipynb>`.
+
+.. toctree::
+  :maxdepth: 1
+  :hidden:
+
+  examples/hello_world_examples
+
+1.1. Deep Learning to Federated Learning
+----------------------------------------
+
+  * :github_nvflare_link:`Deep Learning to Federated Learning (GitHub) <examples/hello-world/ml-to-fl>` - Example for converting Deep Learning (DL) to Federated Learning (FL) using the Client API.
+
+1.2. Workflows
+--------------
+
+  * :ref:`Hello Scatter and Gather <hello_scatter_and_gather>` - Example using the Scatter And Gather (SAG) workflow with a Numpy trainer
+  * :ref:`Hello Cross-Site Validation <hello_cross_val>` - Example using the Cross Site Model Eval workflow with a Numpy trainer
+  * :github_nvflare_link:`Hello Cyclic Weight Transfer (GitHub) <examples/hello-world/hello-cyclic>` - Example using the CyclicController workflow to implement `Cyclic Weight Transfer <https://pubmed.ncbi.nlm.nih.gov/29617797/>`_ with TensorFlow as the deep learning training framework
+  * :github_nvflare_link:`Swarm Learning <examples/advanced/swarm_learning>` - Example using Swarm Learning and Client-Controlled Cross-site Evaluation workflows.
+  * :github_nvflare_link:`Client-Controlled Cyclic Weight Transfer <examples/hello-world/step-by-step/cifar10/cyclic_ccwf>` - Example using Client-Controlled Cyclic workflow using Client API.
+
+1.3. Deep Learning
+------------------
+
+  * :ref:`Hello PyTorch <hello_pt>` - Example image classifier using FedAvg and PyTorch as the deep learning training framework
+  * :ref:`Hello TensorFlow <hello_tf2>` - Example image classifier using FedAvg and TensorFlow as the deep learning training frameworks
+
+
+
+2. Step-By-Step Example Series
 ==============================
 
 :github_nvflare_link:`Step-by-Step Examples (GitHub) <examples/hello-world/step-by-step/>` - Step-by-step examples series with CIFAR-10 (image data) and HIGGS (tabular data) to showcase different FLARE features, workflows, and APIs.
 
-1.1 CIFAR-10 Image Data Examples
+2.1 CIFAR-10 Image Data Examples
 --------------------------------
 
   * :github_nvflare_link:`image_stats <examples/hello-world/step-by-step/cifar10/stats/image_stats.ipynb>` - federated statistics (histograms) of CIFAR10.
@@ -26,7 +58,7 @@ NVIDIA FLARE has several tutorials and examples to help you get started with fed
   * :github_nvflare_link:`cyclic_ccwf <examples/hello-world/step-by-step/cifar10/cyclic_ccwf/cyclic_ccwf.ipynb>` - client-controlled cyclic weight transfer workflow with client-side controller.
   * :github_nvflare_link:`swarm <examples/hello-world/step-by-step/cifar10/swarm/swarm.ipynb>` - swarm learning and client-side cross-site evaluation with Client API.
 
-1.2 HIGGS Tabular Data Examples
+2.2 HIGGS Tabular Data Examples
 -------------------------------
 
   * :github_nvflare_link:`tabular_stats <examples/hello-world/step-by-step/higgs/stats/tabular_stats.ipynb>`- federated stats tabular histogram calculation.
@@ -34,36 +66,6 @@ NVIDIA FLARE has several tutorials and examples to help you get started with fed
   * :github_nvflare_link:`sklearn_svm <examples/hello-world/step-by-step/higgs/sklearn-svm/sklearn_svm.ipynb>`- federated SVM model learning on tabular data.
   * :github_nvflare_link:`sklearn_kmeans <examples/hello-world/step-by-step/higgs/sklearn-kmeans/sklearn_kmeans.ipynb>`- federated k-Means clustering on tabular data.
   * :github_nvflare_link:`xgboost <examples/hello-world/step-by-step/higgs/xgboost/xgboost_horizontal.ipynb>`- federated horizontal xgboost learning on tabular data with bagging collaboration.
-
-2. Hello World Examples
-=======================
-Can be run from the :github_nvflare_link:`hello_world notebook <examples/hello-world/hello_world.ipynb>`.
-
-.. toctree::
-  :maxdepth: 1
-  :hidden:
-
-  examples/hello_world_examples
-
-2.1. Deep Learning to Federated Learning
-----------------------------------------
-
-  * :github_nvflare_link:`Deep Learning to Federated Learning (GitHub) <examples/hello-world/ml-to-fl>` - Example for converting Deep Learning (DL) to Federated Learning (FL) using the Client API.
-
-2.2. Workflows
---------------
-
-  * :ref:`Hello Scatter and Gather <hello_scatter_and_gather>` - Example using the Scatter And Gather (SAG) workflow with a Numpy trainer
-  * :ref:`Hello Cross-Site Validation <hello_cross_val>` - Example using the Cross Site Model Eval workflow with a Numpy trainer
-  * :github_nvflare_link:`Hello Cyclic Weight Transfer (GitHub) <examples/hello-world/hello-cyclic>` - Example using the CyclicController workflow to implement `Cyclic Weight Transfer <https://pubmed.ncbi.nlm.nih.gov/29617797/>`_ with TensorFlow as the deep learning training framework
-  * :github_nvflare_link:`Swarm Learning <examples/advanced/swarm_learning>` - Example using Swarm Learning and Client-Controlled Cross-site Evaluation workflows.
-  * :github_nvflare_link:`Client-Controlled Cyclic Weight Transfer <examples/hello-world/step-by-step/cifar10/cyclic_ccwf>` - Example using Client-Controlled Cyclic workflow using Client API.
-
-2.3. Deep Learning
-------------------
-
-  * :ref:`Hello PyTorch <hello_pt>` - Example image classifier using FedAvg and PyTorch as the deep learning training framework
-  * :ref:`Hello TensorFlow <hello_tf2>` - Example image classifier using FedAvg and TensorFlow as the deep learning training frameworks
 
 
 3. Tutorial Notebooks
