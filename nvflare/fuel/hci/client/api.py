@@ -46,7 +46,7 @@ _CMD_TYPE_CLIENT = 1
 _CMD_TYPE_SERVER = 2
 
 MAX_AUTO_LOGIN_TRIES = 300
-AUTO_LOGIN_INTERVAL = 1.0
+AUTO_LOGIN_INTERVAL = 1.5
 
 
 class ResultKey(object):
@@ -313,7 +313,7 @@ class AdminAPI(AdminAPISpec):
         session_timeout_interval=None,
         session_status_check_interval=None,
         auto_login_delay: int = 5,
-        auto_login_max_tries: int = 5,
+        auto_login_max_tries: int = 15,
         event_handlers=None,
     ):
         """API to keep certs, keys and connection information and to execute admin commands through do_command.
