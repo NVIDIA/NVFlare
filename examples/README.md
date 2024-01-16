@@ -72,7 +72,17 @@ Start a Jupyter Lab:
 When you open a notebook, select the kernel `nvflare_example` using the dropdown menu at the top right.
 ![Selecting a JupyterLab kernel](./jupyterlab_kernel.png)
 
-## 1. Step-by-Step Examples
+## 1. Hello World Examples
+| Example                                                                                                                                | Framework    | Summary                                                                                                                                                         |
+|----------------------------------------------------------------------------------------------------------------------------------------|--------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [Notebook for Hello Examples](./hello-world/hello_world.ipynb)                                                                         | -            | Notebook for examples below.                                                                                                                                    |
+| [Hello Scatter and Gather](./hello-world/hello-numpy-sag/README.md)                                                                    | Numpy        | Example using [ScatterAndGather](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.scatter_and_gather.html) controller workflow.      |
+| [Hello Cross-Site Validation](./hello-world/hello-numpy-cross-val/README.md)                                                           | Numpy        | Example using [CrossSiteModelEval](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.cross_site_model_eval.html) controller workflow. |
+| [Hello Cyclic Weight Transfer](./hello-world/hello-cyclic/README.md)                                                                   | PyTorch      | Example using [CyclicController](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.cyclic_ctl.html) controller workflow to implement [Cyclic Weight Transfer](https://pubmed.ncbi.nlm.nih.gov/29617797/). |
+| [Hello PyTorch](./hello-world/hello-pt/README.md)                                                                                      | PyTorch      | Example using an image classifier using [FedAvg](https://arxiv.org/abs/1602.05629) and [PyTorch](https://pytorch.org/) as the deep learning training framework. |
+| [Hello TensorFlow](./hello-world/hello-tf2/README.md)                                                                                  | TensorFlow2  | Example of using an image classifier using [FedAvg](https://arxiv.org/abs/1602.05629) and [TensorFlow](https://tensorflow.org/) as the deep learning training framework. |
+
+## 2. Step-by-Step Examples
 | Example | Dataset | Controller-Type | Client Category | Framework | Summary |
 |---------|---------|-----------------|-----------------|-----------|---------|
 | [image_stats](./hello-world/step-by-step/cifar10/stats/image_stats.ipynb)                                                        | CIFAR10 | server | Executor | Pandas | Example for federated stats image histogram calculation. |
@@ -91,16 +101,6 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 | [sklearn_svm](./hello-world/step-by-step/higgs/sklearn-svm/sklearn_svm.ipynb)                                                     | HIGGS | server | Client API | sklearn | Example for federated SVM model learning on tabular data. |
 | [sklearn_kmeans](./hello-world/step-by-step/higgs/sklearn-kmeans/sklearn_kmeans.ipynb)                                           | HIGGS | server | Client API |sklearn | Example for federated k-Means clustering on tabular data. |
 | [xgboost](./hello-world/step-by-step/higgs/xgboost/xgboost_horizontal.ipynb)                                                        | HIGGS | server | Client API |XGBoost | Example for federated horizontal xgboost learning on tabular data with bagging collaboration. |
-
-## 2. Hello World Examples
-| Example                                                                                                                                | Framework    | Summary                                                                                                                                                         |
-|----------------------------------------------------------------------------------------------------------------------------------------|--------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [Notebook for Hello Examples](./hello-world/hello_world.ipynb)                                                                         | -            | Notebook for examples below.                                                                                                                                    |
-| [Hello Scatter and Gather](./hello-world/hello-numpy-sag/README.md)                                                                    | Numpy        | Example using [ScatterAndGather](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.scatter_and_gather.html) controller workflow.      |
-| [Hello Cross-Site Validation](./hello-world/hello-numpy-cross-val/README.md)                                                           | Numpy        | Example using [CrossSiteModelEval](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.cross_site_model_eval.html) controller workflow. |
-| [Hello Cyclic Weight Transfer](./hello-world/hello-cyclic/README.md)                                                                   | PyTorch      | Example using [CyclicController](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.cyclic_ctl.html) controller workflow to implement [Cyclic Weight Transfer](https://pubmed.ncbi.nlm.nih.gov/29617797/). |
-| [Hello PyTorch](./hello-world/hello-pt/README.md)                                                                                      | PyTorch      | Example using an image classifier using [FedAvg](https://arxiv.org/abs/1602.05629) and [PyTorch](https://pytorch.org/) as the deep learning training framework. |
-| [Hello TensorFlow](./hello-world/hello-tf2/README.md)                                                                                  | TensorFlow2  | Example of using an image classifier using [FedAvg](https://arxiv.org/abs/1602.05629) and [TensorFlow](https://tensorflow.org/) as the deep learning training framework. |
 
 ## 3. Tutorial notebooks
 | Example                                                                                                                                | Summary                                                                                                                                                         |
