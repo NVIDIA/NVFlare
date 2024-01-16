@@ -37,7 +37,7 @@ def main():
     parser.add_argument(
         "--data_path",
         type=str,
-        default="./data",
+        default="/tmp/nvflare/datasets/elliptic_pp",
     )
     parser.add_argument(
         "--epochs",
