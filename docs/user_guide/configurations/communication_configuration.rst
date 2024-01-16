@@ -126,6 +126,9 @@ This is done by setting use_aio_grpc to true:
 
 ``"use_aio_grpc": true``
 
+On the server side if you use the non-AIO gRPC driver, the default maximum number of workers is 100, meaning that there can be at most 100 concurrent connections to the server.
+If this is not enough, you will need to use the AIO gRPC driver.
+
 Ad-hoc Connections
 ==================
 
