@@ -14,35 +14,21 @@ training code into federated learning code with the following benefits:
 Core concept
 ============
 
-Federated learning's concept is for each participating site to get a good model (better than
-locally trained model) without sharing the data.
+The general structure of the popular federated learning (FL) workflow, "FedAvg" is as follows:
 
-It is done by sharing model parameters or parameter differences (certain filters can be used to
-ensure privacy-preserving and protects against gradient inversion attacks) to each other.
-
-The aggregators will take in all these model parameters submitted by each site and produce a
-new global model.
-
-We hope that this new global model will be better than locally trained model since it
-conceptually trained on more data.
-
-One of the popular federated learning workflow, "FedAvg" is like this:
-
-The general structure of Federated Learning algorithms involve the following steps:
-
-#. controller site initializes an initial model
+#. FL server initializes an initial model
 #. For each round (global iteration):
 
-   #. controller sends the global model to clients
-   #. each client starts with this global model and trains on their own data
-   #. each client sends back their trained model
-   #. controller aggregates all the models and produces a new global model
+   #. FL server sends the global model to clients
+   #. Each FL client starts with this global model and trains on their own data
+   #. Each FL client sends back their trained model
+   #. FL server aggregates all the models and produces a new global model
 
-On the client side, the training workflow is:
+On the client side, the training workflow is as follows:
 
-#. receive model from controller
-#. perform local training on received model, evaluate global model for model selection
-#. send new model back to controller
+#. Receive the model from the FL server
+#. Perform local training on the received global model, evaluate the model for model selection
+#. Send the new model back to the FL server
 
 To be able to support different training frameworks, we define a standard data structure called "FLModel"
 for the local training code to exchange information with the FLARE system.
@@ -56,7 +42,7 @@ We explain its attributes below:
    :caption: fl_model.py
 
 Users only need to obtain the required information from this received FLModel,
-run local training, and put the results in a new FLModel to send back to the controller.
+run local training, and put the results in a new FLModel to be sent back.
 
 For a general use case, there are three essential methods for the Client API:
 

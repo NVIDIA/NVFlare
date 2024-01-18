@@ -4,14 +4,15 @@
 3rd-Party System Integration
 ############################
 
-NVFLARE 2.4.0 supports 3rd-party external systems to integrate with FL clients.
+NVFLARE supports a seamless integration between the FLARE system and a third-party external training system.
+This is especially useful with pre-existing ML/DL training system infrastructure that cannot be easily adapted to the FLARE client.
 
-The FL Client installs the :mod:`TaskExchanger<nvflare.app_common.executors.task_exchanger>` executor and
-the 3rd-party system uses the :mod:`FlareAgent<nvflare.client.flare_agent>` to interact with the TaskExchanger to receive tasks, and submit results to the FLARE server.
+The FL Client uses the :mod:`TaskExchanger<nvflare.app_common.executors.task_exchanger>` executor to receive tasks, and submit results to the FLARE server.
+The 3rd-party system uses the :mod:`FlareAgent<nvflare.client.flare_agent>` to interact with the TaskExchanger.
 
 This integration pattern is illustrated in the diagram below:
 
-.. image:: ../resources/3rd_party_integration_diagram.png
+.. image:: ../../resources/3rd_party_integration_diagram.png
     :height: 400px
 
 Requirements
@@ -27,8 +28,8 @@ Requirements
 Prepare the Trainer
 ===================
 
-You need to modify your trainer code to integrate with the FlareAgent API.
-This API provides simple `get_task()` and `submit_result()` methods to interact with the FL client (FL client).
+You need to modify your trainer code to integrate with the ``FlareAgent`` API.
+This API provides simple ``get_task()`` and ``submit_result()`` methods to interact with the FL client.
 The following is an example of this usage pattern.
 
 .. code-block:: python
@@ -75,7 +76,7 @@ The following is an example of this usage pattern.
                 break
 
             print(f"got task: {task}")
-            rc, meta, result = train(task.data) # peform train task
+            rc, meta, result = train(task.data) # perform train task
             submitted = agent.submit_result(TaskResult(data=result, meta=meta, return_code=rc))
             print(f"result submitted: {submitted}")
 
@@ -88,10 +89,10 @@ The following is an example of this usage pattern.
     if __name__ == "__main__":
         main()
 
-Create the Agent
-----------------
+Create Agent
+------------
 
-The :class:`FlareAgent<nvflare.client.flare_agent.FlareAgent>` is responsible for interacting with the FL client to exchange task data takes the following parameters:
+The :class:`FlareAgent<nvflare.client.flare_agent.FlareAgent>` is responsible for interacting with the FL client to exchange task data, it takes the following parameters:
 
 - ``pipe`` - component id of pipe for communication
 - ``read_interval`` - how often to read from pipe
@@ -115,8 +116,8 @@ If using CellPipe, then :class:`FlareAgentWithCellPipe<nvflare.client.flare_agen
 - ``secure_mode`` - whether the trainer/FL client communication will be in secure mode (SSL)
 - ``workspace_dir`` - this is the local folder that contains the "startup" kit of the FL client site. The trainer system and the FL client must share the same "startup" content.
 
-Start the Agent
----------------
+Start Agent
+-----------
 
 Call ``agent.start()`` to start the agent. This call must be made before trying to get tasks.
 
@@ -158,7 +159,7 @@ The following steps show you how to properly set up your project and jobs.
 Step One - Provision
 --------------------
 
-The FL client will behave like both client and server for connecting from the perspective of the trainer. 
+The FL client site will behave like both client and server for connecting from the perspective of the trainer.
 This requires the client site to have two sets of TLS credentials.
 Make sure to specify the "listening_host" for the client in the project.yml when provisioning the project:
 
@@ -186,11 +187,11 @@ client.crt, client.key, server.crt, server.key, rootCA.pem
 
 Note that the specified listening_port of a site must be accessible to the trainer of the site.
 
-Step Two - Setup for adhoc direct connection between FL Client and Trainer
+Step Two - Setup for Adhoc Direct Connection between FL Client and Trainer
 --------------------------------------------------------------------------
 
 FL client and the trainer can always talk to each other via the server, but it could be slow, especially if the server is located far away.
-The enable adhoc direct connections between the FL client and the Trainer, configure the comm_config.json on the client site as follows:
+The enable adhoc direct connections between the FL client and the trainer, configure the comm_config.json on the client site as follows:
 
 .. code-block:: json
 
@@ -213,10 +214,10 @@ Pay attention to the following:
 - For most cases, the "scheme" should be set to "tcp" to get the best performance. If "tcp" cannot be used, you can use "grpc".
 - In "resources":
 
-  - If FL client and the Trainer are within the same trusted network, you can set "secure" to false; otherwise set it to true;
+  - If FL client and the trainer are within the same trusted network, you can set "secure" to false; otherwise set it to true;
   - The value of the "host" must match the "listening_host" value of the site used in provision.
 
-Step Three - Prepare job configuration
+Step Three - Prepare Job Configuration
 --------------------------------------
 
 For each job, configure the config_fed_client.json to use :mod:`TaskExchanger<nvflare.app_common.executors.task_exchanger>` as the executor.
@@ -273,8 +274,9 @@ Ensure to set the FlareAgent's "workspace_dir" to the workspace folder and that 
 Verification
 ============
 
-The FL client (TaskExchanger) and your trainer process (FlareAgent) do not have to be started at exactly the same time. Whichever is started first will wait for the other for ``heartbeat_timeout`` seconds.
-Once they both are started and connected, you can verify they are directly connected using the Admin's cell commands.
+The FL client (TaskExchanger) and your trainer process (FlareAgent) do not have to be started at exactly the same time.
+Whichever is started first will wait for the other for ``heartbeat_timeout`` seconds.
+Once they both are started and connected, you can verify they are directly connected using the Admin console's ``cells`` commands.
 
 The following example shows two clients (red, blue) connected to their external trainers via the agent_id "ext_trainer_1":
 
@@ -326,4 +328,4 @@ Here you see that the blue-ext_trainer_1 is directly connected to two cells: the
 
 The ``conns`` command shows the connectors on the specified cell. Here you see that blue--ext_trainer_1 has two connectors:
 one connects the server on ``grpc://server:8002``, and another connects to ``blue.44c08365-e829-4bc1-a034-cda5a252fe73 on stcp://nvclient:11947``.
-Note that this port is opened by the FL client dynamically.
+Note that this port (11947) is opened by the FL client dynamically.

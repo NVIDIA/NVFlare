@@ -71,8 +71,8 @@ class FlareAgent:
         max_resends=None,
         submit_result_timeout=30.0,
         metric_pipe=None,
-        task_channel_name=PipeChannelName.TASK,
-        metric_channel_name=PipeChannelName.METRIC,
+        task_channel_name: str = PipeChannelName.TASK,
+        metric_channel_name: str = PipeChannelName.METRIC,
         close_pipe: bool = True,
         close_metric_pipe: bool = True,
     ):
@@ -80,8 +80,20 @@ class FlareAgent:
         to get task and to submit task result.
 
         Args:
-            pipe: pipe for communication
-            submit_result_timeout: when submitting task result, how long to wait for response from the CJ
+            pipe (Pipe): pipe for task communication.
+            read_interval (float): how often to read from the pipe.
+            heartbeat_interval (float): how often to send a heartbeat to the peer.
+            heartbeat_timeout (float): how long to wait for a heartbeat from the peer before treating the peer as gone,
+                0 means DO NOT check for heartbeat.
+            resend_interval (float): how often to resend a message if failing to send. None means no resend.
+                Note that if the pipe does not support resending, then no resend.
+            max_resends (int, optional): max number of resend. None means no limit.
+            submit_result_timeout (float): when submitting task result, how long to wait for response from the CJ.
+            metric_pipe (Pipe): pipe for metric communication.
+            task_channel_name (str): channel name for task.
+            metric_channel_name (str): channel name for metric.
+            close_pipe (bool): whether to close the task pipe when stopped.
+            close_metric_pipe (bool): whether to close the task pipe when stopped.
         """
         flare_decomposers.register()
         common_decomposers.register()
@@ -313,6 +325,24 @@ class FlareAgentWithCellPipe(FlareAgent):
         submit_result_timeout=30.0,
         has_metrics=False,
     ):
+        """Constructor of Flare Agent with Cell Pipe. This is a convenient class.
+
+        Args:
+            agent_id (str): unique id to guarantee the uniqueness of cell's FQCN.
+            site_name (str): name of the FLARE site
+            root_url (str): the root url of the cellnet that the pipe's cell will join
+            secure_mode (bool): whether connection to the root is secure (TLS)
+            workspace_dir (str): the directory that contains startup for joining the cellnet. Required only in secure mode
+            read_interval (float): how often to read from the pipe.
+            heartbeat_interval (float): how often to send a heartbeat to the peer.
+            heartbeat_timeout (float): how long to wait for a heartbeat from the peer before treating the peer as gone,
+                0 means DO NOT check for heartbeat.
+            resend_interval (float): how often to resend a message if failing to send. None means no resend.
+                Note that if the pipe does not support resending, then no resend.
+            max_resends (int, optional): max number of resend. None means no limit.
+            submit_result_timeout (float): when submitting task result, how long to wait for response from the CJ.
+            has_metrics (bool): has metric pipe or not.
+        """
         pipe = CellPipe(
             mode=Mode.ACTIVE,
             token=agent_id,

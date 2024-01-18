@@ -14,7 +14,7 @@
 
 import importlib
 import os
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple
 
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
@@ -32,13 +32,11 @@ from .model_registry import ModelRegistry
 PROCESS_MODEL_REGISTRY = None
 
 
-def _create_client_config(config: Union[str, Dict]) -> ClientConfig:
+def _create_client_config(config: str) -> ClientConfig:
     if isinstance(config, str):
         client_config = from_file(config_file=config)
-    elif isinstance(config, dict):
-        client_config = ClientConfig(config=config)
     else:
-        raise ValueError("config should be either a string or dictionary.")
+        raise ValueError("config should be a string.")
     return client_config
 
 
@@ -63,15 +61,56 @@ def _register_tensor_decomposer():
 
 
 def init(
-    config: Union[str, Dict] = f"config/{CLIENT_API_CONFIG}",
+    config: str = f"config/{CLIENT_API_CONFIG}",
     rank: Optional[str] = None,
 ):
     """Initializes NVFlare Client API environment.
 
     Args:
-        config (str or dict): configuration file or config dictionary.
+        config (str): path to the configuration file.
         rank (str): local rank of the process.
             It is only useful when the training script has multiple worker processes. (for example multi GPU)
+
+    Note:
+        An example of the config file's content looks like the following:
+            {
+              "METRICS_EXCHANGE": {
+                "pipe_channel_name": "metric",
+                "pipe": {
+                  "CLASS_NAME": "nvflare.fuel.utils.pipe.cell_pipe.CellPipe",
+                  "ARG": {
+                    "mode": "ACTIVE",
+                    "site_name": "site-1",
+                    "token": "simulate_job",
+                    "root_url": "tcp://0:51893",
+                    "secure_mode": false,
+                    "workspace_dir": "xxx"
+                  }
+                }
+              },
+              "SITE_NAME": "site-1",
+              "JOB_ID": "simulate_job",
+              "TASK_EXCHANGE": {
+                "train_with_eval": true,
+                "exchange_format": "numpy",
+                "transfer_type": "DIFF",
+                "train_task_name": "train",
+                "eval_task_name": "evaluate",
+                "submit_model_task_name": "submit_model",
+                "pipe_channel_name": "task",
+                "pipe": {
+                  "CLASS_NAME": "nvflare.fuel.utils.pipe.cell_pipe.CellPipe",
+                  "ARG": {
+                    "mode": "ACTIVE",
+                    "site_name": "site-1",
+                    "token": "simulate_job",
+                    "root_url": "tcp://0:51893",
+                    "secure_mode": false,
+                    "workspace_dir": "xxx"
+                  }
+                }
+              }
+            }
     """
     global PROCESS_MODEL_REGISTRY  # Declare PROCESS_MODEL_REGISTRY as global
 
@@ -167,16 +206,19 @@ def get_config() -> Dict:
 
 
 def get_job_id() -> str:
+    """Gets job id."""
     sys_info = system_info()
     return sys_info.get(ConfigKey.JOB_ID, "")
 
 
 def get_site_name() -> str:
+    """Gets site name."""
     sys_info = system_info()
     return sys_info.get(ConfigKey.SITE_NAME, "")
 
 
 def is_running() -> bool:
+    """Returns whether the NVFlare system is up and running."""
     try:
         receive()
         return True
@@ -185,6 +227,7 @@ def is_running() -> bool:
 
 
 def is_train() -> bool:
+    """Returns whether the current task is a training task."""
     model_registry = get_model_registry()
     if model_registry.rank != "0":
         raise RuntimeError("only rank 0 can call is_train!")
@@ -192,6 +235,7 @@ def is_train() -> bool:
 
 
 def is_evaluate() -> bool:
+    """Returns whether the current task is an evaluate task."""
     model_registry = get_model_registry()
     if model_registry.rank != "0":
         raise RuntimeError("only rank 0 can call is_evaluate!")
@@ -199,6 +243,7 @@ def is_evaluate() -> bool:
 
 
 def is_submit_model() -> bool:
+    """Returns whether the current task is a submit_model task."""
     model_registry = get_model_registry()
     if model_registry.rank != "0":
         raise RuntimeError("only rank 0 can call is_submit_model!")
@@ -206,6 +251,14 @@ def is_submit_model() -> bool:
 
 
 def log(key: str, value: Any, data_type: AnalyticsDataType, **kwargs):
+    """Logs a key value pair.
+
+    Args:
+        key (str): key string.
+        value (Any): value to log.
+        data_type (AnalyticsDataType): the data type of the "value".
+        kwargs: additional arguments to be included.
+    """
     model_registry = get_model_registry()
     if model_registry.rank != "0":
         raise RuntimeError("only rank 0 can call log!")
