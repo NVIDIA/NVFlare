@@ -19,7 +19,7 @@ We assume you followed the instructions [here](../../README.md#requirements)
 to install the NeMo framework and the NeMo-NVFlare package. 
 
 The example was tested using the [NeMo Docker container](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/nemo), 
-available with `docker pull nvcr.io/nvidia/nemo:23.02`.
+available with `docker pull nvcr.io/nvidia/nemo:23.06`.
 
 For downloading the pre-trained model, we use [git lfs](https://git-lfs.com).
 
