@@ -23,7 +23,7 @@ example that implements the :class:`cross site model evaluation workflow<nvflare
    model evaluation and ``config_fed_server.json`` is configured with :class:`ValidationJsonGenerator<nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator>`
    to write the results to a JSON file on the server.
 
-Example with Cross Site Model Evaluation / Federated Evaluation Workflow
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-See the :github_nvflare_link:`Hello Numpy Cross-Site Validation <examples/hello-world/hello-numpy-cross-val>` for an example application with
-the cross site model evaluation / federated evaluation workflow.
+Examples with Cross Site Model Evaluation / Federated Evaluation Workflow
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+See :github_nvflare_link:`Hello Numpy Cross-Site Validation <examples/hello-world/hello-numpy-cross-val>` and
+:github_nvflare_link:`Step-by-step Cross-site Evaluation <examples/hello-world/step-by-step/cifar10/cse/cse.ipynb>` for examples using server-controlled cross-site evaluation workflows.
