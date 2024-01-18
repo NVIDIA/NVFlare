@@ -97,7 +97,11 @@ class FLModelUtils:
         params = None
         meta = {}
 
-        try:
+        submit_model_name = shareable.get_header(AppConstants.SUBMIT_MODEL_NAME)
+        if submit_model_name:
+            # this only happens in cross-site eval right now
+            meta[MetaKey.SUBMIT_MODEL_NAME] = submit_model_name
+        else:
             dxo = from_shareable(shareable)
             meta = dict(dxo.meta)
             if dxo.data_kind == DataKind.METRICS:
@@ -115,10 +119,6 @@ class FLModelUtils:
 
                 if MetaKey.INITIAL_METRICS in meta:
                     metrics = meta[MetaKey.INITIAL_METRICS]
-        except:
-            # this only happens in cross-site eval right now
-            submit_model_name = shareable.get_header(AppConstants.SUBMIT_MODEL_NAME)
-            meta[MetaKey.SUBMIT_MODEL_NAME] = submit_model_name
 
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
         total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS, None)
