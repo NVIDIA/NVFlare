@@ -17,12 +17,15 @@ import re
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import SystemConfigs, SystemVarName
 from nvflare.apis.responder import Responder
+from nvflare.app_common.wf_comm.wf_communicator_spec import WFCommunicatorSpec
+from nvflare.app_common.wf_comm.wf_communicator import WFCommunicator
+from nvflare.fuel.message.data_bus import DataBus
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.private.fed_json_config import FedJsonConfigurator
 from nvflare.private.json_configer import ConfigContext, ConfigError
-
 from .server_runner import ServerRunnerConfig
 
 FL_PACKAGES = ["nvflare"]
@@ -30,15 +33,25 @@ FL_MODULES = ["apis", "app_common", "widgets", "app_opt"]
 
 
 class WorkFlow:
-    def __init__(self, id, responder: Responder):
+    def __init__(self, id, responder: Responder, strategy=None):
         """Workflow is a responder with ID.
 
         Args:
             id: identification
-            responder (Responder): A responder
+            responder (Responder): A responder or communicator
+            strategy: federated learning strategy. If None, the responder will implement the strategy
         """
         self.id = id
         self.responder = responder
+        self.strategy = strategy
+
+
+def enhance_workflow_config(element: dict):
+    if "strategy" in element:
+        strategy_config = element.get("strategy")
+        strategy_config["lazy_instantiate"] = True
+        element["strategy"] = strategy_config
+    return element
 
 
 class ServerJsonConfigurator(FedJsonConfigurator):
@@ -124,15 +137,31 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             return
 
         if re.search(r"^workflows\.#[0-9]+$", path):
-            workflow = self.authorize_and_build_component(element, config_ctx, node)
-            if not isinstance(workflow, Responder):
+            element = enhance_workflow_config(element)
+            component = self.authorize_and_build_component(element, config_ctx, node)
+            if isinstance(component, dict):
+                wf_config = component
+                communicator = wf_config.get("communicator", WFCommunicator())
+                if isinstance(communicator, WFCommunicatorSpec):
+                    strategy_config = wf_config.get("strategy")
+                    strategy_config["lazy_instantiate"] = False
+                    communicator.set_strategy_config(strategy_config)
+                    communicator.set_serializers(strategy_config.get("serializers"))
+                data_bus = DataBus()
+                data_bus.send_message("communicator", communicator)
+                responder = communicator
+            else:
+                responder = component
+
+            if not isinstance(responder, Responder):
                 raise ConfigError(
-                    '"workflow" must be a Responder or Controller object, but got {}'.format(type(workflow))
+                    '"workflow" must be a Responder or Controller or has a Responder object, but got {}'.format(
+                        type(responder))
                 )
 
             cid = element.get("id", None)
             if not cid:
-                cid = type(workflow).__name__
+                cid = type(responder).__name__
 
             if not isinstance(cid, str):
                 raise ConfigError('"id" must be str but got {}'.format(type(cid)))
@@ -143,9 +172,23 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             if cid in self.components:
                 raise ConfigError('duplicate component id "{}"'.format(cid))
 
-            self.workflows.append(WorkFlow(cid, workflow))
-            self.components[cid] = workflow
+            workflow = WorkFlow(cid, responder)
+            self.workflows.append(workflow)
+            self.components[cid] = responder
             return
+
+    def get_strategy(self, wf_config):
+        strategy_comp = wf_config.get("strategy")
+        strategy_comp["lazy_instantiate"] = False
+        if isinstance(strategy_comp, dict):
+            strategy = ComponentBuilder().build_component(strategy_comp)
+        else:
+            strategy = strategy_comp
+
+        if strategy is None:
+            raise ValueError("strategy should provided, but get None")
+
+        return strategy
 
     def _get_all_workflows_ids(self):
         ids = []

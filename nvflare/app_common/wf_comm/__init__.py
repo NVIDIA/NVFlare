@@ -12,12 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.app_common.workflows.wf_comm.wf_comm_api import WFCommAPI
-from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import WFCommAPISpec
-from nvflare.fuel.message.message_bus import MessageBus
+from nvflare.app_common.wf_comm.wf_comm_api_spec import WFCommAPISpec
+from nvflare.fuel.message.data_bus import DataBus
 
-message_bus = MessageBus()
+data_bus = DataBus()
 
 
 def get_wf_comm_api() -> WFCommAPISpec:
-    return message_bus.receive_messages("wf_comm_api")
+    return data_bus.receive_messages("wf_comm_api")

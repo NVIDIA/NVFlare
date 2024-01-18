@@ -60,7 +60,7 @@ def generate_log_message(fl_ctx: FLContext, msg: str):
     _task_name = "task_name"
     _task_id = "task_id"
     _rc = "peer_rc"
-    _wf = "wf"
+    _wf = "strategy"
 
     all_kvs = {_identity_: fl_ctx.get_identity_name()}
     my_run = fl_ctx.get_job_id()

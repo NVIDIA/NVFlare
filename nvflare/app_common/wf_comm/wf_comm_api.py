@@ -21,7 +21,7 @@ from typing import Dict, Optional, Tuple
 from nvflare.apis.controller_spec import SendOrder
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.app_common.abstract.fl_model import FLModel
-from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import (
+from nvflare.app_common.wf_comm.wf_comm_api_spec import (
     CMD,
     CMD_ABORT,
     CMD_STOP,
@@ -32,8 +32,8 @@ from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import (
     STATUS,
     WFCommAPISpec,
 )
-from nvflare.app_common.workflows.wf_comm.wf_queue import WFQueue
-from nvflare.fuel.message.message_bus import MessageBus
+from nvflare.app_common.wf_comm.wf_queue import WFQueue
+from nvflare.fuel.message.data_bus import DataBus
 
 
 class WFCommAPI(WFCommAPISpec):
@@ -42,8 +42,8 @@ class WFCommAPI(WFCommAPISpec):
         self.meta = {SITE_NAMES: []}
         self.logger = logging.getLogger(self.__class__.__name__)
 
-        message_bus = MessageBus()
-        self.ctrl = message_bus.receive_messages("controller")
+        message_bus = DataBus()
+        self.ctrl = message_bus.receive_messages("communicator")
         self.wf_queue: Optional[WFQueue] = message_bus.receive_messages("wf_queue")
         self._check_inputs()
 

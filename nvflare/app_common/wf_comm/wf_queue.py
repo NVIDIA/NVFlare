@@ -16,7 +16,7 @@
 from queue import Queue
 from typing import Dict, Optional
 
-from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import CMD, CMD_ABORT, CMD_STOP, PAYLOAD
+from nvflare.app_common.wf_comm.wf_comm_api_spec import CMD, CMD_ABORT, CMD_STOP, PAYLOAD
 
 
 class WFQueue:

@@ -12,10 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.impl.controller import Controller
+from nvflare.apis.signal import Signal
+from nvflare.app_common.wf_comm.base_wf_comm import BaseWFCommunicator
 
-class EventManager:
-    def __init__(self, message_bus):
-        self.message_bus = message_bus
 
-    def fire_event(self, event_name, event_data=None):
-        self.message_bus.publish(event_name, event_data)
+class WFCommunicator(BaseWFCommunicator, Controller):
+    def __init__(
+            self,
+            task_timeout: int = 0,
+            result_pull_interval: float = 0.2,
+    ):
+        super().__init__(task_name="train")
+
+    def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
+        self.start_workflow(abort_signal, fl_ctx)

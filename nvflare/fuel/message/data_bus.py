@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,37 +13,40 @@
 # limitations under the License.
 
 import threading
+from typing import Callable, List
 
 
-class MessageBus:
+class DataBus:
     _instance = None
     _lock = threading.Lock()
 
     def __new__(cls):
         with cls._lock:
             if not cls._instance:
-                cls._instance = super(MessageBus, cls).__new__(cls)
+                cls._instance = super(DataBus, cls).__new__(cls)
                 cls._instance.subscribers = {}
                 cls._instance.message_store = {}
         return cls._instance
 
-    def subscribe(self, topic, callback):
-        if topic not in self.subscribers:
-            self.subscribers[topic] = []
-        self.subscribers[topic].append(callback)
+    def subscribe(self, topics: List[str], callback: Callable):
+        if topics:
+            for topic in topics:
+                if topic not in self.subscribers:
+                    self.subscribers[topic] = []
+                self.subscribers[topic].append(callback)
 
-    def publish(self, topic, message):
-        if topic in self.subscribers:
-            for callback in self.subscribers[topic]:
-                callback(message)
+    def publish(self, topics: List[str], message: any):
+        if topics:
+            for topic in topics:
+                if topic in self.subscribers:
+                    for callback in self.subscribers[topic]:
+                        callback(message, topic)
 
     def send_message(self, key, message, topic: str = "default"):
         if topic not in self.message_store:
             self.message_store[topic] = {}
 
         self.message_store[topic][key] = message
-
-        self.publish(key, message)  # Notify subscribers about the new message
 
     def receive_messages(self, key, topic: str = "default"):
         return self.message_store.get(topic, {}).get(key)

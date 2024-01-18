@@ -67,23 +67,46 @@ class ComponentBuilder:
             return None
 
         class_args = config_dict.get("args", dict())
-        for k, v in class_args.items():
-            if isinstance(v, dict) and self.is_class_config(v):
-                # try to replace the arg with a component
-                try:
-                    t = self.build_component(v)
-                    class_args[k] = t
-                except Exception as e:
-                    raise ValueError(f"failed to instantiate class: {secure_format_exception(e)} ")
+        lazy_instantiate = config_dict.get("lazy_instantiate", False)
+        if not lazy_instantiate:
+            for k, v in class_args.items():
+                if isinstance(v, dict) and self.is_class_config(v):
+                    # try to replace the arg with a component
+                    try:
+                        t = self.build_component(v)
+                        class_args[k] = t
+                    except Exception as e:
+                        raise ValueError(f"failed to instantiate class: {secure_format_exception(e)} ")
 
-        class_path = self.get_class_path(config_dict)
+        class_path = None
+        if self.is_class_config(config_dict):
+            class_path = self.get_class_path(config_dict)
 
         # Handle the special case, if config pass in the class_attributes, use the user defined class attributes
         # parameters directly.
-        if "class_attributes" in class_args:
-            class_args = class_args["class_attributes"]
+        if class_path and not lazy_instantiate:
+            if "class_attributes" in class_args:
+                class_args = class_args["class_attributes"]
 
-        return instantiate_class(class_path, class_args)
+            return instantiate_class(class_path, class_args)
+        else:
+            comp_dict = {}
+            lazy_instantiate = config_dict.get("lazy_instantiate", False)
+            if not lazy_instantiate:
+                for k, v in config_dict.items():
+                    if isinstance(v, dict) and self.is_class_config(v):
+                        # try to replace the arg with a component
+                        try:
+                            t = self.build_component(v)
+                            comp_dict[k] = t
+                        except Exception as e:
+                            raise ValueError(f"failed to instantiate class: {secure_format_exception(e)} ")
+                    else:
+                        comp_dict[k] = v
+            else:
+                comp_dict = config_dict
+
+            return comp_dict
 
     def get_class_path(self, config_dict):
         if "path" in config_dict.keys():

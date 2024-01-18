@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,3 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from nvflare.fuel.message.data_bus import DataBus
+
+
+class EventManager:
+    def __init__(self, data_bus: DataBus):
+        self.data_bus = data_bus
+
+    def fire_event(self, event_name, event_data=None):
+        self.data_bus.publish([event_name], event_data)

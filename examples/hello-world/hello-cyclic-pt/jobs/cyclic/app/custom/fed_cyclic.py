@@ -22,8 +22,8 @@ from net import Net
 
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
-from nvflare.app_common.workflows import wf_comm as flare
-from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import (
+from nvflare.app_common import wf_comm as flare
+from nvflare.app_common.wf_comm.wf_comm_api_spec import (
     CURRENT_ROUND,
     DATA,
     MIN_RESPONSES,

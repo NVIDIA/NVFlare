@@ -15,13 +15,8 @@ import os
 
 import torch
 
-# from fedavg import FedAvg
-from fedavg_intime import FedAvg
-
+from fedavg import FedAvg
 from nvflare.app_common.abstract.fl_model import FLModel
-
-# to use in_time aggregate version of FedAvg
-# you change the import to 'from fedavg_intime import FedAvg'
 
 
 class PTFedAvg(FedAvg):
@@ -32,9 +27,8 @@ class PTFedAvg(FedAvg):
         output_path: str,
         start_round: int = 1,
         stop_cond: str = None,
-        model_selection_rule: str = None,
     ):
-        super().__init__(min_clients, num_rounds, output_path, start_round, stop_cond, model_selection_rule)
+        super().__init__(min_clients, num_rounds, output_path, start_round, stop_cond)
 
     def save_model(self, model: FLModel, file_path: str):
         if not file_path:

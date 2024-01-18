@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import time
-from abc import ABC, abstractmethod
+from abc import ABC
 from queue import Queue
 from typing import Dict, List, Tuple
 
@@ -27,9 +27,8 @@ from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
-from nvflare.app_common.workflows.error_handle_utils import ABORT_WHEN_IN_ERROR
-from nvflare.app_common.workflows.wf_comm.wf_comm_api import WFCommAPI
-from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import (
+from nvflare.app_common.wf_comm.wf_comm_api import WFCommAPI
+from nvflare.app_common.wf_comm.wf_comm_api_spec import (
     CMD,
     DATA,
     MIN_RESPONSES,
@@ -39,34 +38,29 @@ from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import (
     STATUS,
     TARGET_SITES,
 )
-from nvflare.app_common.workflows.wf_comm.wf_queue import WFQueue
-from nvflare.fuel.message.message_bus import MessageBus
-from nvflare.fuel.utils import class_utils
+from nvflare.app_common.wf_comm.wf_communicator_spec import WFCommunicatorSpec
+from nvflare.app_common.wf_comm.wf_queue import WFQueue
+from nvflare.app_common.workflows.error_handle_utils import ABORT_WHEN_IN_ERROR
+from nvflare.fuel.message.data_bus import DataBus
 from nvflare.security.logging import secure_format_traceback
 
 
-class BaseWFController(FLComponent, ControllerSpec, ABC):
+class BaseWFCommunicator(FLComponent, WFCommunicatorSpec, ControllerSpec, ABC):
     def __init__(
         self,
         task_name: str,
-        wf_class_path: str,
-        wf_args: Dict,
-        wf_fn_name: str = "run",
         task_timeout: int = 0,
         result_pull_interval: float = 0.2,
     ):
         super().__init__()
 
-        self.wf = None
+        self.strategy_fn_name = "run"
         self.clients = None
         self.task_timeout = task_timeout
         self.task_name = task_name
         self.result_pull_interval = result_pull_interval
-        self.wf_class_path = wf_class_path
-        self.wf_args = wf_args
-        self.wf_fn_name = wf_fn_name
         self.wf_queue: WFQueue = WFQueue(result_queue=Queue())
-        self.message_bus = MessageBus()
+        self.message_bus = DataBus()
         self.message_bus.send_message("wf_queue", self.wf_queue)
 
         self.engine = None
@@ -79,16 +73,9 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
         self.engine = self.fl_ctx.get_engine()
         self.clients = self.engine.get_clients()
         self.publish_comm_api()
-        self.wf = class_utils.instantiate_class(self.wf_class_path, self.wf_args)
-
         self.log_info(fl_ctx, "workflow controller started")
 
-    @abstractmethod
-    def publish_controller(self):
-        pass
-
     def publish_comm_api(self):
-        self.publish_controller()
         comm_api = WFCommAPI()
         comm_api.set_result_pull_interval(self.result_pull_interval)
         comm_api.meta.update({SITE_NAMES: self.get_site_names()})
@@ -97,7 +84,7 @@ class BaseWFController(FLComponent, ControllerSpec, ABC):
     def start_workflow(self, abort_signal, fl_ctx):
         try:
             fl_ctx.set_prop("abort_signal", abort_signal)
-            func = getattr(self.wf, self.wf_fn_name)
+            func = getattr(self.get_strategy(), self.strategy_fn_name)
             func()
             self.stop_msg_queue("job completed", fl_ctx)
 
