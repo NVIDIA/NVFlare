@@ -13,10 +13,19 @@ In our federated implementation, the LLM parameters stay fixed. Prompt encoder p
 <img src="./figs/fed_p-tuning.svg"  width="90%" height="90%">
 
 ## Dependencies
-We assume you followed the instructions [here](../../README.md#requirements) 
-to install the NeMo, NVFlare, and the NeMo-NVFlare package. 
+The example was tested with the [NeMo 23.06 container](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/nemo).
 
-The example was tested with the [NeMo 23.02 container](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/nemo).
+Start the docker container using 
+```
+DOCKER_IMAGE="nvcr.io/nvidia/nemo:23.06"
+docker run --gpus="device=all" --network=host --ipc=host -it --rm -v ${PWD}/../..:/nemo_nvflare -w /nemo_nvflare/examples/prompt_learning ${DOCKER_IMAGE} /bin/bash  
+```
+
+For easy development with NeMo, install NVFlare and mount the code inside this folder.
+```
+pip install nvflare==2.4.0rc7
+export PYTHONPATH=${PYTHONPATH}:/nemo_nvflare
+``` 
 
 ## Examples
 ### 1. Federated p-tuning using a 345 million parameter GPT model

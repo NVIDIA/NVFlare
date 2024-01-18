@@ -28,36 +28,10 @@ see [examples/supervised_fine_tuning](examples/supervised_fine_tuning/README.md)
 
 ## Requirements
 
-### Using docker
-For simplicity, we recommend using NVIDIA's docker containers that include all the requirements for running NeMo models.
-```
-docker pull nvcr.io/nvidia/nemo:23.02
-```
+### Using docker (Recommended)
+For simplicity, we recommend using NVIDIA's [NeMo docker containers](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/nemo) that include all the requirements for running NeMo models.
 
-### Install NeMo-NVFlare package
-
-<!---
-#### Pip 
-Install NeMo-NVFlare integration from [PyPI](https://pypi.org/):
-```
-pip install nemo_nvflare
-```
--->
-
-#### Mount the source code
-For easy development with NeMo, install NVFlare and mount the code inside the folder.
-```
-pip install nvflare>=2.3.0
-export PYTHONPATH=${PWD}
-```
-
-<!---
-#### From source
-To install the package from source code, use:
-```
-pip install -e .
-```
--->
+> Note: each example in this folder might require different container version. Please check their Readmes for details. 
 
 ### Installation in a virtual environment
 
@@ -68,4 +42,4 @@ and using it in [JupyterLab](../../examples/README.md#notebooks) for running
 the notebooks in the NeMo integration examples.
 
 Follow the NeMo installation steps [here](https://github.com/NVIDIA/NeMo#installation)
-before installing the NeMo-NVFlare package.
+before installing NVFlare and adding the source to the PYTHONPATH.
