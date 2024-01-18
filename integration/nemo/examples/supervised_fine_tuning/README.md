@@ -1,17 +1,14 @@
 ## Supervised Fine-tuning (SFT) with NeMo
 
 In this example, we utilize NeMo's [supervised fine-tuning](https://github.com/NVIDIA/NeMo-Megatron-Launcher#515-instruction-following-via-supervised-finetuning--sft-)
-feature to showcase how to fine-tune the whole model on supervised data for learning how to follow user specified instructions. 
+feature to showcase how to fine-tune the whole model on supervised data for learning how to follow user-specified instructions. 
 
 Due to the large model size of the LLM, we use NVFlare's streaming feature to transfer the model in chunks.
 
 ## Dependencies
-This example running a 1.3B GPT model requires considerable computational resources. For training 1.3B model, SFT needs ~24GB GPU memory using fp16 precision. Hence, to run three clients in parallel, we can compute the resource needed accordingly.
+This example of running a 1.3B GPT model requires considerable computational resources. For training 1.3B model, SFT needs ~24GB GPU memory using fp16 precision. Hence, we can compute the resources needed accordingly to run three clients in parallel.
 
 The example for a 3-client 1.3B GPT model experiment can be performed on either three 32 GB V100 GPUs, or one 80 GB A100 GPU.
-
-We assume you followed the instructions [here](../../README.md#requirements) 
-to install the NeMo, NVFlare, and the NeMo-NVFlare package. 
 
 The example was tested using the [NeMo Docker container](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/nemo), 
 available with `docker pull nvcr.io/nvidia/nemo:23.06`. 
@@ -29,7 +26,7 @@ pip install nvflare==2.4.0rc7
 export PYTHONPATH=${PYTHONPATH}:/workspace/nemo_nvflare
 ``` 
 
-For downloading the pre-trained model, we use [git lfs](https://git-lfs.com).
+To download the pre-trained model, we use [git lfs](https://git-lfs.com).
 Install it in the container with
 ```
 apt update
@@ -54,7 +51,7 @@ For SFT task, we will use three datasets:
 
 These three datasets contain instruction-following data in different formats under different settings: oasst1 features a tree structure for full conversations, while the other two are instruction(w/ or w/o context)-response pairs.
 
-In this example, we first preprocess them following the [NeMo SFT](https://github.com/NVIDIA/NeMo-Megatron-Launcher#5151-sft-data-formatting)'s instructions. The script converts the "Instruction", "Context" and "Response" fields (or their equivalents) into "Input" and "Output". The script also concatenates the "Instruction" and "Context" fields with a \n\n separator and randomizes the order in which they appear in the input to generate a new JSONL file.
+In this example, we first preprocess them following the [NeMo SFT](https://github.com/NVIDIA/NeMo-Megatron-Launcher#5151-sft-data-formatting) instructions. The script converts the "Instruction", "Context" and "Response" fields (or their equivalents) into "Input" and "Output". The script also concatenates the "Instruction" and "Context" fields with a \n\n separator and randomizes the order in which they appear in the input to generate a new JSONL file.
 
 #### 1. Download the datasets
 We download the datasets from HuggingFace:
@@ -80,7 +77,7 @@ python utils/preprocess_oasst1.py --training_file Data/oasst1/data/train-00000-o
 ```
 
 #### 3. Combine for centralized training
-We also generate a combined version for centralized training baseline:
+We also generate a combined version for a centralized training baseline:
 ```
 mkdir Data/Processed/combined
 python utils/combine_jsonl.py --file_list Data/Processed/alpaca/training.jsonl Data/Processed/dolly/training.jsonl Data/Processed/oasst1/training.jsonl --output_path Data/Processed/combined/training.jsonl
@@ -128,7 +125,7 @@ nvflare simulator jobs/gpt_sft_1.3B_fedavg -w workspace_simulator_fedavg -n 3 -g
 ```
 
 ### Use POC mode
-Alternatively, we can also NVFlare's [POC mode](https://nvflare.readthedocs.io/en/main/getting_started.html#setting-up-poc) to simulate 
+Alternatively, we can also use NVFlare's [POC mode](https://nvflare.readthedocs.io/en/main/getting_started.html#setting-up-poc) to simulate 
 
 #### 1. Local and Centralized SFT
 For single-site and centralized training experiments, we create the poc workspaces:
@@ -145,7 +142,7 @@ nvflare poc start -p admin@nvidia.com
 ```
 
 
-Next, copy the jobs to temp workspace.
+Next, copy the jobs to the temp workspace.
 ```
 cp -r jobs/gpt_sft_1.3B_* /tmp/nvflare/poc/example_project/prod_00/admin\@nvidia.com/transfer/
 ```
@@ -175,7 +172,7 @@ nvflare poc start -p admin@nvidia.com
 ```
 
 
-Next, simulate the federated SFT using FedAvg, similarly to single-client experiments
+Next, simulate the federated SFT using FedAvg, similarly to single-client experiments:
 ```
 cp -r jobs/gpt_sft_1.3B_fedavg /tmp/nvflare/poc/example_project/prod_00/admin\@nvidia.com/transfer/
 ```
@@ -221,7 +218,7 @@ As shown, FedAvg is able to generate a model with the best overall performance.
 We use NeMo's [inference script](https://github.com/NVIDIA/NeMo/blob/main/examples/nlp/language_modeling/megatron_gpt_eval.py) for generation task with models after SFT. 
 Below, we define some test examples to feed to the SFT model to see its predictions.
 
-First, we ask the model to generate answer to an open question "Tell me an interesting fact about space travel." 
+First, we ask the model to generate an answer to an open question: "Tell me an interesting fact about space travel." 
 ```
 ALPACA: The first human to orbit the Earth was Neil Armstrong, who flew on the Apollo 11 mission in 1969.'
 DOLLY: The International Space Station is the largest floating structure in the universe. It is made of steel and is about the size of a small house.
@@ -229,7 +226,7 @@ OASST: Sure! Here are a few interesting facts about space travel:\n\n1. Space tr
 COMBINED: The first human to set foot on the Moon was Neil Armstrong.
 FEDAVG: The first person to travel to space was Neil Armstrong, who set foot on the moon in 1969.
 ```
-Note that models mostly gives plausible answers, but ALPACA-finetuned model in fact gives misinformation, since it should be Yuri Gagarin who is the first human to orbit the Earth.
+Note that models mostly give plausible answers, but the ALPACA-finetuned model, in fact, gives misinformation since it should be Yuri Gagarin who is the first human to orbit the Earth.
 On the other hand, the model trained on the combined dataset, as well as the FL model trained with FedAvg, are able to generate a more accurate answer.
 
 Next, we ask the model to answer a question according to a given context, one instance from [SQuAD dataset](https://rajpurkar.github.io/SQuAD-explorer/).
@@ -246,6 +243,6 @@ OASST: The Denver Broncos defeated the Carolina Panthers 24–10 to win the Supe
 COMBINED: The Denver Broncos'
 FEDAVG: The AFC champion Denver Broncos defeated the NFC champion Carolina Panthers 24–10 to win the Super Bowl.'
 ```
-As we can see, the key word "Denver Broncos" is correctly captured by all models. However, ALPACA and FedAvg answers are a bit redundant, and OASST answer is not directly "to the question".
+As we can see, the keyword "Denver Broncos" is correctly captured by all models. However, ALPACA and FedAvg answers are a bit redundant, and OASST answer is not directly "to the question".
 
-Based on the above results, we can see that the models trained on the combined dataset and in a federated fashion are able to generate more stable and accurate answers.
+Based on the above results, we can see that the models trained on the combined dataset and in a federated fashion can generate more stable and accurate answers.
