@@ -13,18 +13,19 @@ In our federated implementation, the LLM parameters stay fixed. Prompt encoder p
 <img src="./figs/fed_p-tuning.svg"  width="90%" height="90%">
 
 ## Dependencies
-The example was tested with the [NeMo 23.06 container](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/nemo).
+The example was tested with the [NeMo 23.02 container](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/nemo).
+In the following, we assume this example folder of the container is mounted to `/workspace` and all downloading, etc. operations are based on this root path.
 
 Start the docker container using 
 ```
-DOCKER_IMAGE="nvcr.io/nvidia/nemo:23.06"
-docker run --gpus="device=all" --network=host --ipc=host -it --rm -v ${PWD}/../..:/nemo_nvflare -w /nemo_nvflare/examples/prompt_learning ${DOCKER_IMAGE} /bin/bash  
+DOCKER_IMAGE="nvcr.io/nvidia/nemo:23.02"
+docker run --gpus="device=all" --network=host --ipc=host -it --rm -v ${PWD}:/workspace -w /workspace ${DOCKER_IMAGE} /bin/bash
 ```
 
-For easy development with NeMo, install NVFlare and mount the code inside this folder.
+For easy experimentation with NeMo, install NVFlare and mount the code inside the [nemo_nvflare](./nemo_nvflare) folder.
 ```
 pip install nvflare==2.4.0rc7
-export PYTHONPATH=${PYTHONPATH}:/nemo_nvflare
+export PYTHONPATH=${PYTHONPATH}:/workspace/nemo_nvflare
 ``` 
 
 ## Examples

@@ -15,11 +15,11 @@ To run three clients in parallel, we require at least six GPUs with 64 GB memory
 (Ampere or later GPU architecture).
 The example was tested on 6xA100 GPUs with 80 GB each.
 
-We assume you followed the instructions [here](../../README.md#requirements) 
-to install the NeMo framework and the NeMo-NVFlare package. 
+We assume you followed the instructions [here](./README.md) 
+to install the NeMo framework and mount the required code. 
 
 The example was tested using the [NeMo Docker container](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/nemo), 
-available with `docker pull nvcr.io/nvidia/nemo:23.06`.
+available with `docker pull nvcr.io/nvidia/nemo:23.02`.
 
 For downloading the pre-trained model, we use [git lfs](https://git-lfs.com).
 

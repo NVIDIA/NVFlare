@@ -14,9 +14,27 @@ We assume you followed the instructions [here](../../README.md#requirements)
 to install the NeMo, NVFlare, and the NeMo-NVFlare package. 
 
 The example was tested using the [NeMo Docker container](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/nemo), 
-available with `docker pull nvcr.io/nvidia/nemo:23.06`. In the following, we assume the root folder of the container is mounted to `/workspace` and all downloading, etc. operations are based on this root path.
+available with `docker pull nvcr.io/nvidia/nemo:23.06`. 
+In the following, we assume this example folder of the container is mounted to `/workspace` and all downloading, etc. operations are based on this root path.
+
+Start the docker container using 
+```
+DOCKER_IMAGE="nvcr.io/nvidia/nemo:23.06"
+docker run --gpus="device=all" --network=host --ipc=host -it --rm -v ${PWD}:/workspace -w /workspace ${DOCKER_IMAGE} /bin/bash
+```
+
+For easy experimentation with NeMo, install NVFlare and mount the code inside the [nemo_nvflare](./nemo_nvflare) folder.
+```
+pip install nvflare==2.4.0rc7
+export PYTHONPATH=${PYTHONPATH}:/workspace/nemo_nvflare
+``` 
 
 For downloading the pre-trained model, we use [git lfs](https://git-lfs.com).
+Install it in the container with
+```
+apt update
+apt install git-lfs
+```
 
 ## Download the pre-trained LLM
 In this example, we use [Megatron-GPT 1.3B](https://huggingface.co/nvidia/nemo-megatron-gpt-1.3B), a transformer-based language model based on the GPT architecture.
@@ -34,7 +52,7 @@ For SFT task, we will use three datasets:
 - [databricks-dolly-15k](https://huggingface.co/datasets/databricks/databricks-dolly-15k)
 - [OpenAssistant Conversations](https://huggingface.co/datasets/OpenAssistant/oasst1)
 
-These three datasets contain instruction-following data in different formats under different settings: oasst1 features a tree struture for full conversations, while the other two are instruction(w/ or w/o context)-response pairs.
+These three datasets contain instruction-following data in different formats under different settings: oasst1 features a tree structure for full conversations, while the other two are instruction(w/ or w/o context)-response pairs.
 
 In this example, we first preprocess them following the [NeMo SFT](https://github.com/NVIDIA/NeMo-Megatron-Launcher#5151-sft-data-formatting)'s instructions. The script converts the "Instruction", "Context" and "Response" fields (or their equivalents) into "Input" and "Output". The script also concatenates the "Instruction" and "Context" fields with a \n\n separator and randomizes the order in which they appear in the input to generate a new JSONL file.
 

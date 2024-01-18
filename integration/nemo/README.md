@@ -1,30 +1,9 @@
 # NeMo Integration
 
-## Objective
-Execute [NVIDIA NeMo™](https://developer.nvidia.com/nemo) in federated environments.
-
-### Goals:
-
-Allow NeMo models to be trained and adapted with NVFlare.
-
-### Non-goals:
-
-n/a
-
-## Background
-NVIDIA NeMo™ is an end-to-end cloud-native enterprise framework for developers to 
+[NVIDIA NeMo™](https://developer.nvidia.com/nemo) is an end-to-end cloud-native enterprise framework for developers to 
 build, customize, and deploy generative AI models with billions of parameters.
 
-## Description
-NVFlare utilizes features from NeMo, such as prompt learning to run LLM tasks in federated environments.
-
-### Examples
-
-For an example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) with NeMo for prompt learning, 
-see [examples/prompt_learning](examples/prompt_learning/README.md) 
-
-For an example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) with NeMo for supervised fine-tuning (SFT), 
-see [examples/supervised_fine_tuning](examples/supervised_fine_tuning/README.md) 
+Here, we show how NVFlare utilizes features from NeMo to run LLM tasks in federated environments with several [examples](./examples).
 
 ## Requirements
 
