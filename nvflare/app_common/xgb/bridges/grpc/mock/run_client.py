@@ -1,7 +1,7 @@
 import time
 
-from nvflare.app_common.xgb.xgb.client import XGBClient
-import nvflare.app_common.xgb.proto.federated_pb2 as pb2
+from nvflare.app_common.xgb.bridges.grpc.client import XGBClient
+import nvflare.app_common.xgb.bridges.grpc.proto.federated_pb2 as pb2
 
 
 import argparse
@@ -12,6 +12,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--addr", "-a", type=str, help="server address", required=True)
     parser.add_argument("--rank", "-r", type=int, help="client rank", required=True)
+    parser.add_argument("--num_rounds", "-n", type=int, help="number of rounds", required=True)
 
     args = parser.parse_args()
     client = XGBClient(server_addr=args.addr)
@@ -21,7 +22,7 @@ def main():
     seq = 0
     total_time = 0
     total_reqs = 0
-    for i in range(10):
+    for i in range(args.num_rounds):
         print(f"Test round {i}")
         data = os.urandom(1000000)
 

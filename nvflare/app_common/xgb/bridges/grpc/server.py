@@ -1,5 +1,5 @@
-from nvflare.app_common.xgb.proto.federated_pb2_grpc import FederatedServicer, add_FederatedServicer_to_server
-import nvflare.app_common.xgb.proto.federated_pb2 as pb2
+from nvflare.app_common.xgb.bridges.grpc.proto.federated_pb2_grpc import FederatedServicer, add_FederatedServicer_to_server
+import nvflare.app_common.xgb.bridges.grpc.proto.federated_pb2 as pb2
 import grpc
 import concurrent.futures as futures
 from nvflare.fuel.utils.obj_utils import get_logger

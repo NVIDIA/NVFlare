@@ -1,8 +1,8 @@
 import argparse
 import logging
 
-from nvflare.app_common.xgb.xgb.server import XGBServer
-from nvflare.app_common.xgb.xgb.aggr_servicer import AggrServicer
+from nvflare.app_common.xgb.bridges.grpc.server import XGBServer
+from nvflare.app_common.xgb.bridges.grpc.mock.aggr_servicer import AggrServicer
 
 
 def main():

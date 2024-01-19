@@ -1,7 +1,7 @@
 import threading
 
-from nvflare.app_common.xgb.proto.federated_pb2_grpc import FederatedServicer
-import nvflare.app_common.xgb.proto.federated_pb2 as pb2
+from nvflare.app_common.xgb.bridges.grpc.proto.federated_pb2_grpc import FederatedServicer
+import nvflare.app_common.xgb.bridges.grpc.proto.federated_pb2 as pb2
 from nvflare.fuel.utils.obj_utils import get_logger
 
 
