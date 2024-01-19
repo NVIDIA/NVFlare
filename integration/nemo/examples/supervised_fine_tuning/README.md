@@ -23,7 +23,7 @@ docker run --gpus="device=all" --network=host --ipc=host -it --rm -v ${PWD}:/wor
 For easy experimentation with NeMo, install NVFlare and mount the code inside the [nemo_nvflare](./nemo_nvflare) folder.
 ```
 pip install nvflare==2.4.0rc7
-export PYTHONPATH=${PYTHONPATH}:/workspace/nemo_nvflare
+export PYTHONPATH=${PYTHONPATH}:/workspace
 ``` 
 
 To download the pre-trained model, we use [git lfs](https://git-lfs.com).
@@ -154,6 +154,11 @@ submit_job gpt_sft_1.3B_dolly
 submit_job gpt_sft_1.3B_oasst1
 submit_job gpt_sft_1.3B_combined
 ```
+During training, we can visualize the training process using TensorBoard.
+With FL simulator, use
+```
+tensorboard --logdir /workspace
+```
 
 #### 2. Federated SFT
 We use the [FedAvg](https://arxiv.org/abs/1602.05629) algorithm to perform SFT on the model in a federated scenario with 3 clients, each uses one of the three datasets. 
@@ -181,11 +186,14 @@ and to submit the FedAvg job
 submit_job gpt_sft_1.3B_fedavg
 ```
 
+During training, we can visualize the training process using TensorBoard.
+With the POC mode, use
+```
+tensorboard --logdir /tmp/nvflare/poc
+```
+
 ## Results
-During training, we can visualize the training process using TensorBoard
-```
-tensorboard --logdir /tmp/nvflare/nemo
-```
+
 In this scenario, all experiments utilize the same validation set, allowing for a direct comparison across all models. Note that we ran FL for 5 rounds, and asked NeMo to record the validation losses every few steps during local training.
 
 The validation losses for all experiments are shown below.

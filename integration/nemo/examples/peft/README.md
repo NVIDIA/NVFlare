@@ -25,7 +25,7 @@ docker run --gpus="device=all" --network=host --ipc=host -it --rm -v ${PWD}/../.
 For easy experimentation with NeMo, install NVFlare and mount the code inside the [nemo_nvflare](./nemo_nvflare) folder.
 ```
 pip install nvflare==2.4.0rc7
-export PYTHONPATH=${PYTHONPATH}:/workspace/nemo_nvflare
+export PYTHONPATH=${PYTHONPATH}:/workspace
 ```
 
 ## Examples
