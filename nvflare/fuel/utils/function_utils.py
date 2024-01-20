@@ -13,10 +13,19 @@
 # limitations under the License.
 import importlib
 import inspect
-from typing import Callable
+from typing import Callable, Tuple
 
 
-def find_task_fn(task_fn_path) -> Callable:
+def find_task_fn(task_fn_path: str) -> Callable:
+    """
+    Find and return a callable task function based on its module path.
+
+    Args:
+        task_fn_path (str): The path to the task function in the format "module_path.function_name".
+
+    Returns:
+        Callable: The callable task function.
+    """
     # Split the text by the last dot
     tokens = task_fn_path.rsplit(".", 1)
     module_name = tokens[0]
@@ -26,7 +35,19 @@ def find_task_fn(task_fn_path) -> Callable:
     return fn
 
 
-def require_arguments(func):
+def require_arguments(func: Callable) -> Tuple[bool, int, int]:
+    """
+    Check if a function requires arguments and provide information about its signature.
+
+    Args:
+        func (Callable): The function to be checked.
+
+    Returns:
+        Tuple[bool, int, int]: A tuple containing three elements:
+            1. A boolean indicating whether the function requires any arguments.
+            2. The total number of parameters in the function's signature.
+            3. The number of parameters with default values (i.e., optional parameters).
+    """
     signature = inspect.signature(func)
     parameters = signature.parameters
     req = any(p.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD for p in parameters.values())
