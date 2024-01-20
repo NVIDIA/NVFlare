@@ -57,7 +57,7 @@ class ServerSideController(Controller):
         self,
         num_rounds: int,
         start_round: int = 0,
-        task_name_prefix: str = "strategy",
+        task_name_prefix: str = "wf",
         configure_task_timeout=Constant.CONFIG_TASK_TIMEOUT,
         end_workflow_timeout=Constant.END_WORKFLOW_TIMEOUT,
         start_task_timeout=Constant.START_TASK_TIMEOUT,

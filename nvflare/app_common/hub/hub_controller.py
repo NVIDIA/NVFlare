@@ -134,7 +134,7 @@ class BcastOperator(OperatorSpec, FLComponent):
 
 class RelayOperator(OperatorSpec, FLComponent):
 
-    _PROP_LAST_RESULT = "last_model"
+    _PROP_LAST_RESULT = "last_result"
     _PROP_SHAREABLE_GEN = "shareable_generator"
 
     def __init__(self):
