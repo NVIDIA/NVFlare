@@ -13,16 +13,10 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, List, Optional
 
-from nvflare.app_common.abstract.fl_model import FLModel
-
-CMD = "COMMAND"
-CMD_STOP = "STOP"
-CMD_ABORT = "ABORT"
-PAYLOAD = "PAYLOAD"
-SEND_ORDER = "SEND_ORDER"
 SITE_NAMES = "SITE_NAMES"
+TASK_NAME = "TASK_NAME"
 
 # note same as app_constant constant (todo: we only need one constant definition)
 MIN_RESPONSES = "min_responses"
@@ -41,59 +35,69 @@ TARGET_SITES = "target_sizes"
 
 class WFCommAPISpec(ABC):
     @abstractmethod
-    def broadcast_and_wait(self, msg_payload: Dict):
+    def broadcast_and_wait(
+        self,
+        task_name: str,
+        min_responses: int,
+        data: any,
+        meta: dict = None,
+        targets: Optional[List[str]] = None,
+        callback: Callable = None,
+    ):
         pass
 
     @abstractmethod
-    def send_and_wait(self, msg_payload: Dict):
+    def send_and_wait(
+        self,
+        task_name: str,
+        min_responses: int,
+        data: any,
+        meta: dict = None,
+        targets: Optional[List[str]] = None,
+        send_order: str = "sequential",
+        callback: Callable = None,
+    ):
         pass
 
     @abstractmethod
-    def relay_and_wait(self, msg_payload: Dict):
+    def relay_and_wait(
+        self,
+        task_name: str,
+        min_responses: int,
+        data: any,
+        meta: dict = None,
+        relay_order: str = "sequential",
+        targets: Optional[List[str]] = None,
+        callback: Callable = None,
+    ):
         pass
 
     @abstractmethod
-    def broadcast(self, msg_payload: Dict):
+    def broadcast(self, task_name: str, data: any, meta: dict = None, targets: Optional[List[str]] = None):
         pass
 
     @abstractmethod
-    def send(self, msg_payload: Dict):
+    def send(
+        self,
+        task_name: str,
+        data: any,
+        meta: dict = None,
+        send_order: str = "sequential",
+        targets: Optional[str] = None,
+    ):
         pass
 
     @abstractmethod
-    def relay(self, msg_payload: Dict):
+    def relay(
+        self,
+        task_name: str,
+        data: any,
+        meta: dict = None,
+        relay_order: str = "sequential",
+        targets: Optional[List[str]] = None,
+    ):
         pass
 
     @abstractmethod
     def get_site_names(self) -> List[str]:
-        pass
-
-    @abstractmethod
-    def wait_all(self, min_responses: int, resp_max_wait_time: Optional[float]) -> Dict[str, Dict[str, FLModel]]:
-        """
-        wait for result
-        Args:
-            min_responses: if min_responses or more sites are received, then the result will return
-            resp_max_wait_time: the max wait time after the 1st site response is received. This is used to deal
-            with really late site result arrival, instead of waiting forever, we set a timeout.
-            if resp_max_wait_time is None, it will not timeout
-
-        Returns:
-            all results with min_response
-        """
-        pass
-
-    @abstractmethod
-    def wait_one(self, resp_max_wait_time: Optional[float] = None) -> Tuple[str, str, FLModel]:
-        """
-        wait for result
-        Args:
-            resp_max_wait_time: the max wait time after the 1st site response is received. This is used to deal
-            with really late site result arrival, instead of waiting forever, we set a timeout.
-            if resp_max_wait_time is None, it will not timeout
-
-        Returns:
-            Tuple of task_name, site_name, FLModel
-        """
-
         pass

@@ -19,12 +19,8 @@ from nvflare.app_common.wf_comm.base_wf_comm import BaseWFCommunicator
 
 
 class WFCommunicator(BaseWFCommunicator, Controller):
-    def __init__(
-            self,
-            task_timeout: int = 0,
-            result_pull_interval: float = 0.2,
-    ):
-        super().__init__(task_name="train")
+    def __init__(self):
+        super().__init__()
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         self.start_workflow(abort_signal, fl_ctx)

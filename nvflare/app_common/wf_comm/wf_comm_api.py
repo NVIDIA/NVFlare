@@ -14,167 +14,169 @@
 
 
 import logging
-import time
-from queue import Empty
-from typing import Dict, Optional, Tuple
+import threading
+from typing import Callable, Dict, List, Optional, Union
 
 from nvflare.apis.controller_spec import SendOrder
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.wf_comm.wf_comm_api_spec import (
-    CMD,
-    CMD_ABORT,
-    CMD_STOP,
-    PAYLOAD,
+    CURRENT_ROUND,
+    DATA,
+    MIN_RESPONSES,
+    NUM_ROUNDS,
+    RESP_MAX_WAIT_TIME,
     RESULT,
-    SEND_ORDER,
     SITE_NAMES,
+    START_ROUND,
     STATUS,
+    TARGET_SITES,
+    TASK_NAME,
     WFCommAPISpec,
 )
-from nvflare.app_common.wf_comm.wf_queue import WFQueue
 from nvflare.fuel.message.data_bus import DataBus
+from nvflare.fuel.message.event_manager import EventManager
 
 
 class WFCommAPI(WFCommAPISpec):
     def __init__(self):
-        self.result_pull_interval = 2
         self.meta = {SITE_NAMES: []}
         self.logger = logging.getLogger(self.__class__.__name__)
 
-        message_bus = DataBus()
-        self.ctrl = message_bus.receive_messages("communicator")
-        self.wf_queue: Optional[WFQueue] = message_bus.receive_messages("wf_queue")
-        self._check_inputs()
+        self.task_results = {}
+        self.task_result_lock = threading.Lock()
 
-    def set_result_pull_interval(self, pull_interval: float):
-        self.result_pull_interval = pull_interval
+        data_bus = DataBus()
+        data_bus.subscribe(topics=["TASK_RESULT"], callback=self.result_callback)
+
+        self.event_manager = EventManager(data_bus)
+        self.ctrl = data_bus.receive_messages("communicator")
+        self._check_inputs()
 
     def get_site_names(self):
         return self.meta.get(SITE_NAMES)
 
-    def broadcast_and_wait(self, msg_payload: Dict):
-        self.ctrl.broadcast_to_peers_and_wait(msg_payload)
-        return self._get_results()
+    def broadcast_and_wait(
+        self,
+        task_name: str,
+        min_responses: int,
+        data: any,
+        meta: dict = None,
+        targets: Optional[List[str]] = None,
+        callback: Callable = None,
+    ) -> Union[int, Dict[str, Dict[str, FLModel]]]:
 
-    def broadcast(self, msg_payload):
+        meta = {} if meta is None else meta
+        msg_payload = self._prepare_input_payload(task_name, data, meta, min_responses, targets)
+        self.register_callback(callback)
+
+        self.ctrl.broadcast_to_peers_and_wait(msg_payload)
+
+        if callback is None:
+            return self._get_results(task_name)
+
+    def register_callback(self, callback):
+        if callback:
+            self.event_manager.data_bus.subscribe(["POST_PROCESS_RESULT"], callback)
+
+    def send_and_wait(
+        self,
+        task_name: str,
+        min_responses: int,
+        data: any,
+        meta: dict = None,
+        send_order: SendOrder = SendOrder.SEQUENTIAL,
+        targets: Optional[List[str]] = None,
+        callback: Callable = None,
+    ):
+        meta = {} if meta is None else meta
+        msg_payload = self._prepare_input_payload(task_name, data, meta, min_responses, targets)
+
+        if callback is not None:
+            self.register_callback(callback)
+
+        self.ctrl.send_to_peers_and_wait(msg_payload, send_order)
+
+        if callback is not None:
+            return self._get_results(task_name)
+
+    def relay_and_wait(
+        self,
+        task_name: str,
+        min_responses: int,
+        data: any,
+        meta: dict = None,
+        relay_order: str = "sequential",
+        targets: Optional[List[str]] = None,
+        callback: Callable = None,
+    ) -> Dict[str, Dict[str, FLModel]]:
+
+        meta = {} if meta is None else meta
+        msg_payload = self._prepare_input_payload(task_name, data, meta, min_responses, targets)
+
+        self.register_callback(callback)
+
+        self.ctrl.relay_to_peers_and_wait(msg_payload, SendOrder(relay_order))
+
+        if callback is None:
+            return self._get_results(task_name)
+
+        return self._get_results(task_name)
+
+    def broadcast(self, task_name: str, data: any, meta: dict = None, targets: Optional[List[str]] = None):
+        msg_payload = self._prepare_input_payload(task_name, data, meta, min_responses=0, targets=targets)
         self.ctrl.broadcast_to_peers(pay_load=msg_payload)
 
-    def send(self, msg_payload: Dict):
-        send_order_name = msg_payload.get(SEND_ORDER)
-        send_order = SendOrder.SEQUENTIAL if not send_order_name else SendOrder(send_order_name)
+    def send(
+        self,
+        task_name: str,
+        data: any,
+        meta: dict = None,
+        send_order: str = "sequential",
+        targets: Optional[List[str]] = None,
+    ):
+        msg_payload = self._prepare_input_payload(task_name, data, meta, min_responses=0, targets=targets)
         self.ctrl.send_to_peers(pay_load=msg_payload, send_order=send_order)
 
-    def send_and_wait(self, msg_payload: Dict):
-        send_order_name = msg_payload.get(SEND_ORDER)
-        send_order = SendOrder.SEQUENTIAL if not send_order_name else SendOrder(send_order_name)
-        self.ctrl.send_to_peers_and_wait(msg_payload, send_order=send_order)
-        return self._get_results()
-
-    def relay_and_wait(self, msg_payload: Dict):
-        send_order_name = msg_payload.get(SEND_ORDER)
-        send_order = SendOrder.SEQUENTIAL if not send_order_name else SendOrder(send_order_name)
-        self.ctrl.relay_to_peers_and_wait(msg_payload, send_order)
-        return self._get_results()
-
-    def relay(self, msg_payload: Dict):
-        send_order_name = msg_payload.get(SEND_ORDER)
-        send_order = SendOrder.SEQUENTIAL if not send_order_name else SendOrder(send_order_name)
+    def relay(
+        self,
+        task_name: str,
+        data: any,
+        meta: dict = None,
+        send_order: str = "sequential",
+        targets: Optional[List[str]] = None,
+    ):
+        msg_payload = self._prepare_input_payload(task_name, data, meta, min_responses=0, targets=targets)
         self.ctrl.relay_to_peers(msg_payload, send_order)
 
-    def wait_all(self, min_responses: int, resp_max_wait_time: Optional[float] = None) -> Dict[str, Dict[str, FLModel]]:
-        acc_size = 0
-        start = None
-        while True:
-            if self.wf_queue.has_result():
-                start = time.time() if start is None else start
-                items_size = self.wf_queue.result_size()
-                acc_size = items_size + acc_size
-                time_waited = time.time() - start
-                self.logger.info(
-                    f"\n\n {items_size=}, {acc_size=}, {min_responses=}, {time_waited=}, {resp_max_wait_time=}"
-                )
-                if resp_max_wait_time is not None:
-                    if time_waited < resp_max_wait_time and acc_size >= min_responses:
-                        return self._get_results()
-                    else:
-                        if time_waited < resp_max_wait_time:
-                            self.logger.info(f" wait for more results, sleep {self.result_pull_interval} sec")
-                            time.sleep(self.result_pull_interval)
-                        else:
-                            msg = f"not enough responses {acc_size} compare with min responses requirement {min_responses} within the max allowed time {resp_max_wait_time} seconds"
-                            self.logger.info(msg)
-                            raise RuntimeError(msg)
-                else:
-                    if acc_size >= min_responses:
-                        return self._get_results()
-                    else:
-                        self.logger.info(f" wait for more results, sleep {self.result_pull_interval} sec")
-                        time.sleep(self.result_pull_interval)
-            else:
-                time.sleep(self.result_pull_interval)
-
-    def wait_one(self, resp_max_wait_time: Optional[float] = None) -> Tuple[str, str, FLModel]:
-        try:
-            item = self.wf_queue.get_result(resp_max_wait_time)
-            if item:
-                return self._process_one_result(item)
-        except Empty as e:
-            raise RuntimeError(f"failed to get result within the given timeout {resp_max_wait_time} sec.")
-
-    def _process_one_result(self, item) -> Tuple[str, str, FLModel]:
-        cmd = item.get(CMD, None)
-
-        if cmd is None:
-            msg = f"get None command, expecting {CMD} key'"
-            self.logger.error(msg)
-            raise RuntimeError(msg)
-
-        elif cmd == CMD_STOP or cmd == CMD_ABORT:
-            msg = item.get(PAYLOAD)
-            self.logger.info(f"receive {cmd} command, {msg}")
-            raise RuntimeError(msg)
-
-        elif cmd == RESULT:
-            payload = item.get(PAYLOAD)
-            task_result = None
-            task, site_result = next(iter(payload.items()))
-            self._check_result(site_result)
-            rc = site_result.get(STATUS)
-            if rc == ReturnCode.OK:
-                result = site_result.get(RESULT, {})
-                site_name, data = next(iter(result.items()))
-                task_result = (task, site_name, data)
-            else:
-                msg = f"task {task} failed with '{rc}' status"
-                self.wf_queue.ask_abort(msg)
-                raise RuntimeError(msg)
-
-            return task_result
+    def _process_one_result(self, site_result) -> Dict[str, FLModel]:
+        self._check_result(site_result)
+        rc = site_result.get(STATUS)
+        if rc == ReturnCode.OK:
+            result = site_result.get(RESULT, {})
+            site_name, data = next(iter(result.items()))
+            task_result = {site_name: data}
         else:
-            raise RuntimeError(f"Unknown command {cmd}")
+            msg = f"task failed with '{rc}' status"
+            raise RuntimeError(msg)
 
-    def _get_results(self) -> Dict[str, Dict[str, FLModel]]:
-        items_size = self.wf_queue.result_size()
+        return task_result
+
+    def _get_results(self, task_name) -> Dict[str, Dict[str, FLModel]]:
         batch_result: Dict = {}
-        for i in range(items_size):
-            item = self.wf_queue.get_result()
-            task, site_name, data = self._process_one_result(item)
-            task_result = batch_result.get(task, {})
-            task_result.update({site_name: data})
-            batch_result[task] = task_result
-        return batch_result
+        site_results = self.task_results.get(task_name)
 
-    def wait_for_responses(self, items_size, min_responses, resp_max_wait_time):
-        start = time.time()
-        while items_size < min_responses:
-            time_waited = time.time() - start
-            if time_waited < resp_max_wait_time:
-                time.sleep(1)
-                items_size = self.wf_queue.result_size()
-            else:
-                break
-        return items_size
+        for i in range(len(site_results)):
+            item = site_results[i]
+            one_result = self._process_one_result(item)
+            task_result = batch_result.get(task_name, {})
+            task_result.update(one_result)
+            batch_result[task_name] = task_result
+
+        with self.task_result_lock:
+            self.task_results[task_name] = []
+
+        return batch_result
 
     def _check_result(self, site_result):
 
@@ -182,7 +184,7 @@ class WFCommAPI(WFCommAPISpec):
             raise RuntimeError("expecting site_result to be dictionary, but get None")
 
         if not isinstance(site_result, dict):
-            raise RuntimeError(f"expecting site_result to be dictionary, but get '{type(site_result)}'")
+            raise RuntimeError(f"expecting site_result to be dictionary, but get '{type(site_result)}', {site_result=}")
 
         keys = [RESULT, STATUS]
         all_keys_present = all(key in site_result for key in keys)
@@ -190,7 +192,41 @@ class WFCommAPI(WFCommAPISpec):
             raise RuntimeError(f"expecting all keys {keys} present in site_result")
 
     def _check_inputs(self):
-        if self.wf_queue is None:
-            raise RuntimeError("missing WFQueue")
         if self.ctrl is None:
             raise RuntimeError("missing Controller")
+
+    def result_callback(self, data, topic):
+        if topic == "TASK_RESULT":
+            task, site_result = next(iter(data.items()))
+            # fire event with process data
+            one_result = self._process_one_result(site_result)
+            self.event_manager.fire_event("POST_PROCESS_RESULT", {task: one_result})
+
+            site_task_results = self.task_results.get(task, [])
+            site_task_results.append(site_result)
+            self.task_results[task] = site_task_results
+
+    def _prepare_input_payload(self, task_name, data, meta, min_responses, targets):
+
+        if data and isinstance(data, FLModel):
+            start_round = data.start_round
+            current_round = data.current_round
+            num_rounds = data.total_rounds
+        else:
+            start_round = meta.get(START_ROUND, 0)
+            current_round = meta.get(CURRENT_ROUND, 0)
+            num_rounds = meta.get(NUM_ROUNDS, 1)
+
+        resp_max_wait_time = meta.get(RESP_MAX_WAIT_TIME, 5)
+
+        msg_payload = {
+            TASK_NAME: task_name,
+            MIN_RESPONSES: min_responses,
+            RESP_MAX_WAIT_TIME: resp_max_wait_time,
+            CURRENT_ROUND: current_round,
+            NUM_ROUNDS: num_rounds,
+            START_ROUND: start_round,
+            DATA: data,
+            TARGET_SITES: targets,
+        }
+        return msg_payload

@@ -17,8 +17,8 @@ import re
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import SystemConfigs, SystemVarName
 from nvflare.apis.responder import Responder
-from nvflare.app_common.wf_comm.wf_communicator_spec import WFCommunicatorSpec
 from nvflare.app_common.wf_comm.wf_communicator import WFCommunicator
+from nvflare.app_common.wf_comm.wf_communicator_spec import WFCommunicatorSpec
 from nvflare.fuel.message.data_bus import DataBus
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.component_builder import ComponentBuilder
@@ -26,6 +26,7 @@ from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.private.fed_json_config import FedJsonConfigurator
 from nvflare.private.json_configer import ConfigContext, ConfigError
+
 from .server_runner import ServerRunnerConfig
 
 FL_PACKAGES = ["nvflare"]
@@ -141,12 +142,15 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             component = self.authorize_and_build_component(element, config_ctx, node)
             if isinstance(component, dict):
                 wf_config = component
-                communicator = wf_config.get("communicator", WFCommunicator())
+                communicator = wf_config.get("communicator")
+                if communicator is None:
+                    communicator = WFCommunicator()
+
                 if isinstance(communicator, WFCommunicatorSpec):
                     strategy_config = wf_config.get("strategy")
                     strategy_config["lazy_instantiate"] = False
                     communicator.set_strategy_config(strategy_config)
-                    communicator.set_serializers(strategy_config.get("serializers"))
+                    communicator.register_serializers(strategy_config.get("serializers"))
                 data_bus = DataBus()
                 data_bus.send_message("communicator", communicator)
                 responder = communicator
@@ -156,7 +160,8 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             if not isinstance(responder, Responder):
                 raise ConfigError(
                     '"workflow" must be a Responder or Controller or has a Responder object, but got {}'.format(
-                        type(responder))
+                        type(responder)
+                    )
                 )
 
             cid = element.get("id", None)

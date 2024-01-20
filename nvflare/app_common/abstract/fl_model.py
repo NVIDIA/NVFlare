@@ -45,6 +45,7 @@ class FLModel:
         params: Any = None,
         optimizer_params: Any = None,
         metrics: Optional[Dict] = None,
+        start_round: int = 0,
         current_round: Optional[int] = None,
         total_rounds: Optional[int] = None,
         meta: Optional[Dict] = None,
@@ -79,6 +80,7 @@ class FLModel:
         self.params = params
         self.optimizer_params = optimizer_params
         self.metrics = metrics
+        self.start_round = start_round
         self.current_round = current_round
         self.total_rounds = total_rounds
 
