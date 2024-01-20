@@ -29,7 +29,14 @@ from multiprocessing.connection import Client
 from urllib.parse import urlparse
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import JobConstants, MachineStatus, RunnerTask, RunProcessKey, WorkspaceConstants
+from nvflare.apis.fl_constant import (
+    FLMetaKey,
+    JobConstants,
+    MachineStatus,
+    RunnerTask,
+    RunProcessKey,
+    WorkspaceConstants,
+)
 from nvflare.apis.job_def import ALL_SITES, JobMetaKey
 from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
 from nvflare.apis.workspace import Workspace
@@ -344,15 +351,34 @@ class SimulatorRunner(FLComponent):
             process = Process(target=self.run_processs, args=(return_dict,))
             process.start()
             process.join()
-            if process.exitcode == -9:
-                run_status = process.exitcode
-            else:
-                run_status = return_dict["run_status"]
+            run_status = self._get_return_code(return_dict, process, self.workspace)
             return run_status
         except KeyboardInterrupt:
             self.logger.info("KeyboardInterrupt, terminate all the child processes.")
             kill_child_processes(os.getpid())
             return -9
+
+    def _get_return_code(self, return_dict, process, workspace):
+        return_code = return_dict.get("run_status")
+        if return_code:
+            self.logger.info(f"process run_status: {return_code}")
+        else:
+            rc_file = os.path.join(workspace, FLMetaKey.PROCESS_RC_FILE)
+            if os.path.exists(rc_file):
+                try:
+                    with open(rc_file, "r") as f:
+                        return_code = int(f.readline())
+                    os.remove(rc_file)
+                    self.logger.info(f"return_code from process_rc_file: {return_code}")
+                except Exception:
+                    self.logger.warning(
+                        f"Could not get the return_code from {rc_file}, Return the RC from the process:{process.pid}"
+                    )
+                    return_code = process.exitcode
+            else:
+                return_code = process.exitcode
+                self.logger.info(f"return_code from process.exitcode: {return_code}")
+        return return_code
 
     def run_processs(self, return_dict):
         # run_status = self.simulator_run_main()
@@ -483,6 +509,8 @@ class SimulatorClientRunner(FLComponent):
         self.build_ctx = build_ctx
         self.kv_list = parse_vars(args.set)
 
+        self.end_run_clients = []
+
     def run(self, gpu):
         try:
             # self.create_clients()
@@ -495,6 +523,13 @@ class SimulatorClientRunner(FLComponent):
 
             # wait for the server and client running thread to finish.
             executor.shutdown()
+
+            for client in self.federated_clients:
+                if client.client_name not in self.end_run_clients:
+                    self.do_one_task(
+                        client, self.args.threads, gpu, lock, timeout=timeout, task_name=RunnerTask.END_RUN
+                    )
+
         except Exception as e:
             self.logger.error(f"SimulatorClientRunner run error: {secure_format_exception(e)}")
         finally:
@@ -528,15 +563,16 @@ class SimulatorClientRunner(FLComponent):
                         client = client_to_run
 
                 client.simulate_running = True
-                stop_run, client_to_run = self.do_one_task(client, num_of_threads, gpu, lock, timeout=timeout)
+                stop_run, client_to_run, end_run_client = self.do_one_task(
+                    client, num_of_threads, gpu, lock, timeout=timeout
+                )
+                if end_run_client:
+                    with lock:
+                        self.end_run_clients.append(end_run_client)
 
                 client.simulate_running = False
         except Exception as e:
             self.logger.error(f"run_client_thread error: {secure_format_exception(e)}")
-        finally:
-            if rank == 0:
-                for client in self.federated_clients:
-                    self.do_one_task(client, num_of_threads, gpu, lock, timeout=timeout, task_name=RunnerTask.END_RUN)
 
     def do_one_task(self, client, num_of_threads, gpu, lock, timeout=60.0, task_name=RunnerTask.TASK_EXEC):
         open_port = get_open_ports(1)[0]
@@ -581,8 +617,11 @@ class SimulatorClientRunner(FLComponent):
         }
         conn.send(data)
 
+        end_run_client = None
         while True:
             stop_run = conn.recv()
+            if stop_run:
+                end_run_client = conn.recv()
 
             with lock:
                 if num_of_threads != len(self.federated_clients):
@@ -595,7 +634,7 @@ class SimulatorClientRunner(FLComponent):
                 conn.send(False)
                 break
 
-        return stop_run, next_client
+        return stop_run, next_client, end_run_client
 
     def _create_connection(self, open_port, timeout=60.0):
         conn = None

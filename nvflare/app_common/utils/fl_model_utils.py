@@ -55,8 +55,9 @@ class FLModelUtils:
             raise ValueError("FLModel without params and metrics is NOT supported.")
         elif fl_model.params is not None:
             if fl_model.params_type is None:
-                raise ValueError(f"Invalid ParamsType: ({fl_model.params_type}).")
-            data_kind = params_type_to_data_kind.get(fl_model.params_type)
+                fl_model.params_type = ParamsType.FULL
+
+            data_kind = params_type_to_data_kind.get(fl_model.params_type.value)
             if data_kind is None:
                 raise ValueError(f"Invalid ParamsType: ({fl_model.params_type}).")
 
@@ -96,24 +97,28 @@ class FLModelUtils:
         params = None
         meta = {}
 
-        try:
+        submit_model_name = shareable.get_header(AppConstants.SUBMIT_MODEL_NAME)
+        if submit_model_name:
+            # this only happens in cross-site eval right now
+            meta[MetaKey.SUBMIT_MODEL_NAME] = submit_model_name
+        else:
             dxo = from_shareable(shareable)
             meta = dict(dxo.meta)
             if dxo.data_kind == DataKind.METRICS:
                 metrics = dxo.data
             else:
                 params_type = data_kind_to_params_type.get(dxo.data_kind)
+                params = dxo.data
                 if params_type is None:
-                    raise ValueError(f"Invalid shareable with dxo that has data kind: {dxo.data_kind}")
+                    if params is None:
+                        raise ValueError(f"Invalid shareable with dxo that has data kind: {dxo.data_kind}")
+                    else:
+                        params_type = ParamsType.FULL
+
                 params_type = ParamsType(params_type)
 
-                params = dxo.data
                 if MetaKey.INITIAL_METRICS in meta:
                     metrics = meta[MetaKey.INITIAL_METRICS]
-        except:
-            # this only happens in cross-site eval right now
-            submit_model_name = shareable.get_header(AppConstants.SUBMIT_MODEL_NAME)
-            meta[MetaKey.SUBMIT_MODEL_NAME] = submit_model_name
 
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
         total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS, None)
@@ -197,14 +202,15 @@ class FLModelUtils:
     @staticmethod
     def update_model(model: FLModel, model_update: FLModel, replace_meta: bool = True) -> FLModel:
         if model.params_type != ParamsType.FULL:
-            raise RuntimeError(
-                f"params_type {model_update.params_type} of `model` not supported! Expected `ParamsType.FULL`."
-            )
+            raise RuntimeError(f"params_type {model.params_type} of `model` not supported! Expected `ParamsType.FULL`.")
 
         if replace_meta:
             model.meta = model_update.meta
         else:
             model.meta.update(model_update.meta)
+
+        model.metrics = model_update.metrics
+
         if model_update.params_type == ParamsType.FULL:
             model.params = model_update.params
         elif model_update.params_type == ParamsType.DIFF:

@@ -42,6 +42,7 @@ class LauncherExecutor(TaskExchanger):
         launch_timeout: Optional[float] = None,
         task_wait_timeout: Optional[float] = None,
         last_result_transfer_timeout: float = 300.0,
+        external_execution_wait: float = 5.0,
         peer_read_timeout: Optional[float] = None,
         monitor_interval: float = 1.0,
         read_interval: float = 0.1,
@@ -95,6 +96,7 @@ class LauncherExecutor(TaskExchanger):
         self._launcher_finish = False
         self._launcher_finish_time = None
         self._last_result_transfer_timeout = last_result_transfer_timeout
+        self._external_execution_wait = external_execution_wait
         self._received_result = Event()
         self._job_end = False
 
@@ -149,7 +151,7 @@ class LauncherExecutor(TaskExchanger):
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
         if self._from_nvflare_converter is not None:
-            shareable = self._from_nvflare_converter.process(shareable, fl_ctx)
+            shareable = self._from_nvflare_converter.process(task_name, shareable, fl_ctx)
 
         result = super().execute(task_name, shareable, fl_ctx, abort_signal)
 
@@ -161,7 +163,7 @@ class LauncherExecutor(TaskExchanger):
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
         if self._to_nvflare_converter is not None:
-            result = self._to_nvflare_converter.process(result, fl_ctx)
+            result = self._to_nvflare_converter.process(task_name, result, fl_ctx)
 
         self._finalize_external_execution(task_name, shareable, fl_ctx, abort_signal)
 
@@ -245,6 +247,7 @@ class LauncherExecutor(TaskExchanger):
             self.log_error(fl_ctx, "External execution set up failed.")
             abort_signal.trigger("External execution set up failed.")
             return False
+        time.sleep(self._external_execution_wait)
         return True
 
     def _execute_launcher_method_in_thread_executor(self, method_name: str, **kwargs) -> Any:

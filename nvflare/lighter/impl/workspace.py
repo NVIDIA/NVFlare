@@ -43,9 +43,9 @@ class WorkspaceBuilder(Builder):
               wip/  <--- this is only used during runtime, and will be removed when the provision command exits
 
         Args:
-            template_file: name of template file containing scripts and configs to put into startup folders
+            template_file: name(s) of template file(s) containing scripts and configs to put into startup folders
         """
-        self.template_file = template_file
+        self.template_files = template_file
 
     def _make_dir(self, dirs):
         for dir in dirs:
@@ -61,10 +61,15 @@ class WorkspaceBuilder(Builder):
             if stage > last:
                 last = stage
         ctx["last_prod_stage"] = last
-        template_file_full_path = os.path.join(self.get_resources_dir(ctx), self.template_file)
-        file_path = pathlib.Path(__file__).parent.absolute()
-        shutil.copyfile(os.path.join(file_path, self.template_file), template_file_full_path)
-        ctx["template_file"] = self.template_file
+        if not isinstance(self.template_files, list):
+            self.template_files = [self.template_files]
+        tplt_file_list = []
+        for tplt_file in self.template_files:
+            tplt_file_full_path = os.path.join(self.get_resources_dir(ctx), tplt_file)
+            file_path = pathlib.Path(__file__).parent.absolute()
+            shutil.copyfile(os.path.join(file_path, tplt_file), tplt_file_full_path)
+            tplt_file_list.append(tplt_file)
+        ctx["template_files"] = tplt_file_list
 
     def build(self, project: Project, ctx: dict):
         dirs = [self.get_kit_dir(p, ctx) for p in project.participants]

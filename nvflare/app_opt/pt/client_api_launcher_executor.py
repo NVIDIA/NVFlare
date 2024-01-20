@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from nvflare.apis.fl_context import FLContext
+from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
 from nvflare.app_opt.pt.decomposers import TensorDecomposer
 from nvflare.app_opt.pt.params_converter import NumpyToPTParamsConverter, PTToNumpyParamsConverter
@@ -26,6 +27,10 @@ class PTClientAPILauncherExecutor(ClientAPILauncherExecutor):
         self._params_exchange_format = ExchangeFormat.PYTORCH
         super().initialize(fl_ctx)
         if self._from_nvflare_converter is None:
-            self._from_nvflare_converter = NumpyToPTParamsConverter()
+            self._from_nvflare_converter = NumpyToPTParamsConverter(
+                [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION]
+            )
         if self._to_nvflare_converter is None:
-            self._to_nvflare_converter = PTToNumpyParamsConverter()
+            self._to_nvflare_converter = PTToNumpyParamsConverter(
+                [AppConstants.TASK_TRAIN, AppConstants.TASK_SUBMIT_MODEL]
+            )
