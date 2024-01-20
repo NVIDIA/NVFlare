@@ -101,6 +101,8 @@ class CClientBridge(XGBClientBridge):
         if op < 0:
             raise RuntimeError(f"error get_pending_op: {op}")
 
+        self.logger.info(f"***** got pending op: {op=} {seq.value=} {data_type.value=} {root.value=}")
+
         props = {
             Constant.PARAM_KEY_SEQ: seq.value,
             Constant.PARAM_KEY_SEND_BUF: bytes(send_buf[0:send_size.value]),
@@ -176,7 +178,7 @@ class CClientBridge(XGBClientBridge):
                 handler_f = self.op_table.get(op)
                 if handler_f is None:
                     self.logger.error(f"no handler for opcode {op}")
-                    self.target_rc = Constant.ERR_CLIENT_ERROR
+                    self.target_rc = Constant.ERR_TARGET_ERROR
                     self.target_done = True
                     return
                 else:
@@ -187,7 +189,7 @@ class CClientBridge(XGBClientBridge):
                     except Exception as ex:
                         self.logger.error(f"exception handling all_gather: {secure_format_exception(ex)}")
                         self._stop_target()
-                        self.target_rc = Constant.ERR_CLIENT_ERROR
+                        self.target_rc = Constant.ERR_TARGET_ERROR
                         self.target_done = True
                         return
             time.sleep(0.001)

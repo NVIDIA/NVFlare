@@ -37,6 +37,7 @@ class Sender:
 
     def send_to_server(self, op: str, req: Shareable, abort_signal: Signal):
         req.set_header(Constant.KEY_XGB_OP, op)
+
         server_name = FQCN.ROOT_SERVER
         with self.engine.new_context() as fl_ctx:
             reply = self.engine.send_aux_request(

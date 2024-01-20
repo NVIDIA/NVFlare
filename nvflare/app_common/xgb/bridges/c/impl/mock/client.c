@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include "../xgb_common.h"
 #include "../xgb_client.h"
 
 int XGBC_max_num_clients = 0;
@@ -75,6 +76,7 @@ int xgbc_get_pending_op(
     }
 
     pthread_mutex_lock(&XGBC_op_mutex);
+    *seq = c->seq;
     *send_buf = c->send_buf;
     *send_size = c->send_buf_size;
     *data_type = c->data_type;
@@ -148,6 +150,9 @@ int _send_op(
     c->send_buf = send_buf;
     c->send_buf_size = send_size;
     c->seq = seq;
+    c->data_type = data_type;
+    c->reduce_op = reduce_op;
+    c->root = root;
     c->received = 0;
     c->op = op;
     pthread_mutex_unlock(&XGBC_op_mutex);
@@ -155,7 +160,7 @@ int _send_op(
     // wait for reply
     while (!c->received) {
         if (c->aborted) {
-            return 0;
+            return ERR_ABORTED;
         }
         usleep(1000);
     }
@@ -185,13 +190,13 @@ int xgbc_send_all_reduce(
     unsigned char* send_buf, size_t send_size,
     unsigned char** rcv_buf, size_t* rcv_size
 ) {
-    return _send_op(OP_ALL_GATHER_V, rank, seq, send_buf, send_size, data_type, reduce_op, 0, rcv_buf, rcv_size);
+    return _send_op(OP_ALL_REDUCE, rank, seq, send_buf, send_size, data_type, reduce_op, 0, rcv_buf, rcv_size);
 }
 
 int xgbc_send_broadcast(
     int rank, int seq, int root, unsigned char* send_buf, size_t send_size, unsigned char** rcv_buf, size_t* rcv_size
 ) {
-    return _send_op(OP_ALL_GATHER_V, rank, seq, send_buf, send_size, 0, 0, root, rcv_buf, rcv_size);
+    return _send_op(OP_BROADCAST, rank, seq, send_buf, send_size, 0, 0, root, rcv_buf, rcv_size);
 }
 
 void _check_result(

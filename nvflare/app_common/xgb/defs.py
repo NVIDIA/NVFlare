@@ -27,13 +27,6 @@ class Constant:
     KEY_XGB_REQ_ID = "xgb.req_id"
     KEY_XGB_REQ_TRY_NUM = "xgb.req_try_num"
     KEY_XGB_REQ_RECEIVED = "xgb.req_received"
-    KEY_XGB_RANK = "xgb.rank"
-    KEY_XGB_SEQ = "xgb.seq"
-    KEY_XGB_SEND_BUF = "xgb.send_buf"
-    KEY_XGB_DATA_TYPE = "xgb.data_type"
-    KEY_XGB_REDUCE_OP = "xgb.reduce_op"
-    KEY_XGB_ROOT = "xgb.root"
-    KEY_XGB_RCV_BUF = "xgb.rcv_buf"
 
     OP_ALL_GATHER = "all_gather"
     OP_ALL_GATHER_V = "all_gather_v"
@@ -50,10 +43,12 @@ class Constant:
     ERR_OP_MISMATCH = -1
     ERR_INVALID_RANK = -2
     ERR_NO_CLIENT_FOR_RANK = -3
-    ERR_CLIENT_ERROR = -4
+    ERR_TARGET_ERROR = -4
 
-    PARAM_KEY_SEQ = "seq"
-    PARAM_KEY_SEND_BUF = "send_buf"
-    PARAM_KEY_DATA_TYPE = "data_type"
-    PARAM_KEY_REDUCE_OP = "reduce_op"
-    PARAM_KEY_ROOT = "root"
+    PARAM_KEY_RANK = "xgb.rank"
+    PARAM_KEY_SEQ = "xgb.seq"
+    PARAM_KEY_SEND_BUF = "xgb.send_buf"
+    PARAM_KEY_DATA_TYPE = "xgb.data_type"
+    PARAM_KEY_REDUCE_OP = "xgb.reduce_op"
+    PARAM_KEY_ROOT = "xgb.root"
+    PARAM_KEY_RCV_BUF = "xgb.rcv_buf"

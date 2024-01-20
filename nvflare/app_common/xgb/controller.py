@@ -168,44 +168,44 @@ class XGBController(Controller):
         return make_reply(ReturnCode.OK)
 
     def _process_all_gather(self, request: Shareable, fl_ctx: FLContext) -> Shareable:
-        rank = request.get(Constant.KEY_XGB_RANK)
-        seq = request.get(Constant.KEY_XGB_SEQ)
-        send_buf = request.get(Constant.KEY_XGB_SEND_BUF)
+        rank = request.get(Constant.PARAM_KEY_RANK)
+        seq = request.get(Constant.PARAM_KEY_SEQ)
+        send_buf = request.get(Constant.PARAM_KEY_SEND_BUF)
         rcv_buf = self.bridge.all_gather(rank, seq, send_buf, fl_ctx)
         reply = Shareable()
-        reply[Constant.KEY_XGB_RCV_BUF] = rcv_buf
+        reply[Constant.PARAM_KEY_RCV_BUF] = rcv_buf
         return reply
 
     def _process_all_gather_v(self, request: Shareable, fl_ctx: FLContext) -> Shareable:
-        rank = request.get(Constant.KEY_XGB_RANK)
-        seq = request.get(Constant.KEY_XGB_SEQ)
-        send_buf = request.get(Constant.KEY_XGB_SEND_BUF)
+        rank = request.get(Constant.PARAM_KEY_RANK)
+        seq = request.get(Constant.PARAM_KEY_SEQ)
+        send_buf = request.get(Constant.PARAM_KEY_SEND_BUF)
         rcv_buf = self.bridge.all_gather_v(rank, seq, send_buf, fl_ctx)
         reply = Shareable()
-        reply[Constant.KEY_XGB_RCV_BUF] = rcv_buf
+        reply[Constant.PARAM_KEY_RCV_BUF] = rcv_buf
         return reply
 
     def _process_all_reduce(self, request: Shareable, fl_ctx: FLContext) -> Shareable:
-        rank = request.get(Constant.KEY_XGB_RANK)
-        seq = request.get(Constant.KEY_XGB_SEQ)
-        send_buf = request.get(Constant.KEY_XGB_SEND_BUF)
-        data_type = request.get(Constant.KEY_XGB_DATA_TYPE)
-        reduce_op = request.get(Constant.KEY_XGB_REDUCE_OP)
+        rank = request.get(Constant.PARAM_KEY_RANK)
+        seq = request.get(Constant.PARAM_KEY_SEQ)
+        send_buf = request.get(Constant.PARAM_KEY_SEND_BUF)
+        data_type = request.get(Constant.PARAM_KEY_DATA_TYPE)
+        reduce_op = request.get(Constant.PARAM_KEY_REDUCE_OP)
         assert isinstance(self.bridge, XGBServerBridge)
         rcv_buf = self.bridge.all_reduce(rank, seq, data_type, reduce_op, send_buf, fl_ctx)
         reply = Shareable()
-        reply[Constant.KEY_XGB_RCV_BUF] = rcv_buf
+        reply[Constant.PARAM_KEY_RCV_BUF] = rcv_buf
         return reply
 
     def _process_broadcast(self, request: Shareable, fl_ctx: FLContext) -> Shareable:
-        rank = request.get(Constant.KEY_XGB_RANK)
-        seq = request.get(Constant.KEY_XGB_SEQ)
-        send_buf = request.get(Constant.KEY_XGB_SEND_BUF)
-        root = request.get(Constant.KEY_XGB_ROOT)
+        rank = request.get(Constant.PARAM_KEY_RANK)
+        seq = request.get(Constant.PARAM_KEY_SEQ)
+        send_buf = request.get(Constant.PARAM_KEY_SEND_BUF)
+        root = request.get(Constant.PARAM_KEY_ROOT)
         assert isinstance(self.bridge, XGBServerBridge)
         rcv_buf = self.bridge.broadcast(rank, seq, root, send_buf, fl_ctx)
         reply = Shareable()
-        reply[Constant.KEY_XGB_RCV_BUF] = rcv_buf
+        reply[Constant.PARAM_KEY_RCV_BUF] = rcv_buf
         return reply
 
     def _process_xgb_request(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
@@ -215,7 +215,6 @@ class XGBController(Controller):
 
         # since XGB protocol is very strict, we'll stop the control flow when any error occurs
         op = request.get_header(Constant.KEY_XGB_OP)
-        self.log_info(fl_ctx, f"received XGB request '{op}'")
         bad_req_error = "bad XGB request"
         process_error = "XGB request process error"
         if not op:

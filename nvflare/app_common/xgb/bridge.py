@@ -17,8 +17,6 @@ class XGBBridge(ABC, FLComponent):
     def __init__(self):
         FLComponent.__init__(self)
         self.abort_signal = None
-        self.target_stopped = False
-        self.target_rc = 0
 
     def set_abort_signal(self, abort_signal: Signal):
         self.abort_signal = abort_signal
@@ -146,7 +144,7 @@ class XGBClientBridge(XGBBridge):
     def _send_request(self, op: str, req: Shareable) -> bytes:
         reply = self.sender.send_to_server(op, req, self.abort_signal)
         if isinstance(reply, Shareable):
-            rcv_buf = reply.get(Constant.KEY_XGB_RCV_BUF)
+            rcv_buf = reply.get(Constant.PARAM_KEY_RCV_BUF)
             if not isinstance(rcv_buf, bytes):
                 raise RuntimeError(f"invalid reply for op {op}: expect bytes but got {type(rcv_buf)}")
             return rcv_buf
@@ -155,31 +153,31 @@ class XGBClientBridge(XGBBridge):
 
     def send_all_gather(self, rank: int, seq: int, send_buf: bytes) -> bytes:
         req = Shareable()
-        req[Constant.KEY_XGB_RANK] = rank
-        req[Constant.KEY_XGB_SEQ] = seq
-        req[Constant.KEY_XGB_SEND_BUF] = send_buf
+        req[Constant.PARAM_KEY_RANK] = rank
+        req[Constant.PARAM_KEY_SEQ] = seq
+        req[Constant.PARAM_KEY_SEND_BUF] = send_buf
         return self._send_request(Constant.OP_ALL_GATHER, req)
 
     def send_all_gather_v(self, rank: int, seq: int, send_buf: bytes) -> bytes:
         req = Shareable()
-        req[Constant.KEY_XGB_RANK] = rank
-        req[Constant.KEY_XGB_SEQ] = seq
-        req[Constant.KEY_XGB_SEND_BUF] = send_buf
+        req[Constant.PARAM_KEY_RANK] = rank
+        req[Constant.PARAM_KEY_SEQ] = seq
+        req[Constant.PARAM_KEY_SEND_BUF] = send_buf
         return self._send_request(Constant.OP_ALL_GATHER_V, req)
 
     def send_all_reduce(self, rank: int, seq: int, data_type: int, reduce_op: int, send_buf: bytes) -> bytes:
         req = Shareable()
-        req[Constant.KEY_XGB_RANK] = rank
-        req[Constant.KEY_XGB_SEQ] = seq
-        req[Constant.KEY_XGB_DATA_TYPE] = data_type
-        req[Constant.KEY_XGB_REDUCE_OP] = reduce_op
-        req[Constant.KEY_XGB_SEND_BUF] = send_buf
+        req[Constant.PARAM_KEY_RANK] = rank
+        req[Constant.PARAM_KEY_SEQ] = seq
+        req[Constant.PARAM_KEY_DATA_TYPE] = data_type
+        req[Constant.PARAM_KEY_REDUCE_OP] = reduce_op
+        req[Constant.PARAM_KEY_SEND_BUF] = send_buf
         return self._send_request(Constant.OP_ALL_REDUCE, req)
 
     def send_broadcast(self, rank: int, seq: int, root: int, send_buf: bytes) -> bytes:
         req = Shareable()
-        req[Constant.KEY_XGB_RANK] = rank
-        req[Constant.KEY_XGB_SEQ] = seq
-        req[Constant.KEY_XGB_ROOT] = root
-        req[Constant.KEY_XGB_SEND_BUF] = send_buf
-        return self._send_request(Constant.OP_ALL_GATHER, req)
+        req[Constant.PARAM_KEY_RANK] = rank
+        req[Constant.PARAM_KEY_SEQ] = seq
+        req[Constant.PARAM_KEY_ROOT] = root
+        req[Constant.PARAM_KEY_SEND_BUF] = send_buf
+        return self._send_request(Constant.OP_BROADCAST, req)
