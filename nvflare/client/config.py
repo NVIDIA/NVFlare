@@ -14,7 +14,6 @@
 
 import json
 import os
-from enum import Enum
 from typing import Dict, Optional
 
 from nvflare.fuel.utils.config_factory import ConfigFactory
