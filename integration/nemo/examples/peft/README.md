@@ -19,7 +19,8 @@ In the following, we assume this example folder of the container is mounted to `
 Start the docker container using 
 ```
 DOCKER_IMAGE="nvcr.io/nvidia/nemo:23.10"
-docker run --gpus="device=all" --network=host --ipc=host -it --rm -v ${PWD}/../../../../job_templates:/job_templates -v ${PWD}:/workspace -w /workspace ${DOCKER_IMAGE} /bin/bash
+docker run --runtime=nvidia -it --rm --shm-size=16g -p 8888:8888 -p 6006:6006 --ulimit memlock=-1 --ulimit stack=67108864 \
+-v ${PWD}/../../../../job_templates:/job_templates -v ${PWD}:/workspace -w /workspace ${DOCKER_IMAGE}
 ```
 
 For easy experimentation with NeMo, install NVFlare and mount the code inside the [nemo_nvflare](./nemo_nvflare) folder.
