@@ -9,14 +9,9 @@ This enables the creation of common robust models without sharing sensitive loca
 
 How does Federated Learning Work?
 =================================
-The federated learning (FL) aggregrator orchestrates the collaboration of multiple clients by first sending an initial model to the FL clients.
-The clients perform training on their local datasets, then send the model updates back to the FL aggregrator for aggregation to form a global model.
+The federated learning (FL) server orchestrates the collaboration of multiple clients by first sending an initial model to the FL clients.
+The clients perform training on their local datasets, then send the model updates back to the FL server for aggregation to form a global model.
 This process forms a single round of federated learning and after a number of rounds, a robust global model can be developed.
-
-.. note::
-
-    In the diagrams below, the FL server has the role of the FL aggregrator. In the case of client-controlled workflows such as swarm learning,
-    FL clients can serve as FL aggregrators instead.
 
 .. image:: resources/fl_diagram.png
     :height: 500px
@@ -25,13 +20,8 @@ This process forms a single round of federated learning and after a number of ro
 FL Terms and Definitions
 ========================
 
-- FL server: manages job lifecycle
-- FL aggregrator: orchestrates workflow, assigns tasks to clients, performs aggregation
-- FL client: executes tasks, performs local computation/learning with local dataset, submits result back to FL aggregrator
-
-.. image:: resources/controller_worker_flow.png
-    :height: 350px
-
+- FL server: manages job lifecycle, orchestrates workflow, assigns tasks to clients, performs aggregation
+- FL client: executes tasks, performs local computation/learning with local dataset, submits result back to FL server
 - FL algorithms: FedAvg, FedOpt, FedProx etc. implemented as workflows
 - Types of FL
 
