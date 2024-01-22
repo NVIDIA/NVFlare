@@ -5,10 +5,11 @@ feature to showcase how to fine-tune the whole model on supervised data for lear
 
 Due to the large model size of the LLM, we use NVFlare's streaming feature to transfer the model in chunks.
 
+## Hardware requirement
+The example for a 3-client 1.3B GPT model experiment can be performed on either three 32 GB V100 GPUs, or one 80 GB A100 GPU.
+
 ## Dependencies
 This example of running a 1.3B GPT model requires considerable computational resources. For training 1.3B model, SFT needs ~24GB GPU memory using fp16 precision. Hence, we can compute the resources needed accordingly to run three clients in parallel.
-
-The example for a 3-client 1.3B GPT model experiment can be performed on either three 32 GB V100 GPUs, or one 80 GB A100 GPU.
 
 The example was tested using the [NeMo Docker container](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/nemo), 
 available with `docker pull nvcr.io/nvidia/nemo:23.06`. 
@@ -17,12 +18,13 @@ In the following, we assume this example folder of the container is mounted to `
 Start the docker container using 
 ```
 DOCKER_IMAGE="nvcr.io/nvidia/nemo:23.06"
-docker run --gpus="device=all" --network=host --ipc=host -it --rm -v ${PWD}:/workspace -w /workspace ${DOCKER_IMAGE} /bin/bash
+docker run --runtime=nvidia -it --rm --shm-size=16g -p 8888:8888 -p 6006:6006 --ulimit memlock=-1 --ulimit stack=67108864 \
+-v ${PWD}:/workspace -w /workspace ${DOCKER_IMAGE}
 ```
 
 For easy experimentation with NeMo, install NVFlare and mount the code inside the [nemo_nvflare](./nemo_nvflare) folder.
 ```
-pip install nvflare==2.4.0rc7
+pip install nvflare~=2.4.0rc7
 export PYTHONPATH=${PYTHONPATH}:/workspace
 ``` 
 

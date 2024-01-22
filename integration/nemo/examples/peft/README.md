@@ -19,21 +19,24 @@ In the following, we assume this example folder of the container is mounted to `
 Start the docker container using 
 ```
 DOCKER_IMAGE="nvcr.io/nvidia/nemo:23.10"
-docker run --gpus="device=all" --network=host --ipc=host -it --rm -v ${PWD}/../../../../job_templates:/job_templates -v ${PWD}:/workspace -w /workspace ${DOCKER_IMAGE} /bin/bash
+docker run --runtime=nvidia -it --rm --shm-size=16g -p 8888:8888 -p 6006:6006 --ulimit memlock=-1 --ulimit stack=67108864 \
+-v ${PWD}/../../../../job_templates:/job_templates -v ${PWD}:/workspace -w /workspace ${DOCKER_IMAGE}
 ```
 
 For easy experimentation with NeMo, install NVFlare and mount the code inside the [nemo_nvflare](./nemo_nvflare) folder.
 ```
-pip install nvflare==2.4.0rc7
+pip install nvflare~=2.4.0rc7
 export PYTHONPATH=${PYTHONPATH}:/workspace
 ```
 
 ## Examples
 ### 1. Federated PEFT using a 345 million parameter GPT model
-This example requires a GPU with at least 24GB memory to run three clients in parallel on the same GPU.
 We use [JupyterLab](https://jupyterlab.readthedocs.io) for this example.
 To start JupyterLab, run
 ```
 jupyter lab .
 ```
 and open [peft.ipynb](./peft.ipynb).
+
+#### Hardware requirement
+This example requires a GPU with at least 24GB memory to run three clients in parallel on the same GPU.
