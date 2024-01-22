@@ -24,7 +24,7 @@ docker run --runtime=nvidia -it --rm --shm-size=16g -p 8888:8888 -p 6006:6006 --
 
 For easy experimentation with NeMo, install NVFlare and mount the code inside the [nemo_nvflare](./nemo_nvflare) folder.
 ```
-pip install nvflare==2.4.0rc7
+pip install nvflare~=2.4.0rc7
 export PYTHONPATH=${PYTHONPATH}:/workspace
 ``` 
 
