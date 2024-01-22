@@ -9,7 +9,7 @@ These step-by-step example series are aimed to help users quickly get started an
 For consistency, each example in the series uses the same dataset- CIFAR10 for image data and the HIGGS dataset for tabular data.
 The examples will build upon previous ones to showcase different features, workflows, or APIs, allowing users to gain a comprehensive understanding of FLARE functionalities. See the README in each directory for more details about each series.
 
-## Key Ideas
+## Common Questions
 
 Here are some common questions we aim to cover in these examples series when formulating a federated learning problem:
 
