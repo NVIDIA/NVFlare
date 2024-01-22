@@ -63,54 +63,69 @@ def _register_tensor_decomposer():
 def init(
     config: str = f"config/{CLIENT_API_CONFIG}",
     rank: Optional[str] = None,
-):
+) -> None:
     """Initializes NVFlare Client API environment.
+
+    Note:
+        An example of the config file's content looks like the following:
+
+            .. code-block:: json
+
+                {
+                  "METRICS_EXCHANGE": {
+                    "pipe_channel_name": "metric",
+                    "pipe": {
+                      "CLASS_NAME": "nvflare.fuel.utils.pipe.cell_pipe.CellPipe",
+                      "ARG": {
+                        "mode": "ACTIVE",
+                        "site_name": "site-1",
+                        "token": "simulate_job",
+                        "root_url": "tcp://0:51893",
+                        "secure_mode": false,
+                        "workspace_dir": "xxx"
+                      }
+                    }
+                  },
+                  "SITE_NAME": "site-1",
+                  "JOB_ID": "simulate_job",
+                  "TASK_EXCHANGE": {
+                    "train_with_eval": true,
+                    "exchange_format": "numpy",
+                    "transfer_type": "DIFF",
+                    "train_task_name": "train",
+                    "eval_task_name": "evaluate",
+                    "submit_model_task_name": "submit_model",
+                    "pipe_channel_name": "task",
+                    "pipe": {
+                      "CLASS_NAME": "nvflare.fuel.utils.pipe.cell_pipe.CellPipe",
+                      "ARG": {
+                        "mode": "ACTIVE",
+                        "site_name": "site-1",
+                        "token": "simulate_job",
+                        "root_url": "tcp://0:51893",
+                        "secure_mode": false,
+                        "workspace_dir": "xxx"
+                      }
+                    }
+                  }
+                }
+
 
     Args:
         config (str): path to the configuration file.
         rank (str): local rank of the process.
             It is only useful when the training script has multiple worker processes. (for example multi GPU)
 
-    Note:
-        An example of the config file's content looks like the following:
-            {
-              "METRICS_EXCHANGE": {
-                "pipe_channel_name": "metric",
-                "pipe": {
-                  "CLASS_NAME": "nvflare.fuel.utils.pipe.cell_pipe.CellPipe",
-                  "ARG": {
-                    "mode": "ACTIVE",
-                    "site_name": "site-1",
-                    "token": "simulate_job",
-                    "root_url": "tcp://0:51893",
-                    "secure_mode": false,
-                    "workspace_dir": "xxx"
-                  }
-                }
-              },
-              "SITE_NAME": "site-1",
-              "JOB_ID": "simulate_job",
-              "TASK_EXCHANGE": {
-                "train_with_eval": true,
-                "exchange_format": "numpy",
-                "transfer_type": "DIFF",
-                "train_task_name": "train",
-                "eval_task_name": "evaluate",
-                "submit_model_task_name": "submit_model",
-                "pipe_channel_name": "task",
-                "pipe": {
-                  "CLASS_NAME": "nvflare.fuel.utils.pipe.cell_pipe.CellPipe",
-                  "ARG": {
-                    "mode": "ACTIVE",
-                    "site_name": "site-1",
-                    "token": "simulate_job",
-                    "root_url": "tcp://0:51893",
-                    "secure_mode": false,
-                    "workspace_dir": "xxx"
-                  }
-                }
-              }
-            }
+    Returns:
+        None
+
+    Example:
+
+        .. code-block:: python
+
+            nvflare.client.init(config="./config.json")
+
+
     """
     global PROCESS_MODEL_REGISTRY  # Declare PROCESS_MODEL_REGISTRY as global
 
@@ -153,6 +168,7 @@ def init(
 
 
 def get_model_registry() -> ModelRegistry:
+    """Gets the ModelRegistry."""
     if PROCESS_MODEL_REGISTRY is None:
         raise RuntimeError("needs to call init method first")
     return PROCESS_MODEL_REGISTRY
@@ -163,6 +179,13 @@ def receive(timeout: Optional[float] = None) -> Optional[FLModel]:
 
     Returns:
         An FLModel received.
+
+    Example:
+
+        .. code-block:: python
+
+            nvflare.client.receive()
+
     """
     model_registry = get_model_registry()
     return model_registry.get_model(timeout)
@@ -174,6 +197,13 @@ def send(fl_model: FLModel, clear_registry: bool = True) -> None:
     Args:
         fl_model (FLModel): Sends a FLModel object.
         clear_registry (bool): To clear the registry or not.
+
+    Example:
+
+        .. code-block:: python
+
+            nvflare.client.send(fl_model=FLModel(...))
+
     """
     model_registry = get_model_registry()
     model_registry.submit_model(model=fl_model)
@@ -182,7 +212,15 @@ def send(fl_model: FLModel, clear_registry: bool = True) -> None:
 
 
 def clear():
-    """Clears the model registry."""
+    """Clears the model registry.
+
+    Example:
+
+        .. code-block:: python
+
+            nvflare.client.clear()
+
+    """
     model_registry = get_model_registry()
     model_registry.clear()
 
@@ -193,32 +231,89 @@ def system_info() -> Dict:
     System information will be available after a valid FLModel is received.
     It does not retrieve information actively.
 
+    Note:
+        system information includes job id and site name.
+
     Returns:
        A dict of system information.
+
+    Example:
+
+        .. code-block:: python
+
+            sys_info = nvflare.client.system_info()
+
     """
     model_registry = get_model_registry()
     return model_registry.get_sys_info()
 
 
 def get_config() -> Dict:
+    """Gets the ClientConfig dictionary.
+
+    Returns:
+        A dict of the configuration used in Client API.
+
+    Example:
+
+        .. code-block:: python
+
+            config = nvflare.client.get_config()
+
+    """
     model_registry = get_model_registry()
     return model_registry.config.config
 
 
 def get_job_id() -> str:
-    """Gets job id."""
+    """Gets job id.
+
+    Returns:
+        The current job id.
+
+    Example:
+
+        .. code-block:: python
+
+            job_id = nvflare.client.get_job_id()
+
+    """
     sys_info = system_info()
     return sys_info.get(ConfigKey.JOB_ID, "")
 
 
 def get_site_name() -> str:
-    """Gets site name."""
+    """Gets site name.
+
+    Returns:
+        The site name of this client.
+
+    Example:
+
+        .. code-block:: python
+
+            site_name = nvflare.client.get_site_name()
+
+    """
     sys_info = system_info()
     return sys_info.get(ConfigKey.SITE_NAME, "")
 
 
 def is_running() -> bool:
-    """Returns whether the NVFlare system is up and running."""
+    """Returns whether the NVFlare system is up and running.
+
+    Returns:
+        True, if the system is up and running. False, otherwise.
+
+    Example:
+
+        .. code-block:: python
+
+            while nvflare.client.is_running():
+                # receive model, perform task, send model, etc.
+                ...
+
+    """
     try:
         receive()
         return True
@@ -227,7 +322,20 @@ def is_running() -> bool:
 
 
 def is_train() -> bool:
-    """Returns whether the current task is a training task."""
+    """Returns whether the current task is a training task.
+
+    Returns:
+        True, if the current task is a training task. False, otherwise.
+
+    Example:
+
+        .. code-block:: python
+
+            if nvflare.client.is_train():
+            # perform train task on received model
+                ...
+
+    """
     model_registry = get_model_registry()
     if model_registry.rank != "0":
         raise RuntimeError("only rank 0 can call is_train!")
@@ -235,7 +343,20 @@ def is_train() -> bool:
 
 
 def is_evaluate() -> bool:
-    """Returns whether the current task is an evaluate task."""
+    """Returns whether the current task is an evaluate task.
+
+    Returns:
+        True, if the current task is an evaluate task. False, otherwise.
+
+    Example:
+
+        .. code-block:: python
+
+            if nvflare.client.is_evaluate():
+            # perform evaluate task on received model
+                ...
+
+    """
     model_registry = get_model_registry()
     if model_registry.rank != "0":
         raise RuntimeError("only rank 0 can call is_evaluate!")
@@ -243,21 +364,53 @@ def is_evaluate() -> bool:
 
 
 def is_submit_model() -> bool:
-    """Returns whether the current task is a submit_model task."""
+    """Returns whether the current task is a submit_model task.
+
+    Returns:
+        True, if the current task is a submit_model. False, otherwise.
+
+    Example:
+
+        .. code-block:: python
+
+            if nvflare.client.is_submit_model():
+            # perform submit_model task to obtain the best local model
+                ...
+
+    """
     model_registry = get_model_registry()
     if model_registry.rank != "0":
         raise RuntimeError("only rank 0 can call is_submit_model!")
     return model_registry.task_name == model_registry.config.get_submit_model_task()
 
 
-def log(key: str, value: Any, data_type: AnalyticsDataType, **kwargs):
+def log(key: str, value: Any, data_type: AnalyticsDataType, **kwargs) -> bool:
     """Logs a key value pair.
+
+    We suggest users use the high-level APIs in nvflare/client/tracking.py
 
     Args:
         key (str): key string.
         value (Any): value to log.
         data_type (AnalyticsDataType): the data type of the "value".
         kwargs: additional arguments to be included.
+
+    Returns:
+        whether the key value pair is logged successfully
+
+    Example:
+
+        .. code-block:: python
+
+            log(
+                key=tag,
+                value=scalar,
+                data_type=AnalyticsDataType.SCALAR,
+                global_step=global_step,
+                writer=LogWriterName.TORCH_TB,
+                **kwargs,
+            )
+
     """
     model_registry = get_model_registry()
     if model_registry.rank != "0":
@@ -265,4 +418,4 @@ def log(key: str, value: Any, data_type: AnalyticsDataType, **kwargs):
 
     flare_agent = model_registry.flare_agent
     dxo = create_analytic_dxo(tag=key, value=value, data_type=data_type, **kwargs)
-    flare_agent.log(dxo)
+    return flare_agent.log(dxo)

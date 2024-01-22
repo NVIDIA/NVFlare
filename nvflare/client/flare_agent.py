@@ -16,7 +16,7 @@ import logging
 import threading
 import time
 import traceback
-from typing import Optional
+from typing import Any, Optional
 
 from nvflare.apis.dxo import DXO, MetaKey, from_shareable
 from nvflare.apis.fl_constant import FLContextKey
@@ -76,24 +76,29 @@ class FlareAgent:
         close_pipe: bool = True,
         close_metric_pipe: bool = True,
     ):
-        """Constructor of Flare Agent. The agent is responsible for communicating with the Flare Client Job cell (CJ)
+        """Constructor of Flare Agent.
+
+        The agent is responsible for communicating with the Flare Client Job cell (CJ)
         to get task and to submit task result.
 
         Args:
             pipe (Pipe): pipe for task communication.
-            read_interval (float): how often to read from the pipe.
-            heartbeat_interval (float): how often to send a heartbeat to the peer.
-            heartbeat_timeout (float): how long to wait for a heartbeat from the peer before treating the peer as gone,
-                0 means DO NOT check for heartbeat.
+            read_interval (float): how often to read from the pipe. Defaults to 0.1.
+            heartbeat_interval (float): how often to send a heartbeat to the peer. Defaults to 5.0.
+            heartbeat_timeout (float): how long to wait for a heartbeat from the peer before treating the peer as dead,
+                0 means DO NOT check for heartbeat. Defaults to 30.0.
             resend_interval (float): how often to resend a message if failing to send. None means no resend.
-                Note that if the pipe does not support resending, then no resend.
-            max_resends (int, optional): max number of resend. None means no limit.
-            submit_result_timeout (float): when submitting task result, how long to wait for response from the CJ.
-            metric_pipe (Pipe): pipe for metric communication.
-            task_channel_name (str): channel name for task.
-            metric_channel_name (str): channel name for metric.
-            close_pipe (bool): whether to close the task pipe when stopped.
-            close_metric_pipe (bool): whether to close the task pipe when stopped.
+                Note that if the pipe does not support resending, then no resend. Defaults to 2.0.
+            max_resends (int, optional): max number of resend. None means no limit. Defaults to None.
+            submit_result_timeout (float): when submitting task result,
+                how long to wait for response from the CJ. Defaults to 30.0.
+            metric_pipe (Pipe, optional): pipe for metric communication. Defaults to None.
+            task_channel_name (str): channel name for task. Defaults to ``task``.
+            metric_channel_name (str): channel name for metric. Defaults to ``metric``.
+            close_pipe (bool): whether to close the task pipe when stopped. Defaults to True.
+                Usually for ``FilePipe`` we set to False, for ``CellPipe`` we set to True.
+            close_metric_pipe (bool): whether to close the metric pipe when stopped. Defaults to True.
+                Usually for ``FilePipe`` we set to False, for ``CellPipe`` we set to True.
         """
         flare_decomposers.register()
         common_decomposers.register()
@@ -131,7 +136,9 @@ class FlareAgent:
         self._close_metric_pipe = close_metric_pipe
 
     def start(self):
-        """Start the agent. This method must be called to enable CJ/Agent communication.
+        """Start the agent.
+
+        This method must be called to enable CJ/Agent communication.
 
         Returns: None
 
@@ -153,7 +160,9 @@ class FlareAgent:
         pipe_handler.stop(self._close_pipe)
 
     def stop(self):
-        """Stop the agent. After this is called, there will be no more communications between CJ and agent.
+        """Stop the agent.
+
+        After this is called, there will be no more communications between CJ and agent.
 
         Returns: None
 
@@ -164,13 +173,17 @@ class FlareAgent:
         if self.metric_pipe_handler:
             self.metric_pipe_handler.stop(self._close_metric_pipe)
 
-    def shareable_to_task_data(self, shareable: Shareable):
+    def shareable_to_task_data(self, shareable: Shareable) -> Any:
         """Convert the Shareable object received from the TaskExchanger to an app-friendly format.
+
         Subclass can override this method to convert to its own app-friendly task data.
         By default, we convert to DXO object.
 
         Args:
             shareable: the Shareable object received from the TaskExchanger.
+
+        Returns:
+            task data.
         """
         try:
             dxo = from_shareable(shareable)
@@ -187,7 +200,7 @@ class FlareAgent:
             self.logger.error(f"failed to extract DXO from shareable object: {ex}")
             raise ex
 
-    def get_task(self, timeout: Optional[float] = None):
+    def get_task(self, timeout: Optional[float] = None) -> Optional[Task]:
         """Get a task from FLARE. This is a blocking call.
 
         Args:
@@ -196,6 +209,7 @@ class FlareAgent:
 
         Returns:
             None if no task is available before timeout; or a Task object if task is available.
+
         Raises:
             AgentClosed exception if the agent has been closed before timeout.
             CallStateError exception if the call has not been made properly.
@@ -241,6 +255,7 @@ class FlareAgent:
 
     def submit_result(self, result, rc=RC.OK) -> bool:
         """Submit the result of the current task.
+
         This is a blocking call. The agent will try to send the result to flare site until it is successfully sent or
         the task is aborted or the agent is closed.
 
@@ -248,8 +263,11 @@ class FlareAgent:
             result: result to be submitted
             rc: return code
 
-        Returns: whether the result is submitted successfully
-        Raises: the CallStateError exception if the submit_result call is not made properly.
+        Returns:
+            whether the result is submitted successfully
+
+        Raises:
+            the CallStateError exception if the submit_result call is not made properly.
 
         Notes: the application must only make this call after the received task is processed. The call can only be
         made a single time regardless whether the submission is successful.
@@ -273,14 +291,15 @@ class FlareAgent:
 
         return result
 
-    def task_result_to_shareable(self, result, rc) -> Shareable:
+    def task_result_to_shareable(self, result: Any, rc) -> Shareable:
         """Convert the result object to Shareable object before sending back to the TaskExchanger.
+
         Subclass can override this method to convert its app-friendly result type to Shareable.
         By default, we expect the result to be DXO object.
 
         Args:
-            result: the result object to be converted to Shareable. If None, an empty Shareable object will be
-                created with the rc only.
+            result: the result object to be converted to Shareable.
+                If None, an empty Shareable object will be created with the rc only.
             rc: the return code.
 
         Returns:
@@ -301,7 +320,15 @@ class FlareAgent:
         reply = Message.new_reply(topic=current_task.task_name, req_msg_id=current_task.msg_id, data=result)
         return self.pipe_handler.send_to_peer(reply, self.submit_result_timeout)
 
-    def log(self, record: DXO):
+    def log(self, record: DXO) -> bool:
+        """Logs a metric record.
+
+        Args:
+            record (DXO): A metric record.
+
+        Returns:
+            whether the metric record is submitted successfully
+        """
         if not self.metric_pipe_handler:
             raise RuntimeError("metric pipe is not available")
 

@@ -20,7 +20,7 @@ from .flare_agent import RC, FlareAgent, Task
 
 
 class TaskRegistry:
-    """This class is used to remember attributes that need to share for a user code."""
+    """This class is used to remember attributes that need to be shared for a user code."""
 
     def __init__(self, config: ClientConfig, rank: Optional[str] = None, flare_agent: Optional[FlareAgent] = None):
         self.flare_agent = flare_agent
@@ -41,6 +41,9 @@ class TaskRegistry:
 
         task = self.flare_agent.get_task(timeout)
 
+        if task is None:
+            raise RuntimeError(f"no received task within timeout: {timeout}")
+
         if task.data is None:
             raise RuntimeError("no received task.data")
 
@@ -48,24 +51,58 @@ class TaskRegistry:
         self.task_name = task.task_name
         self.cache_loaded = True
 
-    def set_task_name(self, task_name: str):
+    def set_task_name(self, task_name: str) -> None:
+        """Sets the current task name.
+
+        This method is only used in multiprocess scenario in the lightning API.
+        For non-rank 0 processes, they are not getting tasks from the FLARE side,
+        thus they rely on the rank 0 process to tell them the current task name
+        and will use this method to set it.
+
+        Args:
+            task_name (str): current task name
+        """
         self.task_name = task_name
 
     def get_task(self, timeout: Optional[float] = None) -> Optional[Task]:
+        """Gets the cached received task.
+
+        Args:
+            timeout (float, optional): If specified, this call is blocked only for the specified amount of time.
+                If not specified, this call is blocked forever until a task has been received or agent has been closed.
+
+        Returns:
+            None if flare agent is None; or a Task object if task is available within timeout.
+        """
         if not self.cache_loaded:
             self._receive(timeout)
         return self.received_task
 
     def get_sys_info(self) -> Dict:
+        """Gets NVFlare system information.
+
+        Returns:
+            A dict of system information.
+        """
         return self.sys_info
 
-    def submit_task(self, data: Any, return_code: str = RC.OK) -> None:
+    def submit_task(self, data: Any, return_code: str = RC.OK) -> bool:
+        """Submits result of the current task.
+
+        Args:
+           data: task result
+           return_code (str): return code of the task execution
+
+        Returns:
+            whether the result is submitted successfully
+        """
         if not self.flare_agent or not self.task_name or self.received_task is None:
-            return None
+            return False
 
-        self.flare_agent.submit_result(result=data, rc=return_code)
+        return self.flare_agent.submit_result(result=data, rc=return_code)
 
-    def clear(self):
+    def clear(self) -> None:
+        """Clears the cached received task."""
         self.received_task = None
         self.cache_loaded = False
 
