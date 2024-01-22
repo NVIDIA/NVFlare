@@ -31,10 +31,12 @@ export PYTHONPATH=${PYTHONPATH}:/workspace
 
 ## Examples
 ### 1. Federated PEFT using a 345 million parameter GPT model
-This example requires a GPU with at least 24GB memory to run three clients in parallel on the same GPU.
 We use [JupyterLab](https://jupyterlab.readthedocs.io) for this example.
 To start JupyterLab, run
 ```
 jupyter lab .
 ```
 and open [peft.ipynb](./peft.ipynb).
+
+#### Hardware requirement
+This example requires a GPU with at least 24GB memory to run three clients in parallel on the same GPU.

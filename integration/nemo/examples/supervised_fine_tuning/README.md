@@ -5,10 +5,11 @@ feature to showcase how to fine-tune the whole model on supervised data for lear
 
 Due to the large model size of the LLM, we use NVFlare's streaming feature to transfer the model in chunks.
 
+## Hardware requirement
+The example for a 3-client 1.3B GPT model experiment can be performed on either three 32 GB V100 GPUs, or one 80 GB A100 GPU.
+
 ## Dependencies
 This example of running a 1.3B GPT model requires considerable computational resources. For training 1.3B model, SFT needs ~24GB GPU memory using fp16 precision. Hence, we can compute the resources needed accordingly to run three clients in parallel.
-
-The example for a 3-client 1.3B GPT model experiment can be performed on either three 32 GB V100 GPUs, or one 80 GB A100 GPU.
 
 The example was tested using the [NeMo Docker container](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/nemo), 
 available with `docker pull nvcr.io/nvidia/nemo:23.06`. 

@@ -31,7 +31,6 @@ export PYTHONPATH=${PYTHONPATH}:/workspace
 
 ## Examples
 ### 1. Federated p-tuning using a 345 million parameter GPT model
-This example requires a GPU with at least 16GB of memory to run three clients in parallel on the same GPU.
 We use [JupyterLab](https://jupyterlab.readthedocs.io) for this example.
 To start JupyterLab, run
 ```
@@ -39,9 +38,14 @@ jupyter lab .
 ```
 and open [prompt_learning.ipynb](./prompt_learning.ipynb).
 
+#### Hardware requirement
+This example requires a GPU with at least 16GB of memory to run three clients in parallel on the same GPU.
+
 ### 2. Federated p-tuning using a 20 billion parameter GPT model
 This example of running a 20B GPT model requires more computational resources. 
-To run three clients in parallel, we require at least six GPUs with 64 GB memory or more each 
-(Ampere or later GPU architecture).
 
 To run the example, follow the instructions in [prompt_learning_20B.md](prompt_learning_20B.md).
+
+#### Hardware requirement
+To run three clients in parallel, we require at least six GPUs with 64 GB memory or more each 
+(Ampere or later GPU architecture).
