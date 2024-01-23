@@ -43,8 +43,8 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         submit_model_task_name: str = "submit_model",
         from_nvflare_converter_id: Optional[str] = None,
         to_nvflare_converter_id: Optional[str] = None,
-        params_exchange_format: ExchangeFormat = ExchangeFormat.NUMPY,
-        params_transfer_type: TransferType = TransferType.FULL,
+        params_exchange_format: str = ExchangeFormat.NUMPY,
+        params_transfer_type: str = TransferType.FULL,
         config_file_name: str = CLIENT_API_CONFIG,
     ) -> None:
         """Initializes the ClientAPILauncherExecutor.
@@ -70,8 +70,8 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 This ParamsConverter will be called when model is sent from nvflare controller side to executor side.
             to_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
                 This ParamsConverter will be called when model is sent from nvflare executor side to controller side.
-            params_exchange_format (ExchangeFormat): What format to exchange the parameters.
-            params_transfer_type (TransferType): How to transfer the parameters. FULL means the whole model parameters are sent.
+            params_exchange_format (str): What format to exchange the parameters.
+            params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
                 DIFF means that only the difference is sent.
             config_file_name (str): The config file name to write attributes into, the client api will read in this file.
         """
