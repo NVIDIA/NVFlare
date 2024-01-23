@@ -1,8 +1,8 @@
-.. _task_execution:
+.. _execution_api_type:
 
-##############
-Task Execution
-##############
+##################
+Execution API Type
+##################
 
 In the FLARE system, a federated learning algorithm is defined in a Job format
 (for details, please refer to :ref:`job`).
@@ -83,7 +83,7 @@ For more details about each type, refer to each page below.
 .. toctree::
    :maxdepth: 1
 
-   task_execution/3rd_party_integration
-   task_execution/client_api
-   task_execution/model_learner
-   task_execution/executor
+   execution_api_type/3rd_party_integration
+   execution_api_type/client_api
+   execution_api_type/model_learner
+   execution_api_type/executor
