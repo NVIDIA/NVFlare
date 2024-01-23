@@ -6,9 +6,9 @@ Executor
 .. image:: ../../resources/Executor.png
     :height: 300px
 
-An :class:`Executor<nvflare.apis.executor.Executor>` in NVIDIA FLARE is a type of FLComponent for FL clients that has an
-``execute`` method that produces a Shareable from an input Shareable. The ``execute`` method also takes a str for
-task_name, FLContext, and abort_signal.
+An :class:`Executor<nvflare.apis.executor.Executor>` is an FLComponent for FL clients used for executing tasks,
+wherein the ``execute`` method receives and returns a Shareable object given a task name,
+``FLContext``, and ``abort_signal``.
 
 .. literalinclude:: ../../../nvflare/apis/executor.py
     :language: python
