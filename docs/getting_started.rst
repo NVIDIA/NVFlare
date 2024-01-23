@@ -22,14 +22,14 @@ Clone NVFLARE repo to get examples, switch main branch (latest stable branch)
 
   $ git clone https://github.com/NVIDIA/NVFlare.git
   $ cd NVFlare
-  $ git switch main
+  $ git switch 2.4
 
 
 Note on branches:
 
 * The `main <https://github.com/NVIDIA/NVFlare/tree/main>`_ branch is the default (unstable) development branch
 
-* The 2.0, 2.1, 2.2, and 2.3 etc. branches are the branches for each major release and minor patches
+* The 2.1, 2.2, 2.3, and 2.4 etc. branches are the branches for each major release and minor patches
 
 
 Quick Start with Simulator

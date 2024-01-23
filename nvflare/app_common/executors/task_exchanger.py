@@ -46,16 +46,27 @@ class TaskExchanger(Executor):
         """Constructor of TaskExchanger.
 
         Args:
-            pipe_id: component id of pipe
-            read_interval: how often to read from pipe
-            heartbeat_interval: how often to send heartbeat to peer
-            heartbeat_timeout: max amount of time to allow missing heartbeats before treating peer as dead
-            resend_interval: how often to resend a message when failing to send
-            max_resends: max number of resends. None means no limit
-            peer_read_timeout: time to wait for peer to accept sent message
-            task_wait_time: how long to wait for a task to complete. None means waiting forever
-            result_poll_interval: how often to poll task result
-            pipe_channel_name: the channel name for sending task requests
+            pipe_id (str): component id of pipe.
+            read_interval (float): how often to read from pipe.
+                Defaults to 0.1.
+            heartbeat_interval (float): how often to send heartbeat to peer.
+                Defaults to 5.0.
+            heartbeat_timeout (float, optional): how long to wait for a
+                heartbeat from the peer before treating the peer as dead,
+                0 means DO NOT check for heartbeat. Defaults to 30.0.
+            resend_interval (float): how often to resend a message if failing to send.
+                None means no resend. Note that if the pipe does not support resending,
+                then no resend. Defaults to 2.0.
+            max_resends (int, optional): max number of resend. None means no limit.
+                Defaults to None.
+            peer_read_timeout (float, optional): time to wait for peer to accept sent message.
+                Defaults to 5.0.
+            task_wait_time (float, optional): how long to wait for a task to complete.
+                None means waiting forever. Defaults to None.
+            result_poll_interval (float): how often to poll task result.
+                Defaults to 0.5.
+            pipe_channel_name: the channel name for sending task requests.
+                Defaults to "task".
         """
         Executor.__init__(self)
         check_str("pipe_id", pipe_id)
