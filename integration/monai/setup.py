@@ -24,7 +24,7 @@ with open(os.path.join(this_directory, "README.md"), encoding="utf-8") as f:
 release = os.environ.get("MONAI_NVFL_RELEASE")
 if release == "1":
     package_name = "monai-nvflare"
-    version = "0.2.4"
+    version = "0.2.6"
 else:
     package_name = "monai-nvflare-nightly"
     today = datetime.date.today().timetuple()
@@ -57,5 +57,5 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     python_requires=">=3.8,<3.11",
-    install_requires=["monai>=1.3.0", "nvflare==2.4.0rc6"],
+    install_requires=["monai>=1.3.0", "nvflare~=2.4.0rc6"],
 )
