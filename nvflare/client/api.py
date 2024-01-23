@@ -61,58 +61,11 @@ def _register_tensor_decomposer():
 
 
 def init(
-    config: str = f"config/{CLIENT_API_CONFIG}",
     rank: Optional[str] = None,
 ) -> None:
     """Initializes NVFlare Client API environment.
 
-    Note:
-        An example of the config file's content looks like the following:
-
-            .. code-block:: json
-
-                {
-                  "METRICS_EXCHANGE": {
-                    "pipe_channel_name": "metric",
-                    "pipe": {
-                      "CLASS_NAME": "nvflare.fuel.utils.pipe.cell_pipe.CellPipe",
-                      "ARG": {
-                        "mode": "ACTIVE",
-                        "site_name": "site-1",
-                        "token": "simulate_job",
-                        "root_url": "tcp://0:51893",
-                        "secure_mode": false,
-                        "workspace_dir": "xxx"
-                      }
-                    }
-                  },
-                  "SITE_NAME": "site-1",
-                  "JOB_ID": "simulate_job",
-                  "TASK_EXCHANGE": {
-                    "train_with_eval": true,
-                    "exchange_format": "numpy",
-                    "transfer_type": "DIFF",
-                    "train_task_name": "train",
-                    "eval_task_name": "evaluate",
-                    "submit_model_task_name": "submit_model",
-                    "pipe_channel_name": "task",
-                    "pipe": {
-                      "CLASS_NAME": "nvflare.fuel.utils.pipe.cell_pipe.CellPipe",
-                      "ARG": {
-                        "mode": "ACTIVE",
-                        "site_name": "site-1",
-                        "token": "simulate_job",
-                        "root_url": "tcp://0:51893",
-                        "secure_mode": false,
-                        "workspace_dir": "xxx"
-                      }
-                    }
-                  }
-                }
-
-
     Args:
-        config (str): path to the configuration file.
         rank (str): local rank of the process.
             It is only useful when the training script has multiple worker processes. (for example multi GPU)
 
@@ -123,7 +76,7 @@ def init(
 
         .. code-block:: python
 
-            nvflare.client.init(config="./config.json")
+            nvflare.client.init()
 
 
     """
@@ -136,7 +89,7 @@ def init(
         print("Warning: called init() more than once. The subsequence calls are ignored")
         return
 
-    client_config = _create_client_config(config=config)
+    client_config = _create_client_config(config=f"config/{CLIENT_API_CONFIG}")
 
     flare_agent = None
     try:

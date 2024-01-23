@@ -12,7 +12,6 @@ NVIDIA FLARE
    example_applications_algorithms
    real_world_fl
    user_guide
-   concepts
    programming_guide
    best_practices
    faq
