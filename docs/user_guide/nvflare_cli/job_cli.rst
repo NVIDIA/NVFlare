@@ -45,7 +45,7 @@ the job_templates.
 
 The output should be similar to the following:
 
-.. code-block::shell
+.. code-block:: none
 
     The following job templates are available: 
 
