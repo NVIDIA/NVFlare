@@ -41,13 +41,13 @@ from nvflare.tool.job.job_client_const import (
     JOB_CONFIG_FILE_NAME,
     JOB_CONFIG_VAR_NAME,
     JOB_CONFIG_VAR_VALUE,
-    JOB_INFO_CLIENT_TYPE,
-    JOB_INFO_CLIENT_TYPE_KEY,
     JOB_INFO_CONF,
     JOB_INFO_CONTROLLER_TYPE,
     JOB_INFO_CONTROLLER_TYPE_KEY,
     JOB_INFO_DESC,
     JOB_INFO_DESC_KEY,
+    JOB_INFO_EXECUTION_API_TYPE,
+    JOB_INFO_EXECUTION_API_TYPE_KEY,
     JOB_INFO_KEYS,
     JOB_INFO_MD,
     JOB_META_BASE_NAME,
@@ -318,13 +318,13 @@ def display_available_templates(template_index_conf):
     print("-" * total_length)
     name_fix_length = 20
     description_fix_length = 60
-    controller_type_fix_length = 20
-    client_category_fix_length = 20
+    controller_type_fix_length = 17
+    execution_api_type_fix_length = 23
     name = fix_length_format("name", name_fix_length)
     description = fix_length_format(JOB_INFO_DESC, description_fix_length)
-    client_category = fix_length_format(JOB_INFO_CLIENT_TYPE, client_category_fix_length)
+    execution_api_type = fix_length_format(JOB_INFO_EXECUTION_API_TYPE, execution_api_type_fix_length)
     controller_type = fix_length_format(JOB_INFO_CONTROLLER_TYPE, controller_type_fix_length)
-    print(" " * left_margin, name, description, controller_type, client_category)
+    print(" " * left_margin, name, description, controller_type, execution_api_type)
     print("-" * total_length)
     for file_path in sorted(template_registry.keys()):
         name = os.path.basename(file_path)
@@ -333,9 +333,11 @@ def display_available_templates(template_index_conf):
             template_info = template_registry.get(name)
         name = fix_length_format(name, name_fix_length)
         description = fix_length_format(template_info.get(JOB_INFO_DESC_KEY), description_fix_length)
-        client_category = fix_length_format(template_info.get(JOB_INFO_CLIENT_TYPE_KEY), client_category_fix_length)
+        execution_api_type = fix_length_format(
+            template_info.get(JOB_INFO_EXECUTION_API_TYPE_KEY), execution_api_type_fix_length
+        )
         controller_type = fix_length_format(template_info.get(JOB_INFO_CONTROLLER_TYPE_KEY), controller_type_fix_length)
-        print(" " * left_margin, name, description, controller_type, client_category)
+        print(" " * left_margin, name, description, controller_type, execution_api_type)
     print("-" * total_length)
 
 

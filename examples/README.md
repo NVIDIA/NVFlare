@@ -83,7 +83,7 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 | [Hello TensorFlow](./hello-world/hello-tf2/README.md)                                                                                  | TensorFlow2  | Example of using an image classifier using [FedAvg](https://arxiv.org/abs/1602.05629) and [TensorFlow](https://tensorflow.org/) as the deep learning training framework. |
 
 ## 2. Step-by-Step Examples
-| Example | Dataset | Controller-Type | Client Category | Framework | Summary |
+| Example | Dataset | Controller-Type | Execution API Type | Framework | Summary |
 |---------|---------|-----------------|-----------------|-----------|---------|
 | [image_stats](./hello-world/step-by-step/cifar10/stats/image_stats.ipynb)                                                        | CIFAR10 | server | Executor | Pandas | Example for federated stats image histogram calculation. |
 | [sag](./hello-world/step-by-step/cifar10/sag/sag.ipynb)                                                                                   | CIFAR10 | server | Client API| PyTorch | Example for FedAvg with [ScatterAndGather](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.scatter_and_gather.html) controller workflow using the Client API. |
