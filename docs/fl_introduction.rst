@@ -23,11 +23,17 @@ FL Terms and Definitions
 - FL server: manages job lifecycle, orchestrates workflow, assigns tasks to clients, performs aggregation
 - FL client: executes tasks, performs local computation/learning with local dataset, submits result back to FL server
 - FL algorithms: FedAvg, FedOpt, FedProx etc. implemented as workflows
+
+.. note::
+
+    Here we describe the centralized version of FL, where the FL server has the role of the aggregrator node. However in a decentralized version such as 
+    swarm learning, FL clients can serve as the aggregator node instead.
+
 - Types of FL
 
   - horizontal FL: clients hold different data samples over the same features
   - vertical FL: clients hold different features over an overlapping set of data samples
-  - swarm learning: a decentralized subset of FL where orchestration and aggregation is performed by the clients in cases where the server is not trusted
+  - swarm learning: a decentralized subset of FL where orchestration and aggregation is performed by the clients
 
 Main Benefits
 =============

@@ -216,8 +216,8 @@ FLARE Job Template Registry
 Below is a table of all available :github_nvflare_link:`Job Templates <job_templates>`.
 
 .. csv-table::
-    :header: Example,Client Category,Controller-Type,Description
-    :widths: 18, 10, 10, 30
+    :header: Example,Execution API Type,Controller Type,Description
+    :widths: 18, 18, 10, 30
 
     cyclic_cc_pt,client,client_api,client-controlled cyclic workflow with PyTorch ClientAPI trainer
     cyclic_pt,server,client_api,server-controlled cyclic workflow with PyTorch ClientAPI trainer
