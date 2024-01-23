@@ -25,7 +25,7 @@ View all the available job templates with the following command:
 
 ```nvflare job list_templates```
 
-| Example | Controller-Type | Client Category | Description |
+| Example | Controller-Type | Execution API Type | Description |
 |---------|-----------------|-----------------|-------------|
 | [cyclic_cc_pt](./cyclic_cc_pt)                  | client           | client_api           | client-controlled cyclic workflow with PyTorch ClientAPI trainer |
 | [cyclic_pt](./cyclic_pt)                        | server           | client_api           | server-controlled cyclic workflow with PyTorch ClientAPI trainer |
