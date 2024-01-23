@@ -5,15 +5,29 @@ NVIDIA FLARE
 .. toctree::
    :maxdepth: -1
    :hidden:
+   :caption: Introduction
 
+   fl_introduction
    flare_overview
    whats_new
    getting_started
+
+.. toctree::
+   :maxdepth: -1
+   :hidden:
+   :caption: Guides
+
    example_applications_algorithms
    real_world_fl
    user_guide
    programming_guide
    best_practices
+
+.. toctree::
+   :maxdepth: -1
+   :hidden:
+   :caption: Miscellaneous
+
    faq
    publications_and_talks
    contributing
@@ -39,8 +53,8 @@ Learn more in the :ref:`FLARE Overview <flare_overview>`, :ref:`What's New <what
 
 Getting Started
 ===============
-For first-time users and FL researchers, FLARE provides the :ref:`fl_simulator` that allows you to build, test, and deploy applications locally.
-The :ref:`Getting Started guide <getting_started>` covers installation and walks through an example application using the FL Simulator.
+For first-time users and FL researchers, FLARE provides the :ref:`FL Simulator <fl_simulator>` that allows you to build, test, and deploy applications locally.
+The :ref:`Getting Started <getting_started>` guide covers installation and walks through an example application using the FL Simulator.
 
 When you are ready to for a secure, distributed deployment, the :ref:`Real World Federated Learning <real_world_fl>` section covers the tools and process
 required to deploy and operate a secure, real-world FLARE project.

@@ -44,7 +44,7 @@ print(sys.path)
 # -- Project information -----------------------------------------------------
 
 project = "NVIDIA FLARE"
-copyright = "2023, NVIDIA"
+copyright = "2024, NVIDIA"
 author = "NVIDIA"
 
 # The full version, including alpha/beta/rc tags
@@ -114,6 +114,7 @@ html_theme_options = {
 html_scaled_image_link = False
 html_show_sourcelink = True
 html_favicon = "favicon.ico"
+html_logo = "resources/nvidia_logo.png"
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,

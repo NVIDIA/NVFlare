@@ -29,12 +29,17 @@ Requirements
   "agent_id" for each job, and start its trainer process with this information.
 - Each FL client must be able to open an address (host:port) to allow the trainer to connect to.
   Depending on where the trainer is running, the connection may or may not need to be in secure mode (TLS).
+- We will need to modify the "project.yml" for NVFlare provision system
+  and generate new package folders for each participating sites
 - The trainer must be a Python program that can integrate with the NVFLARE library.
 - The trainer must be able to connect to the server, as well as the address that
   is dynamically opened by the FL client.
 
 Prepare the Trainer
 ===================
+
+Let's prepare the trainer code first, we will modify the "project.yml" in the
+next section for project setup.
 
 You need to modify your trainer code to integrate with the :class:`FlareAgent<nvflare.client.flare_agent>` API.
 This API provides simple ``get_task()`` and ``submit_result()`` methods to interact with the FL client.
@@ -218,7 +223,8 @@ Notes:
 Project Setup
 =============
 
-The following steps show you how to properly set up your project and jobs.
+After we prepare the trainer code we can follow the steps below to properly
+set up the project and jobs.
 
 Step One - Provision
 --------------------

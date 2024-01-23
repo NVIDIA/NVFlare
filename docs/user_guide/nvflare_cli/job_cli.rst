@@ -208,3 +208,40 @@ and change the app_1 batch_size to 4, app_2 batch_size to 6 for sag_pt_deploy_ma
 
     The app names must be defined in the job template being used: in this case ``app_1``, ``app_2``, and ``app_server``,
     are in ``sag_pt_deploy_map``.
+
+***************************
+FLARE Job Template Registry
+***************************
+
+Below is a table of all available :github_nvflare_link:`Job Templates <job_templates>`.
+
+.. csv-table::
+    :header: Example,Execution API Type,Controller Type,Description
+    :widths: 18, 18, 10, 30
+
+    cyclic_cc_pt,client,client_api,client-controlled cyclic workflow with PyTorch ClientAPI trainer
+    cyclic_pt,server,client_api,server-controlled cyclic workflow with PyTorch ClientAPI trainer
+    psi_csv,server,Executor,private-set intersection for csv data
+    sag_cross_np,server,client_executor,scatter & gather and cross-site validation using numpy
+    sag_cse_pt,server,client_api,scatter & gather workflow and cross-site evaluation with PyTorch
+    sag_gnn,server,client_api,scatter & gather workflow for gnn learning
+    sag_nemo,server,client_api,Scatter and Gather Workflow for NeMo
+    sag_np,server,client_api,scatter & gather workflow using numpy
+    sag_np_cell_pipe,server,client_api,scatter & gather workflow using numpy
+    sag_np_metrics,server,client_api,scatter & gather workflow using numpy
+    sag_pt,server,client_api,scatter & gather workflow using pytorch
+    sag_pt_deploy_map,server,client_api,SAG workflow using pytorch with deploy_map & site-specific configs
+    sag_pt_executor,server,Executor,scatter & gather workflow and cross-site evaluation with PyTorch
+    sag_pt_he,server,client_api,scatter & gather workflow using pytorch and homomorphic encryption
+    sag_pt_mlflow,server,client_api,scatter & gather workflow using pytorch with MLflow tracking
+    sag_pt_model_learner,server,ModelLearner,scatter & gather workflow and cross-site evaluation with PyTorch
+    sag_tf,server,client_api,scatter & gather workflow using TensorFlow
+    sklearn_kmeans,server,client_api,scikit-learn KMeans model
+    sklearn_linear,server,client_api,scikit-learn linear model
+    sklearn_svm,server,client_api,scikit-learn SVM model
+    stats_df,server,stats_executor,FedStats: tabular data with pandas
+    stats_image,server,stats_executor,FedStats: image intensity histogram
+    swarm_cse_pt,client,client_api,Swarm Learning with Cross-Site Evaluation with PyTorch
+    swarm_cse_pt_model_learner,client,ModelLearner,Swarm Learning with Cross-Site Evaluation with PyTorch ModelLearner
+    vertical_xgb,server,Executor,vertical federated xgboost
+    xgboost_tree,server,client_api,xgboost horizontal tree-based collaboration model
