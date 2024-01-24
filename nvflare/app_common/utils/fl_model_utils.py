@@ -119,7 +119,6 @@ class FLModelUtils:
 
                 if MetaKey.INITIAL_METRICS in meta:
                     metrics = meta[MetaKey.INITIAL_METRICS]
- 
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
         total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS, None)
         validate_type = shareable.get_header(AppConstants.VALIDATE_TYPE, None)
