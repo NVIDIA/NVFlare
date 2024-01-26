@@ -1,25 +1,36 @@
-from nvflare.app_common.xgb.bridge import XGBClientBridge
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import nvflare.app_common.xgb.adaptors.grpc.proto.federated_pb2 as pb2
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.xgb.bridges.grpc.proto.federated_pb2_grpc import (
-    FederatedServicer,
-)
-import nvflare.app_common.xgb.bridges.grpc.proto.federated_pb2 as pb2
-from nvflare.fuel.f3.drivers.net_utils import get_open_tcp_port
-from nvflare.app_common.xgb.bridges.grpc.server import XGBServer
+from nvflare.app_common.xgb.adaptor import XGBClientAdaptor
+from nvflare.app_common.xgb.adaptors.grpc.proto.federated_pb2_grpc import FederatedServicer
+from nvflare.app_common.xgb.adaptors.grpc.server import XGBServer
 from nvflare.app_common.xgb.process_manager import ProcessManager
+from nvflare.fuel.f3.drivers.net_utils import get_open_tcp_port
 from nvflare.security.logging import secure_format_exception
 
 
-class GrpcClientBridge(XGBClientBridge, FederatedServicer):
-
+class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
     def __init__(
         self,
         run_xgb_client_cmd: str,
-        internal_server_addr = None,
+        internal_server_addr=None,
         grpc_options=None,
         req_timeout=10.0,
     ):
-        XGBClientBridge.__init__(self, req_timeout)
+        XGBClientAdaptor.__init__(self, req_timeout)
         self.run_xgb_client_cmd = run_xgb_client_cmd
         self.internal_server_addr = internal_server_addr
         self.grpc_options = grpc_options
@@ -70,7 +81,7 @@ class GrpcClientBridge(XGBClientBridge, FederatedServicer):
             self.logger.info("Stop internal XGB Server")
             self.internal_xgb_server.shutdown()
 
-    def is_stopped(self) -> (bool, int):
+    def _is_stopped(self) -> (bool, int):
         if self.client_manager:
             return self.client_manager.is_stopped()
         else:
@@ -86,59 +97,51 @@ class GrpcClientBridge(XGBClientBridge, FederatedServicer):
 
     def Allgather(self, request: pb2.AllgatherRequest, context):
         try:
-            rcv_buf = self.send_all_gather(
+            rcv_buf = self._send_all_gather(
                 rank=request.rank,
                 seq=request.sequence_number,
                 send_buf=request.send_buffer,
             )
-            return pb2.AllgatherReply(
-                receive_buffer=rcv_buf
-            )
+            return pb2.AllgatherReply(receive_buffer=rcv_buf)
         except Exception as ex:
             self._abort(reason=f"send_all_gather exception: {secure_format_exception(ex)}")
             return None
 
     def AllgatherV(self, request: pb2.AllgatherVRequest, context):
         try:
-            rcv_buf = self.send_all_gather_v(
+            rcv_buf = self._send_all_gather_v(
                 rank=request.rank,
                 seq=request.sequence_number,
                 send_buf=request.send_buffer,
             )
-            return pb2.AllgatherVReply(
-                receive_buffer=rcv_buf
-            )
+            return pb2.AllgatherVReply(receive_buffer=rcv_buf)
         except Exception as ex:
             self._abort(reason=f"send_all_gather_v exception: {secure_format_exception(ex)}")
             return None
 
     def Allreduce(self, request: pb2.AllreduceRequest, context):
         try:
-            rcv_buf = self.send_all_reduce(
+            rcv_buf = self._send_all_reduce(
                 rank=request.rank,
                 seq=request.sequence_number,
                 data_type=request.data_type,
                 reduce_op=request.reduce_operation,
                 send_buf=request.send_buffer,
             )
-            return pb2.AllreduceReply(
-                receive_buffer=rcv_buf
-            )
+            return pb2.AllreduceReply(receive_buffer=rcv_buf)
         except Exception as ex:
             self._abort(reason=f"send_all_reduce exception: {secure_format_exception(ex)}")
             return None
 
     def Broadcast(self, request: pb2.BroadcastRequest, context):
         try:
-            rcv_buf = self.send_broadcast(
+            rcv_buf = self._send_broadcast(
                 rank=request.rank,
                 seq=request.sequence_number,
                 root=request.root,
                 send_buf=request.send_buffer,
             )
-            return pb2.BroadcastReply(
-                receive_buffer=rcv_buf
-            )
+            return pb2.BroadcastReply(receive_buffer=rcv_buf)
         except Exception as ex:
             self._abort(reason=f"send_broadcast exception: {secure_format_exception(ex)}")
             return None

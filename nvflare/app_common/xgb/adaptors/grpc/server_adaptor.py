@@ -1,30 +1,41 @@
-from nvflare.app_common.xgb.bridge import XGBServerBridge
-from nvflare.app_common.xgb.defs import Constant
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import nvflare.app_common.xgb.adaptors.grpc.proto.federated_pb2 as pb2
 from nvflare.apis.fl_context import FLContext
-import nvflare.app_common.xgb.bridges.grpc.proto.federated_pb2 as pb2
-from nvflare.fuel.f3.drivers.net_utils import get_open_tcp_port
-from nvflare.app_common.xgb.bridges.grpc.client import XGBClient
+from nvflare.app_common.xgb.adaptor import XGBServerAdaptor
+from nvflare.app_common.xgb.adaptors.grpc.client import XGBClient
+from nvflare.app_common.xgb.defs import Constant
 from nvflare.app_common.xgb.process_manager import ProcessManager
-from nvflare.fuel.utils.validation_utils import (
-    check_str,
-)
+from nvflare.fuel.f3.drivers.net_utils import get_open_tcp_port
+from nvflare.fuel.utils.validation_utils import check_str
 
 
-class GrpcServerBridge(XGBServerBridge):
-
+class GrpcServerAdaptor(XGBServerAdaptor):
     def __init__(
         self,
         run_xgb_server_cmd: str,
         xgb_server_addr=None,
         xgb_server_ready_timeout=Constant.XGB_SERVER_READY_TIMEOUT,
     ):
-        XGBServerBridge.__init__(self)
+        XGBServerAdaptor.__init__(self)
         self.run_xgb_server_cmd = run_xgb_server_cmd
         self.xgb_server_addr = xgb_server_addr
         self.xgb_server_ready_timeout = xgb_server_ready_timeout
         self.internal_xgb_client = None
         self.xgb_server_manager = None
-        check_str('run_xgb_server_cmd', run_xgb_server_cmd)
+        check_str("run_xgb_server_cmd", run_xgb_server_cmd)
 
     def start(self, fl_ctx: FLContext):
         if not self.xgb_server_addr:
@@ -61,7 +72,7 @@ class GrpcServerBridge(XGBServerBridge):
             self.log_info(fl_ctx, "Stopping XGB Server Monitor")
             mgr.stop()
 
-    def is_stopped(self) -> (bool, int):
+    def _is_stopped(self) -> (bool, int):
         if self.xgb_server_manager:
             return self.xgb_server_manager.is_stopped()
         else:
@@ -84,13 +95,13 @@ class GrpcServerBridge(XGBServerBridge):
             raise RuntimeError(f"bad result from XGB server: expect AllgatherVReply but got {type(result)}")
 
     def all_reduce(
-            self,
-            rank: int,
-            seq: int,
-            data_type: int,
-            reduce_op: int,
-            send_buf: bytes,
-            fl_ctx: FLContext,
+        self,
+        rank: int,
+        seq: int,
+        data_type: int,
+        reduce_op: int,
+        send_buf: bytes,
+        fl_ctx: FLContext,
     ) -> bytes:
         assert isinstance(self.internal_xgb_client, XGBClient)
         result = self.internal_xgb_client.send_allreduce(
@@ -105,13 +116,7 @@ class GrpcServerBridge(XGBServerBridge):
         else:
             raise RuntimeError(f"bad result from XGB server: expect AllreduceReply but got {type(result)}")
 
-    def broadcast(
-            self,
-            rank: int,
-            seq: int,
-            root: int,
-            send_buf: bytes,
-            fl_ctx: FLContext) -> bytes:
+    def broadcast(self, rank: int, seq: int, root: int, send_buf: bytes, fl_ctx: FLContext) -> bytes:
         assert isinstance(self.internal_xgb_client, XGBClient)
         result = self.internal_xgb_client.send_broadcast(seq_num=seq, rank=rank, data=send_buf, root=root)
         if isinstance(result, pb2.BroadcastReply):

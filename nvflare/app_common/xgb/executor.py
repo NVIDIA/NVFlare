@@ -1,53 +1,81 @@
-from nvflare.apis.executor import Executor
-from nvflare.apis.fl_context import FLContext
-from nvflare.apis.fl_constant import ReturnCode
-from nvflare.apis.signal import Signal
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 from nvflare.apis.event_type import EventType
+from nvflare.apis.executor import Executor
+from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
-from nvflare.app_common.xgb.bridge import XGBClientBridge
-from nvflare.security.logging import secure_format_exception
+from nvflare.apis.signal import Signal
+from nvflare.app_common.xgb.adaptor import XGBClientAdaptor
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.security.logging import secure_format_exception
+
 from .defs import Constant
 
 
 class XGBExecutor(Executor):
-
     def __init__(
-            self,
-            bridge_component_id: str,
-            configure_task_name=Constant.CONFIG_TASK_NAME,
-            start_task_name=Constant.START_TASK_NAME,
-            req_timeout=10.0,
+        self,
+        adaptor_component_id: str,
+        configure_task_name=Constant.CONFIG_TASK_NAME,
+        start_task_name=Constant.START_TASK_NAME,
+        req_timeout=10.0,
     ):
+        """Constructor
+
+        Args:
+            adaptor_component_id: the component ID of client target adaptor
+            configure_task_name: name of the config task
+            start_task_name: name of the start task
+            req_timeout: timeout for XGB requests to the server
+        """
         Executor.__init__(self)
-        self.bridge_component_id = bridge_component_id
+        self.adaptor_component_id = adaptor_component_id
         self.req_timeout = req_timeout
         self.configure_task_name = configure_task_name
         self.start_task_name = start_task_name
-        self.bridge = None
+        self.adaptor = None
+
+        # create the abort signal to be used for signaling the adaptor
         self.abort_signal = Signal()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
             engine = fl_ctx.get_engine()
-            bridge = engine.get_component(self.bridge_component_id)
-            if not bridge:
-                self.system_panic(f"cannot get component for {self.bridge_component_id}", fl_ctx)
+            adaptor = engine.get_component(self.adaptor_component_id)
+            if not adaptor:
+                self.system_panic(f"cannot get component for {self.adaptor_component_id}", fl_ctx)
                 return
 
-            if not isinstance(bridge, XGBClientBridge):
+            if not isinstance(adaptor, XGBClientAdaptor):
                 self.system_panic(
-                    f"invalid component for {self.bridge_component_id}: expect XGBClientBridge but got {type(bridge)}",
-                    fl_ctx)
+                    f"invalid component '{self.adaptor_component_id}': expect XGBClientAdaptor but got {type(adaptor)}",
+                    fl_ctx,
+                )
                 return
 
-            bridge.set_abort_signal(self.abort_signal)
-            self.bridge = bridge
+            adaptor.set_abort_signal(self.abort_signal)
+            self.adaptor = adaptor
         elif event_type == EventType.END_RUN:
             self.abort_signal.trigger(True)
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if task_name == self.configure_task_name:
+            # there are two important config params for the client:
+            #   the rank assigned to the client;
+            #   number of rounds for training.
             ranks = shareable.get(Constant.CONF_KEY_CLIENT_RANKS)
             if not ranks:
                 self.log_error(fl_ctx, f"missing {Constant.CONF_KEY_CLIENT_RANKS} from config")
@@ -70,44 +98,55 @@ class XGBExecutor(Executor):
                 self.log_error(fl_ctx, f"missing {Constant.CONF_KEY_NUM_ROUNDS} from config")
                 return make_reply(ReturnCode.BAD_TASK_DATA)
 
-            assert isinstance(self.bridge, XGBClientBridge)
-            self.bridge.configure(
+            # configure the XGB client target via the adaptor
+            self.adaptor.configure(
                 {
                     Constant.CONF_KEY_RANK: my_rank,
                     Constant.CONF_KEY_NUM_ROUNDS: num_rounds,
-                 },
-                fl_ctx)
+                },
+                fl_ctx,
+            )
             return make_reply(ReturnCode.OK)
         elif task_name == self.start_task_name:
-            # start bridge
+            # start adaptor
             try:
-                self.bridge.start(fl_ctx)
+                self.adaptor.start(fl_ctx)
             except Exception as ex:
-                self.log_exception(fl_ctx, f"failed to start bridge: {secure_format_exception(ex)}")
+                self.log_exception(fl_ctx, f"failed to start adaptor: {secure_format_exception(ex)}")
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-            # start bridge monitor
-            self.bridge.monitor_target(fl_ctx, self._notify_client_done)
+            # start to monitor the XGB target via the adaptor
+            self.adaptor.monitor_target(fl_ctx, self._notify_client_done)
             return make_reply(ReturnCode.OK)
         else:
             self.log_error(fl_ctx, f"ignored unsupported {task_name}")
             return make_reply(ReturnCode.TASK_UNSUPPORTED)
 
     def _notify_client_done(self, rc, fl_ctx: FLContext):
+        """This is called when the XGB client target is done.
+        We send a message to the FL server telling it that this client is done.
+
+        Args:
+            rc: the return code from the XGB client target
+            fl_ctx: FL context
+
+        Returns: None
+
+        """
         if rc != 0:
             self.log_error(fl_ctx, f"XGB Client stopped with RC {rc}")
         else:
             self.log_info(fl_ctx, "XGB Client Stopped")
 
-        # tell server that XGB is done
+        # tell server that this client is done
         engine = fl_ctx.get_engine()
         req = Shareable()
-        req[Constant.CONF_KEY_EXIT_CODE] = rc
+        req[Constant.MSG_KEY_EXIT_CODE] = rc
         engine.send_aux_request(
             targets=[FQCN.ROOT_SERVER],
             topic=Constant.TOPIC_CLIENT_DONE,
             request=req,
-            timeout=0,   # fire and forget
+            timeout=0,  # fire and forget
             fl_ctx=fl_ctx,
             optional=True,
         )

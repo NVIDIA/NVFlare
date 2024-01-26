@@ -18,80 +18,100 @@ from nvflare.apis.client import Client
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import ClientTask, Controller, Task
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
-from nvflare.security.logging import secure_format_exception
 from nvflare.apis.signal import Signal
-from nvflare.fuel.utils.validation_utils import (
-    check_number_range,
-    check_positive_number,
-    check_str,
-    check_object_type
-)
-from nvflare.app_common.xgb.bridge import XGBServerBridge
+from nvflare.app_common.xgb.adaptor import XGBServerAdaptor
+from nvflare.fuel.utils.validation_utils import check_number_range, check_object_type, check_positive_number, check_str
+from nvflare.security.logging import secure_format_exception
+
 from .defs import Constant
 
 
 class ClientStatus:
+    """
+    Objects of this class keep processing status of each FL client during job execution.
+    """
+
     def __init__(self):
+        # Set when the client's config reply is received and the reply return code is OK.
+        # If the client failed to reply or the return code is not OK, this value is not set.
         self.configured_time = None
+
+        # Set when the client's start reply is received and the reply return code is OK.
+        # If the client failed to reply or the return code is not OK, this value is not set.
         self.started_time = None
+
+        # operation of the last XGB request from this client
         self.last_op = None
-        self.last_report_time = time.time()
+
+        # time of the last XGB op request from this client
+        self.last_op_time = time.time()
+
+        # whether the XGB process is done on this client
         self.xgb_done = False
 
 
 class XGBController(Controller):
     def __init__(
         self,
-        bridge_component_id: str,
+        adaptor_component_id: str,
         num_rounds: int,
         configure_task_name=Constant.CONFIG_TASK_NAME,
         configure_task_timeout=Constant.CONFIG_TASK_TIMEOUT,
         start_task_name=Constant.START_TASK_NAME,
         start_task_timeout=Constant.START_TASK_TIMEOUT,
         job_status_check_interval: float = Constant.JOB_STATUS_CHECK_INTERVAL,
-        max_status_report_interval: float = Constant.PER_CLIENT_STATUS_REPORT_TIMEOUT,
+        max_client_op_interval: float = Constant.MAX_CLIENT_OP_INTERVAL,
         progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
-        max_run_time=None,
         client_ranks=None,
     ):
         """
         Constructor
 
         Args:
+            adaptor_component_id - the component ID of server target adaptor
+            num_rounds - number of rounds
+            configure_task_name - name of the config task
             configure_task_timeout - time to wait for clients’ responses to the config task before timeout.
+            start_task_name - name of the start task
+            start_task_timeout - time to wait for clients’ responses to the start task before timeout.
+            job_status_check_interval - how often to check client statuses of the job
+            max_client_op_interval - max amount of time allowed between XGB ops from a client
             progress_timeout- the maximum amount of time allowed for the workflow to not make any progress.
                 In other words, at least one participating client must have made progress during this time.
                 Otherwise, the workflow will be considered to be in trouble and the job will be aborted.
-            end_workflow_timeout - timeout for ending workflow message.
+            client_ranks: client rank assignments.
+                If specified, must be a dict of client_name => rank.
+                If not specified, client ranks will be randomly assigned.
+                No matter how assigned, ranks must be consecutive integers, starting from 0.
         """
         Controller.__init__(self)
-        self.bridge_component_id = bridge_component_id
+        self.adaptor_component_id = adaptor_component_id
         self.num_rounds = num_rounds
         self.configure_task_name = configure_task_name
         self.start_task_name = start_task_name
         self.start_task_timeout = start_task_timeout
         self.configure_task_timeout = configure_task_timeout
-        self.max_status_report_interval = max_status_report_interval
+        self.max_client_op_interval = max_client_op_interval
         self.progress_timeout = progress_timeout
         self.job_status_check_interval = job_status_check_interval
-        self.max_run_time = max_run_time
         self.client_ranks = client_ranks  # client rank assignments
 
-        self.bridge = None
+        self.adaptor = None
         self.participating_clients = None
         self.status_lock = threading.Lock()
         self.client_statuses = {}  # client name => ClientStatus
         self.abort_signal = None
 
-        check_str('bridge_component_id', bridge_component_id)
+        check_str("adaptor_component_id", adaptor_component_id)
         check_number_range("configure_task_timeout", configure_task_timeout, min_value=1)
         check_positive_number("job_status_check_interval", job_status_check_interval)
         check_positive_number("num_rounds", num_rounds)
-        check_number_range("max_status_report_interval", max_status_report_interval, min_value=10.0)
+        check_number_range("max_client_op_interval", max_client_op_interval, min_value=10.0)
         check_number_range("progress_timeout", progress_timeout, min_value=5.0)
         if client_ranks:
-            check_object_type('client_ranks', client_ranks, dict)
+            check_object_type("client_ranks", client_ranks, dict)
 
+        # set up operation handlers
         self.op_table = {
             Constant.OP_ALL_GATHER: self._process_all_gather,
             Constant.OP_ALL_GATHER_V: self._process_all_gather_v,
@@ -107,18 +127,19 @@ class XGBController(Controller):
             self.client_statuses[c] = ClientStatus()
 
         engine = fl_ctx.get_engine()
-        bridge = engine.get_component(self.bridge_component_id)
-        if not bridge:
-            self.system_panic(f"cannot get component for {self.bridge_component_id}", fl_ctx)
+        adaptor = engine.get_component(self.adaptor_component_id)
+        if not adaptor:
+            self.system_panic(f"cannot get component for {self.adaptor_component_id}", fl_ctx)
             return
 
-        if not isinstance(bridge, XGBServerBridge):
+        if not isinstance(adaptor, XGBServerAdaptor):
             self.system_panic(
-                f"invalid component for {self.bridge_component_id}: expect XGBServerBridge but got {type(bridge)}",
-                fl_ctx)
+                f"invalid component '{self.adaptor_component_id}': expect XGBServerBridge but got {type(adaptor)}",
+                fl_ctx,
+            )
             return
 
-        self.bridge = bridge
+        self.adaptor = adaptor
 
         engine.register_aux_message_handler(
             topic=Constant.TOPIC_XGB_REQUEST,
@@ -129,16 +150,32 @@ class XGBController(Controller):
             message_handle_func=self._process_client_done,
         )
 
-    def _trigger_stop(self, fl_ctx:FLContext, error=None):
+    def _trigger_stop(self, fl_ctx: FLContext, error=None):
+        # first trigger the abort_signal to tell all components (mainly the controller's control_flow and adaptor)
+        # that check this signal to abort.
         if self.abort_signal:
             self.abort_signal.trigger(value=True)
+
+        # if there is error, call system_panic to terminate the job with proper status.
+        # if no error, the job will end normally.
         if error:
             self.system_panic(reason=error, fl_ctx=fl_ctx)
 
     def _is_stopped(self):
+        # check whether the abort signal is triggered
         return self.abort_signal and self.abort_signal.triggered
 
     def _update_client_status(self, fl_ctx: FLContext, op=None, client_done=False):
+        """Update the status of the requesting client.
+
+        Args:
+            fl_ctx: FL context
+            op: the XGB operation requested
+            client_done: whether the client is done
+
+        Returns: None
+
+        """
         with self.status_lock:
             peer_ctx = fl_ctx.get_peer_context()
             if not peer_ctx:
@@ -159,51 +196,104 @@ class XGBController(Controller):
                 status.last_op = op
             if client_done:
                 status.xgb_done = client_done
-            status.last_report_time = time.time()
+            status.last_op_time = time.time()
 
     def _process_client_done(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
-        exit_code = request.get(Constant.CONF_KEY_EXIT_CODE)
-        self.log_info(fl_ctx, f"XGB client is done with exit code {exit_code}")
+        """Process the ClientDone report for a client
+
+        Args:
+            topic: topic of the message
+            request: request to be processed
+            fl_ctx: the FL context
+
+        Returns: reply to the client
+
+        """
+        exit_code = request.get(Constant.MSG_KEY_EXIT_CODE)
+
+        # TBD: should we check the exit_code and determine job status?
+        # Problem is that even if the exit_code is not 0, we can't say the job failed.
+        if exit_code == 0:
+            self.log_info(fl_ctx, f"XGB client is done with exit code {exit_code}")
+        else:
+            self.log_warning(fl_ctx, f"XGB client is done with exit code {exit_code}")
+
         self._update_client_status(fl_ctx, client_done=True)
         return make_reply(ReturnCode.OK)
 
     def _process_all_gather(self, request: Shareable, fl_ctx: FLContext) -> Shareable:
+        """This is the op handler for Allgather.
+
+        Args:
+            request: the request containing op params
+            fl_ctx: FL context
+
+        Returns: a Shareable containing operation result
+
+        """
         rank = request.get(Constant.PARAM_KEY_RANK)
         seq = request.get(Constant.PARAM_KEY_SEQ)
         send_buf = request.get(Constant.PARAM_KEY_SEND_BUF)
-        rcv_buf = self.bridge.all_gather(rank, seq, send_buf, fl_ctx)
+        rcv_buf = self.adaptor.all_gather(rank, seq, send_buf, fl_ctx)
         reply = Shareable()
         reply[Constant.PARAM_KEY_RCV_BUF] = rcv_buf
         return reply
 
     def _process_all_gather_v(self, request: Shareable, fl_ctx: FLContext) -> Shareable:
+        """This is the op handler for AllgatherV.
+
+        Args:
+            request: the request containing op params
+            fl_ctx: FL context
+
+        Returns: a Shareable containing operation result
+
+        """
         rank = request.get(Constant.PARAM_KEY_RANK)
         seq = request.get(Constant.PARAM_KEY_SEQ)
         send_buf = request.get(Constant.PARAM_KEY_SEND_BUF)
-        rcv_buf = self.bridge.all_gather_v(rank, seq, send_buf, fl_ctx)
+        rcv_buf = self.adaptor.all_gather_v(rank, seq, send_buf, fl_ctx)
         reply = Shareable()
         reply[Constant.PARAM_KEY_RCV_BUF] = rcv_buf
         return reply
 
     def _process_all_reduce(self, request: Shareable, fl_ctx: FLContext) -> Shareable:
+        """This is the op handler for Allreduce.
+
+        Args:
+            request: the request containing op params
+            fl_ctx: FL context
+
+        Returns: a Shareable containing operation result
+
+        """
         rank = request.get(Constant.PARAM_KEY_RANK)
         seq = request.get(Constant.PARAM_KEY_SEQ)
         send_buf = request.get(Constant.PARAM_KEY_SEND_BUF)
         data_type = request.get(Constant.PARAM_KEY_DATA_TYPE)
         reduce_op = request.get(Constant.PARAM_KEY_REDUCE_OP)
-        assert isinstance(self.bridge, XGBServerBridge)
-        rcv_buf = self.bridge.all_reduce(rank, seq, data_type, reduce_op, send_buf, fl_ctx)
+        assert isinstance(self.adaptor, XGBServerAdaptor)
+        rcv_buf = self.adaptor.all_reduce(rank, seq, data_type, reduce_op, send_buf, fl_ctx)
         reply = Shareable()
         reply[Constant.PARAM_KEY_RCV_BUF] = rcv_buf
         return reply
 
     def _process_broadcast(self, request: Shareable, fl_ctx: FLContext) -> Shareable:
+        """This is the op handler for Broadcast.
+
+        Args:
+            request: the request containing op params
+            fl_ctx: FL context
+
+        Returns: a Shareable containing operation result
+
+        """
         rank = request.get(Constant.PARAM_KEY_RANK)
         seq = request.get(Constant.PARAM_KEY_SEQ)
         send_buf = request.get(Constant.PARAM_KEY_SEND_BUF)
         root = request.get(Constant.PARAM_KEY_ROOT)
-        assert isinstance(self.bridge, XGBServerBridge)
-        rcv_buf = self.bridge.broadcast(rank, seq, root, send_buf, fl_ctx)
+        assert isinstance(self.adaptor, XGBServerAdaptor)
+        rcv_buf = self.adaptor.broadcast(rank, seq, root, send_buf, fl_ctx)
         reply = Shareable()
         reply[Constant.PARAM_KEY_RCV_BUF] = rcv_buf
         return reply
@@ -214,7 +304,7 @@ class XGBController(Controller):
             return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
 
         # since XGB protocol is very strict, we'll stop the control flow when any error occurs
-        op = request.get_header(Constant.KEY_XGB_OP)
+        op = request.get_header(Constant.MSG_KEY_XGB_OP)
         bad_req_error = "bad XGB request"
         process_error = "XGB request process error"
         if not op:
@@ -222,6 +312,7 @@ class XGBController(Controller):
             self._trigger_stop(fl_ctx, bad_req_error)
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
+        # find and call the op handlers
         process_f = self.op_table.get(op)
         if process_f is None:
             self.log_error(fl_ctx, f"invalid op '{op}' from XGB request")
@@ -229,7 +320,11 @@ class XGBController(Controller):
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
         self._update_client_status(fl_ctx, op=op)
-        assert callable(process_f)
+
+        if not callable(process_f):
+            # impossible but we must declare process_f to be callable; otherwise PyCharm will complain about
+            # process_f(request, fl_ctx).
+            raise RuntimeError(f"op handler for {op} is not callable")
         try:
             reply = process_f(request, fl_ctx)
         except Exception as ex:
@@ -238,40 +333,53 @@ class XGBController(Controller):
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
         self.log_info(fl_ctx, f"received reply for '{op}'")
-        reply.set_header(Constant.KEY_XGB_OP, op)
+        reply.set_header(Constant.MSG_KEY_XGB_OP, op)
         return reply
 
     def _configure_clients(self, abort_signal: Signal, fl_ctx: FLContext):
         self.log_info(fl_ctx, f"Configuring clients {self.participating_clients}")
 
         shareable = Shareable()
-        shareable[Constant.CONF_KEY_MAX_RUN_TIME] = self.max_run_time
 
         # compute client ranks
         if not self.client_ranks:
-            # dynamically assign ranks
+            # dynamically assign ranks, starting from 0
             self.client_ranks = {}
             for i, c in enumerate(self.participating_clients):
                 self.client_ranks[c] = i
         else:
-            # validate ranks
-            if len(self.client_ranks) != len(self.participating_clients):
+            # validate ranks - ranks must be unique consecutive integers, starting from 0.
+            num_clients = len(self.participating_clients)
+            assigned_ranks = {}  # rank => client
+            if len(self.client_ranks) != num_clients:
+                # either missing client or duplicate client
                 self.system_panic(
-                    f"expecting rank assignments for {self.participating_clients} but got {self.client_ranks}",
-                    fl_ctx)
+                    f"expecting rank assignments for {self.participating_clients} but got {self.client_ranks}", fl_ctx
+                )
                 return False
 
+            # all clients must have ranks
             for c in self.participating_clients:
                 if c not in self.client_ranks:
                     self.system_panic(f"missing rank assignment for client '{c}'", fl_ctx)
                     return False
 
+            # check each client's rank
             for c, r in self.client_ranks.items():
                 if not isinstance(r, int):
-                    self.system_panic(
-                        f"bad rank assignment {r} for client '{c}': expect int but got {type(r)}",
-                        fl_ctx)
+                    self.system_panic(f"bad rank assignment {r} for client '{c}': expect int but got {type(r)}", fl_ctx)
                     return False
+
+                if r < 0 or r >= num_clients:
+                    self.system_panic(f"bad rank assignment {r} for client '{c}': must be 0 to {num_clients-1}", fl_ctx)
+                    return False
+
+                assigned_client = assigned_ranks.get(r)
+                if assigned_client:
+                    self.system_panic(f"rank {r} is assigned to both client '{c}' and '{assigned_client}'", fl_ctx)
+                    return False
+
+                assigned_ranks[r] = c
 
         shareable[Constant.CONF_KEY_CLIENT_RANKS] = self.client_ranks
         shareable[Constant.CONF_KEY_NUM_ROUNDS] = self.num_rounds
@@ -302,6 +410,7 @@ class XGBController(Controller):
             if not cs.configured_time:
                 failed_clients.append(c)
 
+        # if any client failed to configure, terminate the job
         if failed_clients:
             self.system_panic(f"failed to configure clients {failed_clients}", fl_ctx)
             return False
@@ -338,6 +447,7 @@ class XGBController(Controller):
             if not cs.started_time:
                 failed_clients.append(c)
 
+        # if any client failed to start, terminate the job
         if failed_clients:
             self.system_panic(f"failed to start clients {failed_clients}", fl_ctx)
             return False
@@ -346,10 +456,26 @@ class XGBController(Controller):
         return True
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
-        self.abort_signal = abort_signal
-        self.bridge.set_abort_signal(abort_signal)
+        """
+        This is the control flow of the XGB Controller. To ensure smooth XGB execution:
+        - ensure that all clients are online and ready to go before starting server
+        - ensure that server is started and ready to take requests before asking clients to start operation
+        - monitor the health of the clients
+        - if anything goes wrong, terminate the job
 
-        # wait for every client to become ready
+        Args:
+            abort_signal: abort signal that is used to notify components to abort
+            fl_ctx: FL context
+
+        Returns: None
+
+        """
+        self.abort_signal = abort_signal
+
+        # the adaptor uses the same abort signal!
+        self.adaptor.set_abort_signal(abort_signal)
+
+        # wait for every client to become online and properly configured
         self.log_info(fl_ctx, f"Waiting for clients to be ready: {self.participating_clients}")
 
         # configure all clients
@@ -357,24 +483,25 @@ class XGBController(Controller):
             self.system_panic("failed to configure all clients", fl_ctx)
             return
 
-        # We start the server bridge here
+        # start the server adaptor
         try:
-            self.bridge.configure({Constant.CONF_KEY_WORLD_SIZE: len(self.participating_clients)}, fl_ctx)
-            self.bridge.start(fl_ctx)
+            self.adaptor.configure({Constant.CONF_KEY_WORLD_SIZE: len(self.participating_clients)}, fl_ctx)
+            self.adaptor.start(fl_ctx)
         except Exception as ex:
             error = f"failed to start bridge: {secure_format_exception(ex)}"
             self.log_error(fl_ctx, error)
             self.system_panic(error, fl_ctx)
             return
 
-        assert isinstance(self.bridge, XGBServerBridge)
-        self.bridge.monitor_target(fl_ctx, self._xgb_server_stopped)
+        self.adaptor.monitor_target(fl_ctx, self._xgb_server_stopped)
 
         # start all clients
         if not self._start_clients(abort_signal, fl_ctx):
             self.system_panic("failed to start all clients", fl_ctx)
             return
 
+        # monitor client health
+        # we periodically check job status until all clients are done or the system is stopped
         self.log_info(fl_ctx, f"Waiting for clients to finish ...")
         while not self._is_stopped():
             done = self._check_job_status(fl_ctx)
@@ -383,7 +510,7 @@ class XGBController(Controller):
             time.sleep(self.job_status_check_interval)
 
     def _xgb_server_stopped(self, rc, fl_ctx: FLContext):
-        # XGB server process stopped
+        # This CB is called when XGB server target is stopped
         error = None
         if rc != 0:
             self.log_error(fl_ctx, f"XGB Server stopped abnormally with code {rc}")
@@ -421,8 +548,18 @@ class XGBController(Controller):
         else:
             self.log_error(fl_ctx, f"client {client_name} failed to start")
 
-    def _check_job_status(self, fl_ctx: FLContext):
+    def _check_job_status(self, fl_ctx: FLContext) -> bool:
+        """Check job status and determine whether the job is done.
+
+        Args:
+            fl_ctx: FL context
+
+        Returns: whether the job is considered done.
+
+        """
         now = time.time()
+
+        # overall_last_progress_time is the latest time that any client made progress.
         overall_last_progress_time = 0.0
         clients_done = 0
         for client_name, cs in self.client_statuses.items():
@@ -431,20 +568,23 @@ class XGBController(Controller):
             if cs.xgb_done:
                 self.log_info(fl_ctx, f"client {client_name} is Done")
                 clients_done += 1
-            elif now - cs.last_report_time > self.max_status_report_interval:
+            elif now - cs.last_op_time > self.max_client_op_interval:
                 self.system_panic(
-                    f"client {client_name} didn't have any activity for {self.max_status_report_interval} seconds",
+                    f"client {client_name} didn't have any activity for {self.max_client_op_interval} seconds",
                     fl_ctx,
                 )
                 return True
 
-            if overall_last_progress_time < cs.last_report_time:
-                overall_last_progress_time = cs.last_report_time
+            if overall_last_progress_time < cs.last_op_time:
+                overall_last_progress_time = cs.last_op_time
 
         if clients_done == len(self.client_statuses):
-            # all clients are done
+            # all clients are done - the job is considered done
             return True
         elif time.time() - overall_last_progress_time > self.progress_timeout:
+            # there has been no progress from any client for too long.
+            # this could be because the clients got stuck.
+            # consider the job done and abort the job.
             self.system_panic(f"the job has no progress for {self.progress_timeout} seconds", fl_ctx)
             return True
         return False
@@ -455,6 +595,6 @@ class XGBController(Controller):
         self.log_warning(fl_ctx, f"ignored unknown task {task_name} from client {client.name}")
 
     def stop_controller(self, fl_ctx: FLContext):
-        if self.bridge:
+        if self.adaptor:
             self.log_info(fl_ctx, "Stopping server bridge")
-            self.bridge.stop(fl_ctx)
+            self.adaptor.stop(fl_ctx)

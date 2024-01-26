@@ -111,7 +111,7 @@ XGBClient* _check_waiting_op(int rank, int received_op, int* rc) {
 }
 
 int xgbc_reply(int op, int rank, unsigned char* rcv_buf, size_t rcv_size) {
-    printf("CCC: xgbc_reply: rank=%d, op=%d rcv_buf='%s' rcv_size=%zu\n", rank, op, rcv_buf, rcv_size);
+    printf("CCC: xgbc_reply: rank=%d, op=%d rcv_size=%zu\n", rank, op, rcv_size);
     int rc;
     XGBClient* c;
     c = _check_waiting_op(rank, op, &rc);
@@ -124,7 +124,6 @@ int xgbc_reply(int op, int rank, unsigned char* rcv_buf, size_t rcv_size) {
     c->rcv_buf = (unsigned char*)malloc(rcv_size);
     memcpy(c->rcv_buf, rcv_buf, rcv_size);
     c->rcv_buf_size = rcv_size;
-    printf("CCC: xgbc_reply Set: rcv_buf='%s' rcv_size=%zu\n", c->rcv_buf, c->rcv_buf_size);
     c->received = 1;
     return 0;
 }
@@ -144,7 +143,7 @@ int _send_op(
         return rc;
     }
 
-    printf("CCC: _send_op op=%d send_buf='%s' send_size=%zu\n", op, send_buf, send_size);
+    printf("CCC: _send_op op=%d send_size=%zu\n", op, send_size);
 
     pthread_mutex_lock(&XGBC_op_mutex);
     c->send_buf = send_buf;
@@ -166,7 +165,6 @@ int _send_op(
     }
 
     printf("CCC: Received reply for op %d rank %d, seq %d\n", op, rank, seq);
-    printf("CCC: Reply rcv_buf='%s' rcv_size=%zu\n", c->rcv_buf, c->rcv_buf_size);
     *rcv_buf = c->rcv_buf;
     *rcv_size = c->rcv_buf_size;
     return 0;
@@ -209,7 +207,6 @@ void _check_result(
         printf("CCC: %s failed: rc=%d\n", name, rc);
         return;
     }
-    printf("CCC: %s: rcv_buf='%s', len=%zu\n", name, rcv_buf, rcv_size);
 
     if (send_size != rcv_size) {
         printf("CCC: %s failed: send_size %zu != rcv_size %zu\n", name, send_size, rcv_size);
@@ -237,8 +234,8 @@ int xgbc_start(int rank, int num_rounds) {
         return rc;
     }
 
-    char send_buf[15] = "this is a test";
-    int buf_size = strlen(send_buf) + 1;
+    size_t buf_size = 100;
+    unsigned char* send_buf = (unsigned char*)malloc(buf_size);
     unsigned char *rcv_buf;
     size_t rcv_size;
     int seq = 0;
@@ -248,8 +245,6 @@ int xgbc_start(int rank, int num_rounds) {
             printf("CCC: rank %d is asked to abort!\n", rank);
             return 0;
         }
-
-        printf("CCC: send_buf='%s', len=%lu\n", send_buf, strlen(send_buf));
 
         rc = xgbc_send_all_gather(rank, seq++, send_buf, buf_size, &rcv_buf, &rcv_size);
         _check_result(rank, seq, "Allgather", rc, send_buf, buf_size, rcv_buf, rcv_size);

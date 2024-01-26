@@ -1,14 +1,28 @@
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import ctypes
 import threading
 import time
 
-from nvflare.app_common.xgb.defs import Constant
-from nvflare.app_common.xgb.bridge import XGBClientBridge
 from nvflare.apis.fl_context import FLContext
+from nvflare.app_common.xgb.adaptor import XGBClientAdaptor
+from nvflare.app_common.xgb.defs import Constant
 from nvflare.security.logging import secure_format_exception
 
 
-class CClientBridge(XGBClientBridge):
+class CClientAdaptor(XGBClientAdaptor):
 
     _xgb_lib = None
     _max_num_clients = 10
@@ -28,7 +42,7 @@ class CClientBridge(XGBClientBridge):
         cls._xgb_lib.xgbc_new_client.restype = ctypes.c_int
 
         cls._xgb_lib.xgbc_get_pending_op.argtypes = [
-            ctypes.c_int,   # rank
+            ctypes.c_int,  # rank
             ctypes.POINTER(ctypes.c_int),  # int* seq
             ctypes.POINTER(ctypes.POINTER(ctypes.c_ubyte)),  # unsigned char** send_buf
             ctypes.POINTER(ctypes.c_size_t),  # size_t* send_size
@@ -39,10 +53,10 @@ class CClientBridge(XGBClientBridge):
         cls._xgb_lib.xgbc_get_pending_op.restype = ctypes.c_int
 
         cls._xgb_lib.xgbc_reply.argtypes = [
-            ctypes.c_int,                       # int op
-            ctypes.c_int,                       # int rank
-            ctypes.POINTER(ctypes.c_ubyte),     # unsigned char* rcv_buf
-            ctypes.c_size_t,                    # size_t rcv_size
+            ctypes.c_int,  # int op
+            ctypes.c_int,  # int rank
+            ctypes.POINTER(ctypes.c_ubyte),  # unsigned char* rcv_buf
+            ctypes.c_size_t,  # size_t rcv_size
         ]
         cls._xgb_lib.xgbc_reply.restype = ctypes.c_int
 
@@ -54,11 +68,8 @@ class CClientBridge(XGBClientBridge):
 
         cls._xgb_lib.xgbc_initialize(cls._max_num_clients)  # we may get _max_num_clients from config later
 
-    def __init__(
-            self,
-            lib_path: str,
-            req_timeout=10.0):
-        XGBClientBridge.__init__(self, req_timeout)
+    def __init__(self, lib_path: str, req_timeout=10.0):
+        XGBClientAdaptor.__init__(self, req_timeout)
 
         # TBD - need to handle c shared lib path with env vars or Pathlib
         self._load_lib(lib_path)
@@ -91,8 +102,13 @@ class CClientBridge(XGBClientBridge):
         reduce_op = ctypes.c_int()
         root = ctypes.c_int()
         op = self._xgb_lib.xgbc_get_pending_op(
-            self.rank, ctypes.byref(seq), ctypes.byref(send_buf), ctypes.byref(send_size),
-            ctypes.byref(data_type), ctypes.byref(reduce_op), ctypes.byref(root),
+            self.rank,
+            ctypes.byref(seq),
+            ctypes.byref(send_buf),
+            ctypes.byref(send_size),
+            ctypes.byref(data_type),
+            ctypes.byref(reduce_op),
+            ctypes.byref(root),
         )
         if op in [Constant.OPCODE_DONE, Constant.OPCODE_NONE]:
             # no pending op
@@ -105,7 +121,7 @@ class CClientBridge(XGBClientBridge):
 
         props = {
             Constant.PARAM_KEY_SEQ: seq.value,
-            Constant.PARAM_KEY_SEND_BUF: bytes(send_buf[0:send_size.value]),
+            Constant.PARAM_KEY_SEND_BUF: bytes(send_buf[0 : send_size.value]),
             Constant.PARAM_KEY_DATA_TYPE: data_type.value,
             Constant.PARAM_KEY_REDUCE_OP: reduce_op.value,
             Constant.PARAM_KEY_ROOT: root.value,
@@ -132,32 +148,32 @@ class CClientBridge(XGBClientBridge):
         p.start()
         self.log_info(fl_ctx, "started C client")
 
-    def _handle_all_gather(self, op: int, params: dict):
+    def _handle_all_gather(self, params: dict):
         seq = params.get(Constant.PARAM_KEY_SEQ)
         send_buf = params.get(Constant.PARAM_KEY_SEND_BUF)
         self.logger.info(f"client {self.rank}: got all_gather {seq=} {len(send_buf)=}")
-        return self.send_all_gather(self.rank, seq, send_buf)
+        return self._send_all_gather(self.rank, seq, send_buf)
 
-    def _handle_all_gather_v(self, op: int, params: dict):
+    def _handle_all_gather_v(self, params: dict):
         seq = params.get(Constant.PARAM_KEY_SEQ)
         send_buf = params.get(Constant.PARAM_KEY_SEND_BUF)
         self.logger.info(f"client {self.rank}: got all_gather_v {seq=} {len(send_buf)=}")
-        return self.send_all_gather_v(self.rank, seq, send_buf)
+        return self._send_all_gather_v(self.rank, seq, send_buf)
 
-    def _handle_all_reduce(self, op: int, params: dict):
+    def _handle_all_reduce(self, params: dict):
         seq = params.get(Constant.PARAM_KEY_SEQ)
         send_buf = params.get(Constant.PARAM_KEY_SEND_BUF)
         data_type = params.get(Constant.PARAM_KEY_DATA_TYPE)
         reduce_op = params.get(Constant.PARAM_KEY_REDUCE_OP)
         self.logger.info(f"client {self.rank}: got all_reduce {seq=} {len(send_buf)=}")
-        return self.send_all_reduce(self.rank, seq, data_type, reduce_op, send_buf)
+        return self._send_all_reduce(self.rank, seq, data_type, reduce_op, send_buf)
 
-    def _handle_broadcast(self, op: int, params: dict):
+    def _handle_broadcast(self, params: dict):
         seq = params.get(Constant.PARAM_KEY_SEQ)
         send_buf = params.get(Constant.PARAM_KEY_SEND_BUF)
         root = params.get(Constant.PARAM_KEY_ROOT)
         self.logger.info(f"client {self.rank}: got broadcast {seq=} {len(send_buf)=}")
-        return self.send_broadcast(self.rank, seq, root, send_buf)
+        return self._send_broadcast(self.rank, seq, root, send_buf)
 
     def _poll_requests(self):
         # poll requests from C side
@@ -184,7 +200,7 @@ class CClientBridge(XGBClientBridge):
                 else:
                     try:
                         assert callable(handler_f)
-                        rcv_buf = handler_f(op, params)
+                        rcv_buf = handler_f(params)
                         self._send_reply(op, rcv_buf)
                     except Exception as ex:
                         self.logger.error(f"exception handling all_gather: {secure_format_exception(ex)}")
@@ -194,7 +210,7 @@ class CClientBridge(XGBClientBridge):
                         return
             time.sleep(0.001)
 
-    def is_stopped(self) -> (bool, int):
+    def _is_stopped(self) -> (bool, int):
         return self.target_done, self.target_rc
 
     def _stop_target(self):

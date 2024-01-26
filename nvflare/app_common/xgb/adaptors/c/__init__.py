@@ -11,6 +11,3 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-from nvflare.app_common.xgb.controller import XGBController
-from nvflare.app_common.xgb.executor import XGBExecutor

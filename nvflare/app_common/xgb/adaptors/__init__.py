@@ -12,5 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.app_common.xgb.controller import XGBController
-from nvflare.app_common.xgb.executor import XGBExecutor
+from nvflare.app_common.xgb.adaptors.c.client_adaptor import CClientAdaptor
+from nvflare.app_common.xgb.adaptors.c.server_adaptor import CServerAdaptor
+from nvflare.app_common.xgb.adaptors.grpc.client_adaptor import GrpcClientAdaptor
+from nvflare.app_common.xgb.adaptors.grpc.server_adaptor import GrpcServerAdaptor
