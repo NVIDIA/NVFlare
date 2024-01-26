@@ -47,6 +47,7 @@
       "id": "mlflow_receiver_with_tracking_uri",
       "path": "nvflare.app_opt.tracking.mlflow.mlflow_receiver.MLflowReceiver",
       "args": {
+        "tracking_uri": "http://127.0.0.1:5000",
         "kwargs": {
           "experiment_name": "monai-spleen-experiment",
           "run_name": "monai-spleen-with-mlflow",
