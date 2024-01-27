@@ -16,12 +16,11 @@ from abc import ABC, abstractmethod
 from typing import Any, List
 
 from nvflare.apis.dxo import from_shareable
-from nvflare.apis.filter import Filter
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 
 
-class ParamsConverter(Filter, ABC):
+class ParamsConverter(ABC):
     def __init__(self, supported_tasks: List[str] = None):
         self.supported_tasks = supported_tasks
 

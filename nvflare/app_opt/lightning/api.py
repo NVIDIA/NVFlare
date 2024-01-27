@@ -38,13 +38,42 @@ FL_META_KEY = "__fl_meta__"
 
 
 def patch(trainer: pl.Trainer, restore_state: bool = True, load_state_dict_strict: bool = True):
-    """Patch the lightning trainer for usage with NVFlare.
+    """Patches the PyTorch Lightning Trainer for usage with NVFlare.
 
     Args:
         trainer: the PyTorch Lightning trainer.
-        restore_state: whether to restore optimizer and learning rate scheduler states. Defaults to `True`.
-        load_state_dict_strict: exposes `strict` argument of `torch.nn.Module.load_state_dict()` used load the received model. Defaults to `True`.
+        restore_state: whether to restore optimizer and learning rate scheduler states.
+            Defaults to `True`.
+        load_state_dict_strict: exposes `strict` argument of `torch.nn.Module.load_state_dict()`
+            used to load the received model. Defaults to `True`.
             See https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.load_state_dict for details.
+
+    Example:
+
+        Normal usage:
+
+        .. code-block:: python
+
+            trainer = Trainer(max_epochs=1)
+            flare.patch(trainer)
+
+
+        Advanced usage:
+
+        If users want to pass additional information to FLARE server side via the lightning API,
+        they will need to set the information inside the attributes called ``__fl_meta__`` in their LightningModule.
+
+        .. code-block:: python
+
+            class LitNet(LightningModule):
+                def __init__(self):
+                    super().__init__()
+                    self.save_hyperparameters()
+                    self.model = Net()
+                    self.train_acc = Accuracy(task="multiclass", num_classes=NUM_CLASSES)
+                    self.valid_acc = Accuracy(task="multiclass", num_classes=NUM_CLASSES)
+                    self.__fl_meta__ = {"CUSTOM_VAR": "VALUE_OF_THE_VAR"}
+
     """
     fl_callback = FLCallback(rank=trainer.global_rank, load_state_dict_strict=load_state_dict_strict)
     callbacks = trainer.callbacks
@@ -67,7 +96,8 @@ class FLCallback(Callback):
 
         Args:
             rank: global rank of the PyTorch Lightning trainer.
-            load_state_dict_strict: exposes `strict` argument of `torch.nn.Module.load_state_dict()` used load the received model. Defaults to `True`.
+            load_state_dict_strict: exposes `strict` argument of `torch.nn.Module.load_state_dict()`
+                used to load the received model. Defaults to `True`.
                 See https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.load_state_dict for details.
         """
         super(FLCallback, self).__init__()

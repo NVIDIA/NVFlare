@@ -23,7 +23,7 @@ from .utils import DIFF_FUNCS
 
 
 class ModelRegistry(TaskRegistry):
-    """This class is used to remember attributes that need to share for a user code.
+    """This class is used to remember attributes that need to be shared for a user code.
 
     For example, after "global_evaluate" we should remember the "metrics" value.
     And set that into the model that we want to submit after "train".
@@ -39,6 +39,17 @@ class ModelRegistry(TaskRegistry):
         self.metrics = None
 
     def get_model(self, timeout: Optional[float] = None) -> Optional[FLModel]:
+        """Gets a model from FLARE client.
+
+        This method gets the task from FLARE client, and extract the `task.data` out.
+
+        Args:
+            timeout (float, optional): If specified, this call is blocked only for the specified amount of time.
+                If not specified, this call is blocked forever until a task has been received or agent has been closed.
+
+        Returns:
+            None if flare agent is None; or an FLModel object if a task is available within timeout.
+        """
         task = self.get_task(timeout)
         if task is not None and task.data is not None:
             if not isinstance(task.data, FLModel):
@@ -47,6 +58,11 @@ class ModelRegistry(TaskRegistry):
         return None
 
     def submit_model(self, model: FLModel) -> None:
+        """Submits a model to FLARE client.
+
+        Args:
+            model (FLModel): Trained local model to be submitted.
+        """
         if not self.flare_agent:
             return None
         if self.config.get_transfer_type() == "DIFF":
@@ -74,5 +90,6 @@ class ModelRegistry(TaskRegistry):
         self.submit_task(model)
 
     def clear(self):
+        """Clears the model registry cache."""
         super().clear()
         self.metrics = None

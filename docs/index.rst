@@ -5,15 +5,29 @@ NVIDIA FLARE
 .. toctree::
    :maxdepth: -1
    :hidden:
+   :caption: Introduction
 
+   fl_introduction
    flare_overview
    whats_new
    getting_started
+
+.. toctree::
+   :maxdepth: -1
+   :hidden:
+   :caption: Guides
+
    example_applications_algorithms
    real_world_fl
    user_guide
    programming_guide
    best_practices
+
+.. toctree::
+   :maxdepth: -1
+   :hidden:
+   :caption: Miscellaneous
+
    faq
    publications_and_talks
    contributing
@@ -21,7 +35,7 @@ NVIDIA FLARE
    glossary
 
 NVIDIA FLARE (NVIDIA Federated Learning Application Runtime Environment) is a domain-agnostic, open-source, extensible SDK that allows
-researchers and data scientists to adaptexisting ML/DL workflows (PyTorch, RAPIDS, Nemo, TensorFlow) to a federated paradigm; and enables
+researchers and data scientists to adapt existing ML/DL workflows (PyTorch, RAPIDS, Nemo, TensorFlow) to a federated paradigm; and enables
 platform developers to build a secure, privacy preserving offering for a distributed multi-party collaboration.
 
 NVIDIA FLARE is built on a componentized architecture that gives you the flexibility to take federated learning workloads from research
@@ -34,13 +48,13 @@ and simulation to real-world production deployment.  Some of the key components 
  - **Management tools** for secure provisioning and deployment, orchestration, and management
  - **Specification-based API** for extensibility
 
-Learn more in the :ref:`FLARE Overview <flare_overview>`, :ref:`Key Features <key_features>`, :ref:`What's New <whats_new>`, and the
+Learn more in the :ref:`FLARE Overview <flare_overview>`, :ref:`What's New <whats_new>`, and the
 :ref:`User Guide <user_guide>` and :ref:`Programming Guide <programming_guide>`.
 
 Getting Started
 ===============
-For first-time users and FL researchers, FLARE provides the :ref:`fl_simulator` that allows you to build, test, and deploy applications locally.
-The :ref:`Getting Started guide <getting_started>` covers installation and walks through an example application using the FL Simulator.
+For first-time users and FL researchers, FLARE provides the :ref:`FL Simulator <fl_simulator>` that allows you to build, test, and deploy applications locally.
+The :ref:`Getting Started <getting_started>` guide covers installation and walks through an example application using the FL Simulator.
 
 When you are ready to for a secure, distributed deployment, the :ref:`Real World Federated Learning <real_world_fl>` section covers the tools and process
 required to deploy and operate a secure, real-world FLARE project.

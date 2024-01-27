@@ -1159,7 +1159,18 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             if ep:
                 reachable_targets[t] = ep
             else:
-                self.log_error(f"cannot send to '{t}': {err}", tm.message)
+                msg = Message(headers=copy.copy(tm.message.headers), payload=tm.message.payload)
+                msg.add_headers(
+                    {
+                        MessageHeaderKey.CHANNEL: tm.channel,
+                        MessageHeaderKey.TOPIC: tm.topic,
+                        MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
+                        MessageHeaderKey.TO_CELL: t,
+                        MessageHeaderKey.ORIGIN: self.my_info.fqcn,
+                        MessageHeaderKey.DESTINATION: t,
+                    }
+                )
+                self.log_error(f"cannot send to '{t}': {err}", msg)
                 send_errs[t] = err
 
         for t, ep in reachable_targets.items():
@@ -1170,12 +1181,12 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 {
                     MessageHeaderKey.CHANNEL: tm.channel,
                     MessageHeaderKey.TOPIC: tm.topic,
-                    MessageHeaderKey.ORIGIN: self.my_info.fqcn,
                     MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
+                    MessageHeaderKey.TO_CELL: ep.name,
+                    MessageHeaderKey.ORIGIN: self.my_info.fqcn,
+                    MessageHeaderKey.DESTINATION: t,
                     MessageHeaderKey.MSG_TYPE: MessageType.REQ,
                     MessageHeaderKey.ROUTE: [(self.my_info.fqcn, time.time())],
-                    MessageHeaderKey.DESTINATION: t,
-                    MessageHeaderKey.TO_CELL: ep.name,
                 }
             )
 
@@ -1506,11 +1517,12 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         reply.add_headers(
             {
                 MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
+                MessageHeaderKey.TO_CELL: to_cell,
                 MessageHeaderKey.ORIGIN: self.my_info.fqcn,
-                MessageHeaderKey.ROUTE: [(self.my_info.fqcn, time.time())],
                 MessageHeaderKey.DESTINATION: to_cell,
                 MessageHeaderKey.REQ_ID: for_req_ids,
                 MessageHeaderKey.MSG_TYPE: MessageType.REPLY,
+                MessageHeaderKey.ROUTE: [(self.my_info.fqcn, time.time())],
                 MessageHeaderKey.SECURE: secure,
                 MessageHeaderKey.OPTIONAL: optional,
             }
@@ -1926,9 +1938,9 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                     MessageHeaderKey.CHANNEL: channel,
                     MessageHeaderKey.TOPIC: topic,
                     MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
+                    MessageHeaderKey.TO_CELL: endpoint.name,
                     MessageHeaderKey.ORIGIN: self.my_info.fqcn,
                     MessageHeaderKey.DESTINATION: origin,
-                    MessageHeaderKey.TO_CELL: endpoint.name,
                     MessageHeaderKey.REQ_ID: req_id,
                     MessageHeaderKey.MSG_TYPE: MessageType.REPLY,
                     MessageHeaderKey.ROUTE: [(self.my_info.fqcn, time.time())],
