@@ -24,7 +24,7 @@ CLIENT_API_TYPE_KEY = "CLIENT_API_TYPE"
 
 class APISpec(ABC):
     @abstractmethod
-    def init(self, config: Union[str, Dict], rank: Optional[str] = None):
+    def init(self, rank: Optional[str] = None):
         pass
 
     @abstractmethod

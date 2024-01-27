@@ -13,14 +13,12 @@
 # limitations under the License.
 import os
 from enum import Enum
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, Optional
 
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.fuel.data_event.data_bus import DataBus
-
 from .api_spec import CLIENT_API_KEY, CLIENT_API_TYPE_KEY, APISpec
-from .constants import CLIENT_API_CONFIG
 from .sub_process.process_api import ExecProcessComm
 
 
@@ -33,7 +31,7 @@ client_api: Optional[APISpec] = None
 data_bus = DataBus()
 
 
-def init(config: Union[str, Dict] = f"config/{CLIENT_API_CONFIG}", rank: Optional[str] = None):
+def init(rank: Optional[str] = None):
 
     api_type_name = os.environ.get(CLIENT_API_TYPE_KEY, ClientAPIType.MEM_API.value)
     api_type = ClientAPIType(api_type_name)
@@ -43,7 +41,7 @@ def init(config: Union[str, Dict] = f"config/{CLIENT_API_CONFIG}", rank: Optiona
     else:
         client_api = ExecProcessComm()
 
-    client_api.init(config, rank)
+    client_api.init(rank)
 
 
 def receive(timeout: Optional[float] = None) -> Optional[FLModel]:

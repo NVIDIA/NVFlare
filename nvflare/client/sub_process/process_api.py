@@ -21,6 +21,7 @@ from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.client.api_spec import APISpec
 from nvflare.client.config import ClientConfig, ConfigKey, ExchangeFormat, from_file
+from nvflare.client.constants import CLIENT_API_CONFIG
 from nvflare.client.flare_agent import FlareAgentException
 from nvflare.client.flare_agent_with_fl_model import FlareAgentWithFLModel
 from nvflare.client.model_registry import ModelRegistry
@@ -68,11 +69,10 @@ class ExecProcessComm(APISpec):
             raise RuntimeError("needs to call init method first")
         return self.process_model_registry
 
-    def init(self, config: Union[str, Dict], rank: Optional[str] = None):
+    def init(self, rank: Optional[str] = None):
         """Initializes NVFlare Client API environment.
 
         Args:
-            config (str or dict): configuration file or config dictionary.
             rank (str): local rank of the process.
                 It is only useful when the training script has multiple worker processes. (for example multi GPU)
         """
@@ -84,7 +84,7 @@ class ExecProcessComm(APISpec):
             print("Warning: called init() more than once. The subsequence calls are ignored")
             return
 
-        client_config = _create_client_config(config=config)
+        client_config = _create_client_config(config=f"config/{CLIENT_API_CONFIG}")
 
         flare_agent = None
         try:
