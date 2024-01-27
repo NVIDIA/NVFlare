@@ -13,63 +13,53 @@
 # limitations under the License.
 import unittest
 
-from nvflare.fuel.message.data_bus import DataBus
-from nvflare.fuel.message.event_manager import EventManager
+from nvflare.fuel.data_event.data_bus import DataBus
+from nvflare.fuel.data_event.event_manager import EventManager
 
 
 class TestMessageBus(unittest.TestCase):
     def setUp(self):
-        self.message_bus = DataBus()
-        self.event_manager = EventManager(self.message_bus)
+        self.data_bus = DataBus()
+        self.event_manager = EventManager(self.data_bus)
 
     def test_subscribe_and_publish(self):
         result = {"count": 0}
 
-        def callback_function(message, topic="default"):
+        def callback_function(topic, datum, data_bus):
             result["count"] += 1
 
-        self.message_bus.subscribe(["test_topic"], callback_function)
-        self.message_bus.publish(["test_topic"], "Test Message 1")
-        self.message_bus.publish(["test_topic"], "Test Message 2")
+        self.data_bus.subscribe(["test_topic"], callback_function)
+        self.data_bus.publish(["test_topic"], "Test Message 1")
+        self.data_bus.publish(["test_topic"], "Test Message 2")
 
         self.assertEqual(result["count"], 2)
 
     def test_singleton_message_bus(self):
-        message_bus1 = DataBus()
-        message_bus1.send_message("user_1", "Hello from User 1!")
-        user_1_message = message_bus1.receive_message("user_1")
+        data_bus1 = DataBus()
+        data_bus1.send_data("user_1", "Hello from User 1!")
+        user_1_message = data_bus1.receive_data("user_1")
         self.assertEqual(user_1_message, "Hello from User 1!")
 
         message_bus2 = DataBus()
-        user_1_message = message_bus2.receive_message("user_1")
+        user_1_message = message_bus2.receive_data("user_1")
         self.assertEqual(user_1_message, "Hello from User 1!")
 
     def test_send_message_and_receive_messages(self):
-        self.message_bus.send_message("user_1", "Hello from User 1!")
-        self.message_bus.send_message("user_2", "Greetings from User 2!")
+        self.data_bus.send_data("user_1", "Hello from User 1!")
+        self.data_bus.send_data("user_2", "Greetings from User 2!")
 
-        user_1_message = self.message_bus.receive_message("user_1")
-        user_2_message = self.message_bus.receive_message("user_2")
+        user_1_message = self.data_bus.receive_data("user_1")
+        user_2_message = self.data_bus.receive_data("user_2")
 
         self.assertEqual(user_1_message, "Hello from User 1!")
         self.assertEqual(user_2_message, "Greetings from User 2!")
 
-        self.message_bus.send_message("user_1", "2nd greetings from User 1!")
-        user_1_message = self.message_bus.receive_message("user_1")
+        self.data_bus.send_data("user_1", "2nd greetings from User 1!")
+        user_1_message = self.data_bus.receive_data("user_1")
         self.assertEqual(user_1_message, "2nd greetings from User 1!")
-
-        self.message_bus.send_message("user_1", "3rd greetings from User 1!", topic="channel-3")
-        user_1_message = self.message_bus.receive_message("user_1")
-        self.assertEqual(user_1_message, "2nd greetings from User 1!")
-
-        user_1_message = self.message_bus.receive_message("user_1", topic="channel-3")
-        self.assertEqual(user_1_message, "3rd greetings from User 1!")
 
     def test_send_message_and_receive_messages_abnormal(self):
-        user_3_message = self.message_bus.receive_message("user_3")
-        self.assertEqual(user_3_message, None)
-
-        user_3_message = self.message_bus.receive_message("user_3", topic="channel")
+        user_3_message = self.data_bus.receive_data("user_3")
         self.assertEqual(user_3_message, None)
 
     def test_fire_event(self):
@@ -80,10 +70,14 @@ class TestMessageBus(unittest.TestCase):
             "prod_event": {"event_received": False},
         }
 
-        def event_handler(data, topic):
+        def event_handler(topic, data, data_bus):
             result[topic]["event_received"] = True
+            if data_bus.receive_data("hi") == "hello":
+                self.data_bus.send_data("hi", "hello-world")
 
-        self.message_bus.subscribe(["test_event", "dev_event", "prod_event"], event_handler)
+        self.data_bus.send_data("hi", "hello")
+
+        self.data_bus.subscribe(["test_event", "dev_event", "prod_event"], event_handler)
         self.event_manager.fire_event("test_event", {"key": "value"})
         self.event_manager.fire_event("dev_event", {"key": "value"})
 

@@ -14,7 +14,7 @@
 
 from typing import Any, Optional
 
-from nvflare.fuel.message.data_bus import DataBus
+from nvflare.fuel.data_event.data_bus import DataBus
 
 
 class EventManager:
