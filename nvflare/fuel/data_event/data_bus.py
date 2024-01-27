@@ -14,8 +14,10 @@
 import threading
 from typing import Any, Callable, List
 
+from nvflare.fuel.data_event.pub_sub import EventPubSub
 
-class DataBus:
+
+class DataBus(EventPubSub):
     """
     Singleton class for a simple data bus implementation.
 
@@ -29,17 +31,19 @@ class DataBus:
     def __new__(cls) -> "DataBus":
         """
         Create a new instance of the DataBus class.
-
         This method ensures that only one instance of the class is created (singleton pattern).
+        The databus
+
+
         """
         with cls._lock:
             if not cls._instance:
                 cls._instance = super(DataBus, cls).__new__(cls)
                 cls._instance.subscribers = {}
-                cls._instance.message_store = {}
+                cls._instance.data_store = {}
         return cls._instance
 
-    def subscribe(self, topics: List[str], callback: Callable) -> None:
+    def subscribe(self, topics: List[str], callback: Callable[[str, Any, "DataBus"], None]) -> None:
         """
         Subscribe a callback function to one or more topics.
 
@@ -47,49 +51,53 @@ class DataBus:
             topics (List[str]): A list of topics to subscribe to.
             callback (Callable): The callback function to be called when messages are published to the subscribed topics.
         """
-        if topics:
-            for topic in topics:
+
+        if not topics:
+            raise ValueError("topics must non-empty")
+
+        for topic in topics:
+            if topic.isspace():
+                raise ValueError(f"topics {topics}contains white space topic")
+
+            with self._lock:
                 if topic not in self.subscribers:
                     self.subscribers[topic] = []
                 self.subscribers[topic].append(callback)
 
-    def publish(self, topics: List[str], message: Any) -> None:
+    def publish(self, topics: List[str], datum: Any) -> None:
         """
-        Publish a message to one or more topics, notifying all subscribed callbacks.
+        Publish a data to one or more topics, notifying all subscribed callbacks.
 
         Args:
-            topics (List[str]): A list of topics to publish the message to.
-            message (Any): The message to be published to the specified topics.
+            topics (List[str]): A list of topics to publish the data to.
+            datum (Any): The data to be published to the specified topics.
         """
         if topics:
             for topic in topics:
-                if topic in self.subscribers:
-                    for callback in self.subscribers[topic]:
-                        callback(message, topic)
+                with self._lock:
+                    if topic in self.subscribers:
+                        for callback in self.subscribers[topic]:
+                            callback(topic, datum, self)
 
-    def send_message(self, key: Any, message: Any, topic: str = "default") -> None:
+    def send_data(self, key: Any, datum: Any) -> None:
         """
-        Store a message associated with a key and topic.
+        Store a data associated with a key and topic.
 
         Args:
             key (Any): The key to associate with the stored message.
-            message (Any): The message to be stored.
-            topic (str): The topic under which the message is stored (default is "default").
+            datum (Any): The message to be stored.
         """
-        if topic not in self.message_store:
-            self.message_store[topic] = {}
+        with self._lock:
+            self.data_store[key] = datum
 
-        self.message_store[topic][key] = message
-
-    def receive_message(self, key: Any, topic: str = "default") -> Any:
+    def receive_data(self, key: Any) -> Any:
         """
-        Retrieve a stored message associated with a key and topic.
+        Retrieve a stored data associated with a key and topic.
 
         Args:
             key (Any): The key associated with the stored message.
-            topic (str): The topic under which the message is stored (default is "default").
 
         Returns:
-            Any: The stored message if found, or None if not found.
+            Any: The stored datum if found, or None if not found.
         """
-        return self.message_store.get(topic, {}).get(key)
+        return self.data_store.get(key)
