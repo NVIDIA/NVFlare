@@ -74,8 +74,8 @@ class DataBus(EventPubSub):
         """
         if topics:
             for topic in topics:
-                with self._lock:
-                    if topic in self.subscribers:
+                if topic in self.subscribers:
+                    with self._lock:
                         for callback in self.subscribers[topic]:
                             callback(topic, datum, self)
 
