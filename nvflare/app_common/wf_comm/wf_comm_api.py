@@ -107,8 +107,8 @@ class WFCommAPI(WFCommAPISpec):
             min_responses: int,
             data: any,
             meta: dict = None,
-            relay_order: str = "sequential",
             targets: Optional[List[str]] = None,
+            relay_order: str = "sequential",
             callback: Callable = None,
     ) -> Dict[str, Dict[str, FLModel]]:
 
@@ -133,8 +133,8 @@ class WFCommAPI(WFCommAPISpec):
             task_name: str,
             data: any,
             meta: dict = None,
-            send_order: str = "sequential",
             targets: Optional[List[str]] = None,
+            send_order: str = "sequential",
     ):
         msg_payload = self._prepare_input_payload(task_name, data, meta, min_responses=0, targets=targets)
         self.ctrl.send_to_peers(pay_load=msg_payload, send_order=send_order)
@@ -144,8 +144,8 @@ class WFCommAPI(WFCommAPISpec):
             task_name: str,
             data: any,
             meta: dict = None,
-            send_order: str = "sequential",
             targets: Optional[List[str]] = None,
+            send_order: str = "sequential",
     ):
         msg_payload = self._prepare_input_payload(task_name, data, meta, min_responses=0, targets=targets)
         self.ctrl.relay_to_peers(msg_payload, send_order)

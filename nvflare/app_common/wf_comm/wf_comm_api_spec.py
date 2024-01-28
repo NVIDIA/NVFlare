@@ -66,8 +66,8 @@ class WFCommAPISpec(ABC):
         min_responses: int,
         data: any,
         meta: dict = None,
-        relay_order: str = "sequential",
         targets: Optional[List[str]] = None,
+        relay_order: str = "sequential",
         callback: Callable = None,
     ):
         pass
@@ -82,8 +82,8 @@ class WFCommAPISpec(ABC):
         task_name: str,
         data: any,
         meta: dict = None,
-        send_order: str = "sequential",
         targets: Optional[str] = None,
+        send_order: str = "sequential",
     ):
         pass
 
@@ -93,8 +93,8 @@ class WFCommAPISpec(ABC):
         task_name: str,
         data: any,
         meta: dict = None,
-        relay_order: str = "sequential",
         targets: Optional[List[str]] = None,
+        relay_order: str = "sequential",
     ):
         pass
 

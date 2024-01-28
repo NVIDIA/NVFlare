@@ -74,8 +74,6 @@ class DataBus(EventPubSub):
         """
         if topics:
             for topic in topics:
-                print(f"{topic=}")
-                print(f"{self.subscribers=}", )
                 if topic in self.subscribers:
                     with self._lock:
                         for callback in self.subscribers[topic]:
