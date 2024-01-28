@@ -110,7 +110,7 @@ class BaseWFCommunicator(FLComponent, WFCommunicatorSpec, ControllerSpec, ABC):
             min_responses=min_responses,
             wait_time_after_min_received=0,
             fl_ctx=self.fl_ctx,
-            abort_signal=abort_signal
+            abort_signal=abort_signal,
         )
         print("\nafter broadcast_and_wait\n")
         self.fire_event(AppEventType.ROUND_DONE, self.fl_ctx)

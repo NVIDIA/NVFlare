@@ -57,13 +57,13 @@ class WFCommAPI(WFCommAPISpec):
         return self.meta.get(SITE_NAMES)
 
     def broadcast_and_wait(
-            self,
-            task_name: str,
-            min_responses: int,
-            data: any,
-            meta: dict = None,
-            targets: Optional[List[str]] = None,
-            callback: Callable = None,
+        self,
+        task_name: str,
+        min_responses: int,
+        data: any,
+        meta: dict = None,
+        targets: Optional[List[str]] = None,
+        callback: Callable = None,
     ) -> Union[int, Dict[str, Dict[str, FLModel]]]:
 
         meta = {} if meta is None else meta
@@ -81,14 +81,14 @@ class WFCommAPI(WFCommAPISpec):
             self.event_manager.data_bus.subscribe(["POST_PROCESS_RESULT"], callback)
 
     def send_and_wait(
-            self,
-            task_name: str,
-            min_responses: int,
-            data: any,
-            meta: dict = None,
-            send_order: SendOrder = SendOrder.SEQUENTIAL,
-            targets: Optional[List[str]] = None,
-            callback: Callable = None,
+        self,
+        task_name: str,
+        min_responses: int,
+        data: any,
+        meta: dict = None,
+        send_order: SendOrder = SendOrder.SEQUENTIAL,
+        targets: Optional[List[str]] = None,
+        callback: Callable = None,
     ):
         meta = {} if meta is None else meta
         msg_payload = self._prepare_input_payload(task_name, data, meta, min_responses, targets)
@@ -102,14 +102,14 @@ class WFCommAPI(WFCommAPISpec):
             return self._get_results(task_name)
 
     def relay_and_wait(
-            self,
-            task_name: str,
-            min_responses: int,
-            data: any,
-            meta: dict = None,
-            targets: Optional[List[str]] = None,
-            relay_order: str = "sequential",
-            callback: Callable = None,
+        self,
+        task_name: str,
+        min_responses: int,
+        data: any,
+        meta: dict = None,
+        targets: Optional[List[str]] = None,
+        relay_order: str = "sequential",
+        callback: Callable = None,
     ) -> Dict[str, Dict[str, FLModel]]:
 
         meta = {} if meta is None else meta
@@ -129,23 +129,23 @@ class WFCommAPI(WFCommAPISpec):
         self.ctrl.broadcast_to_peers(pay_load=msg_payload)
 
     def send(
-            self,
-            task_name: str,
-            data: any,
-            meta: dict = None,
-            targets: Optional[List[str]] = None,
-            send_order: str = "sequential",
+        self,
+        task_name: str,
+        data: any,
+        meta: dict = None,
+        targets: Optional[List[str]] = None,
+        send_order: str = "sequential",
     ):
         msg_payload = self._prepare_input_payload(task_name, data, meta, min_responses=0, targets=targets)
         self.ctrl.send_to_peers(pay_load=msg_payload, send_order=send_order)
 
     def relay(
-            self,
-            task_name: str,
-            data: any,
-            meta: dict = None,
-            targets: Optional[List[str]] = None,
-            send_order: str = "sequential",
+        self,
+        task_name: str,
+        data: any,
+        meta: dict = None,
+        targets: Optional[List[str]] = None,
+        send_order: str = "sequential",
     ):
         msg_payload = self._prepare_input_payload(task_name, data, meta, min_responses=0, targets=targets)
         self.ctrl.relay_to_peers(msg_payload, send_order)
