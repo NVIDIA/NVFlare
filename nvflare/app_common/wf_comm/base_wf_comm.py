@@ -37,8 +37,8 @@ from nvflare.app_common.wf_comm.wf_comm_api_spec import (
 )
 from nvflare.app_common.wf_comm.wf_communicator_spec import WFCommunicatorSpec
 from nvflare.app_common.workflows.error_handle_utils import ABORT_WHEN_IN_ERROR
-from nvflare.fuel.message.data_bus import DataBus
-from nvflare.fuel.message.event_manager import EventManager
+from nvflare.fuel.data_event.data_bus import DataBus
+from nvflare.fuel.data_event.event_manager import EventManager
 from nvflare.security.logging import secure_format_traceback
 
 
@@ -74,7 +74,7 @@ class BaseWFCommunicator(FLComponent, WFCommunicatorSpec, ControllerSpec, ABC):
     def publish_comm_api(self):
         comm_api = WFCommAPI()
         comm_api.meta.update({SITE_NAMES: self.get_site_names()})
-        self.data_bus.send_message("wf_comm_api", comm_api)
+        self.data_bus.send_data("wf_comm_api", comm_api)
 
     def start_workflow(self, abort_signal, fl_ctx):
         try:
@@ -102,6 +102,8 @@ class BaseWFCommunicator(FLComponent, WFCommunicatorSpec, ControllerSpec, ABC):
 
         self.fl_ctx.set_prop("task_name", task.name)
 
+        print(f"call broadcast_and_wait to {targets} \n")
+
         self.broadcast_and_wait(
             task=task,
             targets=targets,
@@ -110,6 +112,7 @@ class BaseWFCommunicator(FLComponent, WFCommunicatorSpec, ControllerSpec, ABC):
             fl_ctx=self.fl_ctx,
             abort_signal=abort_signal,
         )
+        print("\nafter broadcast_and_wait\n")
         self.fire_event(AppEventType.ROUND_DONE, self.fl_ctx)
         self.log_info(self.fl_ctx, f"Round {current_round} finished.")
 
@@ -228,6 +231,7 @@ class BaseWFCommunicator(FLComponent, WFCommunicatorSpec, ControllerSpec, ABC):
         rc = result.get_return_code()
         results: Dict[str, any] = {STATUS: rc}
 
+        print(f"{rc=}")
         if rc == ReturnCode.OK:
             self.log_info(fl_ctx, f"Received result entries from client:{client_name} for task {task_name}")
             fl_model = FLModelUtils.from_shareable(result)

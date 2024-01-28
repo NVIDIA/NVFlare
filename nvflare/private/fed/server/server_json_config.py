@@ -19,7 +19,7 @@ from nvflare.apis.fl_constant import SystemConfigs, SystemVarName
 from nvflare.apis.responder import Responder
 from nvflare.app_common.wf_comm.wf_communicator import WFCommunicator
 from nvflare.app_common.wf_comm.wf_communicator_spec import WFCommunicatorSpec
-from nvflare.fuel.message.data_bus import DataBus
+from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.fuel.utils.config_service import ConfigService
@@ -152,7 +152,7 @@ class ServerJsonConfigurator(FedJsonConfigurator):
                     communicator.set_strategy_config(strategy_config)
                     communicator.register_serializers(strategy_config.get("serializers"))
                 data_bus = DataBus()
-                data_bus.send_message("communicator", communicator)
+                data_bus.send_data("communicator", communicator)
                 responder = communicator
             else:
                 responder = component

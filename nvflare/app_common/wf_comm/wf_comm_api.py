@@ -34,8 +34,8 @@ from nvflare.app_common.wf_comm.wf_comm_api_spec import (
     TASK_NAME,
     WFCommAPISpec,
 )
-from nvflare.fuel.message.data_bus import DataBus
-from nvflare.fuel.message.event_manager import EventManager
+from nvflare.fuel.data_event.data_bus import DataBus
+from nvflare.fuel.data_event.event_manager import EventManager
 
 
 class WFCommAPI(WFCommAPISpec):
@@ -50,7 +50,7 @@ class WFCommAPI(WFCommAPISpec):
         data_bus.subscribe(topics=["TASK_RESULT"], callback=self.result_callback)
 
         self.event_manager = EventManager(data_bus)
-        self.ctrl = data_bus.receive_messages("communicator")
+        self.ctrl = data_bus.receive_data("communicator")
         self._check_inputs()
 
     def get_site_names(self):
@@ -69,8 +69,9 @@ class WFCommAPI(WFCommAPISpec):
         meta = {} if meta is None else meta
         msg_payload = self._prepare_input_payload(task_name, data, meta, min_responses, targets)
         self.register_callback(callback)
-
+        print("calling broadcast_to_peers_and_wait")
         self.ctrl.broadcast_to_peers_and_wait(msg_payload)
+        print("after broadcast_to_peers_and_wait")
 
         if callback is None:
             return self._get_results(task_name)
@@ -163,6 +164,7 @@ class WFCommAPI(WFCommAPISpec):
         return task_result
 
     def _get_results(self, task_name) -> Dict[str, Dict[str, FLModel]]:
+        print("_get_results\n")
         batch_result: Dict = {}
         site_results = self.task_results.get(task_name)
 
@@ -176,6 +178,7 @@ class WFCommAPI(WFCommAPISpec):
         with self.task_result_lock:
             self.task_results[task_name] = []
 
+        print("return batch_result=", batch_result)
         return batch_result
 
     def _check_result(self, site_result):
@@ -195,15 +198,19 @@ class WFCommAPI(WFCommAPISpec):
         if self.ctrl is None:
             raise RuntimeError("missing Controller")
 
-    def result_callback(self, data, topic):
+    def result_callback(self, topic, data, data_bus):
+        print("get callback, topic = ", topic)
         if topic == "TASK_RESULT":
             task, site_result = next(iter(data.items()))
+            print(task, site_result)
             # fire event with process data
             one_result = self._process_one_result(site_result)
+            print("fire_event to POST_PROCESS_RESULT")
             self.event_manager.fire_event("POST_PROCESS_RESULT", {task: one_result})
 
             site_task_results = self.task_results.get(task, [])
             site_task_results.append(site_result)
+            print("acc site_task_results \n")
             self.task_results[task] = site_task_results
 
     def _prepare_input_payload(self, task_name, data, meta, min_responses, targets):

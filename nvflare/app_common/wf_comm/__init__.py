@@ -13,10 +13,10 @@
 # limitations under the License.
 
 from nvflare.app_common.wf_comm.wf_comm_api_spec import WFCommAPISpec
-from nvflare.fuel.message.data_bus import DataBus
+from nvflare.fuel.data_event.data_bus import DataBus
 
 data_bus = DataBus()
 
 
 def get_wf_comm_api() -> WFCommAPISpec:
-    return data_bus.receive_messages("wf_comm_api")
+    return data_bus.receive_data("wf_comm_api")
