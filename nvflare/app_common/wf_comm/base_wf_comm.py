@@ -102,7 +102,7 @@ class BaseWFCommunicator(FLComponent, WFCommunicatorSpec, ControllerSpec, ABC):
 
         self.fl_ctx.set_prop("task_name", task.name)
 
-        print(f"call broadcast_and_wait to {targets} \n")
+        print(f"call broadcast_and_wait to {min_responses=}, {targets=} , {task.timeout=}\n")
 
         self.broadcast_and_wait(
             task=task,
@@ -110,7 +110,7 @@ class BaseWFCommunicator(FLComponent, WFCommunicatorSpec, ControllerSpec, ABC):
             min_responses=min_responses,
             wait_time_after_min_received=0,
             fl_ctx=self.fl_ctx,
-            abort_signal=abort_signal,
+            abort_signal=abort_signal
         )
         print("\nafter broadcast_and_wait\n")
         self.fire_event(AppEventType.ROUND_DONE, self.fl_ctx)
@@ -237,6 +237,7 @@ class BaseWFCommunicator(FLComponent, WFCommunicatorSpec, ControllerSpec, ABC):
             fl_model = FLModelUtils.from_shareable(result)
             results[RESULT] = {client_name: fl_model}
             payload = {task_name: results}
+            print(f"fire_event to TASK_RESULT, {payload=}")
             self.event_manager.fire_event("TASK_RESULT", payload)
         else:
             self.handle_client_errors(rc, client_task, fl_ctx)
