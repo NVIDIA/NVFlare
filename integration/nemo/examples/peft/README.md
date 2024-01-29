@@ -10,17 +10,33 @@ that condition the model to produce the desired output for the downstream task.
 For more details, see the [PEFT script](https://github.com/NVIDIA/NeMo/blob/main/examples/nlp/language_modeling/tuning/megatron_gpt_peft_tuning.py) in NeMo, which we adapt using NVFlare's Lightning client API to run in a federated scenario.
 
 ## Dependencies
-We assume you followed the instructions [here](../../README.md#requirements) 
-to install the NeMo, NVFlare, and the NeMo-NVFlare package. 
+The example was tested with the [NeMo 23.10 container](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/nemo).
+In the following, we assume this example folder of the container is mounted to `/workspace` and all downloading, etc. operations are based on this root path.
 
-The example was tested with the main branch of [NeMo](https://github.com/NVIDIA/NeMo).
+> Note in the following, mount both the [current directory](./) and the [job_templates](../../../../job_templates) 
+> directory to locations inside the docker container. Please make sure you have cloned the full NVFlare repo. 
+
+Start the docker container using 
+```
+DOCKER_IMAGE="nvcr.io/nvidia/nemo:23.10"
+docker run --runtime=nvidia -it --rm --shm-size=16g -p 8888:8888 -p 6006:6006 --ulimit memlock=-1 --ulimit stack=67108864 \
+-v ${PWD}/../../../../job_templates:/job_templates -v ${PWD}:/workspace -w /workspace ${DOCKER_IMAGE}
+```
+
+For easy experimentation with NeMo, install NVFlare and mount the code inside the [nemo_nvflare](./nemo_nvflare) folder.
+```
+pip install nvflare~=2.4.0rc7
+export PYTHONPATH=${PYTHONPATH}:/workspace
+```
 
 ## Examples
 ### 1. Federated PEFT using a 345 million parameter GPT model
-This example requires a GPU with at least 24GB memory to run three clients in parallel on the same GPU.
 We use [JupyterLab](https://jupyterlab.readthedocs.io) for this example.
 To start JupyterLab, run
 ```
 jupyter lab .
 ```
 and open [peft.ipynb](./peft.ipynb).
+
+#### Hardware requirement
+This example requires a GPU with at least 24GB memory to run three clients in parallel on the same GPU.
