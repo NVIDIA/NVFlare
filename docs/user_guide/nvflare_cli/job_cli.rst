@@ -45,22 +45,42 @@ the job_templates.
 
 The output should be similar to the following:
 
-.. code-block::shell
+.. code-block:: none
 
     The following job templates are available: 
 
-    ------------------------------------------------------------------------------------------------------------------------
-    name                 Description                                                  Controller Type      Client Category     
-    ------------------------------------------------------------------------------------------------------------------------
-    sag_cross_np         scatter & gather and cross-site validation using numpy       server               client executor     
-    sag_pt               scatter & gather workflow using pytorch                      server               client_api          
-    sag_pt_ddp           scatter & gather workflow using pytorch + ddp                server               client_api          
-    sag_pt_deploy_map    SAG workflow with pytorch, deploy_map, site-specific configs server               client_api          
-    sag_tf               scatter & gather workflow using TensorFlow                   server               client_api          
-    stats_df             FedStats: tabular data with pandas                           server               stats executor      
-    stats_image          FedStats: image intensity histogram                          server               stats executor      
-    ------------------------------------------------------------------------------------------------------------------------
+    ----------------------------------------------------------------------------------------------------------------------
+    name                 Description                                                  Controller Type   Execution API Type
+    ----------------------------------------------------------------------------------------------------------------------
+    cyclic_cc_pt         client-controlled cyclic workflow with PyTorch ClientAPI tra client            client_api
+    cyclic_pt            server-controlled cyclic workflow with PyTorch ClientAPI tra server            client_api
+    psi_csv              private-set intersection for csv data                        server            Executor
+    sag_cross_np         scatter & gather and cross-site validation using numpy       server            client executor
+    sag_cse_pt           scatter & gather workflow and cross-site evaluation with PyT server            client_api
+    sag_gnn              scatter & gather workflow for gnn learning                   server            client_api
+    sag_nemo             Scatter and Gather Workflow for NeMo                         server            client_api
+    sag_np               scatter & gather workflow using numpy                        server            client_api
+    sag_np_cell_pipe     scatter & gather workflow using numpy                        server            client_api
+    sag_np_metrics       scatter & gather workflow using numpy                        server            client_api
+    sag_pt               scatter & gather workflow using pytorch                      server            client_api
+    sag_pt_deploy_map    SAG workflow with pytorch, deploy_map, site-specific configs server            client_api
+    sag_pt_executor      scatter & gather workflow and cross-site evaluation with PyT server            Executor
+    sag_pt_he            scatter & gather workflow using pytorch and homomorphic encr server            client_api
+    sag_pt_mlflow        scatter & gather workflow using pytorch with MLflow tracking server            client_api
+    sag_pt_model_learner scatter & gather workflow and cross-site evaluation with PyT server            ModelLearner
+    sag_tf               scatter & gather workflow using TensorFlow                   server            client_api
+    sklearn_kmeans       scikit-learn KMeans model                                    server            client_api
+    sklearn_linear       scikit-learn linear model                                    server            client_api
+    sklearn_svm          scikit-learn SVM model                                       server            client_api
+    stats_df             FedStats: tabular data with pandas                           server            stats executor
+    stats_image          FedStats: image intensity histogram                          server            stats executor
+    swarm_cse_pt         Swarm Learning with Cross-Site Evaluation with PyTorch       client            client_api
+    swarm_cse_pt_model_l Swarm Learning with Cross-Site Evaluation with PyTorch Model client            ModelLearner
+    vertical_xgb         vertical federated xgboost                                   server            Executor
+    xgboost_tree         xgboost horizontal tree-based collaboration model            server            client_api
+    ----------------------------------------------------------------------------------------------------------------------
 
+View all the available templates at the :github_nvflare_link:`FLARE Job Template Registry <job_templates>`.
 
 Setting job_template path
 -------------------------
@@ -90,20 +110,18 @@ The options for usage are as follows:
 
 .. code-block::
 
-    usage: nvflare job create [-h] [-j [JOB_FOLDER]] [-w [TEMPLATE]] [-s [SCRIPT]] [-sd [SCRIPT_DIR]] [-f [CONFIG_FILE ...]] [-debug] [-force]
+    usage: nvflare job create [-h] [-j [JOB_FOLDER]] [-w [TEMPLATE]] [-sd [SCRIPT_DIR]] [-f [CONFIG_FILE [CONFIG_FILE ...]]] [-debug] [-force]
 
-    options:
+    optional arguments:
     -h, --help            show this help message and exit
     -j [JOB_FOLDER], --job_folder [JOB_FOLDER]
                             job_folder path, default to ./current_job directory
     -w [TEMPLATE], --template [TEMPLATE]
-                            template name or template folder. You can use list_templates to see available jobs from job templates, pick name such as 'sag_pt' as template name. Alternatively, you can use the path to the job template folder, such as
-                            job_templates/sag_pt
-    -s [SCRIPT], --script [SCRIPT]
-                            code script such as train.py
+                            template name or template folder. You can use list_templates to see available jobs from job templates, pick name such as 'sag_pt' as template name. Alternatively, you can use the path to the job
+                            template folder, such as job_templates/sag_pt
     -sd [SCRIPT_DIR], --script_dir [SCRIPT_DIR]
                             script directory contains additional related files. All files or directories under this directory will be copied over to the custom directory.
-    -f [CONFIG_FILE ...], --config_file [CONFIG_FILE ...]
+    -f [CONFIG_FILE [CONFIG_FILE ...]], --config_file [CONFIG_FILE [CONFIG_FILE ...]]
                             Training config file with corresponding optional key=value pairs. If key presents in the preceding config file, the value in the config file will be overwritten by the new value
     -debug, --debug       debug is on
     -force, --force       force create is on, if -force, overwrite existing configuration with newly created configurations

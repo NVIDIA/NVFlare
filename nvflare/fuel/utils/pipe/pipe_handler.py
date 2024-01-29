@@ -64,19 +64,18 @@ class PipeHandler(object):
         max_resends=None,
         default_request_timeout=5.0,
     ):
-        """
-        Constructor of the PipeHandler.
+        """Constructor of the PipeHandler.
 
         Args:
-            pipe: the pipe to be monitored
-            read_interval: how often to read from the pipe
-            heartbeat_interval: how often to send a heartbeat to the peer
-            heartbeat_timeout: how long to wait for a heartbeat from the peer before treating the peer as gone,
+            pipe (Pipe): the pipe to be monitored.
+            read_interval (float): how often to read from the pipe.
+            heartbeat_interval (float): how often to send a heartbeat to the peer.
+            heartbeat_timeout (float): how long to wait for a heartbeat from the peer before treating the peer as gone,
                 0 means DO NOT check for heartbeat.
-            resend_interval: how often to resend a message if failing to send. None means no resend.
+            resend_interval (float): how often to resend a message if failing to send. None means no resend.
                 Note that if the pipe does not support resending, then no resend.
-            max_resends: max number of resends. None means no limit.
-            default_request_timeout: default timeout for request if timeout not specified
+            max_resends (int, optional): max number of resends. None means no limit.
+            default_request_timeout (float): default timeout for request if timeout not specified.
         """
         check_positive_number("read_interval", read_interval)
         check_positive_number("heartbeat_interval", heartbeat_interval)

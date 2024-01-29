@@ -224,3 +224,75 @@ def update_storage_locations(
     json_object = json.dumps(resources, indent=4)
     with open(target_resource, "w") as outfile:
         outfile.write(json_object)
+
+
+def _write(file_full_path, content, mode, exe=False):
+    mode = mode + "w"
+    with open(file_full_path, mode) as f:
+        f.write(content)
+    if exe:
+        os.chmod(file_full_path, 0o755)
+
+
+def _write_common(type, dest_dir, template, tplt, replacement_dict, config):
+    mapping = {"server": "svr", "client": "cln"}
+    _write(os.path.join(dest_dir, f"fed_{type}.json"), json.dumps(config, indent=2), "t")
+    _write(
+        os.path.join(dest_dir, "docker.sh"),
+        sh_replace(template[f"docker_{mapping[type]}_sh"], replacement_dict),
+        "t",
+        exe=True,
+    )
+    _write(
+        os.path.join(dest_dir, "start.sh"),
+        sh_replace(template[f"start_{mapping[type]}_sh"], replacement_dict),
+        "t",
+        exe=True,
+    )
+    _write(
+        os.path.join(dest_dir, "sub_start.sh"),
+        sh_replace(tplt.get_sub_start_sh(), replacement_dict),
+        "t",
+        exe=True,
+    )
+    _write(
+        os.path.join(dest_dir, "stop_fl.sh"),
+        template["stop_fl_sh"],
+        "t",
+        exe=True,
+    )
+
+
+def _write_local(type, dest_dir, template, capacity=""):
+    _write(
+        os.path.join(dest_dir, "log.config.default"),
+        template["log_config"],
+        "t",
+    )
+    _write(
+        os.path.join(dest_dir, "privacy.json.sample"),
+        template["sample_privacy"],
+        "t",
+    )
+    _write(
+        os.path.join(dest_dir, "authorization.json.default"),
+        template["default_authz"],
+        "t",
+    )
+    resources = json.loads(template["local_client_resources"])
+    if type == "client":
+        for component in resources["components"]:
+            if "nvflare.app_common.resource_managers.gpu_resource_manager.GPUResourceManager" == component["path"]:
+                component["args"] = json.loads(capacity)
+                break
+    _write(
+        os.path.join(dest_dir, "resources.json.default"),
+        json.dumps(resources, indent=2),
+        "t",
+    )
+
+
+def _write_pki(type, dest_dir, cert_pair, root_cert):
+    _write(os.path.join(dest_dir, f"{type}.crt"), cert_pair.ser_cert, "b", exe=False)
+    _write(os.path.join(dest_dir, f"{type}.key"), cert_pair.ser_pri_key, "b", exe=False)
+    _write(os.path.join(dest_dir, "rootCA.pem"), root_cert, "b", exe=False)

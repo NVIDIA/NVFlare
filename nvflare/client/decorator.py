@@ -30,6 +30,23 @@ def train(
     _func=None,
     **root_kwargs,
 ):
+    """A decorator to wraps the training logic.
+
+    Note:
+        FLARE will pass the model received from the server side to the first argument of the decorated method.
+        The return value of the decorated training method needs to be an FLModel object.
+
+    Usage:
+
+        .. code-block:: python
+
+            @nvflare.client.train
+            def my_train(input_model=None, device="cuda:0"):
+               ...
+               return new_model
+
+    """
+
     def decorator(train_fn):
         @functools.wraps(train_fn)
         def wrapper(*args, **kwargs):
@@ -65,6 +82,25 @@ def evaluate(
     _func=None,
     **root_kwargs,
 ):
+    """A decorator to wraps the evaluate logic.
+
+    Note:
+        FLARE will pass the model received from the server side to the first argument of the decorated method.
+        The return value of the decorated method needs to be a float number metric.
+        The decorated method needs to be run BEFORE the training method,
+        so the metrics will be sent along with the trained output model.
+
+    Usage:
+
+        .. code-block:: python
+
+            @nvflare.client.evaluate
+            def my_eval(input_model, device="cuda:0"):
+               ...
+               return metrics
+
+    """
+
     def decorator(eval_fn):
         @functools.wraps(eval_fn)
         def wrapper(*args, **kwargs):

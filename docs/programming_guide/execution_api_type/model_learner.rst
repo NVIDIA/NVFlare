@@ -197,5 +197,6 @@ More Resources
 ==============
 
 In addition to the :github_nvflare_link:`ModelLearner <nvflare/app_common/abstract/model_learner.py>` and :github_nvflare_link:`FLModel <nvflare/app_common/abstract/fl_model.py>` APIs, also take a look at some examples using the ModelLearner:
+
 - :github_nvflare_link:`Step-by-step ModelLearner <examples/hello-world/step-by-step/cifar10/sag_model_learner/sag_model_learner.ipynb>`
-- :github_nvflare_link:`CIFAR10 ModelLearner <hexamples/advanced/cifar10/pt/learners/cifar10_model_learner.py>`
+- :github_nvflare_link:`CIFAR10 ModelLearner <examples/advanced/cifar10/pt/learners/cifar10_model_learner.py>`

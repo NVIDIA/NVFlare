@@ -9,8 +9,13 @@ For an example with real-world deployment settings, see [here](../spleen_ct_segm
 To execute the below commands, please open a terminal
 and go to the folder containing this tutorial.
 
-We recommend following the instructions for setting up a [virtual environment](../../../../examples/README.md#set-up-a-virtual-environment),
-and using it in [JupyterLab](../../../../examples/README.md#Set-up-JupyterLab-for-notebooks) for running the notebooks the MONAI integration examples.
+Follow the [setup](../../README.md#requirements) to create a virtual environment with the MONAI-NVFlare integration installed to use in JupyterLab.
+
+Install the required packages in your virtual environment:
+
+```
+pip install -r ./requirements.txt
+```
 
 ### 1. Download the Spleen Bundle
 

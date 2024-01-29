@@ -157,18 +157,18 @@ class CellPipe(Pipe):
         site_name: str,
         token: str,
         root_url: str = "",
-        secure_mode=True,
+        secure_mode: bool = True,
         workspace_dir: str = "",
     ):
         """The constructor of the CellPipe.
 
         Args:
             mode: passive or active mode
-            site_name: name of the FLARE site
-            token: unique id to guarantee the uniqueness of cell's FQCN.
-            root_url: the root url of the cellnet that the pipe's cell will join
-            secure_mode: whether connection to the root is secure (TLS)
-            workspace_dir: the directory that contains startup for joining the cellnet. Required only in secure_mode
+            site_name (str): name of the FLARE site
+            token (str): unique id to guarantee the uniqueness of cell's FQCN.
+            root_url (str): the root url of the cellnet that the pipe's cell will join
+            secure_mode (bool): whether connection to the root is secure (TLS)
+            workspace_dir (str): the directory that contains startup for joining the cellnet. Required only in secure_mode
         """
         super().__init__(mode)
         self.logger = logging.getLogger(self.__class__.__name__)
