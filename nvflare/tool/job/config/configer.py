@@ -436,7 +436,7 @@ def build_config_file_indices(job_folder: str, app_names: List[str]) -> Dict[str
         for root, dirs, files in os.walk(custom_dir):
             for f in files:
                 for ext in config_extensions:
-                    if f.endswith(ext):
+                    if f.endswith(ext) and not f.startswith(".__nvfl_"):
                         file = os.path.join(root, f)
                         config_files = app_config_files.get(app_name, [])
                         config_files.append(file)
