@@ -1,5 +1,6 @@
 {
   "format_version": 2,
+  "num_rounds": 100,
   "executors": [
     {
       "tasks": [
@@ -10,14 +11,14 @@
         "name": "FedXGBHistogramExecutor",
         "args": {
           "data_loader_id": "dataloader",
-          "num_rounds": 100,
+          "num_rounds": "{num_rounds}",
           "early_stopping_rounds": 2,
           "xgb_params": {
             "max_depth": 8,
             "eta": 0.1,
             "objective": "binary:logistic",
             "eval_metric": "auc",
-            "tree_method": "gpu_hist",
+            "tree_method": "hist",
             "nthread": 16
           }
         }
