@@ -164,19 +164,19 @@ def _prepare_jobs_dir(jobs_dir: str, workspace: str, config_packages: Optional[T
     dst = os.path.join(console_dir, transfer)
     if not is_dir_empty(dst):
         print(" ")
-        answer = input(f"Examples at {dst} is already exists, replace with new one ? (y/N) ")
+        answer = input(f"job directory at {dst} is already exists, replace with new one ? (y/N) ")
         if answer.strip().upper() == "Y":
             if os.path.islink(dst):
                 os.unlink(dst)
             if os.path.isdir(dst):
                 shutil.rmtree(dst, ignore_errors=True)
 
-            print(f"link examples from {src} to {dst}")
+            print(f"link job directory from {src} to {dst}")
             os.symlink(src, dst)
     else:
         if os.path.isdir(dst):
             shutil.rmtree(dst, ignore_errors=True)
-        print(f"link examples from {src} to {dst}")
+        print(f"link job directory from {src} to {dst}")
         os.symlink(src, dst)
 
 
