@@ -24,6 +24,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
 from nvflare.lighter.impl.cert import load_crt
+from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE, NVFLARE_SUBMITTER_CRT_FILE
 
 
 def generate_password(passlen=16):
@@ -56,7 +57,7 @@ def sign_folders(folder, signing_pri_key, crt_path, max_depth=9999):
         depth = depth + 1
         signatures = dict()
         for file in files:
-            if file == ".__nvfl_sig.json" or file == ".__nvfl_submitter.crt":
+            if file == NVFLARE_SIG_FILE or file == NVFLARE_SUBMITTER_CRT_FILE:
                 continue
             signature = signing_pri_key.sign(
                 data=open(os.path.join(root, file), "rb").read(),
@@ -78,8 +79,8 @@ def sign_folders(folder, signing_pri_key, crt_path, max_depth=9999):
             )
             signatures[folder] = b64encode(signature).decode("utf-8")
 
-        json.dump(signatures, open(os.path.join(root, ".__nvfl_sig.json"), "wt"))
-        shutil.copyfile(crt_path, os.path.join(root, ".__nvfl_submitter.crt"))
+        json.dump(signatures, open(os.path.join(root, NVFLARE_SIG_FILE), "wt"))
+        shutil.copyfile(crt_path, os.path.join(root, NVFLARE_SUBMITTER_CRT_FILE))
         if depth >= max_depth:
             break
 
@@ -90,8 +91,8 @@ def verify_folder_signature(src_folder, root_ca_path):
         root_ca_public_key = root_ca_cert.public_key()
         for root, folders, files in os.walk(src_folder):
             try:
-                signatures = json.load(open(os.path.join(root, ".__nvfl_sig.json"), "rt"))
-                cert = load_crt(os.path.join(root, ".__nvfl_submitter.crt"))
+                signatures = json.load(open(os.path.join(root, NVFLARE_SIG_FILE), "rt"))
+                cert = load_crt(os.path.join(root, NVFLARE_SUBMITTER_CRT_FILE))
                 public_key = cert.public_key()
             except:
                 continue  # TODO: shall return False
@@ -101,7 +102,7 @@ def verify_folder_signature(src_folder, root_ca_path):
             for k in signatures:
                 signatures[k] = b64decode(signatures[k].encode("utf-8"))
             for file in files:
-                if file == ".__nvfl_sig.json" or file == ".__nvfl_submitter.crt":
+                if file == NVFLARE_SIG_FILE or file == NVFLARE_SUBMITTER_CRT_FILE:
                     continue
                 signature = signatures.get(file)
                 if signature:
