@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, List
 
 from nvflare.fuel.data_event.pub_sub import EventPubSub
@@ -76,8 +77,10 @@ class DataBus(EventPubSub):
             for topic in topics:
                 if topic in self.subscribers:
                     with self._lock:
+                        executor = ThreadPoolExecutor(max_workers=len(self.subscribers[topic]))
                         for callback in self.subscribers[topic]:
-                            callback(topic, datum, self)
+                            executor.submit(callback, topic, datum, self)
+                    executor.shutdown()
 
     def send_data(self, key: Any, datum: Any) -> None:
         """
