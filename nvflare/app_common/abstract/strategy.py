@@ -17,72 +17,72 @@ from typing import Callable, List, Optional
 from nvflare.app_common import wf_comm
 from nvflare.app_common.wf_comm.wf_comm_api_spec import WFCommAPISpec
 
-
-class Strategy(ABC, WFCommAPISpec):
-    def __init__(self):
-        self.communicator = wf_comm.get_wf_comm_api()
-
-    @abstractmethod
-    def run(self):
-        pass
-
-    def broadcast_and_wait(
-        self,
-        task_name: str,
-        min_responses: int,
-        data: any,
-        meta: dict = None,
-        targets: Optional[List[str]] = None,
-        callback: Callable = None,
-    ):
-        return self.communicator.broadcast_and_wait(task_name, min_responses, data, meta, targets, callback)
-
-    def send_and_wait(
-        self,
-        task_name: str,
-        min_responses: int,
-        data: any,
-        meta: dict = None,
-        targets: Optional[List[str]] = None,
-        send_order: str = "sequential",
-        callback: Callable = None,
-    ):
-        return self.communicator.send_and_wait(task_name, min_responses, data, meta, targets, send_order, callback)
-
-    def relay_and_wait(
-        self,
-        task_name: str,
-        min_responses: int,
-        data: any,
-        meta: dict = None,
-        targets: Optional[List[str]] = None,
-        relay_order: str = "sequential",
-        callback: Callable = None,
-    ):
-        return self.communicator.relay_and_wait(task_name, min_responses, data, meta, targets, relay_order, callback)
-
-    def broadcast(self, task_name: str, data: any, meta: dict = None, targets: Optional[List[str]] = None):
-        return self.communicator.broadcast(task_name, data, meta, targets)
-
-    def send(
-        self,
-        task_name: str,
-        data: any,
-        meta: dict = None,
-        targets: Optional[str] = None,
-        send_order: str = "sequential",
-    ):
-        return self.communicator.send(task_name, data, meta, targets, send_order)
-
-    def relay(
-        self,
-        task_name: str,
-        data: any,
-        meta: dict = None,
-        targets: Optional[List[str]] = None,
-        relay_order: str = "sequential",
-    ):
-        return self.communicator.send(task_name, data, meta, targets, relay_order)
-
-    def get_site_names(self) -> List[str]:
-        return self.communicator.get_site_names()
+#
+# class Strategy(ABC, WFCommAPISpec):
+#     def __init__(self):
+#         self.communicator = wf_comm.get_wf_comm_api()
+#
+#     @abstractmethod
+#     def run(self):
+#         pass
+#
+#     def broadcast_and_wait(
+#         self,
+#         task_name: str,
+#         min_responses: int,
+#         data: any,
+#         meta: dict = None,
+#         targets: Optional[List[str]] = None,
+#         callback: Callable = None,
+#     ):
+#         return self.communicator.broadcast_and_wait(task_name, min_responses, data, meta, targets, callback)
+#
+#     def send_and_wait(
+#         self,
+#         task_name: str,
+#         min_responses: int,
+#         data: any,
+#         meta: dict = None,
+#         targets: Optional[List[str]] = None,
+#         send_order: str = "sequential",
+#         callback: Callable = None,
+#     ):
+#         return self.communicator.send_and_wait(task_name, min_responses, data, meta, targets, send_order, callback)
+#
+#     def relay_and_wait(
+#         self,
+#         task_name: str,
+#         min_responses: int,
+#         data: any,
+#         meta: dict = None,
+#         targets: Optional[List[str]] = None,
+#         relay_order: str = "sequential",
+#         callback: Callable = None,
+#     ):
+#         return self.communicator.relay_and_wait(task_name, min_responses, data, meta, targets, relay_order, callback)
+#
+#     def broadcast(self, task_name: str, data: any, meta: dict = None, targets: Optional[List[str]] = None):
+#         return self.communicator.broadcast(task_name, data, meta, targets)
+#
+#     def send(
+#         self,
+#         task_name: str,
+#         data: any,
+#         meta: dict = None,
+#         targets: Optional[str] = None,
+#         send_order: str = "sequential",
+#     ):
+#         return self.communicator.send(task_name, data, meta, targets, send_order)
+#
+#     def relay(
+#         self,
+#         task_name: str,
+#         data: any,
+#         meta: dict = None,
+#         targets: Optional[List[str]] = None,
+#         relay_order: str = "sequential",
+#     ):
+#         return self.communicator.send(task_name, data, meta, targets, relay_order)
+#
+#     def get_site_names(self) -> List[str]:
+#         return self.communicator.get_site_names()
