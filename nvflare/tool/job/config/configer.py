@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from pyhocon import ConfigFactory, ConfigTree
 
 from nvflare.fuel.utils.config import ConfigFormat
+from nvflare.lighter.tool_consts import NVFLARE_PREFIX
 from nvflare.tool.job.config.config_indexer import KeyIndex, build_reverse_order_index
 from nvflare.tool.job.job_client_const import (
     APP_CONFIG_DIR,
@@ -436,7 +437,7 @@ def build_config_file_indices(job_folder: str, app_names: List[str]) -> Dict[str
         for root, dirs, files in os.walk(custom_dir):
             for f in files:
                 for ext in config_extensions:
-                    if f.endswith(ext) and not f.startswith(".__nvfl_"):
+                    if f.endswith(ext) and not f.startswith(NVFLARE_PREFIX):
                         file = os.path.join(root, f)
                         config_files = app_config_files.get(app_name, [])
                         config_files.append(file)
