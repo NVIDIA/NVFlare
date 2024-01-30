@@ -64,7 +64,7 @@ Please refer to their API page for detailed explanations of each argument:
   - :class:`FlareAgentWithFLModel<nvflare.client.flare_agent_with_fl_model.FlareAgentWithFLModel>`
   - :class:`FlareAgentWithCellPipe<nvflare.client.flare_agent.FlareAgentWithCellPipe>`
 
-You can create the FlareAgent as the following code:
+You can create the FlareAgentWithCellPipe as the following code:
 
 .. code-block:: python
 
@@ -72,7 +72,7 @@ You can create the FlareAgent as the following code:
 
     agent = FlareAgentWithCellPipe(
         root_url="grpc://server:8002",
-        flare_site_name=args.site_name,
+        site_name=args.site_name,
         agent_id=args.agent_id,
         workspace_dir=args.workspace,
         secure_mode=True,
@@ -142,72 +142,15 @@ If this call is missed, the program may not exit properly.
     agent.stop()
 
 
-Putting Together
-----------------
+5. Putting Together
+-------------------
 
 Now we learn all the necessary steps, we can put together into the following
 example code of this usage pattern:
 
-.. code-block:: python
+.. literalinclude:: ../../resources/3rd_party_trainer.py
+    :language: python
 
-    import argparse
-    import logging
-
-    from nvflare.client.defs import RC, AgentClosed, MetaKey
-    from nvflare.client.flare_agent import FlareAgentWithCellPipe
-
-    NUMPY_KEY = "numpy_key"
-
-
-    def main():
-
-        logging.basicConfig()
-        logging.getLogger().setLevel(logging.INFO)
-
-        parser = argparse.ArgumentParser()
-        parser.add_argument("--workspace", "-w", type=str, help="workspace folder", required=False, default=".")
-        parser.add_argument("--site_name", "-s", type=str, help="flare site name", required=True)
-        parser.add_argument("--agent_id", "-a", type=str, help="agent id", required=True)
-
-        args = parser.parse_args()
-
-        # 1. create the agent
-        agent = FlareAgentWithCellPipe(
-            root_url="grpc://server:8002",
-            flare_site_name=args.site_name,
-            agent_id=args.agent_id,
-            workspace_dir=args.workspace,
-            secure_mode=True,
-            submit_result_timeout=2.0,
-            heartbeat_timeout=120.0,
-        )
-
-        # 2. start the agent
-        agent.start()
-
-        # 3. processing tasks
-        while True:
-            print("getting task ...")
-            try:
-                task = agent.get_task()
-            except AgentClosed:
-                print("agent closed - exit")
-                break
-
-            print(f"got task: {task}")
-            rc, meta, result = train(task.data) # perform train task
-            submitted = agent.submit_result(TaskResult(data=result, meta=meta, return_code=rc))
-            print(f"result submitted: {submitted}")
-
-        # 4. stop the agent
-        agent.stop()
-
-
-    def train(model):
-        ...
-
-    if __name__ == "__main__":
-        main()
 
 Notes:
 
@@ -250,21 +193,130 @@ An example looks like:
   - name: site_1
     type: client
     org: nvidia
-    listening_host: site_1.maglev.nvidia.com
+    listening_host: localhost
   - name: site_2
     type: client
     org: nvidia
-    listening_host: site_2.maglev.nvidia.com
+    listening_host: localhost
 
 Once the project is provisioned, check the "startup" kit generated for the clients.
 You should see the following files, among others:
 
 client.crt, client.key, server.crt, server.key, rootCA.pem
 
-Note that the specified listening_port of a site must be accessible to the trainer of the site.
+Note that the specified listening_host of a site must be must be a hostname that
+the external trainer can reach via network.
 
-Step Two - Setup for Adhoc Direct Connection between FL Client and Trainer
---------------------------------------------------------------------------
+Step Two - Prepare Job Configuration
+------------------------------------
+
+For each job, configure the config_fed_client.json to use
+:class:`TaskExchanger<nvflare.app_common.executors.task_exchanger>` as the executor.
+
+.. code-block::
+
+  {
+    "format_version": 2,
+    "executors": [
+        {
+          "tasks": [
+            "train"
+          ],
+          "executor": {
+            "path": "nvflare.app_common.executors.task_exchanger.TaskExchanger",
+            "args": {
+              "pipe_id": "pipe"
+              "peer_read_timeout": 30,
+              "heartbeat_timeout": 60
+            }
+          }
+        }
+      ],
+    "task_result_filters": [],
+    "task_data_filters": [],
+    components =  [
+      {
+        id = "pipe"
+        path = "nvflare.fuel.utils.pipe.cell_pipe.CellPipe"
+        args {
+          mode = "PASSIVE"
+          site_name = "{SITE_NAME}"
+          token = "{SITE_NAME}"
+          root_url = "{ROOT_URL}"
+          secure_mode = "{SECURE_MODE}"
+          workspace_dir = "{WORKSPACE}"
+        }
+      }
+    ]
+  }
+
+Make sure the parameters of the :class:`TaskExchanger<nvflare.app_common.executors.task_exchanger>`
+are configured properly, and change the default values as needed.
+
+Please refer to the API page for a detailed explanation of each argument:
+:class:`TaskExchanger<nvflare.app_common.executors.task_exchanger>`
+
+Step Three - Trainer Setup
+--------------------------
+
+For each client site, you will have an FL client and a trainer process.
+
+To make our integration work, please follow the following steps to
+setup the trainer process on each client site:
+
+    - Make sure the trainer process has access to a local file system.
+    - Create a "workspace" folder that is going to be used by this trainer process
+      This workspace will be used for all jobs.
+    - Copy the "startup" folder of the client site to this "workspace" folder
+      If needed, any additional config files required by the trainer can also
+      be placed in this "workspace" folder.
+    - Create the trainer script following the steps in the above section.
+      Please set the FlareAgentWithCellPipe's "workspace_dir" to the path of
+      this "workspace" folder that you just created.
+      Please make sure the "agent_id" value of FlareAgentWithCellPipe is the same
+      as the "token" value in the above
+
+Verification
+============
+
+The FL client (TaskExchanger) and your trainer process (FlareAgentWithCellPipe)
+do not have to be started at exactly the same time.
+
+Whichever is started first will wait for the other for ``heartbeat_timeout`` seconds.
+Once they both are started and connected, you can verify they are directly
+connected using the Admin console's ``cells`` commands.
+
+The following example shows two clients (site-1, site-2) connected to their
+external trainers via the agent_id/token "ext_trainer":
+
+.. code-block:: shell
+
+  > cells
+  server
+  server.10d1d3b7-fb50-4c83-9575-e510f32c5d21
+  site-1
+  site-1.10d1d3b7-fb50-4c83-9575-e510f32c5d21
+  site-2
+  site-2.10d1d3b7-fb50-4c83-9575-e510f32c5d21
+  site-1_ext_trainer_active
+  site-2_ext_trainer_active
+  site-2_ext_trainer_passive
+  site-1_ext_trainer_passive
+  Total Cells: 10
+
+
+The ``cells`` command lists all cells.
+
+Notice that the job ``10d1d3b7-fb50-4c83-9575-e510f32c5d21`` is running on both
+"site-1" and "site-2" clients.
+
+Also notice that there are two pairs of corresponding cells
+(site-1_ext_trainer_active, site-1_ext_trainer_passive)
+and ((site-2_ext_trainer_active, site-2_ext_trainer_passive)).
+
+
+Optional - Setup for Adhoc Direct Connection between FL Client and Trainer
+==========================================================================
 
 FL client and the trainer can always talk to each other via the server,
 but it could be slow, especially if the server is located far away.
@@ -279,7 +331,7 @@ configure the comm_config.json on the client site as follows:
     "adhoc": {
       "scheme": "tcp",
       "resources": {
-        "host": "nvclient",
+        "host": "localhost",
         "secure": true
       }
     }
@@ -296,117 +348,3 @@ Pay attention to the following:
   - If FL client and the trainer are within the same trusted network,
     you can set "secure" to false; otherwise set it to true.
   - The value of the "host" must match the "listening_host" value of the site used in provision.
-
-Step Three - Prepare Job Configuration
---------------------------------------
-
-For each job, configure the config_fed_client.json to use
-:class:`TaskExchanger<nvflare.app_common.executors.task_exchanger>` as the executor.
-
-.. code-block:: json
-
-  {
-    "format_version": 2,
-    "executors": [
-      {
-        "tasks": [
-          "train"
-        ],
-        "executor": {
-          "path": "nvflare.app_common.executors.task_exchanger.TaskExchanger",
-          "args": {
-            "pipe_id": "pipe"
-            "peer_read_timeout": 30,
-            "heartbeat_timeout": 60
-          }
-        }
-      }
-    ],
-    "task_result_filters": [],
-    "task_data_filters": [],
-    "components": []
-  }
-
-Make sure the parameters of the :class:`TaskExchanger<nvflare.app_common.executors.task_exchanger>`
-are configured properly, and change the default values as needed.
-
-Please refer to the API page for a detailed explanation of each argument:
-:class:`TaskExchanger<nvflare.app_common.executors.task_exchanger>`
-
-Step Four - Trainer Setup
--------------------------
-
-The trainer program must have access to a local file system, and you must create a "workspace" folder.
-This workspace should be used for all jobs.
-
-Copy the "startup" folder of the provisioned site, and put it in the designated workspace folder.
-If needed, any additional config files required by the trainer can also be placed in the workspace folder.
-
-Ensure to set the FlareAgent's "workspace_dir" to the workspace folder and
-that the correct "agent_id" value is passed to both the FL client and the training process.
-
-Verification
-============
-
-The FL client (TaskExchanger) and your trainer process (FlareAgent) do not have
-to be started at exactly the same time.
-Whichever is started first will wait for the other for ``heartbeat_timeout`` seconds.
-Once they both are started and connected, you can verify they are directly
-connected using the Admin console's ``cells`` commands.
-
-The following example shows two clients (red, blue) connected to their external
-trainers via the agent_id "ext_trainer_1":
-
-.. code-block:: shell
-
-  > cells
-  server
-  server.44c08365-e829-4bc1-a034-cda5a252fe73
-  red
-  red.44c08365-e829-4bc1-a034-cda5a252fe73
-  blue
-  blue.44c08365-e829-4bc1-a034-cda5a252fe73
-  red--ndas_1
-  blue--ndas_1
-  Total Cells: 8
-  Done [21695 usecs] 2023-10-16 19:28:37.523651
-
-The ``cells`` command lists all cells.
-Notice that the job 44c08365-e829-4bc1-a034-cda5a252fe73 is running on both "blue" and "red" clients.
-Also notice that there are two corresponding ext_trainer cells (red-ext_trainer_1, and blue-ext_trainer1).
-
-.. code-block:: shell
-
-  > peers blue--ext_trainer_1
-  server
-  blue.44c08365-e829-4bc1-a034-cda5a252fe73
-  Total Agents: 2
-  Done [14526 usecs] 2023-10-16 19:28:44.407505
-
-The ``peers`` command shows the cells directly connected to the specified cell.
-Here you see that the blue-ext_trainer_1 is directly connected to two cells:
-the server and the FL client (blue.44c08365-e829-4bc1-a034-cda5a252fe73).
-
-.. code-block:: shell
-
-  > conns blue--ext_trainer_1
-  {
-    "bb_ext_connector": {
-      "url": "grpc://server:8002",
-      "handle": "CH00001",
-      "type": "connector"
-    },
-    "adhoc_connectors": {
-      "blue.44c08365-e829-4bc1-a034-cda5a252fe73": {
-        "url": "stcp://nvclient:11947",
-        "handle": "CH00002",
-        "type": "connector"
-      }
-    }
-  }
-
-The ``conns`` command shows the connectors on the specified cell.
-Here you see that blue--ext_trainer_1 has two connectors:
-one connects the server on ``grpc://server:8002``, and another connects to
-``blue.44c08365-e829-4bc1-a034-cda5a252fe73 on stcp://nvclient:11947``.
-Note that this port (11947) is opened by the FL client dynamically.
