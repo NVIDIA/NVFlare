@@ -45,9 +45,9 @@ from nvflare.security.logging import secure_format_traceback
 
 class BaseWFCommunicator(FLComponent, WFCommunicatorSpec, ControllerSpec, ABC):
     def __init__(
-            self,
-            task_timeout: int = 0,
-            result_pull_interval: float = 0.2,
+        self,
+        task_timeout: int = 0,
+        result_pull_interval: float = 0.2,
     ):
         super().__init__()
         self.strategy_fn_name = "run"
@@ -79,7 +79,8 @@ class BaseWFCommunicator(FLComponent, WFCommunicatorSpec, ControllerSpec, ABC):
         if decomposer_register:
             if not isinstance(decomposer_register, DecomposerRegister):
                 raise ValueError(
-                    f"decomposer_register component must be type of 'DecomposerRegister', got {type(decomposer_register)}.")
+                    f"decomposer_register component must be type of 'DecomposerRegister', got {type(decomposer_register)}."
+                )
             decomposer_register.register()
 
     def publish_comm_api(self):
@@ -102,7 +103,7 @@ class BaseWFCommunicator(FLComponent, WFCommunicatorSpec, ControllerSpec, ABC):
         pass
 
     def process_result_of_unknown_task(
-            self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
+        self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
     ):
         pass
 

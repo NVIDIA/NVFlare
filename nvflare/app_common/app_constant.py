@@ -219,4 +219,3 @@ class CommConstants(object):
     CONTROLLER = "controller"
     TASK_RESULT = "TASK_RESULT"
     POST_PROCESS_RESULT = "POST_PROCESS_RESULT"
-

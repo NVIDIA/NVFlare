@@ -62,9 +62,7 @@ def enhance_workflow_config(element: dict):
         comm_config = wf_config.pop(CommConstants.COMMUNICATOR)
         controller_config = wf_config
         controller_config["lazy_instantiate"] = True
-        element = {CommConstants.COMMUNICATOR: comm_config,
-                   CommConstants.CONTROLLER: controller_config
-                   }
+        element = {CommConstants.COMMUNICATOR: comm_config, CommConstants.CONTROLLER: controller_config}
 
     return element
 

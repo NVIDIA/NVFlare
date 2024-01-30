@@ -18,12 +18,12 @@ from typing import Callable, Dict, Optional
 
 from net import Net
 
+from nvflare.apis.wf_controller import WFController
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.app_common.utils.math_utils import parse_compare_criteria
 from nvflare.security.logging import secure_format_traceback
-from nvflare.apis.wf_controller import WFController
 
 update_model = FLModelUtils.update_model
 
@@ -59,7 +59,6 @@ class FedAvg(WFController):
             self.stop_criteria = parse_compare_criteria(stop_cond)
         else:
             self.stop_criteria = None
-
 
     def run(self):
         self.logger.info("start Fed Avg Workflow\n \n")
