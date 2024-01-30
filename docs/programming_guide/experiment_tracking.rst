@@ -37,6 +37,12 @@ provided examples, the Receiver is on the FL server, but it could also be on the
     - Server-side experiment tracking also can organize different clients' results into different experiment runs so they can be easily
       compared side-by-side. 
 
+.. note::
+
+    This page covers experiments tracking using LogWriters, however if using the Client API,
+    please refer to :ref:`client_api` and :ref:`nvflare.client.tracking` for their experiment tracking APIs.
+
+
 **************************************
 Tools, Sender, LogWriter and Receivers
 **************************************
@@ -60,9 +66,9 @@ where the actual experiment logs are recorded. The components that receive
 these logs are called Receivers based on :class:`AnalyticsReceiver <nvflare.app_common.widgets.streaming.AnalyticsReceiver>`.
 The receiver component leverages the experiment tracking tool and records the logs during the experiment run.
 
-In a normal setting, we would have pairs of sender and receivers, such as:
+In a normal setting, we would have pairs of sender and receivers, with some provided implementations in :mod:`nvflare.app_opt.tracking`:
 
-    - TBWriter  <-> TBReceiver
+    - TBWriter  <-> TBAnalyticsReceiver
     - MLflowWriter <-> MLflowReceiver
     - WandBWriter <-> WandBReceiver
 
@@ -95,12 +101,12 @@ Data Type
 =========
 
 Currently, the supported data types are metrics, params, and text. If you require other data types, may sure you add
-the type to :class:`AnalyticsDataType <nvflare.apis.analytix.AnalyticsDataType>`.
+
+Currently, the supported data types are listed in :class:`AnalyticsDataType <nvflare.apis.analytix.AnalyticsDataType>`, and other data types can be added as needed.
 
 Writer
 ======
-
-Implement LogWriter interface with the API syntax. For each tool, we mimic the API syntax of the underlying tool,
+Implement :class:`LogWriter <nvflare.app_common.tracking.log_writer.LogWriter>` interface with the API syntax. For each tool, we mimic the API syntax of the underlying tool,
 so users can use what they are familiar with without learning a new API.
 For example, for Tensorboard, TBWriter uses add_scalar() and add_scalars(); for MLflow, the syntax is
 log_metric(), log_metrics(), log_parameter(), and log_parameters(); for W&B, the writer just has log().
@@ -109,7 +115,7 @@ The data collected with these calls will all send to the AnalyticsSender to deli
 Receiver
 ========
 
-Implement AnalyticsReceiver interface and determine how to represent different sites' logs.  In all three implementations
+Implement :class:`AnalyticsReceiver <nvflare.app_common.widgets.streaming.AnalyticsReceiver>` interface and determine how to represent different sites' logs.  In all three implementations
 (Tensorboard, MLflow, WandB), each site's log is represented as one run. Depending on the individual tool, the implementation 
 can be different. For example, for both Tensorboard and MLflow, we create different runs for each client and map to the 
 site name. In the WandB implementation, we have to leverage multiprocess and let each run in a different process.  
@@ -121,13 +127,19 @@ Examples Overview
 The :github_nvflare_link:`experiment tracking examples <examples/advanced/experiment-tracking>`
 illustrate how to leverage different writers and receivers. All examples are based upon the hello-pt example.
 
+TensorBoard
+===========
 The example in the "tensorboard" directory shows how to use the Tensorboard Tracking Tool (for both the
 sender and receiver). See :ref:`tensorboard_streaming` for details.
 
+MLflow
+======
 Under the "mlflow" directory, the "hello-pt-mlflow" job shows how to use MLflow for tracking with both the MLflow sender
 and receiver. The "hello-pt-tb-mlflow" job shows how to use the Tensorboard Sender, while the receiver is MLflow.
 See :ref:`experiment_tracking_mlflow` for details.
 
+Weights & Biases
+================
 Under the :github_nvflare_link:`wandb <examples/advanced/experiment-tracking/wandb>` directory, the
 "hello-pt-wandb" job shows how to use Weights and Biases for experiment tracking with
 the WandBWriter and WandBReceiver to log metrics.

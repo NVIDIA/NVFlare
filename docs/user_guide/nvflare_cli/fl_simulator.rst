@@ -837,6 +837,11 @@ Specifying threads
 ==================
 The simulator ``-t`` option provides the ability to specify how many threads to run the simulator with.
 
+.. note::
+
+    We use the term threads for simplicity, however technically each client actually runs in a separate process.
+    This difference will not affect the user experience.
+
 When you run the simulator with ``-t 1``, there is only one client active and running at a time, and the clients will be running in
 turn. This is to enable the simulation of large number of clients using a single machine with limited resources.
 
