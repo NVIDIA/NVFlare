@@ -75,6 +75,8 @@ class WFCommAPI(WFCommAPISpec):
         if callback is None:
             return self._get_results(task_name)
 
+        return 0
+
     def register_callback(self, callback):
         if callback:
             self.event_manager.data_bus.subscribe([CommConstants.POST_PROCESS_RESULT], callback)
@@ -163,7 +165,6 @@ class WFCommAPI(WFCommAPISpec):
         return task_result
 
     def _get_results(self, task_name) -> Dict[str, Dict[str, FLModel]]:
-        print("_get_results\n")
         batch_result: Dict = {}
         site_results = self.task_results.get(task_name)
         if not site_results:
@@ -179,7 +180,6 @@ class WFCommAPI(WFCommAPISpec):
         with self.task_result_lock:
             self.task_results[task_name] = []
 
-        print("return batch_result=", batch_result)
         return batch_result
 
     def _check_result(self, site_result):

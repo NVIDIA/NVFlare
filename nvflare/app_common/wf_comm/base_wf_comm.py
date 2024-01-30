@@ -22,7 +22,7 @@ from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.fl_model import FLModel
-from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.app_constant import AppConstants, CommConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.app_common.wf_comm.decomposer_register import DecomposerRegister
@@ -114,17 +114,14 @@ class BaseWFCommunicator(FLComponent, WFCommunicatorSpec, ControllerSpec, ABC):
 
         self.fl_ctx.set_prop("task_name", task.name)
 
-        print(f"call broadcast_and_wait to {min_responses=}, {targets=} , {task.timeout=}\n")
-
         self.broadcast_and_wait(
             task=task,
+            fl_ctx=self.fl_ctx,
             targets=targets,
             min_responses=min_responses,
             wait_time_after_min_received=0,
-            fl_ctx=self.fl_ctx,
             abort_signal=abort_signal,
         )
-        print("\nafter broadcast_and_wait\n")
         self.fire_event(AppEventType.ROUND_DONE, self.fl_ctx)
         self.log_info(self.fl_ctx, f"Round {current_round} finished.")
 
@@ -243,14 +240,12 @@ class BaseWFCommunicator(FLComponent, WFCommunicatorSpec, ControllerSpec, ABC):
         rc = result.get_return_code()
         results: Dict[str, any] = {STATUS: rc}
 
-        print(f"{rc=}")
         if rc == ReturnCode.OK:
             self.log_info(fl_ctx, f"Received result entries from client:{client_name} for task {task_name}")
             fl_model = FLModelUtils.from_shareable(result)
             results[RESULT] = {client_name: fl_model}
             payload = {task_name: results}
-            print(f"fire_event to TASK_RESULT, {payload=}")
-            self.event_manager.fire_event("TASK_RESULT", payload)
+            self.event_manager.fire_event(CommConstants.TASK_RESULT, payload)
         else:
             self.handle_client_errors(rc, client_task, fl_ctx)
 

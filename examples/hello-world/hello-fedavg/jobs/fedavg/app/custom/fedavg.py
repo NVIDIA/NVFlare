@@ -17,7 +17,6 @@ import sys
 from typing import Callable, Dict, Optional
 
 from net import Net
-
 from nvflare.apis.wf_controller import WFController
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
@@ -33,13 +32,13 @@ update_model = FLModelUtils.update_model
 
 class FedAvg(WFController):
     def __init__(
-        self,
-        min_clients: int,
-        num_rounds: int,
-        output_path: str,
-        start_round: int = 1,
-        stop_cond: str = None,
-        resp_max_wait_time: float = 5,
+            self,
+            min_clients: int,
+            num_rounds: int,
+            output_path: str,
+            start_round: int = 1,
+            stop_cond: str = None,
+            resp_max_wait_time: float = 5,
     ):
         super(FedAvg, self).__init__()
 
@@ -87,11 +86,7 @@ class FedAvg(WFController):
             # aggr_result = self.aggr_fn()
 
             self.logger.info(f"aggregate metrics = {aggr_result.metrics}")
-
-            print("model size =", sys.getsizeof(model.params))
-
             model = update_model(model, aggr_result)
-
             self.select_best_model(model)
 
         self.save_model(self.best_model, self.output_path)
@@ -109,8 +104,10 @@ class FedAvg(WFController):
         results = self.broadcast_and_wait(
             task_name=task_name, min_responses=self.min_clients, data=model, callback=callback
         )
-        if self.callback is None:
+        if callback is None:
             return results
+        else:
+            return None
 
     def callback(self, data, topic):
         self.intime_agg_fn(data, self.aggr_params_helper, self.aggr_metrics_helper)
@@ -146,49 +143,50 @@ class FedAvg(WFController):
         except Exception as e:
             raise RuntimeError(f"Exception in aggregate call: {secure_format_traceback()}")
 
-    def aggr_fn(self, sag_result: Optional[Dict[str, Dict[str, FLModel]]] = None) -> FLModel:
-
-        if self.callback and sag_result is None:
+    def intime_aggr_fn(self, sag_result: Optional[Dict[str, Dict[str, FLModel]]] = None) -> FLModel:
+        if self.callback:
             return self.get_aggr_result(self.aggr_params_helper, self.aggr_metrics_helper)
         else:
+            raise ValueError("callback function needs to be defined")
 
-            self.logger.info("fed avg aggregate \n")
+    def aggr_fn(self, sag_result: Optional[Dict[str, Dict[str, FLModel]]] = None) -> FLModel:
+        self.logger.info("fed avg aggregate \n")
 
-            if not sag_result:
-                raise RuntimeError("input is None or empty")
+        if not sag_result:
+            raise RuntimeError("input is None or empty")
 
-            # we only have one task
-            task_name, task_result = next(iter(sag_result.items()))
-            self.logger.info(f"aggregating {len(task_result)} update(s) at round {self.current_round}")
+        # we only have one task
+        task_name, task_result = next(iter(sag_result.items()))
+        self.logger.info(f"aggregating {len(task_result)} update(s) at round {self.current_round}")
 
-            try:
-                aggr_params_helper = WeightedAggregationHelper()
-                aggr_metrics_helper = WeightedAggregationHelper()
-                params_type = None
-                for site, fl_model in task_result.items():
-                    if params_type is None:
-                        params_type = fl_model.params_type
+        try:
+            aggr_params_helper = WeightedAggregationHelper()
+            aggr_metrics_helper = WeightedAggregationHelper()
+            params_type = None
+            for site, fl_model in task_result.items():
+                if params_type is None:
+                    params_type = fl_model.params_type
 
-                    aggr_params_helper.add(
-                        data=fl_model.params,
-                        weight=self.current_round,
-                        contributor_name=site,
-                        contribution_round=self.current_round,
-                    )
+                aggr_params_helper.add(
+                    data=fl_model.params,
+                    weight=self.current_round,
+                    contributor_name=site,
+                    contribution_round=self.current_round,
+                )
 
-                    self.logger.info(f"site={site}  {fl_model.metrics=}")
+                self.logger.info(f"site={site}  {fl_model.metrics=}")
 
-                    aggr_metrics_helper.add(
-                        data=fl_model.metrics,
-                        weight=self.current_round,
-                        contributor_name=site,
-                        contribution_round=self.current_round,
-                    )
+                aggr_metrics_helper.add(
+                    data=fl_model.metrics,
+                    weight=self.current_round,
+                    contributor_name=site,
+                    contribution_round=self.current_round,
+                )
 
-                return self.get_aggr_result(aggr_params_helper, aggr_metrics_helper)
+            return self.get_aggr_result(aggr_params_helper, aggr_metrics_helper)
 
-            except Exception as e:
-                raise RuntimeError(f"Exception in aggregate call: {secure_format_traceback()}")
+        except Exception as e:
+            raise RuntimeError(f"Exception in aggregate call: {secure_format_traceback()}")
 
     def select_best_model(self, curr_model: FLModel):
         if self.best_model is None:
@@ -220,7 +218,7 @@ class FedAvg(WFController):
         return op_fn(value, target)
 
     def is_curr_mode_better(
-        self, best_model: FLModel, curr_model: FLModel, target_metric: str, op_fn: Callable
+            self, best_model: FLModel, curr_model: FLModel, target_metric: str, op_fn: Callable
     ) -> bool:
         curr_metrics = curr_model.metrics
         if curr_metrics is None:

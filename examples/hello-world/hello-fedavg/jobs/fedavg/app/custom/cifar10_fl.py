@@ -36,7 +36,7 @@ DEVICE = "cpu"
 def main():
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
-    batch_size = 4
+    batch_size = 512
     epochs = 2
 
     trainset = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=True, download=True, transform=transform)
@@ -92,7 +92,7 @@ def main():
                     summary_writer.add_scalar(tag="loss_for_each_batch", scalar=running_loss, global_step=global_step)
                     running_loss = 0.0
 
-        print("Finished Training")
+        print(f"Finished Training for round {input_model.current_round}")
 
         PATH = "./cifar_net.pth"
         torch.save(net.state_dict(), PATH)
