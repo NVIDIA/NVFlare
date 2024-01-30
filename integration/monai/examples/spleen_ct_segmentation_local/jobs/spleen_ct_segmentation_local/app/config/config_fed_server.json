@@ -52,10 +52,10 @@
           "experiment_name": "monai-spleen-experiment",
           "run_name": "monai-spleen-with-mlflow",
           "experiment_tags": {
-            "mlflow-note-content": "## **MONAI experiment with spleen bundle with MLflow**"
+            "\"mlflow.note.content\"": "## **MONAI experiment with spleen bundle with MLflow**"
           },
           "run_tags": {
-            "mlflow-note-content": "## Federated Experiment tracking with MLflow \n### Example of using **[NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html)** to train and run MONAI-bundle using federated averaging ([FedAvg]([FedAvg](https://arxiv.org/abs/1602.05629))) and [PyTorch](https://pytorch.org/) as the deep learning training framework. This example also highlights the FLARE streaming capability from the clients to the server for server delivery to MLflow.\n"
+            "\"mlflow.note.content\"": "## Federated Experiment tracking with MLflow \n### Example of using **[NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html)** to train and run MONAI-bundle using federated averaging ([FedAvg]([FedAvg](https://arxiv.org/abs/1602.05629))) and [PyTorch](https://pytorch.org/) as the deep learning training framework. This example also highlights the FLARE streaming capability from the clients to the server for server delivery to MLflow.\n"
           }
         },
         "artifact_location": "artifacts"

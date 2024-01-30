@@ -1,11 +1,12 @@
 .. _execution_api_type:
 
-##################
-Execution API Type
-##################
+#######################
+From Local to Federated
+#######################
 
 In the FLARE system, a federated learning algorithm is defined in a Job format
 (for details, please refer to :ref:`job`).
+
 A Job consists of multiple "workflows" and "executors."
 
 The simplified job execution flow is as follows:
@@ -16,8 +17,8 @@ The simplified job execution flow is as follows:
 - If it is not done, it schedules a new task
 - If it is done, it proceeds to the next workflow in the Job.
 
-Users need to adapt their local training logic into FLARE's task execution
-abstractions to make their training federated.
+Users need to adapt their local training or computing logic into FLARE's task
+execution abstractions to make their training or computing federated.
 
 We offer various levels of abstraction for writing task execution code,
 catering to use cases that span from complete customizability to easy user adaptation.
@@ -32,7 +33,8 @@ The Client API uses the :class:`FLModel<nvflare.app_common.abstract.fl_model.FLM
 object for data transfer and supports common tasks such as train, validate, and submit_model.
 Additionally, options for using decorators or PyTorch Lightning are also available.
 
-We recommend users start with the Client API, and to consider the other types for more specific cases as required.
+We recommend users start with the Client API, and to consider the other types
+for more specific cases as required.
 
 **ModelLearner**
 
