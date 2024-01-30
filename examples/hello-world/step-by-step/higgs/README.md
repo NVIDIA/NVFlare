@@ -1,7 +1,8 @@
 
 # Training traditional ML classifiers with HIGGS dataset
 
-The [HIGGS dataset](https://archive.ics.uci.edu/dataset/280/higgs) contains 11 million instances, each with 28 attributes, for binary classification to predict whether an event corresponds to the decayment of a Higgs boson or not. (Please note that the [UCI's website](https://archive.ics.uci.edu/dataset/280/higgs) may experience occasional downtime)
+The [HIGGS dataset](https://archive.ics.uci.edu/dataset/280/higgs) contains 11 million instances, each with 28 attributes, for binary classification to predict whether an event corresponds to the decayment of a Higgs boson or not. Follow the [prepare_data.ipynb](prepare_data.ipynb) notebook to download the HIGGS dataset and prepare the data splits.
+(Please note that the [UCI's website](https://archive.ics.uci.edu/dataset/280/higgs) may experience occasional downtime)
 
 The first 21 features (columns 2-22) are kinematic properties measured by the particle detectors in the accelerator. 
 The data has been produced using Monte Carlo simulations. The first 21 features are kinematic properties measured by the particle detectors in the accelerator. The last 7 features are functions of the first 21 features; these are high-level features derived by physicists to help discriminate between the two classes.

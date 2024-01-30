@@ -13,11 +13,13 @@ Each job template contains the following informations
 * information card: info.md for display purpose
 * information config: used by program
 
+Refer to the [Job CLI Documentation](https://nvflare.readthedocs.io/en/main/user_guide/nvflare_cli/job_cli.html) for details on how to use the Job Templates with the Job CLI.
+
 ## Configuration format
 
 Configurations are written in HOCON (human optimized object Notation). As a variant of JSON, .conf can also use json format.
 The pyhocon format allows for comments, and you can remove many of the double quotes as well as replace ":" with "=" to make the configurations look cleaner.
-You can find details in [pyhoconb: HOCON Parser for python](https://github.com/chimpler/pyhocon). 
+You can find details in [pyhocon: HOCON Parser for python](https://github.com/chimpler/pyhocon).
 
 ## List of Job Templates
 
