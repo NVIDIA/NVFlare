@@ -20,6 +20,7 @@ from typing import Callable, Dict, List, Optional, Union
 from nvflare.apis.controller_spec import SendOrder
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.app_common.app_constant import CommConstants
 from nvflare.app_common.wf_comm.wf_comm_api_spec import (
     CURRENT_ROUND,
     DATA,
@@ -47,10 +48,10 @@ class WFCommAPI(WFCommAPISpec):
         self.task_result_lock = threading.Lock()
 
         data_bus = DataBus()
-        data_bus.subscribe(topics=["TASK_RESULT"], callback=self.result_callback)
+        data_bus.subscribe(topics=[CommConstants.TASK_RESULT], callback=self.result_callback)
 
         self.event_manager = EventManager(data_bus)
-        self.ctrl = data_bus.receive_data("communicator")
+        self.ctrl = data_bus.receive_data(CommConstants.COMMUNICATOR)
         self._check_inputs()
 
     def get_site_names(self):
@@ -69,16 +70,14 @@ class WFCommAPI(WFCommAPISpec):
         meta = {} if meta is None else meta
         msg_payload = self._prepare_input_payload(task_name, data, meta, min_responses, targets)
         self.register_callback(callback)
-        print("\ncalling broadcast_to_peers_and_wait\n")
         self.ctrl.broadcast_to_peers_and_wait(msg_payload)
-        print("\nafter broadcast_to_peers_and_wait\n")
 
         if callback is None:
             return self._get_results(task_name)
 
     def register_callback(self, callback):
         if callback:
-            self.event_manager.data_bus.subscribe(["POST_PROCESS_RESULT"], callback)
+            self.event_manager.data_bus.subscribe([CommConstants.POST_PROCESS_RESULT], callback)
 
     def send_and_wait(
         self,
@@ -201,11 +200,11 @@ class WFCommAPI(WFCommAPISpec):
             raise RuntimeError("missing Controller")
 
     def result_callback(self, topic, data, data_bus):
-        if topic == "TASK_RESULT":
+        if topic == CommConstants.TASK_RESULT:
             task, site_result = next(iter(data.items()))
             # fire event with process data
             one_result = self._process_one_result(site_result)
-            self.event_manager.fire_event("POST_PROCESS_RESULT", {task: one_result})
+            self.event_manager.fire_event(CommConstants.POST_PROCESS_RESULT, {task: one_result})
             site_task_results = self.task_results.get(task, [])
             site_task_results.append(site_result)
             self.task_results[task] = site_task_results

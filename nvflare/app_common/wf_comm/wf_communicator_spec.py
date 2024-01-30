@@ -24,7 +24,7 @@ from nvflare.fuel.utils.import_utils import optional_import
 
 class WFCommunicatorSpec(ABC):
     def __init__(self):
-        self.strategy_config: Optional[Dict] = None
+        self.controller_config: Optional[Dict] = None
 
     @abstractmethod
     def broadcast_to_peers_and_wait(self, pay_load: Dict):
@@ -50,23 +50,23 @@ class WFCommunicatorSpec(ABC):
     def relay_to_peers(self, pay_load: Dict, send_order: SendOrder = SendOrder.SEQUENTIAL):
         pass
 
-    def set_strategy_config(self, strategy_config: Dict):
-        if strategy_config is None:
-            raise ValueError("strategy_config is None")
+    def set_controller_config(self, controller_config: Dict):
+        if controller_config is None:
+            raise ValueError("controller_config is None")
 
-        if not isinstance(strategy_config, dict):
-            raise ValueError(f"strategy_config should be Dict, found '{type(strategy_config)}'")
+        if not isinstance(controller_config, dict):
+            raise ValueError(f"controller_config should be Dict, found '{type(controller_config)}'")
 
-        self.strategy_config = strategy_config
+        self.controller_config = controller_config
 
-    def get_strategy(self):
-        strategy = None
-        if isinstance(self.strategy_config, dict):
-            strategy = ComponentBuilder().build_component(self.strategy_config)
-            if strategy is None:
+    def get_controller(self):
+        controller = None
+        if isinstance(self.controller_config, dict):
+            controller = ComponentBuilder().build_component(self.controller_config)
+            if controller is None:
                 raise ValueError("strategy should provided, but get None")
 
-        return strategy
+        return controller
 
     def register_serializers(self, serializer_class_paths: List[str] = None):
         self.register_default_serializers()

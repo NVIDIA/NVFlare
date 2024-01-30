@@ -17,6 +17,7 @@ import re
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import SystemConfigs, SystemVarName
 from nvflare.apis.responder import Responder
+from nvflare.app_common.app_constant import CommConstants
 from nvflare.app_common.wf_comm.wf_communicator import WFCommunicator
 from nvflare.app_common.wf_comm.wf_communicator_spec import WFCommunicatorSpec
 from nvflare.fuel.data_event.data_bus import DataBus
@@ -48,10 +49,23 @@ class WorkFlow:
 
 
 def enhance_workflow_config(element: dict):
-    if "strategy" in element:
-        strategy_config = element.get("strategy")
-        strategy_config["lazy_instantiate"] = True
-        element["strategy"] = strategy_config
+    if CommConstants.CONTROLLER in element:
+        controller_config = element.get(CommConstants.CONTROLLER)
+        controller_config["lazy_instantiate"] = True
+        element[CommConstants.CONTROLLER] = controller_config
+    elif CommConstants.COMMUNICATOR not in element:
+        controller_config = element.copy()
+        controller_config["lazy_instantiate"] = True
+        element = {CommConstants.CONTROLLER: controller_config}
+    else:
+        wf_config = element.copy()
+        comm_config = wf_config.pop(CommConstants.COMMUNICATOR)
+        controller_config = wf_config
+        controller_config["lazy_instantiate"] = True
+        element = {CommConstants.COMMUNICATOR: comm_config,
+                   CommConstants.CONTROLLER: controller_config
+                   }
+
     return element
 
 
@@ -139,20 +153,24 @@ class ServerJsonConfigurator(FedJsonConfigurator):
 
         if re.search(r"^workflows\.#[0-9]+$", path):
             element = enhance_workflow_config(element)
+
+            print("\n\n element =", element)
             component = self.authorize_and_build_component(element, config_ctx, node)
+
+            # todo: fix: dependency graph is not right, we are now nvflare.private depending on the AppCommon class
+            # todo: refactoring the code into small methods
             if isinstance(component, dict):
                 wf_config = component
-                communicator = wf_config.get("communicator")
+                communicator = wf_config.get(CommConstants.COMMUNICATOR)
                 if communicator is None:
                     communicator = WFCommunicator()
 
                 if isinstance(communicator, WFCommunicatorSpec):
-                    strategy_config = wf_config.get("strategy")
-                    strategy_config["lazy_instantiate"] = False
-                    communicator.set_strategy_config(strategy_config)
-                    communicator.register_serializers(strategy_config.get("serializers"))
+                    controller_config = wf_config.get(CommConstants.CONTROLLER)
+                    controller_config["lazy_instantiate"] = False
+                    communicator.set_controller_config(controller_config)
                 data_bus = DataBus()
-                data_bus.send_data("communicator", communicator)
+                data_bus.send_data(CommConstants.COMMUNICATOR, communicator)
                 responder = communicator
             else:
                 responder = component

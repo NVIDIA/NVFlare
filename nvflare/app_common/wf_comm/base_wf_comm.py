@@ -25,6 +25,7 @@ from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+from nvflare.app_common.wf_comm.decomposer_register import DecomposerRegister
 from nvflare.app_common.wf_comm.wf_comm_api import WFCommAPI
 from nvflare.app_common.wf_comm.wf_comm_api_spec import (
     DATA,
@@ -44,9 +45,9 @@ from nvflare.security.logging import secure_format_traceback
 
 class BaseWFCommunicator(FLComponent, WFCommunicatorSpec, ControllerSpec, ABC):
     def __init__(
-        self,
-        task_timeout: int = 0,
-        result_pull_interval: float = 0.2,
+            self,
+            task_timeout: int = 0,
+            result_pull_interval: float = 0.2,
     ):
         super().__init__()
         self.strategy_fn_name = "run"
@@ -67,9 +68,19 @@ class BaseWFCommunicator(FLComponent, WFCommunicatorSpec, ControllerSpec, ABC):
         self.event_manager = EventManager(self.data_bus)
 
         self.engine = self.fl_ctx.get_engine()
+        self.register_decomposers()
+
         self.clients = self.engine.get_clients()
         self.publish_comm_api()
         self.log_info(fl_ctx, "workflow controller started")
+
+    def register_decomposers(self):
+        decomposer_register = self.engine.get_component("decomposer_register")
+        if decomposer_register:
+            if not isinstance(decomposer_register, DecomposerRegister):
+                raise ValueError(
+                    f"decomposer_register component must be type of 'DecomposerRegister', got {type(decomposer_register)}.")
+            decomposer_register.register()
 
     def publish_comm_api(self):
         comm_api = WFCommAPI()
@@ -79,7 +90,7 @@ class BaseWFCommunicator(FLComponent, WFCommunicatorSpec, ControllerSpec, ABC):
     def start_workflow(self, abort_signal, fl_ctx):
         try:
             fl_ctx.set_prop("abort_signal", abort_signal)
-            func = getattr(self.get_strategy(), self.strategy_fn_name)
+            func = getattr(self.get_controller(), self.strategy_fn_name)
             func()
 
         except Exception as e:
@@ -91,7 +102,7 @@ class BaseWFCommunicator(FLComponent, WFCommunicatorSpec, ControllerSpec, ABC):
         pass
 
     def process_result_of_unknown_task(
-        self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
+            self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
     ):
         pass
 
