@@ -70,7 +70,7 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
 
         # Save the model, only ask process 0 to save the model.
         if xgb.collective.get_rank() == 0:
-            bst.save_model("./test.model.json")
+            bst.save_model("./model/test.model.json")
             xgb.collective.communicator_print("Finished training\n")
 
 
