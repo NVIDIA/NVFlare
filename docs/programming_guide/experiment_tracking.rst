@@ -39,8 +39,9 @@ provided examples, the Receiver is on the FL server, but it could also be on the
 
 .. note::
 
-    This page covers experiments tracking using LogWriters, however if using the Client API,
-    please refer to :ref:`client_api` and :ref:`nvflare.client.tracking` for their experiment tracking APIs.
+    This page covers experiment tracking using :class:`LogWriters <nvflare.app_common.tracking.log_writer.LogWriter>`,
+    which are configured and used with :ref:`executor` or :ref:`model_learner` on the FLARE-side code.
+    However if using the Client API, please refer to :ref:`client_api` and :ref:`nvflare.client.tracking` for adding experiment tracking to your custom training code.
 
 
 **************************************
@@ -99,8 +100,6 @@ There are three things to consider for developing a custom experiment tracking t
 
 Data Type
 =========
-
-Currently, the supported data types are metrics, params, and text. If you require other data types, may sure you add
 
 Currently, the supported data types are listed in :class:`AnalyticsDataType <nvflare.apis.analytix.AnalyticsDataType>`, and other data types can be added as needed.
 
