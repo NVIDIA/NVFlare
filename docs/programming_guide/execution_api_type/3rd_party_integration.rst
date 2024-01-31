@@ -204,7 +204,7 @@ You should see the following files, among others:
 
 client.crt, client.key, server.crt, server.key, rootCA.pem
 
-Note that the specified listening_host of a site must be must be a hostname that
+Note that the specified listening_host of a site must be a hostname that
 the external trainer can reach via network.
 
 Step Two - Prepare Job Configuration
