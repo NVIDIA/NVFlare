@@ -23,12 +23,14 @@ from multiprocessing.connection import Listener
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, RunnerTask, WorkspaceConstants
+from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.multi_process_executor_constants import CommunicationMetaData
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
+from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.private.fed.app.deployer.base_client_deployer import BaseClientDeployer
 from nvflare.private.fed.app.utils import check_parent_alive
 from nvflare.private.fed.client.client_engine import ClientEngine
@@ -244,6 +246,9 @@ def main(args):
     AuthorizationService.initialize(EmptyAuthorizer())
     # AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
     AuditService.the_auditor = SimulatorAuditor()
+
+    workspace_obj = Workspace(root_dir=args.workspace)
+    SecurityContentService.initialize(content_folder=workspace_obj.get_startup_kit_dir())
 
     if args.gpu:
         os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"

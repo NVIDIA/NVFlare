@@ -46,6 +46,7 @@ from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
+from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
 from nvflare.fuel.utils.network_utils import get_open_ports
@@ -152,6 +153,9 @@ class SimulatorRunner(FLComponent):
         fobs_initialize()
         AuthorizationService.initialize(EmptyAuthorizer())
         AuditService.the_auditor = SimulatorAuditor()
+
+        workspace = Workspace(root_dir=self.args.workspace)
+        SecurityContentService.initialize(content_folder=workspace.get_startup_kit_dir())
 
         self.simulator_root = os.path.join(self.args.workspace, SimulatorConstants.JOB_NAME)
         if os.path.exists(self.simulator_root):
