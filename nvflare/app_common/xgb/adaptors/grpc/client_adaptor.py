@@ -17,7 +17,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.xgb.adaptor import XGBClientAdaptor
 from nvflare.app_common.xgb.adaptors.grpc.proto.federated_pb2_grpc import FederatedServicer
 from nvflare.app_common.xgb.adaptors.grpc.server import XGBServer
-from nvflare.app_common.xgb.process_manager import ProcessManager
 from nvflare.fuel.f3.drivers.net_utils import get_open_tcp_port
 from nvflare.security.logging import secure_format_exception
 
@@ -25,18 +24,23 @@ from nvflare.security.logging import secure_format_exception
 class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
     def __init__(
         self,
-        run_xgb_client_cmd: str,
-        internal_server_addr=None,
         grpc_options=None,
         req_timeout=10.0,
     ):
         XGBClientAdaptor.__init__(self, req_timeout)
-        self.run_xgb_client_cmd = run_xgb_client_cmd
-        self.internal_server_addr = internal_server_addr
         self.grpc_options = grpc_options
         self.internal_xgb_server = None
-        self.client_manager = None
         self.stopped = False
+        self.internal_server_addr = None
+
+    def start_client(self, server_addr: str, port: int):
+        pass
+
+    def stop_client(self):
+        pass
+
+    def is_client_stopped(self) -> (bool, int):
+        pass
 
     def start(self, fl_ctx: FLContext):
         if self.rank is None:
@@ -45,27 +49,16 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         if not self.num_rounds:
             raise RuntimeError("cannot start - num_rounds is not set")
 
-        if not self.internal_server_addr:
-            # dynamically determine address on localhost
-            port = get_open_tcp_port(resources={})
-            if not port:
-                raise RuntimeError("failed to get a port for XGB server")
-            self.internal_server_addr = f"127.0.0.1:{port}"
-
-        self.run_xgb_client_cmd = self.run_xgb_client_cmd.replace("$addr", self.internal_server_addr)
-        self.run_xgb_client_cmd = self.run_xgb_client_cmd.replace("$rank", str(self.rank))
-        self.run_xgb_client_cmd = self.run_xgb_client_cmd.replace("$num_rounds", str(self.num_rounds))
-
+        # dynamically determine address on localhost
+        port = get_open_tcp_port(resources={})
+        if not port:
+            raise RuntimeError("failed to get a port for XGB server")
+        self.internal_server_addr = f"127.0.0.1:{port}"
         self.logger.info(f"Start internal server at {self.internal_server_addr}")
         self.internal_xgb_server = XGBServer(self.internal_server_addr, 10, self.grpc_options, self)
         self.internal_xgb_server.start(no_blocking=True)
         self.logger.info(f"Started internal server at {self.internal_server_addr}")
-
-        self.client_manager = ProcessManager(
-            name="XGBClient",
-            start_cmd=self.run_xgb_client_cmd,
-        )
-        self.client_manager.start()
+        self.start_client(self.internal_server_addr, port)
         self.logger.info(f"Started external XGB Client")
 
     def stop(self, fl_ctx: FLContext):
@@ -73,19 +66,14 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
             return
 
         self.stopped = True
-        if self.client_manager:
-            self.logger.info("Stop external XGB client")
-            self.client_manager.stop()
+        self.stop_client()
 
         if self.internal_xgb_server:
             self.logger.info("Stop internal XGB Server")
             self.internal_xgb_server.shutdown()
 
     def _is_stopped(self) -> (bool, int):
-        if self.client_manager:
-            return self.client_manager.is_stopped()
-        else:
-            return True, 0
+        return self.is_client_stopped()
 
     def _abort(self, reason: str):
         # stop the gRPC XGB client (the target)

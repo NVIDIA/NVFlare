@@ -11,51 +11,44 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import nvflare.app_common.xgb.adaptors.grpc.proto.federated_pb2 as pb2
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.xgb.adaptor import XGBServerAdaptor
 from nvflare.app_common.xgb.adaptors.grpc.client import XGBClient
 from nvflare.app_common.xgb.defs import Constant
-from nvflare.app_common.xgb.process_manager import ProcessManager
 from nvflare.fuel.f3.drivers.net_utils import get_open_tcp_port
-from nvflare.fuel.utils.validation_utils import check_str
 
 
 class GrpcServerAdaptor(XGBServerAdaptor):
     def __init__(
         self,
-        run_xgb_server_cmd: str,
-        xgb_server_addr=None,
         xgb_server_ready_timeout=Constant.XGB_SERVER_READY_TIMEOUT,
     ):
         XGBServerAdaptor.__init__(self)
-        self.run_xgb_server_cmd = run_xgb_server_cmd
-        self.xgb_server_addr = xgb_server_addr
         self.xgb_server_ready_timeout = xgb_server_ready_timeout
         self.internal_xgb_client = None
         self.xgb_server_manager = None
-        check_str("run_xgb_server_cmd", run_xgb_server_cmd)
+
+    def start_server(self, addr: str, port: int, world_size: int):
+        pass
+
+    def stop_server(self):
+        pass
+
+    def is_server_stopped(self) -> (bool, int):
+        pass
 
     def start(self, fl_ctx: FLContext):
-        if not self.xgb_server_addr:
-            # we dynamically create server address on localhost
-            port = get_open_tcp_port(resources={})
-            if not port:
-                raise RuntimeError("failed to get a port for XGB server")
-            self.xgb_server_addr = f"127.0.0.1:{port}"
+        # we dynamically create server address on localhost
+        port = get_open_tcp_port(resources={})
+        if not port:
+            raise RuntimeError("failed to get a port for XGB server")
 
-        self.run_xgb_server_cmd = self.run_xgb_server_cmd.replace("$addr", self.xgb_server_addr)
-        self.run_xgb_server_cmd = self.run_xgb_server_cmd.replace("$num_clients", str(self.world_size))
-
-        self.xgb_server_manager = ProcessManager(
-            name="XGBServer",
-            start_cmd=self.run_xgb_server_cmd,
-        )
-        self.xgb_server_manager.start()
+        server_addr = f"127.0.0.1:{port}"
+        self.start_server(server_addr, port, self.world_size)
 
         # start XGB client
-        self.internal_xgb_client = XGBClient(self.xgb_server_addr)
+        self.internal_xgb_client = XGBClient(server_addr)
         self.internal_xgb_client.start(ready_timeout=self.xgb_server_ready_timeout)
 
     def stop(self, fl_ctx: FLContext):
@@ -64,19 +57,10 @@ class GrpcServerAdaptor(XGBServerAdaptor):
         if client:
             self.log_info(fl_ctx, "Stopping internal XGB client")
             client.stop()
-
-        mgr = self.xgb_server_manager
-        self.xgb_server_manager = None
-        if mgr:
-            # stop the XGB server
-            self.log_info(fl_ctx, "Stopping XGB Server Monitor")
-            mgr.stop()
+        self.stop_server()
 
     def _is_stopped(self) -> (bool, int):
-        if self.xgb_server_manager:
-            return self.xgb_server_manager.is_stopped()
-        else:
-            return True, 0
+        return self.is_server_stopped()
 
     def all_gather(self, rank: int, seq: int, send_buf: bytes, fl_ctx: FLContext) -> bytes:
         assert isinstance(self.internal_xgb_client, XGBClient)

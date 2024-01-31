@@ -274,6 +274,7 @@ class XGBClientAdaptor(XGBAdaptor):
         self.stopped = False
         self.rank = None
         self.num_rounds = None
+        self.world_size = None
 
     def configure(self, config: dict, fl_ctx: FLContext):
         """Called by XGB Executor to configure the target.
@@ -287,14 +288,29 @@ class XGBClientAdaptor(XGBAdaptor):
         Returns: None
 
         """
+        ws = config.get(Constant.CONF_KEY_WORLD_SIZE)
+        if not ws:
+            raise RuntimeError("world_size is not configured")
+
+        check_positive_int(Constant.CONF_KEY_WORLD_SIZE, ws)
+        self.world_size = ws
+
         rank = config.get(Constant.CONF_KEY_RANK)
+        if rank is None:
+            raise RuntimeError("rank is not configured")
+
         check_non_negative_int(Constant.CONF_KEY_RANK, rank)
+        self.rank = rank
 
         num_rounds = config.get(Constant.CONF_KEY_NUM_ROUNDS)
-        check_positive_int(Constant.CONF_KEY_NUM_ROUNDS, num_rounds)
+        if num_rounds is None:
+            raise RuntimeError("num_rounds is not configured")
 
-        self.rank = rank
+        check_positive_int(Constant.CONF_KEY_NUM_ROUNDS, num_rounds)
         self.num_rounds = num_rounds
+
+    def initialize(self, fl_ctx: FLContext):
+        pass
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         """Handle FL events.
@@ -310,6 +326,7 @@ class XGBClientAdaptor(XGBAdaptor):
         if event_type == EventType.START_RUN:
             self.engine = fl_ctx.get_engine()
             self.sender = Sender(self.engine, self.req_timeout)
+            self.initialize(fl_ctx)
 
     def _send_request(self, op: str, req: Shareable) -> bytes:
         """Send XGB operation request to the FL server via FLARE message.

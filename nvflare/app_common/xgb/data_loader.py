@@ -12,7 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.app_common.xgb.adaptors.c.client_adaptor import CClientAdaptor
-from nvflare.app_common.xgb.adaptors.c.server_adaptor import CServerAdaptor
-from nvflare.app_common.xgb.adaptors.grpc.impl.in_process_client_adaptor import InProcessGrpcClientAdaptor
-from nvflare.app_common.xgb.adaptors.grpc.impl.in_process_server_adaptor import InProcessGrpcServerAdaptor
+
+from abc import ABC, abstractmethod
+from typing import Tuple
+
+import xgboost as xgb
+
+
+class XGBDataLoader(ABC):
+    @abstractmethod
+    def load_data(self, client_id: str) -> Tuple[xgb.core.DMatrix, xgb.core.DMatrix]:
+        """Loads data for xgboost.
+
+        Returns:
+            A tuple of train_data, validation_data
+        """
+        pass

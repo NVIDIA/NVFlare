@@ -98,11 +98,14 @@ class XGBExecutor(Executor):
                 self.log_error(fl_ctx, f"missing {Constant.CONF_KEY_NUM_ROUNDS} from config")
                 return make_reply(ReturnCode.BAD_TASK_DATA)
 
+            world_size = len(ranks)
+
             # configure the XGB client target via the adaptor
             self.adaptor.configure(
                 {
                     Constant.CONF_KEY_RANK: my_rank,
                     Constant.CONF_KEY_NUM_ROUNDS: num_rounds,
+                    Constant.CONF_KEY_WORLD_SIZE: world_size,
                 },
                 fl_ctx,
             )
