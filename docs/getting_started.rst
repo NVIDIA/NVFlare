@@ -69,7 +69,7 @@ Installation
 Supported Operating Systems
 ---------------------------
 - Linux
-- OSX (Note: some dependencies are not compatible)
+- OSX (Note: some optional dependencies are not compatible, such as tenseal and openmined.psi)
 
 Python Version
 --------------
@@ -137,7 +137,8 @@ Stable releases are available on `NVIDIA FLARE PyPI <https://pypi.org/project/nv
 .. note::
 
     In addition to the dependencies included when installing nvflare, many of our example applications have additional packages that must be installed.
-    Be on the lookout for provided requirement.txt files before running the examples.
+    Make sure to install from any requirement.txt files before running the examples.
+    See :github_nvflare_link:`nvflare/app_opt <nvflare/app_opt>` for modules and components with optional dependencies.
 
 .. _containerized_deployment:
 
