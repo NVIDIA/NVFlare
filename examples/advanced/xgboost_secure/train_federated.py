@@ -42,8 +42,8 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
             label = ""
 
         # for Vertical XGBoost, read from csv with label_column and set data_split_mode to 1 for column mode
-        dtrain = xgb.DMatrix(train_path + f"?format=csv{label}", data_split_mode=1)
-        dvalid = xgb.DMatrix(valid_path + f"?format=csv{label}", data_split_mode=1)
+        dtrain = xgb.DMatrix(train_path + f"?format=csv{label}", data_split_mode=2)
+        dvalid = xgb.DMatrix(valid_path + f"?format=csv{label}", data_split_mode=2)
 
         if PRINT_SAMPLE:
             # print number of rows and columns for each worker
