@@ -138,7 +138,9 @@ class ModelController(Controller, FLComponentWrapper):
         else:
             self.model = FLModel(params_type=ParamsType.FULL, params={})
 
-        self.fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self.model, private=True, sticky=True)
+        # persistor uses Learnable format to save model
+        ml = make_model_learnable(weights=self.model.params, meta_props=self.model.meta)
+        self.fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, ml, private=True, sticky=True)
         self.event(AppEventType.INITIAL_MODEL_LOADED)
 
         self.engine = self.fl_ctx.get_engine()
@@ -231,7 +233,11 @@ class ModelController(Controller, FLComponentWrapper):
         result = client_task.result
         client_name = client_task.client.name
 
+        self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=True)
+
+        self.event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT)
         self._accept_train_result(client_name=client_name, result=result, fl_ctx=fl_ctx)
+        self.event(AppEventType.AFTER_CONTRIBUTION_ACCEPT)
 
         # Turn result into FLModel
         result_model = FLModelUtils.from_shareable(result)
@@ -270,7 +276,6 @@ class ModelController(Controller, FLComponentWrapper):
                 )
                 return
 
-        self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=True)
         self.fl_ctx.set_prop(AppConstants.TRAINING_RESULT, result, private=True, sticky=False)
 
     @abstractmethod
@@ -307,6 +312,7 @@ class ModelController(Controller, FLComponentWrapper):
             ) or self._current_round == self._num_rounds - 1:
                 self.info("Start persist model on server.")
                 self.event(AppEventType.BEFORE_LEARNABLE_PERSIST)
+                # persistor uses Learnable format to save model
                 ml = make_model_learnable(weights=self.model.params, meta_props=self.model.meta)
                 self.persistor.save(ml, self.fl_ctx)
                 self.event(AppEventType.AFTER_LEARNABLE_PERSIST)
