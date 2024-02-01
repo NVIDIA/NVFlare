@@ -28,8 +28,6 @@ FUNCTION_MAPPING = {
     AnalyticsDataType.TEXT: "add_text",
     AnalyticsDataType.IMAGE: "add_image",
     AnalyticsDataType.SCALARS: "add_scalars",
-    AnalyticsDataType.PARAMETER: "add_scalar",
-    AnalyticsDataType.PARAMETERS: "add_scalars",
     AnalyticsDataType.METRIC: "add_scalar",
     AnalyticsDataType.METRICS: "add_scalars",
 }
@@ -91,7 +89,7 @@ class TBAnalyticsReceiver(AnalyticsReceiver):
         )
         func_name = FUNCTION_MAPPING.get(analytic_data.data_type, None)
         if func_name is None:
-            self.log_error(fl_ctx, f"The data_type {analytic_data.data_type} is not supported.", fire_event=False)
+            self.log_warning(fl_ctx, f"The data_type {analytic_data.data_type} is not supported.", fire_event=False)
             return
 
         func = getattr(writer, func_name)

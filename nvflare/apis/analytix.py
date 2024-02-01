@@ -183,11 +183,7 @@ class AnalyticsData:
                 return sender_data_type
 
         if sender == LogWriterName.MLFLOW and receiver == LogWriterName.TORCH_TB:
-            if AnalyticsDataType.PARAMETER == sender_data_type:
-                return AnalyticsDataType.SCALAR
-            elif AnalyticsDataType.PARAMETERS == sender_data_type:
-                return AnalyticsDataType.SCALARS
-            elif AnalyticsDataType.METRIC == sender_data_type:
+            if AnalyticsDataType.METRIC == sender_data_type:
                 return AnalyticsDataType.SCALAR
             elif AnalyticsDataType.METRICS == sender_data_type:
                 return AnalyticsDataType.SCALARS
