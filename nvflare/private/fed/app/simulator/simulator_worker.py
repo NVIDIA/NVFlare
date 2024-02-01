@@ -247,6 +247,7 @@ def main(args):
     # AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
     AuditService.the_auditor = SimulatorAuditor()
 
+    os.makedirs(os.path.join(args.workspace, WorkspaceConstants.STARTUP_FOLDER_NAME), exist_ok=True)
     workspace_obj = Workspace(root_dir=args.workspace)
     SecurityContentService.initialize(content_folder=workspace_obj.get_startup_kit_dir())
 

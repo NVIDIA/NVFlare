@@ -154,6 +154,7 @@ class SimulatorRunner(FLComponent):
         AuthorizationService.initialize(EmptyAuthorizer())
         AuditService.the_auditor = SimulatorAuditor()
 
+        os.makedirs(os.path.join(self.args.workspace, WorkspaceConstants.STARTUP_FOLDER_NAME), exist_ok=True)
         workspace = Workspace(root_dir=self.args.workspace)
         SecurityContentService.initialize(content_folder=workspace.get_startup_kit_dir())
 
