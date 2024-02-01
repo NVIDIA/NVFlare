@@ -13,11 +13,13 @@
 # limitations under the License.
 
 import os
+import shutil
 import uuid
 from unittest.mock import patch
 
 import pytest
 
+from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
 from nvflare.private.fed.utils.fed_utils import split_gpus
 
@@ -34,9 +36,13 @@ class TestSimulatorRunner:
     @patch("nvflare.private.fed.server.fed_server.BaseServer.get_cell", return_value=MockCell())
     def test_valid_job_simulate_setup(self, mock_deploy, mock_admin, mock_register, mock_cell):
         workspace_name = str(uuid.uuid4())
+        cwd = os.getcwd()
+        os.makedirs(os.path.join(cwd, workspace_name, WorkspaceConstants.STARTUP_FOLDER_NAME))
         job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
         runner = SimulatorRunner(job_folder=job_folder, workspace=workspace_name, threads=1)
         assert runner.setup()
+        os.chdir(cwd)
+        shutil.rmtree(os.path.join(cwd, workspace_name))
 
         expected_clients = ["site-1", "site-2"]
         client_names = []
@@ -50,9 +56,13 @@ class TestSimulatorRunner:
     @patch("nvflare.private.fed.server.fed_server.BaseServer.get_cell", return_value=MockCell())
     def test_client_names_setup(self, mock_deploy, mock_admin, mock_register, mock_cell):
         workspace_name = str(uuid.uuid4())
+        cwd = os.getcwd()
+        os.makedirs(os.path.join(cwd, workspace_name, WorkspaceConstants.STARTUP_FOLDER_NAME))
         job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
         runner = SimulatorRunner(job_folder=job_folder, workspace=workspace_name, clients="site-1", threads=1)
         assert runner.setup()
+        os.chdir(cwd)
+        shutil.rmtree(os.path.join(cwd, workspace_name))
 
         expected_clients = ["site-1"]
         client_names = []
@@ -66,9 +76,13 @@ class TestSimulatorRunner:
     @patch("nvflare.private.fed.server.fed_server.BaseServer.get_cell", return_value=MockCell())
     def test_no_app_for_client(self, mock_deploy, mock_admin, mock_register, mock_cell):
         workspace_name = str(uuid.uuid4())
+        cwd = os.getcwd()
+        os.makedirs(os.path.join(cwd, workspace_name, WorkspaceConstants.STARTUP_FOLDER_NAME))
         job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
         runner = SimulatorRunner(job_folder=job_folder, workspace=workspace_name, n_clients=3, threads=1)
         assert not runner.setup()
+        os.chdir(cwd)
+        shutil.rmtree(os.path.join(cwd, workspace_name))
 
     @pytest.mark.parametrize(
         "client_names, gpus, expected_split_names",
