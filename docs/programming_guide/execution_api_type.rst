@@ -23,9 +23,13 @@ execution abstractions to make their training or computing federated.
 We offer various levels of abstraction for writing task execution code,
 catering to use cases that span from complete customizability to easy user adaptation.
 
+Execution API Type
+==================
+
 Below is a general overview of the key ideas and use cases for each type:
 
-**Client API**
+Client API
+----------
 
 The :ref:`client_api` provides the most straightforward way to write FL code,
 and can easily be used to convert centralized code with minimal code changes.
@@ -36,7 +40,8 @@ Additionally, options for using decorators or PyTorch Lightning are also availab
 We recommend users start with the Client API, and to consider the other types
 for more specific cases as required.
 
-**ModelLearner**
+ModelLearner
+------------
 
 The :ref:`model_learner` is designed to simplify writing learning logic by
 minimizing FLARE-specific concepts.
@@ -51,7 +56,8 @@ The ModelLearner is best used when working with standard machine learning code
 that can fit well into the train and validate methods and can be easily adapted
 to the ModelLearner subclass and method structure.
 
-**Executor**
+Executor
+--------
 
 :ref:`executor` is the most flexible for defining custom logic and tasks,
 as with a custom executor and controller, any form of computation can be performed.
@@ -64,7 +70,8 @@ abstract these concepts away for easier user adaptation.
 Overall, writing an Executor is most useful when implementing tasks and logic
 that do not fit within the structure of higher-level APIs or other predefined Executors.
 
-**3rd-Party System Integration**
+3rd-Party System Integration
+----------------------------
 
 There are cases where users have a pre-existing ML/DL training system
 infrastructure that cannot be easily adapted to the FLARE client.
