@@ -16,6 +16,7 @@ import gc
 import random
 
 from nvflare.apis.client import Client
+from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import ClientTask, Controller, Task
 from nvflare.apis.shareable import Shareable
@@ -145,6 +146,19 @@ class CyclicController(Controller):
         return targets
 
     def _process_result(self, client_task: ClientTask, fl_ctx: FLContext):
+        result = client_task.result
+        rc = result.get_return_code()
+        client_name = client_task.client.name
+
+        # Raise errors if ReturnCode is not OK.
+        if rc and rc != ReturnCode.OK:
+            self.system_panic(
+                f"Result from {client_name} is bad, error code: {rc}. "
+                f"{self.__class__.__name__} exiting at round {self._current_round}.",
+                fl_ctx=fl_ctx,
+            )
+            return False
+
         # submitted shareable is stored in client_task.result
         # we need to update task.data with that shareable so the next target
         # will get the updated shareable
