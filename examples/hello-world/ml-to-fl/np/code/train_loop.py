@@ -34,11 +34,11 @@ def main():
 
     # get system information
     sys_info = flare.system_info()
-    print(f"system info is: {sys_info}")
+    print(f"system info is: {sys_info}", flush=True)
 
     while flare.is_running():
         input_model = flare.receive()
-        print(f"received weights is: {input_model.params}")
+        print(f"received weights is: {input_model.params}", flush=True)
 
         input_numpy_array = input_model.params["numpy_key"]
 
@@ -49,11 +49,11 @@ def main():
         metrics = evaluate(input_numpy_array)
 
         sys_info = flare.system_info()
-        print(f"system info is: {sys_info}")
-        print(f"finish round: {input_model.current_round}")
+        print(f"system info is: {sys_info}", flush=True)
+        print(f"finish round: {input_model.current_round}", flush=True)
 
         # send back the model
-        print(f"send back: {output_numpy_array}")
+        print(f"send back: {output_numpy_array}", flush=True)
         flare.send(
             flare.FLModel(
                 params={"numpy_key": output_numpy_array},
