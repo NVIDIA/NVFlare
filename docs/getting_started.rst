@@ -66,6 +66,11 @@ Installation
 .. note::
    The server and client versions of nvflare must match, we do not support cross-version compatibility.
 
+Supported Operating Systems
+---------------------------
+- Linux
+- OSX (Note: some optional dependencies are not compatible, such as tenseal and openmined.psi)
+
 Python Version
 --------------
 
@@ -120,7 +125,6 @@ You may find that the pip and setuptools versions in the venv need updating:
   (nvflare-env) $ python3 -m pip install -U pip
   (nvflare-env) $ python3 -m pip install -U setuptools
 
-
 Install Stable Release
 ----------------------
 
@@ -130,6 +134,11 @@ Stable releases are available on `NVIDIA FLARE PyPI <https://pypi.org/project/nv
 
   $ python3 -m pip install nvflare
 
+.. note::
+
+    In addition to the dependencies included when installing nvflare, many of our example applications have additional packages that must be installed.
+    Make sure to install from any requirement.txt files before running the examples.
+    See :github_nvflare_link:`nvflare/app_opt <nvflare/app_opt>` for modules and components with optional dependencies.
 
 .. _containerized_deployment:
 
@@ -213,7 +222,7 @@ Production mode is secure with TLS certificates - depending the choice the deplo
 
   - HA or non-HA
   - Local or remote
-  - On-premise or on cloud
+  - On-premise or on cloud (See :ref:`cloud_deployment`)
 
 Using non-HA, secure, local mode (all clients and server running on the same host), production mode is very similar to POC mode except it is secure.
 
