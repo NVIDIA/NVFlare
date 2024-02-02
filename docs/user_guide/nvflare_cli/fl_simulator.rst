@@ -49,7 +49,7 @@ Command examples
 Run a single NVFlare app
 ========================
 
-This command will run the same ``hello-numpy-sag`` app on the server and 8 clients using 1 thread. The client names will be site-1, site-2, ... , site-8:
+This command will run the same ``hello-numpy-sag`` app on the server and 8 clients using 1 process. The client names will be site-1, site-2, ... , site-8:
 
 .. code-block:: python
 
@@ -829,22 +829,29 @@ application run.
         status = run_simulator(args)
         sys.exit(status)
 
-****************************
-Threads, Clients, and Events
-****************************
+******************************
+Processes, Clients, and Events
+******************************
 
-Specifying threads
-==================
-The simulator ``-t`` option provides the ability to specify how many threads to run the simulator with.
+Specifying number of processes
+==============================
+The simulator ``-t`` option provides the ability to specify how many processes to run the simulator with.
 
-When you run the simulator with ``-t 1``, there is only one client active and running at a time, and the clients will be running in
-turn. This is to enable the simulation of large number of clients using a single machine with limited resources.
+.. note::
 
-Note that if you have fewer threads than the number of clients, ClientRunner/learner object will go thorugh setup and
-teardown in every round.
+    The ``-t`` and ``--threads`` option for simulator was originally due to clients running in separate threads.
+    However each client now actually runs in a separate process. This distinction will not affect the user experience.
 
-With ``-t=num_client``, the simulator will run the number of clients in separate threads at the same time. Each
-client will always be running in memory with no swap_in / swap_out, but it will require more resources available.
+- N = number of clients (``-n``)
+- T = number of processes (``-t``)
+
+When running the simulator with fewer processes than clients (T < N)
+the simulator will need to swap-in/out the clients for the processes, resulting in some of the clients running sequentially as processes are available.
+This also will cause the ClientRunner/learner objects to go through setup and teardown in every round.
+Using T < N is only needed when trying to simulate of large number of clients using a single machine with limited resources.
+
+In most cases, run the simulator with the same number of processes as clients (T = N). The simulator will run the number of clients in separate processes at the same time. Each
+client will always be running in memory with no swap-in/out, but it will require more resources available.
 
 For the dataset / tensorboard initialization, you could make use of EventType.SWAP_IN and EventType.SWAP_OUT
 in the application.

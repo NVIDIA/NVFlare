@@ -26,7 +26,9 @@ export PYTHONPATH=${PWD}/..
 Import the W&B Python SDK and log in:
 
 ```
-wandb.login()
+python3
+>>> import wandb
+>>> wandb.login()
 ```
 
 Provide your API key when prompted.

@@ -25,6 +25,7 @@ docker run --runtime=nvidia -it --rm --shm-size=16g -p 8888:8888 -p 6006:6006 --
 
 For easy experimentation with NeMo, install NVFlare and mount the code inside the [nemo_nvflare](./nemo_nvflare) folder.
 ```
+cd nemo_nvflare
 pip install nvflare~=2.4.0rc7
 export PYTHONPATH=${PYTHONPATH}:/workspace
 ```
@@ -34,6 +35,7 @@ export PYTHONPATH=${PYTHONPATH}:/workspace
 We use [JupyterLab](https://jupyterlab.readthedocs.io) for this example.
 To start JupyterLab, run
 ```
+cd /workspace
 jupyter lab .
 ```
 and open [peft.ipynb](./peft.ipynb).
