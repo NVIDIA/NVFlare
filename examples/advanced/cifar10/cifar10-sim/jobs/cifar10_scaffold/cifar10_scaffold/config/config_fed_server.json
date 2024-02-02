@@ -2,8 +2,8 @@
     "format_version": 2,
     "min_clients": 8,
     "num_rounds": 50,
-    "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits",
-    "alpha": 1.0,
+    "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits/cifar10_scaffold_alpha0.1_ddeb0732-f26f-473d-97a1-e0eb4cf79038",
+    "alpha": 0.1,
     "server": {
         "heart_beat_timeout": 600
     },
@@ -54,7 +54,6 @@
             "args": {
                 "min_clients": "{min_clients}",
                 "num_rounds": "{num_rounds}",
-
                 "persistor_id": "persistor"
             }
         },
