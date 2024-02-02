@@ -34,19 +34,19 @@ experiments = {
     "cifar10_fedavg": {"tag": "val_acc_global_model", "alpha": 1.0},
 }
 
-# 4.2 Impact of client data heterogeneity
-experiments = {"cifar10_fedavg (alpha=1.0)": {"tag": "val_acc_global_model", "alpha": 1.0},
-              "cifar10_fedavg (alpha=0.5)": {"tag": "val_acc_global_model", "alpha": 0.5},
-              "cifar10_fedavg (alpha=0.3)": {"tag": "val_acc_global_model", "alpha": 0.3},
-              "cifar10_fedavg (alpha=0.1)": {"tag": "val_acc_global_model", "alpha": 0.1}
-}
+# # 4.2 Impact of client data heterogeneity
+# experiments = {"cifar10_fedavg (alpha=1.0)": {"tag": "val_acc_global_model", "alpha": 1.0},
+#               "cifar10_fedavg (alpha=0.5)": {"tag": "val_acc_global_model", "alpha": 0.5},
+#               "cifar10_fedavg (alpha=0.3)": {"tag": "val_acc_global_model", "alpha": 0.3},
+#               "cifar10_fedavg (alpha=0.1)": {"tag": "val_acc_global_model", "alpha": 0.1}
+# }
 
-# 4.3 FedProx vs. FedOpt vs. SCAFFOLD
-experiments = {"cifar10_fedavg": {"tag": "val_acc_global_model", "alpha": 0.1},
-              "cifar10_fedprox": {"tag": "val_acc_global_model", "alpha": 0.1},
-              "cifar10_fedopt": {"tag": "val_acc_global_model", "alpha": 0.1},
-              "cifar10_scaffold": {"tag": "val_acc_global_model", "alpha": 0.1}
-}
+# # 4.3 FedProx vs. FedOpt vs. SCAFFOLD
+# experiments = {"cifar10_fedavg": {"tag": "val_acc_global_model", "alpha": 0.1},
+#               "cifar10_fedprox": {"tag": "val_acc_global_model", "alpha": 0.1},
+#               "cifar10_fedopt": {"tag": "val_acc_global_model", "alpha": 0.1},
+#               "cifar10_scaffold": {"tag": "val_acc_global_model", "alpha": 0.1}
+# }
 
 add_cross_site_val = True
 
