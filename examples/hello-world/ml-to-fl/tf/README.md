@@ -31,8 +31,7 @@ nvflare job list_templates
 \* depends on whether TF can found GPU or not
 
 
-Note that for running with GPUs, we recommend using [NVIDIA TensorFlow docker](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow)
-
+For running with GPUs, please check the [note](#notes-on-running-with-gpus)
 
 ## Transform CIFAR10 TensorFlow training code to FL with NVFLARE Client API
 
@@ -108,7 +107,27 @@ Then we can run the job using the simulator:
 
 ```bash
 bash ./prepare_data.sh
-TF_GPU_ALLOCATOR=cuda_malloc_async nvflare simulator -n 2 -t 2 ./jobs/tensorflow_multi_gpu -w tensorflow_multi_gpu_workspace
+nvflare simulator -n 2 -t 2 ./jobs/tensorflow_multi_gpu -w tensorflow_multi_gpu_workspace
 ```
 
-Note that the flag "TF_GPU_ALLOCATOR=cuda_malloc_async" is only needed if you are going to run more than one process in the same GPU.
+## Notes on running with GPUs
+
+
+If you choose to run the example using GPUs, it is important to note that,
+by default, TensorFlow will attempt to allocate all available GPU memory at the start.
+In scenarios where multiple clients are involved, you have a couple of options to address this.
+
+One approach is to include specific flags to prevent TensorFlow from allocating all GPU memory.
+For instance:
+
+```bash
+TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async nvflare simulator -n 2 -t 2 ./jobs/tensorflow_multi_gpu -w tensorflow_multi_gpu_workspace
+```
+
+If you possess more GPUs than clients,
+an alternative strategy is to run one client on each GPU.
+This can be achieved as illustrated below:
+
+```bash
+nvflare simulator -n 2 -gpu 0,1 ./jobs/tensorflow_multi_gpu -w tensorflow_multi_gpu_workspace
+```
