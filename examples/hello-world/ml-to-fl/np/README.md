@@ -1,4 +1,4 @@
-# Configurations of NVFlare Client API
+# NVFlare Client API
 
 We will demonstrate how to send back model parameters or model parameters differences in different approaches in the following examples:
 
@@ -18,6 +18,25 @@ We demonstrate how to launch training script once and have training script keeps
 
   1. [Launch once for the whole job](#launch-once-for-the-whole-job)
 
+## Software Requirements
+
+Please install the requirements first, it is suggested to install inside a virtual environment:
+
+```bash
+pip install -r requirements.txt
+```
+
+Please also configure the job templates folder:
+
+```bash
+nvflare config -jt ../../../../job_templates/
+nvflare job list_templates
+```
+
+## Minimum Hardware Requirements
+
+1 CPU
+
 
 ## Send model parameters back to the NVFlare server
 
@@ -29,8 +48,6 @@ To send back the whole model parameters, we need to make sure the "params_transf
 Let reuse the job templates from [sag_np](../../../../job_templates/sag_np/):
 
 ```bash
-nvflare config -jt ../../../../job_templates/
-nvflare job list_templates
 nvflare job create -force -j ./jobs/np_param_full_transfer_full -w sag_np -sd ./code/ \
 -f config_fed_client.conf app_script=train_full.py params_transfer_type=FULL launch_once=false
 ```
