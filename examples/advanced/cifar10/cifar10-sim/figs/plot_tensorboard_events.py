@@ -93,7 +93,7 @@ def main():
     for config, exp in experiments.items():
         config_name = config.split(" ")[0]
         alpha = exp.get("alpha", None)
-        if alpha:
+        if alpha is not None:
             config_name = config_name + f"*alpha{alpha}"
         else:
             raise ValueError(f"Expected an alpha value to be provided but got alpha={alpha}")
