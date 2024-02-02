@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import os
 import shlex
 import subprocess
-import sys
 from threading import Thread
 from typing import Optional
 
@@ -25,13 +25,9 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.launcher import Launcher, LauncherRunStatus
 
 
-def log_subprocess_output(process, log_file):
-    with open(log_file, buffering=0, mode="ab") as f:
-        for c in iter(process.stdout.readline, b""):
-            sys.stdout.buffer.write(c)
-            sys.stdout.flush()
-            f.write(c)
-            f.flush()
+def log_subprocess_output(process, logger):
+    for c in iter(process.stdout.readline, b""):
+        logger.info(c.decode().rstrip())
 
 
 class SubprocessLauncher(Launcher):
@@ -49,6 +45,7 @@ class SubprocessLauncher(Launcher):
         self._script = script
         self._launch_once = launch_once
         self._clean_up_script = clean_up_script
+        self.logger = logging.getLogger(self.__class__.__name__)
 
     def initialize(self, fl_ctx: FLContext):
         self._app_dir = self.get_app_dir(fl_ctx)
@@ -73,11 +70,10 @@ class SubprocessLauncher(Launcher):
             command = self._script
             env = os.environ.copy()
             command_seq = shlex.split(command)
-            log_file = os.path.join(self._app_dir, "logfile")
             self._process = subprocess.Popen(
                 command_seq, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=self._app_dir, env=env
             )
-            self._log_thread = Thread(target=log_subprocess_output, args=(self._process, log_file))
+            self._log_thread = Thread(target=log_subprocess_output, args=(self._process, self.logger))
             self._log_thread.start()
 
     def _stop_external_process(self):
