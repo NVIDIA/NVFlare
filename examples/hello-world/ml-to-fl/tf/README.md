@@ -1,18 +1,38 @@
 # TensorFlow Deep Learning to Federated Learning transition with NVFlare
 
+We will demonstrate how to transform an existing DL code into an FL application step-by-step:
+
+1. [How to modify an existing training script using DL2FL Client API](#transform-cifar10-tensorflow-training-code-to-fl-with-nvflare-client-api)
+
+2. [How to modify an existing multi GPU training script using DL2FL Client API](#transform-cifar10-tensorflow-multi-gpu-training-code-to-fl-with-nvflare-client-api)
+
+## Software Requirements
+
 Please install the requirements first, it is suggested to install inside a virtual environment:
 
 ```bash
 pip install -r requirements.txt
 ```
 
+Please also configure the job templates folder:
+
+```bash
+nvflare config -jt ../../../../job_templates/
+nvflare job list_templates
+```
+
+## Minimum Hardware Requirements
+
+| Example name | minimum requirements |
+| ------------ | -------------------- |
+| [How to modify an existing training script using DL2FL Client API](#transform-cifar10-tensorflow-training-code-to-fl-with-nvflare-client-api) | 1 CPU or 1 GPU* |
+| [How to modify an existing multi GPU training script using DL2FL Client API](#transform-cifar10-tensorflow-multi-gpu-training-code-to-fl-with-nvflare-client-api) | 2 CPUs or 2 GPUs* |
+
+\* depends on whether TF can found GPU or not
+
+
 Note that for running with GPUs, we recommend using [NVIDIA TensorFlow docker](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow)
 
-We will demonstrate how to transform an existing DL code into an FL application step-by-step:
-
-1. [How to modify an existing training script using DL2FL Client API](#transform-cifar10-tensorflow-training-code-to-fl-with-nvflare-client-api)
-
-2. [How to modify an existing multi GPU training script using DL2FL Client API](#transform-cifar10-tensorflow-multi-gpu-training-code-to-fl-with-nvflare-client-api)
 
 ## Transform CIFAR10 TensorFlow training code to FL with NVFLARE Client API
 
@@ -46,7 +66,6 @@ Please refer to [JOB CLI tutorial](../../../tutorials/job_cli.ipynb) on how to g
 We choose the [tensorflow job template](../../../../job_templates/sag_tf/) and run the following command to create the job:
 
 ```bash
-nvflare config -jt ../../../../job_templates
 nvflare job create -force -j ./jobs/tensorflow -w sag_tf -sd ./code/ -f config_fed_client.conf app_script=cifar10_tf_fl.py
 ```
 
@@ -82,7 +101,6 @@ Please refer to [JOB CLI tutorial](../../../tutorials/job_cli.ipynb) on how to g
 We choose the [tensorflow job template](../../../../job_templates/sag_tf/) and run the following command to create the job:
 
 ```bash
-nvflare config -jt ../../../../job_templates
 nvflare job create -force -j ./jobs/tensorflow_multi_gpu -w sag_tf -sd ./code/ -f config_fed_client.conf app_script=cifar10_tf_multi_gpu_fl.py
 ```
 
