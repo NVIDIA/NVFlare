@@ -36,30 +36,30 @@ class TestMessageBus(unittest.TestCase):
 
     def test_singleton_message_bus(self):
         data_bus1 = DataBus()
-        data_bus1.send_data("user_1", "Hello from User 1!")
-        user_1_message = data_bus1.receive_data("user_1")
+        data_bus1.put_data("user_1", "Hello from User 1!")
+        user_1_message = data_bus1.get_data("user_1")
         self.assertEqual(user_1_message, "Hello from User 1!")
 
         message_bus2 = DataBus()
-        user_1_message = message_bus2.receive_data("user_1")
+        user_1_message = message_bus2.get_data("user_1")
         self.assertEqual(user_1_message, "Hello from User 1!")
 
     def test_send_message_and_receive_messages(self):
-        self.data_bus.send_data("user_1", "Hello from User 1!")
-        self.data_bus.send_data("user_2", "Greetings from User 2!")
+        self.data_bus.put_data("user_1", "Hello from User 1!")
+        self.data_bus.put_data("user_2", "Greetings from User 2!")
 
-        user_1_message = self.data_bus.receive_data("user_1")
-        user_2_message = self.data_bus.receive_data("user_2")
+        user_1_message = self.data_bus.get_data("user_1")
+        user_2_message = self.data_bus.get_data("user_2")
 
         self.assertEqual(user_1_message, "Hello from User 1!")
         self.assertEqual(user_2_message, "Greetings from User 2!")
 
-        self.data_bus.send_data("user_1", "2nd greetings from User 1!")
-        user_1_message = self.data_bus.receive_data("user_1")
+        self.data_bus.put_data("user_1", "2nd greetings from User 1!")
+        user_1_message = self.data_bus.get_data("user_1")
         self.assertEqual(user_1_message, "2nd greetings from User 1!")
 
     def test_send_message_and_receive_messages_abnormal(self):
-        user_3_message = self.data_bus.receive_data("user_3")
+        user_3_message = self.data_bus.get_data("user_3")
         self.assertEqual(user_3_message, None)
 
     def test_fire_event(self):
@@ -72,10 +72,10 @@ class TestMessageBus(unittest.TestCase):
 
         def event_handler(topic, data, data_bus):
             result[topic]["event_received"] = True
-            if data_bus.receive_data("hi") == "hello":
-                self.data_bus.send_data("hi", "hello-world")
+            if data_bus.get_data("hi") == "hello":
+                self.data_bus.put_data("hi", "hello-world")
 
-        self.data_bus.send_data("hi", "hello")
+        self.data_bus.put_data("hi", "hello")
 
         self.data_bus.subscribe(["test_event", "dev_event", "prod_event"], event_handler)
         self.event_manager.fire_event("test_event", {"key": "value"})
