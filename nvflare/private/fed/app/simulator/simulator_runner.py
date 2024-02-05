@@ -69,7 +69,7 @@ SIMULATOR_POOL_STATS = "simulator_cell_stats.json"
 
 class SimulatorRunner(FLComponent):
     def __init__(
-        self, job_folder: str, workspace: str, clients=None, n_clients=None, threads=None, gpu=None, max_clients=100
+        self, job_folder: str, workspace: str, clients=None, n_clients=None, threads=None, gpu_threads= None, gpu=None, max_clients=100
     ):
         super().__init__()
 
@@ -78,6 +78,7 @@ class SimulatorRunner(FLComponent):
         self.clients = clients
         self.n_clients = n_clients
         self.threads = threads
+        self.gpu_threads = gpu_threads
         self.gpu = gpu
         self.max_clients = max_clients
 
@@ -104,7 +105,7 @@ class SimulatorRunner(FLComponent):
         self.workspace = os.path.join(running_dir, self.workspace)
 
     def _generate_args(
-        self, job_folder: str, workspace: str, clients=None, n_clients=None, threads=None, gpu=None, max_clients=100
+        self, job_folder: str, workspace: str, clients=None, n_clients=None, threads=None, gpu_threads= None, gpu=None, max_clients=100
     ):
         args = Namespace(
             job_folder=job_folder,
@@ -112,15 +113,16 @@ class SimulatorRunner(FLComponent):
             clients=clients,
             n_clients=n_clients,
             threads=threads,
+            gpu_threads=gpu_threads,
             gpu=gpu,
             max_clients=max_clients,
         )
         args.set = []
         return args
 
-    def setup(self):
+    def setup(self) -> (bool, [], []):
         self.args = self._generate_args(
-            self.job_folder, self.workspace, self.clients, self.n_clients, self.threads, self.gpu, self.max_clients
+            self.job_folder, self.workspace, self.clients, self.n_clients, self.threads, self.gpu_threads, self.gpu, self.max_clients
         )
 
         if self.args.clients:
@@ -161,6 +163,8 @@ class SimulatorRunner(FLComponent):
         log_file = os.path.join(self.simulator_root, WorkspaceConstants.LOG_FILE_NAME)
         add_logfile_handler(log_file)
 
+        gpu_groups = [None]
+        gpu_threads = [1]
         try:
             data_bytes, job_name, meta = self.validate_job_data()
 
@@ -174,6 +178,7 @@ class SimulatorRunner(FLComponent):
                     self.client_names.append("site-" + str(i + 1))
             if self.args.gpu is None and self.args.threads is None:
                 self.args.threads = 1
+                gpu_threads = [1]
                 self.logger.warn("The number of threads is not provided. Set it to default: 1")
 
             if self.max_clients < len(self.client_names):
@@ -181,46 +186,56 @@ class SimulatorRunner(FLComponent):
                     f"The number of clients ({len(self.client_names)}) can not be more than the "
                     f"max_number of clients ({self.max_clients})"
                 )
-                return False
+                return False, gpu_groups, gpu_threads
 
             if self.args.gpu:
                 try:
                     gpu_groups = split_gpus(self.args.gpu)
                 except ValueError as e:
                     self.logger.error(f"GPUs group list option in wrong format. Error: {e}")
-                    return False
+                    return False, gpu_groups, gpu_threads
 
                 host_gpus = [str(x) for x in (get_host_gpu_ids())]
                 gpu_ids = [x.split(",") for x in gpu_groups]
                 if host_gpus and not set().union(*gpu_ids).issubset(host_gpus):
                     wrong_gpus = [x for x in gpu_groups if x not in host_gpus]
                     self.logger.error(f"These GPUs are not available: {wrong_gpus}")
-                    return False
+                    return False, gpu_groups, gpu_threads
 
                 if len(gpu_groups) > len(self.client_names):
                     self.logger.error(
                         f"The number of clients ({len(self.client_names)}) must be larger than or equal to "
                         f"the number of GPU groups: ({len(gpu_groups)})"
                     )
-                    return False
-                if len(gpu_groups) > 1:
-                    if self.args.threads and self.args.threads > 1:
-                        self.logger.info(
-                            "When running with multi GPU, each GPU group will run with only 1 thread. "
-                            "Set the Threads to 1."
-                        )
-                    self.args.threads = 1
-                elif len(gpu_groups) == 1:
-                    if self.args.threads is None:
-                        self.args.threads = 1
-                        self.logger.warn("The number of threads is not provided. Set it to default: 1")
+                    return False, gpu_groups, gpu_threads
+                # if len(gpu_groups) > 1:
+                #     if self.args.threads and self.args.threads > 1:
+                #         self.logger.info(
+                #             "When running with multi GPU, each GPU group will run with only 1 thread. "
+                #             "Set the Threads to 1."
+                #         )
+                #     self.args.threads = 1
+                # elif len(gpu_groups) == 1:
+                #     if self.args.threads is None:
+                #         self.args.threads = 1
+                #         self.logger.warn("The number of threads is not provided. Set it to default: 1")
+            if self.args.gpu_threads:
+                pass
+            else:
+                gpu_threads = []
+                for index in range(len(gpu_groups)):
+                    if self.args.threads is not None:
+                        thread = self.args.threads
+                    else:
+                        thread = 1
+                    gpu_threads.append(thread)
 
             if self.args.threads and self.args.threads > len(self.client_names):
                 self.logger.error("The number of threads to run can not be larger than the number of clients.")
-                return False
+                return False, gpu_groups, gpu_threads
             if not (self.args.gpu or self.args.threads):
                 self.logger.error("Please provide the number of threads or provide gpu options to run the simulator.")
-                return False
+                return False, gpu_groups, gpu_threads
 
             self._validate_client_names(meta, self.client_names)
 
@@ -237,12 +252,12 @@ class SimulatorRunner(FLComponent):
             self.logger.info("Deploy the Apps.")
             self._deploy_apps(job_name, data_bytes, meta)
 
-            return True
+            return True, gpu_groups, gpu_threads
 
         except Exception as e:
             self.logger.error(f"Simulator setup error: {secure_format_exception(e)}")
             secure_log_traceback()
-            return False
+            return False, gpu_groups, gpu_threads
 
     def validate_job_data(self):
         # Validate the simulate job
@@ -319,7 +334,6 @@ class SimulatorRunner(FLComponent):
     def create_clients(self):
         # Deploy the FL clients
         self.logger.info("Create the simulate clients.")
-        clients_created_waiter = threading.Event()
         for client_name in self.client_names:
             self.create_client(client_name)
 
@@ -390,7 +404,8 @@ class SimulatorRunner(FLComponent):
         return_dict["run_status"] = run_status
 
     def simulator_run_main(self):
-        if self.setup():
+        status, gpus, gpu_threads = self.setup()
+        if status:
             try:
                 self.create_clients()
                 self.server.engine.run_processes[SimulatorConstants.JOB_NAME] = {
@@ -411,16 +426,7 @@ class SimulatorRunner(FLComponent):
                     if not server_thread.is_alive():
                         raise RuntimeError("Could not start the Server App.")
 
-                # # Start the client heartbeat calls.
-                # for client in self.federated_clients:
-                #     client.start_heartbeat(interval=2)
-
-                if self.args.gpu:
-                    gpus = split_gpus(self.args.gpu)
-                    split_clients = self.split_clients(self.federated_clients, gpus)
-                else:
-                    gpus = [None]
-                    split_clients = [self.federated_clients]
+                split_clients = self.split_clients(self.federated_clients, gpus)
 
                 executor = ThreadPoolExecutor(max_workers=len(gpus))
                 for index in range(len(gpus)):
