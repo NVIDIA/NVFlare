@@ -15,8 +15,9 @@ The example was tested using the [NeMo Docker container](https://catalog.ngc.nvi
 available with `docker pull nvcr.io/nvidia/nemo:23.06`. 
 In the following, we assume this example folder of the container is mounted to `/workspace` and all downloading, etc. operations are based on this root path.
 
-Start the docker container using 
+Start the docker container from **this directory** using
 ```
+# cd NVFlare/integration/nemo/examples/supervised_fine_tuning
 DOCKER_IMAGE="nvcr.io/nvidia/nemo:23.06"
 docker run --runtime=nvidia -it --rm --shm-size=16g -p 8888:8888 -p 6006:6006 --ulimit memlock=-1 --ulimit stack=67108864 \
 -v ${PWD}:/workspace -w /workspace ${DOCKER_IMAGE}
@@ -24,7 +25,6 @@ docker run --runtime=nvidia -it --rm --shm-size=16g -p 8888:8888 -p 6006:6006 --
 
 For easy experimentation with NeMo, install NVFlare and mount the code inside the [nemo_nvflare](./nemo_nvflare) folder.
 ```
-cd nemo_nvflare
 pip install nvflare~=2.4.0rc7
 export PYTHONPATH=${PYTHONPATH}:/workspace
 ``` 
