@@ -33,7 +33,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         external_execution_wait: float = 5.0,
         peer_read_timeout: Optional[float] = None,
         monitor_interval: float = 0.01,
-        read_interval: float = 0.001,
+        read_interval: float = 0.5,
         heartbeat_interval: float = 5.0,
         heartbeat_timeout: float = 30.0,
         workers: int = 4,
