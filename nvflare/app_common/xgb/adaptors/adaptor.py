@@ -45,6 +45,16 @@ class XGBAdaptor(ABC, FLComponent):
         self.xgb_runner = None
 
     def set_runner(self, runner: XGBRunner):
+        """Set the XGB Runner that will be used to run XGB processing logic.
+        Note that the adaptor is only responsible for starting the runner appropriately (in a thread or in a
+        separate process).
+
+        Args:
+            runner: the runner to be set
+
+        Returns: None
+
+        """
         if not isinstance(runner, XGBRunner):
             raise TypeError(f"runner must be XGBRunner but got {type(runner)}")
         self.xgb_runner = runner
@@ -65,6 +75,14 @@ class XGBAdaptor(ABC, FLComponent):
         self.abort_signal = abort_signal
 
     def initialize(self, fl_ctx: FLContext):
+        """Called by the Controller/Executor to initialize the adaptor.
+
+        Args:
+            fl_ctx: the FL context
+
+        Returns: None
+
+        """
         pass
 
     @abstractmethod
@@ -274,6 +292,14 @@ class XGBClientAdaptor(XGBAdaptor):
         self.world_size = None
 
     def set_sender(self, sender: Sender):
+        """Set the sender to be used to send XGB operation requests to the server.
+
+        Args:
+            sender: the sender to be set
+
+        Returns: None
+
+        """
         if not isinstance(sender, Sender):
             raise TypeError(f"sender must be Sender but got {type(sender)}")
         self.sender = sender
@@ -281,7 +307,7 @@ class XGBClientAdaptor(XGBAdaptor):
     def configure(self, config: dict, fl_ctx: FLContext):
         """Called by XGB Executor to configure the target.
 
-        The rank and number of rounds are required config parameters.
+        The rank, world size, and number of rounds are required config parameters.
 
         Args:
             config: config data

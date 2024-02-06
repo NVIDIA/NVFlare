@@ -52,6 +52,16 @@ class XGBExecutor(Executor):
         self.abort_signal = Signal()
 
     def get_adaptor(self, fl_ctx: FLContext):
+        """Get adaptor to be used by this executor.
+        This is the default implementation that gets the adaptor based on configured adaptor_component_id.
+        A subclass of XGBExecutor may get adaptor in a different way.
+
+        Args:
+            fl_ctx: the FL context
+
+        Returns: a XGBClientAdaptor object
+
+        """
         engine = fl_ctx.get_engine()
         return engine.get_component(self.adaptor_component_id)
 
@@ -71,7 +81,7 @@ class XGBExecutor(Executor):
 
             adaptor.set_abort_signal(self.abort_signal)
             engine = fl_ctx.get_engine()
-            adaptor.sender = Sender(engine, self.req_timeout)
+            adaptor.set_sender(Sender(engine, self.req_timeout))
             adaptor.initialize(fl_ctx)
             self.adaptor = adaptor
         elif event_type == EventType.END_RUN:

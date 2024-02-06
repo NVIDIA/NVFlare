@@ -17,17 +17,47 @@ from nvflare.apis.fl_context import FLContext
 
 
 class XGBRunner(ABC):
+
+    """An XGBRunner implements XGB (server or client) processing logic."""
+
     def initialize(self, fl_ctx: FLContext):
+        """Called by Controller/Executor to initialize the runner.
+        This happens when the job is about to start.
+
+        Args:
+            fl_ctx: FL context
+
+        Returns: None
+
+        """
         pass
 
     @abstractmethod
     def run(self, ctx: dict):
+        """Called to start the execution of XGB processing logic.
+
+        Args:
+            ctx: the contextual info to help the runner execution
+
+        Returns: None
+
+        """
         pass
 
     @abstractmethod
     def stop(self):
+        """Called to stop the runner.
+
+        Returns:
+
+        """
         pass
 
     @abstractmethod
     def is_stopped(self) -> (bool, int):
+        """Called to check whether the runner is already stopped.
+
+        Returns: whether the runner is stopped. If stopped, the exit code.
+
+        """
         pass

@@ -26,6 +26,11 @@ from nvflare.security.logging import secure_format_exception, secure_log_traceba
 
 
 class _ClientStarter:
+    """This small class is used to start XGB client runner. It is used when running the runner in a thread
+    or in a separate process.
+
+    """
+
     def __init__(self, runner):
         self.xgb_runner = runner
         self.error = None
@@ -33,6 +38,14 @@ class _ClientStarter:
         self.stopped = False
 
     def start(self, ctx: dict):
+        """Start the runner and wait for it to finish.
+
+        Args:
+            ctx:
+
+        Returns:
+
+        """
         try:
             self.xgb_runner.run(ctx)
             self.stopped = True
@@ -72,6 +85,17 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         self._run_dir = self._workspace.get_run_dir(run_number)
 
     def _start_client(self, server_addr: str):
+        """Start the XGB client runner in a separate thread or separate process based on config.
+        Note that when starting runner in a separate process, we must not call a method defined in this
+        class since the self object contains a sender that contains a Core Cell which cannot be sent to
+        the new process. Instead, we use a small _ClientStarter object to run the process.
+
+        Args:
+            server_addr: the internal gRPC server address that the XGB client will connect to
+
+        Returns: None
+
+        """
         ctx = {
             Constant.RUNNER_CTX_WORLD_SIZE: self.world_size,
             Constant.RUNNER_CTX_CLIENT_NAME: self._client_name,
@@ -105,23 +129,6 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
                 name="xgb_client_process_runner",
             )
             self._process.start()
-
-    def _do_start_client(self, server_addr: str):
-        try:
-            ctx = {
-                Constant.RUNNER_CTX_WORLD_SIZE: self.world_size,
-                Constant.RUNNER_CTX_CLIENT_NAME: self._client_name,
-                Constant.RUNNER_CTX_SERVER_ADDR: server_addr,
-                Constant.RUNNER_CTX_RANK: self.rank,
-                Constant.RUNNER_CTX_NUM_ROUNDS: self.num_rounds,
-                Constant.RUNNER_CTX_MODEL_DIR: self._run_dir,
-                Constant.RUNNER_CTX_TB_DIR: self._app_dir,
-            }
-            self.xgb_runner.run(ctx)
-        except Exception as e:
-            secure_log_traceback()
-            self.logger.error(f"Exception happens when running xgb train: {secure_format_exception(e)}")
-        self._training_stopped = True
 
     def _stop_client(self):
         self._training_stopped = True
