@@ -16,30 +16,34 @@ import concurrent.futures as futures
 
 import grpc
 
-from nvflare.app_common.xgb.adaptors.grpc.proto.federated_pb2_grpc import (
+from nvflare.app_common.xgb.proto.federated_pb2_grpc import (
     FederatedServicer,
     add_FederatedServicer_to_server,
 )
 from nvflare.fuel.utils.obj_utils import get_logger
 from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_int
 from nvflare.security.logging import secure_format_exception
+from nvflare.app_common.xgb.defs import GRPC_DEFAULT_OPTIONS
 
 
-class XGBServer:
+class GrpcServer:
     """This class implements a gRPC XGB Server that is capable of processing XGB operations."""
 
-    def __init__(self, addr, max_workers: int, options, servicer):
+    def __init__(self, addr, max_workers: int, grpc_options, servicer):
         """Constructor
 
         Args:
             addr: the listening address of the server
             max_workers: max number of workers
-            options: gRPC options
+            grpc_options: gRPC options
             servicer: the servicer that is capable of processing XGB requests
         """
+        if not grpc_options:
+            grpc_options = GRPC_DEFAULT_OPTIONS
+
         check_object_type("servicer", servicer, FederatedServicer)
         check_positive_int("max_workers", max_workers)
-        self.grpc_server = grpc.server(futures.ThreadPoolExecutor(max_workers=max_workers), options=options)
+        self.grpc_server = grpc.server(futures.ThreadPoolExecutor(max_workers=max_workers), options=grpc_options)
         add_FederatedServicer_to_server(servicer, self.grpc_server)
         self.logger = get_logger(self)
 

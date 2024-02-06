@@ -19,7 +19,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import ClientTask, Controller, Task
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.app_common.xgb.adaptor import XGBServerAdaptor
+from nvflare.app_common.xgb.adaptors.adaptor import XGBServerAdaptor
 from nvflare.fuel.utils.validation_utils import check_number_range, check_object_type, check_positive_number, check_str
 from nvflare.security.logging import secure_format_exception
 
@@ -119,6 +119,10 @@ class XGBController(Controller):
             Constant.OP_BROADCAST: self._process_broadcast,
         }
 
+    def get_adaptor(self, fl_ctx: FLContext):
+        engine = fl_ctx.get_engine()
+        return engine.get_component(self.adaptor_component_id)
+
     def start_controller(self, fl_ctx: FLContext):
         all_clients = self._engine.get_clients()
         self.participating_clients = [t.name for t in all_clients]
@@ -126,21 +130,22 @@ class XGBController(Controller):
         for c in self.participating_clients:
             self.client_statuses[c] = ClientStatus()
 
-        engine = fl_ctx.get_engine()
-        adaptor = engine.get_component(self.adaptor_component_id)
+        adaptor = self.get_adaptor(fl_ctx)
         if not adaptor:
             self.system_panic(f"cannot get component for {self.adaptor_component_id}", fl_ctx)
-            return
+            return None
 
         if not isinstance(adaptor, XGBServerAdaptor):
             self.system_panic(
                 f"invalid component '{self.adaptor_component_id}': expect XGBServerBridge but got {type(adaptor)}",
                 fl_ctx,
             )
-            return
+            return None
 
+        adaptor.initialize(fl_ctx)
         self.adaptor = adaptor
 
+        engine = fl_ctx.get_engine()
         engine.register_aux_message_handler(
             topic=Constant.TOPIC_XGB_REQUEST,
             message_handle_func=self._process_xgb_request,
@@ -344,9 +349,12 @@ class XGBController(Controller):
         # compute client ranks
         if not self.client_ranks:
             # dynamically assign ranks, starting from 0
-            self.client_ranks = {}
-            for i, c in enumerate(self.participating_clients):
-                self.client_ranks[c] = i
+            # Assumption: all clients are used
+            clients = self.participating_clients
+
+            # Sort by client name so rank is consistent
+            clients.sort()
+            self.client_ranks = {clients[i]: i for i in range(0, len(clients))}
         else:
             # validate ranks - ranks must be unique consecutive integers, starting from 0.
             num_clients = len(self.participating_clients)

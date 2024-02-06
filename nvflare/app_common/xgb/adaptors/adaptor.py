@@ -16,20 +16,18 @@ import threading
 import time
 from abc import ABC, abstractmethod
 
-from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.fuel.utils.validation_utils import (
     check_non_negative_int,
     check_object_type,
     check_positive_int,
-    check_positive_number,
 )
-
-from .defs import Constant
-from .sender import Sender
+from nvflare.app_common.xgb.defs import Constant
+from nvflare.app_common.xgb.runners.xgb_runner import XGBRunner
+from nvflare.app_common.xgb.sender import Sender
 
 
 class XGBAdaptor(ABC, FLComponent):
@@ -48,6 +46,12 @@ class XGBAdaptor(ABC, FLComponent):
     def __init__(self):
         FLComponent.__init__(self)
         self.abort_signal = None
+        self.xgb_runner = None
+
+    def set_runner(self, runner: XGBRunner):
+        if not isinstance(runner, XGBRunner):
+            raise TypeError(f"runner must be XGBRunner but got {type(runner)}")
+        self.xgb_runner = runner
 
     def set_abort_signal(self, abort_signal: Signal):
         """Called by XGB Controller/Executor to set the abort_signal.
@@ -63,6 +67,9 @@ class XGBAdaptor(ABC, FLComponent):
         """
         check_object_type("abort_signal", abort_signal, Signal)
         self.abort_signal = abort_signal
+
+    def initialize(self, fl_ctx: FLContext):
+        pass
 
     @abstractmethod
     def start(self, fl_ctx: FLContext):
@@ -260,21 +267,21 @@ class XGBClientAdaptor(XGBAdaptor):
     XGBClientAdaptor specifies commonly required methods for client adaptor implementations.
     """
 
-    def __init__(self, req_timeout: float):
+    def __init__(self):
         """Constructor of XGBClientAdaptor
-
-        Args:
-            req_timeout: timeout of XGB requests sent to server
         """
         XGBAdaptor.__init__(self)
-        check_positive_number("req_timeout", req_timeout)
-        self.req_timeout = req_timeout
         self.engine = None
         self.sender = None
         self.stopped = False
         self.rank = None
         self.num_rounds = None
         self.world_size = None
+
+    def set_sender(self, sender: Sender):
+        if not isinstance(sender, Sender):
+            raise TypeError(f"sender must be Sender but got {type(sender)}")
+        self.sender = sender
 
     def configure(self, config: dict, fl_ctx: FLContext):
         """Called by XGB Executor to configure the target.
@@ -308,25 +315,6 @@ class XGBClientAdaptor(XGBAdaptor):
 
         check_positive_int(Constant.CONF_KEY_NUM_ROUNDS, num_rounds)
         self.num_rounds = num_rounds
-
-    def initialize(self, fl_ctx: FLContext):
-        pass
-
-    def handle_event(self, event_type: str, fl_ctx: FLContext):
-        """Handle FL events.
-        Listen to the START_RUN event and create the Sender object to be used to send requests to server.
-
-        Args:
-            event_type: event_type to be handled
-            fl_ctx: FL context
-
-        Returns:
-
-        """
-        if event_type == EventType.START_RUN:
-            self.engine = fl_ctx.get_engine()
-            self.sender = Sender(self.engine, self.req_timeout)
-            self.initialize(fl_ctx)
 
     def _send_request(self, op: str, req: Shareable) -> bytes:
         """Send XGB operation request to the FL server via FLARE message.

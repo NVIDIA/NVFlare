@@ -11,40 +11,37 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import os
-import threading
 import time
 
-import nvflare.app_common.xgb.adaptors.grpc.proto.federated_pb2 as pb2
-from nvflare.app_common.xgb.adaptors.grpc.client import XGBClient
-from nvflare.app_common.xgb.adaptors.grpc.client_adaptor import GrpcClientAdaptor
+from nvflare.app_common.xgb.runners.xgb_runner import XGBRunner
+from nvflare.apis.fl_component import FLComponent
+from nvflare.app_common.xgb.grpc_client import GrpcClient
+from nvflare.app_common.xgb.defs import Constant
+import nvflare.app_common.xgb.proto.federated_pb2 as pb2
 
 
-class MockClientAdaptor(GrpcClientAdaptor):
-    def __init__(
-        self,
-        grpc_options=None,
-        req_timeout=10.0,
-    ):
-        GrpcClientAdaptor.__init__(self, grpc_options, req_timeout)
+class MockClientRunner(XGBRunner, FLComponent):
+
+    def __init__(self):
+        FLComponent.__init__(self)
         self.training_stopped = False
         self.asked_to_stop = False
 
-    def start_client(self, server_addr: str, port: int):
-        t = threading.Thread(target=self._do_start_client, args=(server_addr,), daemon=True)
-        t.start()
+    def run(self, ctx: dict):
+        server_addr = ctx.get(Constant.RUNNER_CTX_SERVER_ADDR)
+        rank = ctx.get(Constant.RUNNER_CTX_RANK)
+        num_rounds = ctx.get(Constant.RUNNER_CTX_NUM_ROUNDS)
 
-    def _do_start_client(self, server_addr: str):
-        client = XGBClient(server_addr=server_addr)
+        client = GrpcClient(server_addr=server_addr)
         client.start()
 
-        rank = self.rank
+        rank = rank
         seq = 0
         total_time = 0
         total_reqs = 0
-        for i in range(self.num_rounds):
-            if self.abort_signal.triggered or self.asked_to_stop:
+        for i in range(num_rounds):
+            if self.asked_to_stop:
                 self.logger.info("training aborted")
                 self.training_stopped = True
                 return
@@ -93,6 +90,7 @@ class MockClientAdaptor(GrpcClientAdaptor):
                 self.logger.error("allreduce result does not match request")
             else:
                 self.logger.info("OK: allreduce result matches request!")
+                print("OK: allreduce result matches request!")
 
             self.logger.info("sending broadcast")
             start = time.time()
@@ -116,10 +114,11 @@ class MockClientAdaptor(GrpcClientAdaptor):
 
         time_per_req = total_time / total_reqs
         self.logger.info(f"DONE: {total_reqs=} {total_time=} {time_per_req=}")
+        print(f"DONE: {total_reqs=} {total_time=} {time_per_req=}")
         self.training_stopped = True
 
-    def stop_client(self):
+    def stop(self):
         self.asked_to_stop = True
 
-    def is_client_stopped(self) -> (bool, int):
+    def is_stopped(self) -> (bool, int):
         return self.training_stopped, 0

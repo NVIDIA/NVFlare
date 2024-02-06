@@ -12,5 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.app_common.xgb.controller import XGBController
-from nvflare.app_common.xgb.executor import XGBExecutor
+from nvflare.app_common.xgb.fed_controller import XGBFedController
+from nvflare.app_common.xgb.fed_executor import FedXGBHistogramExecutor
+from nvflare.app_common.xgb.mock.mock_executor import MockXGBExecutor
+from nvflare.app_common.xgb.mock.mock_controller import MockXGBController

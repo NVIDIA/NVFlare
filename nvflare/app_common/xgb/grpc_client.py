@@ -14,12 +14,13 @@
 
 import grpc
 
-import nvflare.app_common.xgb.adaptors.grpc.proto.federated_pb2 as pb2
-from nvflare.app_common.xgb.adaptors.grpc.proto.federated_pb2_grpc import FederatedStub
+import nvflare.app_common.xgb.proto.federated_pb2 as pb2
+from nvflare.app_common.xgb.proto.federated_pb2_grpc import FederatedStub
 from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.app_common.xgb.defs import GRPC_DEFAULT_OPTIONS
 
 
-class XGBClient:
+class GrpcClient:
     """This class implements a gRPC XGB Client that is capable of sending XGB operations to a gRPC XGB Server."""
 
     def __init__(self, server_addr, grpc_options=None):
@@ -29,6 +30,9 @@ class XGBClient:
             server_addr: address of the gRPC server to connect to
             grpc_options: gRPC options for the gRPC client
         """
+        if not grpc_options:
+            grpc_options = GRPC_DEFAULT_OPTIONS
+
         self.stub = None
         self.channel = None
         self.server_addr = server_addr

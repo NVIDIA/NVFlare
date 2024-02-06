@@ -16,8 +16,8 @@ import argparse
 import os
 import time
 
-import nvflare.app_common.xgb.adaptors.grpc.proto.federated_pb2 as pb2
-from nvflare.app_common.xgb.adaptors.grpc.client import XGBClient
+import nvflare.app_common.xgb.proto.federated_pb2 as pb2
+from nvflare.app_common.xgb.grpc_client import GrpcClient
 
 
 def main():
@@ -27,7 +27,7 @@ def main():
     parser.add_argument("--num_rounds", "-n", type=int, help="number of rounds", required=True)
 
     args = parser.parse_args()
-    client = XGBClient(server_addr=args.addr)
+    client = GrpcClient(server_addr=args.addr)
     client.start()
 
     rank = args.rank

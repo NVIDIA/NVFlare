@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from nvflare.fuel.f3.drivers.net_utils import MAX_FRAME_SIZE
+
 
 class Constant:
 
@@ -75,3 +77,19 @@ class Constant:
     PARAM_KEY_REDUCE_OP = "xgb.reduce_op"
     PARAM_KEY_ROOT = "xgb.root"
     PARAM_KEY_RCV_BUF = "xgb.rcv_buf"
+
+    RUNNER_CTX_SERVER_ADDR = "server_addr"
+    RUNNER_CTX_PORT = "port"
+    RUNNER_CTX_CLIENT_NAME = "client_name"
+    RUNNER_CTX_NUM_ROUNDS = "num_rounds"
+    RUNNER_CTX_WORLD_SIZE = "world_size"
+    RUNNER_CTX_RANK = "rank"
+    RUNNER_CTX_DATA_LOADER = "data_loader"
+    RUNNER_CTX_TB_DIR = "tb_dir"
+    RUNNER_CTX_MODEL_DIR = "model_dir"
+
+
+GRPC_DEFAULT_OPTIONS = [
+    ("grpc.max_send_message_length", MAX_FRAME_SIZE),
+    ("grpc.max_receive_message_length", MAX_FRAME_SIZE),
+]

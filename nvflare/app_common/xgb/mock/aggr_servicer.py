@@ -14,8 +14,8 @@
 
 import threading
 
-import nvflare.app_common.xgb.adaptors.grpc.proto.federated_pb2 as pb2
-from nvflare.app_common.xgb.adaptors.grpc.proto.federated_pb2_grpc import FederatedServicer
+import nvflare.app_common.xgb.proto.federated_pb2 as pb2
+from nvflare.app_common.xgb.proto.federated_pb2_grpc import FederatedServicer
 from nvflare.fuel.utils.obj_utils import get_logger
 
 

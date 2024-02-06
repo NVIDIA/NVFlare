@@ -16,7 +16,7 @@
 """Client and server classes corresponding to protobuf-defined services."""
 import grpc
 
-import nvflare.app_common.xgb.adaptors.grpc.proto.federated_pb2 as federated__pb2
+import nvflare.app_common.xgb.proto.federated_pb2 as federated__pb2
 
 
 class FederatedStub(object):

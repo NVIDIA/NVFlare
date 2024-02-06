@@ -6,6 +6,7 @@ from xgboost import callback
 
 class TensorBoardCallback(xgb.callback.TrainingCallback):
     def __init__(self, app_dir: str, tensorboard):
+        xgb.callback.TrainingCallback.__init__(self)
         self.train_writer = tensorboard.SummaryWriter(log_dir=os.path.join(app_dir, "train-auc/"))
         self.val_writer = tensorboard.SummaryWriter(log_dir=os.path.join(app_dir, "val-auc/"))
 

@@ -18,11 +18,12 @@ from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.app_common.xgb.adaptor import XGBClientAdaptor
+from nvflare.app_common.xgb.adaptors.adaptor import XGBClientAdaptor
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.security.logging import secure_format_exception
 
 from .defs import Constant
+from .sender import Sender
 
 
 class XGBExecutor(Executor):
@@ -39,7 +40,6 @@ class XGBExecutor(Executor):
             adaptor_component_id: the component ID of client target adaptor
             configure_task_name: name of the config task
             start_task_name: name of the start task
-            req_timeout: timeout for XGB requests to the server
         """
         Executor.__init__(self)
         self.adaptor_component_id = adaptor_component_id
@@ -51,10 +51,13 @@ class XGBExecutor(Executor):
         # create the abort signal to be used for signaling the adaptor
         self.abort_signal = Signal()
 
+    def get_adaptor(self, fl_ctx: FLContext):
+        engine = fl_ctx.get_engine()
+        return engine.get_component(self.adaptor_component_id)
+
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
-            engine = fl_ctx.get_engine()
-            adaptor = engine.get_component(self.adaptor_component_id)
+            adaptor = self.get_adaptor(fl_ctx)
             if not adaptor:
                 self.system_panic(f"cannot get component for {self.adaptor_component_id}", fl_ctx)
                 return
@@ -67,6 +70,9 @@ class XGBExecutor(Executor):
                 return
 
             adaptor.set_abort_signal(self.abort_signal)
+            engine = fl_ctx.get_engine()
+            adaptor.sender = Sender(engine, self.req_timeout)
+            adaptor.initialize(fl_ctx)
             self.adaptor = adaptor
         elif event_type == EventType.END_RUN:
             self.abort_signal.trigger(True)

@@ -15,8 +15,8 @@
 import argparse
 import logging
 
-from nvflare.app_common.xgb.adaptors.grpc.mock.aggr_servicer import AggrServicer
-from nvflare.app_common.xgb.adaptors.grpc.server import XGBServer
+from nvflare.app_common.xgb.mock.aggr_servicer import AggrServicer
+from nvflare.app_common.xgb.grpc_server import GrpcServer
 
 
 def main():
@@ -30,10 +30,10 @@ def main():
 
     args = parser.parse_args()
     print(f"starting server at {args.addr} max_workers={args.max_workers}")
-    server = XGBServer(
+    server = GrpcServer(
         args.addr,
         max_workers=args.max_workers,
-        options=None,
+        grpc_options=None,
         servicer=AggrServicer(num_clients=args.num_clients),
     )
     server.start()
