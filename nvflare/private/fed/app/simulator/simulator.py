@@ -28,7 +28,7 @@ def define_simulator_parser(simulator_parser):
     simulator_parser.add_argument("-n", "--n_clients", type=int, help="number of clients")
     simulator_parser.add_argument("-c", "--clients", type=str, help="client names list")
     simulator_parser.add_argument("-t", "--threads", type=int, help="number of parallel running clients")
-    simulator_parser.add_argument("-gt", "--gpu_threads", type=int, help="gpu threads number list")
+    simulator_parser.add_argument("-gt", "--gpu_threads", type=str, help="gpu threads number list")
     simulator_parser.add_argument("-gpu", "--gpu", type=str, help="list of GPU Device Ids, comma separated")
     simulator_parser.add_argument("-m", "--max_clients", type=int, default=100, help="max number of clients")
 

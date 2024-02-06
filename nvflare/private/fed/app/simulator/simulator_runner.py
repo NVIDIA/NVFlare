@@ -69,7 +69,15 @@ SIMULATOR_POOL_STATS = "simulator_cell_stats.json"
 
 class SimulatorRunner(FLComponent):
     def __init__(
-        self, job_folder: str, workspace: str, clients=None, n_clients=None, threads=None, gpu_threads= None, gpu=None, max_clients=100
+        self,
+        job_folder: str,
+        workspace: str,
+        clients=None,
+        n_clients=None,
+        threads=None,
+        gpu_threads=None,
+        gpu=None,
+        max_clients=100,
     ):
         super().__init__()
 
@@ -105,7 +113,15 @@ class SimulatorRunner(FLComponent):
         self.workspace = os.path.join(running_dir, self.workspace)
 
     def _generate_args(
-        self, job_folder: str, workspace: str, clients=None, n_clients=None, threads=None, gpu_threads= None, gpu=None, max_clients=100
+        self,
+        job_folder: str,
+        workspace: str,
+        clients=None,
+        n_clients=None,
+        threads=None,
+        gpu_threads=None,
+        gpu=None,
+        max_clients=100,
     ):
         args = Namespace(
             job_folder=job_folder,
@@ -122,7 +138,14 @@ class SimulatorRunner(FLComponent):
 
     def setup(self) -> (bool, [], []):
         self.args = self._generate_args(
-            self.job_folder, self.workspace, self.clients, self.n_clients, self.threads, self.gpu_threads, self.gpu, self.max_clients
+            self.job_folder,
+            self.workspace,
+            self.clients,
+            self.n_clients,
+            self.threads,
+            self.gpu_threads,
+            self.gpu,
+            self.max_clients,
         )
 
         if self.args.clients:
@@ -220,15 +243,26 @@ class SimulatorRunner(FLComponent):
                 #         self.args.threads = 1
                 #         self.logger.warn("The number of threads is not provided. Set it to default: 1")
             if self.args.gpu_threads:
-                pass
+                gpu_threads = "".join(self.args.gpu_threads.split()).split(",")
+                gpu_threads = [int(i) for i in gpu_threads]
+                if len(gpu_groups) != len(gpu_threads):
+                    self.logger.error(
+                        f"The gpu_threads length: {len(gpu_threads)} "
+                        f"must be equal to the GPU groups: {len(gpu_groups)}. "
+                    )
+                    return False, gpu_groups, gpu_threads
             else:
                 gpu_threads = []
                 for index in range(len(gpu_groups)):
-                    if self.args.threads is not None:
-                        thread = self.args.threads
-                    else:
-                        thread = 1
-                    gpu_threads.append(thread)
+                    gpu_threads.append(0)
+                # for index in range(len(gpu_groups)):
+                #     if self.args.threads is not None:
+                #         thread = self.args.threads
+                #     else:
+                #         thread = 1
+                #     gpu_threads.append(str(thread))
+                for index in range(int(self.args.threads)):
+                    gpu_threads[index % len(gpu_groups)] += 1
 
             if self.args.threads and self.args.threads > len(self.client_names):
                 self.logger.error("The number of threads to run can not be larger than the number of clients.")
@@ -321,13 +355,22 @@ class SimulatorRunner(FLComponent):
             with open(job_meta_file, "w") as f:
                 json.dump(meta, f, indent=4)
 
-    def split_clients(self, clients: [], gpus: []):
+    def split_clients(self, clients: [], gpus: [], gpu_threads: []):
         split_clients = []
-        for _ in gpus:
+        # for _ in gpus:
+        #     split_clients.append([])
+        total_threads = 0
+        for gpu_thread in gpu_threads:
             split_clients.append([])
+            total_threads += int(gpu_thread)
         index = 0
         for client in clients:
-            split_clients[index % len(gpus)].append(client)
+            pos = index % total_threads
+            for gpu_index in range(len(gpu_threads)):
+                if pos < int(gpu_threads[gpu_index]):
+                    split_clients[gpu_index].append(client)
+                    break
+                pos -= int(gpu_threads[gpu_index])
             index += 1
         return split_clients
 
@@ -426,12 +469,12 @@ class SimulatorRunner(FLComponent):
                     if not server_thread.is_alive():
                         raise RuntimeError("Could not start the Server App.")
 
-                split_clients = self.split_clients(self.federated_clients, gpus)
+                split_clients = self.split_clients(self.federated_clients, gpus, gpu_threads)
 
                 executor = ThreadPoolExecutor(max_workers=len(gpus))
                 for index in range(len(gpus)):
                     clients = split_clients[index]
-                    executor.submit(lambda p: self.client_run(*p), [clients, gpus[index]])
+                    executor.submit(lambda p: self.client_run(*p), [clients, gpus[index], gpu_threads[index]])
 
                 executor.shutdown()
                 # Abort the server after all clients finished run
@@ -448,9 +491,9 @@ class SimulatorRunner(FLComponent):
             run_status = 1
         return run_status
 
-    def client_run(self, clients, gpu):
+    def client_run(self, clients, gpu, gpu_thread):
         client_runner = SimulatorClientRunner(self.args, clients, self.client_config, self.deploy_args, self.build_ctx)
-        client_runner.run(gpu)
+        client_runner.run(gpu, gpu_thread)
 
     def start_server_app(self):
         app_server_root = os.path.join(self.simulator_root, "app_server")
@@ -514,24 +557,23 @@ class SimulatorClientRunner(FLComponent):
 
         self.end_run_clients = []
 
-    def run(self, gpu):
+    def run(self, gpu, gpu_thread):
         try:
             # self.create_clients()
             self.logger.info("Start the clients run simulation.")
-            executor = ThreadPoolExecutor(max_workers=self.args.threads)
+            num_thread = int(gpu_thread)
+            executor = ThreadPoolExecutor(max_workers=num_thread)
             lock = threading.Lock()
             timeout = self.kv_list.get("simulator_worker_timeout", 60.0)
-            for i in range(self.args.threads):
-                executor.submit(lambda p: self.run_client_thread(*p), [self.args.threads, gpu, lock, i, timeout])
+            for i in range(num_thread):
+                executor.submit(lambda p: self.run_client_thread(*p), [num_thread, gpu, lock, i, timeout])
 
             # wait for the server and client running thread to finish.
             executor.shutdown()
 
             for client in self.federated_clients:
                 if client.client_name not in self.end_run_clients:
-                    self.do_one_task(
-                        client, self.args.threads, gpu, lock, timeout=timeout, task_name=RunnerTask.END_RUN
-                    )
+                    self.do_one_task(client, num_thread, gpu, lock, timeout=timeout, task_name=RunnerTask.END_RUN)
 
         except Exception as e:
             self.logger.error(f"SimulatorClientRunner run error: {secure_format_exception(e)}")

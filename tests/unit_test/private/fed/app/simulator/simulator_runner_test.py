@@ -84,19 +84,62 @@ class TestSimulatorRunner:
         assert not status
         assert gpus == [None]
 
+    @patch("nvflare.private.fed.app.deployer.simulator_deployer.SimulatorServer.deploy")
+    @patch("nvflare.private.fed.app.utils.FedAdminServer")
+    @patch("nvflare.private.fed.client.fed_client.FederatedClient.register")
+    @patch("nvflare.private.fed.server.fed_server.BaseServer.get_cell", return_value=MockCell())
+    def test_valid_gpu_threads(self, mock_deploy, mock_admin, mock_register, mock_cell):
+        job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_all_job")
+        runner = SimulatorRunner(job_folder=job_folder, workspace=self.workspace_name, gpu_threads="1, 2", gpu="0,1")
+        status, gpus, gpu_threads = runner.setup()
+        assert status
+        assert gpu_threads == [1, 2]
+
+        runner = SimulatorRunner(job_folder=job_folder, workspace=self.workspace_name, gpu="0,1", threads=2)
+        status, gpus, gpu_threads = runner.setup()
+        assert status
+        assert gpu_threads == [1, 1]
+
+        runner = SimulatorRunner(
+            job_folder=job_folder, n_clients=4, workspace=self.workspace_name, gpu="0,1", threads=4
+        )
+        status, gpus, gpu_threads = runner.setup()
+        assert status
+        assert gpu_threads == [2, 2]
+
+        runner = SimulatorRunner(
+            job_folder=job_folder, n_clients=5, workspace=self.workspace_name, gpu="0,1", threads=5
+        )
+        status, gpus, gpu_threads = runner.setup()
+        assert status
+        assert gpu_threads == [3, 2]
+
+    @patch("nvflare.private.fed.app.deployer.simulator_deployer.SimulatorServer.deploy")
+    @patch("nvflare.private.fed.app.utils.FedAdminServer")
+    @patch("nvflare.private.fed.client.fed_client.FederatedClient.register")
+    @patch("nvflare.private.fed.server.fed_server.BaseServer.get_cell", return_value=MockCell())
+    def test_invalid_gpu_threads(self, mock_deploy, mock_admin, mock_register, mock_cell):
+        job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
+        runner = SimulatorRunner(job_folder=job_folder, workspace=self.workspace_name, gpu_threads="1", gpu="0,1")
+        status, gpus, gpu_threads = runner.setup()
+        assert not status
+
     @pytest.mark.parametrize(
-        "client_names, gpus, expected_split_names",
+        "client_names, gpus, gpu_threads, expected_split_names",
         [
-            (["1", "2", "3", "4"], ["0", "1"], [["1", "3"], ["2", "4"]]),
-            (["1", "2", "3", "4", "5"], ["0", "1"], [["1", "3", "5"], ["2", "4"]]),
-            (["1", "2", "3", "4", "5"], ["0", "1", "2"], [["1", "4"], ["2", "5"], ["3"]]),
-            (["1", "2", "3", "4", "5"], [None], [["1", "2", "3", "4", "5"]]),
-            (["1", "2", "3", "4", "5"], [""], [["1", "2", "3", "4", "5"]]),
+            (["1", "2", "3", "4"], ["0", "1"], ["1", "1"], [["1", "3"], ["2", "4"]]),
+            (["1", "2", "3", "4", "5"], ["0", "1"], ["1", "1"], [["1", "3", "5"], ["2", "4"]]),
+            (["1", "2", "3", "4", "5"], ["0", "1", "2"], ["1", "1", "1"], [["1", "4"], ["2", "5"], ["3"]]),
+            (["1", "2", "3", "4", "5"], [None], ["1"], [["1", "2", "3", "4", "5"]]),
+            (["1", "2", "3", "4", "5"], [""], ["1"], [["1", "2", "3", "4", "5"]]),
+            (["1", "2", "3", "4"], ["0", "1"], ["2", "2"], [["1", "2"], ["3", "4"]]),
+            (["1", "2", "3", "4"], ["0", "1"], ["1", "3"], [["1"], ["2", "3", "4"]]),
+            (["1", "2", "3", "4", "5", "6"], ["0", "1", "2"], ["1", "2", "2"], [["1", "6"], ["2", "3"], ["4", "5"]]),
         ],
     )
-    def test_split_names(self, client_names, gpus, expected_split_names):
+    def test_split_names(self, client_names, gpus, gpu_threads, expected_split_names):
         runner = SimulatorRunner(job_folder="", workspace="")
-        split_names = runner.split_clients(client_names, gpus)
+        split_names = runner.split_clients(client_names, gpus, gpu_threads)
         assert sorted(split_names) == sorted(expected_split_names)
 
     @pytest.mark.parametrize(
