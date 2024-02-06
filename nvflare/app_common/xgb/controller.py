@@ -104,6 +104,7 @@ class XGBController(Controller):
 
         check_str("adaptor_component_id", adaptor_component_id)
         check_number_range("configure_task_timeout", configure_task_timeout, min_value=1)
+        check_number_range("start_task_timeout", start_task_timeout, min_value=1)
         check_positive_number("job_status_check_interval", job_status_check_interval)
         check_positive_number("num_rounds", num_rounds)
         check_number_range("max_client_op_interval", max_client_op_interval, min_value=10.0)
