@@ -181,6 +181,13 @@ class CellMessageHeaderKeys:
     ABORT_JOBS = "abort_jobs"
 
 
+class CommConstants(object):
+    COMMUNICATOR = "communicator"
+    CONTROLLER = "controller"
+    TASK_RESULT = "TASK_RESULT"
+    POST_PROCESS_RESULT = "POST_PROCESS_RESULT"
+
+
 class JobFailureMsgKey:
 
     JOB_ID = "job_id"

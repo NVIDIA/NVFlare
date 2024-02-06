@@ -20,16 +20,13 @@ from typing import Callable, Dict, List, Optional, Union
 from nvflare.apis.controller_spec import SendOrder
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.app_common.abstract.fl_model import FLModel
-from nvflare.app_common.app_constant import CommConstants
+from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.wf_comm.wf_comm_api_spec import (
-    CURRENT_ROUND,
     DATA,
     MIN_RESPONSES,
-    NUM_ROUNDS,
     RESP_MAX_WAIT_TIME,
     RESULT,
     SITE_NAMES,
-    START_ROUND,
     STATUS,
     TARGET_SITES,
     TASK_NAME,
@@ -37,6 +34,7 @@ from nvflare.app_common.wf_comm.wf_comm_api_spec import (
 )
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.data_event.event_manager import EventManager
+from nvflare.private.defs import CommConstants
 
 
 class WFCommAPI(WFCommAPISpec):
@@ -216,9 +214,9 @@ class WFCommAPI(WFCommAPISpec):
             current_round = data.current_round
             num_rounds = data.total_rounds
         else:
-            start_round = meta.get(START_ROUND, 0)
-            current_round = meta.get(CURRENT_ROUND, 0)
-            num_rounds = meta.get(NUM_ROUNDS, 1)
+            start_round = meta.get(AppConstants.START_ROUND, 0)
+            current_round = meta.get(AppConstants.CURRENT_ROUND, 0)
+            num_rounds = meta.get(AppConstants.NUM_ROUNDS, 1)
 
         resp_max_wait_time = meta.get(RESP_MAX_WAIT_TIME, 15)
 
@@ -226,9 +224,9 @@ class WFCommAPI(WFCommAPISpec):
             TASK_NAME: task_name,
             MIN_RESPONSES: min_responses,
             RESP_MAX_WAIT_TIME: resp_max_wait_time,
-            CURRENT_ROUND: current_round,
-            NUM_ROUNDS: num_rounds,
-            START_ROUND: start_round,
+            AppConstants.CURRENT_ROUND: current_round,
+            AppConstants.NUM_ROUNDS: num_rounds,
+            AppConstants.START_ROUND: start_round,
             DATA: data,
             TARGET_SITES: targets,
         }

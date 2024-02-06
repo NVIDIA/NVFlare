@@ -212,10 +212,3 @@ class PSIConst(AppConstants):
     REQUEST_MSG = "PSI_REQUEST_MSG"
     REQUEST_MSG_SET = "PSI_REQUEST_MSG_SET"
     RESPONSE_MSG = "PSI_RESPONSE_MSG"
-
-
-class CommConstants(object):
-    COMMUNICATOR = "communicator"
-    CONTROLLER = "controller"
-    TASK_RESULT = "TASK_RESULT"
-    POST_PROCESS_RESULT = "POST_PROCESS_RESULT"

@@ -13,10 +13,10 @@
 # limitations under the License.
 
 import logging
-import sys
 from typing import Callable, Dict, Optional
 
 from net import Net
+
 from nvflare.apis.wf_controller import WFController
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
@@ -32,13 +32,13 @@ update_model = FLModelUtils.update_model
 
 class FedAvg(WFController):
     def __init__(
-            self,
-            min_clients: int,
-            num_rounds: int,
-            output_path: str,
-            start_round: int = 1,
-            stop_cond: str = None,
-            resp_max_wait_time: float = 5,
+        self,
+        min_clients: int,
+        num_rounds: int,
+        output_path: str,
+        start_round: int = 1,
+        stop_cond: str = None,
+        resp_max_wait_time: float = 5,
     ):
         super(FedAvg, self).__init__()
 
@@ -196,7 +196,7 @@ class FedAvg(WFController):
         if self.stop_criteria:
             metric, _, op_fn = self.stop_criteria
             self.logger.info("compare models")
-            if self.is_curr_mode_better(self.best_model, curr_model, metric, op_fn):
+            if self.is_curr_model_better(self.best_model, curr_model, metric, op_fn):
                 self.best_model = curr_model
         else:
             self.best_model = curr_model
@@ -217,8 +217,8 @@ class FedAvg(WFController):
 
         return op_fn(value, target)
 
-    def is_curr_mode_better(
-            self, best_model: FLModel, curr_model: FLModel, target_metric: str, op_fn: Callable
+    def is_curr_model_better(
+        self, best_model: FLModel, curr_model: FLModel, target_metric: str, op_fn: Callable
     ) -> bool:
         curr_metrics = curr_model.metrics
         if curr_metrics is None:

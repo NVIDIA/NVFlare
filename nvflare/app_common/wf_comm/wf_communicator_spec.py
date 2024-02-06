@@ -64,7 +64,7 @@ class WFCommunicatorSpec(ABC):
         if isinstance(self.controller_config, dict):
             controller = ComponentBuilder().build_component(self.controller_config)
             if controller is None:
-                raise ValueError("strategy should provided, but get None")
+                raise ValueError("wf_controller should provided, but get None")
 
         return controller
 

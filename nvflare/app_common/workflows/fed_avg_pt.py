@@ -14,9 +14,9 @@
 import os
 
 import torch
-from fedavg import FedAvg
 
 from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.app_common.workflows.fed_avg import FedAvg
 
 
 class PTFedAvg(FedAvg):

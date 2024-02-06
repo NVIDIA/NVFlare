@@ -18,14 +18,8 @@ from typing import Callable, List, Optional
 SITE_NAMES = "SITE_NAMES"
 TASK_NAME = "TASK_NAME"
 
-# note same as app_constant constant (todo: we only need one constant definition)
 MIN_RESPONSES = "min_responses"
 RESP_MAX_WAIT_TIME = "resp_max_wait_time"
-START_ROUND = "start_round"
-CURRENT_ROUND = "current_round"
-CONTRIBUTION_ROUND = "contribution_round"
-CONTRIBUTION_CLIENT = "contribution_client"
-NUM_ROUNDS = "num_rounds"
 
 STATUS = "status"
 RESULT = "result"

@@ -15,12 +15,13 @@
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.signal import Signal
-from nvflare.app_common.wf_comm.base_wf_comm import BaseWFCommunicator
+from nvflare.app_common.wf_comm.base_wf_communicator import BaseWFCommunicator
 
 
 class WFCommunicator(BaseWFCommunicator, Controller):
     def __init__(self):
         super().__init__()
+        self.register_serializers()
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         self.start_workflow(abort_signal, fl_ctx)

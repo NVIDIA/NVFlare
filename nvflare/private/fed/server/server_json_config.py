@@ -17,14 +17,16 @@ import re
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import SystemConfigs, SystemVarName
 from nvflare.apis.responder import Responder
-from nvflare.app_common.app_constant import CommConstants
+from nvflare.apis.wf_controller import WFController
 from nvflare.app_common.wf_comm.wf_communicator import WFCommunicator
 from nvflare.app_common.wf_comm.wf_communicator_spec import WFCommunicatorSpec
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.class_utils import instantiate_class
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
+from nvflare.private.defs import CommConstants
 from nvflare.private.fed_json_config import FedJsonConfigurator
 from nvflare.private.json_configer import ConfigContext, ConfigError
 
@@ -35,34 +37,34 @@ FL_MODULES = ["apis", "app_common", "widgets", "app_opt"]
 
 
 class WorkFlow:
-    def __init__(self, id, responder: Responder, strategy=None):
+    def __init__(self, id, responder: Responder, wf_controller=None):
         """Workflow is a responder with ID.
 
         Args:
             id: identification
             responder (Responder): A responder or communicator
-            strategy: federated learning strategy. If None, the responder will implement the strategy
+            wf_controller: federated learning wf_controller. If None, the responder will implement the wf_controller
         """
         self.id = id
         self.responder = responder
-        self.strategy = strategy
+        self.wf_controller = wf_controller
 
 
-def enhance_workflow_config(element: dict):
+def enhance_workflow_config(element: dict, class_path: str):
     if CommConstants.CONTROLLER in element:
         controller_config = element.get(CommConstants.CONTROLLER)
         controller_config["lazy_instantiate"] = True
         element[CommConstants.CONTROLLER] = controller_config
-    elif CommConstants.COMMUNICATOR not in element:
-        controller_config = element.copy()
-        controller_config["lazy_instantiate"] = True
-        element = {CommConstants.CONTROLLER: controller_config}
-    else:
+    elif CommConstants.COMMUNICATOR in element:
         wf_config = element.copy()
         comm_config = wf_config.pop(CommConstants.COMMUNICATOR)
         controller_config = wf_config
         controller_config["lazy_instantiate"] = True
         element = {CommConstants.COMMUNICATOR: comm_config, CommConstants.CONTROLLER: controller_config}
+    elif isinstance(instantiate_class(class_path, element.get("args", dict())), WFController):
+        controller_config = element.copy()
+        controller_config["lazy_instantiate"] = True
+        element = {CommConstants.CONTROLLER: controller_config}
 
     return element
 
@@ -150,35 +152,11 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             return
 
         if re.search(r"^workflows\.#[0-9]+$", path):
-            element = enhance_workflow_config(element)
+            class_path = self.get_class_path(element)
+            element = enhance_workflow_config(element, class_path)
 
-            print("\n\n element =", element)
             component = self.authorize_and_build_component(element, config_ctx, node)
-
-            # todo: fix: dependency graph is not right, we are now nvflare.private depending on the AppCommon class
-            # todo: refactoring the code into small methods
-            if isinstance(component, dict):
-                wf_config = component
-                communicator = wf_config.get(CommConstants.COMMUNICATOR)
-                if communicator is None:
-                    communicator = WFCommunicator()
-
-                if isinstance(communicator, WFCommunicatorSpec):
-                    controller_config = wf_config.get(CommConstants.CONTROLLER)
-                    controller_config["lazy_instantiate"] = False
-                    communicator.set_controller_config(controller_config)
-                data_bus = DataBus()
-                data_bus.send_data(CommConstants.COMMUNICATOR, communicator)
-                responder = communicator
-            else:
-                responder = component
-
-            if not isinstance(responder, Responder):
-                raise ConfigError(
-                    '"workflow" must be a Responder or Controller or has a Responder object, but got {}'.format(
-                        type(responder)
-                    )
-                )
+            responder = self.get_responder(component)
 
             cid = element.get("id", None)
             if not cid:
@@ -198,18 +176,43 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             self.components[cid] = responder
             return
 
-    def get_strategy(self, wf_config):
-        strategy_comp = wf_config.get("strategy")
-        strategy_comp["lazy_instantiate"] = False
-        if isinstance(strategy_comp, dict):
-            strategy = ComponentBuilder().build_component(strategy_comp)
+    def get_responder(self, component):
+        if isinstance(component, dict):
+            wf_config = component
+            communicator = wf_config.get(CommConstants.COMMUNICATOR)
+            if communicator is None:
+                communicator = WFCommunicator()
+
+            if isinstance(communicator, WFCommunicatorSpec):
+                controller_config = wf_config.get(CommConstants.CONTROLLER)
+                controller_config["lazy_instantiate"] = False
+                communicator.set_controller_config(controller_config)
+            data_bus = DataBus()
+            data_bus.send_data(CommConstants.COMMUNICATOR, communicator)
+            responder = communicator
         else:
-            strategy = strategy_comp
+            responder = component
 
-        if strategy is None:
-            raise ValueError("strategy should provided, but get None")
+        if not isinstance(responder, Responder):
+            raise ConfigError(
+                '"workflow" must be a Responder or Controller or has a Responder object, but got {}'.format(
+                    type(responder)
+                )
+            )
+        return responder
 
-        return strategy
+    def get_wf_controller(self, wf_config):
+        wf_controller_comp = wf_config.get("wf_controller")
+        wf_controller_comp["lazy_instantiate"] = False
+        if isinstance(wf_controller_comp, dict):
+            wf_controller = ComponentBuilder().build_component(wf_controller_comp)
+        else:
+            wf_controller = wf_controller_comp
+
+        if wf_controller is None:
+            raise ValueError("wf_controller should provided, but get None")
+
+        return wf_controller
 
     def _get_all_workflows_ids(self):
         ids = []

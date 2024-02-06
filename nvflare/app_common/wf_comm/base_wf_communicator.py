@@ -22,7 +22,7 @@ from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.fl_model import FLModel
-from nvflare.app_common.app_constant import AppConstants, CommConstants
+from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.app_common.wf_comm.decomposer_register import DecomposerRegister
@@ -40,6 +40,7 @@ from nvflare.app_common.wf_comm.wf_communicator_spec import WFCommunicatorSpec
 from nvflare.app_common.workflows.error_handle_utils import ABORT_WHEN_IN_ERROR
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.data_event.event_manager import EventManager
+from nvflare.private.defs import CommConstants
 from nvflare.security.logging import secure_format_traceback
 
 
@@ -50,7 +51,7 @@ class BaseWFCommunicator(FLComponent, WFCommunicatorSpec, ControllerSpec, ABC):
         result_pull_interval: float = 0.2,
     ):
         super().__init__()
-        self.strategy_fn_name = "run"
+        self.wf_controller_fn_name = "run"
         self.clients = None
         self.task_timeout = task_timeout
 
@@ -91,7 +92,7 @@ class BaseWFCommunicator(FLComponent, WFCommunicatorSpec, ControllerSpec, ABC):
     def start_workflow(self, abort_signal, fl_ctx):
         try:
             fl_ctx.set_prop("abort_signal", abort_signal)
-            func = getattr(self.get_controller(), self.strategy_fn_name)
+            func = getattr(self.get_controller(), self.wf_controller_fn_name)
             func()
 
         except Exception as e:
