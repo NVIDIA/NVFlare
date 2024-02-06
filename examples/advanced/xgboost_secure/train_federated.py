@@ -54,7 +54,7 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
 
         # Specify parameters via map, definition are same as c++ version
         param = {
-            "max_depth": 2,
+            "max_depth": 1,
             "eta": 0.1,
             "objective": "binary:logistic",
             "eval_metric": "auc",
