@@ -33,7 +33,7 @@ class TaskExchanger(Executor):
     def __init__(
         self,
         pipe_id: str,
-        read_interval: float = 0.1,
+        read_interval: float = 0.5,
         heartbeat_interval: float = 5.0,
         heartbeat_timeout: Optional[float] = 30.0,
         resend_interval: float = 2.0,
@@ -48,7 +48,7 @@ class TaskExchanger(Executor):
         Args:
             pipe_id (str): component id of pipe.
             read_interval (float): how often to read from pipe.
-                Defaults to 0.1.
+                Defaults to 0.5.
             heartbeat_interval (float): how often to send heartbeat to peer.
                 Defaults to 5.0.
             heartbeat_timeout (float, optional): how long to wait for a
@@ -115,7 +115,7 @@ class TaskExchanger(Executor):
             self.pipe_handler.set_status_cb(self._pipe_status_cb)
             self.pipe.open(self.pipe_channel_name)
             self.pipe_handler.start()
-        elif event_type == EventType.END_RUN:
+        elif event_type == EventType.ABOUT_TO_END_RUN:
             self.log_info(fl_ctx, "Stopping pipe handler")
             if self.pipe_handler:
                 self.pipe_handler.notify_end("end_of_job")
