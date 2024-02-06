@@ -11,14 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.app_common.xgb.runners.xgb_runner import XGBRunner
 from nvflare.app_common.xgb.defs import Constant
 from nvflare.app_common.xgb.grpc_server import GrpcServer
 from nvflare.app_common.xgb.mock.aggr_servicer import AggrServicer
+from nvflare.app_common.xgb.runners.xgb_runner import XGBRunner
 
 
 class MockServerRunner(XGBRunner):
-
     def __init__(self, server_max_workers=10):
         self.server_max_workers = server_max_workers
         self._stopped = False

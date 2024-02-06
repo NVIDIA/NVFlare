@@ -16,18 +16,14 @@ import threading
 import time
 from abc import ABC, abstractmethod
 
-from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.fuel.utils.validation_utils import (
-    check_non_negative_int,
-    check_object_type,
-    check_positive_int,
-)
 from nvflare.app_common.xgb.defs import Constant
 from nvflare.app_common.xgb.runners.xgb_runner import XGBRunner
 from nvflare.app_common.xgb.sender import Sender
+from nvflare.fuel.utils.validation_utils import check_non_negative_int, check_object_type, check_positive_int
 
 
 class XGBAdaptor(ABC, FLComponent):
@@ -268,8 +264,7 @@ class XGBClientAdaptor(XGBAdaptor):
     """
 
     def __init__(self):
-        """Constructor of XGBClientAdaptor
-        """
+        """Constructor of XGBClientAdaptor"""
         XGBAdaptor.__init__(self)
         self.engine = None
         self.sender = None

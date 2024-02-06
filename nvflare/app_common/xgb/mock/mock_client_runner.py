@@ -14,15 +14,14 @@
 import os
 import time
 
-from nvflare.app_common.xgb.runners.xgb_runner import XGBRunner
-from nvflare.apis.fl_component import FLComponent
-from nvflare.app_common.xgb.grpc_client import GrpcClient
-from nvflare.app_common.xgb.defs import Constant
 import nvflare.app_common.xgb.proto.federated_pb2 as pb2
+from nvflare.apis.fl_component import FLComponent
+from nvflare.app_common.xgb.defs import Constant
+from nvflare.app_common.xgb.grpc_client import GrpcClient
+from nvflare.app_common.xgb.runners.xgb_runner import XGBRunner
 
 
 class MockClientRunner(XGBRunner, FLComponent):
-
     def __init__(self):
         FLComponent.__init__(self)
         self.training_stopped = False

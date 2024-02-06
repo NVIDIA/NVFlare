@@ -15,9 +15,9 @@
 import grpc
 
 import nvflare.app_common.xgb.proto.federated_pb2 as pb2
+from nvflare.app_common.xgb.defs import GRPC_DEFAULT_OPTIONS
 from nvflare.app_common.xgb.proto.federated_pb2_grpc import FederatedStub
 from nvflare.fuel.utils.obj_utils import get_logger
-from nvflare.app_common.xgb.defs import GRPC_DEFAULT_OPTIONS
 
 
 class GrpcClient:

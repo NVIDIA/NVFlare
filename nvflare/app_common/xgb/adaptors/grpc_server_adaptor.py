@@ -11,14 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import threading
 import multiprocessing
+import threading
 
 import nvflare.app_common.xgb.proto.federated_pb2 as pb2
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.xgb.adaptors.adaptor import XGBServerAdaptor
-from nvflare.app_common.xgb.grpc_client import GrpcClient
 from nvflare.app_common.xgb.defs import Constant
+from nvflare.app_common.xgb.grpc_client import GrpcClient
 from nvflare.fuel.f3.drivers.net_utils import get_open_tcp_port
 from nvflare.security.logging import secure_format_exception
 
@@ -54,19 +54,13 @@ class GrpcServerAdaptor(XGBServerAdaptor):
         if self.in_process:
             self.logger.info("starting XGB server in another thread")
             t = threading.Thread(
-                name="xgb_server_thread",
-                target=self._try_start_server,
-                args=(addr, port, world_size),
-                daemon=True
+                name="xgb_server_thread", target=self._try_start_server, args=(addr, port, world_size), daemon=True
             )
             t.start()
         else:
             self.logger.info("starting XGB server in another process")
             self._process = multiprocessing.Process(
-                name="xgb_server_process",
-                target=self._try_start_server,
-                args=(addr, port, world_size),
-                daemon=True
+                name="xgb_server_process", target=self._try_start_server, args=(addr, port, world_size), daemon=True
             )
             self._process.start()
 

@@ -12,29 +12,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+
 import xgboost as xgb
 from xgboost import callback
+
+from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.fl_context import FLContext
+from nvflare.app_common.xgb.data_loader import XGBDataLoader
+from nvflare.app_common.xgb.defs import Constant
+from nvflare.app_common.xgb.runners.xgb_runner import XGBRunner
 from nvflare.app_common.xgb.tb import TensorBoardCallback
 from nvflare.app_common.xgb.xgb_params import XGBoostParams
-from nvflare.app_common.xgb.runners.xgb_runner import XGBRunner
-from nvflare.app_common.xgb.defs import Constant
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.obj_utils import get_logger
-from nvflare.apis.fl_context import FLContext
-from nvflare.apis.fl_component import FLComponent
-from nvflare.app_common.xgb.data_loader import XGBDataLoader
 
 
 class XGBClientRunner(XGBRunner, FLComponent):
-
     def __init__(
-            self,
-            data_loader_id: str,
-            early_stopping_rounds: int,
-            xgb_params: dict,
-            verbose_eval,
-            use_gpus,
-            model_file_name,
+        self,
+        data_loader_id: str,
+        early_stopping_rounds: int,
+        xgb_params: dict,
+        verbose_eval,
+        use_gpus,
+        model_file_name,
     ):
         FLComponent.__init__(self)
         self.early_stopping_rounds = early_stopping_rounds

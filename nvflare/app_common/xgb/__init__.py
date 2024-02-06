@@ -14,5 +14,5 @@
 
 from nvflare.app_common.xgb.fed_controller import XGBFedController
 from nvflare.app_common.xgb.fed_executor import FedXGBHistogramExecutor
-from nvflare.app_common.xgb.mock.mock_executor import MockXGBExecutor
 from nvflare.app_common.xgb.mock.mock_controller import MockXGBController
+from nvflare.app_common.xgb.mock.mock_executor import MockXGBExecutor

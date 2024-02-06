@@ -15,19 +15,17 @@ import multiprocessing
 import threading
 
 import nvflare.app_common.xgb.proto.federated_pb2 as pb2
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.xgb.adaptors.adaptor import XGBClientAdaptor
-from nvflare.app_common.xgb.proto.federated_pb2_grpc import FederatedServicer
-from nvflare.app_common.xgb.grpc_server import GrpcServer
-from nvflare.fuel.f3.drivers.net_utils import get_open_tcp_port
-from nvflare.security.logging import secure_log_traceback
-from nvflare.apis.fl_constant import FLContextKey
 from nvflare.app_common.xgb.defs import Constant
-from nvflare.security.logging import secure_format_exception
+from nvflare.app_common.xgb.grpc_server import GrpcServer
+from nvflare.app_common.xgb.proto.federated_pb2_grpc import FederatedServicer
+from nvflare.fuel.f3.drivers.net_utils import get_open_tcp_port
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 
 class _ClientStarter:
-
     def __init__(self, runner):
         self.xgb_runner = runner
         self.error = None

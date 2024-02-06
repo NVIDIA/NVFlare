@@ -11,19 +11,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.app_common.xgb.executor import XGBExecutor
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.xgb.adaptors.grpc_client_adaptor import GrpcClientAdaptor
+from nvflare.app_common.xgb.executor import XGBExecutor
 from nvflare.app_common.xgb.mock.mock_client_runner import MockClientRunner
 
 
 class MockXGBExecutor(XGBExecutor):
-
     def __init__(
-            self,
-            int_server_grpc_options=None,
-            req_timeout=10.0,
-            in_process=True,
+        self,
+        int_server_grpc_options=None,
+        req_timeout=10.0,
+        in_process=True,
     ):
         XGBExecutor.__init__(
             self,

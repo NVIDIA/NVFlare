@@ -11,24 +11,24 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from .executor import XGBExecutor
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.xgb.adaptors.grpc_client_adaptor import GrpcClientAdaptor
 from nvflare.app_common.xgb.runners.xgb_client_runner import XGBClientRunner
 
+from .executor import XGBExecutor
+
 
 class FedXGBHistogramExecutor(XGBExecutor):
-
     def __init__(
-            self,
-            early_stopping_rounds,
-            xgb_params: dict,
-            data_loader_id: str,
-            verbose_eval=False,
-            use_gpus=False,
-            int_server_grpc_options=None,
-            req_timeout=10.0,
-            model_file_name="model.json",
+        self,
+        early_stopping_rounds,
+        xgb_params: dict,
+        data_loader_id: str,
+        verbose_eval=False,
+        use_gpus=False,
+        int_server_grpc_options=None,
+        req_timeout=10.0,
+        model_file_name="model.json",
     ):
         XGBExecutor.__init__(
             self,

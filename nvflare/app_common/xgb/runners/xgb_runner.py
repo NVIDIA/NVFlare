@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from abc import ABC, abstractmethod
+
 from nvflare.apis.fl_context import FLContext
 
 
 class XGBRunner(ABC):
-
     def initialize(self, fl_ctx: FLContext):
         pass
 

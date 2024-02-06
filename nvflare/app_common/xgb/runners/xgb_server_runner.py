@@ -13,12 +13,12 @@
 # limitations under the License.
 
 import xgboost.federated as xgb_federated
-from nvflare.app_common.xgb.runners.xgb_runner import XGBRunner
+
 from nvflare.app_common.xgb.defs import Constant
+from nvflare.app_common.xgb.runners.xgb_runner import XGBRunner
 
 
 class XGBServerRunner(XGBRunner):
-
     def __init__(self):
         self._port = None
         self._world_size = None

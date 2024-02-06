@@ -12,28 +12,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from nvflare.apis.fl_context import FLContext
+from nvflare.app_common.xgb.adaptors.grpc_server_adaptor import GrpcServerAdaptor
 from nvflare.app_common.xgb.controller import XGBController
 from nvflare.app_common.xgb.defs import Constant
-from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.xgb.mock.mock_server_runner import MockServerRunner
-from nvflare.app_common.xgb.adaptors.grpc_server_adaptor import GrpcServerAdaptor
 
 
 class MockXGBController(XGBController):
-
     def __init__(
-            self,
-            num_rounds: int,
-            configure_task_name=Constant.CONFIG_TASK_NAME,
-            configure_task_timeout=Constant.CONFIG_TASK_TIMEOUT,
-            start_task_name=Constant.START_TASK_NAME,
-            start_task_timeout=Constant.START_TASK_TIMEOUT,
-            job_status_check_interval: float = Constant.JOB_STATUS_CHECK_INTERVAL,
-            max_client_op_interval: float = Constant.MAX_CLIENT_OP_INTERVAL,
-            progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
-            client_ranks=None,
-            int_client_grpc_options=None,
-            in_process=True,
+        self,
+        num_rounds: int,
+        configure_task_name=Constant.CONFIG_TASK_NAME,
+        configure_task_timeout=Constant.CONFIG_TASK_TIMEOUT,
+        start_task_name=Constant.START_TASK_NAME,
+        start_task_timeout=Constant.START_TASK_TIMEOUT,
+        job_status_check_interval: float = Constant.JOB_STATUS_CHECK_INTERVAL,
+        max_client_op_interval: float = Constant.MAX_CLIENT_OP_INTERVAL,
+        progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
+        client_ranks=None,
+        int_client_grpc_options=None,
+        in_process=True,
     ):
         XGBController.__init__(
             self,
