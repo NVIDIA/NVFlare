@@ -25,7 +25,7 @@ Can be run from the :github_nvflare_link:`hello_world notebook <examples/hello-w
 --------------
 
   * :ref:`Hello Scatter and Gather <hello_scatter_and_gather>` - Example using the Scatter And Gather (SAG) workflow with a Numpy trainer
-  * :ref:`Hello Cross-Site Validation <hello_cross_val>` - Example using the Cross Site Model Eval workflow with a Numpy trainer
+  * :ref:`Hello Cross-Site Validation <hello_cross_val>` - Example using the Cross Site Model Eval workflow with a Numpy trainer, also demonstrates running cross site validation using the previous training results.
   * :github_nvflare_link:`Hello Cyclic Weight Transfer (GitHub) <examples/hello-world/hello-cyclic>` - Example using the CyclicController workflow to implement `Cyclic Weight Transfer <https://pubmed.ncbi.nlm.nih.gov/29617797/>`_ with TensorFlow as the deep learning training framework
   * :github_nvflare_link:`Swarm Learning <examples/advanced/swarm_learning>` - Example using Swarm Learning and Client-Controlled Cross-site Evaluation workflows.
   * :github_nvflare_link:`Client-Controlled Cyclic Weight Transfer <examples/hello-world/step-by-step/cifar10/cyclic_ccwf>` - Example using Client-Controlled Cyclic workflow using Client API.

@@ -36,7 +36,8 @@ Please refer to :ref:`application` for more details.
    :maxdepth: 1
 
    programming_guide/workflows_and_controllers
-   programming_guide/fl_clients
+   programming_guide/execution_api_type
+   programming_guide/fl_model
    programming_guide/shareable
    programming_guide/data_exchange_object
    programming_guide/fl_context

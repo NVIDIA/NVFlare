@@ -21,8 +21,13 @@ And go to the folder containing this tutorial
 To execute the below commands, please open a terminal
 and go to the folder containing this tutorial.
 
-We recommend following the instructions for setting up a [virtual environment](../../../../examples/README.md#set-up-a-virtual-environment),
-and using it in [JupyterLab](../../../../examples/README.md#Set-up-JupyterLab-for-notebooks) for running the notebooks the MONAI integration examples.
+Follow the [setup](../../README.md#requirements) to create a virtual environment with the MONAI-NVFlare integration installed to use in JupyterLab.
+
+Install the required packages in your virtual environment:
+
+```
+pip install -r ./requirements.txt
+```
 
 ### 1. Download the Spleen Bundle
 
@@ -102,9 +107,9 @@ By default, POC will create startup kits at `/tmp/nvflare/poc`.
 
 ### 3.3 Start FL system in POC mode
 
-Then, start the FL system with all provisioned clients by running
+Then in another terminal start the FL system in POC mode with all provisioned clients by running:
 ```
-nvflare poc start
+nvflare poc start -ex admin@nvidia.com
 ```
 
 ### 4.1 (Optional) Secure FL workspace
@@ -149,37 +154,26 @@ For details about resource management and consumption, please refer to the [docu
 > **Note:** Full FL training could take several hours for this task.
 > To speed up your experimentation, you can reduce the `num_rounds` value in `config_fed_server.json`, e.g. to 5 rounds.
 
-### 5.1 FLARE-MONAI Integration Experiment tracking
+### 5.1 FLARE-MONAI Integration Experiment Tracking with MLflow
 Experiment tracking for the FLARE-MONAI integration now uses `NVFlareStatsHandler` to provide a set of Ignite Event-handlers to support both iteration and epoch-level events for automatic metric streaming.
+
 In this example, the `spleen_ct_segmentation_local` job is configured to automatically log metrics to MLflow through the FL server.
 
-The `config_fed_client.json` contains the `NVFlareStatsHandler`, `MetricsSender`, and `MetricRelay` (with their respective pipes) to send the metrics to the server side as federated events.
-Then in `config_fed_server.json`, the `MLflowReceiver` is configured for the server to receive the results in "mlruns" or via the tracking uri if specified.
+- The `config_fed_client.json` contains the `NVFlareStatsHandler`, `MetricsSender`, and `MetricRelay` (with their respective pipes) to send the metrics to the server side as federated events.
+- Then in `config_fed_server.json`, the `MLflowReceiver` is configured for the server to write the results to the default MLflow tracking server URI.
 
-View the results by running the following command at the `mlruns/` directory in the workspace:
-
-```
-mlflow ui --port 5000
-```
-
-> **_NOTE:_** The receiver on the server side can be easily configured to support other experiment tracking formats.
-> In addition to the `MLflowReceiver`, the `WandBReceiver` and `TBAnalyticsReceiver` can also be used in `config_fed_server.json` for Tensorboard and > Weights & Biases experiment tracking streaming to the server.
-
-### 5.2 MONAI Experiment tracking with MLflow
-
-The `spleen_ct_segmentation_loc_non_agg` job is the previous configuration that uses MONAI's experiment [tracking feature](https://github.com/Project-MONAI/tutorials/tree/main/experiment_management)
-with clients logging to the MLflow tracking server without going through the FL server.
-For `spleen_ct_segmentation_loc_non_agg`, an MLflow server is expected, so in a new terminal, start the mlflow server with:
+With this configuration the MLflow tracking server must be started before running the job:
 
 ```
 mlflow server
 ```
 
-You can access the MLflow dashboard in your browser using the default tracking uri `http://127.0.0.1:5000`.
+> **_NOTE:_** The receiver on the server side can be easily configured to support other experiment tracking formats.
+  In addition to the `MLflowReceiver`, the `WandBReceiver` and `TBAnalyticsReceiver` can also be used in `config_fed_server.json` for Tensorboard and Weights & Biases experiment tracking streaming to the server.
 
-Next, submit the job.
+Next, we can submit the job.
 
-### 5.3 Federated averaging
+### 5.2 Federated averaging
 
 To run FedAvg using with the Job CLI, submit the job with:
 
@@ -207,13 +201,9 @@ You should see the cross-site validation results at
 [DOWNLOAD_DIR]/[JOB_ID]/workspace/cross_site_val/cross_val_results.json
 ```
 
-Once the training started, you can the experiment curves for the local clients in the current run on the MLflow dashboard.
+### 5.3 Secure aggregation using homomorphic encryption
 
-![MLflow dashboard](./mlflow.png)
-
-### 5.4 Secure aggregation using homomorphic encryption
-
-Next we run FedAvg using homomorphic encryption (HE) for secure aggregation on the server.
+Alternatively we can run FedAvg using homomorphic encryption (HE) for secure aggregation on the server.
 
 > **_NOTE:_** For HE, we need to use the securely provisioned workspace.
 > It will also take longer due to the additional encryption, decryption, encrypted aggregation,
@@ -225,3 +215,13 @@ Then, submit the job to run FedAvg with HE:
 ```
 nvflare job submit -j jobs/spleen_ct_segementation_he
 ```
+
+### 5.4 MLflow experiment tracking results
+
+To view the results, you can access the MLflow dashboard in your browser using the default tracking uri `http://127.0.0.1:5000`.
+
+> **_NOTE:_** To write the results to the server workspace instead of using the MLflow server, users can remove the `tracking_uri` argument from the `MLflowReceiver` configuration and instead view the results by running `mlflow ui --port 5000` in the directory that contains the `mlruns/` directory in the server workspace.
+
+Once the training is started, you can see the experiment curves for the local clients in the current run on the MLflow dashboard.
+
+![MLflow dashboard](./mlflow.png)

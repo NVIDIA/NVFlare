@@ -94,6 +94,15 @@ class SimulatorRunner(FLComponent):
 
         self.clients_created = 0
 
+        running_dir = os.getcwd()
+        if self.workspace is None:
+            self.workspace = "simulator_workspace"
+            self.logger.warn(
+                f"Simulator workspace is not provided. Set it to the default location:"
+                f" {os.path.join(running_dir, self.workspace)}"
+            )
+        self.workspace = os.path.join(running_dir, self.workspace)
+
     def _generate_args(
         self, job_folder: str, workspace: str, clients=None, n_clients=None, threads=None, gpu=None, max_clients=100
     ):
@@ -110,15 +119,6 @@ class SimulatorRunner(FLComponent):
         return args
 
     def setup(self):
-        running_dir = os.getcwd()
-        if self.workspace is None:
-            self.workspace = "simulator_workspace"
-            self.logger.warn(
-                f"Simulator workspace is not provided. Set it to the default location:"
-                f" {os.path.join(running_dir, self.workspace)}"
-            )
-        self.workspace = os.path.join(running_dir, self.workspace)
-
         self.args = self._generate_args(
             self.job_folder, self.workspace, self.clients, self.n_clients, self.threads, self.gpu, self.max_clients
         )
@@ -331,9 +331,6 @@ class SimulatorRunner(FLComponent):
             client_name, self.args
         )
         self.federated_clients.append(client)
-        app_root = os.path.join(self.simulator_root, "app_" + client_name)
-        app_custom_folder = os.path.join(app_root, "custom")
-        sys.path.append(app_custom_folder)
 
     def _set_client_status(self):
         for client in self.federated_clients:
@@ -348,7 +345,7 @@ class SimulatorRunner(FLComponent):
         try:
             manager = Manager()
             return_dict = manager.dict()
-            process = Process(target=self.run_processs, args=(return_dict,))
+            process = Process(target=self.run_process, args=(return_dict,))
             process.start()
             process.join()
             run_status = self._get_return_code(return_dict, process, self.workspace)
@@ -380,7 +377,7 @@ class SimulatorRunner(FLComponent):
                 self.logger.info(f"return_code from process.exitcode: {return_code}")
         return return_code
 
-    def run_processs(self, return_dict):
+    def run_process(self, return_dict):
         # run_status = self.simulator_run_main()
         try:
             run_status = mpm.run(

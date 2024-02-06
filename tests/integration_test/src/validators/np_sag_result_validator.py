@@ -20,9 +20,10 @@ from .job_result_validator import FinishJobResultValidator
 
 
 class NumpySAGResultValidator(FinishJobResultValidator):
-    def __init__(self, expected_result):
+    def __init__(self, expected_result, model_name: str = "server.npy"):
         super().__init__()
         self.expected_result = np.array(expected_result)
+        self.model_name = model_name
 
     def validate_finished_results(self, job_result, client_props) -> bool:
         server_run_dir = job_result["workspace_root"]
@@ -32,7 +33,7 @@ class NumpySAGResultValidator(FinishJobResultValidator):
             self.logger.error(f"models dir {models_dir} doesn't exist.")
             return False
 
-        model_path = os.path.join(models_dir, "server.npy")
+        model_path = os.path.join(models_dir, self.model_name)
         if not os.path.isfile(model_path):
             self.logger.error(f"model_path {model_path} doesn't exist.")
             return False

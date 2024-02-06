@@ -7,12 +7,13 @@ A workflow has one or more controllers, each implementing a specific coordinatio
 CrossSiteValidation controller implements a strategy to let every client site evaluate every other site's model. You can put together
 a workflow that uses any number of controllers.
 
-Before version 2.4, all federating learning workflows (fed-average, cyclic controller, cross-site evaluation) were server controlled,
-implemented with the server-side :ref:`controllers <controllers>`. In these workflows,
-FL clients get tasks assigned by the controller, execute the tasks,
-and submit results back to the server. The first section covers the server-side
-controller API for server-controlled workflows. The second section covers :ref:`client_controlled_workflows` for
-workflows that are controlled by the clients.
+We have implemented several server controlled federated learning workflows (fed-average, cyclic controller, cross-site evaluation) with the server-side :ref:`controllers <controllers>`.
+In these workflows, FL clients get tasks assigned by the controller, execute the tasks, and submit results back to the server.
+
+In certain cases, if the server cannot be trusted, it should not be involved in communication with sensitive information.
+To address this concern, NVFlare introduces Client Controlled Workflows (CCWF) to facilitate peer-to-peer communication among clients.
+
+Please refer to the following sections for more details.
 
 .. toctree::
    :maxdepth: 3

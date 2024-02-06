@@ -23,7 +23,7 @@ Here is a brief example of a common pattern when using the Client API for a clie
     # initialize NVFlare client API
     flare.init()
 
-    # run continously when launching once
+    # run continuously when launching once
     while flare.is_running():
 
       # receive FLModel from NVFlare
@@ -63,12 +63,12 @@ Furthermore, the Job CLI also offers users a convenient method for submitting jo
 
 ``nvflare job list_templates|create|submit|show_variables``
 
-Also explore the continously growing :github_nvflare_link:`Job Template directory <job_templates>` we have created for commonly used configurations.
+Also explore the continuously growing :github_nvflare_link:`Job Template directory <job_templates>` we have created for commonly used configurations.
 For more in-depth information on Job Templates and the Job CLI, refer to the :ref:`job_cli` documentation and :github_nvflare_link:`tutorials <examples/tutorials/job_cli.ipynb>`.
 
 ModelLearner
 ------------
-The ModelLearner is introduced for a simplifed user experience in cases requiring a Learner-pattern.
+The ModelLearner is introduced for a simplified user experience in cases requiring a Learner-pattern.
 Users exclusively interact with the FLModel object, which includes weights, optimizer, metrics, and metadata, while FLARE-specific concepts remain hidden to users.
 The ModelLearner defines standard learning functions, such as ``train()``, ``validate()``, and ``submit_model()`` that can be subclassed for easy adaptation.
 
@@ -89,7 +89,7 @@ Each example will build upon previous ones to showcase different features, workf
 - sag_model_learner: scatter and gather workflow illustrating how to write client code using the ModelLearner.
 - sag_executor: scatter and gather workflow demonstrating show to write client-side executors.
 - sag_mlflow: MLflow experiment tracking logs with the Client API in scatter & gather workflows.
-- sag_he: homomorphic encyption using Client API and POC -he mode.
+- sag_he: homomorphic encryption using Client API and POC -he mode.
 - cse: cross-site evaluation using the Client API.
 - cyclic: cyclic weight transfer workflow with server-side controller.
 - cyclic_ccwf: client-controlled cyclic weight transfer workflow with client-side controller.
@@ -133,7 +133,7 @@ Client-side controlled workflow
 Three commonly used types of client-side controlled workflows are provided:
 
 - :ref:`ccwf_cyclic_learning`: the model is passed from client to client.
-- :ref:`ccwf_swarm_learning`: randomly select clients as client-side controller and aggregrators, where then Scatter and Gather with FedAvg is performed.
+- :ref:`ccwf_swarm_learning`: randomly select clients as client-side controller and aggregators, where then Scatter and Gather with FedAvg is performed.
 - :ref:`ccwf_cross_site_evaluation`: allow clients to evaluate other sites' models.
 
 See :github_nvflare_link:`swarm learning <examples/advanced/swarm_learning>` and :github_nvflare_link:`client-controlled cyclic <examples/hello-world/step-by-step/cifar10/cyclic_ccwf>` for examples using these client-controlled workflows.
@@ -168,7 +168,7 @@ Improved Job Configuration File Processing
 - OS Environment Variables - OS environment variables can be referenced via the dollar sign
 - Parameterized Variable Definition - for creating configuration templates that can be reused and resolved into different concrete configurations
 
-See more details in the :ref:`configuration_files` documentation.
+See more details in the :ref:`configurations` documentation.
 
 POC Command Upgrade
 ===================
@@ -202,13 +202,13 @@ FL HUB: Hierarchical Unification Bridge
 =======================================
 The FL HUB is a new experimental feature designed to support multiple FLARE systems working together in a hierarchical manner.
 In Federated Computing, the number of edge devices is usually large with often just a single server, which can cause performance issues.
-A solution to this problem is to use a hierachical FLARE system, where tiered FLARE systems connect together to form a tree-like structure.
+A solution to this problem is to use a hierarchical FLARE system, where tiered FLARE systems connect together to form a tree-like structure.
 Each leaf of clients (edge devices) only connect to its server, where this server also serves as the client for the parent tier FLARE system.
 
 One potential use case is with global studies, where the client machine may be located across different regions.
 Rather than requiring every region's client machines connect to only a single FL server in that region, the FL HUB could enable a more performant tiered multi-server setup.
 
-Learn more about the FL Hub in the :ref:`hierarchy_unification_bridge` documenation and the :github_nvflare_link:`code <nvflare/app_common/hub>`.
+Learn more about the FL Hub in the :ref:`hierarchy_unification_bridge` documentation and the :github_nvflare_link:`code <nvflare/app_common/hub>`.
 
 Misc. Features
 ==============
@@ -236,7 +236,7 @@ Misc. Features
 
   - We added the application layer ping between Client Job process and Server parent process to replace the gRPC timeout.
     Previously, we noticed if the gRPC timeout is set too long, the cloud provider (eg. Azure Cloud) will kill the connection after 4 minutes.
-    If the timeout setup is too short (such as 2 mins), the underlying gRPC will report too many pings.
+    If the timeout setup is too short (such as 2 minutes), the underlying gRPC will report too many pings.
     The application level ping will avoid both issues to make sure the server/client is aware of the status of the processes.
   - FLARE provides two drivers for gRPC based communication- asyncio (AIO) and regular (non-AIO) versions of gRPC library.
     One notable benefit of the AIO gRPC is its ability to handle many more concurrent connections on the server side.
@@ -278,7 +278,7 @@ For this financial application, we use the `Elliptic++ <https://github.com/git-d
 consists of 203k Bitcoin transactions and 822k wallet addresses to enable both the detection of fraudulent transactions and the detection of illicit
 addresses (actors) in the Bitcoin network by leveraging graph data. For more details, please refer to this `paper <https://arxiv.org/pdf/2306.06108.pdf>`_.
 
-Finanical Application Examples
+Financial Application Examples
 ------------------------------
 To demonstrate how to perform Fraud Detection in financial applications, we introduced an :github_nvflare_link:`example <examples/advanced/finance>` illustrating how to use XGBoost in various ways
 to train a model in a federated manner with a `finance dataset <https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud>`_.
@@ -330,7 +330,7 @@ Here is the default meta.json which can be edited accordingly:
 
 FLARE API Parity
 ================
-In FLARE 2.3.0, an intial version of the FLARE API was implemented as a redesigend FLAdminAPI, however we only included a subset of the functions.
+In FLARE 2.3.0, an initial version of the FLARE API was implemented as a redesigned FLAdminAPI, however we only included a subset of the functions.
 In FLARE 2.4.0, the FLARE API has been enhanced to include the remaining functions of the FLAdminAPI, so that the FLAdminAPI can sunset.
 
 See the :ref:`migrating_to_flare_api` for more details on the added functions.

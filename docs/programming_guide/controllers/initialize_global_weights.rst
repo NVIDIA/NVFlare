@@ -26,7 +26,7 @@ Two changes are needed:
 
 The updated file should look like the following:
 
-.. literalinclude:: ../resources/init_weights_1_config_fed_server.json
+.. literalinclude:: ../../resources/init_weights_1_config_fed_server.json
    :language: json
 
 

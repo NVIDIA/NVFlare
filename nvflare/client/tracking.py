@@ -21,7 +21,12 @@ from .api import log
 
 
 class SummaryWriter:
-    """Mimics Tensorboard apis."""
+    """SummaryWriter mimics the usage of Tensorboard's SummaryWriter.
+
+    Users can replace the import of Tensorboard's SummaryWriter with FLARE's SummaryWriter.
+    They would then use SummaryWriter the same as before.
+    SummaryWriter will send log records to the FLARE system.
+    """
 
     def add_scalar(self, tag: str, scalar: float, global_step: Optional[int] = None, **kwargs):
         """Sends a scalar.
@@ -61,6 +66,13 @@ class SummaryWriter:
 
 
 class WandBWriter:
+    """WandBWriter mimics the usage of weights and biases.
+
+    Users can replace the import of wandb with FLARE's WandBWriter.
+    They would then use WandBWriter the same as they would use wandb.
+    WandBWriter will send log records to the FLARE system.
+    """
+
     def log(self, metrics: Dict[str, float], step: Optional[int] = None):
         """Log multiple metrics for the current run.
 
@@ -69,7 +81,7 @@ class WandBWriter:
             step (int, optional): A single integer step at which to log the specified Metrics.
         """
         log(
-            tag="metrics",
+            key="metrics",
             value=metrics,
             data_type=AnalyticsDataType.METRICS,
             global_step=step,
@@ -78,11 +90,11 @@ class WandBWriter:
 
 
 class MLflowWriter:
-    """MLflowWriter mimics the usage of mlflow.
+    """MLflowWriter mimics the usage of MLflow.
 
-    Users can replace the import of mlflow with MLflowWriter. They would then use
-    MLflowWriter the same as they would use mlflow. MLflowWriter will send log records to
-    the receiver.
+    Users can replace the import of MLflow with FLARE's MLflowWriter.
+    They would then use MLflowWriter the same as they would use MLflow.
+    MLflowWriter will send log records to the FLARE system.
     """
 
     def log_param(self, key: str, value: any) -> None:
