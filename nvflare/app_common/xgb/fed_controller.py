@@ -33,6 +33,7 @@ class XGBFedController(XGBController):
         progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
         client_ranks=None,
         int_client_grpc_options=None,
+        in_process=True,
     ):
         XGBController.__init__(
             self,
@@ -48,10 +49,14 @@ class XGBFedController(XGBController):
             client_ranks=client_ranks,
         )
         self.int_client_grpc_options = int_client_grpc_options
+        self.in_process = in_process
 
     def get_adaptor(self, fl_ctx: FLContext):
         runner = XGBServerRunner()
         runner.initialize(fl_ctx)
-        adaptor = GrpcServerAdaptor(int_client_grpc_options=self.int_client_grpc_options)
+        adaptor = GrpcServerAdaptor(
+            int_client_grpc_options=self.int_client_grpc_options,
+            in_process=self.in_process,
+        )
         adaptor.set_runner(runner)
         return adaptor
