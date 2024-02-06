@@ -173,7 +173,7 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         self.internal_xgb_server.start(no_blocking=True)
         self.logger.info(f"Started internal server at {self.internal_server_addr}")
         self._start_client(self.internal_server_addr)
-        self.logger.info(f"Started external XGB Client")
+        self.logger.info("Started external XGB Client")
 
     def stop(self, fl_ctx: FLContext):
         if self.stopped:

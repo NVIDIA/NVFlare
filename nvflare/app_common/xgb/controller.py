@@ -304,12 +304,12 @@ class XGBController(Controller):
         return reply
 
     def _process_xgb_request(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
+        op = request.get_header(Constant.MSG_KEY_XGB_OP)
         if self._is_stopped():
-            self.log_error(fl_ctx, f"dropped XGB request since server is already stopped")
+            self.log_error(fl_ctx, f"dropped XGB request '{op}' since server is already stopped")
             return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
 
         # since XGB protocol is very strict, we'll stop the control flow when any error occurs
-        op = request.get_header(Constant.MSG_KEY_XGB_OP)
         bad_req_error = "bad XGB request"
         process_error = "XGB request process error"
         if not op:
@@ -510,7 +510,7 @@ class XGBController(Controller):
 
         # monitor client health
         # we periodically check job status until all clients are done or the system is stopped
-        self.log_info(fl_ctx, f"Waiting for clients to finish ...")
+        self.log_info(fl_ctx, "Waiting for clients to finish ...")
         while not self._is_stopped():
             done = self._check_job_status(fl_ctx)
             if done:

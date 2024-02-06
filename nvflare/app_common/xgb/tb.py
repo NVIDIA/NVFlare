@@ -13,17 +13,16 @@
 # limitations under the License.
 import os
 
-import xgboost as xgb
-from xgboost import callback
+import xgboost.callback
 
 
-class TensorBoardCallback(xgb.callback.TrainingCallback):
+class TensorBoardCallback(xgboost.callback.TrainingCallback):
     def __init__(self, app_dir: str, tensorboard):
-        xgb.callback.TrainingCallback.__init__(self)
+        xgboost.callback.TrainingCallback.__init__(self)
         self.train_writer = tensorboard.SummaryWriter(log_dir=os.path.join(app_dir, "train-auc/"))
         self.val_writer = tensorboard.SummaryWriter(log_dir=os.path.join(app_dir, "val-auc/"))
 
-    def after_iteration(self, model, epoch: int, evals_log: xgb.callback.TrainingCallback.EvalsLog):
+    def after_iteration(self, model, epoch: int, evals_log: xgboost.callback.TrainingCallback.EvalsLog):
         if not evals_log:
             return False
 
