@@ -124,6 +124,10 @@ class TestSimulatorRunner:
         status, gpus, gpu_threads = runner.setup()
         assert not status
 
+        runner = SimulatorRunner(job_folder=job_folder, workspace=self.workspace_name, threads=1, gpu="0,1")
+        status, gpus, gpu_threads = runner.setup()
+        assert not status
+
     @pytest.mark.parametrize(
         "client_names, gpus, gpu_threads, expected_split_names",
         [

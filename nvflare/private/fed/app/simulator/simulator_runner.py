@@ -261,7 +261,13 @@ class SimulatorRunner(FLComponent):
                 #     else:
                 #         thread = 1
                 #     gpu_threads.append(str(thread))
-                for index in range(int(self.args.threads)):
+                thread_num = int(self.args.threads)
+                if thread_num < len(gpu_groups):
+                    self.logger.error(
+                        f"The number of threads {thread_num} must be equal or larger than the length of the GPU groups {len(gpu_groups)}"
+                    )
+                    return False, gpu_groups, gpu_threads
+                for index in range(thread_num):
                     gpu_threads[index % len(gpu_groups)] += 1
 
             if self.args.threads and self.args.threads > len(self.client_names):
