@@ -107,6 +107,9 @@ class PipeHandler(object):
         self.peer_is_up_or_dead = threading.Event()
         self._pause = False
         self._last_heartbeat_received_time = None
+        self._check_interval = 0.01
+        self.heartbeat_sender = threading.Thread(target=self._heartbeat)
+        self.heartbeat_sender.daemon = True
 
     def set_status_cb(self, cb, *args, **kwargs):
         """Set CB for status handling. When the peer status is changed (ABORT, END, GONE), this CB is called.
@@ -208,6 +211,9 @@ class PipeHandler(object):
         if not self.reader.is_alive():
             self.reader.start()
 
+        if not self.heartbeat_sender.is_alive():
+            self.heartbeat_sender.start()
+
     def stop(self, close_pipe=True):
         """Stops the handler and optionally close the monitored pipe.
 
@@ -231,7 +237,7 @@ class PipeHandler(object):
         Args:
             msg: message to be sent
             timeout: how long to wait for the peer to read the data.
-                If not specified, return False immediately.
+                If not specified, will use ``self.default_request_timeout``.
             abort_signal:
 
         Returns:
@@ -285,15 +291,13 @@ class PipeHandler(object):
 
     def _try_read(self):
         self._last_heartbeat_received_time = time.time()
-        last_heartbeat_sent_time = 0.0
         while not self.asked_to_stop:
-            now = time.time()
-
             if self._pause:
                 time.sleep(self.read_interval)
                 continue
 
             msg = self.pipe.receive()
+            now = time.time()
 
             if msg:
                 self._last_heartbeat_received_time = now
@@ -318,13 +322,23 @@ class PipeHandler(object):
                     )
                     break
 
+            time.sleep(self.read_interval)
+        self.reader = None
+
+    def _heartbeat(self):
+        last_heartbeat_sent_time = 0.0
+        while not self.asked_to_stop:
+            if self._pause:
+                time.sleep(self._check_interval)
+                continue
+            now = time.time()
+
             # send heartbeat to the peer
             if now - last_heartbeat_sent_time > self.heartbeat_interval:
                 self.send_to_peer(self._make_event_message(Topic.HEARTBEAT, ""))
                 last_heartbeat_sent_time = now
 
-            time.sleep(self.read_interval)
-        self.reader = None
+            time.sleep(self._check_interval)
 
     def get_next(self) -> Optional[Message]:
         """Gets the next message from the message queue.
