@@ -135,7 +135,7 @@ class FilePipe(Pipe):
         self._clear_dir(self.y_path)
         self._clear_dir(self.t_path)
 
-    def _monitor_file(self, file_path: str, timeout) -> bool:
+    def _monitor_file(self, file_path: str, timeout=None) -> bool:
         """Monitors the file until it's read-and-removed by peer, or timed out.
 
         If timeout, remove the file.
@@ -147,8 +147,6 @@ class FilePipe(Pipe):
         Returns:
             whether the file has been read and removed
         """
-        if not timeout:
-            return False
         start = time.time()
         while True:
             if not self.pipe_path:
@@ -156,7 +154,7 @@ class FilePipe(Pipe):
 
             if not os.path.exists(file_path):
                 return True
-            if time.time() - start > timeout:
+            if timeout and time.time() - start > timeout:
                 # timed out - try to delete the file
                 try:
                     os.remove(file_path)
@@ -247,13 +245,15 @@ class FilePipe(Pipe):
         return self._get_from_dir(self.y_path, timeout)
 
     def send(self, msg: Message, timeout=None) -> bool:
-        """
+        """Sends the specified message to the peer.
 
         Args:
-            msg:
-            timeout:
+            msg: the message to be sent
+            timeout: if specified, number of secs to wait for the peer to read the message.
+                If not specified, wait indefinitely.
 
-        Returns: whether the message is read by peer (if timeout is specified)
+        Returns:
+            Whether the message is read by the peer.
 
         """
         if not self.pipe_path:

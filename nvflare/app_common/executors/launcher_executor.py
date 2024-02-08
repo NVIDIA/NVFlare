@@ -45,7 +45,7 @@ class LauncherExecutor(TaskExchanger):
         external_execution_wait: float = 5.0,
         peer_read_timeout: Optional[float] = None,
         monitor_interval: float = 1.0,
-        read_interval: float = 0.1,
+        read_interval: float = 0.5,
         heartbeat_interval: float = 5.0,
         heartbeat_timeout: float = 30.0,
         workers: int = 1,
