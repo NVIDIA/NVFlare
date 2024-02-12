@@ -41,7 +41,6 @@ class ConfigKey:
     PIPE = "pipe"
     CLASS_NAME = "CLASS_NAME"
     ARG = "ARG"
-    # todo: reduce duplicate SITE_NAME is also defined at FLMetaKey.SITE_NAME
     SITE_NAME = "SITE_NAME"
     TASK_NAME = "TASK_NAME"
     JOB_ID = "JOB_ID"

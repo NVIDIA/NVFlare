@@ -17,6 +17,7 @@ import os
 from typing import Any, Dict, Optional, Tuple, Union
 
 from nvflare.apis.analytix import AnalyticsDataType
+from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.client.api_spec import APISpec
@@ -152,11 +153,11 @@ class ExecProcessComm(APISpec):
 
     def get_job_id(self) -> str:
         sys_info = self.system_info()
-        return sys_info.get(ConfigKey.JOB_ID, "")
+        return sys_info.get(FLMetaKey.JOB_ID, "")
 
     def get_site_name(self) -> str:
         sys_info = self.system_info()
-        return sys_info.get(ConfigKey.SITE_NAME, "")
+        return sys_info.get(FLMetaKey.SITE_NAME, "")
 
     def get_task_name(self) -> str:
         model_registry = self.get_model_registry()

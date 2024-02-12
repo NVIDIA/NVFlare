@@ -122,7 +122,7 @@ class InProcessClientAPIExecutor(Executor):
             if self._from_nvflare_converter is not None:
                 shareable = self._from_nvflare_converter.process(task_name, shareable, fl_ctx)
 
-            self.log_info(fl_ctx, "\n send data to peer")
+            self.log_info(fl_ctx, "send data to peer")
 
             self.send_data_to_peer(shareable, fl_ctx)
 
@@ -131,7 +131,7 @@ class InProcessClientAPIExecutor(Executor):
             while True:
                 if abort_signal.triggered:
                     # notify peer that the task is aborted
-                    self._event_manager.fire_event(TOPIC_ABORT, f"{task_name}' is aborted,abort_signal_triggered")
+                    self._event_manager.fire_event(TOPIC_ABORT, f"{task_name}' is aborted, abort_signal_triggered")
                     return make_reply(ReturnCode.TASK_ABORTED)
 
                 if self.local_result:
@@ -153,9 +153,8 @@ class InProcessClientAPIExecutor(Executor):
         job_id = fl_ctx.get_job_id()
         site_name = fl_ctx.get_identity_name()
         meta = {
-            ConfigKey.SITE_NAME: site_name,
             FLMetaKey.SITE_NAME: site_name,
-            ConfigKey.JOB_ID: job_id,
+            FLMetaKey.JOB_ID: job_id,
             ConfigKey.TASK_NAME: task_name,
             ConfigKey.TASK_EXCHANGE: {
                 ConfigKey.TRAIN_WITH_EVAL: self._train_with_evaluation,

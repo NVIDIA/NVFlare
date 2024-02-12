@@ -13,7 +13,6 @@
 # limitations under the License.
 
 from ..apis.fl_constant import FLMetaKey
-from .config import ConfigKey
 
-SYS_ATTRS = (ConfigKey.JOB_ID, ConfigKey.SITE_NAME, FLMetaKey.SITE_NAME)
+SYS_ATTRS = (FLMetaKey.JOB_ID, FLMetaKey.SITE_NAME)
 CLIENT_API_CONFIG = "client_api_config.json"

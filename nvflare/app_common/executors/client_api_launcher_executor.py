@@ -15,6 +15,7 @@
 import os
 from typing import Optional
 
+from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType, write_config_to_file
@@ -123,8 +124,8 @@ class ClientAPILauncherExecutor(LauncherExecutor):
 
         config_data = {
             ConfigKey.TASK_EXCHANGE: task_exchange_attributes,
-            ConfigKey.SITE_NAME: fl_ctx.get_identity_name(),
-            ConfigKey.JOB_ID: fl_ctx.get_job_id(),
+            FLMetaKey.SITE_NAME: fl_ctx.get_identity_name(),
+            FLMetaKey.JOB_ID: fl_ctx.get_job_id(),
         }
 
         config_file_path = self._get_external_config_file_path(fl_ctx)

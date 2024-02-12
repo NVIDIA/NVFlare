@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
+import sys
 import traceback
 from typing import Dict
 
@@ -28,17 +29,27 @@ class ExecTaskFuncWrapper:
         self.logger = logging.getLogger(self.__class__.__name__)
 
         self.task_fn = find_task_fn(task_fn_path)
-        requre_args, args_size, args_default_size = require_arguments(self.task_fn)
-        self.check_fn_inputs(task_fn_path, requre_args, args_size, args_default_size)
-        self.task_fn_requre_args = requre_args
+        require_args, args_size, args_default_size = require_arguments(self.task_fn)
+        self.check_fn_inputs(task_fn_path, require_args, args_size, args_default_size)
+        self.task_fn_require_args = require_args
         self.data_bus = DataBus()
 
     def run(self):
         msg = f"\n start task run() with {self.task_fn_path}"
-        msg = msg if not self.task_fn_requre_args else msg + f", {self.task_fn_args}"
+        msg = msg if not self.task_fn_require_args else msg + f", {self.task_fn_args}"
         self.logger.info(msg)
         try:
-            if self.task_fn_requre_args:
+            fn_path = self.task_fn_path.split(".")
+            if fn_path[-1] == "main":
+                args_list = []
+                for k, v in self.task_fn_args.items():
+                    args_list.extend(["--" + str(k), str(v)])
+
+                curr_argv = sys.argv
+                sys.argv = [fn_path[0] + ".py"] + args_list
+                self.task_fn()
+                sys.argv = curr_argv
+            elif self.task_fn_require_args:
                 self.task_fn(**self.task_fn_args)
             else:
                 self.task_fn()
@@ -49,8 +60,8 @@ class ExecTaskFuncWrapper:
                 self.client_api.exec_queue.ask_abort(msg)
             raise e
 
-    def check_fn_inputs(self, task_fn_path, requre_args: bool, required_args_size: int, args_default_size: int):
-        if requre_args:
+    def check_fn_inputs(self, task_fn_path, require_args: bool, required_args_size: int, args_default_size: int):
+        if require_args:
             if not self.task_fn_args:
                 raise ValueError(f"function '{task_fn_path}' requires arguments, but none provided")
             elif len(self.task_fn_args) < required_args_size - args_default_size:
@@ -59,6 +70,6 @@ class ExecTaskFuncWrapper:
                     f"arguments, but {len(self.task_fn_args)} provided"
                 )
         else:
-            if self.task_fn_args:
+            if self.task_fn_args and task_fn_path.split(".")[-1] != "main":
                 msg = f"function '{task_fn_path}' does not require arguments, {self.task_fn_args} will be ignored"
                 self.logger.warning(msg)

@@ -117,10 +117,10 @@ class InProcessClientAPI(APISpec):
         return self.client_config.get_config()
 
     def get_job_id(self) -> str:
-        return self.meta[ConfigKey.JOB_ID]
+        return self.meta[FLMetaKey.JOB_ID]
 
     def get_site_name(self) -> str:
-        return self.meta[ConfigKey.SITE_NAME]
+        return self.meta[FLMetaKey.SITE_NAME]
 
     def get_task_name(self) -> str:
         return self.meta[ConfigKey.TASK_NAME]
