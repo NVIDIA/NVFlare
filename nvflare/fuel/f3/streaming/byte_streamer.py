@@ -38,7 +38,7 @@ from nvflare.fuel.f3.streaming.stream_utils import (
 
 STREAM_CHUNK_SIZE = 1024 * 1024
 STREAM_WINDOW_SIZE = 16 * STREAM_CHUNK_SIZE
-STREAM_ACK_WAIT = 10
+STREAM_ACK_WAIT = 60
 
 STREAM_TYPE_BYTE = "byte"
 STREAM_TYPE_BLOB = "blob"

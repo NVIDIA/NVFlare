@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, List
 
 from nvflare.fuel.data_event.pub_sub import EventPubSub
@@ -74,12 +75,14 @@ class DataBus(EventPubSub):
         """
         if topics:
             for topic in topics:
-                with self._lock:
-                    if topic in self.subscribers:
+                if topic in self.subscribers:
+                    with self._lock:
+                        executor = ThreadPoolExecutor(max_workers=len(self.subscribers[topic]))
                         for callback in self.subscribers[topic]:
-                            callback(topic, datum, self)
+                            executor.submit(callback, topic, datum, self)
+                    executor.shutdown()
 
-    def send_data(self, key: Any, datum: Any) -> None:
+    def put_data(self, key: Any, datum: Any) -> None:
         """
         Store a data associated with a key and topic.
 
@@ -90,7 +93,7 @@ class DataBus(EventPubSub):
         with self._lock:
             self.data_store[key] = datum
 
-    def receive_data(self, key: Any) -> Any:
+    def get_data(self, key: Any) -> Any:
         """
         Retrieve a stored data associated with a key and topic.
 

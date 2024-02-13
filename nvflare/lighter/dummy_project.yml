@@ -12,9 +12,10 @@ participants:
   - name: site-1
     type: client
     org: nvidia
-    # listening_host will enable creating one pair of cert/private key for this client
-    # so it can behave like a server for client api.  The value must be a hostname that
-    # client api can reach via network.
+    # Specifying listening_host will enable the creation of one pair of
+    # certificate/private key for this client, allowing the client to function
+    # as a server for 3rd-party integration.
+    # The value must be a hostname that the external trainer can reach via the network.
     # listening_host: site-1-lh
   - name: site-2
     type: client

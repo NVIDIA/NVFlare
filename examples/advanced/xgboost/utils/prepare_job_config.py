@@ -20,6 +20,8 @@ import shutil
 
 from nvflare.apis.fl_constant import JobConstants
 
+SCRIPT_PATH = pathlib.Path(os.path.realpath(__file__))
+XGB_EXAMPLE_ROOT = SCRIPT_PATH.parent.parent.absolute()
 JOB_CONFIGS_ROOT = "jobs"
 MODE_ALGO_MAP = {"bagging": "tree-based", "cyclic": "tree-based", "histogram": "histogram-based"}
 
@@ -84,7 +86,7 @@ def _get_src_job_dir(training_mode):
         "cyclic": "cyclic_base",
         "histogram": "base",
     }
-    return pathlib.Path(MODE_ALGO_MAP[training_mode]) / JOB_CONFIGS_ROOT / base_job_map[training_mode]
+    return XGB_EXAMPLE_ROOT / MODE_ALGO_MAP[training_mode] / JOB_CONFIGS_ROOT / base_job_map[training_mode]
 
 
 def _gen_deploy_map(num_sites: int, site_name_prefix: str) -> dict:
@@ -133,6 +135,7 @@ def _update_client_config(config: dict, args, lr_scale, site_name: str):
             num_client_bagging = args.site_num
         config["executors"][0]["executor"]["args"]["num_client_bagging"] = num_client_bagging
     else:
+        config["num_rounds"] = args.round_num
         config["components"][0]["args"]["data_split_filename"] = data_split_name
         config["executors"][0]["executor"]["args"]["xgb_params"]["nthread"] = args.nthread
         config["executors"][0]["executor"]["args"]["xgb_params"]["tree_method"] = args.tree_method
@@ -140,10 +143,10 @@ def _update_client_config(config: dict, args, lr_scale, site_name: str):
 
 def _update_server_config(config: dict, args):
     if args.training_mode == "bagging":
-        config["workflows"][0]["args"]["num_rounds"] = args.round_num + 1
+        config["num_rounds"] = args.round_num + 1
         config["workflows"][0]["args"]["min_clients"] = args.site_num
     elif args.training_mode == "cyclic":
-        config["workflows"][0]["args"]["num_rounds"] = int(args.round_num / args.site_num)
+        config["num_rounds"] = int(args.round_num / args.site_num)
 
 
 def _copy_custom_files(src_job_path, src_app_name, dst_job_path, dst_app_name):
@@ -198,7 +201,7 @@ def main():
     src_job_path = _get_src_job_dir(args.training_mode)
 
     # create a new job
-    dst_job_path = pathlib.Path(MODE_ALGO_MAP[args.training_mode]) / JOB_CONFIGS_ROOT / job_name
+    dst_job_path = XGB_EXAMPLE_ROOT / MODE_ALGO_MAP[args.training_mode] / JOB_CONFIGS_ROOT / job_name
     if not os.path.exists(dst_job_path):
         os.makedirs(dst_job_path)
 
