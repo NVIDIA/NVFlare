@@ -133,7 +133,7 @@ Below is a table overview of key Client APIs.
      - API Doc Link
    * - patch
      - Patches the PyTorch Lightning Trainer for usage with FLARE.
-     - :func:`train<nvflare.app_opt.lightning.api.patch>`
+     - :func:`patch<nvflare.app_opt.lightning.api.patch>`
 
 .. list-table:: Metrics Logger
    :widths: 25 25 50

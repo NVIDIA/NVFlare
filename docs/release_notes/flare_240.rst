@@ -168,7 +168,7 @@ Improved Job Configuration File Processing
 - OS Environment Variables - OS environment variables can be referenced via the dollar sign
 - Parameterized Variable Definition - for creating configuration templates that can be reused and resolved into different concrete configurations
 
-See more details in the :ref:`configuration_files` documentation.
+See more details in the :ref:`configurations` documentation.
 
 POC Command Upgrade
 ===================

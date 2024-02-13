@@ -16,8 +16,9 @@ In our federated implementation, the LLM parameters stay fixed. Prompt encoder p
 The example was tested with the [NeMo 23.02 container](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/nemo).
 In the following, we assume this example folder of the container is mounted to `/workspace` and all downloading, etc. operations are based on this root path.
 
-Start the docker container using 
+Start the docker container from **this directory** using
 ```
+# cd NVFlare/integration/nemo/examples/prompt_learning
 DOCKER_IMAGE="nvcr.io/nvidia/nemo:23.02"
 docker run --runtime=nvidia -it --rm --shm-size=16g -p 8888:8888 -p 6006:6006 --ulimit memlock=-1 --ulimit stack=67108864 \
 -v ${PWD}:/workspace -w /workspace ${DOCKER_IMAGE}

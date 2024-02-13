@@ -26,10 +26,10 @@ Prepare the data first:
 bash ./prepare_data.sh
 ```
 
-Use nvflare simulator to run the hello-examples: (TF2 does not allow multiple processes to be running on a single GPU at the same time. Need to set the simulator threads to 1. "-gpu" option can be used to run multiple concurrent clients.)
+Use nvflare simulator to run the hello-examples:
 
-```
-nvflare simulator -w /tmp/nvflare/ -n 2 -t 1 hello-tf2/jobs/hello-tf2
+```bash
+nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 ./jobs/hello-tf2
 ```
 
 ### 3. Access the logs and results
@@ -40,4 +40,28 @@ You can find the running logs and results inside the simulator's workspace/simul
 $ ls /tmp/nvflare/simulate_job/
 app_server  app_site-1  app_site-2  log.txt
 
+```
+
+### 4. Notes on running with GPUs
+
+For running with GPUs, we recommend using
+[NVIDIA TensorFlow docker](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow)
+
+If you choose to run the example using GPUs, it is important to note that,
+by default, TensorFlow will attempt to allocate all available GPU memory at the start.
+In scenarios where multiple clients are involved, you have a couple of options to address this.
+
+One approach is to include specific flags to prevent TensorFlow from allocating all GPU memory.
+For instance:
+
+```bash
+TF_FORCE_GPU_ALLOW_GROWTH=true nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 ./jobs/hello-tf2
+```
+
+If you possess more GPUs than clients,
+an alternative strategy is to run one client on each GPU.
+This can be achieved as illustrated below:
+
+```bash
+TF_FORCE_GPU_ALLOW_GROWTH=true nvflare simulator -w /tmp/nvflare/ -n 2 -gpu 0,1 ./jobs/hello-tf2
 ```

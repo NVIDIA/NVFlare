@@ -331,9 +331,6 @@ class SimulatorRunner(FLComponent):
             client_name, self.args
         )
         self.federated_clients.append(client)
-        app_root = os.path.join(self.simulator_root, "app_" + client_name)
-        app_custom_folder = os.path.join(app_root, "custom")
-        sys.path.append(app_custom_folder)
 
     def _set_client_status(self):
         for client in self.federated_clients:

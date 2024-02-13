@@ -39,7 +39,7 @@ log = logging.getLogger(__name__)
 MAX_OUT_SEQ_CHUNKS = 16
 # 1/4 of the window size
 ACK_INTERVAL = 1024 * 1024 * 4
-READ_TIMEOUT = 60
+READ_TIMEOUT = 300
 COUNTER_NAME_RECEIVED = "received"
 
 

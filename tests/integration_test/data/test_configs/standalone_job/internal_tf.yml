@@ -22,3 +22,5 @@ tests:
           "data": { "run_finished": True }
     validators:
       - path: tests.integration_test.src.validators.TFModelValidator
+    setup:
+      - python -c "import tensorflow as tf; tf.keras.datasets.mnist.load_data()"

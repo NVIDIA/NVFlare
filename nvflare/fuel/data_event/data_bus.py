@@ -82,7 +82,8 @@ class DataBus(EventPubSub):
                             executor.submit(callback, topic, datum, self)
                     executor.shutdown()
 
-    def send_data(self, key: Any, datum: Any) -> None:
+
+    def put_data(self, key: Any, datum: Any) -> None:
         """
         Store a data associated with a key and topic.
 
@@ -93,7 +94,7 @@ class DataBus(EventPubSub):
         with self._lock:
             self.data_store[key] = datum
 
-    def receive_data(self, key: Any) -> Any:
+    def get_data(self, key: Any) -> Any:
         """
         Retrieve a stored data associated with a key and topic.
 

@@ -16,8 +16,9 @@ In the following, we assume this example folder of the container is mounted to `
 > Note in the following, mount both the [current directory](./) and the [job_templates](../../../../job_templates) 
 > directory to locations inside the docker container. Please make sure you have cloned the full NVFlare repo. 
 
-Start the docker container using 
+Start the docker container from **this directory** using
 ```
+# cd NVFlare/integration/nemo/examples/peft
 DOCKER_IMAGE="nvcr.io/nvidia/nemo:23.10"
 docker run --runtime=nvidia -it --rm --shm-size=16g -p 8888:8888 -p 6006:6006 --ulimit memlock=-1 --ulimit stack=67108864 \
 -v ${PWD}/../../../../job_templates:/job_templates -v ${PWD}:/workspace -w /workspace ${DOCKER_IMAGE}
