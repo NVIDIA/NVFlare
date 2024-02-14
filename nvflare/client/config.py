@@ -41,9 +41,7 @@ class ConfigKey:
     PIPE = "pipe"
     CLASS_NAME = "CLASS_NAME"
     ARG = "ARG"
-    SITE_NAME = "SITE_NAME"
     TASK_NAME = "TASK_NAME"
-    JOB_ID = "JOB_ID"
     TASK_EXCHANGE = "TASK_EXCHANGE"
     METRICS_EXCHANGE = "METRICS_EXCHANGE"
 
