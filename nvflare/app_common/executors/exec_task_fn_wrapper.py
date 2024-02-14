@@ -39,14 +39,13 @@ class ExecTaskFuncWrapper:
         msg = msg if not self.task_fn_require_args else msg + f", {self.task_fn_args}"
         self.logger.info(msg)
         try:
-            fn_path = self.task_fn_path.split(".")
-            if fn_path[-1] == "main":
+            if self.task_fn.__name__ == "main":
                 args_list = []
                 for k, v in self.task_fn_args.items():
                     args_list.extend(["--" + str(k), str(v)])
 
                 curr_argv = sys.argv
-                sys.argv = [fn_path[0] + ".py"] + args_list
+                sys.argv = [self.task_fn_path.rsplit(".", 1)[0].replace(".", "/") + ".py"] + args_list
                 self.task_fn()
                 sys.argv = curr_argv
             elif self.task_fn_require_args:
@@ -70,6 +69,6 @@ class ExecTaskFuncWrapper:
                     f"arguments, but {len(self.task_fn_args)} provided"
                 )
         else:
-            if self.task_fn_args and task_fn_path.split(".")[-1] != "main":
+            if self.task_fn_args and self.task_fn.__name__ != "main":
                 msg = f"function '{task_fn_path}' does not require arguments, {self.task_fn_args} will be ignored"
                 self.logger.warning(msg)

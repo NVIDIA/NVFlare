@@ -115,7 +115,7 @@ class InProcessClientAPIExecutor(Executor):
             meta = self._prepare_job_meta(fl_ctx, task_name)
             client_api = InProcessClientAPI(job_metadata=meta, result_check_interval=0.5)
             client_api.init()
-            self._data_bus.send_data(CLIENT_API_KEY, client_api)
+            self._data_bus.put_data(CLIENT_API_KEY, client_api)
 
             shareable.set_header(FLMetaKey.JOB_ID, fl_ctx.get_job_id())
             shareable.set_header(FLMetaKey.SITE_NAME, fl_ctx.get_identity_name())

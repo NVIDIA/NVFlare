@@ -38,7 +38,7 @@ def init(rank: Optional[str] = None):
     api_type = ClientAPIType(api_type_name)
     global client_api
     if api_type == ClientAPIType.MEM_API:
-        client_api = data_bus.receive_data(CLIENT_API_KEY)
+        client_api = data_bus.get_data(CLIENT_API_KEY)
     else:
         client_api = ExecProcessComm()
 

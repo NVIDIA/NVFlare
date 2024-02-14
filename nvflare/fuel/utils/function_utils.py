@@ -19,7 +19,7 @@ from typing import Callable
 def find_task_fn(task_fn_path) -> Callable:
     # Split the text by the last dot
     tokens = task_fn_path.rsplit(".", 1)
-    module_name = tokens[0]
+    module_name = tokens[0].replace("/", ".")
     fn_name = tokens[1] if len(tokens) > 1 else ""
     module = importlib.import_module(module_name)
     fn = getattr(module, fn_name)
