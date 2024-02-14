@@ -28,7 +28,7 @@ class TestExecTaskFuncWrapper(unittest.TestCase):
 
         self.assertEqual(wrapper.task_fn_path, task_fn_path)
         self.assertEqual(wrapper.task_fn_args, task_fn_args)
-        self.assertTrue(wrapper.task_fn_requre_args)
+        self.assertTrue(wrapper.task_fn_require_args)
 
     def test_init_with_optional_args(self):
         # Test initialization with a function that does not require arguments
@@ -38,7 +38,7 @@ class TestExecTaskFuncWrapper(unittest.TestCase):
 
         self.assertEqual(wrapper.task_fn_path, task_fn_path)
         self.assertEqual(wrapper.task_fn_args, task_fn_args)
-        self.assertFalse(wrapper.task_fn_requre_args)
+        self.assertFalse(wrapper.task_fn_require_args)
 
     def test_init_with_missing_required_args(self):
         # Test initialization with a function that requires arguments but none are provided
@@ -72,12 +72,12 @@ class TestExecTaskFuncWrapper(unittest.TestCase):
 
         self.assertEqual(wrapper.task_fn_path, task_fn_path)
         self.assertEqual(wrapper.task_fn_args, task_fn_args)
-        self.assertTrue(wrapper.task_fn_requre_args)
+        self.assertTrue(wrapper.task_fn_require_args)
 
     def test_run(self):
         message_bus = DataBus()
-        message_bus.send_data("job_metadata", {})
-        message_bus.send_data("mem_pipe", {})
+        message_bus.put_data("job_metadata", {})
+        message_bus.put_data("mem_pipe", {})
 
         # Test the run method
         task_fn_path = "nvflare.fuel.utils.dict_utils.augment"

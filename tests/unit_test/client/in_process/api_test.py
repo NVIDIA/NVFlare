@@ -14,6 +14,7 @@
 
 import unittest
 
+from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.client.config import ConfigKey
 from nvflare.client.in_process.api import (
     TOPIC_ABORT,
@@ -30,9 +31,8 @@ class TestInProcessClientAPI(unittest.TestCase):
     def setUp(self):
         # Create a mock job_metadata for testing
         self.job_metadata = {
-            "JOB_ID": "123",
-            "site_name": "site-1",
-            "SITE_NAME": "site-1",
+            FLMetaKey.JOB_ID: "123",
+            FLMetaKey.SITE_NAME: "site-1",
             "TASK_NAME": "train",
             ConfigKey.TASK_EXCHANGE: {
                 ConfigKey.TRAIN_WITH_EVAL: "train_with_eval",
@@ -55,7 +55,7 @@ class TestInProcessClientAPI(unittest.TestCase):
         assert client_api.is_evaluate() is False
         assert client_api.is_submit_model() is False
 
-        assert client_api.sys_info == {"JOB_ID": "123", "SITE_NAME": "site-1", "site_name": "site-1"}
+        assert client_api.sys_info == {FLMetaKey.JOB_ID: "123", FLMetaKey.SITE_NAME: "site-1"}
 
     def test_init_with_custom_interval(self):
         # Test initialization with a custom result_check_interval
