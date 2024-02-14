@@ -49,7 +49,7 @@ class WFCommAPI(WFCommAPISpec):
         data_bus.subscribe(topics=[CommConstants.TASK_RESULT], callback=self.result_callback)
 
         self.event_manager = EventManager(data_bus)
-        self.ctrl = data_bus.receive_data(CommConstants.COMMUNICATOR)
+        self.ctrl = data_bus.get_data(CommConstants.COMMUNICATOR)
         self._check_inputs()
 
     def get_site_names(self):

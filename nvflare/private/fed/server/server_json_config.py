@@ -188,7 +188,7 @@ class ServerJsonConfigurator(FedJsonConfigurator):
                 controller_config["lazy_instantiate"] = False
                 communicator.set_controller_config(controller_config)
             data_bus = DataBus()
-            data_bus.send_data(CommConstants.COMMUNICATOR, communicator)
+            data_bus.put_data(CommConstants.COMMUNICATOR, communicator)
             responder = communicator
         else:
             responder = component

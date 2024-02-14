@@ -87,7 +87,7 @@ class BaseWFCommunicator(FLComponent, WFCommunicatorSpec, ControllerSpec, ABC):
     def publish_comm_api(self):
         comm_api = WFCommAPI()
         comm_api.meta.update({SITE_NAMES: self.get_site_names()})
-        self.data_bus.send_data("wf_comm_api", comm_api)
+        self.data_bus.put_data("wf_comm_api", comm_api)
 
     def start_workflow(self, abort_signal, fl_ctx):
         try:

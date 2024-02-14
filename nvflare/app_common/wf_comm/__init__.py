@@ -19,4 +19,4 @@ data_bus = DataBus()
 
 
 def get_wf_comm_api() -> WFCommAPISpec:
-    return data_bus.receive_data("wf_comm_api")
+    return data_bus.get_data("wf_comm_api")
