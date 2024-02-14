@@ -82,7 +82,6 @@ class DataBus(EventPubSub):
                             executor.submit(callback, topic, datum, self)
                     executor.shutdown()
 
-
     def put_data(self, key: Any, datum: Any) -> None:
         """
         Store a data associated with a key and topic.
