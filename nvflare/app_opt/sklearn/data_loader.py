@@ -55,14 +55,15 @@ def load_data(data_path: str, require_header: bool = False):
 
 def load_data_for_range(data_path: str, start: int, end: int, require_header: bool = False):
     reader = get_pandas_reader(data_path)
+    header = 'infer'
+
+    if (hasattr(reader, "header") != (not require_header)):
+        header = None
 
     if hasattr(reader, "skiprows"):
         data_size = end - start
-        if hasattr(reader, "header") and not require_header:
-            data = reader(data_path, header=None, skiprows=start, nrows=data_size)
-        else:
-            data = reader(data_path, skiprows=start, nrows=data_size)
+        data = reader(data_path, header=header, skiprows=start, nrows=data_size)
     else:
-        data = reader(data_path).iloc[start:end]
+        data = reader(data_path, header=header).iloc[start:end]
 
     return _to_data_tuple(data)
