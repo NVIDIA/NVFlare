@@ -54,7 +54,7 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
 
         # Specify parameters via map, definition are same as c++ version
         param = {
-            "max_depth": 8,
+            "max_depth": 1,
             "eta": 0.1,
             "objective": "binary:logistic",
             "eval_metric": "auc",
@@ -64,7 +64,7 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
 
         # Specify validations set to watch performance
         watchlist = [(dvalid, 'eval'), (dtrain, 'train')]
-        num_round = 5
+        num_round = 1
 
         # Run training, all the features in training API is available.
         bst = xgb.train(param, dtrain, num_round, evals=watchlist)
