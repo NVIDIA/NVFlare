@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,12 +21,11 @@ from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.client.api_spec import APISpec
-from nvflare.client.config import ClientConfig, ConfigKey
+from nvflare.client.config import ClientConfig, ConfigKey, from_file
 from nvflare.client.constants import SYS_ATTRS
 from nvflare.client.utils import DIFF_FUNCS
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.data_event.event_manager import EventManager
-from nvflare.fuel.utils.config_factory import ConfigFactory
 
 TOPIC_LOG_DATA = "LOG_DATA"
 TOPIC_STOP = "STOP"
@@ -67,9 +66,7 @@ class InProcessClientAPI(APISpec):
 
     def prepare_client_config(self, config):
         if isinstance(config, str):
-            config_dict = ConfigFactory.load_config(config)
-            config_dict = config_dict if config_dict else {}
-            client_config = ClientConfig(config_dict)
+            client_config = from_file(config_file=config)
         elif isinstance(config, dict):
             client_config = ClientConfig(config=config)
         else:

@@ -71,6 +71,7 @@ def train(
 
             if object_holder.metrics is not None:
                 return_value.metrics = object_holder.metrics
+                object_holder = None
 
             send(model=return_value)
 

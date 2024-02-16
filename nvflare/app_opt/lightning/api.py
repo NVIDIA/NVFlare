@@ -19,17 +19,7 @@ from pytorch_lightning.callbacks import Callback
 from torch import Tensor
 
 from nvflare.app_common.abstract.fl_model import FLModel, MetaKey
-from nvflare.client.api import (
-    clear,
-    get_config,
-    get_task_name,
-    init,
-    is_evaluate,
-    is_submit_model,
-    is_train,
-    receive,
-    send,
-)
+from nvflare.client.api import clear, get_config, init, is_evaluate, is_submit_model, is_train, receive, send
 from nvflare.client.config import ConfigKey
 
 from .callbacks import RestoreState
@@ -207,8 +197,6 @@ class FLCallback(Callback):
             _is_submit_model = is_submit_model()
 
         model = trainer.strategy.broadcast(model, src=0)
-        task_name = trainer.strategy.broadcast(trainer.strategy.broadcast(get_task_name(), src=0))
-        # registry.set_task_name(task_name)
         self._is_training = trainer.strategy.broadcast(_is_training, src=0)
         self._is_evaluation = trainer.strategy.broadcast(_is_evaluation, src=0)
         self._is_submit_model = trainer.strategy.broadcast(_is_submit_model, src=0)

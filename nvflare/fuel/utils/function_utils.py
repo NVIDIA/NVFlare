@@ -17,6 +17,18 @@ from typing import Callable
 
 
 def find_task_fn(task_fn_path) -> Callable:
+    """Return function given a function path.
+
+    Args:
+        task_fn_path (str): function path
+
+    Returns:
+        function
+
+    ex: train.main -> main
+        custom/train.main -> main
+        custom.train.main -> main
+    """
     # Split the text by the last dot
     tokens = task_fn_path.rsplit(".", 1)
     module_name = tokens[0].replace("/", ".")
@@ -27,6 +39,14 @@ def find_task_fn(task_fn_path) -> Callable:
 
 
 def require_arguments(func):
+    """Inspect function to get required arguments.
+
+    Args:
+        func: function
+
+    Returns:
+        require_args (bool), args_size (int), args_default_size (int)
+    """
     signature = inspect.signature(func)
     parameters = signature.parameters
     req = any(p.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD for p in parameters.values())

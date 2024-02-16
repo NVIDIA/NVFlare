@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 
 import importlib
 import os
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple
 
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.fl_constant import FLMetaKey
@@ -31,13 +31,11 @@ from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.pipe.pipe import Pipe
 
 
-def _create_client_config(config: Union[str, Dict]) -> ClientConfig:
+def _create_client_config(config: str) -> ClientConfig:
     if isinstance(config, str):
         client_config = from_file(config_file=config)
-    elif isinstance(config, dict):
-        client_config = ClientConfig(config=config)
     else:
-        raise ValueError("config should be either a string or dictionary.")
+        raise ValueError("config should be a string but got: {type(config)}")
     return client_config
 
 
@@ -61,11 +59,12 @@ def _register_tensor_decomposer():
         raise RuntimeError(f"Can't import TensorDecomposer for format: {ExchangeFormat.PYTORCH}")
 
 
-class ExecProcessComm(APISpec):
+class ExProcessClientAPI(APISpec):
     def __init__(self):
         self.process_model_registry = None
 
     def get_model_registry(self) -> ModelRegistry:
+        """Gets the ModelRegistry."""
         if self.process_model_registry is None:
             raise RuntimeError("needs to call init method first")
         return self.process_model_registry
@@ -161,6 +160,8 @@ class ExecProcessComm(APISpec):
 
     def get_task_name(self) -> str:
         model_registry = self.get_model_registry()
+        if model_registry.rank != "0":
+            raise RuntimeError("only rank 0 can call get_task_name!")
         return model_registry.get_task().task_name
 
     def is_running(self) -> bool:
