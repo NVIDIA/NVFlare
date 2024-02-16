@@ -48,22 +48,24 @@ def load_data(data_path: str, require_header: bool = False):
         else:
             data = reader(data_path, header=None)
     else:
-        data = reader(data_path)
+        data = reader(data_path, header=None)
 
     return _to_data_tuple(data)
 
 
 def load_data_for_range(data_path: str, start: int, end: int, require_header: bool = False):
     reader = get_pandas_reader(data_path)
-    header = 'infer'
-
-    if (hasattr(reader, "header") != (not require_header)):
-        header = None
-
+    
     if hasattr(reader, "skiprows"):
         data_size = end - start
-        data = reader(data_path, header=header, skiprows=start, nrows=data_size)
+        if hasattr(reader, "header") and require_header:
+            data = reader(data_path, skiprows=start, nrows=data_size)
+        else:
+            data = reader(data_path, header=None, skiprows=start, nrows=data_size)
     else:
-        data = reader(data_path, header=header).iloc[start:end]
+        if hasattr(reader, "header") and require_header:
+            data = reader(data_path).iloc[start:end]
+        else:
+            data = reader(data_path, header=None).iloc[start:end]
 
     return _to_data_tuple(data)
