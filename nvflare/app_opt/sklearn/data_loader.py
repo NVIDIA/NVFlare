@@ -52,7 +52,7 @@ def load_data(data_path: str, require_header: bool = False):
 
 def load_data_for_range(data_path: str, start: int, end: int, require_header: bool = False):
     reader = get_pandas_reader(data_path)
-    
+
     if hasattr(reader, "skiprows"):
         data_size = end - start
         if hasattr(reader, "header") and require_header:
