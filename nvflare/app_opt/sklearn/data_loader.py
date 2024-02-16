@@ -42,11 +42,8 @@ def get_pandas_reader(data_path: str):
 
 def load_data(data_path: str, require_header: bool = False):
     reader = get_pandas_reader(data_path)
-    if hasattr(reader, "header"):
-        if require_header:
-            data = reader(data_path)
-        else:
-            data = reader(data_path, header=None)
+    if hasattr(reader, "header") and require_header:
+        data = reader(data_path)
     else:
         data = reader(data_path, header=None)
 
