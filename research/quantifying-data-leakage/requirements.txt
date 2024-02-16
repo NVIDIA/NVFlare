@@ -1,4 +1,4 @@
-nvflare>=2.3.0
+nvflare~=2.3.0
 pytorch-ignite>=0.4.10
 torchvision
 monai>=1.0.1
