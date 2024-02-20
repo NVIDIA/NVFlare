@@ -101,7 +101,7 @@ Below is a sample config for site-1, saved to `./jobs/sklearn_linear_5_uniform/a
 ```
 
 ## Run experiment with FL simulator
-[FL simulator](https://nvflare.readthedocs.io/en/latest/user_guide/fl_simulator.html) is used to simulate FL experiments or debug codes, not for real FL deployment.
+[FL simulator](https://nvflare.readthedocs.io/en/latest/user_guide/nvflare_cli/fl_simulator.html) is used to simulate FL experiments or debug codes, not for real FL deployment.
 We can run the FL simulator with five clients under the uniform data split with
 ```commandline
 bash run_experiment_simulator.sh

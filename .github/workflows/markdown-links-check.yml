@@ -17,10 +17,7 @@ name: Check Markdown links
 
 on:
   push:
-    branches: [ "main", "dev" ]
   pull_request:
-    # The branches below must be a subset of the branches above
-    branches: [ "main", "dev" ]
 
 jobs:
   markdown-link-check:
