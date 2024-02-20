@@ -5,7 +5,7 @@ In this example, we utilize NeMo's [PEFT](https://docs.nvidia.com/deeplearning/n
 methods to showcase how to adapt a large language model (LLM) to 
 a downstream task, such as financial sentiment predictions. 
 
-### [Supervised fine-tuning (SFT) with NeMo and NVFlare](./prompt_learning/README.md)
+### [Supervised fine-tuning (SFT) with NeMo and NVFlare](./supervised_fine_tuning/README.md)
 An example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) 
 with NeMo for [supervised fine-tuning (SFT)](https://github.com/NVIDIA/NeMo-Megatron-Launcher#5152-sft-training) 
 to fine-tune all parameters of a large language model (LLM) on supervised data to teach the model how to follow user specified instructions. 
