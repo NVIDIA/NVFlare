@@ -155,6 +155,8 @@ class CCManager(FLComponent):
         self.participant_cc_info[token_owner] = peer_cc_info
         self.participant_cc_info[token_owner][CC_TOKEN_VALIDATED] = False
 
+        self.logger.info(f"Added CC client: {token_owner}")
+
     def _prepare_for_attestation(self, fl_ctx: FLContext) -> str:
         # both server and client sides
         self.site_name = fl_ctx.get_identity_name()
@@ -213,7 +215,7 @@ class CCManager(FLComponent):
         for p in participant_tokens:
             self.participant_cc_info[p][CC_TOKEN_VALIDATED] = True
         fl_ctx.set_prop(key=PEER_CTX_CC_TOKEN, value=participant_tokens, sticky=True, private=False)
-        self.logger.debug(f"{self.site_name=} set PEER_CTX_CC_TOKEN with {participant_tokens=}")
+        self.logger.info(f"{self.site_name=} set PEER_CTX_CC_TOKEN with {participant_tokens=}")
         return ""
 
     def _validate_participants_tokens(self, participants) -> str:

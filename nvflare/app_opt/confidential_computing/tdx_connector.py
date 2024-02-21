@@ -83,9 +83,9 @@ class TDXCCHelper:
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def prepare(self) -> bool:
-        self.token = self.tdx_connector.get_token()
+        self.token, error = self.tdx_connector.get_token()
         self.logger.info(f"site: {self.site_name} got the token: {self.token}")
-        return True
+        return not error
 
     def get_token(self):
         return self.token
