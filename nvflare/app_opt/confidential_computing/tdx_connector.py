@@ -33,16 +33,18 @@ class TDXConnector:
         self.config_file = os.path.join(self.config_dir, TDX_CLI_CONFIG)
 
     def get_token(self):
-        out = open(os.path.join(self.config_dir, TOKEN_FILE), "w")
-        err_out = open(os.path.join(self.config_dir, ERROR_FILE), "w")
+        token_file = os.path.join(self.config_dir, TOKEN_FILE)
+        out = open(token_file, "w")
+        error_file = os.path.join(self.config_dir, ERROR_FILE)
+        err_out = open(error_file, "w")
 
         command = "sudo " + self.tdx_cli_command + " -c " + self.config_file + " token --no-eventlog "
         process = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, stdout=out, stderr=err_out)
         process.wait()
 
-        with open(TOKEN_FILE, "r") as f:
+        with open(token_file, "r") as f:
             token = f.readline()
-        with open(ERROR_FILE, "r") as f:
+        with open(error_file, "r") as f:
             if 'Error:' in f.read():
                 error = True
             else:
@@ -52,7 +54,8 @@ class TDXConnector:
 
     def verify_token(self, token: str):
         out = open(os.path.join(self.config_dir, VERIFY_FILE), "w")
-        err_out = open(os.path.join(self.config_dir, ERROR_FILE), "w")
+        error_file = os.path.join(self.config_dir, ERROR_FILE)
+        err_out = open(error_file, "w")
 
         command = self.tdx_cli_command + " verify --config " + self.config_file + " --token " + token
         process = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, stdout=out, stderr=err_out)
@@ -60,7 +63,7 @@ class TDXConnector:
 
         # with open(VERIFY_FILE, "r") as f:
         #     result = f.readline()
-        with open(ERROR_FILE, "r") as f:
+        with open(error_file, "r") as f:
             if 'Error:' in f.read():
                 return False
 
