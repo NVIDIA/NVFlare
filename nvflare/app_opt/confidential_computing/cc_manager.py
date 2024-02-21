@@ -17,8 +17,9 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeComponentError
+from nvflare.app_opt.confidential_computing.tdx_connector import TDXCCHelper
 
-from .cc_helper import CCHelper
+# from .cc_helper import CCHelper
 
 PEER_CTX_CC_TOKEN = "_peer_ctx_cc_token"
 CC_TOKEN = "_cc_token"
@@ -157,7 +158,11 @@ class CCManager(FLComponent):
     def _prepare_for_attestation(self, fl_ctx: FLContext) -> str:
         # both server and client sides
         self.site_name = fl_ctx.get_identity_name()
-        self.helper = CCHelper(site_name=self.site_name, verifiers=self.verifiers)
+        workspace_folder = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT).get_site_config_dir()
+        # self.helper = CCHelper(site_name=self.site_name, verifiers=self.verifiers)
+        self.helper = TDXCCHelper(site_name=self.site_name,
+                                  tdx_cli_command="/home/azureuser/TDX/client/tdx-cli/trustauthority-cli",
+                                  config_dir=workspace_folder)
         ok = self.helper.prepare()
         if not ok:
             return "failed to attest"

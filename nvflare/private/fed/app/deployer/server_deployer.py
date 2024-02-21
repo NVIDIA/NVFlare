@@ -16,7 +16,7 @@
 import threading
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import SystemComponents
+from nvflare.apis.fl_constant import SystemComponents, FLContextKey
 from nvflare.apis.workspace import Workspace
 from nvflare.private.fed.server.fed_server import FederatedServer
 from nvflare.private.fed.server.job_runner import JobRunner
@@ -119,6 +119,7 @@ class ServerDeployer:
         run_manager.add_component(SystemComponents.JOB_RUNNER, job_runner)
 
         with services.engine.new_context() as fl_ctx:
+            fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
             services.engine.fire_event(EventType.SYSTEM_BOOTSTRAP, fl_ctx)
 
             threading.Thread(target=self._start_job_runner, args=[job_runner, fl_ctx]).start()

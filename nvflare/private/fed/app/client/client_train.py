@@ -108,6 +108,7 @@ def main(args):
             time.sleep(1.0)
 
         with client_engine.new_context() as fl_ctx:
+            fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
             client_engine.fire_event(EventType.SYSTEM_BOOTSTRAP, fl_ctx)
 
             client_engine.fire_event(EventType.BEFORE_CLIENT_REGISTER, fl_ctx)
