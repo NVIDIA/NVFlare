@@ -151,7 +151,7 @@ class CCManager(FLComponent):
         # server side
         peer_ctx = fl_ctx.get_peer_context()
         token_owner = peer_ctx.get_identity_name()
-        peer_cc_info = peer_ctx.get_prop(CC_INFO)
+        peer_cc_info = peer_ctx.get_prop(CC_INFO, {CC_TOKEN: "", CC_TOKEN_VALIDATED: False})
         self.participant_cc_info[token_owner] = peer_cc_info
         self.participant_cc_info[token_owner][CC_TOKEN_VALIDATED] = False
 
