@@ -206,7 +206,10 @@ class CCManager(FLComponent):
                 continue
             if p not in self.participant_cc_info:
                 return f"no token available for participant {p}"
-            participant_tokens[p] = self.participant_cc_info[p][CC_TOKEN]
+            if self.participant_cc_info.get(p):
+                participant_tokens[p] = self.participant_cc_info[p][CC_TOKEN]
+            else:
+                participant_tokens[p] = ""
 
         err = self._validate_participants_tokens(participant_tokens)
         if err:
