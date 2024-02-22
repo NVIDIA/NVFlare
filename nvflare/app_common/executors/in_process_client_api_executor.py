@@ -112,8 +112,8 @@ class InProcessClientAPIExecutor(Executor):
         try:
             fl_ctx.set_prop("abort_signal", abort_signal)
 
-            meta = self._prepare_job_meta(fl_ctx, task_name)
-            client_api = InProcessClientAPI(job_metadata=meta, result_check_interval=0.5)
+            meta = self._prepare_task_meta(fl_ctx, task_name)
+            client_api = InProcessClientAPI(task_metadata=meta, result_check_interval=0.5)
             client_api.init()
             self._data_bus.put_data(CLIENT_API_KEY, client_api)
 
@@ -149,7 +149,7 @@ class InProcessClientAPIExecutor(Executor):
             self._event_manager.fire_event(TOPIC_ABORT, f"{task_name}' failed: {secure_format_traceback()}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-    def _prepare_job_meta(self, fl_ctx, task_name):
+    def _prepare_task_meta(self, fl_ctx, task_name):
         job_id = fl_ctx.get_job_id()
         site_name = fl_ctx.get_identity_name()
         meta = {

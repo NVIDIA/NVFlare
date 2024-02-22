@@ -34,7 +34,7 @@ class TestExecTaskFuncWrapper(unittest.TestCase):
         # Test initialization with a function that does not require arguments
         task_fn_path = "nvflare.utils.cli_utils.get_home_dir"
         task_fn_args = {"class_path": "foo", "init_params": {}}
-        wrapper = ExecTaskFuncWrapper(task_fn_path, task_fn_args, read_interval=3.0)
+        wrapper = ExecTaskFuncWrapper(task_fn_path, task_fn_args)
 
         self.assertEqual(wrapper.task_fn_path, task_fn_path)
         self.assertEqual(wrapper.task_fn_args, task_fn_args)
@@ -76,7 +76,7 @@ class TestExecTaskFuncWrapper(unittest.TestCase):
 
     def test_run(self):
         message_bus = DataBus()
-        message_bus.put_data("job_metadata", {})
+        message_bus.put_data("task_metadata", {})
         message_bus.put_data("mem_pipe", {})
 
         # Test the run method

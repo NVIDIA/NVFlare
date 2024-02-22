@@ -13,7 +13,7 @@
 # limitations under the License.
 import logging
 import time
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional
 
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.fl_constant import FLMetaKey
@@ -21,7 +21,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.client.api_spec import APISpec
-from nvflare.client.config import ClientConfig, ConfigKey, from_file
+from nvflare.client.config import ClientConfig, ConfigKey
 from nvflare.client.constants import SYS_ATTRS
 from nvflare.client.utils import DIFF_FUNCS
 from nvflare.fuel.data_event.data_bus import DataBus
@@ -35,12 +35,18 @@ TOPIC_GLOBAL_RESULT = "GLOBAL_RESULT"
 
 
 class InProcessClientAPI(APISpec):
-    def __init__(self, job_metadata: dict, result_check_interval: float = 2.0):
+    def __init__(self, task_metadata: dict, result_check_interval: float = 2.0):
+        """Initializes the InProcessClientAPI.
+
+        Args:
+            task_metadata (dict): task metadata, added to client_config.
+            result_check_interval (float): how often to check if result is availabe.
+        """
         self.data_bus = DataBus()
         self.data_bus.subscribe([TOPIC_GLOBAL_RESULT], self.__receive_callback)
         self.data_bus.subscribe([TOPIC_ABORT, TOPIC_STOP], self.__ask_to_abort)
 
-        self.meta = job_metadata
+        self.meta = task_metadata
         self.result_check_interval = result_check_interval
 
         self.start_round = None
@@ -56,7 +62,14 @@ class InProcessClientAPI(APISpec):
         self.abort = False
         self.stop = False
 
-    def init(self, config: Union[str, Dict] = None, rank: Optional[str] = None):
+    def init(self, config: Optional[Dict] = None, rank: Optional[str] = None):
+        """Initializes NVFlare Client API environment.
+
+        Args:
+            config (Union[str, Dict]): config dictionary.
+            rank (str): local rank of the process.
+                It is only useful when the training script has multiple worker processes. (for example multi GPU)
+        """
         config = {} if config is None else config
         self.prepare_client_config(config)
 
@@ -65,12 +78,10 @@ class InProcessClientAPI(APISpec):
                 self.sys_info[k] = v
 
     def prepare_client_config(self, config):
-        if isinstance(config, str):
-            client_config = from_file(config_file=config)
-        elif isinstance(config, dict):
+        if isinstance(config, dict):
             client_config = ClientConfig(config=config)
         else:
-            raise ValueError("config should be either a string or dictionary.")
+            raise ValueError("config should be a dictionary.")
 
         if client_config.config:
             client_config.config.update(self.meta)

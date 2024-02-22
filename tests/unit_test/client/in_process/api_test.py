@@ -29,8 +29,8 @@ from nvflare.fuel.data_event.data_bus import DataBus
 
 class TestInProcessClientAPI(unittest.TestCase):
     def setUp(self):
-        # Create a mock job_metadata for testing
-        self.job_metadata = {
+        # Create a mock task_metadata for testing
+        self.task_metadata = {
             FLMetaKey.JOB_ID: "123",
             FLMetaKey.SITE_NAME: "site-1",
             "TASK_NAME": "train",
@@ -46,7 +46,7 @@ class TestInProcessClientAPI(unittest.TestCase):
 
     def test_init(self):
         # Test the initialization of InProcessClientAPI
-        client_api = InProcessClientAPI(self.job_metadata)
+        client_api = InProcessClientAPI(self.task_metadata)
         client_api.init()
         assert client_api.get_site_name() == "site-1"
         assert client_api.get_task_name() == "train"
@@ -59,11 +59,11 @@ class TestInProcessClientAPI(unittest.TestCase):
 
     def test_init_with_custom_interval(self):
         # Test initialization with a custom result_check_interval
-        client_api = InProcessClientAPI(self.job_metadata, result_check_interval=5.0)
+        client_api = InProcessClientAPI(self.task_metadata, result_check_interval=5.0)
         self.assertEqual(client_api.result_check_interval, 5.0)
 
     def test_init_subscriptions(self):
-        client_api = InProcessClientAPI(self.job_metadata)
+        client_api = InProcessClientAPI(self.task_metadata)
         assert list(client_api.data_bus.subscribers.keys()) == [TOPIC_GLOBAL_RESULT, TOPIC_ABORT, TOPIC_STOP]
 
     def local_result_callback(self, data, topic):
@@ -79,7 +79,7 @@ class TestInProcessClientAPI(unittest.TestCase):
         data_bus.subscribe([TOPIC_LOCAL_RESULT], self.local_result_callback)
         data_bus.subscribe([TOPIC_LOG_DATA], self.log_result_callback)
         assert list(data_bus.subscribers.keys()) == [TOPIC_LOCAL_RESULT, TOPIC_LOG_DATA]
-        client_api = InProcessClientAPI(self.job_metadata)
+        client_api = InProcessClientAPI(self.task_metadata)
         assert list(client_api.data_bus.subscribers.keys()) == [
             TOPIC_LOCAL_RESULT,
             TOPIC_LOG_DATA,

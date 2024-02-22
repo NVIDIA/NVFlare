@@ -16,15 +16,19 @@ import sys
 import traceback
 from typing import Dict
 
-from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.utils.function_utils import find_task_fn, require_arguments
 
 
 class ExecTaskFuncWrapper:
-    def __init__(self, task_fn_path: str, task_fn_args: Dict = None, read_interval: float = 2.0):
+    def __init__(self, task_fn_path: str, task_fn_args: Dict = None):
+        """Wrapper for function given function path and args
+
+        Args:
+            task_fn_path (str): function path (ex: train.main, custom/train.main, custom.train.main).
+            task_fn_args (Dict, optional): function arguments to pass in.
+        """
         self.task_fn_path = task_fn_path
         self.task_fn_args = task_fn_args
-        self.read_interval = read_interval
         self.client_api = None
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -32,9 +36,9 @@ class ExecTaskFuncWrapper:
         require_args, args_size, args_default_size = require_arguments(self.task_fn)
         self.check_fn_inputs(task_fn_path, require_args, args_size, args_default_size)
         self.task_fn_require_args = require_args
-        self.data_bus = DataBus()
 
     def run(self):
+        """Call the task_fn with any required arguments."""
         msg = f"\n start task run() with {self.task_fn_path}"
         msg = msg if not self.task_fn_require_args else msg + f", {self.task_fn_args}"
         self.logger.info(msg)
@@ -60,6 +64,7 @@ class ExecTaskFuncWrapper:
             raise e
 
     def check_fn_inputs(self, task_fn_path, require_args: bool, required_args_size: int, args_default_size: int):
+        """Check if the provided task_fn_args are compatible with the task_fn."""
         if require_args:
             if not self.task_fn_args:
                 raise ValueError(f"function '{task_fn_path}' requires arguments, but none provided")
