@@ -292,6 +292,9 @@ class Communicator:
             server's reply to the last message
 
         """
+        shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
+        shareable = Shareable()
+        shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
         client_name = fl_ctx.get_identity_name()
         quit_message = new_cell_message(
             {
@@ -299,7 +302,8 @@ class Communicator:
                 CellMessageHeaderKeys.CLIENT_NAME: client_name,
                 CellMessageHeaderKeys.SSID: ssid,
                 CellMessageHeaderKeys.PROJECT_NAME: task_name,
-            }
+            },
+            shareable
         )
         try:
             result = self.cell.send_request(
