@@ -21,6 +21,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.apis.wf_controller import ABORT_WHEN_IN_ERROR
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
@@ -37,9 +38,12 @@ from nvflare.app_common.wf_comm.wf_comm_api_spec import (
     TASK_NAME,
 )
 from nvflare.app_common.wf_comm.wf_communicator_spec import WFCommunicatorSpec
-from nvflare.app_common.workflows.error_handle_utils import ABORT_WHEN_IN_ERROR
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.data_event.event_manager import EventManager
+from nvflare.fuel.utils.class_utils import instantiate_class
+from nvflare.fuel.utils.component_builder import ComponentBuilder
+from nvflare.fuel.utils.fobs import fobs
+from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.private.defs import CommConstants
 from nvflare.security.logging import secure_format_traceback
 
@@ -267,3 +271,34 @@ class BaseWFCommunicator(FLComponent, WFCommunicatorSpec, ControllerSpec, ABC):
             self.log_error(fl_ctx, f"Execution failed for {client_task.client.name}")
         else:
             raise ValueError(f"Execution result is not received for {client_task.client.name}")
+
+    def set_controller_config(self, controller_config: Dict):
+        if controller_config is None:
+            raise ValueError("controller_config is None")
+
+        if not isinstance(controller_config, dict):
+            raise ValueError(f"controller_config should be Dict, found '{type(controller_config)}'")
+
+        self.controller_config = controller_config
+
+    def get_controller(self):
+        controller = None
+        if isinstance(self.controller_config, dict):
+            controller = ComponentBuilder().build_component(self.controller_config)
+            if controller is None:
+                raise ValueError("wf_controller should provided, but get None")
+
+        return controller
+
+    def register_serializers(self, serializer_class_paths: List[str] = None):
+        self.register_default_serializers()
+        if serializer_class_paths:
+            for class_path in serializer_class_paths:
+                fobs.register(instantiate_class(class_path, {}))
+
+    def register_default_serializers(self):
+        torch, flag = optional_import("torch")
+        if flag:
+            from nvflare.app_opt.pt.decomposers import TensorDecomposer
+
+            fobs.register(TensorDecomposer)

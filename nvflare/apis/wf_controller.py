@@ -16,6 +16,16 @@ from typing import Callable, List, Optional
 
 from nvflare.app_common import wf_comm
 
+from .fl_constant import ReturnCode
+
+ABORT_WHEN_IN_ERROR = {
+    ReturnCode.EXECUTION_EXCEPTION: True,
+    ReturnCode.TASK_UNKNOWN: True,
+    ReturnCode.EXECUTION_RESULT_ERROR: False,
+    ReturnCode.TASK_DATA_FILTER_ERROR: True,
+    ReturnCode.TASK_RESULT_FILTER_ERROR: True,
+}
+
 
 class WFController(ABC):
     def __init__(self):

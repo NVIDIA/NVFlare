@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -78,7 +78,10 @@ class FedAvg(WFController):
                 break
 
             # no callback
-            sag_results = self.prepare_broadcast_and_wait(self.task_name, model)
+            model.current_round = self.current_round
+            sag_results = self.broadcast_and_wait(
+                task_name=self.task_name, min_responses=self.min_clients, data=model, callback=None
+            )
             aggr_result = self.aggr_fn(sag_results)
 
             # # with callback
@@ -97,17 +100,6 @@ class FedAvg(WFController):
         net = Net()
         model = FLModel(params=net.state_dict(), params_type=ParamsType.FULL)
         return model
-
-    def prepare_broadcast_and_wait(self, task_name, model: FLModel, callback=None):
-        # (2) broadcast and wait
-        model.current_round = self.current_round
-        results = self.broadcast_and_wait(
-            task_name=task_name, min_responses=self.min_clients, data=model, callback=callback
-        )
-        if callback is None:
-            return results
-        else:
-            return None
 
     def callback(self, data, topic):
         self.intime_agg_fn(data, self.aggr_params_helper, self.aggr_metrics_helper)

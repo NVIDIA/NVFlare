@@ -49,7 +49,7 @@ class WFCommAPI(WFCommAPISpec):
         data_bus.subscribe(topics=[CommConstants.TASK_RESULT], callback=self.result_callback)
 
         self.event_manager = EventManager(data_bus)
-        self.ctrl = data_bus.get_data(CommConstants.COMMUNICATOR)
+        self.comm = data_bus.get_data(CommConstants.COMMUNICATOR)
         self._check_inputs()
 
     def get_site_names(self):
@@ -68,7 +68,7 @@ class WFCommAPI(WFCommAPISpec):
         meta = {} if meta is None else meta
         msg_payload = self._prepare_input_payload(task_name, data, meta, min_responses, targets)
         self.register_callback(callback)
-        self.ctrl.broadcast_to_peers_and_wait(msg_payload)
+        self.comm.broadcast_to_peers_and_wait(msg_payload)
 
         if callback is None:
             return self._get_results(task_name)
@@ -95,7 +95,7 @@ class WFCommAPI(WFCommAPISpec):
         if callback is not None:
             self.register_callback(callback)
 
-        self.ctrl.send_to_peers_and_wait(msg_payload, send_order)
+        self.comm.send_to_peers_and_wait(msg_payload, send_order)
 
         if callback is not None:
             return self._get_results(task_name)
@@ -116,7 +116,7 @@ class WFCommAPI(WFCommAPISpec):
 
         self.register_callback(callback)
 
-        self.ctrl.relay_to_peers_and_wait(msg_payload, SendOrder(relay_order))
+        self.comm.relay_to_peers_and_wait(msg_payload, SendOrder(relay_order))
 
         if callback is None:
             return self._get_results(task_name)
@@ -125,7 +125,7 @@ class WFCommAPI(WFCommAPISpec):
 
     def broadcast(self, task_name: str, data: any, meta: dict = None, targets: Optional[List[str]] = None):
         msg_payload = self._prepare_input_payload(task_name, data, meta, min_responses=0, targets=targets)
-        self.ctrl.broadcast_to_peers(pay_load=msg_payload)
+        self.comm.broadcast_to_peers(pay_load=msg_payload)
 
     def send(
         self,
@@ -136,7 +136,7 @@ class WFCommAPI(WFCommAPISpec):
         send_order: str = "sequential",
     ):
         msg_payload = self._prepare_input_payload(task_name, data, meta, min_responses=0, targets=targets)
-        self.ctrl.send_to_peers(pay_load=msg_payload, send_order=send_order)
+        self.comm.send_to_peers(pay_load=msg_payload, send_order=send_order)
 
     def relay(
         self,
@@ -147,7 +147,7 @@ class WFCommAPI(WFCommAPISpec):
         send_order: str = "sequential",
     ):
         msg_payload = self._prepare_input_payload(task_name, data, meta, min_responses=0, targets=targets)
-        self.ctrl.relay_to_peers(msg_payload, send_order)
+        self.comm.relay_to_peers(msg_payload, send_order)
 
     def _process_one_result(self, site_result) -> Dict[str, FLModel]:
         self._check_result(site_result)
@@ -194,7 +194,7 @@ class WFCommAPI(WFCommAPISpec):
             raise RuntimeError(f"expecting all keys {keys} present in site_result")
 
     def _check_inputs(self):
-        if self.ctrl is None:
+        if self.comm is None:
             raise RuntimeError("missing Controller")
 
     def result_callback(self, topic, data, data_bus):

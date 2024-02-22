@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,13 +13,9 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 from nvflare.apis.controller_spec import SendOrder
-from nvflare.fuel.utils.class_utils import instantiate_class
-from nvflare.fuel.utils.component_builder import ComponentBuilder
-from nvflare.fuel.utils.fobs import fobs
-from nvflare.fuel.utils.import_utils import optional_import
 
 
 class WFCommunicatorSpec(ABC):
@@ -28,55 +24,58 @@ class WFCommunicatorSpec(ABC):
 
     @abstractmethod
     def broadcast_to_peers_and_wait(self, pay_load: Dict):
+        """Convert pay_load and call Controller's 'broadcast_and_wait' method.
+
+        Args:
+            pay_load: the name of the task to be sent.
+        """
         pass
 
     @abstractmethod
     def broadcast_to_peers(self, pay_load: Dict):
+        """Convert pay_load and call Controller's 'broadcast' method.
+
+        Args:
+            pay_load: the name of the task to be sent.
+        """
         pass
 
     @abstractmethod
     def send_to_peers(self, pay_load: Dict, send_order: SendOrder = SendOrder.SEQUENTIAL):
+        """Convert pay_load and call Controller's 'send' method.
+
+        Args:
+            pay_load: the name of the task to be sent.
+            send_order: order for choosing the next client.
+        """
         pass
 
     @abstractmethod
     def send_to_peers_and_wait(self, pay_load: Dict, send_order: SendOrder = SendOrder.SEQUENTIAL):
+        """Convert pay_load and call Controller's 'send_and_wait' method.
+
+        Args:
+            pay_load: the name of the task to be sent.
+            send_order: order for choosing the next client.
+        """
         pass
 
     @abstractmethod
     def relay_to_peers_and_wait(self, pay_load: Dict, send_order: SendOrder = SendOrder.SEQUENTIAL):
+        """Convert pay_load and call Controller's 'relay_and_wait' method.
+
+        Args:
+            pay_load: the name of the task to be sent.
+            send_order: order for choosing the next client.
+        """
         pass
 
     @abstractmethod
     def relay_to_peers(self, pay_load: Dict, send_order: SendOrder = SendOrder.SEQUENTIAL):
+        """Convert pay_load and call Controller's 'relay' method.
+
+        Args:
+            pay_load: the name of the task to be sent.
+            send_order: order for choosing the next client.
+        """
         pass
-
-    def set_controller_config(self, controller_config: Dict):
-        if controller_config is None:
-            raise ValueError("controller_config is None")
-
-        if not isinstance(controller_config, dict):
-            raise ValueError(f"controller_config should be Dict, found '{type(controller_config)}'")
-
-        self.controller_config = controller_config
-
-    def get_controller(self):
-        controller = None
-        if isinstance(self.controller_config, dict):
-            controller = ComponentBuilder().build_component(self.controller_config)
-            if controller is None:
-                raise ValueError("wf_controller should provided, but get None")
-
-        return controller
-
-    def register_serializers(self, serializer_class_paths: List[str] = None):
-        self.register_default_serializers()
-        if serializer_class_paths:
-            for class_path in serializer_class_paths:
-                fobs.register(instantiate_class(class_path, {}))
-
-    def register_default_serializers(self):
-        torch, flag = optional_import("torch")
-        if flag:
-            from nvflare.app_opt.pt.decomposers import TensorDecomposer
-
-            fobs.register(TensorDecomposer)

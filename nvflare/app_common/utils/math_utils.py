@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,7 +26,7 @@ operator_mapping = {
 def parse_compare_criteria(compare_expr: Optional[str] = None) -> Tuple[str, float, Callable]:
     """
         Parse the compare expression into individual component
-        compare expression is in the format of string literal : "<key> <op> <value"
+        compare expression is in the format of string literal : "<key> <op> <value>"
         such as
             accuracy >= 0.5
             loss  > 2.4
