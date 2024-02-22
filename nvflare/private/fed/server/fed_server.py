@@ -539,6 +539,8 @@ class FederatedServer(BaseServer):
                 token = client.get_token()
                 self.logout_client(token)
 
+                self.engine.fire_event(EventType.CLIENT_QUIT, fl_ctx=fl_ctx)
+
             headers = {CellMessageHeaderKeys.MESSAGE: "Removed client"}
             return self._generate_reply(headers=headers, payload=None, fl_ctx=fl_ctx)
 

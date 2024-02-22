@@ -114,6 +114,9 @@ class CCManager(FLComponent):
         elif event_type == EventType.CLIENT_REGISTERED:
             # Server side
             self._add_client_token(fl_ctx)
+        elif event_type == EventType.CLIENT_QUIT:
+            # Server side
+            self._remove_client_token(fl_ctx)
         elif event_type == EventType.AUTHORIZE_COMMAND_CHECK:
             command_to_check = fl_ctx.get_prop(key=FLContextKey.COMMAND_NAME)
             self.logger.debug(f"Received {command_to_check=}")
@@ -156,6 +159,12 @@ class CCManager(FLComponent):
         self.participant_cc_info[token_owner][CC_TOKEN_VALIDATED] = False
 
         self.logger.info(f"Added CC client: {token_owner}")
+
+    def _remove_client_token(self, fl_ctx: FLContext):
+        # server side
+        peer_ctx = fl_ctx.get_peer_context()
+        token_owner = peer_ctx.get_identity_name()
+        self.participant_cc_info.pop(token_owner)
 
     def _prepare_for_attestation(self, fl_ctx: FLContext) -> str:
         # both server and client sides

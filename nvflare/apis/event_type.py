@@ -72,6 +72,7 @@ class EventType(object):
     BEFORE_CLIENT_REGISTER = "_before_client_register"
     AFTER_CLIENT_REGISTER = "_after_client_register"
     CLIENT_REGISTERED = "_client_registered"
+    CLIENT_QUIT = "_client_quit"
     SYSTEM_BOOTSTRAP = "_system_bootstrap"
 
     AUTHORIZE_COMMAND_CHECK = "_authorize_command_check"
