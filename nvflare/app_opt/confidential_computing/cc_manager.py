@@ -154,17 +154,18 @@ class CCManager(FLComponent):
         # server side
         peer_ctx = fl_ctx.get_peer_context()
         token_owner = peer_ctx.get_identity_name()
-        peer_cc_info = peer_ctx.get_prop(CC_INFO, {CC_TOKEN: "", CC_TOKEN_VALIDATED: False})
+        peer_cc_info = peer_ctx.get_prop(CC_INFO, {CC_TOKEN: ""})
         self.participant_cc_info[token_owner] = peer_cc_info
         self.participant_cc_info[token_owner][CC_TOKEN_VALIDATED] = False
 
-        self.logger.info(f"Added CC client: {token_owner}")
+        self.logger.info(f"Added CC client: {token_owner} token: {peer_cc_info[CC_TOKEN]}")
 
     def _remove_client_token(self, fl_ctx: FLContext):
         # server side
         peer_ctx = fl_ctx.get_peer_context()
         token_owner = peer_ctx.get_identity_name()
         self.participant_cc_info.pop(token_owner)
+        self.logger.info(f"Removed CC client: {token_owner}")
 
     def _prepare_for_attestation(self, fl_ctx: FLContext) -> str:
         # both server and client sides
