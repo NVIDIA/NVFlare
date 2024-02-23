@@ -15,7 +15,7 @@
 
 import logging
 import threading
-from typing import Callable, Dict, List, Optional, Union
+from typing import Callable, Dict, List, Optional
 
 from nvflare.apis.controller_spec import SendOrder
 from nvflare.apis.fl_constant import ReturnCode
@@ -38,7 +38,7 @@ from nvflare.private.defs import CommConstants
 
 
 class WFCommAPI(WFCommAPISpec):
-    def __init__(self):
+    def __init__(self, cid: str = ""):
         self.meta = {SITE_NAMES: []}
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -49,7 +49,7 @@ class WFCommAPI(WFCommAPISpec):
         data_bus.subscribe(topics=[CommConstants.TASK_RESULT], callback=self.result_callback)
 
         self.event_manager = EventManager(data_bus)
-        self.comm = data_bus.get_data(CommConstants.COMMUNICATOR)
+        self.comm = data_bus.get_data(cid + CommConstants.COMMUNICATOR)
         self._check_inputs()
 
     def get_site_names(self):
@@ -63,7 +63,7 @@ class WFCommAPI(WFCommAPISpec):
         meta: dict = None,
         targets: Optional[List[str]] = None,
         callback: Callable = None,
-    ) -> Union[int, Dict[str, Dict[str, FLModel]]]:
+    ) -> Dict[str, Dict[str, FLModel]]:
 
         meta = {} if meta is None else meta
         msg_payload = self._prepare_input_payload(task_name, data, meta, min_responses, targets)
@@ -72,8 +72,6 @@ class WFCommAPI(WFCommAPISpec):
 
         if callback is None:
             return self._get_results(task_name)
-
-        return 0
 
     def register_callback(self, callback):
         if callback:
@@ -88,7 +86,7 @@ class WFCommAPI(WFCommAPISpec):
         send_order: SendOrder = SendOrder.SEQUENTIAL,
         targets: Optional[List[str]] = None,
         callback: Callable = None,
-    ):
+    ) -> Dict[str, Dict[str, FLModel]]:
         meta = {} if meta is None else meta
         msg_payload = self._prepare_input_payload(task_name, data, meta, min_responses, targets)
 
@@ -97,7 +95,7 @@ class WFCommAPI(WFCommAPISpec):
 
         self.comm.send_to_peers_and_wait(msg_payload, send_order)
 
-        if callback is not None:
+        if callback is None:
             return self._get_results(task_name)
 
     def relay_and_wait(
@@ -120,8 +118,6 @@ class WFCommAPI(WFCommAPISpec):
 
         if callback is None:
             return self._get_results(task_name)
-
-        return self._get_results(task_name)
 
     def broadcast(self, task_name: str, data: any, meta: dict = None, targets: Optional[List[str]] = None):
         msg_payload = self._prepare_input_payload(task_name, data, meta, min_responses=0, targets=targets)

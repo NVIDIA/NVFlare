@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional
 
 SITE_NAMES = "SITE_NAMES"
 TASK_NAME = "TASK_NAME"
@@ -37,7 +37,7 @@ class WFCommAPISpec(ABC):
         meta: dict = None,
         targets: Optional[List[str]] = None,
         callback: Callable = None,
-    ):
+    ) -> Dict[str, any]:
         """Communication interface for the blocking version of the 'broadcast' method.
 
         First, the task is scheduled for broadcast (see the broadcast method);
@@ -51,6 +51,9 @@ class WFCommAPISpec(ABC):
             meta: the meta to be sent in the task.
             targets: list of destination clients. If None, all clients.
             callback: callback to be registered.
+
+        Returns:
+            result dict if callback is None
         """
         pass
 
@@ -64,7 +67,7 @@ class WFCommAPISpec(ABC):
         targets: Optional[List[str]] = None,
         send_order: str = "sequential",
         callback: Callable = None,
-    ):
+    ) -> Dict[str, any]:
         """Communication interface for the blocking version of the 'send' method.
 
         First, the task is scheduled for send (see the 'send' method);
@@ -79,6 +82,9 @@ class WFCommAPISpec(ABC):
             targets: list of destination clients.
             send_order: order for choosing the next client.
             callback: callback to be registered.
+
+        Returns:
+            result dict if callback is None
         """
         pass
 
@@ -92,7 +98,7 @@ class WFCommAPISpec(ABC):
         targets: Optional[List[str]] = None,
         relay_order: str = "sequential",
         callback: Callable = None,
-    ):
+    ) -> Dict[str, any]:
         """Communication interface to schedule a task to be done sequentially by the clients in the targets list. This is a non-blocking call.
 
         Args:
@@ -104,6 +110,9 @@ class WFCommAPISpec(ABC):
             targets: list of destination clients. If None, all clients.
             relay_order: order for choosing the next client.
             callback: callback to be registered.
+
+        Returns:
+            result dict if callback is None
         """
         pass
 

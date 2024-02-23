@@ -18,7 +18,7 @@ from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, ControllerSpec, OperatorMethod, SendOrder, Task, TaskOperatorKey
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.wf_controller import ABORT_WHEN_IN_ERROR
@@ -76,7 +76,7 @@ class BaseWFCommunicator(FLComponent, WFCommunicatorSpec, ControllerSpec, ABC):
         self.register_decomposers()
 
         self.clients = self.engine.get_clients()
-        self.publish_comm_api()
+        self.publish_comm_api(fl_ctx)
         self.log_info(fl_ctx, "workflow controller started")
 
     def register_decomposers(self):
@@ -88,8 +88,8 @@ class BaseWFCommunicator(FLComponent, WFCommunicatorSpec, ControllerSpec, ABC):
                 )
             decomposer_register.register()
 
-    def publish_comm_api(self):
-        comm_api = WFCommAPI()
+    def publish_comm_api(self, fl_ctx: FLContext):
+        comm_api = WFCommAPI(cid=fl_ctx.get_prop(FLContextKey.WORKFLOW, ""))
         comm_api.meta.update({SITE_NAMES: self.get_site_names()})
         self.data_bus.put_data("wf_comm_api", comm_api)
 

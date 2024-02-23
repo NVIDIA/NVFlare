@@ -50,25 +50,6 @@ class WorkFlow:
         self.wf_controller = wf_controller
 
 
-def enhance_workflow_config(element: dict, class_path: str):
-    if CommConstants.CONTROLLER in element:
-        controller_config = element.get(CommConstants.CONTROLLER)
-        controller_config["lazy_instantiate"] = True
-        element[CommConstants.CONTROLLER] = controller_config
-    elif CommConstants.COMMUNICATOR in element:
-        wf_config = element.copy()
-        comm_config = wf_config.pop(CommConstants.COMMUNICATOR)
-        controller_config = wf_config
-        controller_config["lazy_instantiate"] = True
-        element = {CommConstants.COMMUNICATOR: comm_config, CommConstants.CONTROLLER: controller_config}
-    elif isinstance(instantiate_class(class_path, element.get("args", dict())), WFController):
-        controller_config = element.copy()
-        controller_config["lazy_instantiate"] = True
-        element = {CommConstants.CONTROLLER: controller_config}
-
-    return element
-
-
 class ServerJsonConfigurator(FedJsonConfigurator):
     def __init__(self, config_file_name: str, args, app_root: str, kv_list=None, exclude_libs=True):
         """This class parses server config from json file.
@@ -152,15 +133,10 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             return
 
         if re.search(r"^workflows\.#[0-9]+$", path):
-            class_path = self.get_class_path(element)
-            element = enhance_workflow_config(element, class_path)
+            element = self.enhance_workflow_config(element)
 
             component = self.authorize_and_build_component(element, config_ctx, node)
-            responder = self.get_responder(component)
-
             cid = element.get("id", None)
-            if not cid:
-                cid = type(responder).__name__
 
             if not isinstance(cid, str):
                 raise ConfigError('"id" must be str but got {}'.format(type(cid)))
@@ -171,12 +147,34 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             if cid in self.components:
                 raise ConfigError('duplicate component id "{}"'.format(cid))
 
+            responder = self.get_responder(component, cid)
+
             workflow = WorkFlow(cid, responder)
             self.workflows.append(workflow)
             self.components[cid] = responder
             return
 
-    def get_responder(self, component):
+    def enhance_workflow_config(self, element: dict):
+        if CommConstants.CONTROLLER in element:
+            controller_config = element.get(CommConstants.CONTROLLER)
+            controller_config["lazy_instantiate"] = True
+            element[CommConstants.CONTROLLER] = controller_config
+        elif CommConstants.COMMUNICATOR in element:
+            wf_config = element.copy()
+            comm_config = wf_config.pop(CommConstants.COMMUNICATOR)
+            controller_config = wf_config
+            controller_config["lazy_instantiate"] = True
+            id = controller_config.pop("id")
+            element = {"id": id, CommConstants.COMMUNICATOR: comm_config, CommConstants.CONTROLLER: controller_config}
+        elif isinstance(instantiate_class(self.get_class_path(element), element.get("args", dict())), WFController):
+            controller_config = element.copy()
+            controller_config["lazy_instantiate"] = True
+            id = controller_config.pop("id")
+            element = {"id": id, CommConstants.CONTROLLER: controller_config}
+
+        return element
+
+    def get_responder(self, component, cid):
         if isinstance(component, dict):
             wf_config = component
             communicator = wf_config.get(CommConstants.COMMUNICATOR)
@@ -188,7 +186,7 @@ class ServerJsonConfigurator(FedJsonConfigurator):
                 controller_config["lazy_instantiate"] = False
                 communicator.set_controller_config(controller_config)
             data_bus = DataBus()
-            data_bus.put_data(CommConstants.COMMUNICATOR, communicator)
+            data_bus.put_data(cid + CommConstants.COMMUNICATOR, communicator)
             responder = communicator
         else:
             responder = component

@@ -257,8 +257,8 @@ class LauncherExecutor(TaskExchanger):
 
             future = self._thread_pool_executor.submit(getattr(self.launcher, method_name), **kwargs)
             result = future.result(timeout=self._launch_timeout)
-            return result
 
+            return result
         except TimeoutError:
             self.log_warning(
                 kwargs.get("fl_ctx"),
