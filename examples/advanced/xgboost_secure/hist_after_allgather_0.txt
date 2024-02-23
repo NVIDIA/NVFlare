@@ -1,0 +1,1064 @@
+********************************
+nodes to build: 1
+node 0 hist_size: 7645
+hist_item 0: 95.8967/85.2767
+hist_item 1: 95.4576/84.0102
+hist_item 2: 95.2178/83.7991
+hist_item 3: 96.5369/84.96
+hist_item 4: 96.2564/85.5933
+hist_item 5: 86.2178/83.7991
+hist_item 6: 89.7767/85.1711
+hist_item 7: 89.6588/82.4271
+hist_item 8: 89.1365/85.4877
+hist_item 9: 90.3763/85.6988
+hist_item 2001: 97.1365/85.4877
+hist_item 2002: 93.7381/83.3769
+hist_item 2003: 97.0166/85.3822
+hist_item 2004: 96.1771/84.6434
+hist_item 2005: 95.5775/84.1157
+hist_item 2006: 97.2564/85.5933
+hist_item 2007: 95.8174/84.3268
+hist_item 2008: 96.1771/84.6434
+hist_item 2009: 95.0166/85.3822
+********************************
+nodes to build: 1
+node 0 hist_size: 7645
+hist_item 0: -0.160549/0.738783
+hist_item 1: 0.959373/0.844323
+hist_item 2: 0.479686/0.422162
+hist_item 3: 0.239843/0.211081
+hist_item 4: 0.359765/0.316621
+hist_item 5: -7.68086/1.16094
+hist_item 6: -5.3211/1.47757
+hist_item 7: -3.40039/0.527702
+hist_item 8: -6.56094/1.26648
+hist_item 9: -3.28047/0.633242
+hist_item 2001: 0.119922/0.10554
+hist_item 2002: -0.640235/0.316621
+hist_item 2003: 0/0
+hist_item 2004: 0.359765/0.316621
+hist_item 2005: 0.119922/0.10554
+hist_item 2006: 0.479686/0.422162
+hist_item 2007: 0.239843/0.211081
+hist_item 2008: 0.359765/0.316621
+hist_item 2009: 0.599608/0.527702
+********************************
+nodes to build: 2
+node 0 hist_size: 7645
+hist_item 0: -0.880078/0.10554
+hist_item 1: 0/0
+hist_item 2: 0/0
+hist_item 3: 0/0
+hist_item 4: 0/0
+hist_item 5: -7.92071/0.949864
+hist_item 6: -5.28047/0.633242
+hist_item 7: -3.40039/0.527702
+hist_item 8: -6.16055/0.738783
+hist_item 9: -3.28047/0.633242
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+node 1 hist_size: 7645
+hist_item 0: 0.239843/0.211081
+hist_item 1: 0.119922/0.10554
+hist_item 2: 0.119922/0.10554
+hist_item 3: 0/0
+hist_item 4: -0.880078/0.10554
+hist_item 5: 0/0
+hist_item 6: 0/0
+hist_item 7: -7.92071/0.949864
+hist_item 8: -5.16055/0.738783
+hist_item 9: -4.28047/0.633242
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+********************************
+nodes to build: 4
+node 0 hist_size: 7645
+hist_item 0: -0.880078/0.10554
+hist_item 1: 0/0
+hist_item 2: 0/0
+hist_item 3: 0/0
+hist_item 4: 0/0
+hist_item 5: 0/0
+hist_item 6: 0/0
+hist_item 7: 0.119922/0.10554
+hist_item 8: 0/0
+hist_item 9: -2.64024/0.316621
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+node 1 hist_size: 7645
+hist_item 0: 0.119922/0.10554
+hist_item 1: -0.640235/0.316621
+hist_item 2: 0/0
+hist_item 3: 0/0
+hist_item 4: 0/0
+hist_item 5: 0/0
+hist_item 6: 0/0
+hist_item 7: 0/0
+hist_item 8: 0.119922/0.10554
+hist_item 9: 0/0
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+node 2 hist_size: 7645
+hist_item 0: 0.239843/0.211081
+hist_item 1: 0.119922/0.10554
+hist_item 2: 0.119922/0.10554
+hist_item 3: 0/0
+hist_item 4: -0.880078/0.10554
+hist_item 5: 0/0
+hist_item 6: 0/0
+hist_item 7: 0/0
+hist_item 8: 0.119922/0.10554
+hist_item 9: -0.880078/0.10554
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+node 3 hist_size: 7645
+hist_item 0: 0/0
+hist_item 1: 0/6.49168e-319
+hist_item 2: 0/0
+hist_item 3: 0/0
+hist_item 4: 0/0
+hist_item 5: 0/0
+hist_item 6: 0/0
+hist_item 7: 0/0
+hist_item 8: 0/0
+hist_item 9: 0/0
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+********************************
+nodes to build: 4
+node 0 hist_size: 7645
+hist_item 0: 0/0
+hist_item 1: 0/0
+hist_item 2: 0/0
+hist_item 3: 0/0
+hist_item 4: 0/0
+hist_item 5: 0/0
+hist_item 6: 0/0
+hist_item 7: 0/0
+hist_item 8: 0/0
+hist_item 9: 0/0
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+node 1 hist_size: 7645
+hist_item 0: 0/6.69139e-318
+hist_item 1: 6.9229e-310/6.9229e-310
+hist_item 2: 0/0
+hist_item 3: 0/0
+hist_item 4: 0.239843/0.211081
+hist_item 5: 0/0
+hist_item 6: -0.640235/0.316621
+hist_item 7: 0/0
+hist_item 8: -0.400392/0.527702
+hist_item 9: 0/0
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+node 2 hist_size: 7645
+hist_item 0: 0/0
+hist_item 1: 0/4.27395e-318
+hist_item 2: 2.29046e-316/6.9229e-310
+hist_item 3: 2.29046e-316/2.29046e-316
+hist_item 4: 0/0
+hist_item 5: 0/0
+hist_item 6: 0/0
+hist_item 7: 0/0
+hist_item 8: 0/0
+hist_item 9: 0/0
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+node 3 hist_size: 7645
+hist_item 0: 0/0
+hist_item 1: 0/0
+hist_item 2: 0.119922/0.10554
+hist_item 3: 0.359765/0.316621
+hist_item 4: 0.839451/0.738783
+hist_item 5: 2.27851/2.00527
+hist_item 6: 0.839451/0.738783
+hist_item 7: 0.239843/0.211081
+hist_item 8: 1.31914/1.16094
+hist_item 9: 1.31914/1.16094
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+********************************
+nodes to build: 1
+node 0 hist_size: 7645
+hist_item 0: 95.8967/85.2767
+hist_item 1: 95.4576/84.0102
+hist_item 2: 95.2178/83.7991
+hist_item 3: 96.5369/84.96
+hist_item 4: 96.2564/85.5933
+hist_item 5: 86.2178/83.7991
+hist_item 6: 89.7767/85.1711
+hist_item 7: 89.6588/82.4271
+hist_item 8: 89.1365/85.4877
+hist_item 9: 90.3763/85.6988
+hist_item 2001: 97.1365/85.4877
+hist_item 2002: 93.7381/83.3769
+hist_item 2003: 97.0166/85.3822
+hist_item 2004: 96.1771/84.6434
+hist_item 2005: 95.5775/84.1157
+hist_item 2006: 97.2564/85.5933
+hist_item 2007: 95.8174/84.3268
+hist_item 2008: 96.1771/84.6434
+hist_item 2009: 95.0166/85.3822
+********************************
+nodes to build: 1
+node 0 hist_size: 7645
+hist_item 0: -0.160549/0.738783
+hist_item 1: 0.959373/0.844323
+hist_item 2: 0.479686/0.422162
+hist_item 3: 0.239843/0.211081
+hist_item 4: 0.359765/0.316621
+hist_item 5: -7.68086/1.16094
+hist_item 6: -5.3211/1.47757
+hist_item 7: -3.40039/0.527702
+hist_item 8: -6.56094/1.26648
+hist_item 9: -3.28047/0.633242
+hist_item 2001: 0.119922/0.10554
+hist_item 2002: -0.640235/0.316621
+hist_item 2003: 0/0
+hist_item 2004: 0.359765/0.316621
+hist_item 2005: 0.119922/0.10554
+hist_item 2006: 0.479686/0.422162
+hist_item 2007: 0.239843/0.211081
+hist_item 2008: 0.359765/0.316621
+hist_item 2009: 0.599608/0.527702
+********************************
+nodes to build: 2
+node 0 hist_size: 7645
+hist_item 0: -0.880078/0.10554
+hist_item 1: 0/0
+hist_item 2: 0/0
+hist_item 3: 0/0
+hist_item 4: 0/0
+hist_item 5: -7.92071/0.949864
+hist_item 6: -5.28047/0.633242
+hist_item 7: -3.40039/0.527702
+hist_item 8: -6.16055/0.738783
+hist_item 9: -3.28047/0.633242
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+node 1 hist_size: 7645
+hist_item 0: 0.239843/0.211081
+hist_item 1: 0.119922/0.10554
+hist_item 2: 0.119922/0.10554
+hist_item 3: 3.02366e-316/3.02366e-316
+hist_item 4: -0.880078/0.10554
+hist_item 5: 0/0
+hist_item 6: 0/0
+hist_item 7: 0/0
+hist_item 8: 0.119922/0.10554
+hist_item 9: -0.880078/0.10554
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+********************************
+nodes to build: 4
+node 0 hist_size: 7645
+hist_item 0: -0.880078/0.10554
+hist_item 1: 0/0
+hist_item 2: 0/0
+hist_item 3: 0/0
+hist_item 4: 0/0
+hist_item 5: 0/0
+hist_item 6: 0/0
+hist_item 7: 0.119922/0.10554
+hist_item 8: 0/0
+hist_item 9: -2.64024/0.316621
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+node 1 hist_size: 7645
+hist_item 0: 0.119922/0.10554
+hist_item 1: -0.640235/0.316621
+hist_item 2: 0/0
+hist_item 3: 0/0
+hist_item 4: 0/0
+hist_item 5: 0/0
+hist_item 6: 0/0
+hist_item 7: 0/0
+hist_item 8: 0.119922/0.10554
+hist_item 9: 0/0
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+node 2 hist_size: 7645
+hist_item 0: 0/0
+hist_item 1: 0/0
+hist_item 2: 0/0
+hist_item 3: 0/0
+hist_item 4: 0/0
+hist_item 5: 0/0
+hist_item 6: 0/0
+hist_item 7: 0/0
+hist_item 8: 0/0
+hist_item 9: 0/0
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+node 3 hist_size: 7645
+hist_item 0: 0/0
+hist_item 1: 0.119922/0.10554
+hist_item 2: 0/0
+hist_item 3: 0/0
+hist_item 4: 0.839451/0.738783
+hist_item 5: 1.43906/1.26648
+hist_item 6: 1.79882/1.58311
+hist_item 7: 0.479686/0.422162
+hist_item 8: 0.959373/0.844323
+hist_item 9: 2.51835/2.21635
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+********************************
+nodes to build: 1
+node 0 hist_size: 7645
+hist_item 0: 95.8967/85.2767
+hist_item 1: 95.4576/84.0102
+hist_item 2: 95.2178/83.7991
+hist_item 3: 96.5369/84.96
+hist_item 4: 96.2564/85.5933
+hist_item 5: 86.2178/83.7991
+hist_item 6: 89.7767/85.1711
+hist_item 7: 89.6588/82.4271
+hist_item 8: 89.1365/85.4877
+hist_item 9: 90.3763/85.6988
+hist_item 2001: 97.1365/85.4877
+hist_item 2002: 93.7381/83.3769
+hist_item 2003: 97.0166/85.3822
+hist_item 2004: 96.1771/84.6434
+hist_item 2005: 95.5775/84.1157
+hist_item 2006: 97.2564/85.5933
+hist_item 2007: 95.8174/84.3268
+hist_item 2008: 96.1771/84.6434
+hist_item 2009: 95.0166/85.3822
+********************************
+nodes to build: 1
+node 0 hist_size: 7645
+hist_item 0: -0.160549/0.738783
+hist_item 1: 0.959373/0.844323
+hist_item 2: 0.479686/0.422162
+hist_item 3: 0.239843/0.211081
+hist_item 4: 0.359765/0.316621
+hist_item 5: -7.68086/1.16094
+hist_item 6: -5.3211/1.47757
+hist_item 7: -3.40039/0.527702
+hist_item 8: -6.56094/1.26648
+hist_item 9: -3.28047/0.633242
+hist_item 2001: 0.119922/0.10554
+hist_item 2002: -0.640235/0.316621
+hist_item 2003: 0/0
+hist_item 2004: 0.359765/0.316621
+hist_item 2005: 0.119922/0.10554
+hist_item 2006: 0.479686/0.422162
+hist_item 2007: 0.239843/0.211081
+hist_item 2008: 0.359765/0.316621
+hist_item 2009: 0.599608/0.527702
+********************************
+nodes to build: 2
+node 0 hist_size: 7645
+hist_item 0: -0.880078/0.10554
+hist_item 1: 0/0
+hist_item 2: 0/0
+hist_item 3: 0/0
+hist_item 4: 0/0
+hist_item 5: -7.92071/0.949864
+hist_item 6: -5.28047/0.633242
+hist_item 7: -3.40039/0.527702
+hist_item 8: -6.16055/0.738783
+hist_item 9: -3.28047/0.633242
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+node 1 hist_size: 7645
+hist_item 0: 0.239843/0.211081
+hist_item 1: 0.119922/0.10554
+hist_item 2: 0.119922/0.10554
+hist_item 3: 0/0
+hist_item 4: -0.880078/0.10554
+hist_item 5: 0/0
+hist_item 6: 0/0
+hist_item 7: 0/0
+hist_item 8: 0.119922/0.10554
+hist_item 9: -0.880078/0.10554
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+********************************
+nodes to build: 1
+node 0 hist_size: 7645
+hist_item 0: 95.8967/85.2767
+hist_item 1: 95.4576/84.0102
+hist_item 2: 95.2178/83.7991
+hist_item 3: 96.5369/84.96
+hist_item 4: 96.2564/85.5933
+hist_item 5: 86.2178/83.7991
+hist_item 6: 89.7767/85.1711
+hist_item 7: 89.6588/82.4271
+hist_item 8: 89.1365/85.4877
+hist_item 9: 90.3763/85.6988
+hist_item 2001: 97.1365/85.4877
+hist_item 2002: 93.7381/83.3769
+hist_item 2003: 97.0166/85.3822
+hist_item 2004: 96.1771/84.6434
+hist_item 2005: 95.5775/84.1157
+hist_item 2006: 97.2564/85.5933
+hist_item 2007: 95.8174/84.3268
+hist_item 2008: 96.1771/84.6434
+hist_item 2009: 95.0166/85.3822
+********************************
+nodes to build: 1
+node 0 hist_size: 7645
+hist_item 0: -0.160549/0.738783
+hist_item 1: 0.959373/0.844323
+hist_item 2: 0.479686/0.422162
+hist_item 3: 0.239843/0.211081
+hist_item 4: 0.359765/0.316621
+hist_item 5: -7.68086/1.16094
+hist_item 6: -5.3211/1.47757
+hist_item 7: -3.40039/0.527702
+hist_item 8: -6.56094/1.26648
+hist_item 9: -3.28047/0.633242
+hist_item 2001: 0.119922/0.10554
+hist_item 2002: -0.640235/0.316621
+hist_item 2003: 0/0
+hist_item 2004: 0.359765/0.316621
+hist_item 2005: 0.119922/0.10554
+hist_item 2006: 0.479686/0.422162
+hist_item 2007: 0.239843/0.211081
+hist_item 2008: 0.359765/0.316621
+hist_item 2009: 0.599608/0.527702
+********************************
+nodes to build: 2
+node 0 hist_size: 7645
+hist_item 0: -0.880078/0.10554
+hist_item 1: 0/0
+hist_item 2: 0/0
+hist_item 3: 0/0
+hist_item 4: 0/0
+hist_item 5: -7.92071/0.949864
+hist_item 6: -5.28047/0.633242
+hist_item 7: -3.40039/0.527702
+hist_item 8: -6.16055/0.738783
+hist_item 9: -3.28047/0.633242
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+node 1 hist_size: 7645
+hist_item 0: 0.239843/0.211081
+hist_item 1: 0.119922/0.10554
+hist_item 2: 0.119922/0.10554
+hist_item 3: 0/0
+hist_item 4: -0.880078/0.10554
+hist_item 5: 0/0
+hist_item 6: 0/0
+hist_item 7: -7.92071/0.949864
+hist_item 8: -5.16055/0.738783
+hist_item 9: -4.28047/0.633242
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+********************************
+nodes to build: 1
+node 0 hist_size: 7645
+hist_item 0: 95.8967/85.2767
+hist_item 1: 95.4576/84.0102
+hist_item 2: 95.2178/83.7991
+hist_item 3: 96.5369/84.96
+hist_item 4: 96.2564/85.5933
+hist_item 5: 86.2178/83.7991
+hist_item 6: 89.7767/85.1711
+hist_item 7: 89.6588/82.4271
+hist_item 8: 89.1365/85.4877
+hist_item 9: 90.3763/85.6988
+hist_item 2001: 97.1365/85.4877
+hist_item 2002: 93.7381/83.3769
+hist_item 2003: 97.0166/85.3822
+hist_item 2004: 96.1771/84.6434
+hist_item 2005: 95.5775/84.1157
+hist_item 2006: 97.2564/85.5933
+hist_item 2007: 95.8174/84.3268
+hist_item 2008: 96.1771/84.6434
+hist_item 2009: 95.0166/85.3822
+********************************
+nodes to build: 1
+node 0 hist_size: 7645
+hist_item 0: -0.160549/0.738783
+hist_item 1: 0.959373/0.844323
+hist_item 2: 0.479686/0.422162
+hist_item 3: 0.239843/0.211081
+hist_item 4: 0.359765/0.316621
+hist_item 5: -7.68086/1.16094
+hist_item 6: -5.3211/1.47757
+hist_item 7: -3.40039/0.527702
+hist_item 8: -6.56094/1.26648
+hist_item 9: -3.28047/0.633242
+hist_item 2001: 0.119922/0.10554
+hist_item 2002: -0.640235/0.316621
+hist_item 2003: 0/0
+hist_item 2004: 0.359765/0.316621
+hist_item 2005: 0.119922/0.10554
+hist_item 2006: 0.479686/0.422162
+hist_item 2007: 0.239843/0.211081
+hist_item 2008: 0.359765/0.316621
+hist_item 2009: 0.599608/0.527702
+********************************
+nodes to build: 2
+node 0 hist_size: 7645
+hist_item 0: -0.880078/0.10554
+hist_item 1: 0/0
+hist_item 2: 0/0
+hist_item 3: 0/0
+hist_item 4: 0/0
+hist_item 5: -7.92071/0.949864
+hist_item 6: -5.28047/0.633242
+hist_item 7: -3.40039/0.527702
+hist_item 8: -6.16055/0.738783
+hist_item 9: -3.28047/0.633242
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+node 1 hist_size: 7645
+hist_item 0: 0.239843/0.211081
+hist_item 1: 0.119922/0.10554
+hist_item 2: 0.119922/0.10554
+hist_item 3: 0/0
+hist_item 4: -0.880078/0.10554
+hist_item 5: 0/0
+hist_item 6: 0/0
+hist_item 7: 0/0
+hist_item 8: 0.119922/0.10554
+hist_item 9: -0.880078/0.10554
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+********************************
+nodes to build: 1
+node 0 hist_size: 7645
+hist_item 0: 95.8967/85.2767
+hist_item 1: 95.4576/84.0102
+hist_item 2: 95.2178/83.7991
+hist_item 3: 96.5369/84.96
+hist_item 4: 96.2564/85.5933
+hist_item 5: 86.2178/83.7991
+hist_item 6: 89.7767/85.1711
+hist_item 7: 89.6588/82.4271
+hist_item 8: 89.1365/85.4877
+hist_item 9: 90.3763/85.6988
+hist_item 2001: 97.1365/85.4877
+hist_item 2002: 93.7381/83.3769
+hist_item 2003: 97.0166/85.3822
+hist_item 2004: 96.1771/84.6434
+hist_item 2005: 95.5775/84.1157
+hist_item 2006: 97.2564/85.5933
+hist_item 2007: 95.8174/84.3268
+hist_item 2008: 96.1771/84.6434
+hist_item 2009: 95.0166/85.3822
+********************************
+nodes to build: 1
+node 0 hist_size: 7645
+hist_item 0: -0.160549/0.738783
+hist_item 1: 0.959373/0.844323
+hist_item 2: 0.479686/0.422162
+hist_item 3: 0.239843/0.211081
+hist_item 4: 0.359765/0.316621
+hist_item 5: -7.68086/1.16094
+hist_item 6: -5.3211/1.47757
+hist_item 7: -3.40039/0.527702
+hist_item 8: -6.56094/1.26648
+hist_item 9: -3.28047/0.633242
+hist_item 2001: 0.119922/0.10554
+hist_item 2002: -0.640235/0.316621
+hist_item 2003: 0/0
+hist_item 2004: 0.359765/0.316621
+hist_item 2005: 0.119922/0.10554
+hist_item 2006: 0.479686/0.422162
+hist_item 2007: 0.239843/0.211081
+hist_item 2008: 0.359765/0.316621
+hist_item 2009: 0.599608/0.527702
+********************************
+nodes to build: 2
+node 0 hist_size: 7645
+hist_item 0: -0.880078/0.10554
+hist_item 1: 0/0
+hist_item 2: 0/0
+hist_item 3: 0/0
+hist_item 4: 0/0
+hist_item 5: -7.92071/0.949864
+hist_item 6: -5.28047/0.633242
+hist_item 7: -3.40039/0.527702
+hist_item 8: -6.16055/0.738783
+hist_item 9: -3.28047/0.633242
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+node 1 hist_size: 7645
+hist_item 0: 0.239843/0.211081
+hist_item 1: 0.119922/0.10554
+hist_item 2: 0.119922/0.10554
+hist_item 3: 0/0
+hist_item 4: -0.880078/0.10554
+hist_item 5: 0/0
+hist_item 6: 0/0
+hist_item 7: -7.92071/0.949864
+hist_item 8: -5.16055/0.738783
+hist_item 9: -4.28047/0.633242
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+********************************
+nodes to build: 1
+node 0 hist_size: 7645
+hist_item 0: 95.8967/85.2767
+hist_item 1: 95.4576/84.0102
+hist_item 2: 95.2178/83.7991
+hist_item 3: 96.5369/84.96
+hist_item 4: 96.2564/85.5933
+hist_item 5: 86.2178/83.7991
+hist_item 6: 89.7767/85.1711
+hist_item 7: 89.6588/82.4271
+hist_item 8: 89.1365/85.4877
+hist_item 9: 90.3763/85.6988
+hist_item 2001: 97.1365/85.4877
+hist_item 2002: 93.7381/83.3769
+hist_item 2003: 97.0166/85.3822
+hist_item 2004: 96.1771/84.6434
+hist_item 2005: 95.5775/84.1157
+hist_item 2006: 97.2564/85.5933
+hist_item 2007: 95.8174/84.3268
+hist_item 2008: 96.1771/84.6434
+hist_item 2009: 95.0166/85.3822
+********************************
+nodes to build: 1
+node 0 hist_size: 7645
+hist_item 0: -0.160549/0.738783
+hist_item 1: 0.959373/0.844323
+hist_item 2: 0.479686/0.422162
+hist_item 3: 0.239843/0.211081
+hist_item 4: 0.359765/0.316621
+hist_item 5: -7.68086/1.16094
+hist_item 6: -5.3211/1.47757
+hist_item 7: -3.40039/0.527702
+hist_item 8: -6.56094/1.26648
+hist_item 9: -3.28047/0.633242
+hist_item 2001: 0.119922/0.10554
+hist_item 2002: -0.640235/0.316621
+hist_item 2003: 0/0
+hist_item 2004: 0.359765/0.316621
+hist_item 2005: 0.119922/0.10554
+hist_item 2006: 0.479686/0.422162
+hist_item 2007: 0.239843/0.211081
+hist_item 2008: 0.359765/0.316621
+hist_item 2009: 0.599608/0.527702
+********************************
+nodes to build: 2
+node 0 hist_size: 7645
+hist_item 0: -0.880078/0.10554
+hist_item 1: 0/0
+hist_item 2: 0/0
+hist_item 3: 0/0
+hist_item 4: 0/0
+hist_item 5: -7.92071/0.949864
+hist_item 6: -5.28047/0.633242
+hist_item 7: -3.40039/0.527702
+hist_item 8: -6.16055/0.738783
+hist_item 9: -3.28047/0.633242
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+node 1 hist_size: 7645
+hist_item 0: 0.239843/0.211081
+hist_item 1: 0.119922/0.10554
+hist_item 2: 0.119922/0.10554
+hist_item 3: 3.24553e-316/3.24553e-316
+hist_item 4: -0.880078/0.10554
+hist_item 5: 0/0
+hist_item 6: 0/0
+hist_item 7: 0/0
+hist_item 8: 0.119922/0.10554
+hist_item 9: -0.880078/0.10554
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+********************************
+nodes to build: 1
+node 0 hist_size: 7645
+hist_item 0: 95.8967/85.2767
+hist_item 1: 95.4576/84.0102
+hist_item 2: 95.2178/83.7991
+hist_item 3: 96.5369/84.96
+hist_item 4: 96.2564/85.5933
+hist_item 5: 86.2178/83.7991
+hist_item 6: 89.7767/85.1711
+hist_item 7: 89.6588/82.4271
+hist_item 8: 89.1365/85.4877
+hist_item 9: 90.3763/85.6988
+hist_item 2001: 97.1365/85.4877
+hist_item 2002: 93.7381/83.3769
+hist_item 2003: 97.0166/85.3822
+hist_item 2004: 96.1771/84.6434
+hist_item 2005: 95.5775/84.1157
+hist_item 2006: 97.2564/85.5933
+hist_item 2007: 95.8174/84.3268
+hist_item 2008: 96.1771/84.6434
+hist_item 2009: 95.0166/85.3822
+********************************
+nodes to build: 1
+node 0 hist_size: 7645
+hist_item 0: -0.160549/0.738783
+hist_item 1: 0.959373/0.844323
+hist_item 2: 0.479686/0.422162
+hist_item 3: 0.239843/0.211081
+hist_item 4: 0.359765/0.316621
+hist_item 5: -7.68086/1.16094
+hist_item 6: -5.3211/1.47757
+hist_item 7: -3.40039/0.527702
+hist_item 8: -6.56094/1.26648
+hist_item 9: -3.28047/0.633242
+hist_item 2001: 0.119922/0.10554
+hist_item 2002: -0.640235/0.316621
+hist_item 2003: 0/0
+hist_item 2004: 0.359765/0.316621
+hist_item 2005: 0.119922/0.10554
+hist_item 2006: 0.479686/0.422162
+hist_item 2007: 0.239843/0.211081
+hist_item 2008: 0.359765/0.316621
+hist_item 2009: 0.599608/0.527702
+********************************
+nodes to build: 2
+node 0 hist_size: 7645
+hist_item 0: -0.880078/0.10554
+hist_item 1: 0/0
+hist_item 2: 0/0
+hist_item 3: 0/0
+hist_item 4: 0/0
+hist_item 5: -7.92071/0.949864
+hist_item 6: -5.28047/0.633242
+hist_item 7: -3.40039/0.527702
+hist_item 8: -6.16055/0.738783
+hist_item 9: -3.28047/0.633242
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+node 1 hist_size: 7645
+hist_item 0: 0.239843/0.211081
+hist_item 1: 0.119922/0.10554
+hist_item 2: 0.119922/0.10554
+hist_item 3: 0/0
+hist_item 4: -0.880078/0.10554
+hist_item 5: 0/0
+hist_item 6: 0/0
+hist_item 7: 0/0
+hist_item 8: 0.119922/0.10554
+hist_item 9: -0.880078/0.10554
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+********************************
+nodes to build: 1
+node 0 hist_size: 7645
+hist_item 0: 95.8967/85.2767
+hist_item 1: 95.4576/84.0102
+hist_item 2: 95.2178/83.7991
+hist_item 3: 96.5369/84.96
+hist_item 4: 96.2564/85.5933
+hist_item 5: 86.2178/83.7991
+hist_item 6: 89.7767/85.1711
+hist_item 7: 89.6588/82.4271
+hist_item 8: 89.1365/85.4877
+hist_item 9: 90.3763/85.6988
+hist_item 2001: 97.1365/85.4877
+hist_item 2002: 93.7381/83.3769
+hist_item 2003: 97.0166/85.3822
+hist_item 2004: 96.1771/84.6434
+hist_item 2005: 95.5775/84.1157
+hist_item 2006: 97.2564/85.5933
+hist_item 2007: 95.8174/84.3268
+hist_item 2008: 96.1771/84.6434
+hist_item 2009: 95.0166/85.3822
+********************************
+nodes to build: 1
+node 0 hist_size: 7645
+hist_item 0: -0.160549/0.738783
+hist_item 1: 0.959373/0.844323
+hist_item 2: 0.479686/0.422162
+hist_item 3: 0.239843/0.211081
+hist_item 4: 0.359765/0.316621
+hist_item 5: -7.68086/1.16094
+hist_item 6: -5.3211/1.47757
+hist_item 7: -3.40039/0.527702
+hist_item 8: -6.56094/1.26648
+hist_item 9: -3.28047/0.633242
+hist_item 2001: 0.119922/0.10554
+hist_item 2002: -0.640235/0.316621
+hist_item 2003: 0/0
+hist_item 2004: 0.359765/0.316621
+hist_item 2005: 0.119922/0.10554
+hist_item 2006: 0.479686/0.422162
+hist_item 2007: 0.239843/0.211081
+hist_item 2008: 0.359765/0.316621
+hist_item 2009: 0.599608/0.527702
+********************************
+nodes to build: 1
+node 0 hist_size: 7645
+hist_item 0: 95.8967/85.2767
+hist_item 1: 95.4576/84.0102
+hist_item 2: 95.2178/83.7991
+hist_item 3: 96.5369/84.96
+hist_item 4: 96.2564/85.5933
+hist_item 5: 86.2178/83.7991
+hist_item 6: 89.7767/85.1711
+hist_item 7: 89.6588/82.4271
+hist_item 8: 89.1365/85.4877
+hist_item 9: 90.3763/85.6988
+hist_item 2001: 97.1365/85.4877
+hist_item 2002: 93.7381/83.3769
+hist_item 2003: 97.0166/85.3822
+hist_item 2004: 96.1771/84.6434
+hist_item 2005: 95.5775/84.1157
+hist_item 2006: 97.2564/85.5933
+hist_item 2007: 95.8174/84.3268
+hist_item 2008: 96.1771/84.6434
+hist_item 2009: 95.0166/85.3822
+********************************
+nodes to build: 1
+node 0 hist_size: 7645
+hist_item 0: -0.160549/0.738783
+hist_item 1: 0.959373/0.844323
+hist_item 2: 0.479686/0.422162
+hist_item 3: 0.239843/0.211081
+hist_item 4: 0.359765/0.316621
+hist_item 5: -7.68086/1.16094
+hist_item 6: -5.3211/1.47757
+hist_item 7: -3.40039/0.527702
+hist_item 8: -6.56094/1.26648
+hist_item 9: -3.28047/0.633242
+hist_item 2001: 0.119922/0.10554
+hist_item 2002: -0.640235/0.316621
+hist_item 2003: 0/0
+hist_item 2004: 0.359765/0.316621
+hist_item 2005: 0.119922/0.10554
+hist_item 2006: 0.479686/0.422162
+hist_item 2007: 0.239843/0.211081
+hist_item 2008: 0.359765/0.316621
+hist_item 2009: 0.599608/0.527702
+********************************
+nodes to build: 2
+node 0 hist_size: 7645
+hist_item 0: -0.880078/0.10554
+hist_item 1: 0/0
+hist_item 2: 0/0
+hist_item 3: 0/0
+hist_item 4: 0/0
+hist_item 5: -7.92071/0.949864
+hist_item 6: -5.28047/0.633242
+hist_item 7: -3.40039/0.527702
+hist_item 8: -6.16055/0.738783
+hist_item 9: -3.28047/0.633242
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
+node 1 hist_size: 7645
+hist_item 0: 0.239843/0.211081
+hist_item 1: 0.119922/0.10554
+hist_item 2: 0.119922/0.10554
+hist_item 3: 0/0
+hist_item 4: -0.880078/0.10554
+hist_item 5: 0/0
+hist_item 6: 0/0
+hist_item 7: -7.92071/0.949864
+hist_item 8: -5.16055/0.738783
+hist_item 9: -4.28047/0.633242
+hist_item 2001: 0/0
+hist_item 2002: 0/0
+hist_item 2003: 0/0
+hist_item 2004: 0/0
+hist_item 2005: 0/0
+hist_item 2006: 0/0
+hist_item 2007: 0/0
+hist_item 2008: 0/0
+hist_item 2009: 0/0
