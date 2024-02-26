@@ -30,7 +30,7 @@ CC_TOKEN_VALIDATED = "_cc_token_validated"
 
 
 class CCManager(FLComponent):
-    def __init__(self, verifiers: list):
+    def __init__(self, cc_authorizer_ids: [str]):
         """Manage all confidential computing related tasks.
 
         This manager does the following tasks:
@@ -40,68 +40,25 @@ class CCManager(FLComponent):
         validating all tokens in the entire NVFlare system
 
         Args:
-            verifiers (list):
-                each element in this list is a dictionary and the keys of dictionary are
-                "devices", "env", "url", "appraisal_policy_file" and "result_policy_file."
-
-                the values of devices are "gpu" and "cpu"
-                the values of env are "local" and "test"
-                currently, valid combination is gpu + local
-
-                url must be an empty string
-                appraisal_policy_file must point to an existing file
-                currently supports an empty file only
-
-                result_policy_file must point to an existing file
-                currently supports the following content only
-
-                .. code-block:: json
-
-                    {
-                        "version":"1.0",
-                        "authorization-rules":{
-                            "x-nv-gpu-available":true,
-                            "x-nv-gpu-attestation-report-available":true,
-                            "x-nv-gpu-info-fetched":true,
-                            "x-nv-gpu-arch-check":true,
-                            "x-nv-gpu-root-cert-available":true,
-                            "x-nv-gpu-cert-chain-verified":true,
-                            "x-nv-gpu-ocsp-cert-chain-verified":true,
-                            "x-nv-gpu-ocsp-signature-verified":true,
-                            "x-nv-gpu-cert-ocsp-nonce-match":true,
-                            "x-nv-gpu-cert-check-complete":true,
-                            "x-nv-gpu-measurement-available":true,
-                            "x-nv-gpu-attestation-report-parsed":true,
-                            "x-nv-gpu-nonce-match":true,
-                            "x-nv-gpu-attestation-report-driver-version-match":true,
-                            "x-nv-gpu-attestation-report-vbios-version-match":true,
-                            "x-nv-gpu-attestation-report-verified":true,
-                            "x-nv-gpu-driver-rim-schema-fetched":true,
-                            "x-nv-gpu-driver-rim-schema-validated":true,
-                            "x-nv-gpu-driver-rim-cert-extracted":true,
-                            "x-nv-gpu-driver-rim-signature-verified":true,
-                            "x-nv-gpu-driver-rim-driver-measurements-available":true,
-                            "x-nv-gpu-driver-vbios-rim-fetched":true,
-                            "x-nv-gpu-vbios-rim-schema-validated":true,
-                            "x-nv-gpu-vbios-rim-cert-extracted":true,
-                            "x-nv-gpu-vbios-rim-signature-verified":true,
-                            "x-nv-gpu-vbios-rim-driver-measurements-available":true,
-                            "x-nv-gpu-vbios-index-conflict":true,
-                            "x-nv-gpu-measurements-match":true
-                        }
-                    }
 
         """
         FLComponent.__init__(self)
         self.site_name = None
-        self.cc_authorizer: TokenPundit = None
-        self.verifiers = verifiers
+        self.cc_authorizer_ids = cc_authorizer_ids
+        self.cc_authorizers = []
         self.my_token = None
         self.participant_cc_info = {}  # used by the Server to keep tokens of all clients
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.SYSTEM_BOOTSTRAP:
             try:
+                engine = fl_ctx.get_engine()
+                for id in self.cc_authorizer_ids:
+                    authorizer = engine.get_component(id)
+                    if not isinstance(authorizer, TokenPundit):
+                        raise RuntimeError(f"cc_authorizer_id {id} must be a TokenPundit, but got {authorizer.__class__}")
+                    self.cc_authorizers.append(authorizer)
+
                 err = self._prepare_for_attestation(fl_ctx)
             except:
                 self.log_exception(fl_ctx, "exception in attestation preparation")
@@ -181,12 +138,14 @@ class CCManager(FLComponent):
         # if not ok:
         #     return "failed to attest"
 
-        self.cc_authorizer = TDXConnector(tdx_cli_command="/home/azureuser/TDX/client/tdx-cli/trustauthority-cli",
-                                     config_dir=workspace_folder)
+        # self.cc_authorizer = TDXConnector(tdx_cli_command="/home/azureuser/TDX/client/tdx-cli/trustauthority-cli",
+        #                              config_dir=workspace_folder)
+        self.cc_authorizer = self._get_authorizer()
         self.my_token = self.cc_authorizer.generate()
         if not self.my_token:
             return "failed to get CC token"
 
+        self.logger.info(f"site: {self.site_name} got the token: {self.my_token}")
         self.participant_cc_info[self.site_name] = {CC_TOKEN: self.my_token, CC_TOKEN_VALIDATED: True}
         return ""
 
@@ -274,3 +233,6 @@ class CCManager(FLComponent):
         self.log_error(fl_ctx, f"Job {job_id} is blocked: {reason}")
         fl_ctx.set_prop(key=FLContextKey.JOB_BLOCK_REASON, value=reason, sticky=False)
         fl_ctx.set_prop(key=FLContextKey.AUTHORIZATION_RESULT, value=False, sticky=False)
+
+    def _get_authorizer(self):
+        return self.cc_authorizers[0]
