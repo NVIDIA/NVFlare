@@ -11,13 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import Dict
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeComponentError
-from nvflare.app_opt.confidential_computing.tdx_connector import TDXCCHelper
+from nvflare.app_opt.confidential_computing.cc_authorizer import TokenPundit
+from nvflare.app_opt.confidential_computing.tdx_connector import TDXConnector
 
 # from .cc_helper import CCHelper
 
@@ -92,7 +94,7 @@ class CCManager(FLComponent):
         """
         FLComponent.__init__(self)
         self.site_name = None
-        self.helper = None
+        self.cc_authorizer: TokenPundit = None
         self.verifiers = verifiers
         self.my_token = None
         self.participant_cc_info = {}  # used by the Server to keep tokens of all clients
@@ -146,7 +148,7 @@ class CCManager(FLComponent):
     def _prepare_token_for_login(self, fl_ctx: FLContext):
         # client side
         if self.my_token is None:
-            self.my_token = self.helper.get_token()
+            self.my_token = self.cc_authorizer.generate()
         cc_info = {CC_TOKEN: self.my_token}
         fl_ctx.set_prop(key=CC_INFO, value=cc_info, sticky=False, private=False)
 
@@ -172,13 +174,19 @@ class CCManager(FLComponent):
         self.site_name = fl_ctx.get_identity_name()
         workspace_folder = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT).get_site_config_dir()
         # self.helper = CCHelper(site_name=self.site_name, verifiers=self.verifiers)
-        self.helper = TDXCCHelper(site_name=self.site_name,
-                                  tdx_cli_command="/home/azureuser/TDX/client/tdx-cli/trustauthority-cli",
-                                  config_dir=workspace_folder)
-        ok = self.helper.prepare()
-        if not ok:
-            return "failed to attest"
-        self.my_token = self.helper.get_token()
+        # self.helper = TDXCCHelper(site_name=self.site_name,
+        #                           tdx_cli_command="/home/azureuser/TDX/client/tdx-cli/trustauthority-cli",
+        #                           config_dir=workspace_folder)
+        # ok = self.helper.prepare()
+        # if not ok:
+        #     return "failed to attest"
+
+        self.cc_authorizer = TDXConnector(tdx_cli_command="/home/azureuser/TDX/client/tdx-cli/trustauthority-cli",
+                                     config_dir=workspace_folder)
+        self.my_token = self.cc_authorizer.generate()
+        if not self.my_token:
+            return "failed to get CC token"
+
         self.participant_cc_info[self.site_name] = {CC_TOKEN: self.my_token, CC_TOKEN_VALIDATED: True}
         return ""
 
@@ -233,7 +241,7 @@ class CCManager(FLComponent):
 
     def _validate_participants_tokens(self, participants) -> str:
         self.logger.debug(f"Validating participant tokens {participants=}")
-        result = self.helper.validate_participants(participants)
+        result = self._validate_participants(participants)
         assert isinstance(result, dict)
         for p in result:
             self.participant_cc_info[p] = {CC_TOKEN: participants[p], CC_TOKEN_VALIDATED: True}
@@ -244,6 +252,16 @@ class CCManager(FLComponent):
             return f"Participant {invalid_participant_string} not meeting CC requirements"
         else:
             return ""
+
+    def _validate_participants(self, participants: Dict[str, str]) -> Dict[str, bool]:
+        result = {}
+        if not participants:
+            return result
+        for k, v in participants.items():
+            if self.cc_authorizer.verify(v):
+                result[k] = True
+        self.logger.info(f"CC - results from validating participants' tokens: {result}")
+        return result
 
     def _not_authorize_job(self, reason: str, fl_ctx: FLContext):
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID, "")
