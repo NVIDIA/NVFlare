@@ -248,11 +248,11 @@ class CCManager(FLComponent):
     def _not_authorize_job(self, reason: str, fl_ctx: FLContext):
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID, "")
         self.log_error(fl_ctx, f"Job {job_id} is blocked: {reason}")
-        fl_ctx.set_prop(key=FLContextKey.AUTHORIZATION_REASON, value=reason)
-        fl_ctx.set_prop(key=FLContextKey.AUTHORIZATION_RESULT, value=False)
+        fl_ctx.set_prop(key=FLContextKey.AUTHORIZATION_REASON, value=reason, sticky=False)
+        fl_ctx.set_prop(key=FLContextKey.AUTHORIZATION_RESULT, value=False, sticky=False)
 
     def _block_job(self, reason: str, fl_ctx: FLContext):
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID, "")
         self.log_error(fl_ctx, f"Job {job_id} is blocked: {reason}")
-        fl_ctx.set_prop(key=FLContextKey.JOB_BLOCK_REASON, value=reason)
-        fl_ctx.set_prop(key=FLContextKey.AUTHORIZATION_RESULT, value=False)
+        fl_ctx.set_prop(key=FLContextKey.JOB_BLOCK_REASON, value=reason, sticky=False)
+        fl_ctx.set_prop(key=FLContextKey.AUTHORIZATION_RESULT, value=False, sticky=False)
