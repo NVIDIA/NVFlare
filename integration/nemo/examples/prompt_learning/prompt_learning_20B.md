@@ -7,7 +7,7 @@ a downstream task such as financial sentiment predictions.
 The prompt learning technique shown in the example is p-tuning which adds a small prompt encoder network to the LLM
 to produce virtual tokens that guide the model toward the desired output of the downstream task.
 
-For more details on how to change hyperparameters for prompt learning in NeMo, see this [tutorial](https://github.com/NVIDIA/NeMo/blob/main/tutorials/nlp/Multitask_Prompt_and_PTuning.ipynb) which is also the basis for this NVFlare tutorial.
+For more details on how to change hyperparameters for prompt learning in NeMo, see this [tutorial](https://github.com/NVIDIA/NeMo/blob/v1.22.0/tutorials/nlp/Multitask_Prompt_and_PTuning.ipynb) which is also the basis for this NVFlare tutorial.
 
 ## Dependencies
 This example running a 20B GPT model requires more computational resources.

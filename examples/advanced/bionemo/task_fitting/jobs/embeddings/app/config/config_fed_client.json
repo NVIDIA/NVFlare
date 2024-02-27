@@ -1,0 +1,18 @@
+{
+  "format_version": 2,
+  "executors": [
+    {
+      "tasks": [
+        "bionemo_inference"
+      ],
+      "executor": {
+        "id": "inference_executor",
+        "path": "bionemo_inferer.BioNeMoInferer",
+        "args": {}
+      }
+    }
+  ],
+  "task_result_filters": [],
+  "task_data_filters": [],
+  "components": []
+}
