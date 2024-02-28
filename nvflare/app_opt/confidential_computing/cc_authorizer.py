@@ -13,7 +13,7 @@
 # limitations under the License.
 # import os.path
 
-class TokenPundit:
+class CCAuthorizer:
     def can_generate(self) -> bool:
         """This indicates if the authorizer can generate a CC token or not.
 

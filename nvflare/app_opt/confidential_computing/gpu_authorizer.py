@@ -13,12 +13,12 @@
 # limitations under the License.
 
 
-from nvflare.app_opt.confidential_computing.cc_authorizer import TokenPundit
+from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer
 
 GPU_NAMESPACE = "x-nv-gpu-"
 
 
-class GPUPundit(TokenPundit):
+class GPUAuthorizer(CCAuthorizer):
     def __init__(self, verifiers: list) -> None:
         """
 

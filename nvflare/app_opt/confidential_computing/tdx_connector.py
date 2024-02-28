@@ -15,7 +15,7 @@
 import os
 import subprocess
 
-from nvflare.app_opt.confidential_computing.cc_authorizer import TokenPundit
+from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer
 
 TDX_NAMESPACE = "tdx_"
 TDX_CLI_CONFIG = "config.json"
@@ -24,7 +24,7 @@ VERIFY_FILE = "verify.txt"
 ERROR_FILE = "error.txt"
 
 
-class TDXConnector(TokenPundit):
+class TDXConnector(CCAuthorizer):
     def __init__(self, tdx_cli_command: str, config_dir: str) -> None:
         super().__init__()
         self.tdx_cli_command = tdx_cli_command
@@ -75,51 +75,3 @@ class TDXConnector(TokenPundit):
 
     def get_namespace(self) -> str:
         return TDX_NAMESPACE
-
-    # def generate(self) -> str:
-    #     return super().generate()
-
-    # def verify(self, token: str) -> bool:
-    #     return super().verify(token)
-
-
-# class TDXCCHelper:
-#
-#     def __init__(self, site_name: str, tdx_cli_command: str, config_dir: str) -> None:
-#         super().__init__()
-#         self.site_name = site_name
-#         # self.tdx_cli_command = tdx_cli_command
-#         # self.config_dir = config_dir
-#         self.token = None
-#
-#         self.tdx_connector = TDXConnector(tdx_cli_command, config_dir)
-#         self.logger = logging.getLogger(self.__class__.__name__)
-#
-#     def prepare(self) -> bool:
-#         self.token, error = self.tdx_connector.generate()
-#         self.logger.info(f"site: {self.site_name} got the token: {self.token}")
-#         return not error
-#
-#     def get_token(self):
-#         return self.token
-#
-#     def validate_participants(self, participants: Dict[str, str]) -> Dict[str, bool]:
-#         result = {}
-#         if not participants:
-#             return result
-#         for k, v in participants.items():
-#             if self.tdx_connector.verify(v):
-#                 result[k] = True
-#         self.logger.info(f"CC - results from validating participants' tokens: {result}")
-#         return result
-
-
-# if __name__ == "__main__":
-#     tdx_connector = TDXConnector()
-#     token = tdx_connector.generate()
-#     print("--- Acquire the token ---")
-#     print(token)
-#
-#     result = tdx_connector.verify(token)
-#     print("---- Verify the token ---")
-#     print(result)
