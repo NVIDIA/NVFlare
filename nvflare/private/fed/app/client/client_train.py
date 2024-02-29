@@ -113,9 +113,10 @@ def main(args):
             client_engine.fire_event(EventType.SYSTEM_BOOTSTRAP, fl_ctx)
 
             exceptions = fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
-            for _, exception in exceptions.items():
-                if isinstance(exception, UnsafeComponentError):
-                    raise RuntimeError(exception)
+            if exceptions:
+                for _, exception in exceptions.items():
+                    if isinstance(exception, UnsafeComponentError):
+                        raise RuntimeError(exception)
 
             client_engine.fire_event(EventType.BEFORE_CLIENT_REGISTER, fl_ctx)
             federated_client.register(fl_ctx)
