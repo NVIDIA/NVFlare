@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import threading
 from typing import Dict
 
 from nvflare.apis.event_type import EventType
@@ -48,6 +49,8 @@ class CCManager(FLComponent):
         self.cc_verifiers = {}
         self.my_token = None
         self.participant_cc_info = {}  # used by the Server to keep tokens of all clients
+
+        self.lock = threading.Lock()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.SYSTEM_BOOTSTRAP:
@@ -128,18 +131,24 @@ class CCManager(FLComponent):
             self.participant_cc_info[token_owner][CC_TOKEN_VALIDATED] = False
             self.logger.info(f"Added CC client: {token_owner} token: {peer_cc_info[CC_TOKEN]}")
 
-            self._verify_running_jobs(fl_ctx)
+            with self.lock:
+                self._verify_running_jobs(fl_ctx)
 
     def _verify_running_jobs(self, fl_ctx):
         engine = fl_ctx.get_engine()
         run_processes = engine.run_processes
         running_jobs = list(run_processes.keys())
         for job_id in running_jobs:
-            participants = run_processes[job_id].get(RunProcessKey.PARTICIPANTS)
+            job_participants = run_processes[job_id].get(RunProcessKey.PARTICIPANTS)
+            participants = []
+            for _, client in job_participants.items():
+                participants.append(client.name)
+
             participant_tokens = {}
             err = self._verify_participants(participants, participant_tokens)
             if err:
                 engine.job_runner.stop_run(job_id, fl_ctx)
+                self.logger.info(f"Stop Job: {job_id} with CC verification error: {err} ")
 
     def _remove_client_token(self, fl_ctx: FLContext):
         # server side
