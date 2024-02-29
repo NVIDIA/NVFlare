@@ -62,10 +62,10 @@ class CCManager(FLComponent):
                 if err:
                     self.log_critical(fl_ctx, err, fire_event=False)
                     raise UnsafeComponentError(err)
-        elif event_type == EventType.BEFORE_CLIENT_REGISTER:
+        elif event_type == EventType.BEFORE_CLIENT_REGISTER or event_type == EventType.BEFORE_CLIENT_HEARTBEAT:
             # On client side
             self._prepare_token_for_login(fl_ctx)
-        elif event_type == EventType.CLIENT_REGISTERED:
+        elif event_type == EventType.CLIENT_REGISTERED or event_type == EventType.AFTER_CLIENT_HEARTBEAT:
             # Server side
             self._add_client_token(fl_ctx)
         elif event_type == EventType.CLIENT_QUIT:
@@ -110,9 +110,10 @@ class CCManager(FLComponent):
             self.cc_verifiers[authorizer.get_namespace()] = authorizer
 
     def _prepare_token_for_login(self, fl_ctx: FLContext):
-        # client side
-        if self.my_token is None:
+        # client side, if token expired then generate a new one
+        if not self.cc_issuer.verify(self.my_token):
             self.my_token = self.cc_issuer.generate()
+            self.logger.info(f"site: {self.site_name} got a new CC token: {self.my_token}")
         cc_info = {CC_TOKEN: self.my_token, CC_NAMESPACE: self.cc_issuer.get_namespace()}
         fl_ctx.set_prop(key=CC_INFO, value=cc_info, sticky=False, private=False)
 
@@ -121,10 +122,11 @@ class CCManager(FLComponent):
         peer_ctx = fl_ctx.get_peer_context()
         token_owner = peer_ctx.get_identity_name()
         peer_cc_info = peer_ctx.get_prop(CC_INFO, {CC_TOKEN: "", CC_NAMESPACE: ""})
-        self.participant_cc_info[token_owner] = peer_cc_info
-        self.participant_cc_info[token_owner][CC_TOKEN_VALIDATED] = False
-
-        self.logger.info(f"Added CC client: {token_owner} token: {peer_cc_info[CC_TOKEN]}")
+        old_cc_info = self.participant_cc_info.get(token_owner)
+        if not old_cc_info or old_cc_info.get(CC_TOKEN) != peer_cc_info[CC_TOKEN]:
+            self.participant_cc_info[token_owner] = peer_cc_info
+            self.participant_cc_info[token_owner][CC_TOKEN_VALIDATED] = False
+            self.logger.info(f"Added CC client: {token_owner} token: {peer_cc_info[CC_TOKEN]}")
 
     def _remove_client_token(self, fl_ctx: FLContext):
         # server side
@@ -172,7 +174,10 @@ class CCManager(FLComponent):
         if not isinstance(participants, list):
             return f"bad value for {FLContextKey.JOB_PARTICIPANTS} in fl_ctx: expect list bot got {type(participants)}"
 
-        participant_tokens = {self.site_name: self.participant_cc_info[self.site_name]}
+        # if server token expired, then generates a new one
+        if not self.cc_issuer.verify(self.my_token):
+            self.my_token = self.cc_issuer.generate()
+        participant_tokens = {self.site_name: {CC_TOKEN: self.my_token, CC_NAMESPACE: self.cc_issuer.get_namespace()}}
         for p in participants:
             assert isinstance(p, str)
             if p == self.site_name:

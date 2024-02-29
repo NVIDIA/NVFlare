@@ -577,6 +577,11 @@ class FederatedServer(BaseServer):
             if error is not None:
                 return make_cellnet_reply(rc=F3ReturnCode.COMM_ERROR, error=error)
 
+            data = request.payload
+            shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
+            fl_ctx.set_peer_context(shared_fl_ctx)
+            self.engine.fire_event(EventType.AFTER_CLIENT_HEARTBEAT, fl_ctx=fl_ctx)
+
             token = request.get_header(CellMessageHeaderKeys.TOKEN)
             client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
 

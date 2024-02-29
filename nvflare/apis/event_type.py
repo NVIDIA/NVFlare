@@ -74,6 +74,8 @@ class EventType(object):
     CLIENT_REGISTERED = "_client_registered"
     CLIENT_QUIT = "_client_quit"
     SYSTEM_BOOTSTRAP = "_system_bootstrap"
+    BEFORE_CLIENT_HEARTBEAT = "_before_client_heartbeat"
+    AFTER_CLIENT_HEARTBEAT = "_after_client_heartbeat"
 
     AUTHORIZE_COMMAND_CHECK = "_authorize_command_check"
     BEFORE_BUILD_COMPONENT = "_before_build_component"
