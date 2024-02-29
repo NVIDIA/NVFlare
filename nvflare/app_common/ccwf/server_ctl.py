@@ -445,7 +445,7 @@ class ServerSideController(Controller):
         # see whether status is available
         reports = peer_ctx.get_prop(Constant.STATUS_REPORTS)
         if not reports:
-            self.log_info(fl_ctx, f"no status report from client {client_name}")
+            self.log_debug(fl_ctx, f"no status report from client {client_name}")
             return
 
         my_report = reports.get(self.workflow_id)
