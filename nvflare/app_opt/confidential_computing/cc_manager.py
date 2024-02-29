@@ -15,7 +15,7 @@ from typing import Dict
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey
+from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, RunProcessKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer
@@ -128,6 +128,19 @@ class CCManager(FLComponent):
             self.participant_cc_info[token_owner][CC_TOKEN_VALIDATED] = False
             self.logger.info(f"Added CC client: {token_owner} token: {peer_cc_info[CC_TOKEN]}")
 
+            self._verify_running_jobs(fl_ctx)
+
+    def _verify_running_jobs(self, fl_ctx):
+        engine = fl_ctx.get_engine()
+        run_processes = engine.run_processes
+        running_jobs = list(run_processes.keys())
+        for job_id in running_jobs:
+            participants = run_processes[job_id].get(RunProcessKey.PARTICIPANTS)
+            participant_tokens = {}
+            err = self._verify_participants(participants, participant_tokens)
+            if err:
+                engine.job_runner.stop_run(job_id, fl_ctx)
+
     def _remove_client_token(self, fl_ctx: FLContext):
         # server side
         peer_ctx = fl_ctx.get_peer_context()
@@ -174,10 +187,23 @@ class CCManager(FLComponent):
         if not isinstance(participants, list):
             return f"bad value for {FLContextKey.JOB_PARTICIPANTS} in fl_ctx: expect list bot got {type(participants)}"
 
+        participant_tokens = {}
+        err = self._verify_participants(participants, participant_tokens)
+        if err:
+            return err
+
+        for p in participant_tokens:
+            self.participant_cc_info[p][CC_TOKEN_VALIDATED] = True
+        fl_ctx.set_prop(key=PEER_CTX_CC_TOKEN, value=participant_tokens, sticky=True, private=False)
+        self.logger.info(f"{self.site_name=} set PEER_CTX_CC_TOKEN with {participant_tokens=}")
+        return ""
+
+    def _verify_participants(self, participants, participant_tokens):
         # if server token expired, then generates a new one
         if not self.cc_issuer.verify(self.my_token):
             self.my_token = self.cc_issuer.generate()
-        participant_tokens = {self.site_name: {CC_TOKEN: self.my_token, CC_NAMESPACE: self.cc_issuer.get_namespace()}}
+        # participant_tokens = {self.site_name: {CC_TOKEN: self.my_token, CC_NAMESPACE: self.cc_issuer.get_namespace()}}
+        participant_tokens[self.site_name] = {CC_TOKEN: self.my_token, CC_NAMESPACE: self.cc_issuer.get_namespace()}
         for p in participants:
             assert isinstance(p, str)
             if p == self.site_name:
@@ -188,16 +214,7 @@ class CCManager(FLComponent):
                 participant_tokens[p] = self.participant_cc_info[p]
             else:
                 participant_tokens[p] = {}
-
-        err = self._validate_participants_tokens(participant_tokens)
-        if err:
-            return err
-
-        for p in participant_tokens:
-            self.participant_cc_info[p][CC_TOKEN_VALIDATED] = True
-        fl_ctx.set_prop(key=PEER_CTX_CC_TOKEN, value=participant_tokens, sticky=True, private=False)
-        self.logger.info(f"{self.site_name=} set PEER_CTX_CC_TOKEN with {participant_tokens=}")
-        return ""
+        return self._validate_participants_tokens(participant_tokens)
 
     def _validate_participants_tokens(self, participants) -> str:
         self.logger.debug(f"Validating participant tokens {participants=}")
