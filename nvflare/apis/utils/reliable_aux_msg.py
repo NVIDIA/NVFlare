@@ -34,6 +34,7 @@ STATUS_IN_PROCESS = "in_process"
 STATUS_IN_REPLY = "in_reply"
 STATUS_NOT_RECEIVED = "not_received"
 STATUS_REPLIED = "replied"
+STATUS_ABORTED = "aborted"
 
 TOPIC_RELIABLE_AUX_REQUEST = "AUX.RELIABLE_REQUEST"
 TOPIC_RELIABLE_AUX_REPLY = "AUX.RELIABLE_REPLY"
@@ -41,18 +42,15 @@ TOPIC_RELIABLE_AUX_REPLY = "AUX.RELIABLE_REPLY"
 
 def _extract_result(reply: Shareable, target: str):
     if not reply:
-        return None
+        return None, None
     if not isinstance(reply, dict):
-        return None
+        return None, None
     result = reply.get(target)
     if not result:
-        return None
+        return None, None
     if not isinstance(result, Shareable):
-        return None
-    rc = result.get_return_code()
-    if rc != ReturnCode.OK:
-        return None
-    return result
+        return None, None
+    return result, result.get_return_code()
 
 
 def _status_reply(status: str):
@@ -105,7 +103,11 @@ class _RequestReceiver:
                     return self.result
             else:
                 # still in process
-                return _status_reply(STATUS_IN_PROCESS)
+                if time.time() - self.rcv_time > self.timeout:
+                    # the process is taking too much time
+                    return _status_reply(STATUS_ABORTED)
+                else:
+                    return _status_reply(STATUS_IN_PROCESS)
 
     def _try_reply(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
@@ -118,8 +120,8 @@ class _RequestReceiver:
             fl_ctx=fl_ctx,
         )
         self.replying = False
-        ack = _extract_result(ack, self.source)
-        if ack:
+        _, rc = _extract_result(ack, self.source)
+        if rc == ReturnCode.OK:
             # reply sent successfully!
             self.reply_time = time.time()
 
@@ -156,7 +158,11 @@ class ReliableAuxMessage:
     _enabled = False
     _executor = None
     _query_interval = 1.0
+    _max_retries = 5
+    _max_tx_time = 300.0  # 5 minutes
     _reply_receivers = {}  # tx id => receiver
+    _tx_lock = threading.Lock()
+    _shutdown_asked = False
 
     @classmethod
     def register_request_handler(cls, topic: str, handler_f):
@@ -181,7 +187,8 @@ class ReliableAuxMessage:
                     # no handler registered for this topic!
                     return make_reply(ReturnCode.TOPIC_UNKNOWN)
                 receiver = _RequestReceiver(topic, handler_f, cls._executor)
-                cls._req_receivers[tx_id] = receiver
+                with cls._tx_lock:
+                    cls._req_receivers[tx_id] = receiver
             return receiver.process(request, fl_ctx)
         elif op == OP_QUERY:
             if not receiver:
@@ -201,11 +208,13 @@ class ReliableAuxMessage:
             return receiver.process(request)
 
     @classmethod
-    def enable(cls, fl_ctx: FLContext, max_request_workers=20, query_interval=1.0):
+    def enable(cls, fl_ctx: FLContext, max_request_workers=20, query_interval=1.0, max_retries=5, max_tx_time=300.0):
         if cls._enabled:
             return
 
         cls._enabled = True
+        cls._max_retries = max_retries
+        cls._max_tx_time = max_tx_time
         cls._query_interval = query_interval
         cls._executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_request_workers)
         engine = fl_ctx.get_engine()
@@ -217,6 +226,31 @@ class ReliableAuxMessage:
             topic=TOPIC_RELIABLE_AUX_REPLY,
             message_handle_func=cls._receive_reply,
         )
+        t = threading.Thread(target=cls._monitor_req_receivers, daemon=True)
+        t.start()
+
+    @classmethod
+    def _monitor_req_receivers(cls):
+        while not cls._shutdown_asked:
+            expired_receivers = []
+            with cls._tx_lock:
+                now = time.time()
+                for tx_id, receiver in cls._req_receivers.items():
+                    assert isinstance(receiver, _RequestReceiver)
+                    if receiver.rcv_time and now - receiver.rcv_time > cls._max_tx_time:
+                        expired_receivers.append(tx_id)
+
+            if expired_receivers:
+                with cls._tx_lock:
+                    for tx_id in expired_receivers:
+                        cls._req_receivers.pop(tx_id, None)
+
+            time.sleep(2.0)
+
+    @classmethod
+    def shutdown(cls):
+        cls._executor.shutdown(cancel_futures=True, wait=False)
+        cls._shutdown_asked = True
 
     @classmethod
     def send_request(
@@ -228,7 +262,7 @@ class ReliableAuxMessage:
         request.set_header(HEADER_TX, tx_id)
         request.set_header(HEADER_OP, OP_REQUEST)
         request.set_header(HEADER_TOPIC, topic)
-        request.set_header(HEADER_TIMEOUT, topic)
+        request.set_header(HEADER_TIMEOUT, timeout)
         try:
             result = cls._send_request(target, request, timeout, abort_signal, fl_ctx, receiver)
         except:
@@ -249,6 +283,7 @@ class ReliableAuxMessage:
         engine = fl_ctx.get_engine()
 
         # keep sending the request until a positive ack or result is received
+        num_tries = 0
         while True:
             if abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
@@ -260,8 +295,8 @@ class ReliableAuxMessage:
                 timeout=timeout,
                 fl_ctx=fl_ctx,
             )
-            ack = _extract_result(ack, target)
-            if ack:
+            ack, rc = _extract_result(ack, target)
+            if ack and rc != ReturnCode.COMMUNICATION_ERROR:
                 # is this result?
                 op = ack.get_header(HEADER_OP)
                 if op == OP_REPLY:
@@ -278,13 +313,18 @@ class ReliableAuxMessage:
                     break
 
             # we didn't get a positive ack - wait a short time and re-send the request.
-            time.sleep(1.0)
+            num_tries += 1
+            if num_tries > cls._max_retries:
+                # enough tries
+                return make_reply(ReturnCode.COMMUNICATION_ERROR)
+            time.sleep(cls._query_interval)
 
         # Querying phase - try to get result
         query = Shareable()
         query.set_header(HEADER_TX, receiver.tx_id)
         query.set_header(HEADER_OP, OP_QUERY)
 
+        num_tries = 0
         while True:
             if receiver.result_ready.wait(cls._query_interval):
                 # we already received result sent by the target.
@@ -304,8 +344,8 @@ class ReliableAuxMessage:
                 timeout=timeout,
                 fl_ctx=fl_ctx,
             )
-            ack = _extract_result(ack, target)
-            if ack:
+            ack, rc = _extract_result(ack, target)
+            if ack and rc != ReturnCode.COMMUNICATION_ERROR:
                 op = ack.get_header(HEADER_OP)
                 if op == OP_REPLY:
                     # the ack is result itself!
@@ -315,3 +355,13 @@ class ReliableAuxMessage:
                 if status == STATUS_NOT_RECEIVED:
                     # the receiver side lost context!
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+                elif status == STATUS_ABORTED:
+                    return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+                else:
+                    # the received is in process - do not increase num_tries here!
+                    continue
+
+            # retry query
+            num_tries += 1
+            if num_tries > cls._max_retries:
+                return make_reply(ReturnCode.COMMUNICATION_ERROR)
