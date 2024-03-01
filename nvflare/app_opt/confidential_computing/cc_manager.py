@@ -74,20 +74,21 @@ class CCManager(FLComponent):
         elif event_type == EventType.CLIENT_QUIT:
             # Server side
             self._remove_client_token(fl_ctx)
-        elif event_type == EventType.AUTHORIZE_COMMAND_CHECK:
-            command_to_check = fl_ctx.get_prop(key=FLContextKey.COMMAND_NAME)
-            self.logger.debug(f"Received {command_to_check=}")
-            if command_to_check == AdminCommandNames.CHECK_RESOURCES:
-                try:
-                    err = self._client_to_check_participant_token(fl_ctx)
-                except:
-                    self.log_exception(fl_ctx, "exception in validating participants")
-                    err = "Participants unable to meet client CC requirements"
-                finally:
-                    if err:
-                        self._not_authorize_job(err, fl_ctx)
+        elif event_type == EventType.BEFORE_CHECK_RESOURCE_MANAGER:
+            # Client Side, job scheduler check resource
+            # command_to_check = fl_ctx.get_prop(key=FLContextKey.COMMAND_NAME)
+            # self.logger.debug(f"Received {command_to_check=}")
+            # if command_to_check == AdminCommandNames.CHECK_RESOURCES:
+            try:
+                err = self._client_to_check_participant_token(fl_ctx)
+            except:
+                self.log_exception(fl_ctx, "exception in validating participants")
+                err = "Participants unable to meet client CC requirements"
+            finally:
+                if err:
+                    self._not_authorize_job(err, fl_ctx)
         elif event_type == EventType.BEFORE_CHECK_CLIENT_RESOURCES:
-            # Server side
+            # Server side, job scheduler check client resources
             try:
                 err = self._server_to_check_client_token(fl_ctx)
             except:
