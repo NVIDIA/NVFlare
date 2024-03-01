@@ -16,7 +16,7 @@ import json
 from typing import List
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, ReturnCode, SystemComponents
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode, SystemComponents, ServerCommandKey
 from nvflare.apis.resource_manager_spec import ResourceConsumerSpec, ResourceManagerSpec
 from nvflare.apis.shareable import Shareable, ReservedHeaderKey
 from nvflare.private.admin_defs import Message
@@ -68,7 +68,7 @@ class CheckResourceProcessor(RequestProcessor):
                 fl_ctx.set_prop(key=FLContextKey.CLIENT_RESOURCE_SPECS, value=resource_spec, private=True, sticky=False)
 
                 fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job_id, private=True, sticky=False)
-                shared_fl_ctx = req.get_header(ReservedHeaderKey.PEER_PROPS)
+                shared_fl_ctx = req.get_header(ServerCommandKey.PEER_FL_CONTEXT)
                 fl_ctx.set_peer_context(shared_fl_ctx)
 
                 engine.fire_event(EventType.BEFORE_CHECK_RESOURCE_MANAGER, fl_ctx)
@@ -80,7 +80,7 @@ class CheckResourceProcessor(RequestProcessor):
                     is_resource_enough, token = resource_manager.check_resources(
                         resource_requirement=resource_spec, fl_ctx=fl_ctx
                     )
-            except Exception:
+            except Exception as e:
                 result.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
 
         result.set_header(ShareableHeader.IS_RESOURCE_ENOUGH, is_resource_enough)

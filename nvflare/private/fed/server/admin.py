@@ -17,7 +17,9 @@ import time
 from typing import List, Optional
 
 from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_constant import ServerCommandKey
 from nvflare.apis.shareable import ReservedHeaderKey
+from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.cellnet.net_manager import NetManager
@@ -276,7 +278,8 @@ class FedAdminServer(AdminServer):
         for _, request in requests.items():
             with self.sai.new_context() as fl_ctx:
                 self.sai.fire_event(EventType.BEFORE_SEND_ADMIN_COMMAND, fl_ctx)
-                request.set_header(ReservedHeaderKey.PEER_PROPS, copy.deepcopy(fl_ctx.get_all_public_props()))
+                shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
+                request.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
 
         return send_requests(
             cell=self.cell,
