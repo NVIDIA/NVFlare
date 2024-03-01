@@ -28,6 +28,7 @@ SERVER_CMD_PULL_BINARY = "_pull_binary_file"
 
 DOWNLOAD_URL_MARKER = "Download_URL:"
 UPLOAD_FOLDER_FQN = "file_transfer.upload_folder"
+PUSH_FOLDER_FQN = "file_transfer.push_folder"
 DOWNLOAD_FOLDER_FQN = "file_transfer.download_folder"
 PULL_FOLDER_FQN = "file_transfer.pull_folder"
 PULL_BINARY_FQN = "file_transfer.pull_binary"

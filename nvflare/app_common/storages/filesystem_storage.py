@@ -21,7 +21,7 @@ import uuid
 from pathlib import Path
 from typing import List, Tuple
 
-from nvflare.apis.storage import DATA, MANIFEST, META, StorageException, StorageSpec
+from nvflare.apis.storage import DATA, META, StorageException, StorageSpec
 from nvflare.apis.utils.format_check import validate_class_methods_args
 from nvflare.security.logging import secure_format_exception
 
@@ -32,10 +32,20 @@ def _write(path: str, content):
     tmp_path = path + "_" + str(uuid.uuid4())
     try:
         Path(os.path.dirname(path)).mkdir(parents=True, exist_ok=True)
-        with open(tmp_path, "wb") as f:
-            f.write(content)
-            f.flush()
-            os.fsync(f.fileno())
+        if isinstance(content, bytes):
+            with open(tmp_path, "wb") as f:
+                f.write(content)
+                f.flush()
+                os.fsync(f.fileno())
+        elif isinstance(content, str):
+            # this is the name of the file that contains content
+            if not os.path.exists(content):
+                raise FileNotFoundError(f"file {content} does not exist")
+            if not os.path.isfile(content):
+                raise ValueError(f"{content} is not a valid file")
+            shutil.copyfile(content, tmp_path)
+        else:
+            raise RuntimeError(f"content must be bytes or str but got {type(content)}")
     except Exception as e:
         if os.path.isfile(tmp_path):
             os.remove(tmp_path)
@@ -100,25 +110,12 @@ class FilesystemStorage(StorageSpec):
     def _object_path(self, uri: str):
         return os.path.join(self.root_dir, uri.lstrip(self.uri_root))
 
-    def _save_data(self, data, destination: str):
-        if isinstance(data, bytes):
-            _write(destination, data)
-        elif isinstance(data, str):
-            # path to file that contains data
-            if not os.path.exists(data):
-                raise FileNotFoundError(f"file {data} does not exist")
-            if not os.path.isfile(data):
-                raise ValueError(f"{data} is not a valid file")
-            shutil.copyfile(data, destination)
-        else:
-            raise ValueError(f"expect data to be bytes or file name but got {type(data)}")
-
     def create_object(self, uri: str, data, meta: dict, overwrite_existing: bool = False):
         """Creates an object.
 
         Args:
             uri: URI of the object
-            data: content of the object
+            data: content of the object; bytes or file name that contains data
             meta: meta of the object
             overwrite_existing: whether to overwrite the object if already exists
 
@@ -134,25 +131,42 @@ class FilesystemStorage(StorageSpec):
         full_uri = self._object_path(uri)
 
         if _object_exists(full_uri) and not overwrite_existing:
-            raise StorageException("object {} already exists and overwrite_existing is False".format(uri))
+            raise StorageException(f"object {uri} already exists and overwrite_existing is False")
 
         if not _object_exists(full_uri) and os.path.isdir(full_uri) and os.listdir(full_uri):
-            raise StorageException("cannot create object {} at nonempty directory".format(uri))
+            raise StorageException(f"cannot create object {uri} at nonempty directory")
 
         data_path = os.path.join(full_uri, DATA)
         meta_path = os.path.join(full_uri, META)
-        self._save_data(data, data_path)
+        _write(data_path, data)
         try:
             _write(meta_path, _encode_meta(meta))
         except Exception as e:
             os.remove(data_path)
             raise e
+        return full_uri
 
-        manifest = os.path.join(full_uri, MANIFEST)
-        manifest_json = '{"data": {"description": "job definition","format": "bytes"},\
-                  "meta":{"description": "job meta.json","format": "text"}}'
-        _write(manifest, manifest_json.encode("utf-8"))
+    def clone_object(self, from_uri: str, to_uri: str, meta: dict, overwrite_existing: bool = False):
+        full_uri = self._object_path(to_uri)
 
+        if _object_exists(full_uri) and not overwrite_existing:
+            raise StorageException(f"object {to_uri} already exists and overwrite_existing is False")
+
+        if not _object_exists(full_uri) and os.path.isdir(full_uri) and os.listdir(full_uri):
+            raise StorageException(f"cannot create object {to_uri} at nonempty directory")
+
+        data_path = os.path.join(full_uri, DATA)
+
+        from_full_uri = self._object_path(from_uri)
+        from_data_path = os.path.join(from_full_uri, DATA)
+        _write(data_path, from_data_path)
+
+        meta_path = os.path.join(full_uri, META)
+        try:
+            _write(meta_path, _encode_meta(meta))
+        except Exception as e:
+            os.remove(data_path)
+            raise e
         return full_uri
 
     def update_object(self, uri: str, data, component_name: str = DATA):
@@ -174,13 +188,7 @@ class FilesystemStorage(StorageSpec):
             raise StorageException(f"{component_name } is not a valid component for storage object.")
 
         component_path = os.path.join(full_dir_path, component_name)
-        self._save_data(data, component_path)
-
-        manifest = os.path.join(full_dir_path, MANIFEST)
-        with open(manifest) as manifest_file:
-            manifest_json = json.loads(manifest_file.read())
-            manifest_json[component_name] = {"format": "bytes"}
-            _write(manifest, json.dumps(manifest_json).encode("utf-8"))
+        _write(component_path, data)
 
     def update_meta(self, uri: str, meta: dict, replace: bool):
         """Updates the meta of the specified object.

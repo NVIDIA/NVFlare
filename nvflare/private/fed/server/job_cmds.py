@@ -54,6 +54,7 @@ CLONED_META_KEYS = {
     JobMetaKey.APPROVALS.value,
     JobMetaKey.MIN_CLIENTS.value,
     JobMetaKey.MANDATORY_CLIENTS.value,
+    JobMetaKey.DATA_STORAGE_FORMAT.value,
 }
 
 
@@ -142,7 +143,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     usage=f"{AdminCommandNames.SUBMIT_JOB} job_folder",
                     handler_func=self.submit_job,
                     authz_func=self.command_authz_required,
-                    client_cmd=ftd.UPLOAD_FOLDER_FQN,
+                    client_cmd=ftd.PUSH_FOLDER_FQN,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.DOWNLOAD_JOB,
@@ -455,8 +456,6 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
                 )
             with engine.new_context() as fl_ctx:
-                data_bytes = job_def_manager.get_content(job_id, fl_ctx)
-
                 job_meta = {str(k): job.meta[k] for k in job.meta.keys() & CLONED_META_KEYS}
 
                 # set the submitter info for the new job
@@ -465,9 +464,9 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 job_meta[JobMetaKey.SUBMITTER_ROLE.value] = conn.get_prop(ConnProps.USER_ROLE)
                 job_meta[JobMetaKey.CLONED_FROM.value] = job_id
 
-                meta = job_def_manager.create(job_meta, data_bytes, fl_ctx)
+                meta = job_def_manager.clone(from_jid=job_id, meta=job_meta, fl_ctx=fl_ctx)
                 new_job_id = meta.get(JobMetaKey.JOB_ID)
-                conn.append_string("Cloned job {} as: {}".format(job_id, new_job_id))
+                conn.append_string(f"Cloned job {job_id} as: {new_job_id}")
         except Exception as e:
             conn.append_error(
                 f"Exception occurred trying to clone job: {secure_format_exception(e)}",
@@ -486,49 +485,6 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             return False, None
 
         return self.authorize_job(conn=conn, args=args[:2])
-
-    def list_files(self, conn: Connection, args: List[str]):
-        job_id = conn.get_prop(self.JOB_ID)
-
-        if len(args) == 2:
-            conn.append_string("job\nworkspace\n\nSpecify the job or workspace dir to see detailed contents.")
-            return
-        else:
-            file = args[2]
-
-        engine = conn.app_ctx
-        try:
-            job_def_manager = engine.job_def_manager
-            if not isinstance(job_def_manager, JobDefManagerSpec):
-                raise TypeError(
-                    f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
-                )
-            with engine.new_context() as fl_ctx:
-                job_data = job_def_manager.get_job_data(job_id, fl_ctx)
-                if file.startswith(TopDir.JOB):
-                    file = file[len(TopDir.JOB) :]
-                    file = file.lstrip("/")
-                    data_bytes = job_data[JobDataKey.JOB_DATA.value]
-                    ls_info = ls_zip_from_bytes(data_bytes)
-                elif file.startswith(TopDir.WORKSPACE):
-                    file = file[len(TopDir.WORKSPACE) :]
-                    file = file.lstrip("/")
-                    workspace_bytes = job_data[JobDataKey.WORKSPACE_DATA.value]
-                    ls_info = ls_zip_from_bytes(workspace_bytes)
-                else:
-                    conn.append_error("syntax error: top level directory must be job or workspace")
-                    return
-                return_string = "%-46s %19s %12s\n" % ("File Name", "Modified    ", "Size")
-                for zinfo in ls_info:
-                    date = "%d-%02d-%02d %02d:%02d:%02d" % zinfo.date_time[:6]
-                    if zinfo.filename.startswith(file):
-                        return_string += "%-46s %s %12d\n" % (zinfo.filename, date, zinfo.file_size)
-                conn.append_string(return_string)
-        except Exception as e:
-            secure_log_traceback()
-            conn.append_error(f"Exception occurred trying to get job from store: {secure_format_exception(e)}")
-            return
-        conn.append_success("")
 
     @staticmethod
     def _job_match(job_meta: Dict, id_prefix: str, name_prefix: str, user_name: str) -> bool:
@@ -579,15 +535,13 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
     def submit_job(self, conn: Connection, args: List[str]):
         folder_name = args[1]
-        zip_b64str = args[2]
+        zip_file_name = conn.extra
 
-        data_bytes = b64str_to_bytes(zip_b64str)
         engine = conn.app_ctx
-
         try:
             with engine.new_context() as fl_ctx:
                 job_validator = JobMetaValidator()
-                valid, error, meta = job_validator.validate(folder_name, data_bytes)
+                valid, error, meta = job_validator.validate(folder_name, zip_file_name)
                 if not valid:
                     conn.append_error(error, meta=make_meta(MetaStatusValue.INVALID_JOB_DEFINITION, error))
                     return
@@ -607,34 +561,19 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 if custom_props:
                     meta[JobMetaKey.CUSTOM_PROPS.value] = custom_props
 
-                meta = job_def_manager.create(meta, data_bytes, fl_ctx)
+                meta = job_def_manager.create(meta, zip_file_name, fl_ctx)
                 job_id = meta.get(JobMetaKey.JOB_ID)
+
+                os.remove(zip_file_name)  # the file is no longer needed
                 conn.append_string(f"Submitted job: {job_id}")
                 conn.append_success("", meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_ID: job_id}))
+
         except Exception as e:
             conn.append_error(
                 f"Exception occurred trying to submit job: {secure_format_exception(e)}",
                 meta=make_meta(MetaStatusValue.INTERNAL_ERROR, f"exception {type(e)} occurred"),
             )
             return
-
-    def _unzip_data(self, download_dir, job_data, job_id):
-        job_id_dir = os.path.join(download_dir, job_id)
-        if os.path.exists(job_id_dir):
-            shutil.rmtree(job_id_dir)
-        os.mkdir(job_id_dir)
-
-        data_bytes = job_data[JobDataKey.JOB_DATA.value]
-        job_dir = os.path.join(job_id_dir, "job")
-        os.mkdir(job_dir)
-        unzip_all_from_bytes(data_bytes, job_dir)
-
-        workspace_bytes = job_data[JobDataKey.WORKSPACE_DATA.value]
-        workspace_dir = os.path.join(job_id_dir, "workspace")
-        os.mkdir(workspace_dir)
-        if workspace_bytes is not None:
-            unzip_all_from_bytes(workspace_bytes, workspace_dir)
-        return job_id_dir
 
     def _clean_up_download(self, conn: Connection, tx_id: str):
         """

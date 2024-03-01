@@ -24,7 +24,7 @@ class JobDefManagerSpec(FLComponent, ABC):
     """Job Definition Management API."""
 
     @abstractmethod
-    def create(self, meta: dict, uploaded_content: bytes, fl_ctx: FLContext) -> Dict[str, Any]:
+    def create(self, meta: dict, uploaded_content: Union[str, bytes], fl_ctx: FLContext) -> Dict[str, Any]:
         """Create a new job permanently.
 
         The caller must have validated the content already and created initial meta. Receives bytes of uploaded folder,
@@ -32,12 +32,27 @@ class JobDefManagerSpec(FLComponent, ABC):
 
         Args:
             meta: caller-provided meta info
-            uploaded_content: data of the job definition
+            uploaded_content: data of the job definition: data bytes or file name that contains the data bytes
             fl_ctx (FLContext): FLContext information
 
         Returns:
             A dict containing meta info. Additional meta info are added, especially
             a unique Job ID (jid) which has been created.
+        """
+        pass
+
+    def clone(self, from_jid: str, meta: dict, fl_ctx: FLContext) -> Dict[str, Any]:
+        """Create a new job by cloning an existing job.
+
+        Args:
+            from_jid: the job to be cloned
+            meta: meta info for the new job
+            fl_ctx: FLContext info
+
+        Returns:
+            A dict containing meta info. Additional meta info are added, especially
+            a unique Job ID (jid) which has been created.
+
         """
         pass
 
@@ -69,42 +84,15 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def get_apps(self, job: Job, fl_ctx: FLContext) -> Dict[str, bytes]:
-        """Get the all the apps of a Job.
-
-        Args:
-            job: Job object
-            fl_ctx (FLContext): FLContext information
-
-        Returns:
-            A dictionary of app names with the content of the corresponding app encoded in bytes
-        """
-        pass
-
-    @abstractmethod
-    def get_content(self, jid: str, fl_ctx: FLContext) -> Optional[bytes]:
+    def get_content(self, meta: dict, fl_ctx: FLContext) -> Optional[bytes]:
         """Gets the entire uploaded content for a Job.
 
         Args:
-            jid (str): Job ID
+            meta (dict): the meta info of the job
             fl_ctx (FLContext): FLContext information
 
         Returns:
             Uploaded content of the job in bytes
-        """
-        pass
-
-    @abstractmethod
-    def get_job_data(self, jid: str, fl_ctx: FLContext) -> dict:
-        """Gets the entire uploaded content and workspace for a job.
-
-        Args:
-            jid (str): Job ID
-            fl_ctx (FLContext): FLContext information
-
-        Returns:
-            a dict to hold the job data and workspace. With the format: {JobDataKey.JOB_DATA.value: stored_data, JobDataKey.WORKSPACE_DATA: workspace_data}
-
         """
         pass
 

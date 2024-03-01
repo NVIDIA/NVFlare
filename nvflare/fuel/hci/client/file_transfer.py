@@ -13,7 +13,9 @@
 # limitations under the License.
 
 import os
+import tempfile
 import time
+import uuid
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.fuel.hci.base64_utils import (
@@ -24,21 +26,37 @@ from nvflare.fuel.hci.base64_utils import (
     bytes_to_b64str,
     text_file_to_b64str,
 )
+from nvflare.fuel.hci.binary_proto import send_binary_file
 from nvflare.fuel.hci.client.event import EventType
 from nvflare.fuel.hci.cmd_arg_utils import join_args
 from nvflare.fuel.hci.proto import MetaKey, ProtoKey
 from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.table import Table
-from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, unzip_all_from_file, zip_directory_to_bytes
+from nvflare.fuel.utils.zip_utils import (
+    split_path,
+    unzip_all_from_bytes,
+    unzip_all_from_file,
+    zip_directory_to_bytes,
+    zip_directory_to_file,
+)
 from nvflare.lighter.utils import load_private_key_file, sign_folders
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
-from .api_spec import CommandContext, ReplyProcessor
+from .api_spec import CommandContext, ReplyProcessor, SendBytesToServer
 from .api_status import APIStatus
 
 
 def _server_cmd_name(name: str):
     return ftd.SERVER_MODULE_NAME + "." + name
+
+
+class _SendFileToServer(SendBytesToServer):
+    def __init__(self, file_name: str):
+        self.file_name = file_name
+
+    def send(self, sock, meta: str):
+        send_binary_file(sock, self.file_name, meta)
+        os.remove(self.file_name)
 
 
 class _DownloadProcessor(ReplyProcessor):
@@ -197,6 +215,7 @@ class FileTransferModule(CommandModule):
 
         self.cmd_handlers = {
             ftd.UPLOAD_FOLDER_FQN: self.upload_folder,
+            ftd.PUSH_FOLDER_FQN: self.push_folder,
             ftd.DOWNLOAD_FOLDER_FQN: self.download_folder,
             ftd.PULL_BINARY_FQN: self.pull_binary_file,
             ftd.PULL_FOLDER_FQN: self.pull_folder,
@@ -246,6 +265,13 @@ class FileTransferModule(CommandModule):
                     description="Submit application to the server",
                     usage="submit_job job_folder",
                     handler_func=self.upload_folder,
+                    visible=False,
+                ),
+                CommandSpec(
+                    name="push_folder",
+                    description="Submit application to the server",
+                    usage="submit_job job_folder",
+                    handler_func=self.push_folder,
                     visible=False,
                 ),
                 CommandSpec(
@@ -505,3 +531,37 @@ class FileTransferModule(CommandModule):
         msg = f"Local Upload Source: {self.upload_dir}\n"
         msg += f"Local Download Destination: {self.download_dir}\n"
         return {"status": "ok", "details": msg}
+
+    def push_folder(self, args, ctx: CommandContext):
+        # upload with binary protocol
+        cmd_entry = ctx.get_command_entry()
+        assert isinstance(cmd_entry, CommandEntry)
+        if len(args) != 2:
+            return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: {}".format(cmd_entry.usage)}
+
+        folder_name = args[1]
+        if folder_name.endswith("/"):
+            folder_name = folder_name.rstrip("/")
+
+        full_path = os.path.join(self.upload_dir, folder_name)
+        if not os.path.isdir(full_path):
+            return {"status": APIStatus.ERROR_RUNTIME, "details": f"'{full_path}' is not a valid folder."}
+
+        # sign folders and files
+        api = ctx.get_api()
+        if not api.insecure:
+            # we are not in POC mode
+            client_key_file_path = api.client_key
+            private_key = load_private_key_file(client_key_file_path)
+            sign_folders(full_path, private_key, api.client_cert)
+
+        # zip the data
+        out_file = os.path.join(tempfile.gettempdir(), str(uuid.uuid4()))
+        zip_directory_to_file(self.upload_dir, folder_name, out_file)
+
+        folder_name = split_path(full_path)[1]
+        parts = [cmd_entry.full_command_name(), folder_name]
+        command = join_args(parts)
+        sender = _SendFileToServer(out_file)
+        ctx.set_bytes_sender(sender)
+        return api.server_execute(command, cmd_ctx=ctx)

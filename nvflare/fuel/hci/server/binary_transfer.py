@@ -21,7 +21,7 @@ from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.server.constants import ConnProps
 
 
-class _BytesSender:
+class _SendBytesToClient:
     def __init__(self, conn: Connection):
         self.conn = conn
 
@@ -46,7 +46,7 @@ class BinaryTransfer:
             return
 
         self.logger.debug(f"called to send {full_path} ...")
-        bytes_sender = _BytesSender(conn)
+        bytes_sender = _SendBytesToClient(conn)
         sender = Sender(send_data_func=bytes_sender.send)
         buffer_size = MAX_CHUNK_SIZE
         bytes_sent = 0

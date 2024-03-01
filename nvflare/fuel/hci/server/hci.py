@@ -17,7 +17,8 @@ import socketserver
 import ssl
 import threading
 
-from nvflare.fuel.hci.conn import Connection, receive_til_end
+from nvflare.fuel.hci.binary_proto import receive_all
+from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey, make_meta, validate_proto
 from nvflare.fuel.hci.security import IdentityKey, get_identity_info
 from nvflare.security.logging import secure_log_traceback
@@ -58,10 +59,14 @@ class _MsgHandler(socketserver.BaseRequestHandler):
                     "authentication error", meta=make_meta(MetaStatusValue.NOT_AUTHENTICATED, info="invalid credential")
                 )
             else:
-                req = receive_til_end(self.request).strip()
+                ct, req, extra = receive_all(self.request)
+                req = req.strip()
                 command = None
                 req_json = validate_proto(req)
                 conn.request = req_json
+                conn.content_type = ct
+                conn.extra = extra
+
                 if req_json is not None:
                     meta = req_json.get(ProtoKey.META, None)
                     if meta and isinstance(meta, dict):
