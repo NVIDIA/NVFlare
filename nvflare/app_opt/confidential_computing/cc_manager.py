@@ -12,24 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import threading
-from typing import Dict
+from typing import Dict, List
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, RunProcessKey
+from nvflare.apis.fl_constant import FLContextKey, RunProcessKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer
 
 PEER_CTX_CC_TOKEN = "_peer_ctx_cc_token"
 CC_TOKEN = "_cc_token"
+CC_ISSUER = "_cc_issuer"
 CC_NAMESPACE = "_cc_namespace"
 CC_INFO = "_cc_info"
 CC_TOKEN_VALIDATED = "_cc_token_validated"
 
 
 class CCManager(FLComponent):
-    def __init__(self, cc_issuer_id: str, cc_verifier_ids: [str]):
+    def __init__(self, cc_issuer_ids: str, cc_verifier_ids: [str]):
         """Manage all confidential computing related tasks.
 
         This manager does the following tasks:
@@ -43,11 +44,10 @@ class CCManager(FLComponent):
         """
         FLComponent.__init__(self)
         self.site_name = None
-        self.cc_issuer_id = cc_issuer_id
+        self.cc_issuer_ids = cc_issuer_ids
         self.cc_verifier_ids = cc_verifier_ids
-        self.cc_issuer = None
+        self.cc_issuers = []
         self.cc_verifiers = {}
-        self.my_token = None
         self.participant_cc_info = {}  # used by the Server to keep tokens of all clients
 
         self.lock = threading.Lock()
@@ -75,10 +75,7 @@ class CCManager(FLComponent):
             # Server side
             self._remove_client_token(fl_ctx)
         elif event_type == EventType.BEFORE_CHECK_RESOURCE_MANAGER:
-            # Client Side, job scheduler check resource
-            # command_to_check = fl_ctx.get_prop(key=FLContextKey.COMMAND_NAME)
-            # self.logger.debug(f"Received {command_to_check=}")
-            # if command_to_check == AdminCommandNames.CHECK_RESOURCES:
+            # Client side, check resources before job scheduled
             try:
                 err = self._client_to_check_participant_token(fl_ctx)
             except:
@@ -103,34 +100,47 @@ class CCManager(FLComponent):
 
     def _setup_cc_authorizers(self, fl_ctx):
         engine = fl_ctx.get_engine()
-        self.cc_issuer = engine.get_component(self.cc_issuer_id)
-        if not isinstance(self.cc_issuer, CCAuthorizer):
-            raise RuntimeError(f"cc_authorizer_id {self.cc_issuer_id} must be a CCAuthorizer, but got {self.cc_issuer.__class__}")
+        for i_id in self.cc_issuer_ids:
+            issuer = engine.get_component(i_id)
+            if not isinstance(issuer, CCAuthorizer):
+                raise RuntimeError(f"cc_issuer_id {i_id} must be a CCAuthorizer, but got {issuer.__class__}")
+            self.cc_issuers.append(issuer)
 
         for v_id in self.cc_verifier_ids:
             authorizer = engine.get_component(v_id)
             if not isinstance(authorizer, CCAuthorizer):
                 raise RuntimeError(f"cc_authorizer_id {v_id} must be a CCAuthorizer, but got {authorizer.__class__}")
-            self.cc_verifiers[authorizer.get_namespace()] = authorizer
+            namespace = authorizer.get_namespace()
+            if namespace in self.cc_verifiers.keys():
+                raise RuntimeError(f"Authorizer with namespace: {namespace} already exist.")
+            self.cc_verifiers[namespace] = authorizer
 
     def _prepare_token_for_login(self, fl_ctx: FLContext):
         # client side, if token expired then generate a new one
-        if not self.cc_issuer.verify(self.my_token):
-            self.my_token = self.cc_issuer.generate()
-            self.logger.info(f"site: {self.site_name} got a new CC token: {self.my_token}")
-        cc_info = {CC_TOKEN: self.my_token, CC_NAMESPACE: self.cc_issuer.get_namespace()}
+        self._handle_expired_tokens()
+
+        site_cc_info = self.participant_cc_info[self.site_name]
+        cc_info = self._get_participant_tokens(site_cc_info)
         fl_ctx.set_prop(key=CC_INFO, value=cc_info, sticky=False, private=False)
 
     def _add_client_token(self, fl_ctx: FLContext):
         # server side
         peer_ctx = fl_ctx.get_peer_context()
         token_owner = peer_ctx.get_identity_name()
-        peer_cc_info = peer_ctx.get_prop(CC_INFO, {CC_TOKEN: "", CC_NAMESPACE: ""})
+        peer_cc_info = peer_ctx.get_prop(CC_INFO, [{CC_TOKEN: "", CC_NAMESPACE: ""}])
+        new_tokens = []
+        for i in peer_cc_info:
+            new_tokens.append(i[CC_TOKEN])
+
         old_cc_info = self.participant_cc_info.get(token_owner)
-        if not old_cc_info or old_cc_info.get(CC_TOKEN) != peer_cc_info[CC_TOKEN]:
+        old_tokens = []
+        if old_cc_info:
+            for i in old_cc_info:
+                old_tokens.append(i[CC_TOKEN])
+
+        if not old_cc_info or set(new_tokens) != set(old_tokens):
             self.participant_cc_info[token_owner] = peer_cc_info
-            self.participant_cc_info[token_owner][CC_TOKEN_VALIDATED] = False
-            self.logger.info(f"Added CC client: {token_owner} token: {peer_cc_info[CC_TOKEN]}")
+            self.logger.info(f"Added CC client: {token_owner} tokens: {peer_cc_info}")
 
             with self.lock:
                 self._verify_running_jobs(fl_ctx)
@@ -162,12 +172,19 @@ class CCManager(FLComponent):
         # both server and client sides
         self.site_name = fl_ctx.get_identity_name()
         workspace_folder = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT).get_site_config_dir()
-        self.my_token = self.cc_issuer.generate()
-        if not self.my_token:
-            return "failed to get CC token"
 
-        self.logger.info(f"site: {self.site_name} got the token: {self.my_token}")
-        self.participant_cc_info[self.site_name] = {CC_TOKEN: self.my_token, CC_NAMESPACE: self.cc_issuer.get_namespace(), CC_TOKEN_VALIDATED: True}
+        self.participant_cc_info[self.site_name] = []
+        for issuer in self.cc_issuers:
+            my_token = issuer.generate()
+            namespace = issuer.get_namespace()
+
+            if not my_token:
+                return "failed to get CC token"
+
+            self.logger.info(f"site: {self.site_name} namespace: {namespace} got the token: {my_token}")
+            cc_info = {CC_TOKEN: my_token, CC_ISSUER: issuer, CC_NAMESPACE: namespace, CC_TOKEN_VALIDATED: True}
+            self.participant_cc_info[self.site_name].append(cc_info)
+
         return ""
 
     def _client_to_check_participant_token(self, fl_ctx: FLContext) -> str:
@@ -202,18 +219,17 @@ class CCManager(FLComponent):
         if err:
             return err
 
-        for p in participant_tokens:
-            self.participant_cc_info[p][CC_TOKEN_VALIDATED] = True
         fl_ctx.set_prop(key=PEER_CTX_CC_TOKEN, value=participant_tokens, sticky=True, private=False)
         self.logger.info(f"{self.site_name=} set PEER_CTX_CC_TOKEN with {participant_tokens=}")
         return ""
 
     def _verify_participants(self, participants, participant_tokens):
         # if server token expired, then generates a new one
-        if not self.cc_issuer.verify(self.my_token):
-            self.my_token = self.cc_issuer.generate()
-        # participant_tokens = {self.site_name: {CC_TOKEN: self.my_token, CC_NAMESPACE: self.cc_issuer.get_namespace()}}
-        participant_tokens[self.site_name] = {CC_TOKEN: self.my_token, CC_NAMESPACE: self.cc_issuer.get_namespace()}
+        self._handle_expired_tokens()
+
+        site_cc_info = self.participant_cc_info[self.site_name]
+        participant_tokens[self.site_name] = self._get_participant_tokens(site_cc_info)
+
         for p in participants:
             assert isinstance(p, str)
             if p == self.site_name:
@@ -221,18 +237,32 @@ class CCManager(FLComponent):
             if p not in self.participant_cc_info:
                 return f"no token available for participant {p}"
             if self.participant_cc_info.get(p):
-                participant_tokens[p] = self.participant_cc_info[p]
+                participant_tokens[p] = self._get_participant_tokens(self.participant_cc_info[p])
             else:
-                participant_tokens[p] = {}
+                participant_tokens[p] = [{}]
         return self._validate_participants_tokens(participant_tokens)
+
+    def _get_participant_tokens(self, site_cc_info):
+        cc_info = []
+        for i in site_cc_info:
+            namespace = i.get(CC_NAMESPACE)
+            token = i.get(CC_TOKEN)
+            cc_info.append({CC_TOKEN: token, CC_NAMESPACE: namespace, CC_TOKEN_VALIDATED: False})
+        return cc_info
+
+    def _handle_expired_tokens(self):
+        site_cc_info = self.participant_cc_info[self.site_name]
+        for i in site_cc_info:
+            issuer = i.get(CC_ISSUER)
+            token = i.get(CC_TOKEN)
+            if not issuer.verify(token):
+                token = issuer.generate()
+                i[CC_TOKEN] = token
+                self.logger.info(f"site: {self.site_name} namespace: {issuer.get_namespace()} got a new CC token: {token}")
 
     def _validate_participants_tokens(self, participants) -> str:
         self.logger.debug(f"Validating participant tokens {participants=}")
-        result = self._validate_participants(participants)
-        assert isinstance(result, dict)
-        for p in result:
-            self.participant_cc_info[p] = {CC_TOKEN: participants[p], CC_TOKEN_VALIDATED: True}
-        invalid_participant_list = [k for k, v in self.participant_cc_info.items() if v[CC_TOKEN_VALIDATED] is False]
+        result, invalid_participant_list = self._validate_participants(participants)
         if invalid_participant_list:
             invalid_participant_string = ",".join(invalid_participant_list)
             self.logger.debug(f"{invalid_participant_list=}")
@@ -240,17 +270,23 @@ class CCManager(FLComponent):
         else:
             return ""
 
-    def _validate_participants(self, participants: Dict[str, Dict[str, str]]) -> Dict[str, bool]:
+    def _validate_participants(self, participants: Dict[str, List[Dict[str, str]]]) -> (Dict[str, bool], List[str]):
         result = {}
+        invalid_participant_list = []
         if not participants:
             return result
-        for k, v in participants.items():
-            token = v.get(CC_TOKEN, "")
-            verifier = self.cc_verifiers.get(v.get(CC_NAMESPACE, ""), None)
-            if verifier and verifier.verify(token):
-                result[k] = True
+
+        for k, cc_info in participants.items():
+            for v in cc_info:
+                token = v.get(CC_TOKEN, "")
+                namespace = v.get(CC_NAMESPACE, "")
+                verifier = self.cc_verifiers.get(namespace, None)
+                if verifier and verifier.verify(token):
+                    result[k + "." + namespace] = True
+                else:
+                    invalid_participant_list.append(k + " namespace: {" + namespace + "}")
         self.logger.info(f"CC - results from validating participants' tokens: {result}")
-        return result
+        return result, invalid_participant_list
 
     def _not_authorize_job(self, reason: str, fl_ctx: FLContext):
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID, "")
