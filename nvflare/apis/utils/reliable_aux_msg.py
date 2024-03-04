@@ -284,6 +284,12 @@ class ReliableAuxMessage:
 
         # keep sending the request until a positive ack or result is received
         num_tries = 0
+
+        query = Shareable()
+        query.set_header(HEADER_TX, receiver.tx_id)
+        query.set_header(HEADER_OP, OP_QUERY)
+
+        req = request
         while True:
             if abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
@@ -291,7 +297,7 @@ class ReliableAuxMessage:
             ack = engine.send_aux_request(
                 targets=[target],
                 topic=TOPIC_RELIABLE_AUX_REQUEST,
-                request=request,
+                request=req,
                 timeout=timeout,
                 fl_ctx=fl_ctx,
             )
@@ -307,9 +313,13 @@ class ReliableAuxMessage:
 
                 # the ack is a status report - check status
                 status = ack.get(HEADER_STATUS)
-                if status and status != STATUS_NOT_RECEIVED:
-                    # status should never be STATUS_NOT_RECEIVED, unless there is a bug in the receving logic
-                    # STATUS_NOT_RECEIVED is only possible during "query" phase.
+                if not status:
+                    # unsure - send query next
+                    req = query
+                elif status == STATUS_NOT_RECEIVED:
+                    # peer said it didn't get the request - send the request next
+                    req = request
+                else:
                     break
 
             # we didn't get a positive ack - wait a short time and re-send the request.
@@ -320,10 +330,6 @@ class ReliableAuxMessage:
             time.sleep(cls._query_interval)
 
         # Querying phase - try to get result
-        query = Shareable()
-        query.set_header(HEADER_TX, receiver.tx_id)
-        query.set_header(HEADER_OP, OP_QUERY)
-
         num_tries = 0
         while True:
             if receiver.result_ready.wait(cls._query_interval):

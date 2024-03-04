@@ -564,7 +564,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 meta = job_def_manager.create(meta, zip_file_name, fl_ctx)
                 job_id = meta.get(JobMetaKey.JOB_ID)
 
-                os.remove(zip_file_name)  # the file is no longer needed
+                # os.remove(zip_file_name)  # the file is no longer needed
                 conn.append_string(f"Submitted job: {job_id}")
                 conn.append_success("", meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_ID: job_id}))
 

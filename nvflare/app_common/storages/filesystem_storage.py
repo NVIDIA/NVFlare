@@ -28,7 +28,7 @@ from nvflare.security.logging import secure_format_exception
 log = logging.getLogger(__name__)
 
 
-def _write(path: str, content):
+def _write(path: str, content, mv_file=True):
     tmp_path = path + "_" + str(uuid.uuid4())
     try:
         Path(os.path.dirname(path)).mkdir(parents=True, exist_ok=True)
@@ -43,7 +43,10 @@ def _write(path: str, content):
                 raise FileNotFoundError(f"file {content} does not exist")
             if not os.path.isfile(content):
                 raise ValueError(f"{content} is not a valid file")
-            shutil.copyfile(content, tmp_path)
+            if mv_file:
+                shutil.move(content, tmp_path)
+            else:
+                shutil.copyfile(content, tmp_path)
         else:
             raise RuntimeError(f"content must be bytes or str but got {type(content)}")
     except Exception as e:
