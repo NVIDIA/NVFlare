@@ -136,15 +136,15 @@ class MockServerEngine(ServerEngineSpec):
         return self.clients.get(token)
 
     def cancel_client_resources(
-        self, resource_check_results: Dict[str, Tuple[bool, str]], resource_reqs: Dict[str, dict]
+        self, resource_check_results: Dict[str, Tuple[bool, str]], resource_reqs: Dict[str, dict], fl_ctx: FLContext
     ):
-        with self.new_context() as fl_ctx:
-            for site_name, result in resource_check_results.items():
-                check_result, token = result
-                if check_result and token:
-                    self.clients[site_name].resource_manager.cancel_resources(
-                        resource_requirement=resource_reqs[site_name], token=token, fl_ctx=fl_ctx
-                    )
+        # with self.new_context() as fl_ctx:
+        for site_name, result in resource_check_results.items():
+            check_result, token = result
+            if check_result and token:
+                self.clients[site_name].resource_manager.cancel_resources(
+                    resource_requirement=resource_reqs[site_name], token=token, fl_ctx=fl_ctx
+                )
 
     def update_job_run_status(self):
         pass

@@ -148,7 +148,8 @@ class CommandUtil(object):
         cmd_timeout = conn.get_prop(ConnProps.CMD_TIMEOUT)
         if not cmd_timeout:
             cmd_timeout = admin_server.timeout
-        replies = admin_server.send_requests(requests, timeout_secs=cmd_timeout)
+        with admin_server.sai.new_context() as fl_ctx:
+            replies = admin_server.send_requests(requests, fl_ctx, timeout_secs=cmd_timeout)
 
         return replies
 

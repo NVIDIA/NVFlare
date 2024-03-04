@@ -219,7 +219,7 @@ class CCManager(FLComponent):
         if err:
             return err
 
-        fl_ctx.set_prop(key=PEER_CTX_CC_TOKEN, value=participant_tokens, sticky=True, private=False)
+        fl_ctx.set_prop(key=PEER_CTX_CC_TOKEN, value=participant_tokens, sticky=False, private=False)
         self.logger.info(f"{self.site_name=} set PEER_CTX_CC_TOKEN with {participant_tokens=}")
         return ""
 
@@ -294,7 +294,7 @@ class CCManager(FLComponent):
     def _not_authorize_job(self, reason: str, fl_ctx: FLContext):
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID, "")
         self.log_error(fl_ctx, f"Job {job_id} is blocked: {reason}")
-        fl_ctx.set_prop(key=FLContextKey.AUTHORIZATION_REASON, value=reason, sticky=False)
+        fl_ctx.set_prop(key=FLContextKey.JOB_BLOCK_REASON, value=reason, sticky=False)
         fl_ctx.set_prop(key=FLContextKey.AUTHORIZATION_RESULT, value=False, sticky=False)
 
     def _block_job(self, reason: str, fl_ctx: FLContext):

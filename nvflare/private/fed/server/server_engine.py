@@ -721,8 +721,8 @@ class ServerEngine(ServerEngineInternalSpec):
 
         return f"reset the server error stats for job: {job_id}"
 
-    def _send_admin_requests(self, requests, timeout_secs=10) -> List[ClientReply]:
-        return self.server.admin_server.send_requests(requests, timeout_secs=timeout_secs)
+    def _send_admin_requests(self, requests, fl_ctx: FLContext, timeout_secs=10) -> List[ClientReply]:
+        return self.server.admin_server.send_requests(requests, fl_ctx, timeout_secs=timeout_secs)
 
     def check_client_resources(self, job: Job, resource_reqs, fl_ctx: FLContext) -> Dict[str, Tuple[bool, str]]:
         requests = {}
@@ -737,7 +737,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 requests.update({client.token: request})
         replies = []
         if requests:
-            replies = self._send_admin_requests(requests, 15)
+            replies = self._send_admin_requests(requests, fl_ctx, 15)
         result = {}
         for r in replies:
             site_name = r.client_name
@@ -765,7 +765,7 @@ class ServerEngine(ServerEngineInternalSpec):
         return request
 
     def cancel_client_resources(
-        self, resource_check_results: Dict[str, Tuple[bool, str]], resource_reqs: Dict[str, dict]
+        self, resource_check_results: Dict[str, Tuple[bool, str]], resource_reqs: Dict[str, dict], fl_ctx: FLContext
     ):
         requests = {}
         for site_name, result in resource_check_results.items():
@@ -778,7 +778,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 if client:
                     requests.update({client.token: request})
         if requests:
-            _ = self._send_admin_requests(requests)
+            _ = self._send_admin_requests(requests, fl_ctx)
 
     def start_client_job(self, job_id, client_sites):
         requests = {}
@@ -793,7 +793,8 @@ class ServerEngine(ServerEngineInternalSpec):
                 requests.update({client.token: request})
         replies = []
         if requests:
-            replies = self._send_admin_requests(requests, timeout_secs=20)
+            with self.new_context() as fl_ctx:
+                replies = self._send_admin_requests(requests, fl_ctx, timeout_secs=20)
         return replies
 
     def stop_all_jobs(self):

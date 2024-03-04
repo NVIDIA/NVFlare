@@ -49,7 +49,8 @@ def _send_to_clients(admin_server, client_sites: List[str], engine, message, tim
 
     if timeout is None:
         timeout = admin_server.timeout
-    replies = admin_server.send_requests(requests, timeout_secs=timeout, optional=optional)
+    with admin_server.sai.new_context() as fl_ctx:
+        replies = admin_server.send_requests(requests, fl_ctx, timeout_secs=timeout, optional=optional)
     return replies
 
 
