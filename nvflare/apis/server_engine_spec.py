@@ -154,12 +154,13 @@ class ServerEngineSpec(EngineSpec, ABC):
         pass
 
     @abstractmethod
-    def start_client_job(self, job_id, client_sites):
+    def start_client_job(self, job_id, client_sites, fl_ctx: FLContext):
         """To send the start client run commands to the clients
 
         Args:
             client_sites: client sites
             job_id: job_id
+            fl_ctx: FLContext
 
         Returns:
 

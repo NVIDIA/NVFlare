@@ -780,7 +780,7 @@ class ServerEngine(ServerEngineInternalSpec):
         if requests:
             _ = self._send_admin_requests(requests, fl_ctx)
 
-    def start_client_job(self, job_id, client_sites):
+    def start_client_job(self, job_id, client_sites, fl_ctx: FLContext):
         requests = {}
         for site, dispatch_info in client_sites.items():
             resource_requirement = dispatch_info.resource_requirements
@@ -793,8 +793,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 requests.update({client.token: request})
         replies = []
         if requests:
-            with self.new_context() as fl_ctx:
-                replies = self._send_admin_requests(requests, fl_ctx, timeout_secs=20)
+            replies = self._send_admin_requests(requests, fl_ctx, timeout_secs=20)
         return replies
 
     def stop_all_jobs(self):

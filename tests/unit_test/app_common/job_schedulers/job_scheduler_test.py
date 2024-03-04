@@ -120,7 +120,7 @@ class MockServerEngine(ServerEngineSpec):
     def restore_components(self, snapshot, fl_ctx: FLContext):
         pass
 
-    def start_client_job(self, job_id, client_sites):
+    def start_client_job(self, job_id, client_sites, fl_ctx: FLContext):
         pass
 
     def check_client_resources(

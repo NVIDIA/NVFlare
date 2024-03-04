@@ -249,7 +249,7 @@ class JobRunner(FLComponent):
         if err:
             raise RuntimeError(f"Could not start the server App for job: {job_id}.")
 
-        replies = engine.start_client_job(job_id, client_sites)
+        replies = engine.start_client_job(job_id, client_sites, fl_ctx)
         client_sites_names = list(client_sites.keys())
         check_client_replies(replies=replies, client_sites=client_sites_names, command=f"start job ({job_id})")
         display_sites = ",".join(client_sites_names)
