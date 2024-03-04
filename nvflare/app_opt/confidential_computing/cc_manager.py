@@ -30,11 +30,11 @@ CC_TOKEN_VALIDATED = "_cc_token_validated"
 
 
 class CCManager(FLComponent):
-    def __init__(self, cc_issuer_ids: str, cc_verifier_ids: [str]):
+    def __init__(self, cc_issuer_ids: [str], cc_verifier_ids: [str]):
         """Manage all confidential computing related tasks.
 
         This manager does the following tasks:
-        obtaining its own GPU CC token
+        obtaining its own CC token
         preparing the token to the server
         keeping clients' tokens in server
         validating all tokens in the entire NVFlare system
@@ -75,7 +75,7 @@ class CCManager(FLComponent):
             # Server side
             self._remove_client_token(fl_ctx)
         elif event_type == EventType.BEFORE_CHECK_RESOURCE_MANAGER:
-            # Client side, check resources before job scheduled
+            # Client side: check resources before job scheduled
             try:
                 err = self._client_to_check_participant_token(fl_ctx)
             except:
@@ -85,7 +85,7 @@ class CCManager(FLComponent):
                 if err:
                     self._not_authorize_job(err, fl_ctx)
         elif event_type == EventType.BEFORE_CHECK_CLIENT_RESOURCES:
-            # Server side, job scheduler check client resources
+            # Server side: job scheduler check client resources
             try:
                 err = self._server_to_check_client_token(fl_ctx)
             except:
@@ -116,7 +116,7 @@ class CCManager(FLComponent):
             self.cc_verifiers[namespace] = authorizer
 
     def _prepare_token_for_login(self, fl_ctx: FLContext):
-        # client side, if token expired then generate a new one
+        # client side: if token expired then generate a new one
         self._handle_expired_tokens()
 
         site_cc_info = self.participant_cc_info[self.site_name]
@@ -257,6 +257,8 @@ class CCManager(FLComponent):
             token = i.get(CC_TOKEN)
             if not issuer.verify(token):
                 token = issuer.generate()
+                if not token:
+                    raise RuntimeError(f"{self.site_name} failed to generate a new CC token")
                 i[CC_TOKEN] = token
                 self.logger.info(f"site: {self.site_name} namespace: {issuer.get_namespace()} got a new CC token: {token}")
 
