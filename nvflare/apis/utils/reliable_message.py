@@ -17,44 +17,48 @@ import time
 import uuid
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
+from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable, make_reply
 from nvflare.apis.signal import Signal
 
+# Operation Types
 OP_REQUEST = "req"
 OP_QUERY = "query"
 OP_REPLY = "reply"
 
-HEADER_OP = "aux.op"
-HEADER_TOPIC = "aux.topic"
-HEADER_TX = "aux.tx"
-HEADER_TIMEOUT = "aux.timeout"
-HEADER_STATUS = "aux.status"
+# Reliable Message headers
+HEADER_OP = "rm.op"
+HEADER_TOPIC = "rm.topic"
+HEADER_TX = "rm.tx"
+HEADER_TIMEOUT = "rm.timeout"
+HEADER_STATUS = "rm.status"
 
+# Status
 STATUS_IN_PROCESS = "in_process"
 STATUS_IN_REPLY = "in_reply"
 STATUS_NOT_RECEIVED = "not_received"
 STATUS_REPLIED = "replied"
 STATUS_ABORTED = "aborted"
 
-TOPIC_RELIABLE_AUX_REQUEST = "AUX.RELIABLE_REQUEST"
-TOPIC_RELIABLE_AUX_REPLY = "AUX.RELIABLE_REPLY"
+# Topics for Reliable Message
+TOPIC_RELIABLE_REQUEST = "RM.RELIABLE_REQUEST"
+TOPIC_RELIABLE_REPLY = "RM.RELIABLE_REPLY"
 
 
 def _extract_result(reply: Shareable, target: str):
-    if not reply:
-        return None, None
     if not isinstance(reply, dict):
         return None, None
     result = reply.get(target)
     if not result:
-        return None, None
-    if not isinstance(result, Shareable):
         return None, None
     return result, result.get_return_code()
 
 
 def _status_reply(status: str):
     return make_reply(rc=ReturnCode.OK, headers={HEADER_STATUS: status})
+
+
+def _error_reply(rc: str, error: str):
+    return make_reply(rc, headers={ReservedHeaderKey.ERROR: error})
 
 
 class _RequestReceiver:
@@ -114,7 +118,7 @@ class _RequestReceiver:
         self.replying = True
         ack = engine.send_aux_request(
             targets=[self.source],
-            topic=TOPIC_RELIABLE_AUX_REPLY,
+            topic=TOPIC_RELIABLE_REPLY,
             request=self.result,
             timeout=self.timeout,
             fl_ctx=fl_ctx,
@@ -128,8 +132,8 @@ class _RequestReceiver:
     def _do_request(self, request: Shareable, fl_ctx: FLContext):
         try:
             result = self.request_handler_f(self.topic, request, fl_ctx)
-        except:
-            result = make_reply(ReturnCode.EXECUTION_EXCEPTION)
+        except Exception as e:
+            result = _error_reply(ReturnCode.EXECUTION_EXCEPTION, str(e))
 
         # send back
         result.set_header(HEADER_TX, self.tx_id)
@@ -151,7 +155,7 @@ class _ReplyReceiver:
         return make_reply(ReturnCode.OK)
 
 
-class ReliableAuxMessage:
+class ReliableMessage:
 
     _topic_to_handle = {}
     _req_receivers = {}  # tx id => receiver
@@ -167,9 +171,7 @@ class ReliableAuxMessage:
     @classmethod
     def register_request_handler(cls, topic: str, handler_f):
         if not cls._enabled:
-            raise RuntimeError(
-                "ReliableAuxMessage is not enabled. Please call ReliableAuxMessage.enable() to enable it"
-            )
+            raise RuntimeError("ReliableMessage is not enabled. Please call ReliableMessage.enable() to enable it")
         if not callable(handler_f):
             raise TypeError(f"handler_f must be callable but {type(handler_f)}")
         cls._topic_to_handle[topic] = handler_f
@@ -208,7 +210,7 @@ class ReliableAuxMessage:
             return receiver.process(request)
 
     @classmethod
-    def enable(cls, fl_ctx: FLContext, max_request_workers=20, query_interval=1.0, max_retries=5, max_tx_time=300.0):
+    def enable(cls, fl_ctx: FLContext, max_request_workers=20, query_interval=5, max_retries=5, max_tx_time=300.0):
         if cls._enabled:
             return
 
@@ -219,11 +221,11 @@ class ReliableAuxMessage:
         cls._executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_request_workers)
         engine = fl_ctx.get_engine()
         engine.register_aux_message_handler(
-            topic=TOPIC_RELIABLE_AUX_REQUEST,
+            topic=TOPIC_RELIABLE_REQUEST,
             message_handle_func=cls._receive_request,
         )
         engine.register_aux_message_handler(
-            topic=TOPIC_RELIABLE_AUX_REPLY,
+            topic=TOPIC_RELIABLE_REPLY,
             message_handle_func=cls._receive_reply,
         )
         t = threading.Thread(target=cls._monitor_req_receivers, daemon=True)
@@ -265,8 +267,8 @@ class ReliableAuxMessage:
         request.set_header(HEADER_TIMEOUT, timeout)
         try:
             result = cls._send_request(target, request, timeout, abort_signal, fl_ctx, receiver)
-        except:
-            result = make_reply(ReturnCode.ERROR)
+        except Exception as e:
+            result = _error_reply(ReturnCode.ERROR, str(e))
         cls._reply_receivers.pop(tx_id)
         return result
 
@@ -290,7 +292,7 @@ class ReliableAuxMessage:
 
             ack = engine.send_aux_request(
                 targets=[target],
-                topic=TOPIC_RELIABLE_AUX_REQUEST,
+                topic=TOPIC_RELIABLE_REQUEST,
                 request=request,
                 timeout=timeout,
                 fl_ctx=fl_ctx,
@@ -306,9 +308,9 @@ class ReliableAuxMessage:
                     return ack
 
                 # the ack is a status report - check status
-                status = ack.get(HEADER_STATUS)
+                status = ack.get_header(HEADER_STATUS)
                 if status and status != STATUS_NOT_RECEIVED:
-                    # status should never be STATUS_NOT_RECEIVED, unless there is a bug in the receving logic
+                    # status should never be STATUS_NOT_RECEIVED, unless there is a bug in the receiving logic
                     # STATUS_NOT_RECEIVED is only possible during "query" phase.
                     break
 
@@ -316,7 +318,7 @@ class ReliableAuxMessage:
             num_tries += 1
             if num_tries > cls._max_retries:
                 # enough tries
-                return make_reply(ReturnCode.COMMUNICATION_ERROR)
+                return _error_reply(ReturnCode.COMMUNICATION_ERROR, f"Max send retries ({cls._max_retries}) reached")
             time.sleep(cls._query_interval)
 
         # Querying phase - try to get result
@@ -339,7 +341,7 @@ class ReliableAuxMessage:
             # Note: the ack could be the result because we failed to receive the result sent by the target earlier.
             ack = engine.send_aux_request(
                 targets=[target],
-                topic=TOPIC_RELIABLE_AUX_REQUEST,
+                topic=TOPIC_RELIABLE_REQUEST,
                 request=query,
                 timeout=timeout,
                 fl_ctx=fl_ctx,
@@ -354,9 +356,9 @@ class ReliableAuxMessage:
                 status = ack.get_header(HEADER_STATUS)
                 if status == STATUS_NOT_RECEIVED:
                     # the receiver side lost context!
-                    return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+                    return _error_reply(ReturnCode.EXECUTION_EXCEPTION, "STATUS_NOT_RECEIVED")
                 elif status == STATUS_ABORTED:
-                    return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+                    return _error_reply(ReturnCode.EXECUTION_EXCEPTION, "Aborted")
                 else:
                     # the received is in process - do not increase num_tries here!
                     continue
@@ -364,4 +366,4 @@ class ReliableAuxMessage:
             # retry query
             num_tries += 1
             if num_tries > cls._max_retries:
-                return make_reply(ReturnCode.COMMUNICATION_ERROR)
+                return _error_reply(ReturnCode.COMMUNICATION_ERROR, f"Max query retries ({cls._max_retries}) reached")
