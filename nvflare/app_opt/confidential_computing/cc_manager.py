@@ -38,6 +38,8 @@ class CCManager(FLComponent):
         preparing the token to the server
         keeping clients' tokens in server
         validating all tokens in the entire NVFlare system
+        not allowing the system to start if failed to get CC token
+        shutdown the running jobs if CC tokens expired
 
         Args:
 
@@ -155,8 +157,7 @@ class CCManager(FLComponent):
             for _, client in job_participants.items():
                 participants.append(client.name)
 
-            participant_tokens = {}
-            err = self._verify_participants(participants, participant_tokens)
+            err, participant_tokens = self._verify_participants(participants)
             if err:
                 engine.job_runner.stop_run(job_id, fl_ctx)
                 self.logger.info(f"Stop Job: {job_id} with CC verification error: {err} ")
@@ -214,8 +215,7 @@ class CCManager(FLComponent):
         if not isinstance(participants, list):
             return f"bad value for {FLContextKey.JOB_PARTICIPANTS} in fl_ctx: expect list bot got {type(participants)}"
 
-        participant_tokens = {}
-        err = self._verify_participants(participants, participant_tokens)
+        err, participant_tokens = self._verify_participants(participants)
         if err:
             return err
 
@@ -223,10 +223,11 @@ class CCManager(FLComponent):
         self.logger.info(f"{self.site_name=} set PEER_CTX_CC_TOKEN with {participant_tokens=}")
         return ""
 
-    def _verify_participants(self, participants, participant_tokens):
+    def _verify_participants(self, participants):
         # if server token expired, then generates a new one
         self._handle_expired_tokens()
 
+        participant_tokens = {}
         site_cc_info = self.participant_cc_info[self.site_name]
         participant_tokens[self.site_name] = self._get_participant_tokens(site_cc_info)
 
@@ -240,7 +241,7 @@ class CCManager(FLComponent):
                 participant_tokens[p] = self._get_participant_tokens(self.participant_cc_info[p])
             else:
                 participant_tokens[p] = [{}]
-        return self._validate_participants_tokens(participant_tokens)
+        return self._validate_participants_tokens(participant_tokens), participant_tokens
 
     def _get_participant_tokens(self, site_cc_info):
         cc_info = []
