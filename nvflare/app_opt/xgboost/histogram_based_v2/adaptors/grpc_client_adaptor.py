@@ -1,0 +1,307 @@
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import multiprocessing
+import os
+import sys
+import threading
+from typing import Tuple
+
+import nvflare.app_opt.xgboost.histogram_based_v2.proto.federated_pb2 as pb2
+from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.workspace import Workspace
+from nvflare.app_opt.xgboost.histogram_based_v2.adaptor import XGBClientAdaptor
+from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
+from nvflare.app_opt.xgboost.histogram_based_v2.grpc.grpc_server import GrpcServer
+from nvflare.app_opt.xgboost.histogram_based_v2.grpc.utils import generate_all_keys
+from nvflare.app_opt.xgboost.histogram_based_v2.proto.federated_pb2_grpc import FederatedServicer
+from nvflare.fuel.f3.drivers.net_utils import get_open_tcp_port
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
+
+
+class _ClientStarter:
+    """This small class is used to start XGB client runner. It is used when running the runner in a thread
+    or in a separate process.
+
+    """
+
+    def __init__(self, runner):
+        self.xgb_runner = runner
+        self.error = None
+        self.started = True
+        self.stopped = False
+
+    def start(self, ctx: dict):
+        """Start the runner and wait for it to finish.
+
+        Args:
+            ctx:
+
+        Returns:
+
+        """
+        try:
+            self.xgb_runner.run(ctx)
+            self.stopped = True
+        except Exception as e:
+            secure_log_traceback()
+            self.error = f"Exception happens when running xgb train: {secure_format_exception(e)}"
+            self.started = False
+
+
+class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
+    def __init__(
+        self,
+        int_server_grpc_options=None,
+        in_process=False,
+    ):
+        XGBClientAdaptor.__init__(self)
+        self.int_server_grpc_options = int_server_grpc_options
+        self.in_process = in_process
+        self.internal_xgb_server = None
+        self.stopped = False
+        self.internal_server_addr = None
+        self._training_stopped = False
+        self._client_name = None
+        self._app_dir = None
+        self._workspace = None
+        self._run_dir = None
+        self._process = None
+        self._starter = None
+
+        self._client_cert_path = None
+        self._client_key_path = None
+        self._server_cert_path = None
+        self._server_key_path = None
+        self._ca_cert_path = None
+
+    def initialize(self, fl_ctx: FLContext):
+        self._client_name = fl_ctx.get_identity_name()
+        engine = fl_ctx.get_engine()
+        ws = engine.get_workspace()
+        self._app_dir = ws.get_app_dir(fl_ctx.get_job_id())
+        self._workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
+        self._run_dir = self._workspace.get_run_dir(run_number)
+
+    def _start_client(self, server_addr: str):
+        """Start the XGB client runner in a separate thread or separate process based on config.
+        Note that when starting runner in a separate process, we must not call a method defined in this
+        class since the self object contains a sender that contains a Core Cell which cannot be sent to
+        the new process. Instead, we use a small _ClientStarter object to run the process.
+
+        Args:
+            server_addr: the internal gRPC server address that the XGB client will connect to
+
+        Returns: None
+
+        """
+        ctx = {
+            Constant.RUNNER_CTX_WORLD_SIZE: self.world_size,
+            Constant.RUNNER_CTX_CLIENT_NAME: self._client_name,
+            Constant.RUNNER_CTX_SERVER_ADDR: server_addr,
+            Constant.RUNNER_CTX_RANK: self.rank,
+            Constant.RUNNER_CTX_NUM_ROUNDS: self.num_rounds,
+            Constant.RUNNER_CTX_MODEL_DIR: self._run_dir,
+            Constant.RUNNER_CTX_TB_DIR: self._app_dir,
+            Constant.RUNNER_CTX_SECURE: self.secure,
+            Constant.RUNNER_CTX_CA_CERT_PATH: self._ca_cert_path,
+            Constant.RUNNER_CTX_CLIENT_CERT_PATH: self._client_cert_path,
+            Constant.RUNNER_CTX_CLIENT_KEY_PATH: self._client_key_path,
+        }
+        starter = _ClientStarter(self.xgb_runner)
+        self.logger.info(f"starting XGB client with {ctx=}")
+        if self.in_process:
+            self.logger.info("starting XGB client in another thread")
+            t = threading.Thread(
+                target=starter.start,
+                args=(ctx,),
+                daemon=True,
+                name="xgb_client_thread_runner",
+            )
+            t.start()
+            if not starter.started:
+                self.logger.error(f"cannot start XGB client: {starter.error}")
+                raise RuntimeError(starter.error)
+            self._starter = starter
+        else:
+            # start as a separate local process
+            self.logger.info("starting XGB client in another process")
+            self._process = multiprocessing.Process(
+                target=starter.start,
+                args=(ctx,),
+                daemon=True,
+                name="xgb_client_process_runner",
+            )
+            self._process.start()
+
+    def _stop_client(self):
+        self._training_stopped = True
+        if self.in_process:
+            if self.xgb_runner:
+                self.xgb_runner.stop()
+        else:
+            if self._process:
+                self._process.kill()
+
+    def _get_certificates(self, fl_ctx: FLContext):
+        workspace: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        bin_folder = workspace.get_startup_kit_dir()
+        xgb_folder = os.path.join(bin_folder, "xgboost_cert")
+        server_name = "localhost"
+        client_name = "xgboost_client"
+        generate_all_keys(xgb_folder, server_name=server_name, client_name=client_name)
+
+        server_cert_path = os.path.join(xgb_folder, server_name, "startup", "server.crt")
+        if not os.path.exists(server_cert_path):
+            self.log_error(fl_ctx, "Missing server certificate (server.crt)")
+            return False
+        server_key_path = os.path.join(xgb_folder, server_name, "startup", "server.key")
+        if not os.path.exists(server_key_path):
+            self.log_error(fl_ctx, "Missing server key (server.key)")
+            return False
+        client_cert_path = os.path.join(xgb_folder, client_name, "startup", "client.crt")
+        if not os.path.exists(client_cert_path):
+            self.log_error(fl_ctx, "Missing client certificate (client.crt)")
+            return False
+        client_key_path = os.path.join(xgb_folder, client_name, "startup", "client.key")
+        if not os.path.exists(client_key_path):
+            self.log_error(fl_ctx, "Missing client key (client.key)")
+            return False
+        ca_cert_path = os.path.join(xgb_folder, client_name, "startup", "rootCA.pem")
+        if not os.path.exists(ca_cert_path):
+            self.log_error(fl_ctx, "Missing ca certificate (rootCA.pem)")
+            return False
+        self._client_cert_path = client_cert_path
+        self._client_key_path = client_key_path
+        self._server_cert_path = server_cert_path
+        self._server_key_path = server_key_path
+        self._ca_cert_path = ca_cert_path
+        return True
+
+    def _is_stopped(self) -> Tuple[bool, int]:
+        if self.in_process:
+            if self._starter:
+                if self._starter.stopped:
+                    return True, 0
+
+            if self._training_stopped:
+                return True, 0
+
+            if self.xgb_runner:
+                return self.xgb_runner.is_stopped()
+            else:
+                return True, 0
+        else:
+            if self._process:
+                ec = self._process.exitcode
+                if ec is None:
+                    return False, 0
+                else:
+                    return True, ec
+            else:
+                return True, 0
+
+    def start(self, fl_ctx: FLContext):
+        if self.rank is None:
+            raise RuntimeError("cannot start - my rank is not set")
+
+        if not self.num_rounds:
+            raise RuntimeError("cannot start - num_rounds is not set")
+
+        # dynamically determine address on localhost
+        port = get_open_tcp_port(resources={})
+        if not port:
+            raise RuntimeError("failed to get a port for XGB server")
+        if self.secure:
+            if not self._get_certificates(fl_ctx):
+                raise RuntimeError("failed to get certificates for XGB server")
+        self.internal_server_addr = f"localhost:{port}"
+        self.logger.info(f"Start internal server at {self.internal_server_addr}")
+        self.internal_xgb_server = GrpcServer(
+            addr=self.internal_server_addr,
+            max_workers=10,
+            grpc_options=self.int_server_grpc_options,
+            servicer=self,
+            secure=self.secure,
+            root_ca_path=self._ca_cert_path,
+            server_key_path=self._server_key_path,
+            server_cert_path=self._server_cert_path,
+        )
+        self.internal_xgb_server.start(no_blocking=True)
+        self.logger.info(f"Started internal server at {self.internal_server_addr}")
+        self._start_client(self.internal_server_addr)
+        self.logger.info("Started external XGB Client")
+
+    def stop(self, fl_ctx: FLContext):
+        if self.stopped:
+            return
+
+        self.stopped = True
+        self._stop_client()
+
+        if self.internal_xgb_server:
+            self.logger.info("Stop internal XGB Server")
+            self.internal_xgb_server.shutdown()
+
+    def _abort(self, reason: str):
+        # stop the gRPC XGB client (the target)
+        self.abort_signal.trigger(True)
+
+        # abort the FL client
+        with self.engine.new_context() as fl_ctx:
+            self.system_panic(reason, fl_ctx)
+
+    def Allgather(self, request: pb2.AllgatherRequest, context):
+        try:
+            self.logger.info(f"Calling Allgather with {sys.getsizeof(request.send_buffer)}")
+            rcv_buf = self._send_all_gather(
+                rank=request.rank,
+                seq=request.sequence_number,
+                send_buf=request.send_buffer,
+            )
+            return pb2.AllgatherReply(receive_buffer=rcv_buf)
+        except Exception as ex:
+            self._abort(reason=f"send_all_gather exception: {secure_format_exception(ex)}")
+            return None
+
+    def Allreduce(self, request: pb2.AllreduceRequest, context):
+        try:
+            self.logger.info(f"Calling Allreduce with {sys.getsizeof(request.send_buffer)}")
+            rcv_buf = self._send_all_reduce(
+                rank=request.rank,
+                seq=request.sequence_number,
+                data_type=request.data_type,
+                reduce_op=request.reduce_operation,
+                send_buf=request.send_buffer,
+            )
+            return pb2.AllreduceReply(receive_buffer=rcv_buf)
+        except Exception as ex:
+            self._abort(reason=f"send_all_reduce exception: {secure_format_exception(ex)}")
+            return None
+
+    def Broadcast(self, request: pb2.BroadcastRequest, context):
+        try:
+            self.logger.info(f"Calling Broadcast with {sys.getsizeof(request.send_buffer)}")
+            rcv_buf = self._send_broadcast(
+                rank=request.rank,
+                seq=request.sequence_number,
+                root=request.root,
+                send_buf=request.send_buffer,
+            )
+            return pb2.BroadcastReply(receive_buffer=rcv_buf)
+        except Exception as ex:
+            self._abort(reason=f"send_broadcast exception: {secure_format_exception(ex)}")
+            return None
