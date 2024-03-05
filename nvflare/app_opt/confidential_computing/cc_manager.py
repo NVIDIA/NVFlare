@@ -255,8 +255,6 @@ class CCManager(FLComponent):
             token = i.get(CC_TOKEN)
             if not issuer.verify(token):
                 token = issuer.generate()
-                if not token:
-                    raise RuntimeError(f"{self.site_name} failed to generate a new CC token")
                 i[CC_TOKEN] = token
                 self.logger.info(f"site: {self.site_name} namespace: {issuer.get_namespace()} got a new CC token: {token}")
 

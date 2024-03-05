@@ -41,8 +41,6 @@ class TDXAuthorizer(CCAuthorizer):
         command = ['sudo', self.tdx_cli_command, '-c', self.config_file, 'token', "--no-eventlog"]
         subprocess.run(command, preexec_fn=os.setsid, stdout=out, stderr=err_out)
 
-        # with open(token_file, "r") as f:
-        #     token = f.readline()
         with open(error_file, "r") as f:
             if 'Error:' in f.read():
                 return ""
@@ -59,8 +57,6 @@ class TDXAuthorizer(CCAuthorizer):
         command = [self.tdx_cli_command, "verify", "--config", self.config_file, "--token", token]
         subprocess.run(command, preexec_fn=os.setsid, stdout=out, stderr=err_out)
 
-        # with open(VERIFY_FILE, "r") as f:
-        #     result = f.readline()
         with open(error_file, "r") as f:
             if 'Error:' in f.read():
                 return False
