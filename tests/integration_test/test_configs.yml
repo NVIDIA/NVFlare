@@ -29,3 +29,6 @@ test_configs:
     - ./data/test_configs/standalone_job/cifar_examples.yml
   stats:
     - ./data/test_configs/standalone_job/image_stats.yml
+  xgboost:
+    - ./data/test_configs/standalone_job/xgb_histogram_examples.yml
+    - ./data/test_configs/standalone_job/xgb_tree_examples.yml

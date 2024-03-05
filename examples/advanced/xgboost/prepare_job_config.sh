@@ -22,4 +22,6 @@ prepare_job_config 20 cyclic uniform uniform $TREE_METHOD
 
 prepare_job_config 2 histogram uniform uniform $TREE_METHOD
 prepare_job_config 5 histogram uniform uniform $TREE_METHOD
+prepare_job_config 2 histogram_v2 uniform uniform $TREE_METHOD
+prepare_job_config 5 histogram_v2 uniform uniform $TREE_METHOD
 echo "Job configs generated"

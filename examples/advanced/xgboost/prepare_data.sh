@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-DATASET_PATH="$HOME/dataset/HIGGS.csv"
+DATASET_PATH="${HOME}/dataset/HIGGS.csv"
 OUTPUT_PATH="/tmp/nvflare/xgboost_higgs_dataset"
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
