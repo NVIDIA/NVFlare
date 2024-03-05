@@ -41,7 +41,7 @@ class TBWriter(LogWriter):
             global_step (optional, int): Global step value.
             **kwargs: Additional arguments to pass to the receiver side.
         """
-        self.sender.add(tag=tag, value=scalar, data_type=AnalyticsDataType.SCALAR, global_step=global_step, **kwargs)
+        self.write(tag=tag, value=scalar, data_type=AnalyticsDataType.SCALAR, global_step=global_step, **kwargs)
 
     def add_scalars(self, tag: str, scalars: dict, global_step: Optional[int] = None, **kwargs):
         """Sends scalars.
@@ -52,7 +52,7 @@ class TBWriter(LogWriter):
             global_step (optional, int): Global step value.
             **kwargs: Additional arguments to pass to the receiver side.
         """
-        self.sender.add(tag=tag, value=scalars, data_type=AnalyticsDataType.SCALARS, global_step=global_step, **kwargs)
+        self.write(tag=tag, value=scalars, data_type=AnalyticsDataType.SCALARS, global_step=global_step, **kwargs)
 
     def flush(self):
         """Flushes out the message.

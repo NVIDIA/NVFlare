@@ -49,7 +49,7 @@ class MLflowWriter(LogWriter):
                 All backend stores support values up to length 500, but some
                 may support larger values.
         """
-        self.sender.add(tag=key, value=value, data_type=AnalyticsDataType.PARAMETER)
+        self.write(tag=key, value=value, data_type=AnalyticsDataType.PARAMETER)
 
     def log_params(self, values: dict) -> None:
         """Log a batch of params for the current run.
@@ -57,7 +57,7 @@ class MLflowWriter(LogWriter):
         Args:
             values (dict): Dictionary of param_name: String -> value: (String, but will be string-ified if not)
         """
-        self.sender.add(tag="params", value=values, data_type=AnalyticsDataType.PARAMETERS)
+        self.write(tag="params", value=values, data_type=AnalyticsDataType.PARAMETERS)
 
     def log_metric(self, key: str, value: float, step: Optional[int] = None) -> None:
         """Log a metric under the current run.
@@ -72,7 +72,7 @@ class MLflowWriter(LogWriter):
                 support larger values.
             step (int, optional): Metric step. Defaults to zero if unspecified.
         """
-        self.sender.add(tag=key, value=value, data_type=AnalyticsDataType.METRIC, global_step=step)
+        self.write(tag=key, value=value, data_type=AnalyticsDataType.METRIC, global_step=step)
 
     def log_metrics(self, metrics: Dict[str, float], step: Optional[int] = None) -> None:
         """Log multiple metrics for the current run.
@@ -84,7 +84,7 @@ class MLflowWriter(LogWriter):
             step (int, optional): A single integer step at which to log the specified Metrics. If unspecified, each metric is
                 logged at step zero.
         """
-        self.sender.add(tag="metrics", value=metrics, data_type=AnalyticsDataType.METRICS, global_step=step)
+        self.write(tag="metrics", value=metrics, data_type=AnalyticsDataType.METRICS, global_step=step)
 
     def log_text(self, text: str, artifact_file_path: str) -> None:
         """Log text as an artifact under the current run.
@@ -94,7 +94,7 @@ class MLflowWriter(LogWriter):
             artifact_file_path (str): The run-relative artifact file path in posixpath format
                 to which the text is saved (e.g. “dir/file.txt”).
         """
-        self.sender.add(tag="text", value=text, data_type=AnalyticsDataType.TEXT, path=artifact_file_path)
+        self.write(tag="text", value=text, data_type=AnalyticsDataType.TEXT, path=artifact_file_path)
 
     def set_tag(self, key: str, tag: any) -> None:
         """Set a tag under the current run.
@@ -105,7 +105,7 @@ class MLflowWriter(LogWriter):
                 All backend stores will support values up to length 5000, but some
                 may support larger values.
         """
-        self.sender.add(tag=key, value=tag, data_type=AnalyticsDataType.TAG)
+        self.write(tag=key, value=tag, data_type=AnalyticsDataType.TAG)
 
     def set_tags(self, tags: dict) -> None:
         """Log a batch of tags for the current run.
@@ -114,4 +114,4 @@ class MLflowWriter(LogWriter):
             tags (dict): Dictionary of tag_name: String -> value: (String, but will be string-ified if
                 not)
         """
-        self.sender.add(tag="tags", value=tags, data_type=AnalyticsDataType.TAGS)
+        self.write(tag="tags", value=tags, data_type=AnalyticsDataType.TAGS)

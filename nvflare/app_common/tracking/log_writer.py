@@ -13,7 +13,9 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
+from typing import Optional
 
+from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
@@ -40,6 +42,20 @@ class LogWriter(FLComponent, ABC):
             else:
                 self.sender = AnalyticsSender(self.event_type, self.get_writer_name())
                 self.sender.engine = engine
+
+    def write(self, tag: str, value, data_type: AnalyticsDataType, global_step: Optional[int] = None, **kwargs):
+        """Writes a record.
+
+        Args:
+            tag (str): Tag name
+            value: Value to send
+            data_type (AnalyticsDataType): Data type of the value being sent
+            global_step (optional, int): Global step value.
+
+        Raises:
+            TypeError: global_step must be an int
+        """
+        self.sender.add(tag=tag, value=value, data_type=data_type, global_step=global_step, **kwargs)
 
     @abstractmethod
     def get_writer_name(self) -> LogWriterName:

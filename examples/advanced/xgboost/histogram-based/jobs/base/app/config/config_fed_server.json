@@ -2,7 +2,25 @@
   "format_version": 2,
   "task_data_filters": [],
   "task_result_filters": [],
-  "components": [],
+  "components": [
+    {
+      "id": "mlflow_receiver_with_tracking_uri",
+      "path": "nvflare.app_opt.tracking.mlflow.mlflow_receiver.MLflowReceiver",
+      "args": {
+        "kwargs": {
+          "experiment_name": "xgboost",
+          "run_name": "xgboost-with-mlflow",
+          "experiment_tags": {
+            "mlflow.note.content": "## **xgboost experiment with MLflow**"
+          },
+          "run_tags": {
+            "mlflow.note.content": "## Federated Experiment tracking with MLflow \n"
+          }
+        },
+        "artifact_location": "artifacts"
+      }
+    }
+  ],
   "workflows": [
     {
       "id": "xgb_controller",

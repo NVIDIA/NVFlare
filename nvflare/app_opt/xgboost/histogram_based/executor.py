@@ -28,6 +28,8 @@ from nvflare.apis.workspace import Workspace
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
 from nvflare.app_opt.xgboost.histogram_based.constants import XGB_TRAIN_TASK, XGBShareableHeader
+from nvflare.app_opt.xgboost.metrics_cb import MetricsCallback
+from nvflare.app_opt.xgboost.tb import TensorBoardCallback
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
@@ -48,25 +50,6 @@ class XGBoostParams:
         self.xgb_params: dict = xgb_params if xgb_params else {}
 
 
-class TensorBoardCallback(xgb.callback.TrainingCallback):
-    def __init__(self, app_dir: str, tensorboard):
-        self.train_writer = tensorboard.SummaryWriter(log_dir=os.path.join(app_dir, "train-auc/"))
-        self.val_writer = tensorboard.SummaryWriter(log_dir=os.path.join(app_dir, "val-auc/"))
-
-    def after_iteration(self, model, epoch: int, evals_log: xgb.callback.TrainingCallback.EvalsLog):
-        if not evals_log:
-            return False
-
-        for data, metric in evals_log.items():
-            for metric_name, log in metric.items():
-                score = log[-1][0] if isinstance(log[-1], tuple) else log[-1]
-                if data == "train":
-                    self.train_writer.add_scalar(metric_name, score, epoch)
-                else:
-                    self.val_writer.add_scalar(metric_name, score, epoch)
-        return False
-
-
 class FedXGBHistogramExecutor(Executor):
     """Federated XGBoost Executor Spec for histogram-base collaboration.
 
@@ -81,6 +64,7 @@ class FedXGBHistogramExecutor(Executor):
         data_loader_id: str,
         verbose_eval=False,
         use_gpus=False,
+        writer_id: str = None,
     ):
         """Federated XGBoost Executor for histogram-base collaboration.
 
@@ -118,6 +102,9 @@ class FedXGBHistogramExecutor(Executor):
         self.train_data = None
         self.val_data = None
 
+        self.writer_id = writer_id
+        self.writer = None
+
     def initialize(self, fl_ctx):
         self.client_id = fl_ctx.get_identity_name()
         self._server_address = self._get_server_address(fl_ctx)
@@ -151,6 +138,8 @@ class FedXGBHistogramExecutor(Executor):
         tensorboard, flag = optional_import(module="torch.utils.tensorboard")
         if flag and self.app_dir:
             callbacks.append(TensorBoardCallback(self.app_dir, tensorboard))
+        if self.writer:
+            callbacks.append(MetricsCallback(self.writer))
 
         # Run training, all the features in training API is available.
         bst = xgb.train(
@@ -168,6 +157,9 @@ class FedXGBHistogramExecutor(Executor):
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
             self.initialize(fl_ctx)
+            engine = fl_ctx.get_engine()
+            if self.writer_id:
+                self.writer = engine.get_component(self.writer_id)
 
     def _get_server_address(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()

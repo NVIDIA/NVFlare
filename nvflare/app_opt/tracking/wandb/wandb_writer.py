@@ -35,4 +35,4 @@ class WandBWriter(LogWriter):
             metrics (Dict[str, float]): Dictionary of metric_name of type String to Float values.
             step (int, optional): A single integer step at which to log the specified Metrics.
         """
-        self.sender.add(tag="metrics", value=metrics, data_type=AnalyticsDataType.METRICS, global_step=step)
+        self.write(tag="metrics", value=metrics, data_type=AnalyticsDataType.METRICS, global_step=step)
