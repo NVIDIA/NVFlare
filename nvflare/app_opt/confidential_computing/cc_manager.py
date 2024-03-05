@@ -85,7 +85,7 @@ class CCManager(FLComponent):
                 err = "Participants unable to meet client CC requirements"
             finally:
                 if err:
-                    self._not_authorize_job(err, fl_ctx)
+                    self._block_job(err, fl_ctx)
         elif event_type == EventType.BEFORE_CHECK_CLIENT_RESOURCES:
             # Server side: job scheduler check client resources
             try:
@@ -96,21 +96,18 @@ class CCManager(FLComponent):
             finally:
                 if err:
                     self._block_job(err, fl_ctx)
-        elif event_type == EventType.AFTER_CHECK_CLIENT_RESOURCES:
-            # Server side
-            fl_ctx.remove_prop(PEER_CTX_CC_TOKEN)
 
     def _setup_cc_authorizers(self, fl_ctx):
         engine = fl_ctx.get_engine()
         for i_id in self.cc_issuer_ids:
             issuer = engine.get_component(i_id)
-            if not isinstance(issuer, CCAuthorizer):
+            if not (isinstance(issuer, CCAuthorizer) and issuer.can_generate()):
                 raise RuntimeError(f"cc_issuer_id {i_id} must be a CCAuthorizer, but got {issuer.__class__}")
             self.cc_issuers.append(issuer)
 
         for v_id in self.cc_verifier_ids:
             authorizer = engine.get_component(v_id)
-            if not isinstance(authorizer, CCAuthorizer):
+            if not (isinstance(authorizer, CCAuthorizer) and authorizer.can_verify()):
                 raise RuntimeError(f"cc_authorizer_id {v_id} must be a CCAuthorizer, but got {authorizer.__class__}")
             namespace = authorizer.get_namespace()
             if namespace in self.cc_verifiers.keys():
@@ -277,8 +274,7 @@ class CCManager(FLComponent):
         result = {}
         invalid_participant_list = []
         if not participants:
-            return result
-
+            return result, invalid_participant_list
         for k, cc_info in participants.items():
             for v in cc_info:
                 token = v.get(CC_TOKEN, "")
@@ -290,12 +286,6 @@ class CCManager(FLComponent):
                     invalid_participant_list.append(k + " namespace: {" + namespace + "}")
         self.logger.info(f"CC - results from validating participants' tokens: {result}")
         return result, invalid_participant_list
-
-    def _not_authorize_job(self, reason: str, fl_ctx: FLContext):
-        job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID, "")
-        self.log_error(fl_ctx, f"Job {job_id} is blocked: {reason}")
-        fl_ctx.set_prop(key=FLContextKey.JOB_BLOCK_REASON, value=reason, sticky=False)
-        fl_ctx.set_prop(key=FLContextKey.AUTHORIZATION_RESULT, value=False, sticky=False)
 
     def _block_job(self, reason: str, fl_ctx: FLContext):
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID, "")

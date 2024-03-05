@@ -24,7 +24,7 @@ VERIFY_FILE = "verify.txt"
 ERROR_FILE = "error.txt"
 
 
-class TDXConnector(CCAuthorizer):
+class TDXAuthorizer(CCAuthorizer):
     def __init__(self, tdx_cli_command: str, config_dir: str) -> None:
         super().__init__()
         self.tdx_cli_command = tdx_cli_command
