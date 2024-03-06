@@ -1,13 +1,13 @@
 ## Federated p-tuning using a 20 billion parameter GPT model
 
-In this example, we utilize NeMo's [prompt learning](https://docs.nvidia.com/deeplearning/nemo/user-guide/docs/en/stable/nlp/nemo_megatron/prompt_learning.html)
+In this example, we utilize NeMo's [prompt learning](https://docs.nvidia.com/deeplearning/nemo/user-guide/docs/en/v1.17.0/nlp/nemo_megatron/prompt_learning.html)
 feature to showcase how to adapt a large language model (LLM) to 
 a downstream task such as financial sentiment predictions. 
 
 The prompt learning technique shown in the example is p-tuning which adds a small prompt encoder network to the LLM
 to produce virtual tokens that guide the model toward the desired output of the downstream task.
 
-For more details on how to change hyperparameters for prompt learning in NeMo, see this [tutorial](https://github.com/NVIDIA/NeMo/blob/main/tutorials/nlp/Multitask_Prompt_and_PTuning.ipynb) which is also the basis for this NVFlare tutorial.
+For more details on how to change hyperparameters for prompt learning in NeMo, see this [tutorial](https://github.com/NVIDIA/NeMo/blob/v1.17.0/tutorials/nlp/Multitask_Prompt_and_PTuning.ipynb) which is also the basis for this NVFlare tutorial.
 
 ## Dependencies
 This example running a 20B GPT model requires more computational resources.
