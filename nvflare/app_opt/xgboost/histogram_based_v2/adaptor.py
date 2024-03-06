@@ -195,7 +195,6 @@ class XGBServerAdaptor(XGBAdaptor, ABC):
     def __init__(self):
         XGBAdaptor.__init__(self)
         self.world_size = None
-        self.secure = None
 
     def configure(self, config: dict, fl_ctx: FLContext):
         """Configures the target.
@@ -217,9 +216,6 @@ class XGBServerAdaptor(XGBAdaptor, ABC):
 
         check_positive_int(Constant.CONF_KEY_WORLD_SIZE, ws)
         self.world_size = ws
-
-        secure = config.get(Constant.CONF_KEY_SECURE, False)
-        self.secure = secure
 
     @abstractmethod
     def all_gather(self, rank: int, seq: int, send_buf: bytes, fl_ctx: FLContext) -> bytes:
@@ -292,7 +288,6 @@ class XGBClientAdaptor(XGBAdaptor, ABC):
         self.rank = None
         self.num_rounds = None
         self.world_size = None
-        self.secure = False
 
     def set_sender(self, sender: Sender):
         """Set the sender to be used to send XGB operation requests to the server.
@@ -339,9 +334,6 @@ class XGBClientAdaptor(XGBAdaptor, ABC):
 
         check_positive_int(Constant.CONF_KEY_NUM_ROUNDS, num_rounds)
         self.num_rounds = num_rounds
-
-        secure = config.get(Constant.CONF_KEY_SECURE, False)
-        self.secure = secure
 
     def _send_request(self, op: str, req: Shareable) -> bytes:
         """Send XGB operation request to the FL server via FLARE message.

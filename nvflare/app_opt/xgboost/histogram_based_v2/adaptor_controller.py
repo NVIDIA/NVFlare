@@ -373,7 +373,6 @@ class XGBController(Controller):
 
         shareable[Constant.CONF_KEY_CLIENT_RANKS] = self.client_ranks
         shareable[Constant.CONF_KEY_NUM_ROUNDS] = self.num_rounds
-        shareable[Constant.CONF_KEY_SECURE] = self._engine.server.secure_train
 
         task = Task(
             name=self.configure_task_name,
@@ -482,7 +481,6 @@ class XGBController(Controller):
             self.adaptor.configure(
                 {
                     Constant.CONF_KEY_WORLD_SIZE: len(self.participating_clients),
-                    Constant.CONF_KEY_SECURE: self._engine.server.secure_train,
                 },
                 fl_ctx,
             )

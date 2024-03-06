@@ -25,7 +25,6 @@ class Constant:
     CONF_KEY_RANK = "rank"
     CONF_KEY_WORLD_SIZE = "world_size"
     CONF_KEY_NUM_ROUNDS = "num_rounds"
-    CONF_KEY_SECURE = "secure"
 
     # default component config values
     CONFIG_TASK_TIMEOUT = 10
@@ -86,16 +85,3 @@ class Constant:
     RUNNER_CTX_RANK = "rank"
     RUNNER_CTX_TB_DIR = "tb_dir"
     RUNNER_CTX_MODEL_DIR = "model_dir"
-    RUNNER_CTX_SECURE = "secure"
-    RUNNER_CTX_SERVER_KEY_PATH = "server_key"
-    RUNNER_CTX_SERVER_CERT_PATH = "server_cert"
-    RUNNER_CTX_CLIENT_KEY_PATH = "client_key"
-    RUNNER_CTX_CLIENT_CERT_PATH = "client_cert"
-    RUNNER_CTX_CA_CERT_PATH = "ca_cert"
-
-
-class XGBShareableHeader:
-    WORLD_SIZE = "_world_size"
-    RANK_MAP = "_rank_map"
-    XGB_FL_SERVER_PORT = "_server_port"
-    XGB_FL_SERVER_SECURE = "_secure_server"

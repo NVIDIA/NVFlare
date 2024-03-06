@@ -15,7 +15,6 @@
 import grpc
 
 from nvflare.app_opt.xgboost.histogram_based_v2.grpc.defs import GRPC_DEFAULT_OPTIONS
-from nvflare.app_opt.xgboost.histogram_based_v2.grpc.utils import read_file
 from nvflare.app_opt.xgboost.histogram_based_v2.proto import federated_pb2 as pb2
 from nvflare.app_opt.xgboost.histogram_based_v2.proto.federated_pb2_grpc import FederatedStub
 from nvflare.fuel.utils.obj_utils import get_logger
@@ -28,20 +27,12 @@ class GrpcClient:
         self,
         server_addr,
         grpc_options=None,
-        secure=False,
-        root_ca_path=None,
-        client_key_path=None,
-        client_cert_path=None,
     ):
         """Constructor
 
         Args:
             server_addr: address of the gRPC server to connect to
             grpc_options: gRPC options for the gRPC client
-            secure: whether the internal gRPC communication is secure
-            root_ca_path: Optional path to the PEM-encoded client root certificates
-            client_key_path: Optional path to the PEM-encoded private key
-            client_cert_path: Optional path to the PEM-encoded certificate chain
         """
         if not grpc_options:
             grpc_options = GRPC_DEFAULT_OPTIONS
@@ -52,10 +43,6 @@ class GrpcClient:
         self.grpc_options = grpc_options
         self.started = False
         self.logger = get_logger(self)
-        self.secure = secure
-        self.root_ca_path = root_ca_path
-        self.client_key_path = client_key_path
-        self.client_cert_path = client_cert_path
 
     def start(self, ready_timeout=10):
         """Start the gRPC client and wait for the server to be ready.
@@ -71,17 +58,7 @@ class GrpcClient:
 
         self.started = True
 
-        if self.secure:
-            channel_credentials = grpc.ssl_channel_credentials(
-                root_certificates=read_file(self.root_ca_path),
-                private_key=read_file(self.client_key_path),
-                certificate_chain=read_file(self.client_cert_path),
-            )
-            self.channel = grpc.secure_channel(
-                self.server_addr, credentials=channel_credentials, options=self.grpc_options
-            )
-        else:
-            self.channel = grpc.insecure_channel(self.server_addr, options=self.grpc_options)
+        self.channel = grpc.insecure_channel(self.server_addr, options=self.grpc_options)
         self.stub = FederatedStub(self.channel)
 
         # wait for channel ready

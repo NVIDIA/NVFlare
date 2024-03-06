@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import multiprocessing
-import os
 import sys
 import threading
 from typing import Tuple
@@ -21,11 +20,9 @@ from typing import Tuple
 import nvflare.app_opt.xgboost.histogram_based_v2.proto.federated_pb2 as pb2
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.xgboost.histogram_based_v2.adaptor import XGBClientAdaptor
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.grpc.grpc_server import GrpcServer
-from nvflare.app_opt.xgboost.histogram_based_v2.grpc.utils import generate_all_keys
 from nvflare.app_opt.xgboost.histogram_based_v2.proto.federated_pb2_grpc import FederatedServicer
 from nvflare.fuel.f3.drivers.net_utils import get_open_tcp_port
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
@@ -81,12 +78,6 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         self._process = None
         self._starter = None
 
-        self._client_cert_path = None
-        self._client_key_path = None
-        self._server_cert_path = None
-        self._server_key_path = None
-        self._ca_cert_path = None
-
     def initialize(self, fl_ctx: FLContext):
         self._client_name = fl_ctx.get_identity_name()
         engine = fl_ctx.get_engine()
@@ -116,10 +107,6 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
             Constant.RUNNER_CTX_NUM_ROUNDS: self.num_rounds,
             Constant.RUNNER_CTX_MODEL_DIR: self._run_dir,
             Constant.RUNNER_CTX_TB_DIR: self._app_dir,
-            Constant.RUNNER_CTX_SECURE: self.secure,
-            Constant.RUNNER_CTX_CA_CERT_PATH: self._ca_cert_path,
-            Constant.RUNNER_CTX_CLIENT_CERT_PATH: self._client_cert_path,
-            Constant.RUNNER_CTX_CLIENT_KEY_PATH: self._client_key_path,
         }
         starter = _ClientStarter(self.xgb_runner)
         self.logger.info(f"starting XGB client with {ctx=}")
@@ -156,41 +143,6 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
             if self._process:
                 self._process.kill()
 
-    def _get_certificates(self, fl_ctx: FLContext):
-        workspace: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-        bin_folder = workspace.get_startup_kit_dir()
-        xgb_folder = os.path.join(bin_folder, "xgboost_cert")
-        server_name = "localhost"
-        client_name = "xgboost_client"
-        generate_all_keys(xgb_folder, server_name=server_name, client_name=client_name)
-
-        server_cert_path = os.path.join(xgb_folder, server_name, "startup", "server.crt")
-        if not os.path.exists(server_cert_path):
-            self.log_error(fl_ctx, "Missing server certificate (server.crt)")
-            return False
-        server_key_path = os.path.join(xgb_folder, server_name, "startup", "server.key")
-        if not os.path.exists(server_key_path):
-            self.log_error(fl_ctx, "Missing server key (server.key)")
-            return False
-        client_cert_path = os.path.join(xgb_folder, client_name, "startup", "client.crt")
-        if not os.path.exists(client_cert_path):
-            self.log_error(fl_ctx, "Missing client certificate (client.crt)")
-            return False
-        client_key_path = os.path.join(xgb_folder, client_name, "startup", "client.key")
-        if not os.path.exists(client_key_path):
-            self.log_error(fl_ctx, "Missing client key (client.key)")
-            return False
-        ca_cert_path = os.path.join(xgb_folder, client_name, "startup", "rootCA.pem")
-        if not os.path.exists(ca_cert_path):
-            self.log_error(fl_ctx, "Missing ca certificate (rootCA.pem)")
-            return False
-        self._client_cert_path = client_cert_path
-        self._client_key_path = client_key_path
-        self._server_cert_path = server_cert_path
-        self._server_key_path = server_key_path
-        self._ca_cert_path = ca_cert_path
-        return True
-
     def _is_stopped(self) -> Tuple[bool, int]:
         if self.in_process:
             if self._starter:
@@ -225,9 +177,7 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         port = get_open_tcp_port(resources={})
         if not port:
             raise RuntimeError("failed to get a port for XGB server")
-        if self.secure:
-            if not self._get_certificates(fl_ctx):
-                raise RuntimeError("failed to get certificates for XGB server")
+
         self.internal_server_addr = f"localhost:{port}"
         self.logger.info(f"Start internal server at {self.internal_server_addr}")
         self.internal_xgb_server = GrpcServer(
@@ -235,10 +185,6 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
             max_workers=10,
             grpc_options=self.int_server_grpc_options,
             servicer=self,
-            secure=self.secure,
-            root_ca_path=self._ca_cert_path,
-            server_key_path=self._server_key_path,
-            server_cert_path=self._server_cert_path,
         )
         self.internal_xgb_server.start(no_blocking=True)
         self.logger.info(f"Started internal server at {self.internal_server_addr}")

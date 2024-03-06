@@ -23,7 +23,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.runner import XGBRunner
-from nvflare.app_opt.xgboost.tb import TensorBoardCallback
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.obj_utils import get_logger
 
@@ -42,6 +41,26 @@ class XGBoostParams:
         self.early_stopping_rounds = early_stopping_rounds
         self.verbose_eval = verbose_eval
         self.xgb_params: dict = xgb_params if xgb_params else {}
+
+
+class TensorBoardCallback(xgb.callback.TrainingCallback):
+    def __init__(self, app_dir: str, tensorboard):
+        super().__init__()
+        self.train_writer = tensorboard.SummaryWriter(log_dir=os.path.join(app_dir, "train-auc/"))
+        self.val_writer = tensorboard.SummaryWriter(log_dir=os.path.join(app_dir, "val-auc/"))
+
+    def after_iteration(self, model, epoch: int, evals_log: xgb.callback.TrainingCallback.EvalsLog):
+        if not evals_log:
+            return False
+
+        for data, metric in evals_log.items():
+            for metric_name, log in metric.items():
+                score = log[-1][0] if isinstance(log[-1], tuple) else log[-1]
+                if data == "train":
+                    self.train_writer.add_scalar(metric_name, score, epoch)
+                else:
+                    self.val_writer.add_scalar(metric_name, score, epoch)
+        return False
 
 
 class XGBClientRunner(XGBRunner, FLComponent):
@@ -123,7 +142,6 @@ class XGBClientRunner(XGBRunner, FLComponent):
         self._server_addr = ctx.get(Constant.RUNNER_CTX_SERVER_ADDR)
         self._tb_dir = ctx.get(Constant.RUNNER_CTX_TB_DIR)
         self._model_dir = ctx.get(Constant.RUNNER_CTX_MODEL_DIR)
-        _secure = ctx.get(Constant.RUNNER_CTX_SECURE, False)
 
         if self.use_gpus:
             # mapping each rank to a GPU (can set to cuda:0 if simulating with only one gpu)
@@ -146,13 +164,6 @@ class XGBClientRunner(XGBRunner, FLComponent):
             "federated_rank": self._rank,
         }
 
-        if _secure:
-            _client_key_path = ctx.get(Constant.RUNNER_CTX_CLIENT_KEY_PATH, None)
-            _client_cert_path = ctx.get(Constant.RUNNER_CTX_CLIENT_CERT_PATH, None)
-            _ca_cert_path = ctx.get(Constant.RUNNER_CTX_CA_CERT_PATH, None)
-            communicator_env["federated_server_cert"] = _ca_cert_path
-            communicator_env["federated_client_key"] = _client_key_path
-            communicator_env["federated_client_cert"] = _client_cert_path
         self.logger.info(f"communicator_env is {communicator_env=}")
         with xgb.collective.CommunicatorContext(**communicator_env):
             train_data, val_data = self._data_loader.load_data(self._client_name)

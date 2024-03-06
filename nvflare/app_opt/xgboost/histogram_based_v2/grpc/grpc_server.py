@@ -17,7 +17,6 @@ import concurrent.futures as futures
 import grpc
 
 from nvflare.app_opt.xgboost.histogram_based_v2.grpc.defs import GRPC_DEFAULT_OPTIONS
-from nvflare.app_opt.xgboost.histogram_based_v2.grpc.utils import read_file
 from nvflare.app_opt.xgboost.histogram_based_v2.proto.federated_pb2_grpc import (
     FederatedServicer,
     add_FederatedServicer_to_server,
@@ -36,10 +35,6 @@ class GrpcServer:
         max_workers: int,
         servicer,
         grpc_options=None,
-        secure: bool = False,
-        root_ca_path=None,
-        server_key_path=None,
-        server_cert_path=None,
     ):
         """Constructor
 
@@ -48,10 +43,6 @@ class GrpcServer:
             max_workers: max number of workers
             servicer: the servicer that is capable of processing XGB requests
             grpc_options: gRPC options
-            secure: whether the internal gRPC communication is secure
-            root_ca_path: Optional path to the PEM-encoded client root certificates
-            server_key_path: Optional path to the PEM-encoded private key
-            server_cert_path: Optional path to the PEM-encoded certificate chain
         """
         if not grpc_options:
             grpc_options = GRPC_DEFAULT_OPTIONS
@@ -63,21 +54,8 @@ class GrpcServer:
         self.logger = get_logger(self)
 
         try:
-            if secure:
-                server_credentials = grpc.ssl_server_credentials(
-                    (
-                        (
-                            read_file(server_key_path),
-                            read_file(server_cert_path),
-                        ),
-                    ),
-                    read_file(root_ca_path),
-                )
-                self.grpc_server.add_secure_port(addr, server_credentials=server_credentials)
-                self.logger.info(f"XGBServer: added secure port at {addr}")
-            else:
-                self.grpc_server.add_insecure_port(addr)
-                self.logger.info(f"XGBServer: added insecure port at {addr}")
+            self.grpc_server.add_insecure_port(addr)
+            self.logger.info(f"XGBServer: added insecure port at {addr}")
         except Exception as ex:
             self.logger.error(f"cannot listen on {addr}: {secure_format_exception(ex)}")
 
