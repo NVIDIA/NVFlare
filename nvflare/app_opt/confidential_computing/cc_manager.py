@@ -35,7 +35,7 @@ TOKEN_EXPIRATION = "token_expiration"
 
 
 class CCManager(FLComponent):
-    def __init__(self, cc_issuers_conf: [str], cc_verifier_ids: [str], verify_frequency=600):
+    def __init__(self, cc_issuers_conf: [Dict[str, str]], cc_verifier_ids: [str], verify_frequency=600):
         """Manage all confidential computing related tasks.
 
         This manager does the following tasks:
@@ -188,10 +188,12 @@ class CCManager(FLComponent):
         workspace_folder = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT).get_site_config_dir()
 
         self.participant_cc_info[self.site_name] = []
-        for issuer, expiration in self.cc_issuers:
+        for issuer, expiration in self.cc_issuers.items():
             my_token = issuer.generate()
             namespace = issuer.get_namespace()
 
+            if not isinstance(expiration, int):
+                raise ValueError(f"token_expiration value must be int, but got {expiration.__class__}")
             if not my_token:
                 return "failed to get CC token"
 
@@ -200,7 +202,7 @@ class CCManager(FLComponent):
                        CC_ISSUER: issuer,
                        CC_NAMESPACE: namespace,
                        TOKEN_GENERATION_TIME: time.time(),
-                       TOKEN_EXPIRATION: expiration,
+                       TOKEN_EXPIRATION: int(expiration),
                        CC_TOKEN_VALIDATED: True}
             self.participant_cc_info[self.site_name].append(cc_info)
 
