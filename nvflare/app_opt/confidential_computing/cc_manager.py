@@ -132,6 +132,7 @@ class CCManager(FLComponent):
             site_cc_info = self.participant_cc_info[self.site_name]
             cc_info = self._get_participant_tokens(site_cc_info)
             fl_ctx.set_prop(key=CC_INFO, value=cc_info, sticky=False, private=False)
+            self.logger.info("Sent the CC-tokens to server.")
             self.token_submitted = True
 
     def _add_client_token(self, fl_ctx: FLContext):
@@ -154,7 +155,7 @@ class CCManager(FLComponent):
             self.participant_cc_info[token_owner] = peer_cc_info
             self.logger.info(f"Added CC client: {token_owner} tokens: {peer_cc_info}")
 
-        if time.time() - self.verify_time > self.verify_frequency:
+        if not self.verify_time or time.time() - self.verify_time > self.verify_frequency:
             self._verify_running_jobs(fl_ctx)
 
     def _verify_running_jobs(self, fl_ctx):
@@ -258,8 +259,8 @@ class CCManager(FLComponent):
             assert isinstance(p, str)
             if p == self.site_name:
                 continue
-            if p not in self.participant_cc_info:
-                return f"no token available for participant {p}"
+            # if p not in self.participant_cc_info:
+            #     return f"no token available for participant {p}"
             if self.participant_cc_info.get(p):
                 participant_tokens[p] = self._get_participant_tokens(self.participant_cc_info[p])
             else:
@@ -286,7 +287,7 @@ class CCManager(FLComponent):
                 i[TOKEN_GENERATION_TIME] = time.time()
                 self.logger.info(f"site: {self.site_name} namespace: {issuer.get_namespace()} got a new CC token: {token}")
 
-        self.token_submitted = False
+                self.token_submitted = False
 
     def _validate_participants_tokens(self, participants) -> str:
         self.logger.debug(f"Validating participant tokens {participants=}")
