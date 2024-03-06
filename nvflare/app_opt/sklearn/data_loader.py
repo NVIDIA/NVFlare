@@ -18,7 +18,6 @@ pd_readers = {
     "csv": pd.read_csv,
     "xls": pd.read_excel,
     "xlsx": pd.read_excel,
-    "json": pd.read_json,
 }
 
 
