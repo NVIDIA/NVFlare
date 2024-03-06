@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import threading
+import time
 from typing import Dict, List
 
 from nvflare.apis.event_type import EventType
@@ -28,9 +29,13 @@ CC_NAMESPACE = "_cc_namespace"
 CC_INFO = "_cc_info"
 CC_TOKEN_VALIDATED = "_cc_token_validated"
 
+CC_ISSUER_ID = "issuer_id"
+TOKEN_GENERATION_TIME = "token_generation_time"
+TOKEN_EXPIRATION = "token_expiration"
+
 
 class CCManager(FLComponent):
-    def __init__(self, cc_issuer_ids: [str], cc_verifier_ids: [str]):
+    def __init__(self, cc_issuers_conf: [str], cc_verifier_ids: [str], verify_frequency=600):
         """Manage all confidential computing related tasks.
 
         This manager does the following tasks:
@@ -46,9 +51,11 @@ class CCManager(FLComponent):
         """
         FLComponent.__init__(self)
         self.site_name = None
-        self.cc_issuer_ids = cc_issuer_ids
+        self.cc_issuers_conf = cc_issuers_conf
         self.cc_verifier_ids = cc_verifier_ids
-        self.cc_issuers = []
+        self.verify_frequency = verify_frequency
+        self.verify_time = None
+        self.cc_issuers = {}
         self.cc_verifiers = {}
         self.participant_cc_info = {}  # used by the Server to keep tokens of all clients
 
@@ -59,7 +66,7 @@ class CCManager(FLComponent):
             try:
                 self._setup_cc_authorizers(fl_ctx)
 
-                err = self._prepare_for_attestation(fl_ctx)
+                err = self._generate_tokens(fl_ctx)
             except:
                 self.log_exception(fl_ctx, "exception in attestation preparation")
                 err = "exception in attestation preparation"
@@ -69,7 +76,7 @@ class CCManager(FLComponent):
                     raise UnsafeComponentError(err)
         elif event_type == EventType.BEFORE_CLIENT_REGISTER or event_type == EventType.BEFORE_CLIENT_HEARTBEAT:
             # On client side
-            self._prepare_token_for_login(fl_ctx)
+            self._prepare_cc_info(fl_ctx)
         elif event_type == EventType.CLIENT_REGISTERED or event_type == EventType.AFTER_CLIENT_HEARTBEAT:
             # Server side
             self._add_client_token(fl_ctx)
@@ -99,22 +106,24 @@ class CCManager(FLComponent):
 
     def _setup_cc_authorizers(self, fl_ctx):
         engine = fl_ctx.get_engine()
-        for i_id in self.cc_issuer_ids:
-            issuer = engine.get_component(i_id)
+        for conf in self.cc_issuers_conf:
+            issuer_id = conf.get(CC_ISSUER_ID)
+            expiration = conf.get(TOKEN_EXPIRATION)
+            issuer = engine.get_component(issuer_id)
             if not (isinstance(issuer, CCAuthorizer) and issuer.can_generate()):
-                raise RuntimeError(f"cc_issuer_id {i_id} must be a CCAuthorizer, but got {issuer.__class__}")
-            self.cc_issuers.append(issuer)
+                raise RuntimeError(f"cc_issuer_id {issuer_id} must be a CCAuthorizer, but got {issuer.__class__}")
+            self.cc_issuers[issuer] = expiration
 
         for v_id in self.cc_verifier_ids:
-            authorizer = engine.get_component(v_id)
-            if not (isinstance(authorizer, CCAuthorizer) and authorizer.can_verify()):
-                raise RuntimeError(f"cc_authorizer_id {v_id} must be a CCAuthorizer, but got {authorizer.__class__}")
-            namespace = authorizer.get_namespace()
+            verifier = engine.get_component(v_id)
+            if not (isinstance(verifier, CCAuthorizer) and verifier.can_verify()):
+                raise RuntimeError(f"cc_authorizer_id {v_id} must be a CCAuthorizer, but got {verifier.__class__}")
+            namespace = verifier.get_namespace()
             if namespace in self.cc_verifiers.keys():
                 raise RuntimeError(f"Authorizer with namespace: {namespace} already exist.")
-            self.cc_verifiers[namespace] = authorizer
+            self.cc_verifiers[namespace] = verifier
 
-    def _prepare_token_for_login(self, fl_ctx: FLContext):
+    def _prepare_cc_info(self, fl_ctx: FLContext):
         # client side: if token expired then generate a new one
         self._handle_expired_tokens()
 
@@ -141,23 +150,30 @@ class CCManager(FLComponent):
             self.participant_cc_info[token_owner] = peer_cc_info
             self.logger.info(f"Added CC client: {token_owner} tokens: {peer_cc_info}")
 
-            with self.lock:
+            self._verify_running_jobs(fl_ctx)
+        else:
+            if time.time() - self.verify_time > self.verify_frequency:
                 self._verify_running_jobs(fl_ctx)
 
     def _verify_running_jobs(self, fl_ctx):
         engine = fl_ctx.get_engine()
         run_processes = engine.run_processes
         running_jobs = list(run_processes.keys())
-        for job_id in running_jobs:
-            job_participants = run_processes[job_id].get(RunProcessKey.PARTICIPANTS)
-            participants = []
-            for _, client in job_participants.items():
-                participants.append(client.name)
+        with self.lock:
+            for job_id in running_jobs:
+                job_participants = run_processes[job_id].get(RunProcessKey.PARTICIPANTS)
+                participants = []
+                for _, client in job_participants.items():
+                    participants.append(client.name)
 
-            err, participant_tokens = self._verify_participants(participants)
-            if err:
-                engine.job_runner.stop_run(job_id, fl_ctx)
-                self.logger.info(f"Stop Job: {job_id} with CC verification error: {err} ")
+                err, participant_tokens = self._verify_participants(participants)
+                if err:
+                    # maybe shutdown the whole system here. leave the user to define the action
+                    engine.job_runner.stop_run(job_id, fl_ctx)
+
+                    self.logger.info(f"Stop Job: {job_id} with CC verification error: {err} ")
+
+        self.verify_time = time.time()
 
     def _remove_client_token(self, fl_ctx: FLContext):
         # server side
@@ -166,13 +182,13 @@ class CCManager(FLComponent):
         self.participant_cc_info.pop(token_owner)
         self.logger.info(f"Removed CC client: {token_owner}")
 
-    def _prepare_for_attestation(self, fl_ctx: FLContext) -> str:
+    def _generate_tokens(self, fl_ctx: FLContext) -> str:
         # both server and client sides
         self.site_name = fl_ctx.get_identity_name()
         workspace_folder = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT).get_site_config_dir()
 
         self.participant_cc_info[self.site_name] = []
-        for issuer in self.cc_issuers:
+        for issuer, expiration in self.cc_issuers:
             my_token = issuer.generate()
             namespace = issuer.get_namespace()
 
@@ -180,7 +196,12 @@ class CCManager(FLComponent):
                 return "failed to get CC token"
 
             self.logger.info(f"site: {self.site_name} namespace: {namespace} got the token: {my_token}")
-            cc_info = {CC_TOKEN: my_token, CC_ISSUER: issuer, CC_NAMESPACE: namespace, CC_TOKEN_VALIDATED: True}
+            cc_info = {CC_TOKEN: my_token,
+                       CC_ISSUER: issuer,
+                       CC_NAMESPACE: namespace,
+                       TOKEN_GENERATION_TIME: time.time(),
+                       TOKEN_EXPIRATION: expiration,
+                       CC_TOKEN_VALIDATED: True}
             self.participant_cc_info[self.site_name].append(cc_info)
 
         return ""
@@ -252,10 +273,12 @@ class CCManager(FLComponent):
         site_cc_info = self.participant_cc_info[self.site_name]
         for i in site_cc_info:
             issuer = i.get(CC_ISSUER)
-            token = i.get(CC_TOKEN)
-            if not issuer.verify(token):
+            token_generate_time = i.get(TOKEN_GENERATION_TIME)
+            expiration = i.get(TOKEN_EXPIRATION)
+            if time.time() - token_generate_time > expiration:
                 token = issuer.generate()
                 i[CC_TOKEN] = token
+                i[TOKEN_GENERATION_TIME] = time.time()
                 self.logger.info(f"site: {self.site_name} namespace: {issuer.get_namespace()} got a new CC token: {token}")
 
     def _validate_participants_tokens(self, participants) -> str:
