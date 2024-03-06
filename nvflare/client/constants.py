@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .config import ConfigKey
+from nvflare.apis.fl_constant import FLMetaKey
 
-SYS_ATTRS = (ConfigKey.JOB_ID, ConfigKey.SITE_NAME)
+SYS_ATTRS = (FLMetaKey.JOB_ID, FLMetaKey.SITE_NAME)
 CLIENT_API_CONFIG = "client_api_config.json"

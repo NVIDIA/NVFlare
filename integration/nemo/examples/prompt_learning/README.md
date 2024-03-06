@@ -1,6 +1,6 @@
 ## Prompt Learning with NeMo
 
-In this example, we utilize NeMo's [prompt learning](https://docs.nvidia.com/deeplearning/nemo/user-guide/docs/en/stable/nlp/nemo_megatron/prompt_learning.html)
+In this example, we utilize NeMo's [prompt learning](https://docs.nvidia.com/deeplearning/nemo/user-guide/docs/en/v1.17.0/nlp/nemo_megatron/prompt_learning.html)
 feature to showcase how to adapt a large language model (LLM) to 
 a downstream task such as financial sentiment predictions. 
 As the prompt learning technique shown in the example is p-tuning, which adds a small prompt encoder network to the LLM

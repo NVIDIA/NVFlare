@@ -1,0 +1,65 @@
+name: ???
+desc: ???
+
+trainer:
+  precision: 16
+  devices: 1 # must be set to accommodate the total model parallel size
+  num_nodes: 1 # must be set to accommodate the total model parallel size
+  accelerator: gpu
+  logger: null
+
+exp_manager:
+  explicit_log_dir: null
+  exp_dir: null
+  name: ${name}
+  create_checkpoint_callback: False
+
+model:
+  downstream_task:
+    restore_from_path: ??? # path of pretrained model to be used in inference
+    outputs: [embeddings, hiddens] # Which outputs to extract per sample (a value or list). Possible values: hiddens, embeddings.
+  data:
+    num_workers: 4 # number of workers in data prefetch
+    batch_size: 128
+    # Path to data must be specified by the user.
+    dataset_path: ??? # full path to dataset (can include range or a list)
+    output_fname: "" # output file, inferred based on dataset_path if empty
+    data_fields_map: # name which data_fields should be used for sequence/id (dataset dependant)
+      sequence: "sequence"
+      id: "id"
+    data_impl: "" # csv_items_mmap, fasta_fields_mmap, or leave empty for inferring type based on file extension
+    data_impl_kwargs: # currently used only for csv_items_mmap (should be data_impl dependant)
+      csv_fields_mmap:
+        newline_int: 10 # byte-value of newline
+        header_lines: 1 # skip first N header lines
+        workers: null # number of workers when creating missing index files (null defaults to cpu_num // 2)
+        sort_dataset_paths: False # if True datasets will be sorted by name
+        data_sep: ',' # string to split text into columns
+        data_fields: # field names and corresponding columns to use for data
+          id: 0
+          sequence: 1
+      fasta_fields_mmap:
+        data_fields: # field names and corresponding columns to use for data
+          id: 0
+          sequence: 1
+target: ???  # path to model class to load
+infer_target: ??? # path to inferende class to load
+
+formatters:
+  simple:
+    format: '[%(asctime)s][%(name)s][%(levelname)s] - %(message)s'
+handlers:
+  console:
+    class: logging.StreamHandler
+    formatter: simple
+    stream: ext://sys.stdout
+  file:
+    class: logging.FileHandler
+    formatter: simple
+    filename: /logs/inference.log
+root:
+  level: INFO
+  # handlers: [console, file]
+  handlers: [console]
+
+disable_existing_loggers: false

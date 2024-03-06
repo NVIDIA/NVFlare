@@ -39,6 +39,16 @@ class FilePipe(Pipe):
         """
         super().__init__(mode=mode)
         check_positive_number("file_check_interval", file_check_interval)
+        check_str("root_path", root_path)
+
+        self._remove_root = False
+        if not os.path.exists(root_path):
+            try:
+                # create the root path
+                os.makedirs(root_path)
+                self._remove_root = True
+            except Exception:
+                pass
 
         self.root_path = root_path
         self.file_check_interval = file_check_interval
@@ -77,12 +87,6 @@ class FilePipe(Pipe):
     def open(self, name: str):
         if not self.accessor:
             raise RuntimeError("File accessor is not set. Make sure to set a FileAccessor before opening the pipe")
-
-        check_str("root_path", self.root_path)
-
-        if not os.path.exists(self.root_path):
-            # create the root path
-            os.makedirs(self.root_path)
 
         pipe_path = os.path.join(self.root_path, name)
 
@@ -137,8 +141,6 @@ class FilePipe(Pipe):
 
     def _monitor_file(self, file_path: str, timeout=None) -> bool:
         """Monitors the file until it's read-and-removed by peer, or timed out.
-
-        If timeout, remove the file.
 
         Args:
             file_path: the path to be monitored
@@ -270,10 +272,9 @@ class FilePipe(Pipe):
         self.pipe_path = None
         if self.mode == Mode.PASSIVE:
             if pipe_path and os.path.exists(pipe_path):
-                try:
-                    shutil.rmtree(pipe_path)
-                except Exception:
-                    pass
+                shutil.rmtree(pipe_path, ignore_errors=True)
+        if self._remove_root and os.path.exists(self.root_path):
+            shutil.rmtree(self.root_path, ignore_errors=True)
 
     def can_resend(self) -> bool:
         return False

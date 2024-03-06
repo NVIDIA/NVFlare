@@ -61,6 +61,8 @@ class SubprocessLauncher(Launcher):
         if self._process is None:
             command = self._script
             env = os.environ.copy()
+            env["CLIENT_API_TYPE"] = "EX_PROCESS_API"
+
             command_seq = shlex.split(command)
 
             self._process = subprocess.Popen(

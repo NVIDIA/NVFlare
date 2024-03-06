@@ -143,6 +143,8 @@ class LauncherExecutor(TaskExchanger):
             self.finalize(fl_ctx)
             self.log_info(fl_ctx, f"{EventType.END_RUN} event received - telling external to stop")
             super().handle_event(event_type, fl_ctx)
+        else:
+            super().handle_event(event_type, fl_ctx)
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         self.log_info(fl_ctx, f"execute for task ({task_name})")
