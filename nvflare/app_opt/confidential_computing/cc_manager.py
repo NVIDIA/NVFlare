@@ -59,6 +59,7 @@ class CCManager(FLComponent):
         self.cc_verifiers = {}
         self.participant_cc_info = {}  # used by the Server to keep tokens of all clients
 
+        self.token_submitted = False
         self.lock = threading.Lock()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
@@ -127,33 +128,34 @@ class CCManager(FLComponent):
         # client side: if token expired then generate a new one
         self._handle_expired_tokens()
 
-        site_cc_info = self.participant_cc_info[self.site_name]
-        cc_info = self._get_participant_tokens(site_cc_info)
-        fl_ctx.set_prop(key=CC_INFO, value=cc_info, sticky=False, private=False)
+        if not self.token_submitted:
+            site_cc_info = self.participant_cc_info[self.site_name]
+            cc_info = self._get_participant_tokens(site_cc_info)
+            fl_ctx.set_prop(key=CC_INFO, value=cc_info, sticky=False, private=False)
+            self.token_submitted = True
 
     def _add_client_token(self, fl_ctx: FLContext):
         # server side
         peer_ctx = fl_ctx.get_peer_context()
         token_owner = peer_ctx.get_identity_name()
-        peer_cc_info = peer_ctx.get_prop(CC_INFO, [{CC_TOKEN: "", CC_NAMESPACE: ""}])
-        new_tokens = []
-        for i in peer_cc_info:
-            new_tokens.append(i[CC_TOKEN])
+        peer_cc_info = peer_ctx.get_prop(CC_INFO)
+        # new_tokens = []
+        # for i in peer_cc_info:
+        #     new_tokens.append(i[CC_TOKEN])
+        #
+        # old_cc_info = self.participant_cc_info.get(token_owner)
+        # old_tokens = []
+        # if old_cc_info:
+        #     for i in old_cc_info:
+        #         old_tokens.append(i[CC_TOKEN])
 
-        old_cc_info = self.participant_cc_info.get(token_owner)
-        old_tokens = []
-        if old_cc_info:
-            for i in old_cc_info:
-                old_tokens.append(i[CC_TOKEN])
-
-        if not old_cc_info or set(new_tokens) != set(old_tokens):
+        # if not old_cc_info or set(new_tokens) != set(old_tokens):
+        if peer_cc_info:
             self.participant_cc_info[token_owner] = peer_cc_info
             self.logger.info(f"Added CC client: {token_owner} tokens: {peer_cc_info}")
 
+        if time.time() - self.verify_time > self.verify_frequency:
             self._verify_running_jobs(fl_ctx)
-        else:
-            if time.time() - self.verify_time > self.verify_frequency:
-                self._verify_running_jobs(fl_ctx)
 
     def _verify_running_jobs(self, fl_ctx):
         engine = fl_ctx.get_engine()
@@ -205,6 +207,7 @@ class CCManager(FLComponent):
                        TOKEN_EXPIRATION: int(expiration),
                        CC_TOKEN_VALIDATED: True}
             self.participant_cc_info[self.site_name].append(cc_info)
+            self.token_submitted = False
 
         return ""
 
@@ -260,7 +263,7 @@ class CCManager(FLComponent):
             if self.participant_cc_info.get(p):
                 participant_tokens[p] = self._get_participant_tokens(self.participant_cc_info[p])
             else:
-                participant_tokens[p] = [{}]
+                participant_tokens[p] = [{CC_TOKEN: "", CC_NAMESPACE: ""}]
         return self._validate_participants_tokens(participant_tokens), participant_tokens
 
     def _get_participant_tokens(self, site_cc_info):
@@ -282,6 +285,8 @@ class CCManager(FLComponent):
                 i[CC_TOKEN] = token
                 i[TOKEN_GENERATION_TIME] = time.time()
                 self.logger.info(f"site: {self.site_name} namespace: {issuer.get_namespace()} got a new CC token: {token}")
+
+        self.token_submitted = False
 
     def _validate_participants_tokens(self, participants) -> str:
         self.logger.debug(f"Validating participant tokens {participants=}")
