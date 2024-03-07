@@ -16,7 +16,6 @@ from typing import List
 
 from nvflare.fuel.common.ctx import BaseContext
 
-from .chunk import MAX_CHUNK_SIZE, Receiver
 from .proto import ALL_END, LINE_END, MAX_BLOCK_SIZE, Buffer, validate_proto
 from .table import Table
 
@@ -52,15 +51,9 @@ def _process_one_line(line: str, process_json_func):
     process_json_func(json_data)
 
 
-def receive_bytes_and_process(sock, receive_bytes_func):
-    receiver = Receiver(receive_data_func=receive_bytes_func)
-    while True:
-        data = sock.recv(MAX_BLOCK_SIZE)
-        if not data:
-            return False
-        done = receiver.receive(data)
-        if done:
-            return True
+def receive_bytes_and_process(sock, receiver):
+    receiver.receive(sock)
+    return True
 
 
 def receive_and_process(sock, process_json_func):

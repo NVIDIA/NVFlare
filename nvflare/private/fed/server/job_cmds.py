@@ -153,6 +153,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     authz_func=self.authorize_job,
                     client_cmd=ftd.PULL_FOLDER_FQN,
                 ),
+                # This is an internal command that the client automatically issues during the download process of a job.
+                # This command is not visible to the user and cannot be issued by the user.
                 CommandSpec(
                     name=AdminCommandNames.DOWNLOAD_JOB_FILE,
                     description="download a specified job file",

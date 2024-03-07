@@ -715,10 +715,10 @@ class AdminAPI(AdminAPISpec):
 
         conn.close()
 
-        receive_bytes_func = ctx.get_bytes_receiver()
-        if receive_bytes_func is not None:
+        receiver = ctx.get_bytes_receiver()
+        if receiver is not None:
             self.debug("receive_bytes_and_process ...")
-            ok = receive_bytes_and_process(sock, receive_bytes_func)
+            ok = receive_bytes_and_process(sock, receiver)
             if ok:
                 ctx.set_command_result({"status": APIStatus.SUCCESS, "details": "OK"})
             else:

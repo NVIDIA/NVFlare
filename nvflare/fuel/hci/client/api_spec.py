@@ -42,6 +42,11 @@ class SendBytesToServer:
         pass
 
 
+class ReceiveBytesFromServer:
+    def receive(self, sock):
+        pass
+
+
 class CommandContext(SimpleContext):
     def set_bytes_receiver(self, r):
         self.set_prop(CommandCtxKey.BYTES_RECEIVER, r)
