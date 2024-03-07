@@ -33,12 +33,7 @@ from nvflare.fuel.hci.cmd_arg_utils import join_args
 from nvflare.fuel.hci.proto import MetaKey, ProtoKey
 from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.table import Table
-from nvflare.fuel.utils.zip_utils import (
-    split_path,
-    unzip_all_from_bytes,
-    unzip_all_from_file,
-    zip_directory_to_file,
-)
+from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, unzip_all_from_file, zip_directory_to_file
 from nvflare.lighter.utils import load_private_key_file, sign_folders
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
