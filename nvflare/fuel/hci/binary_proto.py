@@ -284,12 +284,12 @@ class MsgDataProcessor(DataProcessor):
             self.file.close()
 
 
-def receive_all(sock):
+def receive_all(receiver: Receiver):
     """Receive all data from the peer via the specified communication socket.
     This function uses the MsgDataProcessor for memory saving during data exchange.
 
     Args:
-        sock: the communication socket
+        receiver: the object that is capable of receiving. Note that TCP socket is a Receiver (duck typing)
 
     Returns: a tuple of (content_type, request_text, additional_data)
 
@@ -299,7 +299,7 @@ def receive_all(sock):
     additional_data is None.
     """
     p = MsgDataProcessor()
-    handler = ExchangeHandler(receiver=sock, processor=p)
+    handler = ExchangeHandler(receiver=receiver, processor=p)
     handler.receive_and_parse()
     if handler.content_type == CT_TEXT:
         return CT_TEXT, p.total_text, None
@@ -439,11 +439,11 @@ class GenerateDataFromFile(DataGenerator):
         return data
 
 
-def send_binary_file(sock, file_name: str, meta: str) -> int:
+def send_binary_file(sender: Sender, file_name: str, meta: str) -> int:
     """Send a file using binary protocol.
 
     Args:
-        sock: the communication socket. Note that the socket is a Sender (duck typing).
+        sender: the object that is capable of sending. Note that TCP socket is a Sender (duck typing).
         file_name: the file to be sent
         meta: the meta info to be sent
 
@@ -451,4 +451,4 @@ def send_binary_file(sock, file_name: str, meta: str) -> int:
 
     """
     gen = GenerateDataFromFile(file_name)
-    return send_binary_data(sock, gen, meta)
+    return send_binary_data(sender, gen, meta)
