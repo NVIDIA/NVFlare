@@ -21,6 +21,8 @@ from nvflare.apis.fl_constant import FLContextKey, RunProcessKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer
+from nvflare.fuel.hci.conn import Connection
+from nvflare.private.fed.server.training_cmds import TrainingCommandModule
 
 PEER_CTX_CC_TOKEN = "_peer_ctx_cc_token"
 CC_TOKEN = "_cc_token"
@@ -28,14 +30,19 @@ CC_ISSUER = "_cc_issuer"
 CC_NAMESPACE = "_cc_namespace"
 CC_INFO = "_cc_info"
 CC_TOKEN_VALIDATED = "_cc_token_validated"
+CC_VERIFY_ERROR = "_cc_verify_error."
 
 CC_ISSUER_ID = "issuer_id"
 TOKEN_GENERATION_TIME = "token_generation_time"
 TOKEN_EXPIRATION = "token_expiration"
 
+SHUTDOWN_SYSTEM = 1
+SHUTDOWN_JOB = 2
+
 
 class CCManager(FLComponent):
-    def __init__(self, cc_issuers_conf: [Dict[str, str]], cc_verifier_ids: [str], verify_frequency=600):
+    def __init__(self, cc_issuers_conf: [Dict[str, str]], cc_verifier_ids: [str],
+                 verify_frequency=600, critical_level=SHUTDOWN_JOB):
         """Manage all confidential computing related tasks.
 
         This manager does the following tasks:
@@ -53,7 +60,15 @@ class CCManager(FLComponent):
         self.site_name = None
         self.cc_issuers_conf = cc_issuers_conf
         self.cc_verifier_ids = cc_verifier_ids
-        self.verify_frequency = verify_frequency
+
+        if not isinstance(verify_frequency, int):
+            raise ValueError(f"verify_frequency must be in, but got {verify_frequency.__class__}")
+        self.verify_frequency = int(verify_frequency)
+
+        self.critical_level = critical_level
+        if self.critical_level not in [SHUTDOWN_SYSTEM, SHUTDOWN_JOB]:
+            raise ValueError(f"critical_level must be in [{SHUTDOWN_SYSTEM}, {SHUTDOWN_JOB}]. But got {critical_level}")
+
         self.verify_time = None
         self.cc_issuers = {}
         self.cc_verifiers = {}
@@ -103,7 +118,19 @@ class CCManager(FLComponent):
                 err = "Clients unable to meet server CC requirements"
             finally:
                 if err:
-                    self._block_job(err, fl_ctx)
+                    if self.critical_level == SHUTDOWN_JOB:
+                        self._block_job(err, fl_ctx)
+                    else:
+                        threading.Thread(target=self._shutdown_system, args=[err, fl_ctx]).start()
+        elif event_type == EventType.AFTER_CHECK_CLIENT_RESOURCES:
+            client_resource_result = fl_ctx.get_prop(FLContextKey.CLIENT_RESOURCE_RESULT)
+            if client_resource_result:
+                for site_name, check_result in client_resource_result.items():
+                    is_resource_enough, reason = check_result
+                    if not is_resource_enough and reason.startswith(CC_VERIFY_ERROR) \
+                            and self.critical_level == SHUTDOWN_SYSTEM:
+                        threading.Thread(target=self._shutdown_system, args=[reason, fl_ctx]).start()
+                        break
 
     def _setup_cc_authorizers(self, fl_ctx):
         engine = fl_ctx.get_engine()
@@ -161,10 +188,12 @@ class CCManager(FLComponent):
 
                 err, participant_tokens = self._verify_participants(participants)
                 if err:
-                    # maybe shutdown the whole system here. leave the user to define the action
-                    engine.job_runner.stop_run(job_id, fl_ctx)
-
-                    self.logger.info(f"Stop Job: {job_id} with CC verification error: {err} ")
+                    if self.critical_level == SHUTDOWN_JOB:
+                        # maybe shutdown the whole system here. leave the user to define the action
+                        engine.job_runner.stop_run(job_id, fl_ctx)
+                        self.logger.info(f"Stop Job: {job_id} with CC verification error: {err} ")
+                    else:
+                        threading.Thread(target=self._shutdown_system, args=[err, fl_ctx]).start()
 
         self.verify_time = time.time()
 
@@ -310,5 +339,22 @@ class CCManager(FLComponent):
     def _block_job(self, reason: str, fl_ctx: FLContext):
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID, "")
         self.log_error(fl_ctx, f"Job {job_id} is blocked: {reason}")
-        fl_ctx.set_prop(key=FLContextKey.JOB_BLOCK_REASON, value=reason, sticky=False)
+        fl_ctx.set_prop(key=FLContextKey.JOB_BLOCK_REASON, value=CC_VERIFY_ERROR+reason, sticky=False)
         fl_ctx.set_prop(key=FLContextKey.AUTHORIZATION_RESULT, value=False, sticky=False)
+
+    def _shutdown_system(self, reason: str, fl_ctx: FLContext):
+        engine = fl_ctx.get_engine()
+        run_processes = engine.run_processes
+        running_jobs = list(run_processes.keys())
+        for job_id in running_jobs:
+            engine.job_runner.stop_run(job_id, fl_ctx)
+
+        conn = Connection({}, engine.server.admin_server)
+        conn.app_ctx = engine
+
+        cmd = TrainingCommandModule()
+        args = ["shutdown", "all"]
+        cmd.validate_command_targets(conn, args[1:])
+        cmd.shutdown(conn, args)
+
+        self.logger.error(f"CC system shutdown! due to reason: {reason}")

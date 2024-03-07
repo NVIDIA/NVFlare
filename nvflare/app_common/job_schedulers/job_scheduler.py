@@ -168,6 +168,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         cc_peer_ctx = fl_ctx.get_prop(key=PEER_CTX_CC_TOKEN)
         self.logger.info(f"++++++++++ {cc_peer_ctx}")
         resource_check_results = self._check_client_resources(job=job, resource_reqs=resource_reqs, fl_ctx=fl_ctx)
+        fl_ctx.set_prop(FLContextKey.CLIENT_RESOURCE_RESULT, resource_check_results, private=True, sticky=False)
         self.fire_event(EventType.AFTER_CHECK_CLIENT_RESOURCES, fl_ctx)
 
         if not resource_check_results:
