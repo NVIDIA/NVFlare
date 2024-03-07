@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-This package implements a protocol for Admin client and server to exchange data in binary protocol. This is mainly
+This package implements a binary protocol for data exchange between the Admin client and server. This is mainly
 used for large data exchanges such as job submission and download.
 
 The format of a binary exchange has 4 sections (header, meta, body, and footer), as follows:
@@ -27,9 +27,13 @@ Footer section: {end_marker:4} {checksum:4}
 
 The 1-byte binary_marker in Header signifies that the exchange is binary. If this marker is missing,
 the exchange is text.
+
 A binary exchange can optionally include text-encoded meta information (e.g. a JSON string).
+
 At the end of the exchange is the footer that contains end-of-data marker (four bytes of 0) and the checksum computed
 over the body bytes.
+
+Note that the binary protocol does not replace the text protocol, which is still used for regular admin commands.
 
 """
 
@@ -37,6 +41,7 @@ import os
 import struct
 import tempfile
 import uuid
+from abc import ABC, abstractmethod
 
 from .checksum import Checksum
 from .proto import ALL_END, LINE_END, MAX_BLOCK_SIZE
@@ -52,28 +57,31 @@ FOOTER_STRUCT = struct.Struct(">II")  # end_marker(four 0s), checksum(4)
 FOOTER_LEN = FOOTER_STRUCT.size
 
 
-class Receiver:
+class Receiver(ABC):
     """
     A Receiver must be able to receive bytes from the peer.
     """
 
+    @abstractmethod
     def recv(self, size: int) -> bytes:
         """Receive bytes of up to the specified size.
+        Note that this method is named "recv" to make TCP socket automatically a Receiver (duck typing).
 
         Args:
-            size: the number of bytes to receive.
+            size: the max number of bytes to receive.
 
-        Returns: bytes of no more than size
+        Returns: bytes of no more than size; or None if recv is not possible (e.g. peer reset connection)
 
         """
         pass
 
 
-class DataProcessor:
+class DataProcessor(ABC):
     """
     A DataProcessor is used to process data received from the peer.
     """
 
+    @abstractmethod
     def process(self, data: bytes, content_type: int):
         """Process the data received from peer.
 
@@ -86,13 +94,19 @@ class DataProcessor:
         """
         pass
 
+    @abstractmethod
     def finalize(self):
+        """Finalize the processor. This is called when the exchange processing is finished.
+
+        Returns: None
+
+        """
         pass
 
 
-class MsgReceiver:
+class ExchangeHandler:
     """
-    A MsgReceiver is used to receive and parse exchange from the peer.
+    The ExchangeHandler is used to receive and parse exchange from the peer.
     It uses the provided Receiver to receive data from the peer, parses the data according to the echange protocl,
     and calls the provided DataProcessor to process the data.
     """
@@ -107,6 +121,7 @@ class MsgReceiver:
         self.receiver = receiver
         self.processor = processor
         self.meta = None
+        self.content_type = None
 
     def _must_recv(self, num_bytes: int):
         """Must receive specified number of bytes.
@@ -183,14 +198,23 @@ class MsgReceiver:
         if checksum_received != computed_checksum:
             raise RuntimeError(f"checksum mismatch: received {checksum_received} != {computed_checksum}")
 
-    def parse(self):
-        # get marker
+    def receive_and_parse(self):
+        """Receive data of the exchange from the peer and parse it according to the protocol definition.
+
+        Returns: None
+
+        """
+        # Check the binary marker. If binary protocol, the 1st byte of the exchange is the special BINARY_MARKER
+        # If the value is not BINARY_MARKER, then it is treated as text protocol. This is to be backward compatible
+        # with the current text-based protocol!
         data = self.receiver.recv(1)
         if not data:
             raise RuntimeError("no data type marker received")
 
         marker = data[0]
         if marker == BINARY_MARKER:
+            # Binary protocol - process according to binary protocol definition
+            self.content_type = CT_BINARY
             buffer = self._must_recv(HEADER_LEN)
             if not buffer:
                 raise RuntimeError(f"cannot get header buffer of {HEADER_LEN} bytes")
@@ -201,19 +225,20 @@ class MsgReceiver:
             if meta_size < 0:
                 raise RuntimeError(f"invalid binary data meta size {meta_size}")
 
-            # get headers
+            # get meta
             meta_bytes = self._must_recv(meta_size)
             if not data:
                 raise RuntimeError("no meta data received")
             if len(meta_bytes) != meta_size:
                 raise RuntimeError(f"expect {meta_size} meta bytes but got {len(meta_bytes)}")
 
+            # meta data must be str!
             self.meta = str(meta_bytes, "utf-8")
             self._parse_binary(body_size)
         else:
             # text content - the 1st byte is part of the data!
-            content_type = CT_TEXT
-            self.processor.process(data, content_type)
+            self.content_type = CT_TEXT
+            self.processor.process(data, CT_TEXT)
             self._parse_text()
 
         self.processor.finalize()
@@ -270,20 +295,23 @@ def receive_all(sock):
 
     When content_type is CT_TEXT, the request_text is the request body, and additional_data is None;
     When content_type is CT_BINARY, the request_text is the meta info, and additional_data is the name of a
-    temporary file that holds the received body data.
+    temporary file that holds the received body data. However, if there is no data (size 0), the value of
+    additional_data is None.
     """
     p = MsgDataProcessor()
-    parser = MsgReceiver(receiver=sock, processor=p)
-    parser.parse()
-    if p.total_text:
+    handler = ExchangeHandler(receiver=sock, processor=p)
+    handler.receive_and_parse()
+    if handler.content_type == CT_TEXT:
         return CT_TEXT, p.total_text, None
-    else:
+    elif handler.content_type == CT_BINARY:
         # binary
         return (
             CT_BINARY,
-            parser.meta,
+            handler.meta,
             p.file_name,
         )
+    else:
+        raise RuntimeError(f"invalid content type {handler.content_type} from receiver")
 
 
 def binary_header(meta_size: int, body_size: int):
@@ -293,7 +321,7 @@ def binary_header(meta_size: int, body_size: int):
         meta_size: size of the meta info
         body_size: size of the message body
 
-    Returns:
+    Returns: encoded bytes of the header
 
     """
     return HEADER_STRUCT.pack(meta_size, body_size)
@@ -305,23 +333,46 @@ def binary_footer(checksum: int):
     Args:
         checksum: the checksum value.
 
-    Returns:
+    Returns: encoded bytes of the footer
 
     """
     # the value of the end-of-data marker is always 0!
     return FOOTER_STRUCT.pack(0, checksum)
 
 
-class DataGenerator:
+class DataGenerator(ABC):
+    @abstractmethod
     def data_size(self) -> int:
+        """Return the size of the exchange body to be generated. This method is called before the generate method is called.
+        Therefore, the DataGenerator must know the size of the exchange body in advance.
+
+        Returns: the size of the exchange body to be generated
+
+        """
         pass
 
+    @abstractmethod
     def generate(self) -> bytes:
+        """This method is called to generate next chunk of data to be sent.
+
+        Returns: bytes to be sent; or None if no more data.
+
+        """
         pass
 
 
-class Sender:
-    def sendall(self, data):
+class Sender(ABC):
+    @abstractmethod
+    def sendall(self, data: bytes):
+        """Send specified data until done. This method must send all bytes, instead of a subset of it!
+        Note that this method is named "sendall" to make TCP socket automatically a Sender (duck typing).
+
+        Args:
+            data: data to be sent.
+
+        Returns:
+
+        """
         pass
 
 
