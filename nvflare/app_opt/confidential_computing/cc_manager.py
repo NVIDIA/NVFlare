@@ -140,17 +140,7 @@ class CCManager(FLComponent):
         peer_ctx = fl_ctx.get_peer_context()
         token_owner = peer_ctx.get_identity_name()
         peer_cc_info = peer_ctx.get_prop(CC_INFO)
-        # new_tokens = []
-        # for i in peer_cc_info:
-        #     new_tokens.append(i[CC_TOKEN])
-        #
-        # old_cc_info = self.participant_cc_info.get(token_owner)
-        # old_tokens = []
-        # if old_cc_info:
-        #     for i in old_cc_info:
-        #         old_tokens.append(i[CC_TOKEN])
 
-        # if not old_cc_info or set(new_tokens) != set(old_tokens):
         if peer_cc_info:
             self.participant_cc_info[token_owner] = peer_cc_info
             self.logger.info(f"Added CC client: {token_owner} tokens: {peer_cc_info}")
@@ -182,8 +172,9 @@ class CCManager(FLComponent):
         # server side
         peer_ctx = fl_ctx.get_peer_context()
         token_owner = peer_ctx.get_identity_name()
-        self.participant_cc_info.pop(token_owner)
-        self.logger.info(f"Removed CC client: {token_owner}")
+        if token_owner in self.participant_cc_info.keys():
+            self.participant_cc_info.pop(token_owner)
+            self.logger.info(f"Removed CC client: {token_owner}")
 
     def _generate_tokens(self, fl_ctx: FLContext) -> str:
         # both server and client sides
