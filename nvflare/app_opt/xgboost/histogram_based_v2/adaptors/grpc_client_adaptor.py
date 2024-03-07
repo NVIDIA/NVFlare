@@ -62,7 +62,7 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
     def __init__(
         self,
         int_server_grpc_options=None,
-        in_process=False,
+        in_process=True,
     ):
         XGBClientAdaptor.__init__(self)
         self.int_server_grpc_options = int_server_grpc_options
