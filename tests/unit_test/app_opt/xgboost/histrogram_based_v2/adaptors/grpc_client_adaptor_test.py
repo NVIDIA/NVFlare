@@ -33,7 +33,7 @@ class TestGrpcClientAdaptor:
         with patch("nvflare.app_opt.xgboost.histogram_based_v2.grpc.grpc_server.GrpcServer.start") as mock_method:
             mock_method.return_value = True
             adaptor.start(ctx)
-            assert wait_for_status(runner.started, True)
+            assert wait_for_status(runner, True)
 
             adaptor.stop(ctx)
-            assert wait_for_status(runner.started, False)
+            assert wait_for_status(runner, False)

@@ -20,9 +20,9 @@ from nvflare.app_opt.xgboost.histogram_based_v2.runner import XGBRunner
 TIMEOUT = 5.0
 
 
-def wait_for_status(status, expected, timeout=TIMEOUT):
+def wait_for_status(runner: XGBRunner, expected, timeout=TIMEOUT):
     start_time = time.time()
-    while status != expected:
+    while runner.started != expected:
         if time.time() - start_time > timeout:
             return False
         time.sleep(1.0)
