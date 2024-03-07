@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Tuple
 import time
+from typing import Tuple
 
 from nvflare.app_opt.xgboost.histogram_based_v2.runner import XGBRunner
 

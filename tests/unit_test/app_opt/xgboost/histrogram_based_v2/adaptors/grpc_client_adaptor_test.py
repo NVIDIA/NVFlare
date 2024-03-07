@@ -15,8 +15,8 @@
 from unittest.mock import patch
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.adaptors.grpc_client_adaptor import GrpcClientAdaptor
+from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 
 from .mock_runner import MockRunner, wait_for_status
 
@@ -25,11 +25,7 @@ class TestGrpcClientAdaptor:
     def test_start_and_stop(self):
         runner = MockRunner()
         adaptor = GrpcClientAdaptor(in_process=True)
-        config = {
-            Constant.CONF_KEY_WORLD_SIZE: 66,
-            Constant.CONF_KEY_RANK: 44,
-            Constant.CONF_KEY_NUM_ROUNDS: 100
-        }
+        config = {Constant.CONF_KEY_WORLD_SIZE: 66, Constant.CONF_KEY_RANK: 44, Constant.CONF_KEY_NUM_ROUNDS: 100}
         ctx = FLContext()
         adaptor.configure(config, ctx)
 

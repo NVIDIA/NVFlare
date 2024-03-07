@@ -12,15 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import patch, Mock
+from unittest.mock import Mock, patch
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.app_opt.xgboost.histogram_based_v2.adaptor import XGBServerAdaptor, XGBAdaptor, XGBClientAdaptor
+from nvflare.app_opt.xgboost.histogram_based_v2.adaptor import XGBAdaptor, XGBClientAdaptor, XGBServerAdaptor
+from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.runner import XGBRunner
 from nvflare.app_opt.xgboost.histogram_based_v2.sender import Sender
-from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 
 
 @patch.multiple(XGBAdaptor, __abstractmethods__=set())
@@ -46,9 +46,7 @@ class TestXGBServerAdaptor:
     @patch.multiple(XGBServerAdaptor, __abstractmethods__=set())
     def test_configure(self):
         xgb_adaptor = XGBServerAdaptor()
-        config = {
-            Constant.CONF_KEY_WORLD_SIZE: 66
-        }
+        config = {Constant.CONF_KEY_WORLD_SIZE: 66}
         ctx = FLContext()
         xgb_adaptor.configure(config, ctx)
         assert xgb_adaptor.world_size == 66
@@ -58,11 +56,7 @@ class TestXGBServerAdaptor:
 class TestXGBClientAdaptor:
     def test_configure(self):
         xgb_adaptor = XGBClientAdaptor()
-        config = {
-            Constant.CONF_KEY_WORLD_SIZE: 66,
-            Constant.CONF_KEY_RANK: 44,
-            Constant.CONF_KEY_NUM_ROUNDS: 100
-        }
+        config = {Constant.CONF_KEY_WORLD_SIZE: 66, Constant.CONF_KEY_RANK: 44, Constant.CONF_KEY_NUM_ROUNDS: 100}
         ctx = FLContext()
         xgb_adaptor.configure(config, ctx)
         assert xgb_adaptor.world_size == 66

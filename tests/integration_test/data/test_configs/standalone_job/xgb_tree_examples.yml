@@ -32,9 +32,20 @@ tests:
     ../../examples/advanced/xgboost/tree-based/temp_requirements.txt
   - sed -i '/nvflare\|jupyter\|notebook/d' ../../examples/advanced/xgboost/tree-based/temp_requirements.txt
   - pip install -r ../../examples/advanced/xgboost/tree-based/temp_requirements.txt
-  - bash ../../examples/advanced/xgboost/tree-based/prepare_data.sh
-  - python3 ../../examples/advanced/xgboost/utils/prepare_job_config.py --site_num 5 --training_mode cyclic
-    --split_method uniform --lr_mode uniform --nthread 16 --tree_method hist
+  - python3 ../../examples/advanced/xgboost/utils/prepare_data_split.py
+    --data_path /tmp/nvflare/dataset/HIGGS.csv
+    --site_num 5
+    --size_total 110000
+    --size_valid 10000
+    --split_method uniform
+    --out_path "/tmp/nvflare/xgboost_higgs_dataset/5_uniform"
+  - python3 ../../examples/advanced/xgboost/utils/prepare_job_config.py
+    --site_num 5
+    --training_mode cyclic
+    --split_method uniform
+    --lr_mode uniform
+    --nthread 16
+    --tree_method hist 
   - python3 convert_to_test_job.py
     --job ../../examples/advanced/xgboost/tree-based/jobs/higgs_5_cyclic_uniform_split_uniform_lr
     --post _copy
@@ -64,8 +75,13 @@ tests:
         run_finished: true
       type: run_state
   setup:
-  - python3 ../../examples/advanced/xgboost/utils/prepare_job_config.py --site_num 5 --training_mode bagging
-    --split_method uniform --lr_mode uniform --nthread 16 --tree_method hist
+  - python3 ../../examples/advanced/xgboost/utils/prepare_job_config.py
+    --site_num 5
+    --training_mode bagging
+    --split_method uniform
+    --lr_mode uniform
+    --nthread 16
+    --tree_method hist
   - python3 convert_to_test_job.py
     --job ../../examples/advanced/xgboost/tree-based/jobs/higgs_5_bagging_uniform_split_uniform_lr
     --post _copy
