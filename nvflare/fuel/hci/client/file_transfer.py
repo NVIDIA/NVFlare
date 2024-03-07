@@ -25,7 +25,6 @@ from nvflare.fuel.hci.base64_utils import (
     b64str_to_bytes,
     b64str_to_text_file,
     binary_file_to_b64str,
-    bytes_to_b64str,
     text_file_to_b64str,
 )
 from nvflare.fuel.hci.binary_proto import CT_BINARY, receive_all, send_binary_file
