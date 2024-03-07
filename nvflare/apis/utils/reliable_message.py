@@ -44,7 +44,7 @@ TOPIC_RELIABLE_REQUEST = "RM.RELIABLE_REQUEST"
 TOPIC_RELIABLE_REPLY = "RM.RELIABLE_REPLY"
 
 
-def _extract_result(reply: Shareable, target: str):
+def _extract_result(reply: dict, target: str):
     if not isinstance(reply, dict):
         return None, None
     result = reply.get(target)
@@ -62,7 +62,17 @@ def _error_reply(rc: str, error: str):
 
 
 class _RequestReceiver:
+    """This class handles reliable message request on the receiving end"""
+
     def __init__(self, topic, request_handler_f, executor):
+        """The constructor
+
+        Args:
+            topic: The topic of the reliable message
+            request_handler_f: The callback function to handle the request in the form of
+                request_handler_f(topic: str, request: Shareable, fl_ctx:FLContext)
+            executor: A ThreadPoolExecutor
+        """
         self.topic = topic
         self.request_handler_f = request_handler_f
         self.executor = executor
@@ -170,6 +180,13 @@ class ReliableMessage:
 
     @classmethod
     def register_request_handler(cls, topic: str, handler_f):
+        """Register a handler for the reliable message with this topic
+
+        Args:
+            topic: The topic of the reliable message
+            handler_f: The callback function to handle the request in the form of
+                handler_f(topic, request, fl_ctx)
+        """
         if not cls._enabled:
             raise RuntimeError("ReliableMessage is not enabled. Please call ReliableMessage.enable() to enable it")
         if not callable(handler_f):
@@ -319,7 +336,23 @@ class ReliableMessage:
             if num_tries > cls._max_retries:
                 # enough tries
                 return _error_reply(ReturnCode.COMMUNICATION_ERROR, f"Max send retries ({cls._max_retries}) reached")
-            time.sleep(cls._query_interval)
+            start = time.time()
+            while time.time() - start < cls._query_interval:
+                if abort_signal.triggered:
+                    return make_reply(ReturnCode.TASK_ABORTED)
+                time.sleep(0.1)
+
+        return cls._query_result(target, timeout, abort_signal, fl_ctx, receiver)
+
+    @classmethod
+    def _query_result(
+        cls,
+        target: str,
+        timeout: float,
+        abort_signal: Signal,
+        fl_ctx: FLContext,
+        receiver: _ReplyReceiver,
+    ) -> Shareable:
 
         # Querying phase - try to get result
         query = Shareable()
