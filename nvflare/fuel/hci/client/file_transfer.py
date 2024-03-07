@@ -37,7 +37,6 @@ from nvflare.fuel.utils.zip_utils import (
     split_path,
     unzip_all_from_bytes,
     unzip_all_from_file,
-    zip_directory_to_bytes,
     zip_directory_to_file,
 )
 from nvflare.lighter.utils import load_private_key_file, sign_folders
