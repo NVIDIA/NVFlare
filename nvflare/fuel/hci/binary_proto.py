@@ -82,14 +82,14 @@ class DataProcessor(ABC):
     """
 
     @abstractmethod
-    def process(self, data: bytes, content_type: int):
+    def process(self, data: bytes, content_type: int) -> bool:
         """Process the data received from peer.
 
         Args:
             data: the data to be processed
             content_type: the content type: CT_TEXT or CT_BINARY
 
-        Returns: None
+        Returns: whether this is the end of process
 
         """
         pass
