@@ -16,9 +16,11 @@ import time
 from datetime import datetime
 
 from nvflare.apis.client import Client
+from nvflare.apis.controller_spec import ClientTask, Task
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.impl.controller import ClientTask, Controller, Task
+from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import ReturnCode, Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
@@ -341,9 +343,9 @@ class ServerSideController(Controller):
 
         self.log_info(fl_ctx, f"Workflow {self.workflow_id} done!")
 
-    def process_task_request(self, client: Client, fl_ctx: FLContext):
-        self._update_client_status(fl_ctx)
-        return super().process_task_request(client, fl_ctx)
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        if event_type == EventType.BEFORE_PROCESS_TASK_REQUEST:
+            self._update_client_status(fl_ctx)
 
     def process_config_reply(self, client_name: str, reply: Shareable, fl_ctx: FLContext) -> bool:
         return True
@@ -445,7 +447,7 @@ class ServerSideController(Controller):
         # see whether status is available
         reports = peer_ctx.get_prop(Constant.STATUS_REPORTS)
         if not reports:
-            self.log_info(fl_ctx, f"no status report from client {client_name}")
+            self.log_debug(fl_ctx, f"no status report from client {client_name}")
             return
 
         my_report = reports.get(self.workflow_id)
