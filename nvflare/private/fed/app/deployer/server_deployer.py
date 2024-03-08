@@ -16,7 +16,7 @@
 import threading
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import SystemComponents, FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, SystemComponents
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.workspace import Workspace
 from nvflare.private.fed.server.fed_server import FederatedServer

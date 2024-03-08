@@ -304,7 +304,7 @@ class Communicator:
                 CellMessageHeaderKeys.SSID: ssid,
                 CellMessageHeaderKeys.PROJECT_NAME: task_name,
             },
-            shareable
+            shareable,
         )
         try:
             result = self.cell.send_request(
@@ -347,7 +347,7 @@ class Communicator:
                         CellMessageHeaderKeys.PROJECT_NAME: task_name,
                         CellMessageHeaderKeys.JOB_IDS: job_ids,
                     },
-                    shareable
+                    shareable,
                 )
 
                 try:

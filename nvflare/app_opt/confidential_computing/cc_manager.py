@@ -41,8 +41,13 @@ SHUTDOWN_JOB = 2
 
 
 class CCManager(FLComponent):
-    def __init__(self, cc_issuers_conf: [Dict[str, str]], cc_verifier_ids: [str],
-                 verify_frequency=600, critical_level=SHUTDOWN_JOB):
+    def __init__(
+        self,
+        cc_issuers_conf: [Dict[str, str]],
+        cc_verifier_ids: [str],
+        verify_frequency=600,
+        critical_level=SHUTDOWN_JOB,
+    ):
         """Manage all confidential computing related tasks.
 
         This manager does the following tasks:
@@ -127,8 +132,11 @@ class CCManager(FLComponent):
             if client_resource_result:
                 for site_name, check_result in client_resource_result.items():
                     is_resource_enough, reason = check_result
-                    if not is_resource_enough and reason.startswith(CC_VERIFY_ERROR) \
-                            and self.critical_level == SHUTDOWN_SYSTEM:
+                    if (
+                        not is_resource_enough
+                        and reason.startswith(CC_VERIFY_ERROR)
+                        and self.critical_level == SHUTDOWN_SYSTEM
+                    ):
                         threading.Thread(target=self._shutdown_system, args=[reason, fl_ctx]).start()
                         break
 
@@ -221,12 +229,14 @@ class CCManager(FLComponent):
                 return "failed to get CC token"
 
             self.logger.info(f"site: {self.site_name} namespace: {namespace} got the token: {my_token}")
-            cc_info = {CC_TOKEN: my_token,
-                       CC_ISSUER: issuer,
-                       CC_NAMESPACE: namespace,
-                       TOKEN_GENERATION_TIME: time.time(),
-                       TOKEN_EXPIRATION: int(expiration),
-                       CC_TOKEN_VALIDATED: True}
+            cc_info = {
+                CC_TOKEN: my_token,
+                CC_ISSUER: issuer,
+                CC_NAMESPACE: namespace,
+                TOKEN_GENERATION_TIME: time.time(),
+                TOKEN_EXPIRATION: int(expiration),
+                CC_TOKEN_VALIDATED: True,
+            }
             self.participant_cc_info[self.site_name].append(cc_info)
             self.token_submitted = False
 
@@ -305,7 +315,9 @@ class CCManager(FLComponent):
                 token = issuer.generate()
                 i[CC_TOKEN] = token
                 i[TOKEN_GENERATION_TIME] = time.time()
-                self.logger.info(f"site: {self.site_name} namespace: {issuer.get_namespace()} got a new CC token: {token}")
+                self.logger.info(
+                    f"site: {self.site_name} namespace: {issuer.get_namespace()} got a new CC token: {token}"
+                )
 
                 self.token_submitted = False
 
@@ -339,7 +351,7 @@ class CCManager(FLComponent):
     def _block_job(self, reason: str, fl_ctx: FLContext):
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID, "")
         self.log_error(fl_ctx, f"Job {job_id} is blocked: {reason}")
-        fl_ctx.set_prop(key=FLContextKey.JOB_BLOCK_REASON, value=CC_VERIFY_ERROR+reason, sticky=False)
+        fl_ctx.set_prop(key=FLContextKey.JOB_BLOCK_REASON, value=CC_VERIFY_ERROR + reason, sticky=False)
         fl_ctx.set_prop(key=FLContextKey.AUTHORIZATION_RESULT, value=False, sticky=False)
 
     def _shutdown_system(self, reason: str, fl_ctx: FLContext):
