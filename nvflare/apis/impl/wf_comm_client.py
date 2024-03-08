@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,56 +11,31 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 from typing import List, Union
 
 from nvflare.apis.client import Client
-from nvflare.apis.controller_spec import ClientTask, ControllerSpec, SendOrder, Task, TaskCompletionStatus
+from nvflare.apis.controller_spec import ClientTask, SendOrder, Task, TaskCompletionStatus
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode, SiteType
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.apis.shareable import make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.task_utils import apply_filters
+from nvflare.apis.wf_comm_spec import WFCommSpec
 from nvflare.private.fed.utils.fed_utils import get_target_names
 from nvflare.private.privacy_manager import Scope
 from nvflare.security.logging import secure_format_exception
 
 
-class TaskController(FLComponent, ControllerSpec):
+class WFCommClient(FLComponent, WFCommSpec):
     def __init__(
         self,
     ) -> None:
         super().__init__()
         self.task_data_filters = {}
         self.task_result_filters = {}
-
-    def handle_event(self, event_type: str, fl_ctx: FLContext):
-        if event_type == EventType.START_RUN:
-            self.start_controller(fl_ctx)
-        elif event_type == EventType.END_RUN:
-            self.stop_controller(fl_ctx)
-
-    def start_controller(self, fl_ctx: FLContext):
-        client_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
-        self.task_data_filters = client_runner.task_data_filters
-        if not self.task_data_filters:
-            self.task_data_filters = {}
-
-        self.task_result_filters = client_runner.task_result_filters
-        if not self.task_result_filters:
-            self.task_result_filters = {}
-
-    def control_flow(self, fl_ctx: FLContext):
-        pass
-
-    def stop_controller(self, fl_ctx: FLContext):
-        pass
-
-    def process_result_of_unknown_task(
-        self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
-    ):
-        pass
 
     def broadcast(
         self,
@@ -70,7 +45,6 @@ class TaskController(FLComponent, ControllerSpec):
         min_responses: int = 0,
         wait_time_after_min_received: int = 0,
     ):
-
         return self.broadcast_and_wait(task, fl_ctx, targets, min_responses, wait_time_after_min_received)
 
     def broadcast_and_wait(

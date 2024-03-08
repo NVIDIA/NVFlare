@@ -14,9 +14,9 @@
 
 import os
 
+from nvflare.apis.controller_spec import ClientTask, Task
 from nvflare.apis.dxo import from_shareable
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.impl.controller import ClientTask, Task
 from nvflare.apis.shareable import ReturnCode, Shareable
 from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace

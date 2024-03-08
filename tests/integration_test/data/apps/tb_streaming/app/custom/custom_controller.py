@@ -13,8 +13,9 @@
 # limitations under the License.
 
 from nvflare.apis.client import Client
+from nvflare.apis.controller_spec import ClientTask, Task
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.impl.controller import ClientTask, Controller, Task
+from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
