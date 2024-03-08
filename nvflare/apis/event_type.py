@@ -37,6 +37,7 @@ class EventType(object):
 
     BEFORE_PULL_TASK = "_before_pull_task"
     AFTER_PULL_TASK = "_after_pull_task"
+    BEFORE_PROCESS_TASK = "_before_process_task_request"
     BEFORE_PROCESS_SUBMISSION = "_before_process_submission"
     AFTER_PROCESS_SUBMISSION = "_after_process_submission"
 

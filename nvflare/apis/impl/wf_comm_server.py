@@ -86,6 +86,7 @@ class WFCommServer(Responder, WFCommSpec):
             task_check_period (float, optional): interval for checking status of tasks. Defaults to 0.2.
         """
         super().__init__()
+        self.controller = None
         self._engine = None
         self._tasks = []  # list of standing tasks
         self._client_task_map = {}  # client_task_id => client_task
@@ -343,6 +344,8 @@ class WFCommServer(Responder, WFCommSpec):
             if not self._dead_client_reports.get(client_name):
                 self._dead_client_reports[client_name] = time.time()
 
+        self.controller.handle_dead_job(client_name, fl_ctx)
+
     def process_task_check(self, task_id: str, fl_ctx: FLContext):
         with self._task_lock:
             # task_id is the uuid associated with the client_task
@@ -397,7 +400,7 @@ class WFCommServer(Responder, WFCommSpec):
         if client_task is None:
             # cannot find a standing task for the submission
             self.log_debug(fl_ctx, "no standing task found for {}:{}".format(task_name, task_id))
-            self.process_result_of_unknown_task(client, task_name, task_id, result, fl_ctx)
+            self.controller.process_result_of_unknown_task(client, task_name, task_id, result, fl_ctx)
             return
 
         task = client_task.task

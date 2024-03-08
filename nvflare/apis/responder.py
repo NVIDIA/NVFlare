@@ -15,7 +15,6 @@
 from abc import ABC, abstractmethod
 from typing import Tuple
 
-
 from .client import Client
 from .fl_component import FLComponent
 from .fl_context import FLContext

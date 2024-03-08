@@ -15,28 +15,33 @@ from abc import ABC
 from typing import List, Optional, Union
 
 from nvflare.apis.client import Client
-from nvflare.apis.controller_spec import ClientTask, ControllerSpec, SendOrder, Task, TaskCompletionStatus
+from nvflare.apis.controller_spec import ControllerSpec, SendOrder, Task, TaskCompletionStatus
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.impl.wf_comm_server import WFCommServer
 from nvflare.apis.signal import Signal
 from nvflare.apis.wf_comm_spec import WFCommSpec
 
 
 class Controller(FLComponent, ControllerSpec, ABC):
     def __init__(self, task_check_period=0.2):
-        """Manage life cycles of tasks and their destinations.
+        """Controller logic for tasks and their destinations.
+
+        Must set_communicator() to access communication related function implementations.
 
         Args:
-            task_check_period (float, optional): interval for checking status of tasks. Defaults to 0.2.
+            task_check_period (float, optional): interval for checking status of tasks. Applicable for WFCommServer. Defaults to 0.2.
         """
         super().__init__()
         self._task_check_period = task_check_period
         self.communicator = None
 
     def set_communicator(self, communicator: WFCommSpec, fl_ctx: FLContext):
-        communicator.task_check_period = self._task_check_period
+        if not isinstance(communicator, WFCommSpec):
+            raise TypeError(f"communicator must be an instance of WFCommSpec, but got {type(communicator)}")
+
         self.communicator = communicator
+        self.communicator.controller = self
+        self.communicator.task_check_period = self._task_check_period
         engine = fl_ctx.get_engine()
         if not engine:
             self.system_panic(f"Engine not found. {self.__class__.__name__} exiting.", fl_ctx)
@@ -128,18 +133,21 @@ class Controller(FLComponent, ControllerSpec, ABC):
         )
 
     def get_num_standing_tasks(self) -> int:
-        if not isinstance(self.communicator, WFCommServer):
-            raise NotImplementedError
-        return self.communicator.get_num_standing_tasks()
+        try:
+            return self.communicator.get_num_standing_tasks()
+        except:
+            raise NotImplementedError(f"{self.communicator} does not support this function")
 
     def cancel_task(
         self, task: Task, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: Optional[FLContext] = None
     ):
-        if not isinstance(self.communicator, WFCommServer):
-            raise NotImplementedError
-        self.communicator.cancel_task(task, completion_status, fl_ctx)
+        try:
+            self.communicator.cancel_task(task, completion_status, fl_ctx)
+        except:
+            raise NotImplementedError(f"{self.communicator} does not support this function")
 
     def cancel_all_tasks(self, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: Optional[FLContext] = None):
-        if not isinstance(self.communicator, WFCommServer):
-            raise NotImplementedError
-        self.communicator.cancel_all_tasks(completion_status, fl_ctx)
+        try:
+            self.communicator.cancel_all_tasks(completion_status, fl_ctx)
+        except:
+            raise NotImplementedError(f"{self.communicator} does not support this function")

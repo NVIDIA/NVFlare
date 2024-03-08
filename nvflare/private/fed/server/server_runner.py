@@ -335,6 +335,7 @@ class ServerRunner(TBI):
                     self.log_debug(fl_ctx, "no current workflow - asked client to try again later")
                     return "", "", None
 
+                self.fire_event(EventType.BEFORE_PROCESS_TASK, fl_ctx)
                 task_name, task_id, task_data = self.current_wf.controller.communicator.process_task_request(
                     client, fl_ctx
                 )
