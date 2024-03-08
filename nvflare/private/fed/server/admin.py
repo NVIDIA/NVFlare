@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import copy
 import threading
 import time
 from typing import List, Optional
@@ -19,7 +18,6 @@ from typing import List, Optional
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import ServerCommandKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import ReservedHeaderKey
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
