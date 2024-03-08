@@ -43,3 +43,19 @@ tests:
         args: { server_model_names: ["server"] }
       - path: tests.integration_test.src.validators.NumpySAGResultValidator
         args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
+  - test_name: "run hello-ccwf"
+    # TODO: add a result validator for the "models" saved on client site (ccwf)
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job hello-ccwf/jobs/swarm_cse_numpy" ]
+        "result":
+          "type": "job_submit_success"
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }

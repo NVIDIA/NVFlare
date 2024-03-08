@@ -292,6 +292,7 @@ def _replace_config_fed_client(client_json_path: str):
     with open(client_json_path, "r+") as f:
         config_fed_client = json.load(f)
         config_fed_client["TRAIN_SPLIT_ROOT"] = "/tmp/nvflare/test_data"
+        config_fed_client["num_rounds"] = 2
         config_fed_client["AGGREGATION_EPOCHS"] = 1
         f.seek(0)
         json.dump(config_fed_client, f, indent=4)
@@ -318,65 +319,82 @@ def simplify_job(job_folder_path: str, postfix: str = POSTFIX):
 def generate_test_config_yaml_for_example(
     example: Example,
     project_yaml: str = PROJECT_YAML,
-    postfix: str = POSTFIX,
+    job_postfix: str = POSTFIX,
 ) -> List[str]:
-    """Generates test configuration yaml for NVFlare example.
+    """Generates test configurations for an NVFlare example folder.
 
     Args:
-        example: A well-formatted NVFlare example.
-        project_yaml: Project yaml file for the testing of this example.
-        postfix: Postfix for the newly generated job.
+        example (Example): A well-formatted NVFlare example folder.
+        project_yaml (str): Project yaml file for the testing of this example.
+        job_postfix (str): Postfix for the newly generated job.
     """
-
     output_yamls = []
     os.makedirs(OUTPUT_YAML_DIR, exist_ok=True)
     for job in os.listdir(example.jobs_root_dir):
-        output_yaml = os.path.join(OUTPUT_YAML_DIR, f"{example.name}_{job}.yml")
-        job_dir = os.path.join(example.jobs_root_dir, job)
-        requirements_file = os.path.join(example.root, example.requirements_file)
-        new_requirements_file = os.path.join(example.root, "temp_requirements.txt")
-        exclude_requirements = "\\|".join(REQUIREMENTS_TO_EXCLUDE)
-
-        setup = [
-            f"cp {requirements_file} {new_requirements_file}",
-            f"sed -i '/{exclude_requirements}/d' {new_requirements_file}",
-            f"pip install -r {new_requirements_file}",
-        ]
-        if example.prepare_data_script is not None:
-            setup.append(f"bash {example.prepare_data_script}")
-        setup.append(f"python convert_to_test_job.py --job {job_dir} --post {postfix}")
-        setup.append(f"rm -f {new_requirements_file}")
-
-        config = {
-            "ha": True,
-            "jobs_root_dir": example.jobs_root_dir,
-            "cleanup": True,
-            "project_yaml": project_yaml,
-            "additional_python_paths": example.additional_python_paths,
-            "tests": [
-                {
-                    "test_name": f"Test a simplified copy of job {job} for example {example.name}.",
-                    "event_sequence": [
-                        {
-                            "trigger": {"type": "server_log", "data": "Server started"},
-                            "actions": [f"submit_job {job}{postfix}"],
-                            "result": {"type": "job_submit_success"},
-                        },
-                        {
-                            "trigger": {"type": "run_state", "data": {"run_finished": True}},
-                            "actions": ["ensure_current_job_done"],
-                            "result": {"type": "run_state", "data": {"run_finished": True}},
-                        },
-                    ],
-                    "setup": setup,
-                    "teardown": [f"rm -rf {job_dir}{postfix}"],
-                }
-            ],
-        }
-        with open(output_yaml, "w") as yaml_file:
-            yaml.dump(config, yaml_file, default_flow_style=False)
+        output_yaml = _generate_test_config_for_one_job(example, job, project_yaml, job_postfix)
         output_yamls.append(output_yaml)
     return output_yamls
+
+
+def _generate_test_config_for_one_job(
+    example: Example,
+    job: str,
+    project_yaml: str = PROJECT_YAML,
+    postfix: str = POSTFIX,
+) -> str:
+    """Generates test configuration yaml for an NVFlare example.
+
+    Args:
+        example (Example): A well-formatted NVFlare example.
+        job (str): name of the job.
+        project_yaml (str): Project yaml file for the testing of this example.
+        postfix (str): Postfix for the newly generated job.
+    """
+    output_yaml = os.path.join(OUTPUT_YAML_DIR, f"{example.name}_{job}.yml")
+    job_dir = os.path.join(example.jobs_root_dir, job)
+    requirements_file = os.path.join(example.root, example.requirements_file)
+    new_requirements_file = os.path.join(example.root, "temp_requirements.txt")
+    exclude_requirements = "\\|".join(REQUIREMENTS_TO_EXCLUDE)
+
+    setup = [
+        f"cp {requirements_file} {new_requirements_file}",
+        f"sed -i '/{exclude_requirements}/d' {new_requirements_file}",
+        f"pip install -r {new_requirements_file}",
+    ]
+    if example.prepare_data_script is not None:
+        setup.append(f"bash {example.prepare_data_script}")
+    setup.append(f"python convert_to_test_job.py --job {job_dir} --post {postfix}")
+    setup.append(f"rm -f {new_requirements_file}")
+
+    config = {
+        "ha": True,
+        "jobs_root_dir": example.jobs_root_dir,
+        "cleanup": True,
+        "project_yaml": project_yaml,
+        "additional_python_paths": example.additional_python_paths,
+        "tests": [
+            {
+                "test_name": f"Test a simplified copy of job {job} for example {example.name}.",
+                "event_sequence": [
+                    {
+                        "trigger": {"type": "server_log", "data": "Server started"},
+                        "actions": [f"submit_job {job}{postfix}"],
+                        "result": {"type": "job_submit_success"},
+                    },
+                    {
+                        "trigger": {"type": "run_state", "data": {"run_finished": True}},
+                        "actions": ["ensure_current_job_done"],
+                        "result": {"type": "run_state", "data": {"run_finished": True}},
+                    },
+                ],
+                "setup": setup,
+                "teardown": [f"rm -rf {job_dir}{postfix}"],
+            }
+        ],
+    }
+    with open(output_yaml, "w") as yaml_file:
+        yaml.dump(config, yaml_file, default_flow_style=False)
+    return output_yaml
 
 
 def _read_admin_json_file(admin_json_file) -> dict:

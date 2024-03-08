@@ -3,7 +3,7 @@
 set -e
 
 PYTHONPATH="${PWD}/../.."
-backends=(numpy tensorflow pytorch overseer ha auth preflight cifar auto stats)
+backends=(numpy tensorflow pytorch overseer ha auth preflight cifar auto stats xgboost)
 
 usage()
 {
@@ -58,6 +58,18 @@ run_overseer_test()
     eval "$cmd"
 }
 
+run_xgb_test()
+{
+    echo "Running xgboost integration tests."
+    cmd="$cmd xgb_test.py"
+    echo "$cmd"
+    eval "$cmd"
+    echo "Running system integration tests with backend $m."
+    cmd="$prefix $cmd system_test.py"
+    echo "$cmd"
+    eval "$cmd"
+}
+
 run_system_test()
 {
     echo "Running system integration tests with backend $m."
@@ -81,6 +93,8 @@ elif [[ $m == "overseer" ]]; then
     run_overseer_test
 elif [[ $m == "preflight" ]]; then
     run_preflight_check_test
+elif [[ $m == "xgboost" ]]; then
+    run_xgb_test
 else
     run_system_test
 fi

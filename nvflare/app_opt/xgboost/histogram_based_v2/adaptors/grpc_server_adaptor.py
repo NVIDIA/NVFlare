@@ -26,12 +26,42 @@ from nvflare.security.logging import secure_format_exception
 
 
 class GrpcServerAdaptor(XGBServerAdaptor):
+    """Implementation of XGBServerAdaptor that uses an internal `GrpcClient`.
+
+    The `GrpcServerAdaptor` class serves as an interface between the XGBoost
+    federated client and federated server components.
+    It employs its `XGBRunner` to initiate an XGBoost federated gRPC server
+    and utilizes an internal `GrpcClient` to forward client requests/responses.
+
+    The communication flow is as follows:
+
+        1. XGBoost federated gRPC client talks to `GrpcClientAdaptor`, which
+           encapsulates a `GrpcServer`.
+           Requests are then forwarded to `GrpcServerAdaptor`, which internally
+           manages a `GrpcClient` responsible for interacting with the XGBoost
+           federated gRPC server.
+        2. XGBoost federated gRPC server talks to `GrpcServerAdaptor`, which
+           encapsulates a `GrpcClient`.
+           Responses are then forwarded to `GrpcClientAdaptor`, which internally
+           manages a `GrpcServer` responsible for interacting with the XGBoost
+           federated gRPC client.
+    """
+
     def __init__(
         self,
         int_client_grpc_options=None,
-        xgb_server_ready_timeout=Constant.XGB_SERVER_READY_TIMEOUT,
-        in_process=True,
+        in_process: bool = False,
+        xgb_server_ready_timeout: float = Constant.XGB_SERVER_READY_TIMEOUT,
     ):
+        """Constructor method to initialize the object.
+
+        Args:
+            int_client_grpc_options: An optional list of key-value pairs (`channel_arguments`
+                in gRPC Core runtime) to configure the gRPC channel of internal `GrpcClient`.
+            in_process (bool): Specifies whether to start the `XGBRunner` in the same process or not.
+            xgb_server_ready_timeout (float): Duration for which the internal `GrpcClient`
+                should wait for the XGBoost gRPC server before timing out.
+        """
         XGBServerAdaptor.__init__(self)
         self.int_client_grpc_options = int_client_grpc_options
         self.xgb_server_ready_timeout = xgb_server_ready_timeout
