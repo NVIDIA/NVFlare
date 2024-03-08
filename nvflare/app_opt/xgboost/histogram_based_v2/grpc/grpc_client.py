@@ -32,7 +32,8 @@ class GrpcClient:
 
         Args:
             server_addr: address of the gRPC server to connect to
-            grpc_options: gRPC options for the gRPC client
+            grpc_options: An optional list of key-value pairs (`channel_arguments`
+                in gRPC Core runtime) to configure the gRPC channel.
         """
         if not grpc_options:
             grpc_options = GRPC_DEFAULT_OPTIONS

@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import multiprocessing
-import sys
 import threading
 from typing import Tuple
 
@@ -59,11 +58,39 @@ class _ClientStarter:
 
 
 class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
+    """Implementation of XGBClientAdaptor that uses an internal `GrpcServer`.
+
+    The `GrpcClientAdaptor` class serves as an interface between the XGBoost
+    federated client and federated server components.
+    It employs its `XGBRunner` to initiate an XGBoost federated gRPC client
+    and utilizes an internal `GrpcServer` to forward client requests/responses.
+
+    The communication flow is as follows:
+
+        1. XGBoost federated gRPC client talks to `GrpcClientAdaptor`, which
+           encapsulates a `GrpcServer`.
+           Requests are then forwarded to `GrpcServerAdaptor`, which internally
+           manages a `GrpcClient` responsible for interacting with the XGBoost
+           federated gRPC server.
+        2. XGBoost federated gRPC server talks to `GrpcServerAdaptor`, which
+           encapsulates a `GrpcClient`.
+           Responses are then forwarded to `GrpcClientAdaptor`, which internally
+           manages a `GrpcServer` responsible for interacting with the XGBoost
+           federated gRPC client.
+    """
+
     def __init__(
         self,
         int_server_grpc_options=None,
-        in_process=True,
+        in_process=False,
     ):
+        """Constructor method to initialize the object.
+
+        Args:
+            int_server_grpc_options: An optional list of key-value pairs (`channel_arguments`
+                in gRPC Core runtime) to configure the gRPC channel of internal `GrpcServer`.
+            in_process (bool): Specifies whether to start the `XGBRunner` in the same process or not.
+        """
         XGBClientAdaptor.__init__(self)
         self.int_server_grpc_options = int_server_grpc_options
         self.in_process = in_process
@@ -212,7 +239,6 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
 
     def Allgather(self, request: pb2.AllgatherRequest, context):
         try:
-            self.logger.info(f"Calling Allgather with {sys.getsizeof(request.send_buffer)}")
             rcv_buf = self._send_all_gather(
                 rank=request.rank,
                 seq=request.sequence_number,
@@ -225,7 +251,6 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
 
     def Allreduce(self, request: pb2.AllreduceRequest, context):
         try:
-            self.logger.info(f"Calling Allreduce with {sys.getsizeof(request.send_buffer)}")
             rcv_buf = self._send_all_reduce(
                 rank=request.rank,
                 seq=request.sequence_number,
@@ -240,7 +265,6 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
 
     def Broadcast(self, request: pb2.BroadcastRequest, context):
         try:
-            self.logger.info(f"Calling Broadcast with {sys.getsizeof(request.send_buffer)}")
             rcv_buf = self._send_broadcast(
                 rank=request.rank,
                 seq=request.sequence_number,

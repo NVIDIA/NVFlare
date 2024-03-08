@@ -42,7 +42,8 @@ class GrpcServer:
             addr: the listening address of the server
             max_workers: max number of workers
             servicer: the servicer that is capable of processing XGB requests
-            grpc_options: gRPC options
+            grpc_options: An optional list of key-value pairs (`channel_arguments`
+                in gRPC Core runtime) to configure the gRPC channel.
         """
         if not grpc_options:
             grpc_options = GRPC_DEFAULT_OPTIONS
