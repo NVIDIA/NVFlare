@@ -13,11 +13,12 @@
 # limitations under the License.
 
 from abc import ABC
-from typing import List, Union
+from typing import List, Optional, Tuple, Union
 
 from nvflare.apis.client import Client
-from nvflare.apis.controller_spec import SendOrder, Task
+from nvflare.apis.controller_spec import SendOrder, Task, TaskCompletionStatus
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 
 
@@ -64,7 +65,7 @@ class WFCommSpec(ABC):
               If == 0, end the task immediately after the min responses are received;
 
         """
-        pass
+        raise NotImplementedError
 
     def broadcast_and_wait(
         self,
@@ -91,7 +92,7 @@ class WFCommSpec(ABC):
             abort_signal: the abort signal. If triggered, this method stops waiting and returns to the caller.
 
         """
-        pass
+        raise NotImplementedError
 
     def broadcast_forever(
         self,
@@ -112,7 +113,7 @@ class WFCommSpec(ABC):
             targets: list of destination clients. None means all clients are determined dynamically.
 
         """
-        pass
+        raise NotImplementedError
 
     def send(
         self,
@@ -144,7 +145,7 @@ class WFCommSpec(ABC):
             task_assignment_timeout: in SEQUENTIAL order, this is the wait time for trying a target client, before trying next target.
 
         """
-        pass
+        raise NotImplementedError
 
     def send_and_wait(
         self,
@@ -170,7 +171,7 @@ class WFCommSpec(ABC):
             abort_signal: the abort signal. If triggered, this method stops waiting and returns to the caller.
 
         """
-        pass
+        raise NotImplementedError
 
     def relay(
         self,
@@ -196,7 +197,7 @@ class WFCommSpec(ABC):
             expanded dynamically when a new client joins.
 
         """
-        pass
+        raise NotImplementedError
 
     def relay_and_wait(
         self,
@@ -210,4 +211,112 @@ class WFCommSpec(ABC):
         abort_signal: Signal = None,
     ):
         """This is the blocking version of 'relay'."""
-        pass
+        raise NotImplementedError
+
+    def get_num_standing_tasks(self) -> int:
+        """Gets tasks that are currently standing.
+
+        Returns: length of the list of standing tasks
+
+        """
+        raise NotImplementedError
+
+    def cancel_task(
+        self,
+        task: Task,
+        completion_status: TaskCompletionStatus = TaskCompletionStatus.CANCELLED,
+        fl_ctx: Optional[FLContext] = None,
+    ):
+        """Cancels the specified task.
+
+        If the task is standing, the task is cancelled immediately (and removed from job queue) and calls
+        the task_done CB (if specified);
+
+        If the task is not standing, this method has no effect.
+
+        Args:
+            task: the task to be cancelled
+            completion_status: the TaskCompletionStatus of the task
+            fl_ctx: the FL context
+
+        """
+        raise NotImplementedError
+
+    def cancel_all_tasks(self, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: Optional[FLContext] = None):
+        """Cancels all standing tasks.
+
+        Args:
+            completion_status: the TaskCompletionStatus of the task
+            fl_ctx: the FL context
+        """
+        raise NotImplementedError
+
+    def check_tasks(self):
+        """Checks if tasks should be exited."""
+        raise NotImplementedError
+
+    def process_task_request(self, client: Client, fl_ctx: FLContext) -> Tuple[str, str, Shareable]:
+        """Called by the Engine when a task request is received from a client.
+
+        Args:
+            client: the Client that the task request is from
+            fl_ctx: the FLContext
+
+        Returns: task name, task id, and task data
+
+        """
+        raise NotImplementedError
+
+    def handle_exception(self, task_id: str, fl_ctx: FLContext):
+        """Called after process_task_request returns, but exception occurs before task is sent out."""
+        raise NotImplementedError
+
+    def process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):
+        """Called by the Engine to process the submitted result from a client.
+
+        Args:
+            client: the Client that the submitted result is from
+            task_name: the name of the task
+            task_id: the id of the task
+            result: the Shareable result from the Client
+            fl_ctx: the FLContext
+
+        """
+        raise NotImplementedError
+
+    def process_task_check(self, task_id: str, fl_ctx: FLContext):
+        """Called by the Engine to check whether a specified task still exists.
+        Args:
+            task_id: the id of the task
+            fl_ctx: the FLContext
+        Returns: the ClientTask object if exists; None otherwise
+        """
+        raise NotImplementedError
+
+    def handle_dead_job(self, client_name: str, fl_ctx: FLContext):
+        """Called by the Engine to handle the case that the job on the client is dead.
+
+        Args:
+            client_name: name of the client on which the job is dead
+            fl_ctx: the FLContext
+
+        """
+        raise NotImplementedError
+
+    def initialize_run(self, fl_ctx: FLContext):
+        """Called when a new RUN is about to start.
+
+        Args:
+            fl_ctx: FL context. It must contain 'job_id' that is to be initialized
+
+        """
+        raise NotImplementedError
+
+    def finalize_run(self, fl_ctx: FLContext):
+        """Called when a new RUN is finished.
+
+        Args:
+            fl_ctx: the FL context
+
+        """
+        raise NotImplementedError

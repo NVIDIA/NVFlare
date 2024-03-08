@@ -125,7 +125,8 @@ def _setup_system(num_clients=1):
     controller = DummyController()
     fl_ctx = mock_server_engine.new_context()
     communicator = WFCommServer()
-    controller.set_communicator(communicator, fl_ctx)
+    controller.set_communicator(communicator)
+    controller.initialize(fl_ctx)
     controller.communicator.initialize_run(fl_ctx=fl_ctx)
     return controller, mock_server_engine, fl_ctx, clients_list
 
@@ -233,7 +234,7 @@ class TestTaskManagement(TestController):
         for i in range(num_of_cancel_tasks):
             controller.cancel_task(task=all_tasks[i], fl_ctx=fl_ctx)
             assert all_tasks[i].completion_status == TaskCompletionStatus.CANCELLED
-        controller.communicator._check_tasks()
+        controller.communicator.check_tasks()
         assert controller.get_num_standing_tasks() == (num_of_start_tasks - num_of_cancel_tasks)
         controller.cancel_all_tasks()
         for thread in all_threads:
@@ -263,7 +264,7 @@ class TestTaskManagement(TestController):
             # check if task_id is empty means this task is not assigned
             assert task_id == ""
             assert data is None
-        controller.communicator._check_tasks()
+        controller.communicator.check_tasks()
         assert controller.get_num_standing_tasks() == 0
         assert task.completion_status == TaskCompletionStatus.CANCELLED
         launch_thread.join()
@@ -645,7 +646,7 @@ class TestCallback(TestController):
         )
 
         assert task.last_client_task_map[client_name].result["_test_data"] == client_name
-        controller.communicator._check_tasks()
+        controller.communicator.check_tasks()
         assert task.completion_status == TaskCompletionStatus.OK
         launch_thread.join()
         self.teardown_system(controller, fl_ctx)
@@ -690,12 +691,12 @@ class TestCallback(TestController):
                     )
         if task_complete == "timeout":
             time.sleep(timeout)
-            controller.communicator._check_tasks()
+            controller.communicator.check_tasks()
             assert task.completion_status == TaskCompletionStatus.TIMEOUT
         elif task_complete == "cancel":
             controller.cancel_task(task)
             assert task.completion_status == TaskCompletionStatus.CANCELLED
-        controller.communicator._check_tasks()
+        controller.communicator.check_tasks()
         assert task.props[task_name] == expected
         assert controller.get_num_standing_tasks() == 0
         launch_thread.join()
@@ -867,7 +868,7 @@ class TestCallback(TestController):
         controller.communicator.process_submission(
             client=client, task_name="__test_task", task_id=client_task_id, fl_ctx=ctx, result=data
         )
-        controller.communicator._check_tasks()
+        controller.communicator.check_tasks()
         assert controller.get_num_standing_tasks() == 1
         new_task_name_out = ""
         while new_task_name_out == "":
@@ -914,14 +915,14 @@ class TestCallback(TestController):
         launch_thread.start()
 
         clients_pull_and_submit_result(controller=controller, ctx=ctx, clients=clients, task_name="__test_task")
-        controller.communicator._check_tasks()
+        controller.communicator.check_tasks()
         assert controller.get_num_standing_tasks() == num_of_clients
 
         for i in range(num_of_clients):
             clients_pull_and_submit_result(
                 controller=controller, ctx=ctx, clients=clients, task_name=f"__new_test_task_{clients[i].name}"
             )
-            controller.communicator._check_tasks()
+            controller.communicator.check_tasks()
             assert controller.get_num_standing_tasks() == num_of_clients - (i + 1)
 
         launch_thread.join()
@@ -1042,7 +1043,7 @@ class TestBasic(TestController):
         assert controller.get_num_standing_tasks() == 1
 
         controller.cancel_task(task=task)
-        controller.communicator._check_tasks()
+        controller.communicator.check_tasks()
         assert controller.get_num_standing_tasks() == 0
         assert task.completion_status == TaskCompletionStatus.CANCELLED
         launch_thread.join()
@@ -1079,7 +1080,7 @@ class TestBasic(TestController):
         assert controller.get_num_standing_tasks() == 2
 
         controller.cancel_all_tasks()
-        controller.communicator._check_tasks()
+        controller.communicator.check_tasks()
         assert controller.get_num_standing_tasks() == 0
         assert task.completion_status == TaskCompletionStatus.CANCELLED
         assert task1.completion_status == TaskCompletionStatus.CANCELLED
@@ -1135,7 +1136,7 @@ class TestBroadcastBehavior(TestController):
             )
             assert task.last_client_task_map[client.name].result == result
 
-        controller.communicator._check_tasks()
+        controller.communicator.check_tasks()
         assert task.completion_status == TaskCompletionStatus.OK
         launch_thread.join()
         self.teardown_system(controller, fl_ctx)
@@ -1208,13 +1209,13 @@ class TestBroadcastBehavior(TestController):
 
         for client, client_task_id in zip(clients, client_task_ids):
             result = Shareable()
-            controller.communicator._check_tasks()
+            controller.communicator.check_tasks()
             assert controller.get_num_standing_tasks() == 1
             controller.communicator.process_submission(
                 client=client, task_name="__test_task", task_id=client_task_id, result=result, fl_ctx=fl_ctx
             )
 
-        controller.communicator._check_tasks()
+        controller.communicator.check_tasks()
         assert controller.get_num_standing_tasks() == 0
         assert task.completion_status == TaskCompletionStatus.OK
         launch_thread.join()
@@ -1257,7 +1258,7 @@ class TestBroadcastBehavior(TestController):
                 client=client, task_name="__test_task", task_id=client_task_id, result=result, fl_ctx=fl_ctx
             )
 
-        controller.communicator._check_tasks()
+        controller.communicator.check_tasks()
         assert controller.get_num_standing_tasks() == 0
         assert task.completion_status == TaskCompletionStatus.OK
         launch_thread.join()
@@ -1290,18 +1291,18 @@ class TestBroadcastBehavior(TestController):
             task_name_out, client_task_id, data = controller.communicator.process_task_request(client, fl_ctx)
             client_task_ids.append(client_task_id)
             assert task_name_out == "__test_task"
-            controller.communicator._check_tasks()
+            controller.communicator.check_tasks()
             assert controller.get_num_standing_tasks() == 1
 
         for client, client_task_id in zip(clients, client_task_ids):
-            controller.communicator._check_tasks()
+            controller.communicator.check_tasks()
             assert controller.get_num_standing_tasks() == 1
             result = Shareable()
             controller.communicator.process_submission(
                 client=client, task_name="__test_task", task_id=client_task_id, result=result, fl_ctx=fl_ctx
             )
 
-        controller.communicator._check_tasks()
+        controller.communicator.check_tasks()
         assert controller.get_num_standing_tasks() == 0
         assert task.completion_status == TaskCompletionStatus.OK
         launch_thread.join()
@@ -1814,7 +1815,7 @@ class TestRelayBehavior(TestController):
 
             # client side running some logic to generate result
             if expected_client_to_get_task:
-                controller.communicator._check_tasks()
+                controller.communicator.check_tasks()
                 assert controller.get_num_standing_tasks() == 1
                 result = Shareable()
                 controller.communicator.process_submission(
@@ -1826,7 +1827,7 @@ class TestRelayBehavior(TestController):
                 )
 
         launch_thread.join()
-        controller.communicator._check_tasks()
+        controller.communicator.check_tasks()
         assert controller.get_num_standing_tasks() == 0
         self.teardown_system(controller, fl_ctx)
 
@@ -1894,7 +1895,7 @@ class TestRelayBehavior(TestController):
 
         # need to make sure the header is set
         assert result.get_header(ReservedHeaderKey.REPLY_IS_LATE)
-        controller.communicator._check_tasks()
+        controller.communicator.check_tasks()
         assert controller.get_num_standing_tasks() == 1
         self.teardown_system(controller, fl_ctx)
 
@@ -2029,7 +2030,7 @@ class TestSendBehavior(TestController):
         assert _client_task_id == ""
 
         controller.cancel_task(task)
-        controller.communicator._check_tasks()
+        controller.communicator.check_tasks()
         assert controller.get_num_standing_tasks() == 0
         launch_thread.join()
         self.teardown_system(controller, fl_ctx)
@@ -2072,7 +2073,7 @@ class TestSendBehavior(TestController):
 
         controller.cancel_task(task)
         assert task.completion_status == TaskCompletionStatus.CANCELLED
-        controller.communicator._check_tasks()
+        controller.communicator.check_tasks()
         assert controller.get_num_standing_tasks() == 0
         launch_thread.join()
         self.teardown_system(controller, fl_ctx)
@@ -2169,14 +2170,14 @@ class TestSendBehavior(TestController):
         # once a client gets a task, other clients should not get task
         _assert_other_clients_get_no_task(controller=controller, fl_ctx=fl_ctx, client_idx=0, clients=clients)
 
-        controller.communicator._check_tasks()
+        controller.communicator.check_tasks()
         assert controller.get_num_standing_tasks() == 1
 
         controller.communicator.process_submission(
             client=clients[0], task_name="__test_task", task_id=client_task_id, fl_ctx=fl_ctx, result=data
         )
 
-        controller.communicator._check_tasks()
+        controller.communicator.check_tasks()
         assert controller.get_num_standing_tasks() == 0
         assert task.completion_status == TaskCompletionStatus.OK
         launch_thread.join()

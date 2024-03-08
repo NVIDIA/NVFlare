@@ -344,7 +344,7 @@ class ServerSideController(Controller):
         self.log_info(fl_ctx, f"Workflow {self.workflow_id} done!")
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
-        if event_type == EventType.BEFORE_PROCESS_TASK:
+        if event_type == EventType.BEFORE_PROCESS_TASK_REQUEST:
             self._update_client_status(fl_ctx)
 
     def process_config_reply(self, client_name: str, reply: Shareable, fl_ctx: FLContext) -> bool:

@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,10 +18,10 @@ from typing import List, Optional, Tuple, Union
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, SendOrder, Task, TaskCompletionStatus
+from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import job_from_meta
-from nvflare.apis.responder import Responder
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_copy
 from nvflare.apis.signal import Signal
 from nvflare.apis.wf_comm_spec import WFCommSpec
@@ -78,7 +78,7 @@ def _get_client_task(target, task: Task):
     return None
 
 
-class WFCommServer(Responder, WFCommSpec):
+class WFCommServer(FLComponent, WFCommSpec):
     def __init__(self, task_check_period=0.2):
         """Manage life cycles of tasks and their destinations.
 
@@ -96,7 +96,7 @@ class WFCommServer(Responder, WFCommSpec):
         self._task_check_period = task_check_period
         self._dead_client_reports = {}  # clients that reported the job is dead on it: name => report time
         self._dead_clients_lock = Lock()  # need lock since dead_clients can be modified from different threads
-        # make sure _check_tasks, process_task_request, process_submission does not interfere with each other
+        # make sure check_tasks, process_task_request, process_submission does not interfere with each other
         self._controller_lock = Lock()
 
     def initialize_run(self, fl_ctx: FLContext):
@@ -822,14 +822,14 @@ class WFCommServer(Responder, WFCommSpec):
         while not self._all_done:
             should_abort_job = self._job_policy_violated()
             if not should_abort_job:
-                self._check_tasks()
+                self.check_tasks()
             else:
                 with self._engine.new_context() as fl_ctx:
                     self.system_panic("Aborting job due to deployment policy violation", fl_ctx)
                 return
             time.sleep(self._task_check_period)
 
-    def _check_tasks(self):
+    def check_tasks(self):
         with self._controller_lock:
             self._do_check_tasks()
 

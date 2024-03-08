@@ -20,7 +20,6 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.impl.wf_comm_server import WFCommServer
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
@@ -127,7 +126,7 @@ class ServerRunner(TBI):
 
                     fl_ctx.set_prop(FLContextKey.WORKFLOW, wf.id, sticky=True)
 
-                    wf.controller.set_communicator(WFCommServer(), fl_ctx)
+                    wf.controller.initialize(fl_ctx)
                     wf.controller.communicator.initialize_run(fl_ctx)
                     wf.controller.start_controller(fl_ctx)
 
@@ -335,10 +334,13 @@ class ServerRunner(TBI):
                     self.log_debug(fl_ctx, "no current workflow - asked client to try again later")
                     return "", "", None
 
-                self.fire_event(EventType.BEFORE_PROCESS_TASK, fl_ctx)
+                self.log_debug(fl_ctx, "firing event EventType.BEFORE_PROCESS_TASK_REQUEST")
+                self.fire_event(EventType.BEFORE_PROCESS_TASK_REQUEST, fl_ctx)
                 task_name, task_id, task_data = self.current_wf.controller.communicator.process_task_request(
                     client, fl_ctx
                 )
+                self.log_debug(fl_ctx, "firing event EventType.AFTER_PROCESS_TASK_REQUEST")
+                self.fire_event(EventType.AFTER_PROCESS_TASK_REQUEST, fl_ctx)
 
                 if task_name and task_name != SpecialTaskName.TRY_AGAIN:
                     if task_data:

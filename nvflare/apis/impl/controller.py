@@ -35,19 +35,21 @@ class Controller(FLComponent, ControllerSpec, ABC):
         self._task_check_period = task_check_period
         self.communicator = None
 
-    def set_communicator(self, communicator: WFCommSpec, fl_ctx: FLContext):
-        if not isinstance(communicator, WFCommSpec):
-            raise TypeError(f"communicator must be an instance of WFCommSpec, but got {type(communicator)}")
-
-        self.communicator = communicator
-        self.communicator.controller = self
-        self.communicator.task_check_period = self._task_check_period
+    def initialize(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
         if not engine:
             self.system_panic(f"Engine not found. {self.__class__.__name__} exiting.", fl_ctx)
             return
 
         self._engine = engine
+
+    def set_communicator(self, communicator: WFCommSpec):
+        if not isinstance(communicator, WFCommSpec):
+            raise TypeError(f"communicator must be an instance of WFCommSpec, but got {type(communicator)}")
+
+        self.communicator = communicator
+        self.communicator.controller = self
+        self.communicator.task_check_period = self._task_check_period
 
     def broadcast(
         self,
@@ -133,21 +135,12 @@ class Controller(FLComponent, ControllerSpec, ABC):
         )
 
     def get_num_standing_tasks(self) -> int:
-        try:
-            return self.communicator.get_num_standing_tasks()
-        except:
-            raise NotImplementedError(f"{self.communicator} does not support this function")
+        return self.communicator.get_num_standing_tasks()
 
     def cancel_task(
         self, task: Task, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: Optional[FLContext] = None
     ):
-        try:
-            self.communicator.cancel_task(task, completion_status, fl_ctx)
-        except:
-            raise NotImplementedError(f"{self.communicator} does not support this function")
+        self.communicator.cancel_task(task, completion_status, fl_ctx)
 
     def cancel_all_tasks(self, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: Optional[FLContext] = None):
-        try:
-            self.communicator.cancel_all_tasks(completion_status, fl_ctx)
-        except:
-            raise NotImplementedError(f"{self.communicator} does not support this function")
+        self.communicator.cancel_all_tasks(completion_status, fl_ctx)
