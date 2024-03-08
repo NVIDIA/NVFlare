@@ -4,20 +4,10 @@
   "task_result_filters": [],
   "components": [
     {
-      "id": "mlflow_receiver_with_tracking_uri",
-      "path": "nvflare.app_opt.tracking.mlflow.mlflow_receiver.MLflowReceiver",
+      "id": "tb_receiver",
+      "path": "nvflare.app_opt.tracking.tb.tb_receiver.TBAnalyticsReceiver",
       "args": {
-        "kwargs": {
-          "experiment_name": "xgboost",
-          "run_name": "xgboost-with-mlflow",
-          "experiment_tags": {
-            "mlflow.note.content": "## **xgboost experiment with MLflow**"
-          },
-          "run_tags": {
-            "mlflow.note.content": "## Federated Experiment tracking with MLflow \n"
-          }
-        },
-        "artifact_location": "artifacts"
+        "tb_folder": "tb_events"
       }
     }
   ],

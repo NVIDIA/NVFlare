@@ -14,7 +14,6 @@
 
 import xgboost.callback
 
-from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.app_common.tracking.log_writer import LogWriter
 
 
@@ -29,10 +28,11 @@ class MetricsCallback(xgboost.callback.TrainingCallback):
         if not evals_log:
             return False
 
+        data_type = self.writer.get_default_metric_data_type()
         for data, metric in evals_log.items():
+            record = {}
             for metric_name, log in metric.items():
                 score = log[-1][0] if isinstance(log[-1], tuple) else log[-1]
-                self.writer.write(
-                    tag=f"{data}_{metric_name}", value=score, data_type=AnalyticsDataType.METRIC, global_step=epoch
-                )
+                record[metric_name] = score
+            self.writer.write(tag=f"{data}_metrics", value=record, data_type=data_type, global_step=epoch)
         return False

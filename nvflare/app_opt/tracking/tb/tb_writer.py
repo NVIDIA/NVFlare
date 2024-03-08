@@ -32,6 +32,9 @@ class TBWriter(LogWriter):
     def get_writer_name(self) -> LogWriterName:
         return LogWriterName.TORCH_TB
 
+    def get_default_metric_data_type(self) -> AnalyticsDataType:
+        return AnalyticsDataType.SCALARS
+
     def add_scalar(self, tag: str, scalar: float, global_step: Optional[int] = None, **kwargs):
         """Sends a scalar.
 

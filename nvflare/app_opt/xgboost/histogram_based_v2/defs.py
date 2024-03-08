@@ -83,5 +83,4 @@ class Constant:
     RUNNER_CTX_NUM_ROUNDS = "num_rounds"
     RUNNER_CTX_WORLD_SIZE = "world_size"
     RUNNER_CTX_RANK = "rank"
-    RUNNER_CTX_TB_DIR = "tb_dir"
     RUNNER_CTX_MODEL_DIR = "model_dir"

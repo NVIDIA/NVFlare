@@ -38,7 +38,7 @@
     },
     {
       "id": "log_writer",
-      "path": "nvflare.app_opt.tracking.mlflow.mlflow_writer.MLflowWriter",
+      "path": "nvflare.app_opt.tracking.tb.tb_writer.TBWriter",
       "args": {"event_type": "analytix_log_stats"}
     },
     {

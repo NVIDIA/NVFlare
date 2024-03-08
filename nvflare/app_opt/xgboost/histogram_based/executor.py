@@ -26,16 +26,17 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.tracking.log_writer import LogWriter
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
 from nvflare.app_opt.xgboost.histogram_based.constants import XGB_TRAIN_TASK, XGBShareableHeader
 from nvflare.app_opt.xgboost.metrics_cb import MetricsCallback
-from nvflare.app_opt.xgboost.tb import TensorBoardCallback
-from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 
 class XGBoostParams:
-    def __init__(self, xgb_params: dict, num_rounds=10, early_stopping_rounds=2, verbose_eval=False):
+    def __init__(
+        self, xgb_params: dict, num_rounds: int = 10, early_stopping_rounds: int = 2, verbose_eval: bool = False
+    ):
         """Container for all XGBoost parameters.
 
         Args:
@@ -81,9 +82,10 @@ class FedXGBHistogramExecutor(Executor):
             data_loader_id: the ID points to XGBDataLoader.
             verbose_eval: verbose_eval in xgboost.train
             use_gpus: flag to enable gpu training
+            writer_id: the ID points to a LogWriter, if provided, a MetricsCallback will be added.
+                Users can then use the receivers from nvflare.app_opt.tracking.
         """
         super().__init__()
-        self.app_dir = None
 
         self.num_rounds = num_rounds
         self.early_stopping_rounds = early_stopping_rounds
@@ -102,8 +104,8 @@ class FedXGBHistogramExecutor(Executor):
         self.train_data = None
         self.val_data = None
 
-        self.writer_id = writer_id
-        self.writer = None
+        self._writer_id = writer_id
+        self._writer = None
 
     def initialize(self, fl_ctx):
         self.client_id = fl_ctx.get_identity_name()
@@ -111,12 +113,14 @@ class FedXGBHistogramExecutor(Executor):
         self.log_info(fl_ctx, f"server address is {self._server_address}")
 
         engine = fl_ctx.get_engine()
-        ws = engine.get_workspace()
-        self.app_dir = ws.get_app_dir(fl_ctx.get_job_id())
 
         self.data_loader = engine.get_component(self.data_loader_id)
         if not isinstance(self.data_loader, XGBDataLoader):
             self.system_panic("data_loader should be type XGBDataLoader", fl_ctx)
+
+        self._writer = engine.get_component(self._writer_id)
+        if not isinstance(self._writer, LogWriter):
+            self.system_panic("writer should be type LogWriter", fl_ctx)
 
     def xgb_train(self, params: XGBoostParams) -> xgb.core.Booster:
         """XGBoost training logic.
@@ -135,11 +139,9 @@ class FedXGBHistogramExecutor(Executor):
         watchlist = [(dval, "eval"), (dtrain, "train")]
 
         callbacks = [callback.EvaluationMonitor(rank=self.rank)]
-        tensorboard, flag = optional_import(module="torch.utils.tensorboard")
-        if flag and self.app_dir:
-            callbacks.append(TensorBoardCallback(self.app_dir, tensorboard))
-        if self.writer:
-            callbacks.append(MetricsCallback(self.writer))
+
+        if self._writer:
+            callbacks.append(MetricsCallback(self._writer))
 
         # Run training, all the features in training API is available.
         bst = xgb.train(
@@ -157,9 +159,6 @@ class FedXGBHistogramExecutor(Executor):
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
             self.initialize(fl_ctx)
-            engine = fl_ctx.get_engine()
-            if self.writer_id:
-                self.writer = engine.get_component(self.writer_id)
 
     def _get_server_address(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()

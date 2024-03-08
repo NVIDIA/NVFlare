@@ -37,6 +37,9 @@ class MLflowWriter(LogWriter):
         """Returns "MLFLOW"."""
         return LogWriterName.MLFLOW
 
+    def get_default_metric_data_type(self) -> AnalyticsDataType:
+        return AnalyticsDataType.METRICS
+
     def log_param(self, key: str, value: any) -> None:
         """Log a parameter (e.g. model hyperparameter) under the current run.
 

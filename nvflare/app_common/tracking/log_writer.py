@@ -60,3 +60,6 @@ class LogWriter(FLComponent, ABC):
     @abstractmethod
     def get_writer_name(self) -> LogWriterName:
         pass
+
+    def get_default_metric_data_type(self) -> AnalyticsDataType:
+        return AnalyticsDataType.METRICS
