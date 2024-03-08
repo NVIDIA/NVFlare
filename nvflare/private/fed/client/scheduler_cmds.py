@@ -18,7 +18,7 @@ from typing import List
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode, ServerCommandKey, SystemComponents
 from nvflare.apis.resource_manager_spec import ResourceConsumerSpec, ResourceManagerSpec
-from nvflare.apis.shareable import ReservedHeaderKey, Shareable
+from nvflare.apis.shareable import Shareable
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import ERROR_MSG_PREFIX, RequestHeader, SysCommandTopic, TrainingTopic
 from nvflare.private.fed.client.admin import RequestProcessor
