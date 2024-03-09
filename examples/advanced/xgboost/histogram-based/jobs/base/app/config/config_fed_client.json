@@ -13,7 +13,7 @@
           "data_loader_id": "dataloader",
           "num_rounds": "{num_rounds}",
           "early_stopping_rounds": 2,
-          "writer_id": "log_writer",
+          "metrics_writer_id": "metrics_writer",
           "xgb_params": {
             "max_depth": 8,
             "eta": 0.1,
@@ -37,7 +37,7 @@
       }
     },
     {
-      "id": "log_writer",
+      "id": "metrics_writer",
       "path": "nvflare.app_opt.tracking.tb.tb_writer.TBWriter",
       "args": {"event_type": "analytix_log_stats"}
     },

@@ -55,8 +55,22 @@ class XGBClientRunner(XGBRunner, FLComponent):
         verbose_eval: bool,
         use_gpus: bool,
         model_file_name: str,
-        writer_id: str = None,
+        metrics_writer_id: str = None,
     ):
+        """Constructor.
+
+        Args:
+            early_stopping_rounds: early stopping rounds
+            xgb_params: This dict is passed to `xgboost.train()` as the first argument `params`.
+                It contains all the Booster parameters.
+                Please refer to XGBoost documentation for details:
+                https://xgboost.readthedocs.io/en/stable/python/python_api.html#module-xgboost.training
+            data_loader_id: the ID points to XGBDataLoader.
+            verbose_eval: verbose_eval in xgboost.train
+            use_gpus: flag to enable gpu training
+            metrics_writer_id: the ID points to a LogWriter, if provided, a MetricsCallback will be added.
+                Users can then use the receivers from nvflare.app_opt.tracking.
+        """
         FLComponent.__init__(self)
         self.early_stopping_rounds = early_stopping_rounds
         self.xgb_params = xgb_params
@@ -64,7 +78,6 @@ class XGBClientRunner(XGBRunner, FLComponent):
         self.use_gpus = use_gpus
         self.model_file_name = model_file_name
         self.data_loader_id = data_loader_id
-        self.writer_id = writer_id
         self.logger = get_logger(self)
 
         self._client_name = None
@@ -75,7 +88,8 @@ class XGBClientRunner(XGBRunner, FLComponent):
         self._data_loader = None
         self._model_dir = None
         self._stopped = False
-        self._writer = None
+        self._metrics_writer_id = metrics_writer_id
+        self._metrics_writer = None
 
     def initialize(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
@@ -83,9 +97,10 @@ class XGBClientRunner(XGBRunner, FLComponent):
         if not isinstance(self._data_loader, XGBDataLoader):
             self.system_panic(f"data_loader should be type XGBDataLoader but got {type(self._data_loader)}", fl_ctx)
 
-        self._writer = engine.get_component(self._writer_id)
-        if not isinstance(self._writer, LogWriter):
-            self.system_panic("writer should be type LogWriter", fl_ctx)
+        if self._metrics_writer_id:
+            self._metrics_writer = engine.get_component(self._metrics_writer_id)
+            if not isinstance(self._metrics_writer, LogWriter):
+                self.system_panic("writer should be type LogWriter", fl_ctx)
 
     def xgb_train(
         self, params: XGBoostParams, train_data: xgb.core.DMatrix, val_data: xgb.core.DMatrix
@@ -107,8 +122,8 @@ class XGBClientRunner(XGBRunner, FLComponent):
         watchlist = [(val_data, "eval"), (train_data, "train")]
 
         callbacks = [callback.EvaluationMonitor(rank=self._rank)]
-        if self.writer:
-            callbacks.append(MetricsCallback(self._writer))
+        if self._metrics_writer:
+            callbacks.append(MetricsCallback(self._metrics_writer))
 
         # Run training, all the features in training API is available.
         bst = xgb.train(

@@ -65,7 +65,8 @@ class FedXGBHistogramExecutor(Executor):
         data_loader_id: str,
         verbose_eval=False,
         use_gpus=False,
-        writer_id: str = None,
+        metrics_writer_id: str = None,
+        model_file_name="test.model.json",
     ):
         """Federated XGBoost Executor for histogram-base collaboration.
 
@@ -82,8 +83,9 @@ class FedXGBHistogramExecutor(Executor):
             data_loader_id: the ID points to XGBDataLoader.
             verbose_eval: verbose_eval in xgboost.train
             use_gpus: flag to enable gpu training
-            writer_id: the ID points to a LogWriter, if provided, a MetricsCallback will be added.
+            metrics_writer_id: the ID points to a LogWriter, if provided, a MetricsCallback will be added.
                 Users can then use the receivers from nvflare.app_opt.tracking.
+            model_file_name (str): where to save the model.
         """
         super().__init__()
 
@@ -91,6 +93,7 @@ class FedXGBHistogramExecutor(Executor):
         self.early_stopping_rounds = early_stopping_rounds
         self.xgb_params = xgb_params
         self.data_loader_id = data_loader_id
+        self.data_loader = None
         self.verbose_eval = verbose_eval
         self.use_gpus = use_gpus
 
@@ -103,9 +106,10 @@ class FedXGBHistogramExecutor(Executor):
         self._server_address = "localhost"
         self.train_data = None
         self.val_data = None
+        self.model_file_name = model_file_name
 
-        self._writer_id = writer_id
-        self._writer = None
+        self._metrics_writer_id = metrics_writer_id
+        self._metrics_writer = None
 
     def initialize(self, fl_ctx):
         self.client_id = fl_ctx.get_identity_name()
@@ -118,9 +122,10 @@ class FedXGBHistogramExecutor(Executor):
         if not isinstance(self.data_loader, XGBDataLoader):
             self.system_panic("data_loader should be type XGBDataLoader", fl_ctx)
 
-        self._writer = engine.get_component(self._writer_id)
-        if not isinstance(self._writer, LogWriter):
-            self.system_panic("writer should be type LogWriter", fl_ctx)
+        if self._metrics_writer_id:
+            self._metrics_writer = engine.get_component(self._metrics_writer_id)
+            if not isinstance(self._metrics_writer, LogWriter):
+                self.system_panic("writer should be type LogWriter", fl_ctx)
 
     def xgb_train(self, params: XGBoostParams) -> xgb.core.Booster:
         """XGBoost training logic.
@@ -140,8 +145,8 @@ class FedXGBHistogramExecutor(Executor):
 
         callbacks = [callback.EvaluationMonitor(rank=self.rank)]
 
-        if self._writer:
-            callbacks.append(MetricsCallback(self._writer))
+        if self._metrics_writer:
+            callbacks.append(MetricsCallback(self._metrics_writer))
 
         # Run training, all the features in training API is available.
         bst = xgb.train(
@@ -279,7 +284,7 @@ class FedXGBHistogramExecutor(Executor):
                 workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
                 run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
                 run_dir = workspace.get_run_dir(run_number)
-                bst.save_model(os.path.join(run_dir, "test.model.json"))
+                bst.save_model(os.path.join(run_dir, self.model_file_name))
                 xgb.collective.communicator_print("Finished training\n")
         except Exception as e:
             secure_log_traceback()
