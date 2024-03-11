@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-# change to "gpu_hist" for gpu training
 TREE_METHOD="hist"
 DATA_SPLIT_ROOT="/tmp/nvflare/random_forest/HIGGS/data_splits"
 

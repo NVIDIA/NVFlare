@@ -20,15 +20,18 @@ from xgboost import callback
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
+from nvflare.app_common.tracking.log_writer import LogWriter
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.runner import XGBRunner
-from nvflare.fuel.utils.import_utils import optional_import
+from nvflare.app_opt.xgboost.metrics_cb import MetricsCallback
 from nvflare.fuel.utils.obj_utils import get_logger
 
 
 class XGBoostParams:
-    def __init__(self, xgb_params: dict, num_rounds=10, early_stopping_rounds=2, verbose_eval=False):
+    def __init__(
+        self, xgb_params: dict, num_rounds: int = 10, early_stopping_rounds: int = 2, verbose_eval: bool = False
+    ):
         """Container for all XGBoost parameters.
 
         Args:
@@ -43,36 +46,31 @@ class XGBoostParams:
         self.xgb_params: dict = xgb_params if xgb_params else {}
 
 
-class TensorBoardCallback(xgb.callback.TrainingCallback):
-    def __init__(self, app_dir: str, tensorboard):
-        super().__init__()
-        self.train_writer = tensorboard.SummaryWriter(log_dir=os.path.join(app_dir, "train-auc/"))
-        self.val_writer = tensorboard.SummaryWriter(log_dir=os.path.join(app_dir, "val-auc/"))
-
-    def after_iteration(self, model, epoch: int, evals_log: xgb.callback.TrainingCallback.EvalsLog):
-        if not evals_log:
-            return False
-
-        for data, metric in evals_log.items():
-            for metric_name, log in metric.items():
-                score = log[-1][0] if isinstance(log[-1], tuple) else log[-1]
-                if data == "train":
-                    self.train_writer.add_scalar(metric_name, score, epoch)
-                else:
-                    self.val_writer.add_scalar(metric_name, score, epoch)
-        return False
-
-
 class XGBClientRunner(XGBRunner, FLComponent):
     def __init__(
         self,
         data_loader_id: str,
         early_stopping_rounds: int,
         xgb_params: dict,
-        verbose_eval,
-        use_gpus,
+        verbose_eval: bool,
+        use_gpus: bool,
         model_file_name: str,
+        metrics_writer_id: str = None,
     ):
+        """Constructor.
+
+        Args:
+            early_stopping_rounds: early stopping rounds
+            xgb_params: This dict is passed to `xgboost.train()` as the first argument `params`.
+                It contains all the Booster parameters.
+                Please refer to XGBoost documentation for details:
+                https://xgboost.readthedocs.io/en/stable/python/python_api.html#module-xgboost.training
+            data_loader_id: the ID points to XGBDataLoader.
+            verbose_eval: verbose_eval in xgboost.train
+            use_gpus: flag to enable gpu training
+            metrics_writer_id: the ID points to a LogWriter, if provided, a MetricsCallback will be added.
+                Users can then use the receivers from nvflare.app_opt.tracking.
+        """
         FLComponent.__init__(self)
         self.early_stopping_rounds = early_stopping_rounds
         self.xgb_params = xgb_params
@@ -88,15 +86,21 @@ class XGBClientRunner(XGBRunner, FLComponent):
         self._num_rounds = None
         self._server_addr = None
         self._data_loader = None
-        self._tb_dir = None
         self._model_dir = None
         self._stopped = False
+        self._metrics_writer_id = metrics_writer_id
+        self._metrics_writer = None
 
     def initialize(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
         self._data_loader = engine.get_component(self.data_loader_id)
         if not isinstance(self._data_loader, XGBDataLoader):
             self.system_panic(f"data_loader should be type XGBDataLoader but got {type(self._data_loader)}", fl_ctx)
+
+        if self._metrics_writer_id:
+            self._metrics_writer = engine.get_component(self._metrics_writer_id)
+            if not isinstance(self._metrics_writer, LogWriter):
+                self.system_panic("writer should be type LogWriter", fl_ctx)
 
     def xgb_train(
         self, params: XGBoostParams, train_data: xgb.core.DMatrix, val_data: xgb.core.DMatrix
@@ -118,9 +122,8 @@ class XGBClientRunner(XGBRunner, FLComponent):
         watchlist = [(val_data, "eval"), (train_data, "train")]
 
         callbacks = [callback.EvaluationMonitor(rank=self._rank)]
-        tensorboard, flag = optional_import(module="torch.utils.tensorboard")
-        if flag and self._tb_dir:
-            callbacks.append(TensorBoardCallback(self._tb_dir, tensorboard))
+        if self._metrics_writer:
+            callbacks.append(MetricsCallback(self._metrics_writer))
 
         # Run training, all the features in training API is available.
         bst = xgb.train(
@@ -140,7 +143,6 @@ class XGBClientRunner(XGBRunner, FLComponent):
         self._world_size = ctx.get(Constant.RUNNER_CTX_WORLD_SIZE)
         self._num_rounds = ctx.get(Constant.RUNNER_CTX_NUM_ROUNDS)
         self._server_addr = ctx.get(Constant.RUNNER_CTX_SERVER_ADDR)
-        self._tb_dir = ctx.get(Constant.RUNNER_CTX_TB_DIR)
         self._model_dir = ctx.get(Constant.RUNNER_CTX_MODEL_DIR)
 
         if self.use_gpus:

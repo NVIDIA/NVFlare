@@ -139,7 +139,9 @@ By default, CPU based training is used.
 If the CUDA is installed on the site, tree construction and prediction can be
 accelerated using GPUs.
 
-To enable GPU accelerated training, in `config_fed_client.json` set `"use_gpus": true` and  `"tree_method": "hist"`. Then, in `FedXGBHistogramExecutor` we use the `device` parameter to map each rank to a GPU device ordinal in `xgb_params`. For a single GPU, assuming it has enough memory, we can map each rank to the same device with `params["device"] = f"cuda:0"`.
+To enable GPU accelerated training, in `config_fed_client.json` set `"use_gpus": true` and  `"tree_method": "hist"`.
+Then, in `FedXGBHistogramExecutor` we use the `device` parameter to map each rank to a GPU device ordinal in `xgb_params`.
+For a single GPU, assuming it has enough memory, we can map each rank to the same device with `params["device"] = f"cuda:0"`.
 
 ### Multi GPU support
 

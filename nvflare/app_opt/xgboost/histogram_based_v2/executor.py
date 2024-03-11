@@ -29,6 +29,7 @@ class FedXGBHistogramExecutor(XGBExecutor):
         int_server_grpc_options=None,
         req_timeout=100.0,
         model_file_name="model.json",
+        metrics_writer_id: str = None,
         in_process=True,
     ):
         XGBExecutor.__init__(
@@ -44,6 +45,7 @@ class FedXGBHistogramExecutor(XGBExecutor):
         self.int_server_grpc_options = int_server_grpc_options
         self.model_file_name = model_file_name
         self.in_process = in_process
+        self.metrics_writer_id = metrics_writer_id
 
     def get_adaptor(self, fl_ctx: FLContext):
         runner = XGBClientRunner(
@@ -53,6 +55,7 @@ class FedXGBHistogramExecutor(XGBExecutor):
             verbose_eval=self.verbose_eval,
             use_gpus=self.use_gpus,
             model_file_name=self.model_file_name,
+            metrics_writer_id=self.metrics_writer_id,
         )
         runner.initialize(fl_ctx)
         adaptor = GrpcClientAdaptor(

@@ -28,6 +28,9 @@ class WandBWriter(LogWriter):
         """Returns "WEIGHTS_AND_BIASES"."""
         return LogWriterName.WANDB
 
+    def get_default_metric_data_type(self) -> AnalyticsDataType:
+        return AnalyticsDataType.METRICS
+
     def log(self, metrics: Dict[str, float], step: Optional[int] = None):
         """Log multiple metrics for the current run.
 
@@ -35,4 +38,4 @@ class WandBWriter(LogWriter):
             metrics (Dict[str, float]): Dictionary of metric_name of type String to Float values.
             step (int, optional): A single integer step at which to log the specified Metrics.
         """
-        self.sender.add(tag="metrics", value=metrics, data_type=AnalyticsDataType.METRICS, global_step=step)
+        self.write(tag="metrics", value=metrics, data_type=AnalyticsDataType.METRICS, global_step=step)
