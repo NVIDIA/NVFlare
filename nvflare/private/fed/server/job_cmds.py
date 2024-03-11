@@ -150,7 +150,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     authz_func=self.authorize_job,
                     client_cmd=ftd.PULL_FOLDER_FQN,
                 ),
-                # This is an internal command that the client automatically issues during the download process of a job.
+                # DOWNLOAD_JOB_FILE is an internal command that the client automatically issues
+                # during the download process of a job.
                 # This command is not visible to the user and cannot be issued by the user.
                 CommandSpec(
                     name=AdminCommandNames.DOWNLOAD_JOB_FILE,
@@ -473,17 +474,6 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             )
             return
         conn.append_success("", meta=make_meta(status=MetaStatusValue.OK, extra={MetaKey.JOB_ID: new_job_id}))
-
-    def authorize_list_files(self, conn: Connection, args: List[str]):
-        if len(args) < 2:
-            conn.append_error("syntax error: missing job_id")
-            return False, None
-
-        if len(args) > 3:
-            conn.append_error("syntax error: too many arguments")
-            return False, None
-
-        return self.authorize_job(conn=conn, args=args[:2])
 
     @staticmethod
     def _job_match(job_meta: Dict, id_prefix: str, name_prefix: str, user_name: str) -> bool:

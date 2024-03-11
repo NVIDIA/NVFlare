@@ -37,12 +37,14 @@ class CommandCtxKey(object):
     BYTES_SENDER = "bytes_sender"
 
 
-class SendBytesToServer:
+class SendBytesToServer(ABC):
+    @abstractmethod
     def send(self, sock, meta: str):
         pass
 
 
-class ReceiveBytesFromServer:
+class ReceiveBytesFromServer(ABC):
+    @abstractmethod
     def receive(self, sock):
         pass
 

@@ -112,7 +112,7 @@ class ExchangeHandler:
     """
 
     def __init__(self, receiver: Receiver, processor: DataProcessor):
-        """Constructor of MsgReceiver
+        """Constructor of ExchangeHandler
 
         Args:
             receiver: the data receiver object to be used to receive data from the peer

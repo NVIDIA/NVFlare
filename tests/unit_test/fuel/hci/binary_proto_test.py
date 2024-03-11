@@ -17,7 +17,7 @@ import random
 import tempfile
 import uuid
 
-from nvflare.fuel.hci.binary_proto import DataGenerator, Receiver, Sender, receive_all, send_binary_file
+from nvflare.fuel.hci.binary_proto import CT_BINARY, Receiver, Sender, receive_all, send_binary_file
 
 
 class MySender(Sender):
@@ -26,27 +26,6 @@ class MySender(Sender):
 
     def sendall(self, data):
         self.buf.extend(data)
-
-
-class MyGen(DataGenerator):
-    def __init__(self, size: int):
-        self.size = size
-        self.buf = os.urandom(size)
-        self.bytes_sent = 0
-
-    def generate(self) -> bytes:
-        remaining = self.size - self.bytes_sent
-        if remaining == 0:
-            return None
-        bytes_to_send = random.randint(1, 100)
-        if bytes_to_send > remaining:
-            bytes_to_send = remaining
-        data = self.buf[self.bytes_sent : self.bytes_sent + bytes_to_send]
-        self.bytes_sent += len(data)
-        return data
-
-    def data_size(self) -> int:
-        return self.size
 
 
 class MyReceiver(Receiver):
@@ -93,6 +72,7 @@ class TestBinaryProto:
             os.remove(file_name)
         else:
             received_size = 0
+        assert ct == CT_BINARY
         assert received_meta == meta
         assert received_size == len(body)
         os.remove(tf)

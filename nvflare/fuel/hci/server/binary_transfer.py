@@ -21,14 +21,6 @@ from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.server.constants import ConnProps
 
 
-class _SendBytesToClient:
-    def __init__(self, conn: Connection):
-        self.conn = conn
-
-    def send(self, data):
-        self.conn.flush_bytes(data)
-
-
 class BinaryTransfer:
     def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)

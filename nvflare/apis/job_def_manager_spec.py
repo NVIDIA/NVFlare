@@ -41,6 +41,7 @@ class JobDefManagerSpec(FLComponent, ABC):
         """
         pass
 
+    @abstractmethod
     def clone(self, from_jid: str, meta: dict, fl_ctx: FLContext) -> Dict[str, Any]:
         """Create a new job by cloning an existing job.
 
