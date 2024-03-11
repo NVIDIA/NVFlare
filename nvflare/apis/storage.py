@@ -21,7 +21,6 @@ META = "meta"
 META_JSON = "meta.json"
 WORKSPACE = "workspace"
 WORKSPACE_ZIP = "workspace.zip"
-MANIFEST = "manifest.json"
 
 
 class StorageException(Exception):
@@ -53,7 +52,7 @@ class StorageSpec(ABC):
 
         Args:
             uri: URI of the object
-            data: content of the object
+            data: content of the object. bytes or file name.
             meta: meta info of the object
             overwrite_existing: whether to overwrite the object if already exists
 
@@ -61,6 +60,21 @@ class StorageSpec(ABC):
             - invalid args
             - object already exists and overwrite_existing is False
             - error creating the object
+
+        """
+        pass
+
+    @abstractmethod
+    def clone_object(self, from_uri: str, to_uri: str, meta: dict, overwrite_existing: bool = False):
+        """Create a new object by cloning an existing one
+
+        Args:
+            from_uri: the existing object's uri
+            to_uri: the uri for the new object
+            meta: meta info for the new object
+            overwrite_existing: whether to overwrite the new uri if already exists
+
+        Returns:
 
         """
         pass
@@ -203,4 +217,4 @@ class StorageSpec(ABC):
 
     @staticmethod
     def is_valid_component(component_name):
-        return component_name in [DATA, META, WORKSPACE, MANIFEST]
+        return component_name in [DATA, META, WORKSPACE]

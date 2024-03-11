@@ -13,7 +13,11 @@
 # limitations under the License.
 
 import os
+import shutil
+import tempfile
 import time
+import uuid
+from pathlib import Path
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.fuel.hci.base64_utils import (
@@ -21,24 +25,50 @@ from nvflare.fuel.hci.base64_utils import (
     b64str_to_bytes,
     b64str_to_text_file,
     binary_file_to_b64str,
-    bytes_to_b64str,
     text_file_to_b64str,
 )
+from nvflare.fuel.hci.binary_proto import CT_BINARY, receive_all, send_binary_file
 from nvflare.fuel.hci.client.event import EventType
 from nvflare.fuel.hci.cmd_arg_utils import join_args
 from nvflare.fuel.hci.proto import MetaKey, ProtoKey
 from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.table import Table
-from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, unzip_all_from_file, zip_directory_to_bytes
+from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, unzip_all_from_file, zip_directory_to_file
 from nvflare.lighter.utils import load_private_key_file, sign_folders
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
-from .api_spec import CommandContext, ReplyProcessor
+from .api_spec import CommandContext, ReceiveBytesFromServer, ReplyProcessor, SendBytesToServer
 from .api_status import APIStatus
 
 
 def _server_cmd_name(name: str):
     return ftd.SERVER_MODULE_NAME + "." + name
+
+
+class _SendFileToServer(SendBytesToServer):
+    def __init__(self, file_name: str):
+        self.file_name = file_name
+
+    def send(self, sock, meta: str):
+        send_binary_file(sock, self.file_name, meta)
+        os.remove(self.file_name)
+
+
+class _ReceiveFileFromServer(ReceiveBytesFromServer):
+    def __init__(self, file_name: str):
+        self.file_name = file_name
+        self.num_bytes_received = 0
+
+    def receive(self, sock):
+        ct, _, tmp_file_name = receive_all(sock)
+        if ct != CT_BINARY:
+            raise RuntimeError(f"expecting BINARY type {CT_BINARY} but got {ct}")
+        if not tmp_file_name:
+            raise RuntimeError("nothing received from the server")
+        file_stats = os.stat(tmp_file_name)
+        self.num_bytes_received = file_stats.st_size
+        Path(os.path.dirname(self.file_name)).mkdir(parents=True, exist_ok=True)
+        shutil.move(tmp_file_name, self.file_name)
 
 
 class _DownloadProcessor(ReplyProcessor):
@@ -160,28 +190,6 @@ class _DownloadFolderProcessor(ReplyProcessor):
             )
 
 
-class _FileReceiver:
-    def __init__(self, file_path: str):
-        self.file_path = file_path
-        dir_name = os.path.dirname(self.file_path)
-        if not os.path.exists(dir_name):
-            os.makedirs(dir_name)
-        if os.path.exists(self.file_path):
-            # remove existing file
-            os.remove(self.file_path)
-        self.file = open(self.file_path, "ab")
-        self.num_bytes_received = 0
-
-    def close(self):
-        self.file.close()
-
-    def receive_data(self, data, start: int, length: int):
-        # print(f"got {length} bytes ...")
-        view = memoryview(data)
-        self.file.write(view[start : start + length])
-        self.num_bytes_received += length
-
-
 class FileTransferModule(CommandModule):
     """Command module with commands relevant to file transfer."""
 
@@ -196,7 +204,7 @@ class FileTransferModule(CommandModule):
         self.download_dir = download_dir
 
         self.cmd_handlers = {
-            ftd.UPLOAD_FOLDER_FQN: self.upload_folder,
+            ftd.PUSH_FOLDER_FQN: self.push_folder,
             ftd.DOWNLOAD_FOLDER_FQN: self.download_folder,
             ftd.PULL_BINARY_FQN: self.pull_binary_file,
             ftd.PULL_FOLDER_FQN: self.pull_folder,
@@ -242,10 +250,10 @@ class FileTransferModule(CommandModule):
                     visible=False,
                 ),
                 CommandSpec(
-                    name="upload_folder",
+                    name="push_folder",
                     description="Submit application to the server",
                     usage="submit_job job_folder",
-                    handler_func=self.upload_folder,
+                    handler_func=self.push_folder,
                     visible=False,
                 ),
                 CommandSpec(
@@ -356,17 +364,16 @@ class FileTransferModule(CommandModule):
         tx_id = args[1]
         folder_name = args[2]
         file_name = args[3]
-        is_end = len(args) > 4
+        # is_end = len(args) > 4
         tx_path = self._tx_path(tx_id, folder_name)
         file_path = os.path.join(tx_path, file_name)
-        receiver = _FileReceiver(file_path)
+        receiver = _ReceiveFileFromServer(file_path)
         api = ctx.get_api()
         api.fire_session_event(EventType.BEFORE_DOWNLOAD_FILE, f"downloading {file_name} ...")
         api = ctx.get_api()
-        ctx.set_bytes_receiver(receiver.receive_data)
+        ctx.set_bytes_receiver(receiver)
         download_start = time.time()
         result = api.server_execute(ctx.get_command(), cmd_ctx=ctx)
-        receiver.close()
         if result.get(ProtoKey.STATUS) != APIStatus.SUCCESS:
             return result
         download_end = time.time()
@@ -457,7 +464,26 @@ class FileTransferModule(CommandModule):
         # all rename attempts have failed - keep the original destination name
         return destination
 
-    def upload_folder(self, args, ctx: CommandContext):
+    def download_folder(self, args, ctx: CommandContext):
+        cmd_entry = ctx.get_command_entry()
+        assert isinstance(cmd_entry, CommandEntry)
+
+        if len(args) != 2:
+            return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: {}".format(cmd_entry.usage)}
+        job_id = args[1]
+        parts = [cmd_entry.full_command_name(), job_id]
+        command = join_args(parts)
+        reply_processor = _DownloadFolderProcessor(self.download_dir)
+        api = ctx.get_api()
+        return api.server_execute(command, reply_processor)
+
+    def info(self, args, ctx: CommandContext):
+        msg = f"Local Upload Source: {self.upload_dir}\n"
+        msg += f"Local Download Destination: {self.download_dir}\n"
+        return {"status": "ok", "details": msg}
+
+    def push_folder(self, args, ctx: CommandContext):
+        # upload with binary protocol
         cmd_entry = ctx.get_command_entry()
         assert isinstance(cmd_entry, CommandEntry)
         if len(args) != 2:
@@ -480,28 +506,12 @@ class FileTransferModule(CommandModule):
             sign_folders(full_path, private_key, api.client_cert)
 
         # zip the data
-        data = zip_directory_to_bytes(self.upload_dir, folder_name)
+        out_file = os.path.join(tempfile.gettempdir(), str(uuid.uuid4()))
+        zip_directory_to_file(self.upload_dir, folder_name, out_file)
 
         folder_name = split_path(full_path)[1]
-        b64str = bytes_to_b64str(data)
-        parts = [cmd_entry.full_command_name(), folder_name, b64str]
+        parts = [cmd_entry.full_command_name(), folder_name]
         command = join_args(parts)
-        return api.server_execute(command)
-
-    def download_folder(self, args, ctx: CommandContext):
-        cmd_entry = ctx.get_command_entry()
-        assert isinstance(cmd_entry, CommandEntry)
-
-        if len(args) != 2:
-            return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: {}".format(cmd_entry.usage)}
-        job_id = args[1]
-        parts = [cmd_entry.full_command_name(), job_id]
-        command = join_args(parts)
-        reply_processor = _DownloadFolderProcessor(self.download_dir)
-        api = ctx.get_api()
-        return api.server_execute(command, reply_processor)
-
-    def info(self, args, ctx: CommandContext):
-        msg = f"Local Upload Source: {self.upload_dir}\n"
-        msg += f"Local Download Destination: {self.download_dir}\n"
-        return {"status": "ok", "details": msg}
+        sender = _SendFileToServer(out_file)
+        ctx.set_bytes_sender(sender)
+        return api.server_execute(command, cmd_ctx=ctx)
