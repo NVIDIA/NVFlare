@@ -126,7 +126,7 @@ def _setup_system(num_clients=1):
     fl_ctx = mock_server_engine.new_context()
     communicator = WFCommServer()
     controller.set_communicator(communicator)
-    controller.initialize(fl_ctx)
+    controller.initialize_controller(fl_ctx)
     controller.communicator.initialize_run(fl_ctx=fl_ctx)
     return controller, mock_server_engine, fl_ctx, clients_list
 

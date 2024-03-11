@@ -134,7 +134,7 @@ class WFCommServer(FLComponent, WFCommSpec):
                     "collector must be an instance of GroupInfoCollector, but got {}".format(type(collector))
                 )
             collector.set_info(
-                group_name=self._name,
+                group_name=self.controller._name,
                 info={
                     "tasks": {t.name: [ct.client.name for ct in t.client_tasks] for t in self._tasks},
                 },
@@ -343,8 +343,6 @@ class WFCommServer(FLComponent, WFCommSpec):
             self.log_info(fl_ctx, f"received dead job report from client {client_name}")
             if not self._dead_client_reports.get(client_name):
                 self._dead_client_reports[client_name] = time.time()
-
-        self.controller.handle_dead_job(client_name, fl_ctx)
 
     def process_task_check(self, task_id: str, fl_ctx: FLContext):
         with self._task_lock:

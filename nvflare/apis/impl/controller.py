@@ -35,13 +35,14 @@ class Controller(FLComponent, ControllerSpec, ABC):
         self._task_check_period = task_check_period
         self.communicator = None
 
-    def initialize(self, fl_ctx: FLContext):
+    def initialize_controller(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
         if not engine:
             self.system_panic(f"Engine not found. {self.__class__.__name__} exiting.", fl_ctx)
             return
 
         self._engine = engine
+        self.start_controller(fl_ctx)
 
     def set_communicator(self, communicator: WFCommSpec):
         if not isinstance(communicator, WFCommSpec):
@@ -144,3 +145,12 @@ class Controller(FLComponent, ControllerSpec, ABC):
 
     def cancel_all_tasks(self, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: Optional[FLContext] = None):
         self.communicator.cancel_all_tasks(completion_status, fl_ctx)
+
+    def wait_for_task(self, task: Task, abort_signal: Signal):
+        self.communicator.wait_for_task(task, abort_signal)
+
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        self.communicator.handle_event(event_type, fl_ctx)
+
+    def handle_dead_job(self, client_name: str, fl_ctx: FLContext):
+        self.communicator.handle_dead_job(client_name, fl_ctx)

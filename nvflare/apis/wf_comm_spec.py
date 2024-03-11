@@ -251,6 +251,15 @@ class WFCommSpec(ABC):
         """
         raise NotImplementedError
 
+    def wait_for_task(self, task: Task, abort_signal: Signal):
+        """Wait for task to complete or abort.
+
+        Args:
+            task: the task to wait for
+            abort_signal: the abort signal. If triggered, this method stops waiting and returns to the caller.
+        """
+        raise NotImplementedError
+
     def check_tasks(self):
         """Checks if tasks should be exited."""
         raise NotImplementedError
