@@ -39,7 +39,6 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         self.internal_server_addr = None
         self._training_stopped = False
         self._client_name = None
-        self._app_dir = None
         self._workspace = None
         self._run_dir = None
         self._lock = threading.Lock()
@@ -47,9 +46,6 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
 
     def initialize(self, fl_ctx: FLContext):
         self._client_name = fl_ctx.get_identity_name()
-        engine = fl_ctx.get_engine()
-        ws = engine.get_workspace()
-        self._app_dir = ws.get_app_dir(fl_ctx.get_job_id())
         self._workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
         self._run_dir = self._workspace.get_run_dir(run_number)
@@ -77,7 +73,6 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
             Constant.RUNNER_CTX_XGB_PARAMS: self.xgb_params,
             Constant.RUNNER_CTX_XGB_OPTIONS: self.xgb_options,
             Constant.RUNNER_CTX_MODEL_DIR: self._run_dir,
-            Constant.RUNNER_CTX_TB_DIR: self._app_dir,
         }
         self.start_runner(runner_ctx, fl_ctx)
 
