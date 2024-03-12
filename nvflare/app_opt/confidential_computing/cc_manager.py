@@ -20,7 +20,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, RunProcessKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeComponentError
-from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer
+from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer, CCTokenGenerateError, CCTokenVerifyError
 from nvflare.fuel.hci.conn import Connection
 from nvflare.private.fed.server.training_cmds import TrainingCommandModule
 
@@ -148,13 +148,13 @@ class CCManager(FLComponent):
             issuer_id = conf.get(CC_ISSUER_ID)
             expiration = conf.get(TOKEN_EXPIRATION)
             issuer = engine.get_component(issuer_id)
-            if not (isinstance(issuer, CCAuthorizer) and issuer.can_generate()):
+            if not isinstance(issuer, CCAuthorizer):
                 raise RuntimeError(f"cc_issuer_id {issuer_id} must be a CCAuthorizer, but got {issuer.__class__}")
             self.cc_issuers[issuer] = expiration
 
         for v_id in self.cc_verifier_ids:
             verifier = engine.get_component(v_id)
-            if not (isinstance(verifier, CCAuthorizer) and verifier.can_verify()):
+            if not isinstance(verifier, CCAuthorizer):
                 raise RuntimeError(f"cc_authorizer_id {v_id} must be a CCAuthorizer, but got {verifier.__class__}")
             namespace = verifier.get_namespace()
             if namespace in self.cc_verifiers.keys():
@@ -222,25 +222,28 @@ class CCManager(FLComponent):
 
         self.participant_cc_info[self.site_name] = []
         for issuer, expiration in self.cc_issuers.items():
-            my_token = issuer.generate()
-            namespace = issuer.get_namespace()
+            try:
+                my_token = issuer.generate()
+                namespace = issuer.get_namespace()
 
-            if not isinstance(expiration, int):
-                raise ValueError(f"token_expiration value must be int, but got {expiration.__class__}")
-            if not my_token:
-                return "failed to get CC token"
+                if not isinstance(expiration, int):
+                    raise ValueError(f"token_expiration value must be int, but got {expiration.__class__}")
+                if not my_token:
+                    return f"{issuer} failed to get CC token"
 
-            self.logger.info(f"site: {self.site_name} namespace: {namespace} got the token: {my_token}")
-            cc_info = {
-                CC_TOKEN: my_token,
-                CC_ISSUER: issuer,
-                CC_NAMESPACE: namespace,
-                TOKEN_GENERATION_TIME: time.time(),
-                TOKEN_EXPIRATION: int(expiration),
-                CC_TOKEN_VALIDATED: True,
-            }
-            self.participant_cc_info[self.site_name].append(cc_info)
-            self.token_submitted = False
+                self.logger.info(f"site: {self.site_name} namespace: {namespace} got the token: {my_token}")
+                cc_info = {
+                    CC_TOKEN: my_token,
+                    CC_ISSUER: issuer,
+                    CC_NAMESPACE: namespace,
+                    TOKEN_GENERATION_TIME: time.time(),
+                    TOKEN_EXPIRATION: int(expiration),
+                    CC_TOKEN_VALIDATED: True,
+                }
+                self.participant_cc_info[self.site_name].append(cc_info)
+                self.token_submitted = False
+            except CCTokenGenerateError:
+                raise RuntimeError(f"{issuer} failed to generate CC token.")
 
         return ""
 
@@ -343,9 +346,12 @@ class CCManager(FLComponent):
                 token = v.get(CC_TOKEN, "")
                 namespace = v.get(CC_NAMESPACE, "")
                 verifier = self.cc_verifiers.get(namespace, None)
-                if verifier and verifier.verify(token):
-                    result[k + "." + namespace] = True
-                else:
+                try:
+                    if verifier and verifier.verify(token):
+                        result[k + "." + namespace] = True
+                    else:
+                        invalid_participant_list.append(k + " namespace: {" + namespace + "}")
+                except CCTokenVerifyError:
                     invalid_participant_list.append(k + " namespace: {" + namespace + "}")
         self.logger.info(f"CC - results from validating participants' tokens: {result}")
         return result, invalid_participant_list

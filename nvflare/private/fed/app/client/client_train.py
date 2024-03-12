@@ -116,6 +116,7 @@ def main(args):
             if exceptions:
                 for _, exception in exceptions.items():
                     if isinstance(exception, UnsafeComponentError):
+                        print("Unsafe component configured, could not start the client!!")
                         raise RuntimeError(exception)
 
             client_engine.fire_event(EventType.BEFORE_CLIENT_REGISTER, fl_ctx)

@@ -127,6 +127,7 @@ class ServerDeployer:
             if exceptions:
                 for _, exception in exceptions.items():
                     if isinstance(exception, UnsafeComponentError):
+                        print("Unsafe component configured, could not start the server!!")
                         raise RuntimeError(exception)
 
             threading.Thread(target=self._start_job_runner, args=[job_runner, fl_ctx]).start()

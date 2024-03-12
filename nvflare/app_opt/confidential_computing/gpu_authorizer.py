@@ -19,6 +19,11 @@ GPU_NAMESPACE = "x-nv-gpu-"
 
 
 class GPUAuthorizer(CCAuthorizer):
+    """Note: This is just a fake implementation for GPU authorizer. It will be replaced later
+    with the real implementation.
+
+    """
+
     def __init__(self, verifiers: list) -> None:
         """
 
@@ -77,12 +82,6 @@ class GPUAuthorizer(CCAuthorizer):
         """
         super().__init__()
         self.verifiers = verifiers
-
-    def can_generate(self) -> bool:
-        return True
-
-    def can_verify(self) -> bool:
-        return True
 
     def get_namespace(self) -> str:
         return GPU_NAMESPACE

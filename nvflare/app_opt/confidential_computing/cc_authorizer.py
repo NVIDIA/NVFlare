@@ -15,22 +15,6 @@
 
 
 class CCAuthorizer:
-    def can_generate(self) -> bool:
-        """This indicates if the authorizer can generate a CC token or not.
-
-        Returns: bool
-
-        """
-        pass
-
-    def can_verify(self) -> bool:
-        """This indicates if the authorizer can verify a CC token or not.
-
-        Returns: bool
-
-        """
-        pass
-
     def get_namespace(self) -> str:
         """This returns the namespace of the CCAuthorizer.
 
@@ -57,3 +41,15 @@ class CCAuthorizer:
 
         """
         pass
+
+
+class CCTokenGenerateError(Exception):
+    """Raised when a CC token generation failed"""
+
+    pass
+
+
+class CCTokenVerifyError(Exception):
+    """Raised when a CC token verification failed"""
+
+    pass

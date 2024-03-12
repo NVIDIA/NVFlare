@@ -63,11 +63,5 @@ class TDXAuthorizer(CCAuthorizer):
 
         return True
 
-    def can_generate(self) -> bool:
-        return True
-
-    def can_verify(self) -> bool:
-        return True
-
     def get_namespace(self) -> str:
         return TDX_NAMESPACE
