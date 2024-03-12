@@ -13,11 +13,13 @@
 # limitations under the License.
 
 import os
+import shutil
 import uuid
 from unittest.mock import patch
 
 import pytest
 
+from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
 from nvflare.private.fed.utils.fed_utils import split_gpus
 
@@ -28,14 +30,22 @@ class MockCell:
 
 
 class TestSimulatorRunner:
+    def setup_method(self, method):
+        self.workspace_name = str(uuid.uuid4())
+        self.cwd = os.getcwd()
+        os.makedirs(os.path.join(self.cwd, self.workspace_name, WorkspaceConstants.STARTUP_FOLDER_NAME))
+
+    def teardown_method(self, method):
+        os.chdir(self.cwd)
+        shutil.rmtree(os.path.join(self.cwd, self.workspace_name))
+
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.SimulatorServer.deploy")
     @patch("nvflare.private.fed.app.utils.FedAdminServer")
     @patch("nvflare.private.fed.client.fed_client.FederatedClient.register")
     @patch("nvflare.private.fed.server.fed_server.BaseServer.get_cell", return_value=MockCell())
     def test_valid_job_simulate_setup(self, mock_deploy, mock_admin, mock_register, mock_cell):
-        workspace_name = str(uuid.uuid4())
         job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
-        runner = SimulatorRunner(job_folder=job_folder, workspace=workspace_name, threads=1)
+        runner = SimulatorRunner(job_folder=job_folder, workspace=self.workspace_name, threads=1)
         assert runner.setup()
 
         expected_clients = ["site-1", "site-2"]
@@ -49,9 +59,8 @@ class TestSimulatorRunner:
     @patch("nvflare.private.fed.client.fed_client.FederatedClient.register")
     @patch("nvflare.private.fed.server.fed_server.BaseServer.get_cell", return_value=MockCell())
     def test_client_names_setup(self, mock_deploy, mock_admin, mock_register, mock_cell):
-        workspace_name = str(uuid.uuid4())
         job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
-        runner = SimulatorRunner(job_folder=job_folder, workspace=workspace_name, clients="site-1", threads=1)
+        runner = SimulatorRunner(job_folder=job_folder, workspace=self.workspace_name, clients="site-1", threads=1)
         assert runner.setup()
 
         expected_clients = ["site-1"]
@@ -65,9 +74,8 @@ class TestSimulatorRunner:
     @patch("nvflare.private.fed.client.fed_client.FederatedClient.register")
     @patch("nvflare.private.fed.server.fed_server.BaseServer.get_cell", return_value=MockCell())
     def test_no_app_for_client(self, mock_deploy, mock_admin, mock_register, mock_cell):
-        workspace_name = str(uuid.uuid4())
         job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
-        runner = SimulatorRunner(job_folder=job_folder, workspace=workspace_name, n_clients=3, threads=1)
+        runner = SimulatorRunner(job_folder=job_folder, workspace=self.workspace_name, n_clients=3, threads=1)
         assert not runner.setup()
 
     @pytest.mark.parametrize(
