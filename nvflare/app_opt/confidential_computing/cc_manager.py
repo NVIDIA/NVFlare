@@ -39,6 +39,8 @@ TOKEN_EXPIRATION = "token_expiration"
 SHUTDOWN_SYSTEM = 1
 SHUTDOWN_JOB = 2
 
+CC_VERIFICATION_FAILED = "not meeting CC requirements"
+
 
 class CCManager(FLComponent):
     def __init__(
@@ -327,7 +329,7 @@ class CCManager(FLComponent):
         if invalid_participant_list:
             invalid_participant_string = ",".join(invalid_participant_list)
             self.logger.debug(f"{invalid_participant_list=}")
-            return f"Participant {invalid_participant_string} not meeting CC requirements"
+            return f"Participant {invalid_participant_string}" + CC_VERIFICATION_FAILED
         else:
             return ""
 

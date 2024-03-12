@@ -48,7 +48,7 @@ class TestFederatedServer:
                     CellMessageHeaderKeys.PROJECT_NAME: "task_name",
                     CellMessageHeaderKeys.JOB_IDS: ["extra_job"],
                 },
-                Shareable()
+                Shareable(),
             )
 
             result = server.client_heartbeat(request)
