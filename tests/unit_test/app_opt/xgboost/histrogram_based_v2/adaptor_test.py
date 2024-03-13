@@ -19,8 +19,8 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_opt.xgboost.histogram_based_v2.adaptor import XGBAdaptor, XGBClientAdaptor, XGBServerAdaptor
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
-from nvflare.app_opt.xgboost.histogram_based_v2.runner import XGBRunner
 from nvflare.app_opt.xgboost.histogram_based_v2.request_sender import RequestSender
+from nvflare.app_opt.xgboost.histogram_based_v2.runner import XGBRunner
 
 
 @patch.multiple(XGBAdaptor, __abstractmethods__=set())

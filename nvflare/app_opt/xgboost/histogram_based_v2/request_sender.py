@@ -24,7 +24,7 @@ class RequestSender:
     A wrapper class for Sender to handle reply
     """
 
-    def __init__(self, engine, sender: Sender):
+    def __init__(self, engine, sender: Sender, timeout: float = 30):
         """Constructor
 
         Args:
@@ -33,6 +33,7 @@ class RequestSender:
         """
         self.engine = engine
         self.sender = sender
+        self.timeout = timeout
         self.logger = get_logger(self)
 
     def _extract_result(self, reply, expected_op):
@@ -70,6 +71,6 @@ class RequestSender:
         """
         req.set_header(Constant.MSG_KEY_XGB_OP, op)
 
-        reply = self.sender.send_to_server(self.engine, Constant.TOPIC_XGB_REQUEST, req, abort_signal)
+        reply = self.sender.send_to_server(self.engine, Constant.TOPIC_XGB_REQUEST, req, self.timeout, abort_signal)
 
         return self._extract_result(reply, op)

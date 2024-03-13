@@ -36,7 +36,7 @@ class ReliableSender(Sender):
         self.max_tx_time = max_tx_time
         self.enabled = False
 
-    def send_to_server(self, engine, topic: str, req: Shareable, abort_signal: Signal):
+    def send_to_server(self, engine, topic: str, req: Shareable, timeout: float, abort_signal: Signal):
 
         with engine.new_context() as fl_ctx:
 
@@ -50,6 +50,6 @@ class ReliableSender(Sender):
                 )
                 self.enabled = True
 
-            reply = ReliableMessage.send_request(FQCN.ROOT_SERVER, topic, req, self.timeout, abort_signal, fl_ctx)
+            reply = ReliableMessage.send_request(FQCN.ROOT_SERVER, topic, req, timeout, abort_signal, fl_ctx)
             # To be consistent with aux_message reply, which is a dict
             return {FQCN.ROOT_SERVER: reply}

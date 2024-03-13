@@ -135,7 +135,6 @@ class XGBController(Controller):
         max_client_op_interval: float = Constant.MAX_CLIENT_OP_INTERVAL,
         progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
         client_ranks=None,
-        enable_reliable_sender=True,
     ):
         """Controller for XGB.
 
@@ -167,7 +166,6 @@ class XGBController(Controller):
         self.progress_timeout = progress_timeout
         self.job_status_check_interval = job_status_check_interval
         self.client_ranks = client_ranks  # client rank assignments
-        self.enable_reliable_sender = enable_reliable_sender
 
         self.adaptor = None
         self.participating_clients = None
@@ -221,17 +219,15 @@ class XGBController(Controller):
             message_handle_func=self._process_client_done,
         )
 
-        if self.enable_reliable_sender:
-            ReliableMessage.enable(fl_ctx)
-            ReliableMessage.register_request_handler(
-                topic=Constant.TOPIC_XGB_REQUEST,
-                handler_f=self._process_xgb_request,
-            )
-
-            ReliableMessage.register_request_handler(
-                topic=Constant.TOPIC_CLIENT_DONE,
-                handler_f=self._process_client_done,
-            )
+        ReliableMessage.enable(fl_ctx)
+        ReliableMessage.register_request_handler(
+            topic=Constant.TOPIC_XGB_REQUEST,
+            handler_f=self._process_xgb_request,
+        )
+        ReliableMessage.register_request_handler(
+            topic=Constant.TOPIC_CLIENT_DONE,
+            handler_f=self._process_client_done,
+        )
 
     def _trigger_stop(self, fl_ctx: FLContext, error=None):
         # first trigger the abort_signal to tell all components (mainly the controller's control_flow and adaptor)

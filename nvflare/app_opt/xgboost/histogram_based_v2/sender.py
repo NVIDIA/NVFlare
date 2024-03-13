@@ -22,20 +22,15 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 class Sender(FLComponent, ABC):
     """An abstract interface to send request to XGB server"""
 
-    def __init__(self):
-        self.timeout = 30
-
-    def set_timeout(self, timeout):
-        self.timeout = timeout
-
     @abstractmethod
-    def send_to_server(self, engine, topic: str, req: Shareable, abort_signal: Signal):
+    def send_to_server(self, engine, topic: str, req: Shareable, timeout: float, abort_signal: Signal):
         """Send a request to the server.
 
         Args:
             engine: Client engine
             topic: Topic for the request
             req: the request Shareable
+            timeout: Timeout of the request in seconds
             abort_signal: used for checking whether the job is aborted.
 
         Returns: reply from the server
@@ -47,7 +42,7 @@ class SimpleSender(Sender):
     def __init__(self):
         super().__init__()
 
-    def send_to_server(self, engine, topic: str, req: Shareable, abort_signal: Signal):
+    def send_to_server(self, engine, topic: str, req: Shareable, timeout: float, abort_signal: Signal):
 
         server_name = FQCN.ROOT_SERVER
         with engine.new_context() as fl_ctx:
@@ -55,6 +50,6 @@ class SimpleSender(Sender):
                 targets=[server_name],
                 topic=topic,
                 request=req,
-                timeout=self.timeout,
+                timeout=timeout,
                 fl_ctx=fl_ctx,
             )
