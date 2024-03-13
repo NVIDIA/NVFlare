@@ -18,7 +18,6 @@ pd_readers = {
     "csv": pd.read_csv,
     "xls": pd.read_excel,
     "xlsx": pd.read_excel,
-    "json": pd.read_json,
 }
 
 
@@ -42,13 +41,10 @@ def get_pandas_reader(data_path: str):
 
 def load_data(data_path: str, require_header: bool = False):
     reader = get_pandas_reader(data_path)
-    if hasattr(reader, "header"):
-        if require_header:
-            data = reader(data_path)
-        else:
-            data = reader(data_path, header=None)
-    else:
+    if hasattr(reader, "header") and require_header:
         data = reader(data_path)
+    else:
+        data = reader(data_path, header=None)
 
     return _to_data_tuple(data)
 
@@ -58,11 +54,14 @@ def load_data_for_range(data_path: str, start: int, end: int, require_header: bo
 
     if hasattr(reader, "skiprows"):
         data_size = end - start
-        if hasattr(reader, "header") and not require_header:
-            data = reader(data_path, header=None, skiprows=start, nrows=data_size)
-        else:
+        if hasattr(reader, "header") and require_header:
             data = reader(data_path, skiprows=start, nrows=data_size)
+        else:
+            data = reader(data_path, header=None, skiprows=start, nrows=data_size)
     else:
-        data = reader(data_path).iloc[start:end]
+        if hasattr(reader, "header") and require_header:
+            data = reader(data_path).iloc[start:end]
+        else:
+            data = reader(data_path, header=None).iloc[start:end]
 
     return _to_data_tuple(data)

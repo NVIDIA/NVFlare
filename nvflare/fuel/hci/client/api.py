@@ -701,6 +701,7 @@ class AdminAPI(AdminAPISpec):
         process_json_func = json_processor.process_server_reply
 
         conn = Connection(sock, self)
+        conn.bytes_sender = ctx.get_bytes_sender()
         conn.append_command(command)
         if self.token:
             conn.append_token(self.token)
@@ -713,10 +714,11 @@ class AdminAPI(AdminAPISpec):
             conn.update_meta({MetaKey.CUSTOM_PROPS: custom_props})
 
         conn.close()
-        receive_bytes_func = ctx.get_bytes_receiver()
-        if receive_bytes_func is not None:
+
+        receiver = ctx.get_bytes_receiver()
+        if receiver is not None:
             self.debug("receive_bytes_and_process ...")
-            ok = receive_bytes_and_process(sock, receive_bytes_func)
+            ok = receive_bytes_and_process(sock, receiver)
             if ok:
                 ctx.set_command_result({"status": APIStatus.SUCCESS, "details": "OK"})
             else:

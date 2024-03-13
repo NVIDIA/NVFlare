@@ -26,7 +26,7 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
-from nvflare.app_opt.xgboost.tree_based.shareable_generator import update_model
+from nvflare.app_opt.xgboost.tree_based.utils import update_model
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.security.logging import secure_format_exception
 

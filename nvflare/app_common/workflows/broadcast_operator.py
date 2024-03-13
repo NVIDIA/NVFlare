@@ -16,11 +16,11 @@ import threading
 from typing import Dict, List, Optional, Union
 
 from nvflare.apis.client import Client
+from nvflare.apis.controller_spec import ClientTask, Task
 from nvflare.apis.dxo import DXO, from_shareable
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.impl.controller import ClientTask, Task
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.workflows.error_handling_controller import ErrorHandlingController

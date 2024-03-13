@@ -226,7 +226,7 @@ Below is the accuracy of the models on these tasks.
 As shown, FedAvg is able to generate a model with the best overall performance.    
 
 ## Inference
-We use NeMo's [inference script](https://github.com/NVIDIA/NeMo/blob/main/examples/nlp/language_modeling/megatron_gpt_eval.py) for generation task with models after SFT. 
+We use NeMo's [inference script](https://github.com/NVIDIA/NeMo/blob/v1.20.0/examples/nlp/language_modeling/megatron_gpt_eval.py) for generation task with models after SFT. 
 Below, we define some test examples to feed to the SFT model to see its predictions.
 
 First, we ask the model to generate an answer to an open question: "Tell me an interesting fact about space travel." 

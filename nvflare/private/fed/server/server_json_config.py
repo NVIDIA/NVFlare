@@ -16,7 +16,8 @@ import re
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import SystemConfigs, SystemVarName
-from nvflare.apis.responder import Responder
+from nvflare.apis.impl.controller import Controller
+from nvflare.apis.impl.wf_comm_server import WFCommServer
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
@@ -30,15 +31,18 @@ FL_MODULES = ["apis", "app_common", "widgets", "app_opt"]
 
 
 class WorkFlow:
-    def __init__(self, id, responder: Responder):
-        """Workflow is a responder with ID.
+    def __init__(self, id, controller: Controller):
+        """Workflow is a controller with ID.
+
+        Setting communicator to WFCommServer for server-side workflow.
 
         Args:
             id: identification
-            responder (Responder): A responder
+            controller (Controller): A controller
         """
         self.id = id
-        self.responder = responder
+        self.controller = controller
+        self.controller.set_communicator(WFCommServer())
 
 
 class ServerJsonConfigurator(FedJsonConfigurator):
@@ -125,10 +129,8 @@ class ServerJsonConfigurator(FedJsonConfigurator):
 
         if re.search(r"^workflows\.#[0-9]+$", path):
             workflow = self.authorize_and_build_component(element, config_ctx, node)
-            if not isinstance(workflow, Responder):
-                raise ConfigError(
-                    '"workflow" must be a Responder or Controller object, but got {}'.format(type(workflow))
-                )
+            if not isinstance(workflow, Controller):
+                raise ConfigError('"workflow" must be a Controller object, but got {}'.format(type(workflow)))
 
             cid = element.get("id", None)
             if not cid:
