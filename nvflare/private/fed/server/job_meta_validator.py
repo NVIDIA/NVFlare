@@ -18,12 +18,16 @@ from io import BytesIO
 from typing import Optional, Set, Tuple
 from zipfile import ZipFile
 
+from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.fl_constant import JobConstants
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, JobMetaKey
 from nvflare.apis.job_meta_validator_spec import JobMetaValidatorSpec
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.security.logging import secure_format_exception
+
+CONFIG_FOLDER = "/config/"
+CUSTOM_FOLDER = "/custom/"
 
 MAX_CLIENTS = 1000000
 
@@ -120,11 +124,12 @@ class JobMetaValidator(JobMetaValidatorSpec):
 
         deploy_map = meta.get(JobMetaKey.DEPLOY_MAP.value)
 
+        has_byoc = False
         for app, deployments in deploy_map.items():
 
-            zip_folder = job_name + "/" + app + "/config/"
-            if not self._entry_exists(zip_file, zip_folder):
-                logger.debug(f"zip folder {zip_folder} missing. Files in the zip:")
+            config_folder = job_name + "/" + app + CONFIG_FOLDER
+            if not self._entry_exists(zip_file, config_folder):
+                logger.debug(f"zip folder {config_folder} missing. Files in the zip:")
                 for x in zip_file.namelist():
                     logger.debug(f"    {x}")
                 raise ValueError(f"App '{app}' in deploy_map doesn't exist for job {job_name}")
@@ -132,14 +137,21 @@ class JobMetaValidator(JobMetaValidatorSpec):
             all_sites = ALL_SITES.casefold() in (site.casefold() for site in deployments)
 
             if (all_sites or SERVER_SITE_NAME in deployments) and not self._config_exists(
-                zip_file, zip_folder, JobConstants.SERVER_JOB_CONFIG
+                zip_file, config_folder, JobConstants.SERVER_JOB_CONFIG
             ):
                 raise ValueError(f"App '{app}' will be deployed to server but server config is missing")
 
             if (all_sites or [site for site in deployments if site != SERVER_SITE_NAME]) and not self._config_exists(
-                zip_file, zip_folder, JobConstants.CLIENT_JOB_CONFIG
+                zip_file, config_folder, JobConstants.CLIENT_JOB_CONFIG
             ):
                 raise ValueError(f"App '{app}' will be deployed to client but client config is missing")
+
+            # custom_folder = job_name + "/" + app + CUSTOM_FOLDER
+            # if self._entry_exists(zip_file, custom_folder):
+            #     has_byoc = True
+
+        if has_byoc:
+                meta[AppValidationKey.BYOC] = True
 
     @staticmethod
     def _convert_value_to_int(v) -> int:

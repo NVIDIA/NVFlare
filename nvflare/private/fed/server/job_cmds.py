@@ -21,7 +21,8 @@ from typing import Dict, List
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey
+from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey, FLContextKey
 from nvflare.apis.job_def import Job, JobMetaKey, is_valid_job_id
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.storage import DATA, JOB_ZIP, META, META_JSON, WORKSPACE, WORKSPACE_ZIP
@@ -540,6 +541,15 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     raise TypeError(
                         f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
                     )
+
+                fl_ctx.set_prop(FLContextKey.JOB_META, meta, private=True, sticky=False)
+                engine.fire_event(EventType.SUBMIT_JOB, fl_ctx)
+                block_reason = fl_ctx.get_prop(FLContextKey.JOB_BLOCK_REASON)
+                if block_reason:
+                    # submitted job blocked
+                    self.logger.error(f"submitted job is blocked: {block_reason}")
+                    conn.append_error(error, meta=make_meta(MetaStatusValue.INVALID_JOB_DEFINITION, block_reason))
+                    return
 
                 # set submitter info
                 meta[JobMetaKey.SUBMITTER_NAME.value] = conn.get_prop(ConnProps.USER_NAME, "")
