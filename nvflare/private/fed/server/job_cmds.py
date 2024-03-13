@@ -548,7 +548,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 if block_reason:
                     # submitted job blocked
                     self.logger.error(f"submitted job is blocked: {block_reason}")
-                    conn.append_error(error, meta=make_meta(MetaStatusValue.INVALID_JOB_DEFINITION, block_reason))
+                    conn.append_error(block_reason, meta=make_meta(MetaStatusValue.INVALID_JOB_DEFINITION, block_reason))
                     return
 
                 # set submitter info

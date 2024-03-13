@@ -146,9 +146,9 @@ class JobMetaValidator(JobMetaValidatorSpec):
             ):
                 raise ValueError(f"App '{app}' will be deployed to client but client config is missing")
 
-            # custom_folder = job_name + "/" + app + CUSTOM_FOLDER
-            # if self._entry_exists(zip_file, custom_folder):
-            #     has_byoc = True
+            custom_folder = job_name + "/" + app + CUSTOM_FOLDER
+            if self._entry_exists(zip_file, custom_folder):
+                has_byoc = True
 
         if has_byoc:
                 meta[AppValidationKey.BYOC] = True
