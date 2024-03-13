@@ -20,7 +20,7 @@ from nvflare.apis.signal import Signal
 from nvflare.app_opt.xgboost.histogram_based_v2.adaptor import XGBAdaptor, XGBClientAdaptor, XGBServerAdaptor
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.runner import XGBRunner
-from nvflare.app_opt.xgboost.histogram_based_v2.sender import Sender
+from nvflare.app_opt.xgboost.histogram_based_v2.request_sender import RequestSender
 
 
 @patch.multiple(XGBAdaptor, __abstractmethods__=set())
@@ -65,7 +65,7 @@ class TestXGBClientAdaptor:
 
     def test_send(self):
         xgb_adaptor = XGBClientAdaptor()
-        sender = Mock(spec=Sender)
+        sender = Mock(spec=RequestSender)
         reply = Shareable()
         reply[Constant.PARAM_KEY_RCV_BUF] = b"hello"
         sender.send_to_server.return_value = reply

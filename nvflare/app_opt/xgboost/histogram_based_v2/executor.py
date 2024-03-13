@@ -24,6 +24,7 @@ class FedXGBHistogramExecutor(XGBExecutor):
         early_stopping_rounds,
         xgb_params: dict,
         data_loader_id: str,
+        sender_id: str = None,
         verbose_eval=False,
         use_gpus=False,
         int_server_grpc_options=None,
@@ -35,6 +36,7 @@ class FedXGBHistogramExecutor(XGBExecutor):
         XGBExecutor.__init__(
             self,
             adaptor_component_id="",
+            sender_id=sender_id,
             req_timeout=req_timeout,
         )
         self.early_stopping_rounds = early_stopping_rounds

@@ -22,8 +22,8 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
+from nvflare.app_opt.xgboost.histogram_based_v2.request_sender import RequestSender
 from nvflare.app_opt.xgboost.histogram_based_v2.runner import XGBRunner
-from nvflare.app_opt.xgboost.histogram_based_v2.sender import Sender
 from nvflare.fuel.utils.validation_utils import check_non_negative_int, check_object_type, check_positive_int
 
 
@@ -289,7 +289,7 @@ class XGBClientAdaptor(XGBAdaptor, ABC):
         self.num_rounds = None
         self.world_size = None
 
-    def set_sender(self, sender: Sender):
+    def set_sender(self, sender: RequestSender):
         """Set the sender to be used to send XGB operation requests to the server.
 
         Args:
@@ -298,7 +298,7 @@ class XGBClientAdaptor(XGBAdaptor, ABC):
         Returns: None
 
         """
-        if not isinstance(sender, Sender):
+        if not isinstance(sender, RequestSender):
             raise TypeError(f"sender must be Sender but got {type(sender)}")
         self.sender = sender
 

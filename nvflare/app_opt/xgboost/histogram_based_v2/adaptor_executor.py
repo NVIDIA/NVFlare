@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import ReturnCode
@@ -20,7 +19,8 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_opt.xgboost.histogram_based_v2.adaptor import XGBClientAdaptor
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
-from nvflare.app_opt.xgboost.histogram_based_v2.sender import Sender
+from nvflare.app_opt.xgboost.histogram_based_v2.request_sender import RequestSender
+from nvflare.app_opt.xgboost.histogram_based_v2.sender import Sender, SimpleSender
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.security.logging import secure_format_exception
 
@@ -29,6 +29,7 @@ class XGBExecutor(Executor):
     def __init__(
         self,
         adaptor_component_id: str,
+        sender_id: str = None,
         configure_task_name=Constant.CONFIG_TASK_NAME,
         start_task_name=Constant.START_TASK_NAME,
         req_timeout=100.0,
@@ -37,15 +38,18 @@ class XGBExecutor(Executor):
 
         Args:
             adaptor_component_id: the component ID of client target adaptor
+            sender_id: The sender component id
             configure_task_name: name of the config task
             start_task_name: name of the start task
         """
         Executor.__init__(self)
         self.adaptor_component_id = adaptor_component_id
+        self.sender_id = sender_id
         self.req_timeout = req_timeout
         self.configure_task_name = configure_task_name
         self.start_task_name = start_task_name
         self.adaptor = None
+        self.sender = None
 
         # create the abort signal to be used for signaling the adaptor
         self.abort_signal = Signal()
@@ -64,6 +68,37 @@ class XGBExecutor(Executor):
         engine = fl_ctx.get_engine()
         return engine.get_component(self.adaptor_component_id)
 
+    def get_sender(self, fl_ctx: FLContext) -> Sender:
+        """Get request sender to be used by this executor.
+
+        Args:
+            fl_ctx: the FL context
+
+        Returns:
+            A sender object
+        """
+
+        if self.sender_id:
+            engine = fl_ctx.get_engine()
+            sender = engine.get_component(self.sender_id)
+            if not sender:
+                self.system_panic(f"cannot get component for {self.sender_id}", fl_ctx)
+            else:
+                if not isinstance(sender, Sender):
+                    self.system_panic(
+                        f"invalid component '{self.sender_id}': expect {Sender.__name__} but got {type(sender)}",
+                        fl_ctx,
+                    )
+                    sender = None
+
+        else:
+            sender = SimpleSender()
+
+        if sender:
+            sender.set_timeout(self.req_timeout)
+
+        return sender
+
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
             adaptor = self.get_adaptor(fl_ctx)
@@ -78,9 +113,11 @@ class XGBExecutor(Executor):
                 )
                 return
 
+            self.sender = self.get_sender(fl_ctx)
+
             adaptor.set_abort_signal(self.abort_signal)
             engine = fl_ctx.get_engine()
-            adaptor.set_sender(Sender(engine, self.req_timeout))
+            adaptor.set_sender(RequestSender(engine, self.sender))
             adaptor.initialize(fl_ctx)
             self.adaptor = adaptor
         elif event_type == EventType.END_RUN:
@@ -160,11 +197,4 @@ class XGBExecutor(Executor):
         engine = fl_ctx.get_engine()
         req = Shareable()
         req[Constant.MSG_KEY_EXIT_CODE] = rc
-        engine.send_aux_request(
-            targets=[FQCN.ROOT_SERVER],
-            topic=Constant.TOPIC_CLIENT_DONE,
-            request=req,
-            timeout=0,  # fire and forget
-            fl_ctx=fl_ctx,
-            optional=True,
-        )
+        self.sender.send_to_server(engine, Constant.TOPIC_CLIENT_DONE, req, Signal())
