@@ -293,7 +293,6 @@ class ControllerSpec(ABC):
         """
         pass
 
-    @abstractmethod
     def process_result_of_unknown_task(
         self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
     ):
@@ -541,22 +540,5 @@ class ControllerSpec(ABC):
         Args:
             completion_status: the TaskCompletionStatus of the task
             fl_ctx: the FL context
-        """
-        pass
-
-    def wait_for_task(self, task: Task, abort_signal: Signal):
-        """Wait for task to complete or abort.
-
-        Args:
-            task: the task to wait for
-            abort_signal: the abort signal. If triggered, this method stops waiting and returns to the caller.
-        """
-        pass
-
-    def handle_dead_job(self, client_name: str, fl_ctx: FLContext):
-        """Called by the Engine to handle the case that the job on the client is dead.
-        Args:
-            client_name: name of the client on which the job is dead
-            fl_ctx: the FLContext
         """
         pass

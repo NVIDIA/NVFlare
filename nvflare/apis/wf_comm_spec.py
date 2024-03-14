@@ -251,15 +251,6 @@ class WFCommSpec(ABC):
         """
         raise NotImplementedError
 
-    def wait_for_task(self, task: Task, abort_signal: Signal):
-        """Wait for task to complete or abort.
-
-        Args:
-            task: the task to wait for
-            abort_signal: the abort signal. If triggered, this method stops waiting and returns to the caller.
-        """
-        raise NotImplementedError
-
     def check_tasks(self):
         """Checks if tasks should be exited."""
         raise NotImplementedError
@@ -299,16 +290,6 @@ class WFCommSpec(ABC):
             task_id: the id of the task
             fl_ctx: the FLContext
         Returns: the ClientTask object if exists; None otherwise
-        """
-        raise NotImplementedError
-
-    def handle_dead_job(self, client_name: str, fl_ctx: FLContext):
-        """Called by the Engine to handle the case that the job on the client is dead.
-
-        Args:
-            client_name: name of the client on which the job is dead
-            fl_ctx: the FLContext
-
         """
         raise NotImplementedError
 

@@ -34,6 +34,7 @@ class EventType(object):
     JOB_COMPLETED = "_job_completed"
     JOB_ABORTED = "_job_aborted"
     JOB_CANCELLED = "_job_cancelled"
+    JOB_DEAD = "_job_dead"
 
     BEFORE_PULL_TASK = "_before_pull_task"
     AFTER_PULL_TASK = "_after_pull_task"
@@ -50,6 +51,8 @@ class EventType(object):
     AFTER_TASK_EXECUTION = "_after_task_execution"
     BEFORE_SEND_TASK_RESULT = "_before_send_task_result"
     AFTER_SEND_TASK_RESULT = "_after_send_task_result"
+    BEFORE_PROCESS_RESULT_OF_UNKNOWN_TASK = "_before_process_result_of_unknown_task"
+    AFTER_PROCESS_RESULT_OF_UNKNOWN_TASK = "_after_process_result_of_unknown_task"
 
     CRITICAL_LOG_AVAILABLE = "_critical_log_available"
     ERROR_LOG_AVAILABLE = "_error_log_available"

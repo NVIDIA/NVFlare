@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import threading
+import time
 from typing import Dict, List, Optional, Union
 
 from nvflare.apis.client import Client
@@ -55,15 +56,19 @@ class BroadcastAndWait(FLComponent):
         task_name: str,
         task_inputs: Dict[str, Shareable],
         abort_signal: Signal = None,
+        task_check_period: int = 0.5,
     ) -> Dict[str, DXO]:
 
         tasks: Dict[str, Task] = self.get_tasks(task_name, task_inputs)
         for client_name in tasks:
-            self.controller.broadcast(task=tasks[client_name], fl_ctx=self.fl_ctx, targets=[client_name])
+            self.controller.send(task=tasks[client_name], fl_ctx=self.fl_ctx, targets=[client_name])
 
-        for client_name in tasks:
-            self.log_info(self.fl_ctx, f"wait for client {client_name} task")
-            self.controller.wait_for_task(tasks[client_name], abort_signal)
+        while self.controller.get_num_standing_tasks():
+            if abort_signal.triggered:
+                self.log_info(self.fl_ctx, "Abort signal triggered. Finishing multicasts_and_wait.")
+                return
+            self.log_debug(self.fl_ctx, "Checking standing tasks to see if multicasts_and_wait finished.")
+            time.sleep(task_check_period)
 
         return self.results
 

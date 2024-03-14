@@ -380,7 +380,10 @@ class ServerRunner(TBI):
                 if self.current_wf is None:
                     return
 
-                self.current_wf.controller.handle_dead_job(client_name=client_name, fl_ctx=fl_ctx)
+                fl_ctx.set_prop(FLContextKey.DEAD_JOB_CLIENT_NAME, client_name)
+                self.log_debug(fl_ctx, "firing event EventType.JOB_DEAD")
+                self.fire_event(EventType.JOB_DEAD, fl_ctx)
+
             except Exception as e:
                 self.log_exception(
                     fl_ctx, f"Error processing dead job by workflow {self.current_wf.id}: {secure_format_exception(e)}"
