@@ -61,6 +61,11 @@ class CCManager(FLComponent):
         shutdown the running jobs if CC tokens expired
 
         Args:
+            cc_issuers_conf: configuration of the CC token issuers. each contains the CC token issuer component ID,
+                            and the token expiration time
+            cc_verifier_ids: CC token verifiers component IDs
+            verify_frequency: CC tokens verification frequency
+            critical_level: critical_level
 
         """
         FLComponent.__init__(self)
