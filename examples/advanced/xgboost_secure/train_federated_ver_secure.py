@@ -28,7 +28,7 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         valid_path = f'./dataset/vertical_xgb_data/site-{rank + 1}/valid.csv'
 
         # Load file directly to tell the match from loading with DMatrix
-        df_train = pd.read_csv(train_path)
+        df_train = pd.read_csv(train_path, header=None)
         if PRINT_SAMPLE:
             # print number of rows and columns for each worker
             print(f'Direct load: rank={rank}, nrow={df_train.shape[0]}, ncol={df_train.shape[1]}')
@@ -40,7 +40,6 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
             label = "&label_column=0"
         else:
             label = ""
-
         # for Vertical XGBoost, read from csv with label_column and set data_split_mode to 1 for column mode
         dtrain = xgb.DMatrix(train_path + f"?format=csv{label}", data_split_mode=2)
         dvalid = xgb.DMatrix(valid_path + f"?format=csv{label}", data_split_mode=2)
@@ -49,7 +48,7 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
             # print number of rows and columns for each worker
             print(f'DMatrix: rank={rank}, nrow={dtrain.num_row()}, ncol={dtrain.num_col()}')
             # print one sample row of the data
-            data_sample = dtrain.get_data()[1]
+            data_sample = dtrain.get_data()[0]
             print(f'DMatrix: rank={rank}, one sample row of the data: \n {data_sample}')
 
         # Specify parameters via map, definition are same as c++ version
