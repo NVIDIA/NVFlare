@@ -35,7 +35,7 @@ class Controller(FLComponent, ControllerSpec, ABC):
         self._task_check_period = task_check_period
         self.communicator = None
 
-    def initialize_controller(self, fl_ctx: FLContext):
+    def initialize(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
         if not engine:
             self.system_panic(f"Engine not found. {self.__class__.__name__} exiting.", fl_ctx)

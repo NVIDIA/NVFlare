@@ -127,7 +127,7 @@ class ServerRunner(TBI):
                     fl_ctx.set_prop(FLContextKey.WORKFLOW, wf.id, sticky=True)
 
                     wf.controller.communicator.initialize_run(fl_ctx)
-                    wf.controller.initialize_controller(fl_ctx)
+                    wf.controller.initialize(fl_ctx)
 
                     self.log_info(fl_ctx, "Workflow {} ({}) started".format(wf.id, type(wf.controller)))
                     self.log_debug(fl_ctx, "firing event EventType.START_WORKFLOW")
