@@ -22,7 +22,7 @@ from typing import Dict, List
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey, FLContextKey
+from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, RunProcessKey
 from nvflare.apis.job_def import Job, JobMetaKey, is_valid_job_id
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.storage import DATA, JOB_ZIP, META, META_JSON, WORKSPACE, WORKSPACE_ZIP
@@ -548,7 +548,9 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 if block_reason:
                     # submitted job blocked
                     self.logger.error(f"submitted job is blocked: {block_reason}")
-                    conn.append_error(block_reason, meta=make_meta(MetaStatusValue.INVALID_JOB_DEFINITION, block_reason))
+                    conn.append_error(
+                        block_reason, meta=make_meta(MetaStatusValue.INVALID_JOB_DEFINITION, block_reason)
+                    )
                     return
 
                 # set submitter info

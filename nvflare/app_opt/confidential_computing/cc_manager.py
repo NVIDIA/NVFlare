@@ -151,8 +151,9 @@ class CCManager(FLComponent):
             job_meta = fl_ctx.get_prop(FLContextKey.JOB_META, {})
             byoc = job_meta.get(AppValidationKey.BYOC, False)
             if byoc:
-                fl_ctx.set_prop(key=FLContextKey.JOB_BLOCK_REASON, value="BYOC job not allowed for CC",
-                                sticky=False, private=True)
+                fl_ctx.set_prop(
+                    key=FLContextKey.JOB_BLOCK_REASON, value="BYOC job not allowed for CC", sticky=False, private=True
+                )
 
     def _setup_cc_authorizers(self, fl_ctx):
         engine = fl_ctx.get_engine()

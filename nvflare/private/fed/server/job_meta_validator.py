@@ -151,7 +151,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
                 has_byoc = True
 
         if has_byoc:
-                meta[AppValidationKey.BYOC] = True
+            meta[AppValidationKey.BYOC] = True
 
     @staticmethod
     def _convert_value_to_int(v) -> int:
