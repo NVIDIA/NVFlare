@@ -87,7 +87,7 @@ class GPUAuthorizer(CCAuthorizer):
         return GPU_NAMESPACE
 
     def generate(self) -> str:
-        return super().generate()
+        raise NotImplementedError
 
     def verify(self, token: str) -> bool:
-        return super().verify(token)
+        raise NotImplementedError

@@ -12,9 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # import os.path
+from abc import ABC, abstractmethod
 
 
-class CCAuthorizer:
+class CCAuthorizer(ABC):
+    @abstractmethod
     def get_namespace(self) -> str:
         """This returns the namespace of the CCAuthorizer.
 
@@ -23,6 +25,7 @@ class CCAuthorizer:
         """
         pass
 
+    @abstractmethod
     def generate(self) -> str:
         """To generate and return the active CCAuthorizer token.
 
@@ -31,6 +34,7 @@ class CCAuthorizer:
         """
         pass
 
+    @abstractmethod
     def verify(self, token: str) -> bool:
         """To return the token verification result.
 

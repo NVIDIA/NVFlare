@@ -17,8 +17,8 @@ import threading
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, SystemComponents
-from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.workspace import Workspace
+from nvflare.private.fed.app.utils import component_security_check
 from nvflare.private.fed.server.fed_server import FederatedServer
 from nvflare.private.fed.server.job_runner import JobRunner
 from nvflare.private.fed.server.run_manager import RunManager
@@ -123,12 +123,7 @@ class ServerDeployer:
             fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
             services.engine.fire_event(EventType.SYSTEM_BOOTSTRAP, fl_ctx)
 
-            exceptions = fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
-            if exceptions:
-                for _, exception in exceptions.items():
-                    if isinstance(exception, UnsafeComponentError):
-                        print("Unsafe component configured, could not start the server!!")
-                        raise RuntimeError(exception)
+            component_security_check(fl_ctx)
 
             threading.Thread(target=self._start_job_runner, args=[job_runner, fl_ctx]).start()
             services.status = ServerStatus.STARTED
