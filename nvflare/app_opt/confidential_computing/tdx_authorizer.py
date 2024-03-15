@@ -44,13 +44,16 @@ class TDXAuthorizer(CCAuthorizer):
         if not os.path.exists(error_file) or not os.path.exists(token_file):
             return ""
 
-        with open(error_file, "r") as e_f:
-            if "Error:" in e_f.read():
-                return ""
-            else:
-                with open(token_file, "r") as t_f:
-                    token = t_f.readline()
-                return token
+        try:
+            with open(error_file, "r") as e_f:
+                if "Error:" in e_f.read():
+                    return ""
+                else:
+                    with open(token_file, "r") as t_f:
+                        token = t_f.readline()
+                    return token
+        except:
+            return ""
 
     def verify(self, token: str) -> bool:
         out = open(os.path.join(self.config_dir, VERIFY_FILE), "w")
@@ -63,9 +66,12 @@ class TDXAuthorizer(CCAuthorizer):
         if not os.path.exists(error_file):
             return False
 
-        with open(error_file, "r") as f:
-            if "Error:" in f.read():
-                return False
+        try:
+            with open(error_file, "r") as f:
+                if "Error:" in f.read():
+                    return False
+        except:
+            return False
 
         return True
 
