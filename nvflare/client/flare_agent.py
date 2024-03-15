@@ -66,10 +66,10 @@ class FlareAgent:
         pipe: Pipe,
         read_interval=0.1,
         heartbeat_interval=5.0,
-        heartbeat_timeout=30.0,
+        heartbeat_timeout=60.0,
         resend_interval=2.0,
         max_resends=None,
-        submit_result_timeout=30.0,
+        submit_result_timeout=60.0,
         metric_pipe=None,
         task_channel_name: str = PipeChannelName.TASK,
         metric_channel_name: str = PipeChannelName.METRIC,
@@ -83,15 +83,15 @@ class FlareAgent:
 
         Args:
             pipe (Pipe): pipe for task communication.
-            read_interval (float): how often to read from the pipe. Defaults to 0.1.
-            heartbeat_interval (float): how often to send a heartbeat to the peer. Defaults to 5.0.
+            read_interval (float): how often to read from the pipe.
+            heartbeat_interval (float): how often to send a heartbeat to the peer.
             heartbeat_timeout (float): how long to wait for a heartbeat from the peer before treating the peer as dead,
-                0 means DO NOT check for heartbeat. Defaults to 30.0.
+                0 means DO NOT check for heartbeat.
             resend_interval (float): how often to resend a message if failing to send. None means no resend.
-                Note that if the pipe does not support resending, then no resend. Defaults to 2.0.
+                Note that if the pipe does not support resending, then no resend.
             max_resends (int, optional): max number of resend. None means no limit. Defaults to None.
             submit_result_timeout (float): when submitting task result,
-                how long to wait for response from the CJ. Defaults to 30.0.
+                how long to wait for response from the CJ.
             metric_pipe (Pipe, optional): pipe for metric communication. Defaults to None.
             task_channel_name (str): channel name for task. Defaults to ``task``.
             metric_channel_name (str): channel name for metric. Defaults to ``metric``.
@@ -123,10 +123,9 @@ class FlareAgent:
             self.metric_pipe_handler = PipeHandler(
                 pipe=self.metric_pipe,
                 read_interval=read_interval,
-                heartbeat_interval=heartbeat_interval,
-                heartbeat_timeout=heartbeat_timeout,
                 resend_interval=resend_interval,
                 max_resends=max_resends,
+                enable_heartbeat=False,
             )
 
         self.current_task = None
@@ -346,10 +345,10 @@ class FlareAgentWithCellPipe(FlareAgent):
         workspace_dir: str,
         read_interval=0.1,
         heartbeat_interval=5.0,
-        heartbeat_timeout=30.0,
+        heartbeat_timeout=60.0,
         resend_interval=2.0,
         max_resends=None,
-        submit_result_timeout=30.0,
+        submit_result_timeout=60.0,
         has_metrics=False,
     ):
         """Constructor of Flare Agent with Cell Pipe. This is a convenient class.
