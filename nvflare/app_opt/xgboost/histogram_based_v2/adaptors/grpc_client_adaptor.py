@@ -105,7 +105,6 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         self._run_dir = None
         self._process = None
         self._starter = None
-        self.engine = None
 
     def initialize(self, fl_ctx: FLContext):
         self.engine = fl_ctx.get_engine()
