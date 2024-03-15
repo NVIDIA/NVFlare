@@ -204,7 +204,13 @@ class CrossSiteEvalServerController(ServerSideController):
             self.current_round += 1
 
         # ask everyone to eval everyone else's local model
+        train_clients = fl_ctx.get_prop(Constant.PROP_KEY_TRAIN_CLIENTS)
         for c in self.evaluatees:
+            if train_clients and c not in train_clients:
+                # this client does not have local models
+                self.log_info(fl_ctx, f"ignore client {c} since it does not have local models")
+                continue
+
             self._ask_to_evaluate(
                 current_round=self.current_round,
                 model_name=ModelName.BEST_MODEL,
