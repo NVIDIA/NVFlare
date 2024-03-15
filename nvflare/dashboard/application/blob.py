@@ -55,7 +55,7 @@ def gen_overseer(key):
         )
         utils._write(
             os.path.join(dest_dir, "gunicorn.conf.py"),
-            utils.sh_replace(template["gunicorn_conf_py"], {"port": "8443"}),
+            utils.sh_replace(template["gunicorn_conf_py"], {"port": "{$NVFL_OVERSEER_PORT}"}),
             "t",
             exe=False,
         )
@@ -73,12 +73,12 @@ def gen_server(key, first_server=True):
     project = Project.query.first()
     if first_server:
         entity = Entity(project.server1)
-        fl_port = 8002
-        admin_port = 8003
+        fl_port = "{$FED_LEARN_PORT}"
+        admin_port = "{$NVFL_ADMIN_PORT}"
     else:
         entity = Entity(project.server2)
-        fl_port = 8102
-        admin_port = 8103
+        fl_port = "{$FED_LEARN_PORT2}"
+        admin_port = "{$NVFL_ADMIN_PORT2}"
     issuer = Entity(project.short_name)
     signing_cert_pair = CertPair(issuer, project.root_key, project.root_cert)
     cert_pair = make_cert(entity, signing_cert_pair)
@@ -94,15 +94,15 @@ def gen_server(key, first_server=True):
         overseer_agent = {"path": "nvflare.ha.overseer_agent.HttpOverseerAgent"}
         overseer_agent["args"] = {
             "role": "server",
-            "overseer_end_point": f"https://{project.overseer}:8443/api/v1",
+            "overseer_end_point": f"https://{project.overseer}:{{$NVFL_OVERSEER_PORT}}/api/v1",
             "project": project.short_name,
             "name": entity.name,
-            "fl_port": str(fl_port),
-            "admin_port": str(admin_port),
+            "fl_port": fl_port,
+            "admin_port": admin_port,
         }
     else:
         overseer_agent = {"path": "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent"}
-        overseer_agent["args"] = {"sp_end_point": f"{project.server1}:8002:8003"}
+        overseer_agent["args"] = {"sp_end_point": f"{project.server1}:{{$FED_LEARN_PORT}}:{{$NVFL_ADMIN_PORT}}"}
 
     config["overseer_agent"] = overseer_agent
     replacement_dict = {
@@ -184,13 +184,13 @@ def gen_client(key, id):
         overseer_agent = {"path": "nvflare.ha.overseer_agent.HttpOverseerAgent"}
         overseer_agent["args"] = {
             "role": "client",
-            "overseer_end_point": f"https://{project.overseer}:8443/api/v1",
+            "overseer_end_point": f"https://{project.overseer}:{{$NVFL_OVERSEER_PORT}}/api/v1",
             "project": project.short_name,
             "name": entity.name,
         }
     else:
         overseer_agent = {"path": "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent"}
-        overseer_agent["args"] = {"sp_end_point": f"{project.server1}:8002:8003"}
+        overseer_agent["args"] = {"sp_end_point": f"{project.server1}:{{$FED_LEARN_PORT}}:{{$NVFL_ADMIN_PORT}}"}
     config["overseer_agent"] = overseer_agent
 
     tplt = tplt_utils.Template(template)
@@ -252,19 +252,19 @@ def gen_user(key, id):
     cert_pair = make_cert(entity, signing_cert_pair)
 
     config = json.loads(template["fed_admin"])
-    replacement_dict = {"admin_name": entity.name, "cn": server_name, "admin_port": "8003", "docker_image": ""}
+    replacement_dict = {"admin_name": entity.name, "cn": server_name, "admin_port": "{$NVFL_ADMIN_PORT}", "docker_image": ""}
 
     if project.ha_mode:
         overseer_agent = {"path": "nvflare.ha.overseer_agent.HttpOverseerAgent"}
         overseer_agent["args"] = {
             "role": "admin",
-            "overseer_end_point": f"https://{project.overseer}:8443/api/v1",
+            "overseer_end_point": f"https://{project.overseer}:{{$NVFL_OVERSEER_PORT}}/api/v1",
             "project": project.short_name,
             "name": entity.name,
         }
     else:
         overseer_agent = {"path": "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent"}
-        overseer_agent["args"] = {"sp_end_point": f"{project.server1}:8002:8003"}
+        overseer_agent["args"] = {"sp_end_point": f"{project.server1}:{{$FED_LEARN_PORT}}:{{$NVFL_ADMIN_PORT}}"}
     config["admin"].update({"overseer_agent": overseer_agent})
 
     with tempfile.TemporaryDirectory() as tmp_dir:
