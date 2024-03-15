@@ -15,7 +15,6 @@ from abc import ABC, abstractmethod
 from typing import Optional
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
@@ -60,22 +59,7 @@ class Sender(FLComponent, ABC):
         Returns: reply from the server
         """
 
-        reply = self.send_request(FQCN.ROOT_SERVER, topic, req, timeout, fl_ctx, abort_signal)
-
-        return self._check_reply(reply)
-
-    def _check_reply(self, reply):
-        if not reply:
-            return None
-        if not isinstance(reply, Shareable):
-            self.logger.error(f"expect result to be a Shareable but got {type(reply)}")
-            return None
-        rc = reply.get_return_code()
-        if rc != ReturnCode.OK:
-            self.logger.error(f"server failed to process request: {rc=}")
-            return None
-
-        return reply
+        return self.send_request(FQCN.ROOT_SERVER, topic, req, timeout, fl_ctx, abort_signal)
 
 
 class SimpleSender(Sender):

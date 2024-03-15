@@ -105,10 +105,10 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         self._run_dir = None
         self._process = None
         self._starter = None
-        self.fl_ctx = None
+        self.engine = None
 
     def initialize(self, fl_ctx: FLContext):
-        self.fl_ctx = fl_ctx
+        self.engine = fl_ctx.get_engine()
         self._client_name = fl_ctx.get_identity_name()
         self._workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
@@ -233,7 +233,8 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         self.abort_signal.trigger(True)
 
         # abort the FL client
-        self.system_panic(reason, self.fl_ctx)
+        with self.engine.new_context() as fl_ctx:
+            self.system_panic(reason, fl_ctx)
 
     def Allgather(self, request: pb2.AllgatherRequest, context):
         try:

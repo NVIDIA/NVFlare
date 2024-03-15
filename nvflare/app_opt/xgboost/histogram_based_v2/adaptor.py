@@ -18,6 +18,7 @@ from abc import ABC, abstractmethod
 from typing import Tuple
 
 from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
@@ -289,7 +290,6 @@ class XGBClientAdaptor(XGBAdaptor, ABC):
         self.num_rounds = None
         self.world_size = None
         self.req_timeout = req_timeout
-        self.fl_ctx = None
 
     def set_sender(self, sender: Sender):
         """Set the sender to be used to send XGB operation requests to the server.
@@ -316,7 +316,7 @@ class XGBClientAdaptor(XGBAdaptor, ABC):
         Returns:
             None
         """
-        self.fl_ctx = fl_ctx
+        self.engine = fl_ctx.get_engine()
 
         ws = config.get(Constant.CONF_KEY_WORLD_SIZE)
         if not ws:
@@ -350,10 +350,17 @@ class XGBClientAdaptor(XGBAdaptor, ABC):
             operation result
         """
         req.set_header(Constant.MSG_KEY_XGB_OP, op)
-        reply = self.sender.send_to_server(
-            Constant.TOPIC_XGB_REQUEST, req, self.req_timeout, self.fl_ctx, self.abort_signal
-        )
+
+        with self.engine.new_context() as fl_ctx:
+            reply = self.sender.send_to_server(
+                Constant.TOPIC_XGB_REQUEST, req, self.req_timeout, fl_ctx, self.abort_signal
+            )
+
         if isinstance(reply, Shareable):
+            rc = reply.get_return_code()
+            if rc != ReturnCode.OK:
+                raise RuntimeError(f"received error return code: {rc}")
+
             reply_op = reply.get_header(Constant.MSG_KEY_XGB_OP)
             if reply_op != op:
                 raise RuntimeError(f"received op {reply_op} != expected op {op}")
