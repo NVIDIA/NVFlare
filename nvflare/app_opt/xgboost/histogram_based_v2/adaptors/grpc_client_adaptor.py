@@ -83,6 +83,7 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         self,
         int_server_grpc_options=None,
         in_process=False,
+        req_timeout=100,
     ):
         """Constructor method to initialize the object.
 
@@ -90,8 +91,9 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
             int_server_grpc_options: An optional list of key-value pairs (`channel_arguments`
                 in gRPC Core runtime) to configure the gRPC channel of internal `GrpcServer`.
             in_process (bool): Specifies whether to start the `XGBRunner` in the same process or not.
+            req_timeout: Request timeout
         """
-        XGBClientAdaptor.__init__(self)
+        XGBClientAdaptor.__init__(self, req_timeout)
         self.int_server_grpc_options = int_server_grpc_options
         self.in_process = in_process
         self.internal_xgb_server = None

@@ -21,8 +21,8 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.apis.utils.sender import Sender
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
-from nvflare.app_opt.xgboost.histogram_based_v2.request_sender import RequestSender
 from nvflare.app_opt.xgboost.histogram_based_v2.runner import XGBRunner
 from nvflare.fuel.utils.validation_utils import check_non_negative_int, check_object_type, check_positive_int
 
@@ -279,7 +279,7 @@ class XGBClientAdaptor(XGBAdaptor, ABC):
     XGBClientAdaptor specifies commonly required methods for client adaptor implementations.
     """
 
-    def __init__(self):
+    def __init__(self, req_timeout: float):
         """Constructor of XGBClientAdaptor"""
         XGBAdaptor.__init__(self)
         self.engine = None
@@ -288,8 +288,10 @@ class XGBClientAdaptor(XGBAdaptor, ABC):
         self.rank = None
         self.num_rounds = None
         self.world_size = None
+        self.req_timeout = req_timeout
+        self.fl_ctx = None
 
-    def set_sender(self, sender: RequestSender):
+    def set_sender(self, sender: Sender):
         """Set the sender to be used to send XGB operation requests to the server.
 
         Args:
@@ -298,7 +300,7 @@ class XGBClientAdaptor(XGBAdaptor, ABC):
         Returns: None
 
         """
-        if not isinstance(sender, RequestSender):
+        if not isinstance(sender, Sender):
             raise TypeError(f"sender must be Sender but got {type(sender)}")
         self.sender = sender
 
@@ -314,6 +316,8 @@ class XGBClientAdaptor(XGBAdaptor, ABC):
         Returns:
             None
         """
+        self.fl_ctx = fl_ctx
+
         ws = config.get(Constant.CONF_KEY_WORLD_SIZE)
         if not ws:
             raise RuntimeError("world_size is not configured")
@@ -345,8 +349,15 @@ class XGBClientAdaptor(XGBAdaptor, ABC):
         Returns:
             operation result
         """
-        reply = self.sender.send_to_server(op, req, self.abort_signal)
+        req.set_header(Constant.MSG_KEY_XGB_OP, op)
+        reply = self.sender.send_to_server(
+            Constant.TOPIC_XGB_REQUEST, req, self.req_timeout, self.fl_ctx, self.abort_signal
+        )
         if isinstance(reply, Shareable):
+            reply_op = reply.get_header(Constant.MSG_KEY_XGB_OP)
+            if reply_op != op:
+                raise RuntimeError(f"received op {reply_op} != expected op {op}")
+
             rcv_buf = reply.get(Constant.PARAM_KEY_RCV_BUF)
             if not isinstance(rcv_buf, bytes):
                 raise RuntimeError(f"invalid rcv_buf for {op=}: expect bytes but got {type(rcv_buf)}")

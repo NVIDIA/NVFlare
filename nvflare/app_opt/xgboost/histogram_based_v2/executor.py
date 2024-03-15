@@ -63,6 +63,7 @@ class FedXGBHistogramExecutor(XGBExecutor):
         adaptor = GrpcClientAdaptor(
             int_server_grpc_options=self.int_server_grpc_options,
             in_process=self.in_process,
+            req_timeout=self.req_timeout,
         )
         adaptor.set_runner(runner)
         return adaptor

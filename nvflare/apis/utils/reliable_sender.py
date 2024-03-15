@@ -11,10 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.reliable_message import ReliableMessage
-from nvflare.app_opt.xgboost.histogram_based_v2.sender import Sender
+from nvflare.apis.utils.sender import Sender
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 
 
@@ -36,20 +37,18 @@ class ReliableSender(Sender):
         self.max_tx_time = max_tx_time
         self.enabled = False
 
-    def send_to_server(self, engine, topic: str, req: Shareable, timeout: float, abort_signal: Signal):
+    def send_request(
+        self, target: str, topic: str, req: Shareable, timeout: float, fl_ctx: FLContext, abort_signal: Signal
+    ) -> Shareable:
 
-        with engine.new_context() as fl_ctx:
+        if not self.enabled:
+            ReliableMessage.enable(
+                fl_ctx,
+                max_request_workers=self.max_request_workers,
+                query_interval=self.query_interval,
+                max_retries=self.max_retries,
+                max_tx_time=self.max_tx_time,
+            )
+            self.enabled = True
 
-            if not self.enabled:
-                ReliableMessage.enable(
-                    fl_ctx,
-                    max_request_workers=self.max_request_workers,
-                    query_interval=self.query_interval,
-                    max_retries=self.max_retries,
-                    max_tx_time=self.max_tx_time,
-                )
-                self.enabled = True
-
-            reply = ReliableMessage.send_request(FQCN.ROOT_SERVER, topic, req, timeout, abort_signal, fl_ctx)
-            # To be consistent with aux_message reply, which is a dict
-            return {FQCN.ROOT_SERVER: reply}
+        return ReliableMessage.send_request(FQCN.ROOT_SERVER, topic, req, timeout, abort_signal, fl_ctx)

@@ -17,9 +17,9 @@ from unittest.mock import Mock, patch
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.apis.utils.sender import Sender
 from nvflare.app_opt.xgboost.histogram_based_v2.adaptor import XGBAdaptor, XGBClientAdaptor, XGBServerAdaptor
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
-from nvflare.app_opt.xgboost.histogram_based_v2.request_sender import RequestSender
 from nvflare.app_opt.xgboost.histogram_based_v2.runner import XGBRunner
 
 
@@ -55,7 +55,7 @@ class TestXGBServerAdaptor:
 @patch.multiple(XGBClientAdaptor, __abstractmethods__=set())
 class TestXGBClientAdaptor:
     def test_configure(self):
-        xgb_adaptor = XGBClientAdaptor()
+        xgb_adaptor = XGBClientAdaptor(10)
         config = {Constant.CONF_KEY_WORLD_SIZE: 66, Constant.CONF_KEY_RANK: 44, Constant.CONF_KEY_NUM_ROUNDS: 100}
         ctx = FLContext()
         xgb_adaptor.configure(config, ctx)
@@ -64,9 +64,10 @@ class TestXGBClientAdaptor:
         assert xgb_adaptor.num_rounds == 100
 
     def test_send(self):
-        xgb_adaptor = XGBClientAdaptor()
-        sender = Mock(spec=RequestSender)
+        xgb_adaptor = XGBClientAdaptor(10)
+        sender = Mock(spec=Sender)
         reply = Shareable()
+        reply.set_header(Constant.MSG_KEY_XGB_OP, "")
         reply[Constant.PARAM_KEY_RCV_BUF] = b"hello"
         sender.send_to_server.return_value = reply
         abort_signal = Signal()
