@@ -43,12 +43,12 @@ class LauncherExecutor(TaskExchanger):
         task_wait_timeout: Optional[float] = None,
         last_result_transfer_timeout: float = 300.0,
         external_execution_wait: float = 5.0,
-        peer_read_timeout: Optional[float] = None,
+        peer_read_timeout: Optional[float] = 60.0,
         monitor_interval: float = 1.0,
         read_interval: float = 0.5,
         heartbeat_interval: float = 5.0,
-        heartbeat_timeout: float = 30.0,
-        workers: int = 1,
+        heartbeat_timeout: float = 60.0,
+        workers: int = 4,
         train_with_evaluation: bool = True,
         train_task_name: str = "train",
         evaluate_task_name: str = "evaluate",
@@ -65,7 +65,8 @@ class LauncherExecutor(TaskExchanger):
             task_wait_timeout (Optional[float]): Timeout for retrieving the task result (None for no timeout).
             last_result_transfer_timeout (float): Timeout for transmitting the last result from an external process (default: 5.0).
                 This value should be greater than the time needed for sending the whole result.
-            peer_read_timeout (Optional[float]): Timeout for waiting the task to be read by the peer from the pipe (None for no timeout).
+            peer_read_timeout (float, optional): time to wait for peer to accept sent message.
+                Defaults to 60.0.
             monitor_interval (float): Interval for monitoring the launcher (default: 0.01).
             read_interval (float): Interval for reading from the pipe (default: 0.5).
             heartbeat_interval (float): Interval for sending heartbeat to the peer (default: 5.0).
@@ -282,12 +283,15 @@ class LauncherExecutor(TaskExchanger):
                 return False
 
             if abort_signal.triggered:
+                self.log_info(fl_ctx, "External execution is not set up but abort signal is triggered.")
                 return False
 
             if self.peer_is_up_or_dead():
                 return True
 
-            if self.launcher.check_run_status(task_name, fl_ctx) != LauncherRunStatus.RUNNING:
+            run_status = self.launcher.check_run_status(task_name, fl_ctx)
+            if run_status != LauncherRunStatus.RUNNING:
+                self.log_info(fl_ctx, f"External execution is not set up and run status becomes {run_status}.")
                 return False
 
             time.sleep(0.1)
@@ -295,18 +299,17 @@ class LauncherExecutor(TaskExchanger):
     def _finalize_external_execution(
         self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal
     ) -> bool:
-        with self._lock:
-            if self._job_end:
-                ask_peer_end_success = self.ask_peer_to_end(fl_ctx)
-                if not ask_peer_end_success:
-                    return False
+        if self._job_end:
+            ask_peer_end_success = self.ask_peer_to_end(fl_ctx)
+            if not ask_peer_end_success:
+                return False
 
         check_run_status = self._execute_launcher_method_in_thread_executor(
             method_name="check_run_status",
             task_name=task_name,
             fl_ctx=fl_ctx,
         )
-        if check_run_status != LauncherRunStatus.COMPLETE_SUCCESS:
+        if not self._received_result.is_set() and check_run_status != LauncherRunStatus.COMPLETE_SUCCESS:
             self.log_warning(fl_ctx, f"Try to stop task ({task_name}) when launcher run status is {check_run_status}")
 
         self.log_info(fl_ctx, f"Calling stop task ({task_name}).")
@@ -367,6 +370,7 @@ class LauncherExecutor(TaskExchanger):
                     break
 
                 if self._current_task is None:
+                    self.pause_pipe_handler()
                     continue
 
                 task_name = self._current_task

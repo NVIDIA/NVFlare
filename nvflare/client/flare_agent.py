@@ -66,10 +66,10 @@ class FlareAgent:
         pipe: Pipe,
         read_interval=0.1,
         heartbeat_interval=5.0,
-        heartbeat_timeout=30.0,
+        heartbeat_timeout=60.0,
         resend_interval=2.0,
         max_resends=None,
-        submit_result_timeout=30.0,
+        submit_result_timeout=60.0,
         metric_pipe=None,
         task_channel_name: str = PipeChannelName.TASK,
         metric_channel_name: str = PipeChannelName.METRIC,
@@ -123,10 +123,9 @@ class FlareAgent:
             self.metric_pipe_handler = PipeHandler(
                 pipe=self.metric_pipe,
                 read_interval=read_interval,
-                heartbeat_interval=heartbeat_interval,
-                heartbeat_timeout=heartbeat_timeout,
                 resend_interval=resend_interval,
                 max_resends=max_resends,
+                enable_heartbeat=False,
             )
 
         self.current_task = None
@@ -346,10 +345,10 @@ class FlareAgentWithCellPipe(FlareAgent):
         workspace_dir: str,
         read_interval=0.1,
         heartbeat_interval=5.0,
-        heartbeat_timeout=30.0,
+        heartbeat_timeout=60.0,
         resend_interval=2.0,
         max_resends=None,
-        submit_result_timeout=30.0,
+        submit_result_timeout=60.0,
         has_metrics=False,
     ):
         """Constructor of Flare Agent with Cell Pipe. This is a convenient class.

@@ -59,10 +59,11 @@ class PipeHandler(object):
         pipe: Pipe,
         read_interval=0.1,
         heartbeat_interval=5.0,
-        heartbeat_timeout=30.0,
+        heartbeat_timeout=60.0,
         resend_interval=2.0,
         max_resends=None,
         default_request_timeout=5.0,
+        enable_heartbeat: bool = True,
     ):
         """Constructor of the PipeHandler.
 
@@ -70,12 +71,16 @@ class PipeHandler(object):
             pipe (Pipe): the pipe to be monitored.
             read_interval (float): how often to read from the pipe.
             heartbeat_interval (float): how often to send a heartbeat to the peer.
-            heartbeat_timeout (float): how long to wait for a heartbeat from the peer before treating the peer as gone,
+                Only useful when enable_heartbeat is set to True.
+            heartbeat_timeout (float): how long to wait for a heartbeat from
+                the peer before treating the peer as gone,
                 0 means DO NOT check for heartbeat.
+                Only useful when enable_heartbeat is set to True.
             resend_interval (float): how often to resend a message if failing to send. None means no resend.
                 Note that if the pipe does not support resending, then no resend.
             max_resends (int, optional): max number of resends. None means no limit.
             default_request_timeout (float): default timeout for request if timeout not specified.
+            enable_heartbeat (bool): if heartbeat sending is enabled.
         """
         check_positive_number("read_interval", read_interval)
         check_positive_number("heartbeat_interval", heartbeat_interval)
@@ -108,8 +113,11 @@ class PipeHandler(object):
         self._pause = False
         self._last_heartbeat_received_time = None
         self._check_interval = 0.01
-        self.heartbeat_sender = threading.Thread(target=self._heartbeat)
-        self.heartbeat_sender.daemon = True
+        self.enable_heartbeat = enable_heartbeat
+        self.heartbeat_sender = None
+        if self.enable_heartbeat:
+            self.heartbeat_sender = threading.Thread(target=self._heartbeat)
+            self.heartbeat_sender.daemon = True
 
     def set_status_cb(self, cb, *args, **kwargs):
         """Set CB for status handling. When the peer status is changed (ABORT, END, GONE), this CB is called.
@@ -208,10 +216,10 @@ class PipeHandler(object):
         """Starts the PipeHandler.
         Note: before calling this method, the pipe managed by this PipeHandler must have been opened.
         """
-        if not self.reader.is_alive():
+        if self.reader and not self.reader.is_alive():
             self.reader.start()
 
-        if not self.heartbeat_sender.is_alive():
+        if self.enable_heartbeat and self.heartbeat_sender and not self.heartbeat_sender.is_alive():
             self.heartbeat_sender.start()
 
     def stop(self, close_pipe=True):
@@ -256,7 +264,7 @@ class PipeHandler(object):
         p = self.pipe
         if p:
             try:
-                p.send(self._make_event_message(Topic.END, data))
+                p.send(self._make_event_message(Topic.END, data), self.default_request_timeout)
             except Exception as ex:
                 self.logger.debug(f"exception notify_end: {secure_format_exception(ex)}")
 
@@ -265,7 +273,7 @@ class PipeHandler(object):
         p = self.pipe
         if p:
             try:
-                p.send(self._make_event_message(Topic.ABORT, data))
+                p.send(self._make_event_message(Topic.ABORT, data), self.default_request_timeout)
             except Exception as ex:
                 self.logger.debug(f"exception notify_abort: {secure_format_exception(ex)}")
 
@@ -311,7 +319,8 @@ class PipeHandler(object):
             else:
                 # is peer gone?
                 if (
-                    self.heartbeat_timeout
+                    self.enable_heartbeat
+                    and self.heartbeat_timeout
                     and now - self._last_heartbeat_received_time > self.heartbeat_timeout
                     and not self.asked_to_stop
                 ):
@@ -339,6 +348,7 @@ class PipeHandler(object):
                 last_heartbeat_sent_time = now
 
             time.sleep(self._check_interval)
+        self.heartbeat_sender = None
 
     def get_next(self) -> Optional[Message]:
         """Gets the next message from the message queue.

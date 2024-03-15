@@ -35,10 +35,10 @@ class TaskExchanger(Executor):
         pipe_id: str,
         read_interval: float = 0.5,
         heartbeat_interval: float = 5.0,
-        heartbeat_timeout: Optional[float] = 30.0,
+        heartbeat_timeout: Optional[float] = 60.0,
         resend_interval: float = 2.0,
         max_resends: Optional[int] = None,
-        peer_read_timeout: Optional[float] = 5.0,
+        peer_read_timeout: Optional[float] = 60.0,
         task_wait_time: Optional[float] = None,
         result_poll_interval: float = 0.5,
         pipe_channel_name=PipeChannelName.TASK,
@@ -60,7 +60,7 @@ class TaskExchanger(Executor):
             max_resends (int, optional): max number of resend. None means no limit.
                 Defaults to None.
             peer_read_timeout (float, optional): time to wait for peer to accept sent message.
-                Defaults to 5.0.
+                Defaults to 60.0.
             task_wait_time (float, optional): how long to wait for a task to complete.
                 None means waiting forever. Defaults to None.
             result_poll_interval (float): how often to poll task result.
@@ -114,6 +114,7 @@ class TaskExchanger(Executor):
             )
             self.pipe_handler.set_status_cb(self._pipe_status_cb)
             self.pipe.open(self.pipe_channel_name)
+        elif event_type == EventType.BEFORE_TASK_EXECUTION:
             self.pipe_handler.start()
         elif event_type == EventType.ABOUT_TO_END_RUN:
             self.log_info(fl_ctx, "Stopping pipe handler")
