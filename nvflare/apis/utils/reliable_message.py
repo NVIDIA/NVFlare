@@ -304,7 +304,7 @@ class ReliableMessage:
         # keep sending the request until a positive ack or result is received
         num_tries = 0
         while True:
-            if abort_signal.triggered:
+            if abort_signal and abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
 
             ack = engine.send_aux_request(
@@ -338,7 +338,7 @@ class ReliableMessage:
                 return _error_reply(ReturnCode.COMMUNICATION_ERROR, f"Max send retries ({cls._max_retries}) reached")
             start = time.time()
             while time.time() - start < cls._query_interval:
-                if abort_signal.triggered:
+                if abort_signal and abort_signal.triggered:
                     return make_reply(ReturnCode.TASK_ABORTED)
                 time.sleep(0.1)
 
@@ -355,6 +355,7 @@ class ReliableMessage:
     ) -> Shareable:
 
         # Querying phase - try to get result
+        engine = fl_ctx.get_engine()
         query = Shareable()
         query.set_header(HEADER_TX, receiver.tx_id)
         query.set_header(HEADER_OP, OP_QUERY)
@@ -367,7 +368,7 @@ class ReliableMessage:
                 # check other condition and/or send query to ask for result.
                 return receiver.result
 
-            if abort_signal.triggered:
+            if abort_signal and abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
 
             # send a query. The ack of the query could be the result itself, or a status report.

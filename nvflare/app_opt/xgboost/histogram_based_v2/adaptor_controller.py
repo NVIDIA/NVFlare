@@ -22,6 +22,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import ClientTask, Controller, Task
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.signal import Signal
+from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.app_opt.xgboost.histogram_based_v2.adaptor import XGBServerAdaptor
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.fuel.utils.validation_utils import check_number_range, check_object_type, check_positive_number, check_str
@@ -216,6 +217,16 @@ class XGBController(Controller):
         engine.register_aux_message_handler(
             topic=Constant.TOPIC_CLIENT_DONE,
             message_handle_func=self._process_client_done,
+        )
+
+        ReliableMessage.enable(fl_ctx)
+        ReliableMessage.register_request_handler(
+            topic=Constant.TOPIC_XGB_REQUEST,
+            handler_f=self._process_xgb_request,
+        )
+        ReliableMessage.register_request_handler(
+            topic=Constant.TOPIC_CLIENT_DONE,
+            handler_f=self._process_client_done,
         )
 
     def _trigger_stop(self, fl_ctx: FLContext, error=None):
