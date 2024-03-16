@@ -107,7 +107,6 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         self._starter = None
 
     def initialize(self, fl_ctx: FLContext):
-        self.engine = fl_ctx.get_engine()
         self._client_name = fl_ctx.get_identity_name()
         self._workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
