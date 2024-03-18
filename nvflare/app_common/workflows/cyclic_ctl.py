@@ -160,6 +160,10 @@ class CyclicController(Controller):
         self._last_client = targets[-1]
         return targets
 
+    def _stop_workflow(self, task: Task):
+        self.cancel_task(task)
+        self._is_done = True
+
     def _process_result(self, client_task: ClientTask, fl_ctx: FLContext):
         # submitted shareable is stored in client_task.result
         # we need to update task.data with that shareable so the next target
@@ -175,7 +179,9 @@ class CyclicController(Controller):
                 self._last_learnable = self.shareable_generator.shareable_to_learnable(result, fl_ctx)
             except Exception as ex:
                 if rc != ReturnCode.EARLY_TERMINATION:
+                    self._stop_workflow(task)
                     self.log_error(fl_ctx, f"exception {secure_format_exception(ex)} from shareable_to_learnable")
+                    return
                 else:
                     self.log_warning(
                         fl_ctx,
@@ -185,15 +191,21 @@ class CyclicController(Controller):
             if rc == ReturnCode.EARLY_TERMINATION:
                 if self._allow_early_termination:
                     # the workflow is done
-                    self.cancel_task(task)
+                    self._stop_workflow(task)
                     self.log_info(fl_ctx, f"Stopping workflow due to {rc} from client {client_task.client.name}")
-                    self._is_done = True
                     return
                 else:
                     self.log_warning(
                         fl_ctx,
                         f"Ignored {rc} from client {client_task.client.name} because early termination is not allowed",
                     )
+        else:
+            self._stop_workflow(task)
+            self.log_error(
+                fl_ctx,
+                f"Stopping workflow due to result from client {client_task.client.name} is not a Shareable",
+            )
+            return
 
         # prepare task shareable data for next client
         task.data = self.shareable_generator.learnable_to_shareable(self._last_learnable, fl_ctx)
