@@ -117,6 +117,11 @@ A decomposer can either serialize the class into bytes or decompose it into obje
 serializable types. In most cases, it only involves saving members as a list and reconstructing
 the object from the list.
 
+MessagePack can't handle items larger than 4GB in dict. To work around this issue, FOBS can externalize
+the large item and just stores a reference in the buffer. :code:`DatumManager` is used to handle the
+externalized data. For most objects which don't deal with dict items larger than 4GB, the DatumManager
+is not needed.
+
 Here is an example of a simple decomposer. Even though :code:`datetime` is not supported
 by MessagePack, a decomposer is included in `fobs` module so no need to further decompose it.
 
@@ -138,10 +143,10 @@ by MessagePack, a decomposer is included in `fobs` module so no need to further 
         def supported_type(self) -> Type[Any]:
             return Simple
 
-        def decompose(self, obj) -> Any:
+        def decompose(self, obj, manager) -> Any:
             return [obj.num, obj.name, obj.timestamp]
 
-        def recompose(self, data: Any) -> Simple:
+        def recompose(self, data: Any, manager) -> Simple:
             return Simple(data[0], data[1], data[2])
 
 
