@@ -105,7 +105,7 @@ class CCManager(FLComponent):
         elif event_type == EventType.BEFORE_CLIENT_REGISTER or event_type == EventType.BEFORE_CLIENT_HEARTBEAT:
             # On client side
             self._prepare_cc_info(fl_ctx)
-        elif event_type == EventType.CLIENT_REGISTERED or event_type == EventType.AFTER_CLIENT_HEARTBEAT:
+        elif event_type == EventType.RECEIVED_CLIENT_REGISTER or event_type == EventType.RECEIVED_CLIENT_HEARTBEAT:
             # Server side
             self._add_client_token(fl_ctx)
         elif event_type == EventType.CLIENT_QUIT:
