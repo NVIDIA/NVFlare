@@ -55,6 +55,18 @@ ORDER_TEST_CASES = [
 ]
 
 
+def gen_shareable(is_early_termination: bool = False, is_not_shareable: bool = False):
+    if is_not_shareable:
+        return [1, 2, 3]
+    return_result = Shareable()
+    if is_early_termination:
+        return_result.set_return_code(ReturnCode.EARLY_TERMINATION)
+    return return_result
+
+
+PROCESS_RESULT_TEST_CASES = [gen_shareable(is_early_termination=True), gen_shareable(is_not_shareable=True)]
+
+
 class TestCyclicController:
     @pytest.mark.parametrize("order,active_clients,expected_result", ORDER_TEST_CASES)
     def test_get_relay_orders(self, order, active_clients, expected_result):
@@ -90,7 +102,8 @@ class TestCyclicController:
 
                 mock_method.assert_called_once()
 
-    def test_process_result(self):
+    @pytest.mark.parametrize("return_result", PROCESS_RESULT_TEST_CASES)
+    def test_process_result(self, return_result):
         ctl = CyclicController(
             persist_every_n_rounds=0, snapshot_every_n_rounds=0, num_rounds=1, allow_early_termination=True
         )
@@ -101,16 +114,12 @@ class TestCyclicController:
             Client("site-2", SITE_2_ID),
         ]
 
-        abort_signal = Signal()
         fl_ctx = FLContext()
         with patch.object(ctl, "cancel_task") as mock_method, patch.object(
             ctl.shareable_generator, "learnable_to_shareable"
         ) as mock_method1, patch.object(ctl.shareable_generator, "shareable_to_learnable") as mock_method2:
             mock_method1.return_value = Shareable()
             mock_method2.return_value = Learnable()
-
-            return_result = Shareable()
-            return_result.set_return_code(ReturnCode.EARLY_TERMINATION)
 
             client_task = ClientTask(
                 client=Mock(),
