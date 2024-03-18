@@ -145,6 +145,3 @@ class Controller(FLComponent, ControllerSpec, ABC):
 
     def cancel_all_tasks(self, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: Optional[FLContext] = None):
         self.communicator.cancel_all_tasks(completion_status, fl_ctx)
-
-    def handle_event(self, event_type: str, fl_ctx: FLContext):
-        self.communicator.handle_event(event_type, fl_ctx)

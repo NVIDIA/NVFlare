@@ -266,7 +266,6 @@ class CyclicController(Controller):
             pass
 
     def handle_event(self, event_type, fl_ctx):
-        super().handle_event(event_type, fl_ctx)
         if event_type == EventType.JOB_DEAD:
             client_name = fl_ctx.get_prop(FLContextKey.DEAD_JOB_CLIENT_NAME)
             new_client_list = []
