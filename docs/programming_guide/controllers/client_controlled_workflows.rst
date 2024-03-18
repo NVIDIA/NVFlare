@@ -70,6 +70,7 @@ All client controlled workflows must have a server side controller that extends 
             result_clients_policy: str = DefaultValuePolicy.ALL,
             max_status_report_interval: float = Constant.PER_CLIENT_STATUS_REPORT_TIMEOUT,
             progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
+            private_p2p: bool = True,
         ):
 
 Init args for ServerSideController
@@ -233,10 +234,11 @@ Cyclic Learning: Server Side Controller
             starting_client: str = "",
             max_status_report_interval: float = Constant.PER_CLIENT_STATUS_REPORT_TIMEOUT,
             progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
-            rr_order: str = RROrder.FIXED,
+            private_p2p: bool = True,
+            cyclic_order: str = CyclicOrder.FIXED,
         ):
 
-The only extra init arg is ``rr_order``, which specifies how the round-robin sequence is to be computed for each round: fixed order or random order.
+The only extra init arg is ``cyclic_order``, which specifies how the cyclic sequence is to be computed for each round: fixed order or random order.
 
 Of all the init args, only the ``num_rounds`` must be explicitly specified. All others can take default values:
 
