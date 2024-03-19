@@ -105,7 +105,7 @@ class CCManager(FLComponent):
         elif event_type == EventType.BEFORE_CLIENT_REGISTER or event_type == EventType.BEFORE_CLIENT_HEARTBEAT:
             # On client side
             self._prepare_cc_info(fl_ctx)
-        elif event_type == EventType.RECEIVED_CLIENT_REGISTER or event_type == EventType.RECEIVED_CLIENT_HEARTBEAT:
+        elif event_type == EventType.RECEIVED_CLIENT_REGISTER or event_type == EventType.CLIENT_HEARTBEAT_RECEIVED:
             # Server side
             self._add_client_token(fl_ctx)
         elif event_type == EventType.CLIENT_QUIT:
@@ -135,7 +135,7 @@ class CCManager(FLComponent):
                     else:
                         threading.Thread(target=self._shutdown_system, args=[err, fl_ctx]).start()
         elif event_type == EventType.AFTER_CHECK_CLIENT_RESOURCES:
-            client_resource_result = fl_ctx.get_prop(FLContextKey.CLIENT_RESOURCE_RESULT)
+            client_resource_result = fl_ctx.get_prop(FLContextKey.RESOURCE_CHECK_RESULT)
             if client_resource_result:
                 for site_name, check_result in client_resource_result.items():
                     is_resource_enough, reason = check_result

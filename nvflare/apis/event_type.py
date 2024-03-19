@@ -79,8 +79,8 @@ class EventType(object):
     SYSTEM_BOOTSTRAP = "_system_bootstrap"
     BEFORE_CLIENT_HEARTBEAT = "_before_client_heartbeat"
     AFTER_CLIENT_HEARTBEAT = "_after_client_heartbeat"
-    RECEIVED_CLIENT_HEARTBEAT = "_received_client_heartbeat"
-    PROCEEDED_CLIENT_HEARTBEAT = "_proceeded_client_heartbeat"
+    CLIENT_HEARTBEAT_RECEIVED = "_client_heartbeat_received"
+    CLIENT_HEARTBEAT_PROCESSED = "_client_heartbeat_processed"
 
     AUTHORIZE_COMMAND_CHECK = "_authorize_command_check"
     BEFORE_BUILD_COMPONENT = "_before_build_component"

@@ -581,7 +581,7 @@ class FederatedServer(BaseServer):
             data = request.payload
             shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
             fl_ctx.set_peer_context(shared_fl_ctx)
-            self.engine.fire_event(EventType.RECEIVED_CLIENT_HEARTBEAT, fl_ctx=fl_ctx)
+            self.engine.fire_event(EventType.CLIENT_HEARTBEAT_RECEIVED, fl_ctx=fl_ctx)
 
             token = request.get_header(CellMessageHeaderKeys.TOKEN)
             client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
@@ -604,7 +604,7 @@ class FederatedServer(BaseServer):
                     f"These jobs: {display_runs} are not running on the server. "
                     f"Ask client: {client_name} to abort these runs."
                 )
-            self.engine.fire_event(EventType.PROCEEDED_CLIENT_HEARTBEAT, fl_ctx=fl_ctx)
+            self.engine.fire_event(EventType.CLIENT_HEARTBEAT_PROCESSED, fl_ctx=fl_ctx)
             return reply
 
     def _sync_client_jobs(self, request, client_token):
