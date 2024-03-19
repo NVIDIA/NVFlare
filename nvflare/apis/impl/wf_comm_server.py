@@ -18,6 +18,7 @@ from typing import List, Optional, Tuple, Union
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, SendOrder, Task, TaskCompletionStatus
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
@@ -133,8 +134,8 @@ class WFCommServer(FLComponent, WFCommSpec):
                 raise TypeError(
                     "collector must be an instance of GroupInfoCollector, but got {}".format(type(collector))
                 )
-            collector.set_info(
-                group_name=self._name,
+            collector.add_info(
+                group_name=self.controller._name,
                 info={
                     "tasks": {t.name: [ct.client.name for ct in t.client_tasks] for t in self._tasks},
                 },
@@ -149,6 +150,12 @@ class WFCommServer(FLComponent, WFCommSpec):
         """
         if event_type == InfoCollector.EVENT_TYPE_GET_STATS:
             self._set_stats(fl_ctx)
+        elif event_type == EventType.JOB_DEAD:
+            client_name = fl_ctx.get_prop(FLContextKey.DEAD_JOB_CLIENT_NAME)
+            with self._dead_clients_lock:
+                self.log_info(fl_ctx, f"received dead job report from client {client_name}")
+                if not self._dead_client_reports.get(client_name):
+                    self._dead_client_reports[client_name] = time.time()
 
     def process_task_request(self, client: Client, fl_ctx: FLContext) -> Tuple[str, str, Shareable]:
         """Called by runner when a client asks for a task.
@@ -330,22 +337,6 @@ class WFCommServer(FLComponent, WFCommSpec):
         self.cancel_task(task=task, fl_ctx=fl_ctx)
         self.log_error(fl_ctx, "task {} is cancelled due to exception".format(task.name))
 
-    def handle_dead_job(self, client_name: str, fl_ctx: FLContext):
-        """Called by the Engine to handle the case that the job on the client is dead.
-
-        Args:
-            client_name: name of the client on which the job is dead
-            fl_ctx: the FLContext
-
-        """
-        # record the report and to be used by the task monitor
-        with self._dead_clients_lock:
-            self.log_info(fl_ctx, f"received dead job report from client {client_name}")
-            if not self._dead_client_reports.get(client_name):
-                self._dead_client_reports[client_name] = time.time()
-
-        self.controller.handle_dead_job(client_name, fl_ctx)
-
     def process_task_check(self, task_id: str, fl_ctx: FLContext):
         with self._task_lock:
             # task_id is the uuid associated with the client_task
@@ -400,7 +391,14 @@ class WFCommServer(FLComponent, WFCommSpec):
         if client_task is None:
             # cannot find a standing task for the submission
             self.log_debug(fl_ctx, "no standing task found for {}:{}".format(task_name, task_id))
+
+            self.log_debug(fl_ctx, "firing event EventType.BEFORE_PROCESS_RESULT_OF_UNKNOWN_TASK")
+            self.fire_event(EventType.BEFORE_PROCESS_RESULT_OF_UNKNOWN_TASK, fl_ctx)
+
             self.controller.process_result_of_unknown_task(client, task_name, task_id, result, fl_ctx)
+
+            self.log_debug(fl_ctx, "firing event EventType.AFTER_PROCESS_RESULT_OF_UNKNOWN_TASK")
+            self.fire_event(EventType.AFTER_PROCESS_RESULT_OF_UNKNOWN_TASK, fl_ctx)
             return
 
         task = client_task.task

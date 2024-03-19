@@ -42,6 +42,7 @@ class Controller(FLComponent, ControllerSpec, ABC):
             return
 
         self._engine = engine
+        self.start_controller(fl_ctx)
 
     def set_communicator(self, communicator: WFCommSpec):
         if not isinstance(communicator, WFCommSpec):
