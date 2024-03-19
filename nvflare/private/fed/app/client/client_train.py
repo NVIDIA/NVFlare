@@ -27,7 +27,7 @@ from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger, create_privacy_manager
-from nvflare.private.fed.app.utils import version_check
+from nvflare.private.fed.app.utils import component_security_check, version_check
 from nvflare.private.fed.client.admin import FedAdminAgent
 from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.client_status import ClientStatus
@@ -108,7 +108,10 @@ def main(args):
             time.sleep(1.0)
 
         with client_engine.new_context() as fl_ctx:
+            fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
             client_engine.fire_event(EventType.SYSTEM_BOOTSTRAP, fl_ctx)
+
+            component_security_check(fl_ctx)
 
             client_engine.fire_event(EventType.BEFORE_CLIENT_REGISTER, fl_ctx)
             federated_client.register(fl_ctx)
