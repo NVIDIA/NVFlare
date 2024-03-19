@@ -493,7 +493,7 @@ class FederatedServer(BaseServer):
                 shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
                 fl_ctx.set_peer_context(shared_fl_ctx)
 
-                self.engine.fire_event(EventType.RECEIVED_CLIENT_REGISTER, fl_ctx=fl_ctx)
+                self.engine.fire_event(EventType.CLIENT_REGISTER_RECEIVED, fl_ctx=fl_ctx)
 
                 exceptions = fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
                 if exceptions:
@@ -513,7 +513,7 @@ class FederatedServer(BaseServer):
                     }
                 else:
                     headers = {}
-                self.engine.fire_event(EventType.PROCEEDED_CLIENT_REGISTER, fl_ctx=fl_ctx)
+                self.engine.fire_event(EventType.CLIENT_REGISTER_PROCESSED, fl_ctx=fl_ctx)
                 return self._generate_reply(headers=headers, payload=None, fl_ctx=fl_ctx)
             except NotAuthenticated as e:
                 self.logger.error(f"Failed to authenticate the register_client: {secure_format_exception(e)}")

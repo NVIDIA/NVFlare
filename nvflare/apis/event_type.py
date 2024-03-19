@@ -73,8 +73,8 @@ class EventType(object):
 
     BEFORE_CLIENT_REGISTER = "_before_client_register"
     AFTER_CLIENT_REGISTER = "_after_client_register"
-    RECEIVED_CLIENT_REGISTER = "_received_client_register"
-    PROCEEDED_CLIENT_REGISTER = "_proceeded_client_register"
+    CLIENT_REGISTER_RECEIVED = "_client_register_received"
+    CLIENT_REGISTER_PROCESSED = "_client_register_processed"
     CLIENT_QUIT = "_client_quit"
     SYSTEM_BOOTSTRAP = "_system_bootstrap"
     BEFORE_CLIENT_HEARTBEAT = "_before_client_heartbeat"
