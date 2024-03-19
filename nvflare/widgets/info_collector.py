@@ -47,7 +47,6 @@ class InfoCollector(Widget):
     CATEGORY_STATS = "stats"
     CATEGORY_ERROR = "error"
 
-    EVENT_TYPE_SET_STATS = "info_collector.set_stats"
     EVENT_TYPE_GET_STATS = "info_collector.get_stats"
     CTX_KEY_STATS_COLLECTOR = "info_collector.stats_collector"
 
@@ -138,7 +137,7 @@ class InfoCollector(Widget):
             coll = GroupInfoCollector()
             fl_ctx.set_prop(key=self.CTX_KEY_STATS_COLLECTOR, value=coll, sticky=False, private=True)
 
-            engine.fire_event(event_type=self.EVENT_TYPE_SET_STATS, fl_ctx=fl_ctx)
+            engine.fire_event(event_type=self.EVENT_TYPE_GET_STATS, fl_ctx=fl_ctx)
             # Get the StatusCollector from the fl_ctx, it could have been updated by other component.
             coll = fl_ctx.get_prop(InfoCollector.CTX_KEY_STATS_COLLECTOR)
             return coll.info

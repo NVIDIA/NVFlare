@@ -134,7 +134,7 @@ class WFCommServer(FLComponent, WFCommSpec):
                 raise TypeError(
                     "collector must be an instance of GroupInfoCollector, but got {}".format(type(collector))
                 )
-            collector.set_info(
+            collector.add_info(
                 group_name=self.controller._name,
                 info={
                     "tasks": {t.name: [ct.client.name for ct in t.client_tasks] for t in self._tasks},
@@ -148,9 +148,8 @@ class WFCommServer(FLComponent, WFCommSpec):
             event_type (str): all event types, including AppEventType and EventType
             fl_ctx (FLContext): FLContext information with current event type
         """
-        if event_type == InfoCollector.EVENT_TYPE_SET_STATS:
+        if event_type == InfoCollector.EVENT_TYPE_GET_STATS:
             self._set_stats(fl_ctx)
-            self.fire_event(InfoCollector.EVENT_TYPE_GET_STATS, fl_ctx)
         elif event_type == EventType.JOB_DEAD:
             client_name = fl_ctx.get_prop(FLContextKey.DEAD_JOB_CLIENT_NAME)
             with self._dead_clients_lock:

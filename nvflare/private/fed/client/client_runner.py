@@ -672,7 +672,7 @@ class ClientRunner(TBI):
         self.run_abort_signal.trigger(True)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
-        if event_type == InfoCollector.EVENT_TYPE_SET_STATS:
+        if event_type == InfoCollector.EVENT_TYPE_GET_STATS:
             collector = fl_ctx.get_prop(InfoCollector.CTX_KEY_STATS_COLLECTOR)
             if collector:
                 if not isinstance(collector, GroupInfoCollector):
