@@ -163,7 +163,7 @@ class DhPSIWorkFlow(PSIWorkflow):
 
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
         results = bop.multicasts_and_wait(
-            task_name=self.task_name, task_inputs=task_inputs, abort_signal=self.abort_signal
+            task_name=self.task_name, task_inputs=task_inputs, fl_ctx=self.fl_ctx, abort_signal=self.abort_signal
         )
         return {site_name: results[site_name].data[PSIConst.SETUP_MSG] for site_name in results}
 
@@ -181,7 +181,7 @@ class DhPSIWorkFlow(PSIWorkflow):
 
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
         results = bop.multicasts_and_wait(
-            task_name=self.task_name, task_inputs=task_inputs, abort_signal=self.abort_signal
+            task_name=self.task_name, task_inputs=task_inputs, fl_ctx=self.fl_ctx, abort_signal=self.abort_signal
         )
         return {site_name: results[site_name].data[PSIConst.REQUEST_MSG] for site_name in results}
 
@@ -199,7 +199,7 @@ class DhPSIWorkFlow(PSIWorkflow):
 
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
         results = bop.multicasts_and_wait(
-            task_name=self.task_name, task_inputs=task_inputs, abort_signal=self.abort_signal
+            task_name=self.task_name, task_inputs=task_inputs, fl_ctx=self.fl_ctx, abort_signal=self.abort_signal
         )
         return {site_name: results[site_name].data[PSIConst.RESPONSE_MSG] for site_name in results}
 
@@ -217,7 +217,7 @@ class DhPSIWorkFlow(PSIWorkflow):
 
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
         results = bop.multicasts_and_wait(
-            task_name=self.task_name, task_inputs=task_inputs, abort_signal=self.abort_signal
+            task_name=self.task_name, task_inputs=task_inputs, fl_ctx=self.fl_ctx, abort_signal=self.abort_signal
         )
         return {site_name: results[site_name].data[PSIConst.ITEMS_SIZE] for site_name in results}
 
@@ -279,7 +279,7 @@ class DhPSIWorkFlow(PSIWorkflow):
             task_inputs[client_name] = inputs
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
         results = bop.multicasts_and_wait(
-            task_name=self.task_name, task_inputs=task_inputs, abort_signal=self.abort_signal
+            task_name=self.task_name, task_inputs=task_inputs, fl_ctx=self.fl_ctx, abort_signal=self.abort_signal
         )
 
         intersects = {client_name: results[client_name].data[PSIConst.ITEMS_SIZE] for client_name in results}
@@ -292,7 +292,11 @@ class DhPSIWorkFlow(PSIWorkflow):
         task_inputs[PSIConst.REQUEST_MSG_SET] = request_msgs
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
         results = bop.broadcast_and_wait(
-            task_name=self.task_name, task_input=task_inputs, targets=[s.name], abort_signal=self.abort_signal
+            task_name=self.task_name,
+            task_input=task_inputs,
+            fl_ctx=self.fl_ctx,
+            targets=[s.name],
+            abort_signal=self.abort_signal,
         )
 
         dxo = results[s.name]
@@ -309,7 +313,7 @@ class DhPSIWorkFlow(PSIWorkflow):
 
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
         results = bop.multicasts_and_wait(
-            task_name=self.task_name, task_inputs=task_inputs, abort_signal=self.abort_signal
+            task_name=self.task_name, task_inputs=task_inputs, fl_ctx=self.fl_ctx, abort_signal=self.abort_signal
         )
         request_msgs = {client_name: results[client_name].data[PSIConst.REQUEST_MSG] for client_name in results}
         return request_msgs
@@ -335,6 +339,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         results = bop.broadcast_and_wait(
             task_name=self.task_name,
             task_input=inputs,
+            fl_ctx=self.fl_ctx,
             targets=targets,
             min_responses=min_responses,
             abort_signal=abort_signal,
@@ -352,7 +357,11 @@ class DhPSIWorkFlow(PSIWorkflow):
         inputs[PSIConst.ITEMS_SIZE_SET] = other_site_sizes
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
         results = bop.broadcast_and_wait(
-            task_name=self.task_name, task_input=inputs, targets=[s.name], abort_signal=self.abort_signal
+            task_name=self.task_name,
+            task_input=inputs,
+            fl_ctx=self.fl_ctx,
+            targets=[s.name],
+            abort_signal=self.abort_signal,
         )
         dxo = results[s.name]
         return dxo.data[PSIConst.SETUP_MSG]
