@@ -378,6 +378,7 @@ class Communicator:
                 except Exception as ex:
                     raise FLCommunicationError("error:client_quit", ex)
 
+                engine.fire_event(EventType.AFTER_CLIENT_HEARTBEAT, fl_ctx)
                 for i in range(wait_times):
                     time.sleep(2)
                     if self.heartbeat_done:

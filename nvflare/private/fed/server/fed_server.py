@@ -493,7 +493,7 @@ class FederatedServer(BaseServer):
                 shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
                 fl_ctx.set_peer_context(shared_fl_ctx)
 
-                self.engine.fire_event(EventType.CLIENT_REGISTERED, fl_ctx=fl_ctx)
+                self.engine.fire_event(EventType.CLIENT_REGISTER_RECEIVED, fl_ctx=fl_ctx)
 
                 exceptions = fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
                 if exceptions:
@@ -513,6 +513,7 @@ class FederatedServer(BaseServer):
                     }
                 else:
                     headers = {}
+                self.engine.fire_event(EventType.CLIENT_REGISTER_PROCESSED, fl_ctx=fl_ctx)
                 return self._generate_reply(headers=headers, payload=None, fl_ctx=fl_ctx)
             except NotAuthenticated as e:
                 self.logger.error(f"Failed to authenticate the register_client: {secure_format_exception(e)}")
@@ -580,7 +581,7 @@ class FederatedServer(BaseServer):
             data = request.payload
             shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
             fl_ctx.set_peer_context(shared_fl_ctx)
-            self.engine.fire_event(EventType.AFTER_CLIENT_HEARTBEAT, fl_ctx=fl_ctx)
+            self.engine.fire_event(EventType.CLIENT_HEARTBEAT_RECEIVED, fl_ctx=fl_ctx)
 
             token = request.get_header(CellMessageHeaderKeys.TOKEN)
             client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
@@ -603,6 +604,7 @@ class FederatedServer(BaseServer):
                     f"These jobs: {display_runs} are not running on the server. "
                     f"Ask client: {client_name} to abort these runs."
                 )
+            self.engine.fire_event(EventType.CLIENT_HEARTBEAT_PROCESSED, fl_ctx=fl_ctx)
             return reply
 
     def _sync_client_jobs(self, request, client_token):

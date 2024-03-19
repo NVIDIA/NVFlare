@@ -165,7 +165,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
             return SCHEDULE_RESULT_NO_RESOURCE, None, block_reason
 
         resource_check_results = self._check_client_resources(job=job, resource_reqs=resource_reqs, fl_ctx=fl_ctx)
-        fl_ctx.set_prop(FLContextKey.CLIENT_RESOURCE_RESULT, resource_check_results, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.RESOURCE_CHECK_RESULT, resource_check_results, private=True, sticky=False)
         self.fire_event(EventType.AFTER_CHECK_CLIENT_RESOURCES, fl_ctx)
 
         if not resource_check_results:
