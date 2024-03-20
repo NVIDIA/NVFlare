@@ -88,6 +88,8 @@ class Constant:
     FINAL_RESULT_ACK_TIMEOUT = 10
     GET_MODEL_TIMEOUT = 10
 
+    PROP_KEY_TRAIN_CLIENTS = "cwf.train_clients"
+
 
 class ModelType:
 

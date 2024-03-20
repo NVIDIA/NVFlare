@@ -70,6 +70,8 @@ def send(model: FLModel, clear_cache: bool = True) -> None:
         model (FLModel): Sends a FLModel object.
         clear_cache: clear cache after send
     """
+    if not isinstance(fl_model, FLModel):
+        raise TypeError("fl_model needs to be an instance of FLModel")
     global client_api
     return client_api.send(model, clear_cache)
 
