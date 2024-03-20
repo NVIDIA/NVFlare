@@ -293,7 +293,6 @@ class ControllerSpec(ABC):
         """
         pass
 
-    @abstractmethod
     def process_result_of_unknown_task(
         self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
     ):
