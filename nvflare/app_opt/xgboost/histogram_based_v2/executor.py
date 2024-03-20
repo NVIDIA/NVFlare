@@ -27,7 +27,6 @@ class FedXGBHistogramExecutor(XGBExecutor):
         sender_id: str = None,
         verbose_eval=False,
         use_gpus=False,
-        int_server_grpc_options=None,
         req_timeout=100.0,
         model_file_name="model.json",
         metrics_writer_id: str = None,
@@ -44,10 +43,12 @@ class FedXGBHistogramExecutor(XGBExecutor):
         self.data_loader_id = data_loader_id
         self.verbose_eval = verbose_eval
         self.use_gpus = use_gpus
-        self.int_server_grpc_options = int_server_grpc_options
         self.model_file_name = model_file_name
         self.in_process = in_process
         self.metrics_writer_id = metrics_writer_id
+
+        # do not let use specify int_server_grpc_options in this version - always use default
+        self.int_server_grpc_options = None
 
     def get_adaptor(self, fl_ctx: FLContext):
         runner = XGBClientRunner(
