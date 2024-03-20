@@ -33,3 +33,4 @@ from .api import send as send
 from .api import system_info as system_info
 from .decorator import evaluate as evaluate
 from .decorator import train as train
+from .ipc.ipc_agent import IPCAgent
