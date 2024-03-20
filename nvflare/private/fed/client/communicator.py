@@ -17,6 +17,7 @@ import socket
 import time
 from typing import List, Optional
 
+from nvflare.apis.event_type import EventType
 from nvflare.apis.filter import Filter
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_constant import ReturnCode as ShareableRC
@@ -292,6 +293,9 @@ class Communicator:
             server's reply to the last message
 
         """
+        shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
+        shareable = Shareable()
+        shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
         client_name = fl_ctx.get_identity_name()
         quit_message = new_cell_message(
             {
@@ -299,7 +303,8 @@ class Communicator:
                 CellMessageHeaderKeys.CLIENT_NAME: client_name,
                 CellMessageHeaderKeys.SSID: ssid,
                 CellMessageHeaderKeys.PROJECT_NAME: task_name,
-            }
+            },
+            shareable,
         )
         try:
             result = self.cell.send_request(
@@ -328,6 +333,11 @@ class Communicator:
         heartbeats_log_interval = 10
         while not self.heartbeat_done:
             try:
+                engine.fire_event(EventType.BEFORE_CLIENT_HEARTBEAT, fl_ctx)
+                shareable = Shareable()
+                shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
+                shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
+
                 job_ids = engine.get_all_job_ids()
                 heartbeat_message = new_cell_message(
                     {
@@ -336,7 +346,8 @@ class Communicator:
                         CellMessageHeaderKeys.CLIENT_NAME: client_name,
                         CellMessageHeaderKeys.PROJECT_NAME: task_name,
                         CellMessageHeaderKeys.JOB_IDS: job_ids,
-                    }
+                    },
+                    shareable,
                 )
 
                 try:
@@ -367,6 +378,7 @@ class Communicator:
                 except Exception as ex:
                     raise FLCommunicationError("error:client_quit", ex)
 
+                engine.fire_event(EventType.AFTER_CLIENT_HEARTBEAT, fl_ctx)
                 for i in range(wait_times):
                     time.sleep(2)
                     if self.heartbeat_done:
