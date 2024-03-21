@@ -42,13 +42,13 @@ class LauncherExecutor(TaskExchanger):
         launch_timeout: Optional[float] = None,
         task_wait_timeout: Optional[float] = None,
         last_result_transfer_timeout: float = 300.0,
-        external_execution_wait: float = 5.0,
-        peer_read_timeout: Optional[float] = None,
+        external_setup_timeout: float = 60.0,
+        peer_read_timeout: Optional[float] = 60.0,
         monitor_interval: float = 1.0,
         read_interval: float = 0.5,
         heartbeat_interval: float = 5.0,
-        heartbeat_timeout: float = 30.0,
-        workers: int = 1,
+        heartbeat_timeout: float = 60.0,
+        workers: int = 4,
         train_with_evaluation: bool = True,
         train_task_name: str = "train",
         evaluate_task_name: str = "evaluate",
@@ -63,18 +63,19 @@ class LauncherExecutor(TaskExchanger):
             launcher_id (Optional[str]): Identifier for obtaining the Launcher from NVFlare components.
             launch_timeout (Optional[float]): Timeout for the Launcher's "launch_task" method to complete (None for no timeout).
             task_wait_timeout (Optional[float]): Timeout for retrieving the task result (None for no timeout).
-            last_result_transfer_timeout (float): Timeout for transmitting the last result from an external process (default: 5.0).
+            last_result_transfer_timeout (float): Timeout for transmitting the last result from an external process.
                 This value should be greater than the time needed for sending the whole result.
-            peer_read_timeout (Optional[float]): Timeout for waiting the task to be read by the peer from the pipe (None for no timeout).
-            monitor_interval (float): Interval for monitoring the launcher (default: 0.01).
-            read_interval (float): Interval for reading from the pipe (default: 0.5).
-            heartbeat_interval (float): Interval for sending heartbeat to the peer (default: 5.0).
-            heartbeat_timeout (float): Timeout for waiting for a heartbeat from the peer (default: 30.0).
-            workers (int): Number of worker threads needed (default: 1).
-            train_with_evaluation (bool): Whether to run training with global model evaluation (default: True).
-            train_task_name (str): Task name of train mode (default: train).
-            evaluate_task_name (str): Task name of evaluate mode (default: evaluate).
-            submit_model_task_name (str): Task name of submit_model mode (default: submit_model).
+            external_setup_timeout (float): Time to wait for external process to start.
+            peer_read_timeout (float, optional): time to wait for peer to accept sent message.
+            monitor_interval (float): Interval for monitoring the launcher.
+            read_interval (float): Interval for reading from the pipe.
+            heartbeat_interval (float): Interval for sending heartbeat to the peer.
+            heartbeat_timeout (float): Timeout for waiting for a heartbeat from the peer.
+            workers (int): Number of worker threads needed.
+            train_with_evaluation (bool): Whether to run training with global model evaluation.
+            train_task_name (str): Task name of train mode.
+            evaluate_task_name (str): Task name of evaluate mode.
+            submit_model_task_name (str): Task name of submit_model mode.
             from_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
                 This ParamsConverter will be called when model is sent from nvflare controller side to executor side.
             to_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
@@ -96,7 +97,7 @@ class LauncherExecutor(TaskExchanger):
         self._launcher_finish = False
         self._launcher_finish_time = None
         self._last_result_transfer_timeout = last_result_transfer_timeout
-        self._external_execution_wait = external_execution_wait
+        self._external_setup_timeout = external_setup_timeout
         self._received_result = Event()
         self._job_end = False
 
@@ -249,7 +250,6 @@ class LauncherExecutor(TaskExchanger):
             self.log_error(fl_ctx, "External execution set up failed.")
             abort_signal.trigger("External execution set up failed.")
             return False
-        time.sleep(self._external_execution_wait)
         return True
 
     def _execute_launcher_method_in_thread_executor(self, method_name: str, **kwargs) -> Any:
@@ -277,17 +277,22 @@ class LauncherExecutor(TaskExchanger):
     def _wait_external_setup(self, task_name: str, fl_ctx: FLContext, abort_signal: Signal):
         start_time = time.time()
         while True:
-            if self._launch_timeout and time.time() - start_time >= self._launch_timeout:
-                self.log_error(fl_ctx, f"External execution is not set up within timeout: {self._launch_timeout}")
+            if self._external_setup_timeout and time.time() - start_time >= self._external_setup_timeout:
+                self.log_error(
+                    fl_ctx, f"External execution is not set up within timeout: {self._external_setup_timeout}"
+                )
                 return False
 
             if abort_signal.triggered:
+                self.log_info(fl_ctx, "External execution is not set up but abort signal is triggered.")
                 return False
 
             if self.peer_is_up_or_dead():
                 return True
 
-            if self.launcher.check_run_status(task_name, fl_ctx) != LauncherRunStatus.RUNNING:
+            run_status = self.launcher.check_run_status(task_name, fl_ctx)
+            if run_status != LauncherRunStatus.RUNNING:
+                self.log_info(fl_ctx, f"External execution is not set up and run status becomes {run_status}.")
                 return False
 
             time.sleep(0.1)
@@ -295,18 +300,17 @@ class LauncherExecutor(TaskExchanger):
     def _finalize_external_execution(
         self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal
     ) -> bool:
-        with self._lock:
-            if self._job_end:
-                ask_peer_end_success = self.ask_peer_to_end(fl_ctx)
-                if not ask_peer_end_success:
-                    return False
+        if self._job_end:
+            ask_peer_end_success = self.ask_peer_to_end(fl_ctx)
+            if not ask_peer_end_success:
+                return False
 
         check_run_status = self._execute_launcher_method_in_thread_executor(
             method_name="check_run_status",
             task_name=task_name,
             fl_ctx=fl_ctx,
         )
-        if check_run_status != LauncherRunStatus.COMPLETE_SUCCESS:
+        if not self._received_result.is_set() and check_run_status != LauncherRunStatus.COMPLETE_SUCCESS:
             self.log_warning(fl_ctx, f"Try to stop task ({task_name}) when launcher run status is {check_run_status}")
 
         self.log_info(fl_ctx, f"Calling stop task ({task_name}).")
@@ -367,6 +371,7 @@ class LauncherExecutor(TaskExchanger):
                     break
 
                 if self._current_task is None:
+                    self.pause_pipe_handler()
                     continue
 
                 task_name = self._current_task
