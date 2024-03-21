@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import multiprocessing
+import sys
 import threading
 from typing import Tuple
 
@@ -33,8 +34,9 @@ class _ClientStarter:
 
     """
 
-    def __init__(self, runner):
+    def __init__(self, runner, in_process: bool):
         self.xgb_runner = runner
+        self.in_process = in_process
         self.error = None
         self.started = True
         self.stopped = False
@@ -58,6 +60,9 @@ class _ClientStarter:
             self.started = False
             self.stopped = True
             self.exit_code = Constant.EXIT_CODE_CANT_START_XGB
+            if not self.in_process:
+                # running in separate process - exit with error code for the monitor to report to server
+                sys.exit(self.exit_code)
 
 
 class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
@@ -135,7 +140,7 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
             Constant.RUNNER_CTX_NUM_ROUNDS: self.num_rounds,
             Constant.RUNNER_CTX_MODEL_DIR: self._run_dir,
         }
-        starter = _ClientStarter(self.xgb_runner)
+        starter = _ClientStarter(self.xgb_runner, self.in_process)
         self.logger.info(f"starting XGB client with {ctx=}")
         if self.in_process:
             self.logger.info("starting XGB client in another thread")
@@ -146,10 +151,10 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
                 name="xgb_client_thread_runner",
             )
             t.start()
+            self._starter = starter
             if not starter.started:
                 self.logger.error(f"cannot start XGB client: {starter.error}")
                 raise RuntimeError(starter.error)
-            self._starter = starter
         else:
             # start as a separate local process
             self.logger.info("starting XGB client in another process")

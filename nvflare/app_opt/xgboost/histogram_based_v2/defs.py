@@ -85,4 +85,4 @@ class Constant:
     RUNNER_CTX_RANK = "rank"
     RUNNER_CTX_MODEL_DIR = "model_dir"
 
-    EXIT_CODE_CANT_START_XGB = -101
+    EXIT_CODE_CANT_START_XGB = 101
