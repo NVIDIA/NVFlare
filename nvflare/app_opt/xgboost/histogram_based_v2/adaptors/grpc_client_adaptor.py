@@ -38,6 +38,7 @@ class _ClientStarter:
         self.error = None
         self.started = True
         self.stopped = False
+        self.exit_code = 0
 
     def start(self, ctx: dict):
         """Start the runner and wait for it to finish.
@@ -55,6 +56,8 @@ class _ClientStarter:
             secure_log_traceback()
             self.error = f"Exception happens when running xgb train: {secure_format_exception(e)}"
             self.started = False
+            self.stopped = True
+            self.exit_code = Constant.EXIT_CODE_CANT_START_XGB
 
 
 class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
@@ -171,7 +174,7 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         if self.in_process:
             if self._starter:
                 if self._starter.stopped:
-                    return True, 0
+                    return True, self._starter.exit_code
 
             if self._training_stopped:
                 return True, 0
