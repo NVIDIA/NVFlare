@@ -15,6 +15,7 @@
 import logging
 import queue
 import threading
+import time
 from typing import Tuple, Union
 
 from nvflare.fuel.f3.cellnet.cell import Cell
@@ -202,12 +203,28 @@ class CellPipe(Pipe):
         self.channel = None  # the cellnet message channel
         self.pipe_lock = threading.Lock()  # used to ensure no msg to be sent after closed
         self.closed = False
+        self.last_peer_active_time = 0.0
+
+    def _update_peer_active_time(self, msg: CellMessage, ch_name: str, msg_type: str):
+        origin = msg.get_header(MessageHeaderKey.ORIGIN)
+        self.logger.debug(f"_update_peer_active_time: {origin=} {ch_name=} {msg_type=} {self.peer_fqcn=}")
+        if origin == self.peer_fqcn:
+            self.last_peer_active_time = time.time()
+
+    def get_last_peer_active_time(self):
+        return self.last_peer_active_time
 
     def set_cell_cb(self, channel_name: str):
         # This allows multiple pipes over the same cell (e.g. one channel for tasks, another for metrics),
         # as long as different pipes use different cell message channels
         self.channel = f"{_PREFIX}{channel_name}"
         self.cell.register_request_cb(channel=self.channel, topic="*", cb=self._receive_message)
+        self.cell.core_cell.add_incoming_request_filter(
+            channel="*", topic="*", cb=self._update_peer_active_time, ch_name=channel_name, msg_type="req"
+        )
+        self.cell.core_cell.add_incoming_reply_filter(
+            channel="*", topic="*", cb=self._update_peer_active_time, ch_name=channel_name, msg_type="reply"
+        )
         self.logger.info(f"registered CellPipe request CB for {self.channel}")
 
     def send(self, msg: Message, timeout=None) -> bool:
@@ -249,6 +266,9 @@ class CellPipe(Pipe):
                         self.logger.error(err)
                     return False
             else:
+                self.logger.error(
+                    "failed to send '{msg.topic}' to '{self.peer_fqcn}' in channel '{self.channel}': no reply object!"
+                )
                 return False
 
     def _receive_message(self, request: CellMessage) -> Union[None, CellMessage]:

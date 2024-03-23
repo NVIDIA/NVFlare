@@ -145,7 +145,7 @@ class TaskExchanger(Executor):
         task_id = shareable.get_header(key=FLContextKey.TASK_ID)
 
         # send to peer
-        self.log_debug(fl_ctx, "sending task to peer ...")
+        self.log_debug(fl_ctx, f"sending task to peer {self.peer_read_timeout=}")
         req = Message.new_request(topic=task_name, data=shareable, msg_id=task_id)
         start_time = time.time()
         has_been_read = self.pipe_handler.send_to_peer(req, timeout=self.peer_read_timeout, abort_signal=abort_signal)
