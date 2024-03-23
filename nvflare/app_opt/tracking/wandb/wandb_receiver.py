@@ -82,6 +82,13 @@ class WandBReceiver(AnalyticsReceiver):
         run_name = self.kwargs["name"]
         job_id_tag = self.get_job_id_tag(run_group_id)
         wand_config = self.kwargs.get("config", {})
+
+        try:
+            wandb.login(timeout=1)
+        except Exception as e:
+            self.log_error(self.fl_ctx, f"Unsuccessful login: {e}. Will not log to wandb.")
+            return
+
         for site in sites:
             self.log_info(self.fl_ctx, f"initialize WandB run for site {site.name}")
             self.kwargs["name"] = f"{site.name}-{job_id_tag[:6]}-{run_name}"
