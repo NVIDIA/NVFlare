@@ -37,6 +37,8 @@ _PREFIX = "cell_pipe."
 _HEADER_MSG_TYPE = _PREFIX + "msg_type"
 _HEADER_MSG_ID = _PREFIX + "msg_id"
 _HEADER_REQ_ID = _PREFIX + "req_id"
+_HEADER_START_TIME = _PREFIX + "start"
+_HEADER_HB_SEQ = _PREFIX + "hb_seq"
 
 
 def _cell_fqcn(mode, site_name, token):
@@ -47,8 +49,10 @@ def _cell_fqcn(mode, site_name, token):
     return f"{site_name}_{token}_{mode}"
 
 
-def _to_cell_message(msg: Message) -> CellMessage:
-    headers = {_HEADER_MSG_TYPE: msg.msg_type, _HEADER_MSG_ID: msg.msg_id}
+def _to_cell_message(msg: Message, extra=None) -> CellMessage:
+    headers = {_HEADER_MSG_TYPE: msg.msg_type, _HEADER_MSG_ID: msg.msg_id, _HEADER_START_TIME: time.time()}
+    if extra:
+        headers.update(extra)
     if msg.req_id:
         headers[_HEADER_REQ_ID] = msg.req_id
 
@@ -204,11 +208,12 @@ class CellPipe(Pipe):
         self.pipe_lock = threading.Lock()  # used to ensure no msg to be sent after closed
         self.closed = False
         self.last_peer_active_time = 0.0
+        self.hb_seq = 1
 
     def _update_peer_active_time(self, msg: CellMessage, ch_name: str, msg_type: str):
         origin = msg.get_header(MessageHeaderKey.ORIGIN)
-        self.logger.debug(f"_update_peer_active_time: {origin=} {ch_name=} {msg_type=} {self.peer_fqcn=}")
         if origin == self.peer_fqcn:
+            self.logger.debug(f"{time.time()}: _update_peer_active_time: {ch_name=} {msg_type=} {msg.headers}")
             self.last_peer_active_time = time.time()
 
     def get_last_peer_active_time(self):
@@ -246,6 +251,24 @@ class CellPipe(Pipe):
             if msg.topic in [Topic.END, Topic.ABORT, Topic.HEARTBEAT]:
                 optional = True
 
+            if not timeout and msg.topic in [Topic.END, Topic.ABORT]:
+                timeout = 5.0  # need to keep the connection for some time; otherwise the msg may not go out
+
+            if msg.topic == Topic.HEARTBEAT:
+                # for debugging purpose
+                extra_headers = {_HEADER_HB_SEQ: self.hb_seq}
+                self.hb_seq += 1
+
+                # don't need to wait for reply!
+                self.cell.fire_and_forget(
+                    channel=self.channel,
+                    topic=msg.topic,
+                    targets=[self.peer_fqcn],
+                    message=_to_cell_message(msg, extra_headers),
+                    optional=optional,
+                )
+                return True
+
             reply = self.cell.send_request(
                 channel=self.channel,
                 topic=msg.topic,
@@ -257,6 +280,9 @@ class CellPipe(Pipe):
             if reply:
                 rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
                 if rc == ReturnCode.OK:
+                    return True
+                elif msg.topic == Topic.HEARTBEAT:
+                    # we don't re-send here for HB since it will be retried periodically
                     return True
                 else:
                     err = f"failed to send '{msg.topic}' to '{self.peer_fqcn}' in channel '{self.channel}': {rc}"
