@@ -454,6 +454,15 @@ class ConfigVarName:
     # client: timeout for submitTaskResult requests
     SUBMIT_TASK_RESULT_TIMEOUT = "submit_task_result_timeout"
 
+    # client and server: max number of request workers for reliable message
+    RM_MAX_REQUEST_WORKERS = "rm_max_request_workers"
+
+    # client and server: query interval for reliable message
+    RM_QUERY_INTERVAL = "rm_query_interval"
+
+    # client and server: max transaction time for RM requests
+    RM_MAX_TX_LIFE = "rm_max_tx_life"
+
 
 class SystemVarName:
     """

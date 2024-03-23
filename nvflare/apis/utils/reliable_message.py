@@ -15,10 +15,15 @@ import concurrent.futures
 import threading
 import time
 import uuid
+import logging
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable, make_reply
 from nvflare.apis.signal import Signal
+from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.apis.fl_constant import ConfigVarName, SystemConfigs
+from nvflare.apis.utils.fl_context_utils import generate_log_message
+from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 # Operation Types
 OP_REQUEST = "req"
@@ -42,6 +47,8 @@ STATUS_ABORTED = "aborted"
 # Topics for Reliable Message
 TOPIC_RELIABLE_REQUEST = "RM.RELIABLE_REQUEST"
 TOPIC_RELIABLE_REPLY = "RM.RELIABLE_REPLY"
+
+PROP_KEY_TX_ID = "RM.TX_ID"
 
 
 def _extract_result(reply: dict, target: str):
@@ -96,36 +103,45 @@ class _RequestReceiver:
                 self.timeout = request.get_header(HEADER_TIMEOUT)
 
                 # start processing
+                ReliableMessage.info(fl_ctx, f"started processing request of topic {self.topic}")
                 self.executor.submit(self._do_request, request, fl_ctx)
                 return _status_reply(STATUS_IN_PROCESS)  # ack
             elif self.result:
                 # we already finished processing - send the result back
+                ReliableMessage.info(fl_ctx, "resend result back to requester")
                 return self.result
             else:
                 # we are still processing
+                ReliableMessage.info(fl_ctx, "got request - the request is being processed")
                 return _status_reply(STATUS_IN_PROCESS)
         elif op == OP_QUERY:
             if self.result:
                 if self.reply_time:
                     # result already sent back successfully
+                    ReliableMessage.info(fl_ctx, "got query: we already replied successfully")
                     return _status_reply(STATUS_REPLIED)
                 elif self.replying:
                     # result is being sent
+                    ReliableMessage.info(fl_ctx, "got query: reply is being sent")
                     return _status_reply(STATUS_IN_REPLY)
                 else:
                     # try to send the result again
+                    ReliableMessage.info(fl_ctx, "got query: sending reply again")
                     return self.result
             else:
                 # still in process
                 if time.time() - self.rcv_time > self.timeout:
                     # the process is taking too much time
+                    ReliableMessage.error(fl_ctx, f"aborting processing since exceeded max tx time {self.timeout}")
                     return _status_reply(STATUS_ABORTED)
                 else:
+                    ReliableMessage.error(fl_ctx, "got query: request is in-process")
                     return _status_reply(STATUS_IN_PROCESS)
 
     def _try_reply(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
         self.replying = True
+        start_time = time.time()
         ack = engine.send_aux_request(
             targets=[self.source],
             topic=TOPIC_RELIABLE_REPLY,
@@ -133,29 +149,42 @@ class _RequestReceiver:
             timeout=self.timeout,
             fl_ctx=fl_ctx,
         )
+        time_spent = time.time()-start_time
         self.replying = False
         _, rc = _extract_result(ack, self.source)
         if rc == ReturnCode.OK:
             # reply sent successfully!
             self.reply_time = time.time()
+            ReliableMessage.info(fl_ctx, f"sent reply in {time_spent} secs")
+        else:
+            ReliableMessage.error(
+                fl_ctx,
+                f"failed to send reply in {time_spent} secs: {rc=}; will wait for requester to query")
 
     def _do_request(self, request: Shareable, fl_ctx: FLContext):
+        start_time = time.time()
         try:
             result = self.request_handler_f(self.topic, request, fl_ctx)
         except Exception as e:
-            result = _error_reply(ReturnCode.EXECUTION_EXCEPTION, str(e))
+            ReliableMessage.error(
+                fl_ctx,
+                f"exception processing request: {secure_format_traceback()}")
+            result = _error_reply(ReturnCode.EXECUTION_EXCEPTION, secure_format_exception(e))
 
         # send back
         result.set_header(HEADER_TX, self.tx_id)
         result.set_header(HEADER_OP, OP_REPLY)
         result.set_header(HEADER_TOPIC, self.topic)
         self.result = result
+        ReliableMessage.info(fl_ctx, f"finished processing request in {time.time()-start_time} secs")
         self._try_reply(fl_ctx)
 
 
 class _ReplyReceiver:
-    def __init__(self, tx_id: str):
+    def __init__(self, tx_id: str, max_tx_time: float):
         self.tx_id = tx_id
+        self.tx_start_time = time.time()
+        self.max_tx_time = max_tx_time
         self.result = None
         self.result_ready = threading.Event()
 
@@ -173,10 +202,11 @@ class ReliableMessage:
     _executor = None
     _query_interval = 1.0
     _max_retries = 5
-    _max_tx_time = 300.0  # 5 minutes
+    _max_tx_life = 600.0  # 10 minutes
     _reply_receivers = {}  # tx id => receiver
     _tx_lock = threading.Lock()
     _shutdown_asked = False
+    _logger = logging.getLogger("ReliableMessage")
 
     @classmethod
     def register_request_handler(cls, topic: str, handler_f):
@@ -196,6 +226,7 @@ class ReliableMessage:
     @classmethod
     def _receive_request(cls, topic: str, request: Shareable, fl_ctx: FLContext):
         tx_id = request.get_header(HEADER_TX)
+        fl_ctx.set_prop(key=PROP_KEY_TX_ID, value=tx_id, sticky=False, private=True)
         receiver = cls._req_receivers.get(tx_id)
         op = request.get_header(HEADER_OP)
         topic = request.get_header(HEADER_TOPIC)
@@ -204,17 +235,22 @@ class ReliableMessage:
                 handler_f = cls._topic_to_handle.get(topic)
                 if not handler_f:
                     # no handler registered for this topic!
+                    cls.error(fl_ctx, f"no handler registered for request {topic=}")
                     return make_reply(ReturnCode.TOPIC_UNKNOWN)
                 receiver = _RequestReceiver(topic, handler_f, cls._executor)
                 with cls._tx_lock:
                     cls._req_receivers[tx_id] = receiver
+
+            cls.info(fl_ctx, f"received request {topic=}")
             return receiver.process(request, fl_ctx)
         elif op == OP_QUERY:
             if not receiver:
+                cls.error(fl_ctx, f"received query but the request ({topic=}) is not received!")
                 return _status_reply(STATUS_NOT_RECEIVED)  # meaning the request wasn't received
             else:
                 return receiver.process(request, fl_ctx)
         else:
+            cls.error(fl_ctx, f"received invalid op {op} for the request ({topic=})")
             return make_reply(rc=ReturnCode.BAD_REQUEST_DATA)
 
     @classmethod
@@ -222,19 +258,31 @@ class ReliableMessage:
         tx_id = request.get_header(HEADER_TX)
         receiver = cls._reply_receivers.get(tx_id)
         if not receiver:
+            cls.error(fl_ctx, "received reply but we are no longer waiting for it")
             return make_reply(ReturnCode.OK)
         else:
+            assert isinstance(receiver, _ReplyReceiver)
+            cls.info(fl_ctx, f"received reply in {time.time()-receiver.tx_start_time} secs")
             return receiver.process(request)
 
     @classmethod
-    def enable(cls, fl_ctx: FLContext, max_request_workers=20, query_interval=5, max_retries=5, max_tx_time=300.0):
+    def enable(cls, fl_ctx: FLContext):
         if cls._enabled:
             return
 
+        max_request_workers = ConfigService.get_int_var(
+            name=ConfigVarName.RM_MAX_REQUEST_WORKERS, conf=SystemConfigs.APPLICATION_CONF, default=20
+        )
+        query_interval = ConfigService.get_float_var(
+            name=ConfigVarName.RM_QUERY_INTERVAL, conf=SystemConfigs.APPLICATION_CONF, default=2.0
+        )
+        max_tx_life = ConfigService.get_float_var(
+            name=ConfigVarName.RM_MAX_TX_LIFE, conf=SystemConfigs.APPLICATION_CONF, default=600
+        )
+
         cls._enabled = True
-        cls._max_retries = max_retries
-        cls._max_tx_time = max_tx_time
         cls._query_interval = query_interval
+        cls._max_tx_life = max_tx_life
         cls._executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_request_workers)
         engine = fl_ctx.get_engine()
         engine.register_aux_message_handler(
@@ -247,6 +295,7 @@ class ReliableMessage:
         )
         t = threading.Thread(target=cls._monitor_req_receivers, daemon=True)
         t.start()
+        cls._logger.info(f"enabled reliable message: {max_request_workers=} {query_interval=} {max_tx_life=}")
 
     @classmethod
     def _monitor_req_receivers(cls):
@@ -256,7 +305,7 @@ class ReliableMessage:
                 now = time.time()
                 for tx_id, receiver in cls._req_receivers.items():
                     assert isinstance(receiver, _RequestReceiver)
-                    if receiver.rcv_time and now - receiver.rcv_time > cls._max_tx_time:
+                    if receiver.rcv_time and now - receiver.rcv_time > cls._max_tx_life:
                         expired_receivers.append(tx_id)
 
             if expired_receivers:
@@ -265,6 +314,7 @@ class ReliableMessage:
                         cls._req_receivers.pop(tx_id, None)
 
             time.sleep(2.0)
+        cls._logger.info("shutdown reliable message monitor")
 
     @classmethod
     def shutdown(cls):
@@ -272,20 +322,64 @@ class ReliableMessage:
         cls._shutdown_asked = True
 
     @classmethod
+    def _log_msg(cls, fl_ctx: FLContext, msg: str):
+        tx_id = fl_ctx.get_prop(PROP_KEY_TX_ID)
+        if tx_id:
+            msg = f"[{tx_id=}] {msg}"
+        return generate_log_message(fl_ctx, msg)
+
+    @classmethod
+    def info(cls, fl_ctx: FLContext, msg: str):
+        cls._logger.info(cls._log_msg(fl_ctx, msg))
+
+    @classmethod
+    def error(cls, fl_ctx: FLContext, msg: str):
+        cls._logger.error(cls._log_msg(fl_ctx, msg))
+
+    @classmethod
+    def debug(cls, fl_ctx: FLContext, msg: str):
+        cls._logger.debug(cls._log_msg(fl_ctx, msg))
+
+    @classmethod
     def send_request(
-        cls, target: str, topic: str, request: Shareable, timeout: float, abort_signal: Signal, fl_ctx: FLContext
+        cls,
+        target: str,
+        topic: str,
+        request: Shareable,
+        timeout: float,
+        abort_signal: Signal,
+        fl_ctx: FLContext,
+        max_tx_time=None,
     ) -> Shareable:
+        if not max_tx_time or max_tx_time <= timeout:
+            # simple aux message
+            cls.info(fl_ctx, f"send request with aux msg: {max_tx_time=}")
+            engine = fl_ctx.get_engine()
+            reply = engine.send_aux_request(
+                targets=[target],
+                topic=topic,
+                request=request,
+                timeout=timeout,
+                fl_ctx=fl_ctx,
+            )
+            result, _ = _extract_result(reply, target)
+            return result
+
+        cls.info(fl_ctx, f"send request with reliable message {max_tx_time=}")
+
         tx_id = str(uuid.uuid4())
-        receiver = _ReplyReceiver(tx_id)
+        fl_ctx.set_prop(key=PROP_KEY_TX_ID, value=tx_id, private=True, sticky=False)
+        receiver = _ReplyReceiver(tx_id, max_tx_time)
         cls._reply_receivers[tx_id] = receiver
         request.set_header(HEADER_TX, tx_id)
         request.set_header(HEADER_OP, OP_REQUEST)
         request.set_header(HEADER_TOPIC, topic)
-        request.set_header(HEADER_TIMEOUT, timeout)
+        request.set_header(HEADER_TIMEOUT, max_tx_time)
         try:
             result = cls._send_request(target, request, timeout, abort_signal, fl_ctx, receiver)
         except Exception as e:
-            result = _error_reply(ReturnCode.ERROR, str(e))
+            cls.error(fl_ctx, f"exception sending reliable message: {secure_format_traceback()}")
+            result = _error_reply(ReturnCode.ERROR, secure_format_exception(e))
         cls._reply_receivers.pop(tx_id)
         return result
 
@@ -305,7 +399,15 @@ class ReliableMessage:
         num_tries = 0
         while True:
             if abort_signal and abort_signal.triggered:
+                cls.info(fl_ctx, "send_request abort triggered")
                 return make_reply(ReturnCode.TASK_ABORTED)
+
+            if time.time() - receiver.tx_start_time >= receiver.max_tx_time:
+                cls.error(fl_ctx, f"aborting send_request since exceeded {receiver.max_tx_time=}")
+                return make_reply(ReturnCode.COMMUNICATION_ERROR)
+
+            if num_tries > 0:
+                cls.info(fl_ctx, f"retry #{num_tries} sending request")
 
             ack = engine.send_aux_request(
                 targets=[target],
@@ -322,6 +424,7 @@ class ReliableMessage:
                     # the reply is already the result - we are done!
                     # this could happen when we didn't get positive ack for our first request, and the result was
                     # already produced when we did the 2nd request (this request).
+                    cls.info(fl_ctx, f"C1: received result in {time.time()-receiver.tx_start_time} seconds")
                     return ack
 
                 # the ack is a status report - check status
@@ -331,11 +434,12 @@ class ReliableMessage:
                     # STATUS_NOT_RECEIVED is only possible during "query" phase.
                     break
 
+            if time.time() + cls._query_interval - receiver.tx_start_time >= receiver.max_tx_time:
+                cls.error(fl_ctx, f"aborting send_request since it will exceed {receiver.max_tx_time=}")
+                return make_reply(ReturnCode.COMMUNICATION_ERROR)
+
             # we didn't get a positive ack - wait a short time and re-send the request.
             num_tries += 1
-            if num_tries > cls._max_retries:
-                # enough tries
-                return _error_reply(ReturnCode.COMMUNICATION_ERROR, f"Max send retries ({cls._max_retries}) reached")
             start = time.time()
             while time.time() - start < cls._query_interval:
                 if abort_signal and abort_signal.triggered:
@@ -353,26 +457,40 @@ class ReliableMessage:
         fl_ctx: FLContext,
         receiver: _ReplyReceiver,
     ) -> Shareable:
-
         # Querying phase - try to get result
+        cls.info(fl_ctx, "query for result")
         engine = fl_ctx.get_engine()
         query = Shareable()
         query.set_header(HEADER_TX, receiver.tx_id)
         query.set_header(HEADER_OP, OP_QUERY)
 
         num_tries = 0
+        last_query_time = 0
+        short_wait = 0.1
         while True:
-            if receiver.result_ready.wait(cls._query_interval):
+            if time.time() - receiver.tx_start_time > receiver.max_tx_time:
+                cls.error(fl_ctx, f"aborted query since exceeded {receiver.max_tx_time=}")
+                return _error_reply(ReturnCode.COMMUNICATION_ERROR, f"max tx time ({receiver.max_tx_time}) reached")
+
+            if receiver.result_ready.wait(short_wait):
                 # we already received result sent by the target.
                 # Note that we don't wait forever here - we only wait for _query_interval so we could
                 # check other condition and/or send query to ask for result.
+                cls.info(fl_ctx, f"C2: received result in {time.time()-receiver.tx_start_time} seconds")
                 return receiver.result
 
             if abort_signal and abort_signal.triggered:
+                cls.info(fl_ctx, "aborted query triggered by abort signal")
                 return make_reply(ReturnCode.TASK_ABORTED)
+
+            if time.time() - last_query_time < cls._query_interval:
+                # don't query too quickly
+                continue
 
             # send a query. The ack of the query could be the result itself, or a status report.
             # Note: the ack could be the result because we failed to receive the result sent by the target earlier.
+            num_tries += 1
+            cls.info(fl_ctx, f"query #{num_tries}: try to get result from {target}")
             ack = engine.send_aux_request(
                 targets=[target],
                 topic=TOPIC_RELIABLE_REQUEST,
@@ -385,19 +503,14 @@ class ReliableMessage:
                 op = ack.get_header(HEADER_OP)
                 if op == OP_REPLY:
                     # the ack is result itself!
+                    cls.info(fl_ctx, f"C3: received result in {time.time()-receiver.tx_start_time} seconds")
                     return ack
 
                 status = ack.get_header(HEADER_STATUS)
                 if status == STATUS_NOT_RECEIVED:
                     # the receiver side lost context!
+                    cls.error(fl_ctx, f"peer {target} lost request!")
                     return _error_reply(ReturnCode.EXECUTION_EXCEPTION, "STATUS_NOT_RECEIVED")
                 elif status == STATUS_ABORTED:
+                    cls.error(fl_ctx, f"peer {target} aborted processing!")
                     return _error_reply(ReturnCode.EXECUTION_EXCEPTION, "Aborted")
-                else:
-                    # the received is in process - do not increase num_tries here!
-                    continue
-
-            # retry query
-            num_tries += 1
-            if num_tries > cls._max_retries:
-                return _error_reply(ReturnCode.COMMUNICATION_ERROR, f"Max query retries ({cls._max_retries}) reached")
