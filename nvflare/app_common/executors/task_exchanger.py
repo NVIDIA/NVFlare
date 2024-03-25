@@ -156,6 +156,8 @@ class TaskExchanger(Executor):
             )
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
+        self.log_info(fl_ctx, f"task {task_name} sent to peer in {time.time()-start_time} secs")
+
         # wait for result
         self.log_debug(fl_ctx, "Waiting for result from peer")
         start = time.time()
@@ -213,6 +215,8 @@ class TaskExchanger(Executor):
                     if not self.check_output_shareable(task_name, result, fl_ctx):
                         self.log_error(fl_ctx, "bad task result from peer")
                         return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+
+                    self.log_info(fl_ctx, f"received result of {task_name} from peer in {time.time()-start} secs")
                     return result
                 except Exception as ex:
                     self.log_error(fl_ctx, f"Failed to convert result: {secure_format_exception(ex)}")

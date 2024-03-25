@@ -247,55 +247,39 @@ class CellPipe(Pipe):
             if self.closed:
                 raise BrokenPipeError("pipe closed")
 
-            optional = False
-            if msg.topic in [Topic.END, Topic.ABORT, Topic.HEARTBEAT]:
-                optional = True
+        # Note: the following code must not be within the lock scope
+        # Otherwise only one message can be sent at a time!
+        optional = False
+        if msg.topic in [Topic.END, Topic.ABORT, Topic.HEARTBEAT]:
+            optional = True
 
-            if not timeout and msg.topic in [Topic.END, Topic.ABORT]:
-                timeout = 5.0  # need to keep the connection for some time; otherwise the msg may not go out
+        if not timeout and msg.topic in [Topic.END, Topic.ABORT]:
+            timeout = 5.0  # need to keep the connection for some time; otherwise the msg may not go out
 
-            if msg.topic == Topic.HEARTBEAT:
-                # for debugging purpose
-                extra_headers = {_HEADER_HB_SEQ: self.hb_seq}
-                self.hb_seq += 1
+        if msg.topic == Topic.HEARTBEAT:
+            # for debugging purpose
+            extra_headers = {_HEADER_HB_SEQ: self.hb_seq}
+            self.hb_seq += 1
 
-                # don't need to wait for reply!
-                self.cell.fire_and_forget(
-                    channel=self.channel,
-                    topic=msg.topic,
-                    targets=[self.peer_fqcn],
-                    message=_to_cell_message(msg, extra_headers),
-                    optional=optional,
-                )
-                return True
-
-            reply = self.cell.send_request(
+            # don't need to wait for reply!
+            self.cell.fire_and_forget(
                 channel=self.channel,
                 topic=msg.topic,
-                target=self.peer_fqcn,
-                request=_to_cell_message(msg),
-                timeout=timeout,
+                targets=[self.peer_fqcn],
+                message=_to_cell_message(msg, extra_headers),
                 optional=optional,
             )
-            if reply:
-                rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
-                if rc == ReturnCode.OK:
-                    return True
-                elif msg.topic == Topic.HEARTBEAT:
-                    # we don't re-send here for HB since it will be retried periodically
-                    return True
-                else:
-                    err = f"failed to send '{msg.topic}' to '{self.peer_fqcn}' in channel '{self.channel}': {rc}"
-                    if optional:
-                        self.logger.debug(err)
-                    else:
-                        self.logger.error(err)
-                    return False
-            else:
-                self.logger.error(
-                    "failed to send '{msg.topic}' to '{self.peer_fqcn}' in channel '{self.channel}': no reply object!"
-                )
-                return False
+            return True
+
+        return self.cell.send_request(
+            channel=self.channel,
+            topic=msg.topic,
+            target=self.peer_fqcn,
+            request=_to_cell_message(msg),
+            timeout=timeout,
+            optional=optional,
+            wait_for_reply=False,
+        )
 
     def _receive_message(self, request: CellMessage) -> Union[None, CellMessage]:
         sender = request.get_header(MessageHeaderKey.ORIGIN)
