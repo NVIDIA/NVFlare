@@ -158,6 +158,8 @@ def send(fl_model: FLModel, clear_registry: bool = True) -> None:
             nvflare.client.send(fl_model=FLModel(...))
 
     """
+    if not isinstance(fl_model, FLModel):
+        raise TypeError("fl_model needs to be an instance of FLModel")
     model_registry = get_model_registry()
     model_registry.submit_model(model=fl_model)
     if clear_registry:
