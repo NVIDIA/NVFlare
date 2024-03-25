@@ -84,15 +84,16 @@ class WandBReceiver(AnalyticsReceiver):
         wand_config = self.kwargs.get("config", {})
 
         try:
-            wandb.login(timeout=1)
+            wandb.login(timeout=1, verify=True)
         except Exception as e:
-            self.log_error(self.fl_ctx, f"Unsuccessful login: {e}. Will not log to wandb.")
-            return
+            self.log_error(self.fl_ctx, f"Unsuccessful login: {e}. Using wandb offline mode.")
+            self.mode = "offline"
 
         for site in sites:
             self.log_info(self.fl_ctx, f"initialize WandB run for site {site.name}")
             self.kwargs["name"] = f"{site.name}-{job_id_tag[:6]}-{run_name}"
             self.kwargs["group"] = f"{run_name}-{job_id_tag}"
+            self.kwargs["mode"] = self.mode
             wand_config["job_id"] = job_id_tag
             wand_config["client"] = site.name
             wand_config["run_name"] = run_name
