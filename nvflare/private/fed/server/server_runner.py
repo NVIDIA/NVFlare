@@ -126,9 +126,8 @@ class ServerRunner(TBI):
 
                     fl_ctx.set_prop(FLContextKey.WORKFLOW, wf.id, sticky=True)
 
-                    wf.controller.initialize(fl_ctx)
                     wf.controller.communicator.initialize_run(fl_ctx)
-                    wf.controller.start_controller(fl_ctx)
+                    wf.controller.initialize(fl_ctx)
 
                     self.log_info(fl_ctx, "Workflow {} ({}) started".format(wf.id, type(wf.controller)))
                     self.log_debug(fl_ctx, "firing event EventType.START_WORKFLOW")
@@ -381,7 +380,10 @@ class ServerRunner(TBI):
                 if self.current_wf is None:
                     return
 
-                self.current_wf.controller.communicator.handle_dead_job(client_name=client_name, fl_ctx=fl_ctx)
+                fl_ctx.set_prop(FLContextKey.DEAD_JOB_CLIENT_NAME, client_name)
+                self.log_debug(fl_ctx, "firing event EventType.JOB_DEAD")
+                self.fire_event(EventType.JOB_DEAD, fl_ctx)
+
             except Exception as e:
                 self.log_exception(
                     fl_ctx, f"Error processing dead job by workflow {self.current_wf.id}: {secure_format_exception(e)}"

@@ -144,7 +144,7 @@ class ModelController(Controller, FLComponentWrapper):
         self.event(AppEventType.INITIAL_MODEL_LOADED)
 
         self.engine = self.fl_ctx.get_engine()
-        self.initialize()
+        FLComponentWrapper.initialize(self)
 
     def _build_shareable(self, data: FLModel = None) -> Shareable:
         if not data:  # if no data is given, send self.model

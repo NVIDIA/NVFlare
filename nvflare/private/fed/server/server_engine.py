@@ -721,8 +721,8 @@ class ServerEngine(ServerEngineInternalSpec):
 
         return f"reset the server error stats for job: {job_id}"
 
-    def _send_admin_requests(self, requests, timeout_secs=10) -> List[ClientReply]:
-        return self.server.admin_server.send_requests(requests, timeout_secs=timeout_secs)
+    def _send_admin_requests(self, requests, fl_ctx: FLContext, timeout_secs=10) -> List[ClientReply]:
+        return self.server.admin_server.send_requests(requests, fl_ctx, timeout_secs=timeout_secs)
 
     def check_client_resources(self, job: Job, resource_reqs, fl_ctx: FLContext) -> Dict[str, Tuple[bool, str]]:
         requests = {}
@@ -737,7 +737,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 requests.update({client.token: request})
         replies = []
         if requests:
-            replies = self._send_admin_requests(requests, 15)
+            replies = self._send_admin_requests(requests, fl_ctx, 15)
         result = {}
         for r in replies:
             site_name = r.client_name
@@ -760,12 +760,14 @@ class ServerEngine(ServerEngineInternalSpec):
     def _make_message_for_check_resource(self, job, resource_requirements, fl_ctx):
         request = Message(topic=TrainingTopic.CHECK_RESOURCE, body=resource_requirements)
         request.set_header(RequestHeader.JOB_ID, job.job_id)
+        request.set_header(RequestHeader.REQUIRE_AUTHZ, "true")
+        request.set_header(RequestHeader.ADMIN_COMMAND, AdminCommandNames.CHECK_RESOURCES)
 
         set_message_security_data(request, job, fl_ctx)
         return request
 
     def cancel_client_resources(
-        self, resource_check_results: Dict[str, Tuple[bool, str]], resource_reqs: Dict[str, dict]
+        self, resource_check_results: Dict[str, Tuple[bool, str]], resource_reqs: Dict[str, dict], fl_ctx: FLContext
     ):
         requests = {}
         for site_name, result in resource_check_results.items():
@@ -778,9 +780,9 @@ class ServerEngine(ServerEngineInternalSpec):
                 if client:
                     requests.update({client.token: request})
         if requests:
-            _ = self._send_admin_requests(requests)
+            _ = self._send_admin_requests(requests, fl_ctx)
 
-    def start_client_job(self, job_id, client_sites):
+    def start_client_job(self, job_id, client_sites, fl_ctx: FLContext):
         requests = {}
         for site, dispatch_info in client_sites.items():
             resource_requirement = dispatch_info.resource_requirements
@@ -793,7 +795,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 requests.update({client.token: request})
         replies = []
         if requests:
-            replies = self._send_admin_requests(requests, timeout_secs=20)
+            replies = self._send_admin_requests(requests, fl_ctx, timeout_secs=20)
         return replies
 
     def stop_all_jobs(self):
