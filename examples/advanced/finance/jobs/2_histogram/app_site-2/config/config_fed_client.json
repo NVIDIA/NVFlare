@@ -3,14 +3,15 @@
     "executors": [
         {
             "tasks": [
-                "train"
+                "config",
+                "start"
             ],
             "executor": {
                 "id": "Executor",
-                "name": "FedXGBHistogramExecutor",
+                "path": "nvflare.app_opt.xgboost.histogram_based_v2.executor.FedXGBHistogramExecutor",
                 "args": {
                     "data_loader_id": "dataloader",
-                    "num_rounds": 100,
+                    "model_file_name": "test.model.json",
                     "early_stopping_rounds": 2,
                     "xgb_params": {
                         "max_depth": 8,
