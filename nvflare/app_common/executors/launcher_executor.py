@@ -42,7 +42,7 @@ class LauncherExecutor(TaskExchanger):
         launch_timeout: Optional[float] = None,
         task_wait_timeout: Optional[float] = None,
         last_result_transfer_timeout: float = 300.0,
-        external_setup_timeout: float = 60.0,
+        external_pre_init_timeout: float = 60.0,
         peer_read_timeout: Optional[float] = 60.0,
         monitor_interval: float = 1.0,
         read_interval: float = 0.5,
@@ -65,7 +65,7 @@ class LauncherExecutor(TaskExchanger):
             task_wait_timeout (Optional[float]): Timeout for retrieving the task result (None for no timeout).
             last_result_transfer_timeout (float): Timeout for transmitting the last result from an external process.
                 This value should be greater than the time needed for sending the whole result.
-            external_setup_timeout (float): Time to wait for external process to start.
+            external_pre_init_timeout (float): Time to wait for external process before it calls flare.init().
             peer_read_timeout (float, optional): time to wait for peer to accept sent message.
             monitor_interval (float): Interval for monitoring the launcher.
             read_interval (float): Interval for reading from the pipe.
@@ -97,7 +97,7 @@ class LauncherExecutor(TaskExchanger):
         self._launcher_finish = False
         self._launcher_finish_time = None
         self._last_result_transfer_timeout = last_result_transfer_timeout
-        self._external_setup_timeout = external_setup_timeout
+        self._external_pre_init_timeout = external_pre_init_timeout
         self._received_result = Event()
         self._job_end = False
 
@@ -277,14 +277,15 @@ class LauncherExecutor(TaskExchanger):
     def _wait_external_setup(self, task_name: str, fl_ctx: FLContext, abort_signal: Signal):
         start_time = time.time()
         while True:
-            if self._external_setup_timeout and time.time() - start_time >= self._external_setup_timeout:
+            if self._external_pre_init_timeout and time.time() - start_time >= self._external_pre_init_timeout:
                 self.log_error(
-                    fl_ctx, f"External execution is not set up within timeout: {self._external_setup_timeout}"
+                    fl_ctx,
+                    f"External process has not called flare.init within timeout: {self._external_pre_init_timeout}",
                 )
                 return False
 
             if abort_signal.triggered:
-                self.log_info(fl_ctx, "External execution is not set up but abort signal is triggered.")
+                self.log_info(fl_ctx, "External execution has not called flare.init but abort signal is triggered.")
                 return False
 
             if self.peer_is_up_or_dead():
@@ -292,7 +293,9 @@ class LauncherExecutor(TaskExchanger):
 
             run_status = self.launcher.check_run_status(task_name, fl_ctx)
             if run_status != LauncherRunStatus.RUNNING:
-                self.log_info(fl_ctx, f"External execution is not set up and run status becomes {run_status}.")
+                self.log_info(
+                    fl_ctx, f"External process has not called flare.init and run status becomes {run_status}."
+                )
                 return False
 
             time.sleep(0.1)

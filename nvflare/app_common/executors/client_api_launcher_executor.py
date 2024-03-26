@@ -30,7 +30,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         launch_timeout: Optional[float] = None,
         task_wait_timeout: Optional[float] = None,
         last_result_transfer_timeout: float = 300.0,
-        external_setup_timeout: float = 60.0,
+        external_pre_init_timeout: float = 60.0,
         peer_read_timeout: Optional[float] = 60.0,
         monitor_interval: float = 0.01,
         read_interval: float = 0.5,
@@ -56,7 +56,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             task_wait_timeout (Optional[float]): Timeout for retrieving the task result (None for no timeout).
             last_result_transfer_timeout (float): Timeout for transmitting the last result from an external process.
                 This value should be greater than the time needed for sending the whole result.
-            external_setup_timeout (float): Time to wait for external process to start.
+            external_pre_init_timeout (float): Time to wait for external process before it calls flare.init().
             peer_read_timeout (float, optional): time to wait for peer to accept sent message.
             monitor_interval (float): Interval for monitoring the launcher.
             read_interval (float): Interval for reading from the pipe.
@@ -83,7 +83,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             launch_timeout=launch_timeout,
             task_wait_timeout=task_wait_timeout,
             last_result_transfer_timeout=last_result_transfer_timeout,
-            external_setup_timeout=external_setup_timeout,
+            external_pre_init_timeout=external_pre_init_timeout,
             peer_read_timeout=peer_read_timeout,
             monitor_interval=monitor_interval,
             read_interval=read_interval,
