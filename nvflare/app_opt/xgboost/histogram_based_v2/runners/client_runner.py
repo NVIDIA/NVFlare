@@ -38,7 +38,7 @@ class XGBoostParams:
             xgb_params: This dict is passed to `xgboost.train()` as the first argument `params`.
                 It contains all the Booster parameters.
                 Please refer to XGBoost documentation for details:
-                https://xgboost.readthedocs.io/en/stable/python/python_api.html#module-xgboost.training
+                https://xgboost.readthedocs.io/en/stable/parameter.html
         """
         self.num_rounds = num_rounds
         self.early_stopping_rounds = early_stopping_rounds
@@ -64,10 +64,11 @@ class XGBClientRunner(XGBRunner, FLComponent):
             xgb_params: This dict is passed to `xgboost.train()` as the first argument `params`.
                 It contains all the Booster parameters.
                 Please refer to XGBoost documentation for details:
-                https://xgboost.readthedocs.io/en/stable/python/python_api.html#module-xgboost.training
+                https://xgboost.readthedocs.io/en/stable/parameter.html
             data_loader_id: the ID points to XGBDataLoader.
             verbose_eval: verbose_eval in xgboost.train
-            use_gpus: flag to enable gpu training
+            use_gpus (bool): A convenient flag to enable gpu training, if gpu device is specified in
+                the `xgb_params` then this flag can be ignored.
             metrics_writer_id: the ID points to a LogWriter, if provided, a MetricsCallback will be added.
                 Users can then use the receivers from nvflare.app_opt.tracking.
         """
