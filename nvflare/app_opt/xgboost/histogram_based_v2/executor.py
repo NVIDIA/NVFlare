@@ -16,6 +16,12 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_opt.xgboost.histogram_based_v2.adaptor_executor import XGBExecutor
 from nvflare.app_opt.xgboost.histogram_based_v2.adaptors.grpc_client_adaptor import GrpcClientAdaptor
 from nvflare.app_opt.xgboost.histogram_based_v2.runners.client_runner import XGBClientRunner
+from nvflare.fuel.utils.validation_utils import (
+    check_non_negative_int,
+    check_object_type,
+    check_positive_number,
+    check_str,
+)
 
 
 class FedXGBHistogramExecutor(XGBExecutor):
@@ -24,13 +30,13 @@ class FedXGBHistogramExecutor(XGBExecutor):
         early_stopping_rounds,
         xgb_params: dict,
         data_loader_id: str,
-        sender_id: str = None,
-        verbose_eval: bool = False,
-        use_gpus: bool = False,
-        metrics_writer_id: str = None,
+        verbose_eval=False,
+        use_gpus=False,
+        per_msg_timeout=10.0,
+        tx_timeout=100.0,
         model_file_name="model.json",
+        metrics_writer_id: str = None,
         in_process: bool = True,
-        req_timeout=100.0,
     ):
         """
 
@@ -48,19 +54,37 @@ class FedXGBHistogramExecutor(XGBExecutor):
                 Users can then use the receivers from nvflare.app_opt.tracking.
             model_file_name (str): where to save the model.
             in_process (bool): Specifies whether to start the `XGBRunner` in the same process or not.
-            req_timeout: Request timeout
+            per_msg_timeout: timeout for sending one message
+            tx_timeout: transaction timeout
         """
         XGBExecutor.__init__(
             self,
             adaptor_component_id="",
-            sender_id=sender_id,
-            req_timeout=req_timeout,
         )
+
+        if early_stopping_rounds is not None:
+            check_non_negative_int("early_stopping_rounds", early_stopping_rounds)
+
+        if xgb_params is not None:
+            check_object_type("xgb_params", xgb_params, dict)
+
+        check_str("data_loader_id", data_loader_id)
+        check_positive_number("per_msg_timeout", per_msg_timeout)
+        if tx_timeout:
+            check_positive_number("tx_timeout", tx_timeout)
+
+        check_str("model_file_name", model_file_name)
+
+        if metrics_writer_id:
+            check_str("metrics_writer_id", metrics_writer_id)
+
         self.early_stopping_rounds = early_stopping_rounds
         self.xgb_params = xgb_params
         self.data_loader_id = data_loader_id
         self.verbose_eval = verbose_eval
         self.use_gpus = use_gpus
+        self.per_msg_timeout = per_msg_timeout
+        self.tx_timeout = tx_timeout
         self.model_file_name = model_file_name
         self.in_process = in_process
         self.metrics_writer_id = metrics_writer_id
@@ -82,7 +106,8 @@ class FedXGBHistogramExecutor(XGBExecutor):
         adaptor = GrpcClientAdaptor(
             int_server_grpc_options=self.int_server_grpc_options,
             in_process=self.in_process,
-            req_timeout=self.req_timeout,
+            per_msg_timeout=self.per_msg_timeout,
+            tx_timeout=self.tx_timeout,
         )
         adaptor.set_runner(runner)
         return adaptor

@@ -219,7 +219,6 @@ class XGBController(Controller):
             message_handle_func=self._process_client_done,
         )
 
-        ReliableMessage.enable(fl_ctx)
         ReliableMessage.register_request_handler(
             topic=Constant.TOPIC_XGB_REQUEST,
             handler_f=self._process_xgb_request,

@@ -132,7 +132,7 @@ class GrpcServerAdaptor(XGBServerAdaptor):
         if not port:
             raise RuntimeError("failed to get a port for XGB server")
 
-        server_addr = f"localhost:{port}"
+        server_addr = f"127.0.0.1:{port}"
         self._start_server(addr=server_addr, port=port)
 
         # start XGB client

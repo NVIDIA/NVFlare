@@ -12,12 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.apis.utils.sender import Sender
 from nvflare.app_opt.xgboost.histogram_based_v2.adaptor import XGBAdaptor, XGBClientAdaptor, XGBServerAdaptor
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.runner import XGBRunner
@@ -72,7 +71,7 @@ class TestXGBServerAdaptor:
 @patch.multiple(XGBClientAdaptor, __abstractmethods__=set())
 class TestXGBClientAdaptor:
     def test_configure(self):
-        xgb_adaptor = XGBClientAdaptor(10)
+        xgb_adaptor = XGBClientAdaptor(10, 100)
         config = {Constant.CONF_KEY_WORLD_SIZE: 66, Constant.CONF_KEY_RANK: 44, Constant.CONF_KEY_NUM_ROUNDS: 100}
         ctx = MockEngine().new_context()
         xgb_adaptor.configure(config, ctx)
@@ -81,17 +80,14 @@ class TestXGBClientAdaptor:
         assert xgb_adaptor.num_rounds == 100
 
     def test_send(self):
-        xgb_adaptor = XGBClientAdaptor(10)
+        xgb_adaptor = XGBClientAdaptor(10, 100)
         ctx = MockEngine().new_context()
         config = {Constant.CONF_KEY_WORLD_SIZE: 66, Constant.CONF_KEY_RANK: 44, Constant.CONF_KEY_NUM_ROUNDS: 100}
         xgb_adaptor.configure(config, ctx)
-        sender = Mock(spec=Sender)
         reply = Shareable()
         reply.set_header(Constant.MSG_KEY_XGB_OP, "")
         reply[Constant.PARAM_KEY_RCV_BUF] = b"hello"
-        sender.send_to_server.return_value = reply
+        xgb_adaptor._send_request.return_value = reply
         abort_signal = Signal()
         xgb_adaptor.set_abort_signal(abort_signal)
-        xgb_adaptor.set_sender(sender)
-        assert xgb_adaptor.sender == sender
         assert xgb_adaptor._send_request("", Shareable()) == b"hello"

@@ -22,9 +22,10 @@ from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.apis.utils.sender import Sender
+from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.runner import XGBRunner
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.validation_utils import check_non_negative_int, check_object_type, check_positive_int
 
 
@@ -280,29 +281,16 @@ class XGBClientAdaptor(XGBAdaptor, ABC):
     XGBClientAdaptor specifies commonly required methods for client adaptor implementations.
     """
 
-    def __init__(self, req_timeout: float):
+    def __init__(self, per_msg_timeout: float, tx_timeout: float):
         """Constructor of XGBClientAdaptor"""
         XGBAdaptor.__init__(self)
         self.engine = None
-        self.sender = None
         self.stopped = False
         self.rank = None
         self.num_rounds = None
         self.world_size = None
-        self.req_timeout = req_timeout
-
-    def set_sender(self, sender: Sender):
-        """Set the sender to be used to send XGB operation requests to the server.
-
-        Args:
-            sender: the sender to be set
-
-        Returns: None
-
-        """
-        if not isinstance(sender, Sender):
-            raise TypeError(f"sender must be Sender but got {type(sender)}")
-        self.sender = sender
+        self.per_msg_timeout = per_msg_timeout
+        self.tx_timeout = tx_timeout
 
     def configure(self, config: dict, fl_ctx: FLContext):
         """Called by XGB Executor to configure the target.
@@ -352,8 +340,14 @@ class XGBClientAdaptor(XGBAdaptor, ABC):
         req.set_header(Constant.MSG_KEY_XGB_OP, op)
 
         with self.engine.new_context() as fl_ctx:
-            reply = self.sender.send_to_server(
-                Constant.TOPIC_XGB_REQUEST, req, self.req_timeout, fl_ctx, self.abort_signal
+            reply = ReliableMessage.send_request(
+                target=FQCN.ROOT_SERVER,
+                topic=Constant.TOPIC_XGB_REQUEST,
+                request=req,
+                per_msg_timeout=self.per_msg_timeout,
+                tx_timeout=self.tx_timeout,
+                abort_signal=self.abort_signal,
+                fl_ctx=fl_ctx,
             )
 
         if isinstance(reply, Shareable):
