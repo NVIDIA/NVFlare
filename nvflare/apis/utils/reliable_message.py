@@ -23,6 +23,7 @@ from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable, mak
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import generate_log_message
 from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.utils.validation_utils import check_positive_number
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 # Operation Types
@@ -34,7 +35,7 @@ OP_REPLY = "reply"
 HEADER_OP = "rm.op"
 HEADER_TOPIC = "rm.topic"
 HEADER_TX_ID = "rm.tx_id"
-HEADER_MSG_TIMEOUT = "rm.msg_timeout"
+HEADER_PER_MSG_TIMEOUT = "rm.per_msg_timeout"
 HEADER_TX_TIMEOUT = "rm.tx_timeout"
 HEADER_STATUS = "rm.status"
 
@@ -53,11 +54,12 @@ PROP_KEY_TX_ID = "RM.TX_ID"
 
 
 def _extract_result(reply: dict, target: str):
+    err_rc = ReturnCode.COMMUNICATION_ERROR
     if not isinstance(reply, dict):
-        return None, None
+        return make_reply(err_rc), err_rc
     result = reply.get(target)
     if not result:
-        return None, None
+        return make_reply(err_rc), err_rc
     return result, result.get_return_code()
 
 
@@ -72,7 +74,7 @@ def _error_reply(rc: str, error: str):
 class _RequestReceiver:
     """This class handles reliable message request on the receiving end"""
 
-    def __init__(self, topic, request_handler_f, executor, msg_timeout, tx_timeout):
+    def __init__(self, topic, request_handler_f, executor, per_msg_timeout, tx_timeout):
         """The constructor
 
         Args:
@@ -84,7 +86,7 @@ class _RequestReceiver:
         self.topic = topic
         self.request_handler_f = request_handler_f
         self.executor = executor
-        self.msg_timeout = msg_timeout
+        self.per_msg_timeout = per_msg_timeout
         self.tx_timeout = tx_timeout
         self.rcv_time = None
         self.result = None
@@ -102,7 +104,7 @@ class _RequestReceiver:
             # it is possible that a new request for the same tx is received while we are processing the previous one
             if not self.rcv_time:
                 self.rcv_time = time.time()
-                self.msg_timeout = request.get_header(HEADER_MSG_TIMEOUT)
+                self.per_msg_timeout = request.get_header(HEADER_PER_MSG_TIMEOUT)
                 self.tx_timeout = request.get_header(HEADER_TX_TIMEOUT)
 
                 # start processing
@@ -145,12 +147,12 @@ class _RequestReceiver:
         engine = fl_ctx.get_engine()
         self.replying = True
         start_time = time.time()
-        ReliableMessage.info(fl_ctx, f"try to send reply back to {self.source}: {self.msg_timeout=}")
+        ReliableMessage.info(fl_ctx, f"try to send reply back to {self.source}: {self.per_msg_timeout=}")
         ack = engine.send_aux_request(
             targets=[self.source],
             topic=TOPIC_RELIABLE_REPLY,
             request=self.result,
-            timeout=self.msg_timeout,
+            timeout=self.per_msg_timeout,
             fl_ctx=fl_ctx,
         )
         time_spent = time.time() - start_time
@@ -184,10 +186,11 @@ class _RequestReceiver:
 
 
 class _ReplyReceiver:
-    def __init__(self, tx_id: str, max_tx_time: float):
+    def __init__(self, tx_id: str, per_msg_timeout: float, tx_timeout: float):
         self.tx_id = tx_id
         self.tx_start_time = time.time()
-        self.max_tx_time = max_tx_time
+        self.tx_timeout = tx_timeout
+        self.per_msg_timeout = per_msg_timeout
         self.result = None
         self.result_ready = threading.Event()
 
@@ -233,13 +236,13 @@ class ReliableMessage:
         with cls._tx_lock:
             receiver = cls._req_receivers.get(tx_id)
             if not receiver:
-                msg_timeout = request.get_header(HEADER_MSG_TIMEOUT)
-                if not msg_timeout:
-                    raise RuntimeError("missing msg_timeout in request")
+                per_msg_timeout = request.get_header(HEADER_PER_MSG_TIMEOUT)
+                if not per_msg_timeout:
+                    raise RuntimeError("missing per_msg_timeout in request")
                 tx_timeout = request.get_header(HEADER_TX_TIMEOUT)
                 if not tx_timeout:
                     raise RuntimeError("missing tx_timeout in request")
-                receiver = _RequestReceiver(topic, handler_f, cls._executor, msg_timeout, tx_timeout)
+                receiver = _RequestReceiver(topic, handler_f, cls._executor, per_msg_timeout, tx_timeout)
                 cls._req_receivers[tx_id] = receiver
             return receiver
 
@@ -284,6 +287,14 @@ class ReliableMessage:
 
     @classmethod
     def enable(cls, fl_ctx: FLContext):
+        """Enable ReliableMessage. This method can be called multiple times, but only the 1st call has effect.
+
+        Args:
+            fl_ctx: FL Context
+
+        Returns:
+
+        """
         if cls._enabled:
             return
 
@@ -332,6 +343,11 @@ class ReliableMessage:
 
     @classmethod
     def shutdown(cls):
+        """Shutdown ReliableMessage.
+
+        Returns:
+
+        """
         if not cls._shutdown_asked:
             cls._shutdown_asked = True
             cls._executor.shutdown(cancel_futures=True, wait=False)
@@ -362,20 +378,38 @@ class ReliableMessage:
         target: str,
         topic: str,
         request: Shareable,
-        timeout: float,
+        per_msg_timeout: float,
+        tx_timeout: float,
         abort_signal: Signal,
         fl_ctx: FLContext,
-        max_tx_time=None,
     ) -> Shareable:
-        if not max_tx_time or max_tx_time <= timeout:
+        """Send a reliable request.
+
+        Args:
+            target: the target cell of this request
+            topic: topic of the request;
+            request: the request to be sent
+            per_msg_timeout: timeout when sending a message
+            tx_timeout: the timeout of the whole transaction
+            abort_signal: abort signal
+            fl_ctx: the FL context
+
+        Returns: reply from the peer.
+
+        """
+        check_positive_number("per_msg_timeout", per_msg_timeout)
+        if tx_timeout:
+            check_positive_number("tx_timeout", tx_timeout)
+
+        if not tx_timeout or tx_timeout <= per_msg_timeout:
             # simple aux message
-            cls.info(fl_ctx, f"send request with simple Aux Msg: {timeout=} {max_tx_time=}")
+            cls.info(fl_ctx, f"send request with simple Aux Msg: {per_msg_timeout=} {tx_timeout=}")
             engine = fl_ctx.get_engine()
             reply = engine.send_aux_request(
                 targets=[target],
                 topic=topic,
                 request=request,
-                timeout=timeout,
+                timeout=per_msg_timeout,
                 fl_ctx=fl_ctx,
             )
             result, _ = _extract_result(reply, target)
@@ -383,16 +417,16 @@ class ReliableMessage:
 
         tx_id = str(uuid.uuid4())
         fl_ctx.set_prop(key=PROP_KEY_TX_ID, value=tx_id, private=True, sticky=False)
-        cls.info(fl_ctx, f"send request with Reliable Msg {timeout=} {max_tx_time=}")
-        receiver = _ReplyReceiver(tx_id, max_tx_time)
+        cls.info(fl_ctx, f"send request with Reliable Msg {per_msg_timeout=} {tx_timeout=}")
+        receiver = _ReplyReceiver(tx_id, per_msg_timeout, tx_timeout)
         cls._reply_receivers[tx_id] = receiver
         request.set_header(HEADER_TX_ID, tx_id)
         request.set_header(HEADER_OP, OP_REQUEST)
         request.set_header(HEADER_TOPIC, topic)
-        request.set_header(HEADER_MSG_TIMEOUT, timeout)
-        request.set_header(HEADER_TX_TIMEOUT, max_tx_time)
+        request.set_header(HEADER_PER_MSG_TIMEOUT, per_msg_timeout)
+        request.set_header(HEADER_TX_TIMEOUT, tx_timeout)
         try:
-            result = cls._send_request(target, request, timeout, abort_signal, fl_ctx, receiver)
+            result = cls._send_request(target, request, abort_signal, fl_ctx, receiver)
         except Exception as e:
             cls.error(fl_ctx, f"exception sending reliable message: {secure_format_traceback()}")
             result = _error_reply(ReturnCode.ERROR, secure_format_exception(e))
@@ -404,7 +438,6 @@ class ReliableMessage:
         cls,
         target: str,
         request: Shareable,
-        timeout: float,
         abort_signal: Signal,
         fl_ctx: FLContext,
         receiver: _ReplyReceiver,
@@ -412,24 +445,26 @@ class ReliableMessage:
         engine = fl_ctx.get_engine()
 
         # keep sending the request until a positive ack or result is received
+        tx_timeout = receiver.tx_timeout
+        per_msg_timeout = receiver.per_msg_timeout
         num_tries = 0
         while True:
             if abort_signal and abort_signal.triggered:
                 cls.info(fl_ctx, "send_request abort triggered")
                 return make_reply(ReturnCode.TASK_ABORTED)
 
-            if time.time() - receiver.tx_start_time >= receiver.max_tx_time:
-                cls.error(fl_ctx, f"aborting send_request since exceeded {receiver.max_tx_time=}")
+            if time.time() - receiver.tx_start_time >= receiver.tx_timeout:
+                cls.error(fl_ctx, f"aborting send_request since exceeded {tx_timeout=}")
                 return make_reply(ReturnCode.COMMUNICATION_ERROR)
 
             if num_tries > 0:
-                cls.info(fl_ctx, f"retry #{num_tries} sending request: {timeout=}")
+                cls.info(fl_ctx, f"retry #{num_tries} sending request: {per_msg_timeout=}")
 
             ack = engine.send_aux_request(
                 targets=[target],
                 topic=TOPIC_RELIABLE_REQUEST,
                 request=request,
-                timeout=timeout,
+                timeout=per_msg_timeout,
                 fl_ctx=fl_ctx,
             )
             ack, rc = _extract_result(ack, target)
@@ -451,8 +486,8 @@ class ReliableMessage:
                     cls.info(fl_ctx, f"received status ack: {rc=} {status=}")
                     break
 
-            if time.time() + cls._query_interval - receiver.tx_start_time >= receiver.max_tx_time:
-                cls.error(fl_ctx, f"aborting send_request since it will exceed {receiver.max_tx_time=}")
+            if time.time() + cls._query_interval - receiver.tx_start_time >= tx_timeout:
+                cls.error(fl_ctx, f"aborting send_request since it will exceed {tx_timeout=}")
                 return make_reply(ReturnCode.COMMUNICATION_ERROR)
 
             # we didn't get a positive ack - wait a short time and re-send the request.
@@ -466,17 +501,19 @@ class ReliableMessage:
                 time.sleep(0.1)
 
         cls.info(fl_ctx, "request was received by the peer - will query for result")
-        return cls._query_result(target, timeout, abort_signal, fl_ctx, receiver)
+        return cls._query_result(target, abort_signal, fl_ctx, receiver)
 
     @classmethod
     def _query_result(
         cls,
         target: str,
-        timeout: float,
         abort_signal: Signal,
         fl_ctx: FLContext,
         receiver: _ReplyReceiver,
     ) -> Shareable:
+        tx_timeout = receiver.tx_timeout
+        per_msg_timeout = receiver.per_msg_timeout
+
         # Querying phase - try to get result
         engine = fl_ctx.get_engine()
         query = Shareable()
@@ -487,9 +524,9 @@ class ReliableMessage:
         last_query_time = 0
         short_wait = 0.1
         while True:
-            if time.time() - receiver.tx_start_time > receiver.max_tx_time:
-                cls.error(fl_ctx, f"aborted query since exceeded {receiver.max_tx_time=}")
-                return _error_reply(ReturnCode.COMMUNICATION_ERROR, f"max tx time ({receiver.max_tx_time}) reached")
+            if time.time() - receiver.tx_start_time > tx_timeout:
+                cls.error(fl_ctx, f"aborted query since exceeded {tx_timeout=}")
+                return _error_reply(ReturnCode.COMMUNICATION_ERROR, f"max tx timeout ({tx_timeout}) reached")
 
             if receiver.result_ready.wait(short_wait):
                 # we already received result sent by the target.
@@ -509,12 +546,12 @@ class ReliableMessage:
             # send a query. The ack of the query could be the result itself, or a status report.
             # Note: the ack could be the result because we failed to receive the result sent by the target earlier.
             num_tries += 1
-            cls.info(fl_ctx, f"query #{num_tries}: try to get result from {target}: {timeout=}")
+            cls.info(fl_ctx, f"query #{num_tries}: try to get result from {target}: {per_msg_timeout=}")
             ack = engine.send_aux_request(
                 targets=[target],
                 topic=TOPIC_RELIABLE_REQUEST,
                 request=query,
-                timeout=timeout,
+                timeout=per_msg_timeout,
                 fl_ctx=fl_ctx,
             )
             ack, rc = _extract_result(ack, target)

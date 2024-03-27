@@ -26,7 +26,7 @@ class FedXGBHistogramExecutor(XGBExecutor):
         data_loader_id: str,
         verbose_eval=False,
         use_gpus=False,
-        req_timeout=10.0,
+        per_msg_timeout=10.0,
         tx_timeout=100.0,
         model_file_name="model.json",
         metrics_writer_id: str = None,
@@ -48,7 +48,7 @@ class FedXGBHistogramExecutor(XGBExecutor):
                 Users can then use the receivers from nvflare.app_opt.tracking.
             model_file_name (str): where to save the model.
             in_process (bool): Specifies whether to start the `XGBRunner` in the same process or not.
-            req_timeout: Request timeout
+            per_msg_timeout: timeout for sending one message
             tx_timeout: transaction timeout
         """
         XGBExecutor.__init__(
@@ -60,7 +60,7 @@ class FedXGBHistogramExecutor(XGBExecutor):
         self.data_loader_id = data_loader_id
         self.verbose_eval = verbose_eval
         self.use_gpus = use_gpus
-        self.req_timeout = req_timeout
+        self.per_msg_timeout = per_msg_timeout
         self.tx_timeout = tx_timeout
         self.model_file_name = model_file_name
         self.in_process = in_process
@@ -83,7 +83,7 @@ class FedXGBHistogramExecutor(XGBExecutor):
         adaptor = GrpcClientAdaptor(
             int_server_grpc_options=self.int_server_grpc_options,
             in_process=self.in_process,
-            req_timeout=self.req_timeout,
+            per_msg_timeout=self.per_msg_timeout,
             tx_timeout=self.tx_timeout,
         )
         adaptor.set_runner(runner)

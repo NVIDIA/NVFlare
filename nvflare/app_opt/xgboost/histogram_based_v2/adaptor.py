@@ -281,7 +281,7 @@ class XGBClientAdaptor(XGBAdaptor, ABC):
     XGBClientAdaptor specifies commonly required methods for client adaptor implementations.
     """
 
-    def __init__(self, req_timeout: float, tx_timeout: float):
+    def __init__(self, per_msg_timeout: float, tx_timeout: float):
         """Constructor of XGBClientAdaptor"""
         XGBAdaptor.__init__(self)
         self.engine = None
@@ -289,7 +289,7 @@ class XGBClientAdaptor(XGBAdaptor, ABC):
         self.rank = None
         self.num_rounds = None
         self.world_size = None
-        self.req_timeout = req_timeout
+        self.per_msg_timeout = per_msg_timeout
         self.tx_timeout = tx_timeout
 
     def configure(self, config: dict, fl_ctx: FLContext):
@@ -344,8 +344,8 @@ class XGBClientAdaptor(XGBAdaptor, ABC):
                 target=FQCN.ROOT_SERVER,
                 topic=Constant.TOPIC_XGB_REQUEST,
                 request=req,
-                timeout=self.req_timeout,
-                max_tx_time=self.tx_timeout,
+                per_msg_timeout=self.per_msg_timeout,
+                tx_timeout=self.tx_timeout,
                 abort_signal=self.abort_signal,
                 fl_ctx=fl_ctx,
             )

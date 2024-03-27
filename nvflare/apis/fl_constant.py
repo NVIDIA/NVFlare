@@ -460,9 +460,6 @@ class ConfigVarName:
     # client and server: query interval for reliable message
     RM_QUERY_INTERVAL = "rm_query_interval"
 
-    # client and server: max transaction time for RM requests
-    RM_MAX_TX_LIFE = "rm_max_tx_life"
-
 
 class SystemVarName:
     """
