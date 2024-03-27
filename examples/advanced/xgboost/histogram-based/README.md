@@ -59,6 +59,92 @@ overwrite the `xgb_train()` method.
 To use other dataset, can inherit the base class `XGBDataLoader` and
 implement the `load_data()` method.
 
+## GPU support
+By default, CPU based training is used.
+
+If the CUDA is installed on the site, tree construction and prediction can be
+accelerated using GPUs.
+
+To enable GPU accelerated training, in `config_fed_client` set the args of 
+`FedXGBHistogramExecutor` to `"use_gpus": true` and set `"tree_method": "hist"`
+in `xgb_params`.
+
+We can also use the `device` parameter to map each rank to a GPU device ordinal in `xgb_params`.
+For a single GPU, assuming it has enough memory, we can map each rank to the same device with `xgb_params["device"] = f"cuda:0"`.
+
+### Multi GPU support
+
+Multiple GPUs can be supported by running one NVFlare client for each GPU.
+
+In the `xgb_params`, we can set the `device` parameter to map each rank to a corresponding GPU
+device ordinal in with `xgb_params["device"] = f"cuda:{self.rank}"`
+
+Assuming there are 2 physical client sites, each with 2 GPUs (id 0 and 1).
+We can start 4 NVFlare client processes (site-1a, site-1b, site-2a, site-2b), one for each GPU.
+The job layout looks like this,
+::
+
+    xgb_multi_gpu_job
+    ├── app_server
+    │   └── config
+    │       └── config_fed_server.json
+    ├── app_site1_gpu0
+    │   └── config
+    │       └── config_fed_client.json
+    ├── app_site1_gpu1
+    │   └── config
+    │       └── config_fed_client.json
+    ├── app_site2_gpu0
+    │   └── config
+    │       └── config_fed_client.json
+    ├── app_site2_gpu1
+    │   └── config
+    │       └── config_fed_client.json
+    └── meta.json
+
+Each app is deployed to its own client site. Here is the `meta.json`,
+::
+
+    {
+      "name": "xgb_multi_gpu_job",
+      "resource_spec": {
+        "site-1a": {
+          "num_of_gpus": 1,
+          "mem_per_gpu_in_GiB": 1
+        },
+        "site-1b": {
+          "num_of_gpus": 1,
+          "mem_per_gpu_in_GiB": 1
+        },
+        "site-2a": {
+          "num_of_gpus": 1,
+          "mem_per_gpu_in_GiB": 1
+        },
+        "site-2b": {
+          "num_of_gpus": 1,
+          "mem_per_gpu_in_GiB": 1
+        }
+      },
+      "deploy_map": {
+        "app_server": [
+          "server"
+        ],
+        "app_site1_gpu0": [
+          "site-1a"
+        ],
+        "app_site1_gpu1": [
+          "site-1b"
+        ],
+        "app_site2_gpu0": [
+          "site-2a"
+        ],
+        "app_site2_gpu1": [
+          "site-2b"
+        ]
+      },
+      "min_clients": 4
+    }
+
 ## Loose integration
 
 We can use the NVFlare controller/executor just to launch the external xgboost

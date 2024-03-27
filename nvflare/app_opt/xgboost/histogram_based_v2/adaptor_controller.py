@@ -293,6 +293,9 @@ class XGBController(Controller):
         # Problem is that even if the exit_code is not 0, we can't say the job failed.
         if exit_code == 0:
             self.log_info(fl_ctx, f"XGB client is done with exit code {exit_code}")
+        elif exit_code == Constant.EXIT_CODE_CANT_START_XGB:
+            self.log_error(fl_ctx, "XGB client failed to start")
+            self.system_panic("XGB client failed to start", fl_ctx)
         else:
             self.log_warning(fl_ctx, f"XGB client is done with exit code {exit_code}")
 
