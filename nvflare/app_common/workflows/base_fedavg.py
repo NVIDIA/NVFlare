@@ -16,6 +16,7 @@ import random
 from typing import List
 
 from nvflare.apis.fl_constant import FLMetaKey
+from nvflare.apis.wf_controller_spec import WFControllerSpec
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.model import make_model_learnable
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
@@ -27,7 +28,7 @@ from nvflare.security.logging import secure_format_exception
 from .model_controller import ModelController
 
 
-class BaseFedAvg(ModelController):
+class BaseFedAvg(ModelController, WFControllerSpec):
     """The base controller for FedAvg Workflow. *Note*: This class is based on the experimental `ModelController`.
 
     Implements [FederatedAveraging](https://arxiv.org/abs/1602.05629).

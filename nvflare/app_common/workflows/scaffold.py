@@ -69,7 +69,7 @@ class Scaffold(BaseFedAvg):
             global_model = self.model
             global_model.meta[AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL] = self._global_ctrl_weights
 
-            results = self.send_model_and_wait(targets=clients, data=global_model)
+            results = self.send_model(targets=clients, data=global_model)
 
             aggregate_results = self.aggregate(results, aggregate_fn=scaffold_aggregate_fn)
 
