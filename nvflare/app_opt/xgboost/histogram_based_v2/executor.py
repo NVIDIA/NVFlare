@@ -16,6 +16,12 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_opt.xgboost.histogram_based_v2.adaptor_executor import XGBExecutor
 from nvflare.app_opt.xgboost.histogram_based_v2.adaptors.grpc_client_adaptor import GrpcClientAdaptor
 from nvflare.app_opt.xgboost.histogram_based_v2.runners.client_runner import XGBClientRunner
+from nvflare.fuel.utils.validation_utils import (
+    check_non_negative_int,
+    check_object_type,
+    check_positive_number,
+    check_str,
+)
 
 
 class FedXGBHistogramExecutor(XGBExecutor):
@@ -55,6 +61,23 @@ class FedXGBHistogramExecutor(XGBExecutor):
             self,
             adaptor_component_id="",
         )
+
+        if early_stopping_rounds is not None:
+            check_non_negative_int("early_stopping_rounds", early_stopping_rounds)
+
+        if xgb_params is not None:
+            check_object_type("xgb_params", xgb_params, dict)
+
+        check_str("data_loader_id", data_loader_id)
+        check_positive_number("per_msg_timeout", per_msg_timeout)
+        if tx_timeout:
+            check_positive_number("tx_timeout", tx_timeout)
+
+        check_str("model_file_name", model_file_name)
+
+        if metrics_writer_id:
+            check_str("metrics_writer_id", metrics_writer_id)
+
         self.early_stopping_rounds = early_stopping_rounds
         self.xgb_params = xgb_params
         self.data_loader_id = data_loader_id
