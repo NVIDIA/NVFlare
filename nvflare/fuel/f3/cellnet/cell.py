@@ -250,11 +250,47 @@ class Cell(StreamCell):
             self.logger.error(f"Can't encode {msg=} {exc=}")
             raise exc
 
-    def _send_request(self, channel, target, topic, request, timeout=10.0, secure=False, optional=False):
-        self._encode_message(request)
-        return self._send_one_request(channel, target, topic, request, timeout, secure, optional)
+    def _send_request(
+        self,
+        channel,
+        target,
+        topic,
+        request,
+        timeout=10.0,
+        secure=False,
+        optional=False,
+        wait_for_reply=True,
+    ):
+        """Stream one request to the target
 
-    def _send_one_request(self, channel, target, topic, request, timeout=10.0, secure=False, optional=False):
+        Args:
+            channel: message channel name
+            target: FQCN of the target cell
+            topic: topic of the message
+            request: request message
+            timeout: how long to wait
+            secure: is P2P security to be applied
+            optional: is the message optional
+            wait_for_reply: whether to wait for reply
+
+        Returns: if wait_for_reply, then reply data; otherwise only a bool to indicate whether the request
+        is sent successfully
+
+        """
+        self._encode_message(request)
+        return self._send_one_request(channel, target, topic, request, timeout, secure, optional, wait_for_reply)
+
+    def _send_one_request(
+        self,
+        channel,
+        target,
+        topic,
+        request,
+        timeout=10.0,
+        secure=False,
+        optional=False,
+        wait_for_reply=True,
+    ):
         req_id = str(uuid.uuid4())
         request.add_headers({StreamHeaderKey.STREAM_REQ_ID: req_id})
 
@@ -276,8 +312,13 @@ class Cell(StreamCell):
         sending_complete = self._future_wait(future, timeout)
         if not sending_complete:
             self.logger.info(f"{req_id=}: sending timeout {timeout=}")
-            return self._get_result(req_id)
+            if wait_for_reply:
+                return self._get_result(req_id)
+            else:
+                return False
         self.logger.debug(f"{req_id=}: sending complete")
+        if not wait_for_reply:
+            return True
 
         # waiting for receiving first byte
         self.logger.debug(f"{req_id=}: entering remote process wait {timeout=}")
