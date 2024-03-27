@@ -601,10 +601,14 @@ class SimulatorClientRunner(FLComponent):
         if gpu:
             command += " --gpu " + str(gpu)
         new_env = os.environ.copy()
-        if not sys.path[0]:
-            new_env["PYTHONPATH"] = os.pathsep.join(sys.path[1:])
+        # append custom to path_to_pass so won't affect sys.path
+        app_custom_folder = os.path.join(client_workspace, "custom")
+        path_to_pass = [p for p in sys.path]
+        path_to_pass.append(app_custom_folder)
+        if not path_to_pass[0]:
+            new_env["PYTHONPATH"] = os.pathsep.join(path_to_pass[1:])
         else:
-            new_env["PYTHONPATH"] = os.pathsep.join(sys.path)
+            new_env["PYTHONPATH"] = os.pathsep.join(path_to_pass)
         _ = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
 
         conn = self._create_connection(open_port, timeout=timeout)
