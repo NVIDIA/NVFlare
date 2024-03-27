@@ -11,6 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import inspect
+import json
+import shutil
 from typing import Dict
 import os
 
@@ -72,13 +75,41 @@ class FedJob:
         Returns:
 
         """
-        os.remove(job_root)
+        if os.path.exists(job_root):
+            shutil.rmtree(job_root, ignore_errors=True)
 
         for app_name, fed_app in self.fed_apps.items():
-            if fed_app.server_app:
-                server_config = os.path.join(job_root, self.job_name, app_name, FED_SERVER_JSON)
-                os.makedirs(server_config)
+            config_dir = os.path.join(job_root, self.job_name, app_name, CONFIG)
+            os.makedirs(config_dir, exist_ok=True)
 
-            if fed_app.client_app:
-                client_config = os.path.join(job_root, self.job_name, app_name, FED_CLIENT_JSON)
-                os.makedirs(client_config)
+            if fed_app.server_app:
+                server_app = {"format_version": 2}
+                server_app["components"] = []
+                for cid, component in fed_app.server_app.components.items():
+                    server_app["components"].append(
+                        {
+                            "id": cid,
+                            "path": component.__module__ + "." + component.__class__.__name__,
+                            "args": self._get_args(component)
+                        }
+                    )
+                server_config = os.path.join(config_dir, FED_SERVER_JSON)
+                with open(server_config, "w") as outfile:
+                    json_dump = json.dumps(server_app, indent=4)
+                    outfile.write(json_dump)
+
+            # if fed_app.client_app:
+            #     client_config = os.path.join(job_root, self.job_name, app_name, FED_CLIENT_JSON)
+            #     os.makedirs(client_config, exist_ok=True)
+
+    def _get_args(self, component):
+        constructor = component.__class__.__init__
+        parameters = inspect.signature(constructor).parameters
+        attrs = component.__dict__
+        args = {}
+        for param in parameters:
+            if param in attrs.keys() and parameters[param].default != attrs[param]:
+                args[param] = attrs[param]
+
+        return args
+

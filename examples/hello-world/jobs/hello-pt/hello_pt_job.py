@@ -87,6 +87,11 @@ class HelloPTJob:
         server_app.add_component("json_generator", component)
         return server_app
 
+    def export_job(self, job_root):
+        self.job.generate_job_config(job_root)
+
 
 if __name__ == '__main__':
     job = HelloPTJob()
+
+    job.export_job("/tmp/nvflare/jobs")
