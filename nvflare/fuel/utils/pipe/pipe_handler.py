@@ -61,7 +61,7 @@ class PipeHandler(object):
         heartbeat_interval=5.0,
         heartbeat_timeout=30.0,
         resend_interval=2.0,
-        max_resends=None,
+        max_resends=5,
         default_request_timeout=5.0,
     ):
         """Constructor of the PipeHandler.
@@ -166,6 +166,7 @@ class PipeHandler(object):
     def _send_to_pipe(self, msg: Message, timeout=None, abort_signal: Signal = None):
         pipe = self.pipe
         if not pipe:
+            self.logger.error("cannot send message to pipe since it's already closed")
             return False
 
         if not timeout or not pipe.can_resend() or not self.resend_interval:
@@ -181,6 +182,7 @@ class PipeHandler(object):
                 return sent
 
             if self.max_resends is not None and num_sends > self.max_resends:
+                self.logger.error(f"abort sending after {num_sends} tries")
                 return False
 
             if self.asked_to_stop:
@@ -310,6 +312,11 @@ class PipeHandler(object):
                     break
             else:
                 # is peer gone?
+                # ask the pipe for the last known active time of the peer
+                last_peer_active_time = self.pipe.get_last_peer_active_time()
+                if last_peer_active_time > self._last_heartbeat_received_time:
+                    self._last_heartbeat_received_time = last_peer_active_time
+
                 if (
                     self.heartbeat_timeout
                     and now - self._last_heartbeat_received_time > self.heartbeat_timeout
