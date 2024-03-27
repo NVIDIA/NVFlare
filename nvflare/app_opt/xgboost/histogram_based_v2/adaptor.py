@@ -25,8 +25,8 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.runner import XGBRunner
-from nvflare.fuel.utils.validation_utils import check_non_negative_int, check_object_type, check_positive_int
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.utils.validation_utils import check_non_negative_int, check_object_type, check_positive_int
 
 
 class XGBAdaptor(ABC, FLComponent):
@@ -347,7 +347,7 @@ class XGBClientAdaptor(XGBAdaptor, ABC):
                 timeout=self.req_timeout,
                 max_tx_time=self.tx_timeout,
                 abort_signal=self.abort_signal,
-                fl_ctx=fl_ctx
+                fl_ctx=fl_ctx,
             )
 
         if isinstance(reply, Shareable):

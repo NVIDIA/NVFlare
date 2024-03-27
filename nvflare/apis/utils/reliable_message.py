@@ -12,19 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import concurrent.futures
+import logging
 import threading
 import time
 import uuid
-import logging
 
+from nvflare.apis.fl_constant import ConfigVarName, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.fuel.utils.config_service import ConfigService
-from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import ConfigVarName, SystemConfigs
-from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.utils.fl_context_utils import generate_log_message
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 # Operation Types
@@ -35,8 +33,9 @@ OP_REPLY = "reply"
 # Reliable Message headers
 HEADER_OP = "rm.op"
 HEADER_TOPIC = "rm.topic"
-HEADER_TX = "rm.tx"
-HEADER_TIMEOUT = "rm.timeout"
+HEADER_TX_ID = "rm.tx_id"
+HEADER_MSG_TIMEOUT = "rm.msg_timeout"
+HEADER_TX_TIMEOUT = "rm.tx_timeout"
 HEADER_STATUS = "rm.status"
 
 # Status
@@ -73,7 +72,7 @@ def _error_reply(rc: str, error: str):
 class _RequestReceiver:
     """This class handles reliable message request on the receiving end"""
 
-    def __init__(self, topic, request_handler_f, executor, timeout):
+    def __init__(self, topic, request_handler_f, executor, msg_timeout, tx_timeout):
         """The constructor
 
         Args:
@@ -85,7 +84,8 @@ class _RequestReceiver:
         self.topic = topic
         self.request_handler_f = request_handler_f
         self.executor = executor
-        self.timeout = timeout
+        self.msg_timeout = msg_timeout
+        self.tx_timeout = tx_timeout
         self.rcv_time = None
         self.result = None
         self.source = None
@@ -93,7 +93,7 @@ class _RequestReceiver:
         self.reply_time = None
 
     def process(self, request: Shareable, fl_ctx: FLContext) -> Shareable:
-        self.tx_id = request.get_header(HEADER_TX)
+        self.tx_id = request.get_header(HEADER_TX_ID)
         op = request.get_header(HEADER_OP)
         peer_ctx = fl_ctx.get_peer_context()
         assert isinstance(peer_ctx, FLContext)
@@ -102,7 +102,8 @@ class _RequestReceiver:
             # it is possible that a new request for the same tx is received while we are processing the previous one
             if not self.rcv_time:
                 self.rcv_time = time.time()
-                self.timeout = request.get_header(HEADER_TIMEOUT)
+                self.msg_timeout = request.get_header(HEADER_MSG_TIMEOUT)
+                self.tx_timeout = request.get_header(HEADER_TX_TIMEOUT)
 
                 # start processing
                 ReliableMessage.info(fl_ctx, f"started processing request of topic {self.topic}")
@@ -132,27 +133,27 @@ class _RequestReceiver:
                     return self.result
             else:
                 # still in process
-                if time.time() - self.rcv_time > self.timeout:
+                if time.time() - self.rcv_time > self.tx_timeout:
                     # the process is taking too much time
-                    ReliableMessage.error(fl_ctx, f"aborting processing since exceeded max tx time {self.timeout}")
+                    ReliableMessage.error(fl_ctx, f"aborting processing since exceeded max tx time {self.tx_timeout}")
                     return _status_reply(STATUS_ABORTED)
                 else:
-                    ReliableMessage.error(fl_ctx, "got query: request is in-process")
+                    ReliableMessage.info(fl_ctx, "got query: request is in-process")
                     return _status_reply(STATUS_IN_PROCESS)
 
     def _try_reply(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
         self.replying = True
         start_time = time.time()
-        ReliableMessage.info(fl_ctx, f"try to send reply back to {self.source}: {self.timeout=}")
+        ReliableMessage.info(fl_ctx, f"try to send reply back to {self.source}: {self.msg_timeout=}")
         ack = engine.send_aux_request(
             targets=[self.source],
             topic=TOPIC_RELIABLE_REPLY,
             request=self.result,
-            timeout=self.timeout,
+            timeout=self.msg_timeout,
             fl_ctx=fl_ctx,
         )
-        time_spent = time.time()-start_time
+        time_spent = time.time() - start_time
         self.replying = False
         _, rc = _extract_result(ack, self.source)
         if rc == ReturnCode.OK:
@@ -161,8 +162,8 @@ class _RequestReceiver:
             ReliableMessage.info(fl_ctx, f"sent reply successfully in {time_spent} secs")
         else:
             ReliableMessage.error(
-                fl_ctx,
-                f"failed to send reply in {time_spent} secs: {rc=}; will wait for requester to query")
+                fl_ctx, f"failed to send reply in {time_spent} secs: {rc=}; will wait for requester to query"
+            )
 
     def _do_request(self, request: Shareable, fl_ctx: FLContext):
         start_time = time.time()
@@ -170,13 +171,11 @@ class _RequestReceiver:
         try:
             result = self.request_handler_f(self.topic, request, fl_ctx)
         except Exception as e:
-            ReliableMessage.error(
-                fl_ctx,
-                f"exception processing request: {secure_format_traceback()}")
+            ReliableMessage.error(fl_ctx, f"exception processing request: {secure_format_traceback()}")
             result = _error_reply(ReturnCode.EXECUTION_EXCEPTION, secure_format_exception(e))
 
         # send back
-        result.set_header(HEADER_TX, self.tx_id)
+        result.set_header(HEADER_TX_ID, self.tx_id)
         result.set_header(HEADER_OP, OP_REPLY)
         result.set_header(HEADER_TOPIC, self.topic)
         self.result = result
@@ -228,22 +227,25 @@ class ReliableMessage:
 
     @classmethod
     def _get_or_create_receiver(cls, topic: str, request: Shareable, handler_f) -> _RequestReceiver:
-        tx_id = request.get_header(HEADER_TX)
+        tx_id = request.get_header(HEADER_TX_ID)
         if not tx_id:
             raise RuntimeError("missing tx_id in request")
         with cls._tx_lock:
             receiver = cls._req_receivers.get(tx_id)
             if not receiver:
-                timeout = request.get_header(HEADER_TIMEOUT)
-                if not timeout:
-                    raise RuntimeError("missing timeout in request")
-                receiver = _RequestReceiver(topic, handler_f, cls._executor, timeout)
+                msg_timeout = request.get_header(HEADER_MSG_TIMEOUT)
+                if not msg_timeout:
+                    raise RuntimeError("missing msg_timeout in request")
+                tx_timeout = request.get_header(HEADER_TX_TIMEOUT)
+                if not tx_timeout:
+                    raise RuntimeError("missing tx_timeout in request")
+                receiver = _RequestReceiver(topic, handler_f, cls._executor, msg_timeout, tx_timeout)
                 cls._req_receivers[tx_id] = receiver
             return receiver
 
     @classmethod
     def _receive_request(cls, topic: str, request: Shareable, fl_ctx: FLContext):
-        tx_id = request.get_header(HEADER_TX)
+        tx_id = request.get_header(HEADER_TX_ID)
         fl_ctx.set_prop(key=PROP_KEY_TX_ID, value=tx_id, sticky=False, private=True)
         op = request.get_header(HEADER_OP)
         topic = request.get_header(HEADER_TOPIC)
@@ -269,7 +271,7 @@ class ReliableMessage:
 
     @classmethod
     def _receive_reply(cls, topic: str, request: Shareable, fl_ctx: FLContext):
-        tx_id = request.get_header(HEADER_TX)
+        tx_id = request.get_header(HEADER_TX_ID)
         fl_ctx.set_prop(key=PROP_KEY_TX_ID, value=tx_id, private=True, sticky=False)
         receiver = cls._reply_receivers.get(tx_id)
         if not receiver:
@@ -316,7 +318,7 @@ class ReliableMessage:
                 now = time.time()
                 for tx_id, receiver in cls._req_receivers.items():
                     assert isinstance(receiver, _RequestReceiver)
-                    if receiver.rcv_time and now - receiver.rcv_time > 4 * receiver.timeout:
+                    if receiver.rcv_time and now - receiver.rcv_time > 4 * receiver.tx_timeout:
                         cls._logger.info(f"detected expired request receiver {tx_id}")
                         expired_receivers.append(tx_id)
 
@@ -330,8 +332,10 @@ class ReliableMessage:
 
     @classmethod
     def shutdown(cls):
-        cls._executor.shutdown(cancel_futures=True, wait=False)
-        cls._shutdown_asked = True
+        if not cls._shutdown_asked:
+            cls._shutdown_asked = True
+            cls._executor.shutdown(cancel_futures=True, wait=False)
+            cls._logger.info("ReliableMessage is shutdown")
 
     @classmethod
     def _log_msg(cls, fl_ctx: FLContext, msg: str):
@@ -365,7 +369,7 @@ class ReliableMessage:
     ) -> Shareable:
         if not max_tx_time or max_tx_time <= timeout:
             # simple aux message
-            cls.info(fl_ctx, f"send request with simple Aux Msg: {max_tx_time=}")
+            cls.info(fl_ctx, f"send request with simple Aux Msg: {timeout=} {max_tx_time=}")
             engine = fl_ctx.get_engine()
             reply = engine.send_aux_request(
                 targets=[target],
@@ -379,13 +383,14 @@ class ReliableMessage:
 
         tx_id = str(uuid.uuid4())
         fl_ctx.set_prop(key=PROP_KEY_TX_ID, value=tx_id, private=True, sticky=False)
-        cls.info(fl_ctx, f"send request with Reliable Msg {max_tx_time=}")
+        cls.info(fl_ctx, f"send request with Reliable Msg {timeout=} {max_tx_time=}")
         receiver = _ReplyReceiver(tx_id, max_tx_time)
         cls._reply_receivers[tx_id] = receiver
-        request.set_header(HEADER_TX, tx_id)
+        request.set_header(HEADER_TX_ID, tx_id)
         request.set_header(HEADER_OP, OP_REQUEST)
         request.set_header(HEADER_TOPIC, topic)
-        request.set_header(HEADER_TIMEOUT, max_tx_time)
+        request.set_header(HEADER_MSG_TIMEOUT, timeout)
+        request.set_header(HEADER_TX_TIMEOUT, max_tx_time)
         try:
             result = cls._send_request(target, request, timeout, abort_signal, fl_ctx, receiver)
         except Exception as e:
@@ -460,7 +465,7 @@ class ReliableMessage:
                     return make_reply(ReturnCode.TASK_ABORTED)
                 time.sleep(0.1)
 
-        cls.info(fl_ctx, "request was received - query for result")
+        cls.info(fl_ctx, "request was received by the peer - will query for result")
         return cls._query_result(target, timeout, abort_signal, fl_ctx, receiver)
 
     @classmethod
@@ -475,7 +480,7 @@ class ReliableMessage:
         # Querying phase - try to get result
         engine = fl_ctx.get_engine()
         query = Shareable()
-        query.set_header(HEADER_TX, receiver.tx_id)
+        query.set_header(HEADER_TX_ID, receiver.tx_id)
         query.set_header(HEADER_OP, OP_QUERY)
 
         num_tries = 0
@@ -488,7 +493,7 @@ class ReliableMessage:
 
             if receiver.result_ready.wait(short_wait):
                 # we already received result sent by the target.
-                # Note that we don't wait forever here - we only wait for _query_interval so we could
+                # Note that we don't wait forever here - we only wait for _query_interval, so we could
                 # check other condition and/or send query to ask for result.
                 cls.info(fl_ctx, f"C2: received result in {time.time()-receiver.tx_start_time} seconds")
                 return receiver.result
@@ -532,15 +537,3 @@ class ReliableMessage:
                 cls.info(fl_ctx, f"will retry query in {cls._query_interval} secs: {rc=} {status=} {op=}")
             else:
                 cls.info(fl_ctx, f"will retry query in {cls._query_interval} secs: {rc=}")
-
-
-class ReliableMessageEnabler(FLComponent):
-
-    def __init__(self):
-        FLComponent.__init__(self)
-
-    def handle_event(self, event_type: str, fl_ctx: FLContext):
-        if event_type == EventType.START_RUN:
-            ReliableMessage.enable(fl_ctx)
-        elif event_type == EventType.END_RUN:
-            ReliableMessage.shutdown()

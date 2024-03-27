@@ -79,13 +79,7 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
            federated gRPC client.
     """
 
-    def __init__(
-        self,
-        int_server_grpc_options=None,
-        in_process=False,
-        req_timeout=10.0,
-        tx_timeout=100.0
-    ):
+    def __init__(self, int_server_grpc_options=None, in_process=False, req_timeout=10.0, tx_timeout=100.0):
         """Constructor method to initialize the object.
 
         Args:
@@ -204,7 +198,7 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         if not port:
             raise RuntimeError("failed to get a port for XGB server")
 
-        self.internal_server_addr = f"localhost:{port}"
+        self.internal_server_addr = f"127.0.0.1:{port}"
         self.logger.info(f"Start internal server at {self.internal_server_addr}")
         self.internal_xgb_server = GrpcServer(
             addr=self.internal_server_addr,

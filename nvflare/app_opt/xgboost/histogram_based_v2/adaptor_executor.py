@@ -17,7 +17,6 @@ from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.apis.utils.sender import Sender, SimpleSender
 from nvflare.app_opt.xgboost.histogram_based_v2.adaptor import XGBClientAdaptor
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
@@ -29,27 +28,19 @@ class XGBExecutor(Executor):
     def __init__(
         self,
         adaptor_component_id: str,
-        sender_id: str = None,
         configure_task_name=Constant.CONFIG_TASK_NAME,
         start_task_name=Constant.START_TASK_NAME,
-        req_timeout=100.0,
     ):
         """Executor for XGB.
 
         Args:
             adaptor_component_id: the component ID of client target adaptor
-            sender_id: The sender component id
             configure_task_name: name of the config task
             start_task_name: name of the start task
         """
         Executor.__init__(self)
         self.adaptor_component_id = adaptor_component_id
 
-        if sender_id:
-            check_str("sender_id", sender_id)
-        self.sender_id = sender_id
-
-        self.req_timeout = req_timeout
         self.configure_task_name = configure_task_name
         self.start_task_name = start_task_name
         self.adaptor = None
@@ -85,12 +76,7 @@ class XGBExecutor(Executor):
                 )
                 return
 
-            sender = self._get_sender(fl_ctx)
-            if not sender:
-                return
-
             adaptor.set_abort_signal(self.abort_signal)
-            adaptor.set_sender(sender)
             adaptor.initialize(fl_ctx)
             self.adaptor = adaptor
         elif event_type == EventType.END_RUN:
@@ -178,31 +164,3 @@ class XGBExecutor(Executor):
             fl_ctx=fl_ctx,
             optional=True,
         )
-
-    def _get_sender(self, fl_ctx: FLContext) -> Sender:
-        """Get request sender to be used by this executor.
-
-        Args:
-            fl_ctx: the FL context
-
-        Returns:
-            A sender object
-        """
-
-        if self.sender_id:
-            engine = fl_ctx.get_engine()
-            sender = engine.get_component(self.sender_id)
-            if not sender:
-                self.system_panic(f"cannot get component for {self.sender_id}", fl_ctx)
-            else:
-                if not isinstance(sender, Sender):
-                    self.system_panic(
-                        f"invalid component '{self.sender_id}': expect {Sender.__name__} but got {type(sender)}",
-                        fl_ctx,
-                    )
-                    sender = None
-
-        else:
-            sender = SimpleSender()
-
-        return sender

@@ -24,10 +24,10 @@ class FedXGBHistogramExecutor(XGBExecutor):
         early_stopping_rounds,
         xgb_params: dict,
         data_loader_id: str,
-        sender_id: str = None,
         verbose_eval=False,
         use_gpus=False,
-        req_timeout=100.0,
+        req_timeout=10.0,
+        tx_timeout=100.0,
         model_file_name="model.json",
         metrics_writer_id: str = None,
         in_process=True,
@@ -35,14 +35,14 @@ class FedXGBHistogramExecutor(XGBExecutor):
         XGBExecutor.__init__(
             self,
             adaptor_component_id="",
-            sender_id=sender_id,
-            req_timeout=req_timeout,
         )
         self.early_stopping_rounds = early_stopping_rounds
         self.xgb_params = xgb_params
         self.data_loader_id = data_loader_id
         self.verbose_eval = verbose_eval
         self.use_gpus = use_gpus
+        self.req_timeout = req_timeout
+        self.tx_timeout = tx_timeout
         self.model_file_name = model_file_name
         self.in_process = in_process
         self.metrics_writer_id = metrics_writer_id
@@ -65,6 +65,7 @@ class FedXGBHistogramExecutor(XGBExecutor):
             int_server_grpc_options=self.int_server_grpc_options,
             in_process=self.in_process,
             req_timeout=self.req_timeout,
+            tx_timeout=self.tx_timeout,
         )
         adaptor.set_runner(runner)
         return adaptor

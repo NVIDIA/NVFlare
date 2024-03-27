@@ -17,7 +17,6 @@ import re
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import SystemConfigs, SystemVarName
 from nvflare.apis.responder import Responder
-from nvflare.apis.utils.reliable_message import ReliableMessageEnabler
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
@@ -187,5 +186,3 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             section_name=SystemConfigs.APPLICATION_CONF,
             data=self.config_data,
         )
-
-        self.handlers.append(ReliableMessageEnabler())
