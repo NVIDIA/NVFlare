@@ -140,6 +140,14 @@ class Pipe(AttributesExportable, ABC):
         """Whether the pipe is able to resend a message."""
         pass
 
+    def get_last_peer_active_time(self):
+        """Get the last time that the peer is known to be active
+
+        Returns: the last time that the peer is known to be active; or 0 if this info is not available
+
+        """
+        return 0
+
     def export(self, export_mode: str) -> Tuple[str, dict]:
         if export_mode == ExportMode.SELF:
             mode = self.mode
