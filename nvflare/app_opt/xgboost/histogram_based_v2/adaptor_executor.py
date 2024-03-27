@@ -20,7 +20,6 @@ from nvflare.apis.signal import Signal
 from nvflare.app_opt.xgboost.histogram_based_v2.adaptor import XGBClientAdaptor
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
-from nvflare.fuel.utils.validation_utils import check_str
 from nvflare.security.logging import secure_format_exception
 
 

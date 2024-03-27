@@ -30,9 +30,7 @@ class FedXGBHistogramExecutor(XGBExecutor):
         tx_timeout=100.0,
         model_file_name="model.json",
         metrics_writer_id: str = None,
-        model_file_name="model.json",
         in_process: bool = True,
-        req_timeout=100.0,
     ):
         """
 
@@ -51,6 +49,7 @@ class FedXGBHistogramExecutor(XGBExecutor):
             model_file_name (str): where to save the model.
             in_process (bool): Specifies whether to start the `XGBRunner` in the same process or not.
             req_timeout: Request timeout
+            tx_timeout: transaction timeout
         """
         XGBExecutor.__init__(
             self,
