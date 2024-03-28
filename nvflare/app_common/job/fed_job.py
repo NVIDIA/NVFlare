@@ -83,24 +83,83 @@ class FedJob:
             os.makedirs(config_dir, exist_ok=True)
 
             if fed_app.server_app:
-                server_app = {"format_version": 2}
-                server_app["components"] = []
-                for cid, component in fed_app.server_app.components.items():
-                    server_app["components"].append(
-                        {
-                            "id": cid,
-                            "path": component.__module__ + "." + component.__class__.__name__,
-                            "args": self._get_args(component)
-                        }
-                    )
-                server_config = os.path.join(config_dir, FED_SERVER_JSON)
-                with open(server_config, "w") as outfile:
-                    json_dump = json.dumps(server_app, indent=4)
-                    outfile.write(json_dump)
+                self._get_server_app(config_dir, fed_app)
 
-            # if fed_app.client_app:
-            #     client_config = os.path.join(job_root, self.job_name, app_name, FED_CLIENT_JSON)
-            #     os.makedirs(client_config, exist_ok=True)
+            if fed_app.client_app:
+                self._get_client_app(config_dir, fed_app)
+                # client_config = os.path.join(job_root, self.job_name, app_name, FED_CLIENT_JSON)
+                # os.makedirs(client_config, exist_ok=True)
+
+    def _get_server_app(self, config_dir, fed_app):
+        server_app = {"format_version": 2}
+        server_app["workflows"] = []
+        for workflow in fed_app.server_app.workflows:
+            server_app["workflows"].append(
+                {
+                    "id": workflow.id,
+                    "path": workflow.controller.__module__ + "." + workflow.controller.__class__.__name__,
+                    "args": self._get_args(workflow.controller)
+                }
+            )
+        self._get_base_app(fed_app.server_app, server_app)
+        server_config = os.path.join(config_dir, FED_SERVER_JSON)
+        with open(server_config, "w") as outfile:
+            json_dump = json.dumps(server_app, indent=4)
+            outfile.write(json_dump)
+
+    def _get_client_app(self, config_dir, fed_app):
+        client_app = {"format_version": 2}
+        client_app["executors"] = []
+        for e in fed_app.client_app.executors:
+            client_app["executors"].append(
+                {
+                    "tasks": e.tasks,
+                    "executor": {
+                        "path": e.executor.__module__ + "." + e.executor.__class__.__name__,
+                        "args": self._get_args(e.executor)
+                    }
+                }
+            )
+        self._get_base_app(fed_app.client_app, client_app)
+        server_config = os.path.join(config_dir, FED_CLIENT_JSON)
+        with open(server_config, "w") as outfile:
+            json_dump = json.dumps(client_app, indent=4)
+            outfile.write(json_dump)
+
+    def _get_base_app(self, app, app_config):
+        app_config["components"] = []
+        for cid, component in app.components.items():
+            app_config["components"].append(
+                {
+                    "id": cid,
+                    "path": component.__module__ + "." + component.__class__.__name__,
+                    "args": self._get_args(component)
+                }
+            )
+        app_config["task_data_filters"] = []
+        for tasks, filters in app.task_data_filters:
+            app_config["task_data_filters"].append(
+                {
+                    "tasks": tasks,
+                    "filters": [
+                        {
+                            self._get_filters(filters)
+                        }
+                    ]
+                }
+            )
+        app_config["task_result_filters"] = []
+        for tasks, filters in app.task_result_filters:
+            app_config["task_result_filters"].append(
+                {
+                    "tasks": tasks,
+                    "filters": [
+                        {
+                            self._get_filters(filters)
+                        }
+                    ]
+                }
+            )
 
     def _get_args(self, component):
         constructor = component.__class__.__init__
@@ -108,8 +167,18 @@ class FedJob:
         attrs = component.__dict__
         args = {}
         for param in parameters:
-            if param in attrs.keys() and parameters[param].default != attrs[param]:
-                args[param] = attrs[param]
+            attr_key = param if param in attrs.keys() else "_" + param
+            if attr_key in attrs.keys() and parameters[param].default != attrs[attr_key]:
+                args[param] = attrs[attr_key]
 
         return args
 
+    def _get_filters(self, filters):
+        r = []
+        for f in filters:
+            r.append(
+                {
+                    "path": f.__module__ + "." + f.__name__
+                }
+            )
+        return r
