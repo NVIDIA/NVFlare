@@ -17,6 +17,7 @@ import shutil
 from typing import Dict
 import os
 
+from nvflare import SimulatorRunner
 from nvflare.app_common.job.client_app import ClientApp
 from nvflare.app_common.job.server_app import ServerApp
 from nvflare.private.fed.app.fl_conf import FL_PACKAGES
@@ -107,6 +108,20 @@ class FedJob:
                 self._get_client_app(config_dir, custom_dir, fed_app)
 
         self._generate_meta(job_root)
+
+    def simulator_run(self, job_root, workspace, clients=None, n_clients=None, threads=None, gpu=None):
+        self.generate_job_config(job_root)
+
+        simulator = SimulatorRunner(
+            job_folder=os.path.join(job_root, self.job_name),
+            workspace=workspace,
+            clients=clients,
+            n_clients=n_clients,
+            threads=threads,
+            gpu=gpu
+        )
+        simulator.run()
+
 
     def _get_server_app(self, config_dir, custom_dir, fed_app):
         server_app = {"format_version": 2, "workflows": []}
