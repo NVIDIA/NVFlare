@@ -19,10 +19,13 @@ import os
 
 from nvflare.app_common.job.client_app import ClientApp
 from nvflare.app_common.job.server_app import ServerApp
+from nvflare.private.fed.app.fl_conf import FL_PACKAGES
 
 CONFIG = "config"
+CUSTOM = "custom"
 FED_SERVER_JSON = "config_fed_server.json"
 FED_CLIENT_JSON = "config_fed_client.json"
+META_JSON = "meta.json"
 
 
 class FedApp:
@@ -39,15 +42,17 @@ class FedApp:
 
 
 class FedJob:
-    def __init__(self, name, min_clients, mandatory_clients) -> None:
+    def __init__(self, job_name, min_clients, mandatory_clients=None) -> None:
         super().__init__()
 
         self.min_clients = min_clients
         self.mandatory_clients = mandatory_clients
 
-        self.job_name = name
+        self.job_name = job_name
         self.fed_apps: Dict[str, FedApp] = {}
         self.deploy_map = {}
+
+        self.custom_modules = []
 
     def add_fed_app(self, app_name: str, fed_app: FedApp):
         if not isinstance(fed_app, FedApp):
@@ -61,13 +66,25 @@ class FedJob:
 
         self.deploy_map[site_name] = app_name
 
-    def generate_meta(self):
+    def _generate_meta(self, job_root):
         """ generate the job meta.json
 
         Returns:
 
         """
-        pass
+        meta_file = os.path.join(job_root, self.job_name, META_JSON)
+        meta_json = {
+            "name": self.job_name,
+            "resource_spec": {},
+            "min_clients": self.min_clients,
+            "deploy_map": self._get_deploy_map()
+        }
+        if self.mandatory_clients:
+            meta_json["mandatory_clients"] = self.mandatory_clients
+
+        with open(meta_file, "w") as outfile:
+            json_dump = json.dumps(meta_json, indent=4)
+            outfile.write(json_dump)
 
     def generate_job_config(self, job_root):
         """ generate the job config
@@ -80,59 +97,81 @@ class FedJob:
 
         for app_name, fed_app in self.fed_apps.items():
             config_dir = os.path.join(job_root, self.job_name, app_name, CONFIG)
+            custom_dir = os.path.join(job_root, self.job_name, app_name, CUSTOM)
             os.makedirs(config_dir, exist_ok=True)
 
             if fed_app.server_app:
-                self._get_server_app(config_dir, fed_app)
+                self._get_server_app(config_dir, custom_dir, fed_app)
 
             if fed_app.client_app:
-                self._get_client_app(config_dir, fed_app)
-                # client_config = os.path.join(job_root, self.job_name, app_name, FED_CLIENT_JSON)
-                # os.makedirs(client_config, exist_ok=True)
+                self._get_client_app(config_dir, custom_dir, fed_app)
 
-    def _get_server_app(self, config_dir, fed_app):
-        server_app = {"format_version": 2}
-        server_app["workflows"] = []
+        self._generate_meta(job_root)
+
+    def _get_server_app(self, config_dir, custom_dir, fed_app):
+        server_app = {"format_version": 2, "workflows": []}
         for workflow in fed_app.server_app.workflows:
             server_app["workflows"].append(
                 {
                     "id": workflow.id,
-                    "path": workflow.controller.__module__ + "." + workflow.controller.__class__.__name__,
+                    "path": self._get_class_path(workflow.controller, custom_dir),
                     "args": self._get_args(workflow.controller)
                 }
             )
-        self._get_base_app(fed_app.server_app, server_app)
+        self._get_base_app(custom_dir, fed_app.server_app, server_app)
         server_config = os.path.join(config_dir, FED_SERVER_JSON)
         with open(server_config, "w") as outfile:
             json_dump = json.dumps(server_app, indent=4)
             outfile.write(json_dump)
 
-    def _get_client_app(self, config_dir, fed_app):
-        client_app = {"format_version": 2}
-        client_app["executors"] = []
+    def _get_class_path(self, obj, custom_dir):
+        module = obj.__module__
+        source_file = inspect.getsourcefile(obj.__class__)
+        self._get_custom_file(custom_dir, module, source_file)
+
+        return obj.__module__ + "." + obj.__class__.__name__
+
+    def _get_custom_file(self, custom_dir, module, source_file):
+        package = module.split(".")[0]
+        if os.path.exists(source_file):
+            if package not in FL_PACKAGES and module not in self.custom_modules:
+                os.makedirs(custom_dir, exist_ok=True)
+                dest_file = os.path.join(custom_dir, module.replace(".", os.sep) + ".py")
+
+                with open(source_file, "r") as sf:
+                    import_lines = list(self.iter_imports(sf, dest_file))
+
+                self.custom_modules.append(module)
+                for line in import_lines:
+                    import_module = line.split(" ")[1]
+                    import_source_file = import_module.replace(".", os.sep) + ".py"
+                    self._get_custom_file(custom_dir, import_module, import_source_file)
+
+    def _get_client_app(self, config_dir, custom_dir, fed_app):
+        client_app = {"format_version": 2, "executors": []}
         for e in fed_app.client_app.executors:
             client_app["executors"].append(
                 {
                     "tasks": e.tasks,
                     "executor": {
-                        "path": e.executor.__module__ + "." + e.executor.__class__.__name__,
+                        "path": self._get_class_path(e.executor, custom_dir),
                         "args": self._get_args(e.executor)
                     }
                 }
             )
-        self._get_base_app(fed_app.client_app, client_app)
+        self._get_base_app(custom_dir, fed_app.client_app, client_app)
         server_config = os.path.join(config_dir, FED_CLIENT_JSON)
         with open(server_config, "w") as outfile:
             json_dump = json.dumps(client_app, indent=4)
             outfile.write(json_dump)
 
-    def _get_base_app(self, app, app_config):
+    def _get_base_app(self, custom_dir, app, app_config):
         app_config["components"] = []
         for cid, component in app.components.items():
             app_config["components"].append(
                 {
                     "id": cid,
-                    "path": component.__module__ + "." + component.__class__.__name__,
+                    "path": self._get_class_path(component, custom_dir),
                     "args": self._get_args(component)
                 }
             )
@@ -143,7 +182,7 @@ class FedJob:
                     "tasks": tasks,
                     "filters": [
                         {
-                            self._get_filters(filters)
+                            self._get_filters(filters, custom_dir)
                         }
                     ]
                 }
@@ -155,7 +194,7 @@ class FedJob:
                     "tasks": tasks,
                     "filters": [
                         {
-                            self._get_filters(filters)
+                            self._get_filters(filters, custom_dir)
                         }
                     ]
                 }
@@ -173,12 +212,27 @@ class FedJob:
 
         return args
 
-    def _get_filters(self, filters):
+    def _get_filters(self, filters, custom_dir):
         r = []
         for f in filters:
             r.append(
                 {
-                    "path": f.__module__ + "." + f.__name__
+                    "path": self._get_class_path(f, custom_dir)
                 }
             )
         return r
+
+    def iter_imports(self, sf, dest_file):
+        with open(dest_file, "w") as df:
+            for line in sf:
+                df.write(line)
+                trimmed = line.strip()
+                if trimmed.startswith('from ') and ('import ' in trimmed):
+                    yield trimmed
+
+    def _get_deploy_map(self):
+        deploy_map = {}
+        for site, app_name in self.deploy_map.items():
+            deploy_map[app_name] = deploy_map.get(app_name, [])
+            deploy_map[app_name].append(site)
+        return deploy_map

@@ -33,16 +33,19 @@ class HelloPTJob:
         self.job = self.define_job()
 
     def define_job(self):
-        job = FedJob(name="hello-pt", min_clients=2, mandatory_clients="site-1")
+        # job = FedJob(job_name="hello-pt", min_clients=2, mandatory_clients="site-1")
+        job = FedJob(job_name="hello-pt", min_clients=2)
 
         server_app = self._create_server_app()
         client_app = self._create_client_app()
 
         app = FedApp(server_app=server_app, client_app=client_app)
         job.add_fed_app("app", app)
-        job.set_site_app("server", "app")
-        job.set_site_app("site-1", "app")
-        job.set_site_app("site-2", "app")
+        # job.set_site_app("server", "app")
+        # job.set_site_app("site-1", "app")
+        # job.set_site_app("site-2", "app")
+
+        job.set_site_app("@ALL", "app")
 
         return job
 
