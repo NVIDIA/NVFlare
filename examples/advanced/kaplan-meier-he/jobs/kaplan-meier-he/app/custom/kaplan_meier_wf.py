@@ -19,19 +19,12 @@ from typing import Dict
 import tenseal as ts
 
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
-from nvflare.app_common.workflows.wf_comm.wf_comm_api_spec import (
-    CURRENT_ROUND,
-    DATA,
-    MIN_RESPONSES,
-    NUM_ROUNDS,
-    START_ROUND,
-)
-from nvflare.app_common.workflows.wf_comm.wf_spec import WF
+from nvflare.app_common.workflows.wf_controller import WFController
 
 # Controller Workflow
 
 
-class KM(WF):
+class KM(WFController):
     def __init__(self, min_clients: int, he_context_path: str):
         super(KM, self).__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -53,15 +46,9 @@ class KM(WF):
 
     def start_fl_collect_max_idx(self):
         self.logger.info("send initial message to all sites to start FL \n")
-        msg_payload = {
-            MIN_RESPONSES: self.min_clients,
-            CURRENT_ROUND: 1,
-            NUM_ROUNDS: self.num_rounds,
-            START_ROUND: 1,
-            DATA: {},
-        }
+        model = FLModel(params={}, current_round=1, total_rounds=self.num_rounds)
 
-        results = self.flare_comm.broadcast_and_wait(msg_payload)
+        results = self.send_model(data=model)
         return results
 
     def aggr_max_idx(self, sag_result: Dict[str, Dict[str, FLModel]]):
@@ -70,13 +57,8 @@ class KM(WF):
         if not sag_result:
             raise RuntimeError("input is None or empty")
 
-        task_name, task_result = next(iter(sag_result.items()))
-
-        if not task_result:
-            raise RuntimeError("task_result None or empty ")
-
         max_idx_global = []
-        for site, fl_model in task_result.items():
+        for fl_model in sag_result:
             max_idx = fl_model.params["max_idx"]
             max_idx_global.append(max_idx)
         # actual time point as index, so plus 1 for storage
@@ -85,17 +67,14 @@ class KM(WF):
     def distribute_max_idx_collect_enc_stats(self, result: int):
         self.logger.info("send global max_index to all sites \n")
 
-        model = FLModel(params={"max_idx_global": result}, params_type=ParamsType.FULL)
+        model = FLModel(
+            params={"max_idx_global": result},
+            params_type=ParamsType.FULL,
+            current_round=2,
+            total_rounds=self.num_rounds,
+        )
 
-        msg_payload = {
-            MIN_RESPONSES: self.min_clients,
-            CURRENT_ROUND: 2,
-            NUM_ROUNDS: self.num_rounds,
-            START_ROUND: 1,
-            DATA: model,
-        }
-
-        results = self.flare_comm.broadcast_and_wait(msg_payload)
+        results = self.send_model(data=model)
         return results
 
     def aggr_he_hist(self, sag_result: Dict[str, Dict[str, FLModel]]):
@@ -108,14 +87,10 @@ class KM(WF):
         if not sag_result:
             raise RuntimeError("input is None or empty")
 
-        task_name, task_result = next(iter(sag_result.items()))
-
-        if not task_result:
-            raise RuntimeError("task_result None or empty ")
-
         hist_obs_global = None
         hist_cen_global = None
-        for site, fl_model in task_result.items():
+        for fl_model in sag_result:
+            site = fl_model.meta.get("client_name", None)
             hist_obs_he_serial = fl_model.params["hist_obs"]
             hist_obs_he = ts.bfv_vector_from(he_context, hist_obs_he_serial)
             hist_cen_he_serial = fl_model.params["hist_cen"]
@@ -146,15 +121,9 @@ class KM(WF):
         model = FLModel(
             params={"hist_obs_global": hist_obs_global_serial, "hist_cen_global": hist_cen_global_serial},
             params_type=ParamsType.FULL,
+            current_round=3,
+            total_rounds=self.num_rounds,
         )
 
-        msg_payload = {
-            MIN_RESPONSES: self.min_clients,
-            CURRENT_ROUND: 3,
-            NUM_ROUNDS: self.num_rounds,
-            START_ROUND: 1,
-            DATA: model,
-        }
-
-        results = self.flare_comm.broadcast_and_wait(msg_payload)
+        results = self.send_model(data=model)
         return results
