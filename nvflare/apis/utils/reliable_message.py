@@ -554,6 +554,7 @@ class ReliableMessage:
                 timeout=per_msg_timeout,
                 fl_ctx=fl_ctx,
             )
+            last_query_time = time.time()
             ack, rc = _extract_result(ack, target)
             if ack and rc not in [ReturnCode.COMMUNICATION_ERROR]:
                 op = ack.get_header(HEADER_OP)
