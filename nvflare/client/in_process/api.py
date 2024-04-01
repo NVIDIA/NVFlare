@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
+import os
 import time
 from typing import Any, Dict, Optional
 
@@ -61,8 +62,9 @@ class InProcessClientAPI(APISpec):
         self.stop_reason = ""
         self.abort = False
         self.stop = False
+        self.rank = None
 
-    def init(self, config: Optional[Dict] = None, rank: Optional[str] = None):
+    def init(self, rank: Optional[str] = None, config: Optional[Dict] = None):
         """Initializes NVFlare Client API environment.
 
         Args:
@@ -70,6 +72,11 @@ class InProcessClientAPI(APISpec):
             rank (str): local rank of the process.
                 It is only useful when the training script has multiple worker processes. (for example multi GPU)
         """
+
+        self.rank = rank
+        if rank is None:
+            self.rank = os.environ.get("RANK", "0")
+
         config = {} if config is None else config
         self.prepare_client_config(config)
 
@@ -81,7 +88,7 @@ class InProcessClientAPI(APISpec):
         if isinstance(config, dict):
             client_config = ClientConfig(config=config)
         else:
-            raise ValueError("config should be a dictionary.")
+            raise ValueError(f"config should be a dictionary, but got {type(config)}")
 
         if client_config.config:
             client_config.config.update(self.meta)
@@ -131,6 +138,9 @@ class InProcessClientAPI(APISpec):
         return self.meta[FLMetaKey.SITE_NAME]
 
     def get_task_name(self) -> str:
+        if self.rank != "0":
+            raise RuntimeError("only rank 0 can call get_task_name!")
+
         return self.meta[ConfigKey.TASK_NAME]
 
     def is_running(self) -> bool:
@@ -149,15 +159,23 @@ class InProcessClientAPI(APISpec):
         return self.current_round < self.start_round + self.total_rounds
 
     def is_train(self) -> bool:
+        if self.rank != "0":
+            raise RuntimeError("only rank 0 can call is_train!")
         return self.meta.get(ConfigKey.TASK_NAME) == self.client_config.get_train_task()
 
     def is_evaluate(self) -> bool:
+        if self.rank != "0":
+            raise RuntimeError("only rank 0 can call is_evaluate!")
         return self.meta.get(ConfigKey.TASK_NAME) == self.client_config.get_eval_task()
 
     def is_submit_model(self) -> bool:
+        if self.rank != "0":
+            raise RuntimeError("only rank 0 can call is_submit_model!")
         return self.meta.get(ConfigKey.TASK_NAME) == self.client_config.get_submit_model_task()
 
     def log(self, key: str, value: Any, data_type: AnalyticsDataType, **kwargs):
+        if self.rank != "0":
+            raise RuntimeError("only rank 0 can call log!")
         msg = dict(key=key, value=value, data_type=data_type, **kwargs)
         self.event_manager.fire_event(TOPIC_LOG_DATA, msg)
 

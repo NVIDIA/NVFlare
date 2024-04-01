@@ -18,7 +18,6 @@ from typing import Any, Dict, Optional
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.fuel.data_event.data_bus import DataBus
-
 from .api_spec import CLIENT_API_KEY, CLIENT_API_TYPE_KEY, APISpec
 from .ex_process.api import ExProcessClientAPI
 
@@ -50,7 +49,7 @@ def init(rank: Optional[str] = None):
     else:
         client_api = ExProcessClientAPI()
 
-    client_api.init(rank)
+    client_api.init(rank=rank)
 
 
 def receive(timeout: Optional[float] = None) -> Optional[FLModel]:

@@ -71,8 +71,11 @@ class CIFAR10DataModule(LightningDataModule):
 def main():
     model = LitNet()
     cifar10_dm = CIFAR10DataModule()
+    if torch.cuda.is_available():
+        trainer = Trainer(max_epochs=1, accelerator='gpu', devices=1 if torch.cuda.is_available() else None)
+    else:
+        trainer = Trainer(max_epochs=1, devices=None)
 
-    trainer = Trainer(max_epochs=1, devices=1 if torch.cuda.is_available() else None)
     # (2) patch the lightning trainer
     flare.patch(trainer)
 
@@ -82,7 +85,7 @@ def main():
         # because after flare.patch the trainer.fit/validate will get the
         # global model internally
         input_model = flare.receive()
-        print(f"current_round={input_model.current_round}")
+        print(f"\n[Current Round={input_model.current_round}, Site = {flare.get_site_name()}]\n")
 
         # (4) evaluate the current global model to allow server-side model selection
         print("--- validate global model ---")

@@ -37,6 +37,7 @@ class ExecTaskFuncWrapper:
         self.check_fn_inputs(task_fn_path, require_args, args_size, args_default_size)
         self.task_fn_require_args = require_args
 
+
     def run(self):
         """Call the task_fn with any required arguments."""
         msg = f"\n start task run() with {self.task_fn_path}"
