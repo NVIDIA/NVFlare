@@ -122,7 +122,6 @@ class FedJob:
         )
         simulator.run()
 
-
     def _get_server_app(self, config_dir, custom_dir, fed_app):
         server_app = {"format_version": 2, "workflows": []}
         for workflow in fed_app.server_app.workflows:

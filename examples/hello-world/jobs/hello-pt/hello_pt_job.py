@@ -94,7 +94,7 @@ class HelloPTJob:
         self.job.generate_job_config(job_root)
 
     def simulator_run(self, job_root, workspace):
-        self.job.simulator_run(job_root, workspace)
+        self.job.simulator_run(job_root, workspace, threads=2)
 
 
 if __name__ == '__main__':
