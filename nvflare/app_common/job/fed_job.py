@@ -153,7 +153,7 @@ class FedJob:
                 dest_file = os.path.join(custom_dir, module.replace(".", os.sep) + ".py")
 
                 with open(source_file, "r") as sf:
-                    import_lines = list(self.iter_imports(sf, dest_file))
+                    import_lines = list(self.locate_imports(sf, dest_file))
 
                 self.custom_modules.append(module)
                 for line in import_lines:
@@ -174,8 +174,8 @@ class FedJob:
                 }
             )
         self._get_base_app(custom_dir, fed_app.client_app, client_app)
-        server_config = os.path.join(config_dir, FED_CLIENT_JSON)
-        with open(server_config, "w") as outfile:
+        client_config = os.path.join(config_dir, FED_CLIENT_JSON)
+        with open(client_config, "w") as outfile:
             json_dump = json.dumps(client_app, indent=4)
             outfile.write(json_dump)
 
@@ -190,25 +190,27 @@ class FedJob:
                 }
             )
         app_config["task_data_filters"] = []
-        for tasks, filters in app.task_data_filters:
+        for task_filter in app.task_data_filters:
             app_config["task_data_filters"].append(
                 {
-                    "tasks": tasks,
+                    "tasks": task_filter.tasks,
                     "filters": [
                         {
-                            self._get_filters(filters, custom_dir)
+                            # self._get_filters(task_filter.filter, custom_dir)
+                            "path": self._get_class_path(task_filter.filter, custom_dir)
                         }
                     ]
                 }
             )
         app_config["task_result_filters"] = []
-        for tasks, filters in app.task_result_filters:
+        for result_filer in app.task_result_filters:
             app_config["task_result_filters"].append(
                 {
-                    "tasks": tasks,
+                    "tasks": result_filer.tasks,
                     "filters": [
                         {
-                            self._get_filters(filters, custom_dir)
+                            # self._get_filters(result_filer.filter, custom_dir)
+                            "path": self._get_class_path(result_filer.filter, custom_dir)
                         }
                     ]
                 }
@@ -236,7 +238,7 @@ class FedJob:
             )
         return r
 
-    def iter_imports(self, sf, dest_file):
+    def locate_imports(self, sf, dest_file):
         with open(dest_file, "w") as df:
             for line in sf:
                 df.write(line)

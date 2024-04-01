@@ -12,10 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict
+from typing import Dict, List
 
 from nvflare.apis.filter import Filter
 from nvflare.apis.fl_component import FLComponent
+
+
+class _FilterDef:
+
+    def __init__(self, tasks, filter) -> None:
+        super().__init__()
+
+        self.tasks = tasks
+        self.filter = filter
 
 
 class BaseApp(object):
@@ -36,15 +45,28 @@ class BaseApp(object):
         if isinstance(component, FLComponent):
             self.handlers.append(component)
 
-    def add_task_data_filter(self, tasks: [str], filter: Filter):
+    def add_task_data_filter(self, tasks: List[str], filter: Filter):
         if not isinstance(filter, Filter):
             raise RuntimeError(f"filter must be Filter, but got {filter.__class__}")
 
-        self.task_data_filters[tasks] = filter
+        for task in tasks:
+            for fd in self.task_data_filters:
+                if task in fd.tasks:
+                    raise RuntimeError(f"Task {task} already defined in task_data_filters.")
 
-    def add_task_result_filter(self, tasks: [str], filter: Filter):
+        # self.task_result_filters[tasks] = filter
+        self.task_data_filters.append(_FilterDef(tasks, filter))
+        # self.task_data_filters[tasks] = filter
+
+    def add_task_result_filter(self, tasks: List[str], filter: Filter):
         if not isinstance(filter, Filter):
             raise RuntimeError(f"filter must be Filter, but got {filter.__class__}")
 
-        self.task_result_filters[tasks] = filter
+        for task in tasks:
+            for fd in self.task_result_filters:
+                if task in fd.tasks:
+                    raise RuntimeError(f"Task {task} already defined in task_result_filters.")
+
+        # self.task_result_filters[tasks] = filter
+        self.task_result_filters.append(_FilterDef(tasks, filter))
 

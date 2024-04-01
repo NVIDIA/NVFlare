@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from add_shareable_parameter import AddShareable
 from cifar10trainer import Cifar10Trainer
 from cifar10validator import Cifar10Validator
 from nvflare.apis.dxo import DataKind
@@ -24,6 +25,7 @@ from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEva
 from nvflare.app_common.workflows.initialize_global_weights import InitializeGlobalWeights
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.app_opt.pt import PTFileModelPersistor
+from print_shareable_parameter import PrintShareable
 from pt_model_locator import PTModelLocator
 
 
@@ -32,9 +34,9 @@ class HelloPTJob:
         super().__init__()
         self.job = self.define_job()
 
-    def define_job(self):
+    def define_job(self) -> FedJob:
         # job = FedJob(job_name="hello-pt", min_clients=2, mandatory_clients="site-1")
-        job = FedJob(job_name="hello-pt", min_clients=2)
+        job: FedJob = FedJob(job_name="hello-pt", min_clients=2)
 
         server_app = self._create_server_app()
         client_app = self._create_client_app()
@@ -55,6 +57,11 @@ class HelloPTJob:
         client_app.add_executor(["train", "submit_model", "get_weights"], executor)
         executor = Cifar10Validator()
         client_app.add_executor(["validate"], executor)
+
+        task_filter = AddShareable()
+        client_app.add_task_result_filter(["train"], task_filter)
+        task_filter = PrintShareable()
+        client_app.add_task_data_filter(["validate", "train"], task_filter)
         return client_app
 
     def _create_server_app(self):
@@ -88,6 +95,11 @@ class HelloPTJob:
         server_app.add_component("model_locator", component)
         component = ValidationJsonGenerator()
         server_app.add_component("json_generator", component)
+
+        task_filter = AddShareable()
+        server_app.add_task_data_filter(["train"], task_filter)
+        task_filter = PrintShareable()
+        server_app.add_task_result_filter(["validate", "train"], task_filter)
         return server_app
 
     def export_job(self, job_root):
