@@ -1,46 +1,46 @@
 # Simple ML/DL to FL transition with NVFlare
 
-Converting Deep Learning (DL) to Federated Learning (FL) involves:
-1. Algorithms formulation, how to formulate a DL to FL algorithm and what information needs to be passed between Client and Server
-2. Convert existing standalone, centralized DL code to FL code.
-3. Configure the workflow to use the newly changed code.
 
-NVFlare make it easy to convert the existing machine learning (ML) or Deep Learning (DL) algorithm
-to Federated Learning (FL) algorithm. As one can see, only a few lines of code changes.
+Converting Deep Learning (DL) models to Federated Learning (FL) entails several key steps:
 
-In the [ml-to-fl](.) examples, we assume algorithm formulation is chosen from NVFLARE predefined workflow algorithms
-(ex. FedAvg). You can find examples of converting traditional ML to FL in [step-by-step tutorials with tabular datasets](../step-by-step/higgs).
+Formulating the algorithm: This involves determining how to adapt a DL model into an FL framework, including specifying the information exchange protocol between the Client and Server.
 
-We will demonstrate different techniques depending on the existing code structure and preferences.
+Code conversion: Adapting existing standalone DL code into FL-compatible code. This typically involves minimal changes, often just a few lines of code, thanks to tools like NVFlare.
 
-To configure the workflow, one can reference the config we have here and the documentation.
+Workflow configuration: Once the code is modified, configuring the workflow to integrate the newly adapted FL code seamlessly.
 
-We cover the following use cases:
+NVFlare simplifies the process of transitioning from traditional Machine Learning (ML) or DL algorithms to FL. With NVFlare, the conversion process requires only minor code adjustments.
 
-  1. Configurations of NVFlare Client API: [np](./np/README.md)
-  2. PyTorch and PyTorch Lightning: [pt](./pt/README.md)
-  3. TensorFlow: [tf](./tf/README.md)
+In our examples, we assume that algorithm formulation follows NVFlare's predefined workflow algorithms (such as FedAvg). Detailed tutorials on converting traditional ML to FL, particularly with tabular datasets, are available in our step-by-step guides.
 
-If you just want to follow the steps to create convert the DL to FL code, you can just skip the rest of the readme and
-go directly to the examples.  
+We offer various techniques tailored to different code structures and user preferences. Configuration guidance and documentation are provided to facilitate workflow setup.
 
-For those who are more curious to learn more different types of implementations for use cases, you can continue to read. 
+Our coverage includes:
 
-# For Advanced Users: Client API with different implementations 
- 
-For the same Client API, we have several implementations for different needs
+Configurations for NVFlare Client API: [np](./np/README.md)
+Integration with PyTorch and PyTorch Lightning frameworks:[pt](./pt/README.md)
+Support for TensorFlow implementations: [tf](./tf/README.md)
 
-  1. In-process Client API: the client training script is in the same process as the NVFlare Client job process.
-     Since training script and client job process both in the same process memory, it is a bit efficient and simpler configuration, here we leverage ```InProcessClientAPIExecutor``` executor.
-     In many cases, you should choose Option 1 for efficiency and simplicity. 
+For detailed instructions on configuring the workflow, refer to our provided examples and documentation.
+If you're solely interested in converting DL to FL code, feel free to skip ahead to the examples without delving further into this readme.
 
+For those eager to explore various implementations and use cases, read on.
 
-  2. sub-process client API: the client training script is in a sub-process
-     Since training script and NVFlare job are in separate process with ```ClientAPILauncherExecutor``` executor, we offer two mechanisms to communicate
-     * the sub-process training script and client job process are communicated via CellPipe (default)
-     * the sub-process training script and client job process are communicated via FilePipe
+## Advanced User Options: Client API with Different Implementations
 
-     If you need to have multi-GPU or distributed pytorch training, you should use Option 2.
- 
+Within the Client API, we offer multiple implementations tailored to diverse requirements:
+
+* In-process Client API: In this setup, the client training script operates within the same process as the NVFlare Client job.
+This configuration, utilizing the ```InProcessClientAPIExecutor```, offers shared the memory usage, is efficient and with simple configuration. 
+Use this configuration for development or single GPU
+
+* Sub-process Client API: Here, the client training script runs in a separate subprocess.
+Utilizing the ```ClientAPILauncherExecutor```, this option offers flexibility in communication mechanisms:
+  * Communication via CellPipe (default)
+  * Communication via FilePipe ( no capability to stream experiment track log metrics) 
+This configuration is ideal for scenarios requiring multi-GPU or distributed PyTorch training.
+  
+
+Choose the option best suited to your specific requirements and workflow preferences.
 
 Note: Avoid install TensorFlow and PyTorch on the same virtual environment due to library conflicts.
