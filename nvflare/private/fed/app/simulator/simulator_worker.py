@@ -235,6 +235,8 @@ def main(args):
     log_file = os.path.join(args.workspace, WorkspaceConstants.LOG_FILE_NAME)
     add_logfile_handler(log_file)
 
+    app_custom_folder = os.path.join(args.workspace, "custom")
+    sys.path.append(app_custom_folder)
     os.chdir(args.workspace)
     fobs_initialize()
     AuthorizationService.initialize(EmptyAuthorizer())
