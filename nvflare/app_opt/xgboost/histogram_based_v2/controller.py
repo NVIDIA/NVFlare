@@ -17,6 +17,7 @@ from nvflare.app_opt.xgboost.histogram_based_v2.adaptor_controller import XGBCon
 from nvflare.app_opt.xgboost.histogram_based_v2.adaptors.grpc_server_adaptor import GrpcServerAdaptor
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.runners.server_runner import XGBServerRunner
+from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_int, check_positive_number, check_str
 
 
 class XGBFedController(XGBController):
@@ -33,6 +34,17 @@ class XGBFedController(XGBController):
         client_ranks=None,
         in_process=True,
     ):
+        check_positive_int("num_rounds", num_rounds)
+        check_str("configure_task_name", configure_task_name)
+        check_positive_number("configure_task_timeout", configure_task_timeout)
+        check_str("start_task_name", start_task_name)
+        check_positive_number("start_task_timeout", start_task_timeout)
+        check_positive_number("job_status_check_interval", job_status_check_interval)
+        check_positive_number("max_client_op_interval", max_client_op_interval)
+        check_positive_number("progress_timeout", progress_timeout)
+        if client_ranks is not None:
+            check_object_type("client_ranks", client_ranks, dict)
+
         XGBController.__init__(
             self,
             adaptor_component_id="",

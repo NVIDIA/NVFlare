@@ -24,14 +24,14 @@ with open(os.path.join(this_directory, "README.md"), encoding="utf-8") as f:
 release = os.environ.get("MONAI_NVFL_RELEASE")
 if release == "1":
     package_name = "monai-nvflare"
-    version = "0.2.6"
+    version = "0.2.7"
 else:
     package_name = "monai-nvflare-nightly"
     today = datetime.date.today().timetuple()
     year = today[0] % 1000
     month = today[1]
     day = today[2]
-    version = f"0.2.3.{year:02d}{month:02d}{day:02d}"
+    version = f"0.2.6.{year:02d}{month:02d}{day:02d}"
 
 setup(
     name=package_name,
@@ -57,5 +57,5 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     python_requires=">=3.8,<3.11",
-    install_requires=["monai>=1.3.0", "nvflare~=2.4.0rc6"],
+    install_requires=["monai>=1.3.0", "nvflare~=2.4.1rc3"],
 )
