@@ -75,16 +75,17 @@ def patch(trainer: pl.Trainer, restore_state: bool = True, load_state_dict_stric
                     self.__fl_meta__ = {"CUSTOM_VAR": "VALUE_OF_THE_VAR"}
 
     """
-    fl_callback = FLCallback(rank=trainer.global_rank, load_state_dict_strict=load_state_dict_strict)
     callbacks = trainer.callbacks
-    if isinstance(callbacks, list):
-        callbacks.append(fl_callback)
-    elif isinstance(callbacks, Callback):
-        callbacks = [callbacks, fl_callback]
-    else:
-        callbacks = [fl_callback]
+    if isinstance(callbacks, Callback):
+        callbacks = [callbacks]
+    elif not isinstance(callbacks, list):
+        callbacks = []
 
-    if restore_state:
+    if not any(isinstance(cb, FLCallback) for cb in callbacks):
+        fl_callback = FLCallback(rank=trainer.global_rank, load_state_dict_strict=load_state_dict_strict)
+        callbacks.append(fl_callback)
+
+    if restore_state and not any(isinstance(cb, RestoreState) for cb in callbacks):
         callbacks.append(RestoreState())
 
     trainer.callbacks = callbacks

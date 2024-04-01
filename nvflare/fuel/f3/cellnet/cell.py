@@ -28,7 +28,25 @@ from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import StreamFuture
 from nvflare.private.defs import CellChannel
 
-CHANNELS_TO_HANDLE = (CellChannel.SERVER_COMMAND, CellChannel.AUX_COMMUNICATION)
+CHANNELS_TO_EXCLUDE = (
+    CellChannel.CLIENT_MAIN,
+    CellChannel.SERVER_MAIN,
+    CellChannel.SERVER_PARENT_LISTENER,
+    CellChannel.CLIENT_COMMAND,
+    CellChannel.CLIENT_SUB_WORKER_COMMAND,
+    CellChannel.MULTI_PROCESS_EXECUTOR,
+    CellChannel.SIMULATOR_RUNNER,
+    CellChannel.RETURN_ONLY,
+)
+
+
+def _is_stream_channel(channel: str) -> bool:
+    if channel is None or channel == "":
+        return False
+    elif channel in CHANNELS_TO_EXCLUDE:
+        return False
+    # if not excluded, all channels supporting streaming capabilities
+    return True
 
 
 class SimpleWaiter:
@@ -104,13 +122,13 @@ class Cell(StreamCell):
         This method is called when Python cannot find an invoked method "x" of this class.
         Method "x" is one of the message sending methods (send_request, broadcast_request, etc.)
         In this method, we decide which method should be used instead, based on the "channel" of the message.
-        - If the channel is in CHANNELS_TO_HANDLE, use the method "_x" of this class.
-        - Otherwise, user the method "x" of the core_cell.
+        - If the channel is stream channel, use the method "_x" of this class.
+        - Otherwise, user the method "x" of the CoreCell.
         """
 
         def method(*args, **kwargs):
             self.logger.debug(f"__getattr__: {args=}, {kwargs=}")
-            if kwargs.get("channel") in CHANNELS_TO_HANDLE:
+            if _is_stream_channel(kwargs.get("channel")):
                 self.logger.debug(f"calling cell {func}")
                 return getattr(self, f"_{func}")(*args, **kwargs)
             if not hasattr(self.core_cell, func):
@@ -232,11 +250,47 @@ class Cell(StreamCell):
             self.logger.error(f"Can't encode {msg=} {exc=}")
             raise exc
 
-    def _send_request(self, channel, target, topic, request, timeout=10.0, secure=False, optional=False):
-        self._encode_message(request)
-        return self._send_one_request(channel, target, topic, request, timeout, secure, optional)
+    def _send_request(
+        self,
+        channel,
+        target,
+        topic,
+        request,
+        timeout=10.0,
+        secure=False,
+        optional=False,
+        wait_for_reply=True,
+    ):
+        """Stream one request to the target
 
-    def _send_one_request(self, channel, target, topic, request, timeout=10.0, secure=False, optional=False):
+        Args:
+            channel: message channel name
+            target: FQCN of the target cell
+            topic: topic of the message
+            request: request message
+            timeout: how long to wait
+            secure: is P2P security to be applied
+            optional: is the message optional
+            wait_for_reply: whether to wait for reply
+
+        Returns: if wait_for_reply, then reply data; otherwise only a bool to indicate whether the request
+        is sent successfully
+
+        """
+        self._encode_message(request)
+        return self._send_one_request(channel, target, topic, request, timeout, secure, optional, wait_for_reply)
+
+    def _send_one_request(
+        self,
+        channel,
+        target,
+        topic,
+        request,
+        timeout=10.0,
+        secure=False,
+        optional=False,
+        wait_for_reply=True,
+    ):
         req_id = str(uuid.uuid4())
         request.add_headers({StreamHeaderKey.STREAM_REQ_ID: req_id})
 
@@ -258,8 +312,13 @@ class Cell(StreamCell):
         sending_complete = self._future_wait(future, timeout)
         if not sending_complete:
             self.logger.info(f"{req_id=}: sending timeout {timeout=}")
-            return self._get_result(req_id)
+            if wait_for_reply:
+                return self._get_result(req_id)
+            else:
+                return False
         self.logger.debug(f"{req_id=}: sending complete")
+        if not wait_for_reply:
+            return True
 
         # waiting for receiving first byte
         self.logger.debug(f"{req_id=}: entering remote process wait {timeout=}")
@@ -311,7 +370,7 @@ class Cell(StreamCell):
 
         if not callable(cb):
             raise ValueError(f"specified request_cb {type(cb)} is not callable")
-        if channel in CHANNELS_TO_HANDLE:
+        if _is_stream_channel(channel):
             self.logger.info(f"Register blob CB for {channel=}, {topic=}")
             adapter = Adapter(cb, self.core_cell.my_info, self)
             self.register_blob_cb(channel, topic, adapter.call, *args, **kwargs)

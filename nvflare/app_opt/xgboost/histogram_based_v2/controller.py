@@ -16,7 +16,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_opt.xgboost.histogram_based_v2.adaptor_controller import XGBController
 from nvflare.app_opt.xgboost.histogram_based_v2.adaptors.grpc_server_adaptor import GrpcServerAdaptor
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
-from nvflare.app_opt.xgboost.histogram_based_v2.grpc.defs import GRPC_DEFAULT_OPTIONS
 from nvflare.app_opt.xgboost.histogram_based_v2.runners.server_runner import XGBServerRunner
 
 
@@ -32,7 +31,6 @@ class XGBFedController(XGBController):
         max_client_op_interval: float = Constant.MAX_CLIENT_OP_INTERVAL,
         progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
         client_ranks=None,
-        int_client_grpc_options=None,
         in_process=True,
     ):
         XGBController.__init__(
@@ -48,9 +46,8 @@ class XGBFedController(XGBController):
             progress_timeout=progress_timeout,
             client_ranks=client_ranks,
         )
-        self.int_client_grpc_options = (
-            GRPC_DEFAULT_OPTIONS if int_client_grpc_options is None else int_client_grpc_options
-        )
+        # do not let user specify int_client_grpc_options in this version - always use default.
+        self.int_client_grpc_options = None
         self.in_process = in_process
 
     def get_adaptor(self, fl_ctx: FLContext):

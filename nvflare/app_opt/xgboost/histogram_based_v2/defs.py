@@ -29,7 +29,7 @@ class Constant:
     # default component config values
     CONFIG_TASK_TIMEOUT = 10
     START_TASK_TIMEOUT = 10
-    XGB_SERVER_READY_TIMEOUT = 10.0
+    XGB_SERVER_READY_TIMEOUT = 5.0
 
     TASK_CHECK_INTERVAL = 0.5
     JOB_STATUS_CHECK_INTERVAL = 2.0
@@ -84,3 +84,5 @@ class Constant:
     RUNNER_CTX_WORLD_SIZE = "world_size"
     RUNNER_CTX_RANK = "rank"
     RUNNER_CTX_MODEL_DIR = "model_dir"
+
+    EXIT_CODE_CANT_START_XGB = 101
