@@ -1,4 +1,4 @@
-# Convert Machine Learning/Deep Learning to Federated Learning transition with NVFlare
+# Simple ML/DL to FL transition with NVFlare
 
 Converting Deep Learning (DL) to Federated Learning (FL) involves:
 1. Algorithms formulation, how to formulate a DL to FL algorithm and what information needs to be passed between Client and Server
@@ -24,21 +24,23 @@ We cover the following use cases:
 If you just want to follow the steps to create convert the DL to FL code, you can just skip the rest of the readme and
 go directly to the examples.  
 
-For those who are more curious, you can continue to read. 
+For those who are more curious to learn more different types of implementations for use cases, you can continue to read. 
 
-# For More Curious users
+# For Advanced Users: Client API with different implementations 
  
 For the same Client API, we have several implementations for different needs
 
-  1. In-process Client API: the client training script is in the same process as the NVFlare Client.
+  1. In-process Client API: the client training script is in the same process as the NVFlare Client job process.
+     Since training script and client job process both in the same process memory, it is a bit efficient and simpler configuration, here we leverage ```InProcessClientAPIExecutor``` executor.
+     In many cases, you should choose Option 1 for efficiency and simplicity. 
+
+
   2. sub-process client API: the client training script is in a sub-process
-     * the sub-process training script and client process are communicated via FilePipe
-     * the sub-process training script and client process are communicated via CellPipe 
+     Since training script and NVFlare job are in separate process with ```ClientAPILauncherExecutor``` executor, we offer two mechanisms to communicate
+     * the sub-process training script and client job process are communicated via CellPipe (default)
+     * the sub-process training script and client job process are communicated via FilePipe
 
-  In most of the case, you should choose Option 1 for efficiency and simplicity.
-  If you need to have multi-GPU or distributed pytorch training, you should use Option 2. For Option 2, we use CellPipe as default
-
-To make this easy to follow, we have created two job templates: xxx-in-proc job templates are used for in-process client API. 
-
+     If you need to have multi-GPU or distributed pytorch training, you should use Option 2.
+ 
 
 Note: Avoid install TensorFlow and PyTorch on the same virtual environment due to library conflicts.

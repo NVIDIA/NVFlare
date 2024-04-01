@@ -2,7 +2,7 @@
 
 ## sag_pt_he
     name = "sag_pt_he"
-    description = "Scatter and Gather Workflow using pytorch and homomorphic encryption" 
+    description = "FedAvg with Scatter and Gather Workflow using pytorch and homomorphic encryption" 
     class_name  =  "ScatterAndGather"
     controller_type = "server"
     executor_type = "launcher_executor"
