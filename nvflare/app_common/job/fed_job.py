@@ -159,7 +159,8 @@ class FedJob:
                 for line in import_lines:
                     import_module = line.split(" ")[1]
                     import_source_file = import_module.replace(".", os.sep) + ".py"
-                    self._get_custom_file(custom_dir, import_module, import_source_file)
+                    if os.path.exists(import_source_file):
+                        self._get_custom_file(custom_dir, import_module, import_source_file)
 
     def _get_client_app(self, config_dir, custom_dir, fed_app):
         client_app = {"format_version": 2, "executors": []}
@@ -244,6 +245,8 @@ class FedJob:
                 df.write(line)
                 trimmed = line.strip()
                 if trimmed.startswith('from ') and ('import ' in trimmed):
+                    yield trimmed
+                elif trimmed.startswith('import'):
                     yield trimmed
 
     def _get_deploy_map(self):
