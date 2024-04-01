@@ -72,7 +72,7 @@ def main():
     model = LitNet()
     cifar10_dm = CIFAR10DataModule()
     if torch.cuda.is_available():
-        trainer = Trainer(max_epochs=1, accelerator='gpu', devices=1 if torch.cuda.is_available() else None)
+        trainer = Trainer(max_epochs=1, accelerator="gpu", devices=1 if torch.cuda.is_available() else None)
     else:
         trainer = Trainer(max_epochs=1, devices=None)
 

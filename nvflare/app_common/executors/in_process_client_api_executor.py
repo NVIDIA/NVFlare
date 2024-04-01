@@ -46,6 +46,7 @@ class InProcessClientAPIExecutor(Executor):
     def __init__(
         self,
         task_script_path: str,
+        task_script_args: str = "",
         task_fn_args: Dict = None,
         task_wait_time: Optional[float] = None,
         result_pull_interval: float = 0.5,
@@ -68,7 +69,9 @@ class InProcessClientAPIExecutor(Executor):
         if not task_script_path or not task_script_path.endswith(".py"):
             raise ValueError(f"invalid task_script_path '{task_script_path}'")
 
+        # only support main() for backward compatibility
         self._task_fn_path = task_script_path.replace(".py", ".main")
+        self._task_script_args = task_script_args
         self._task_fn_args = task_fn_args
         self._task_wait_time = task_wait_time
 
@@ -84,7 +87,8 @@ class InProcessClientAPIExecutor(Executor):
         self._to_nvflare_converter: Optional[ParamsConverter] = None
 
         self._task_fn_wrapper = ExecTaskFuncWrapper(
-            task_fn_path=self._task_fn_path, task_fn_args=self._task_fn_args)
+            task_fn_path=self._task_fn_path, task_main_args=self._task_script_args, task_fn_args=self._task_fn_args
+        )
         self._engine = None
         self._task_fn_thread = None
         self._log_thread = None
