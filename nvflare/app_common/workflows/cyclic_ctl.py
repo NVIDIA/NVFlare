@@ -17,7 +17,8 @@ import random
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task
-from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import Shareable
@@ -264,11 +265,11 @@ class CyclicController(Controller):
         finally:
             pass
 
-    def handle_dead_job(self, client_name: str, fl_ctx: FLContext):
-        super().handle_dead_job(client_name, fl_ctx)
-
-        new_client_list = []
-        for client in self._participating_clients:
-            if client_name != client.name:
-                new_client_list.append(client)
-        self._participating_clients = new_client_list
+    def handle_event(self, event_type, fl_ctx):
+        if event_type == EventType.JOB_DEAD:
+            client_name = fl_ctx.get_prop(FLContextKey.DEAD_JOB_CLIENT_NAME)
+            new_client_list = []
+            for client in self._participating_clients:
+                if client_name != client.name:
+                    new_client_list.append(client)
+            self._participating_clients = new_client_list

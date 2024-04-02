@@ -157,6 +157,7 @@ class FLContextKey(object):
     CLIENT_TOKEN = "__client_token"
     AUTHORIZATION_RESULT = "_authorization_result"
     AUTHORIZATION_REASON = "_authorization_reason"
+    DEAD_JOB_CLIENT_NAME = "_dead_job_client_name"
 
     CLIENT_REGISTER_DATA = "_client_register_data"
     SECURITY_ITEMS = "_security_items"

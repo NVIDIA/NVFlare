@@ -50,7 +50,7 @@ def init(rank: Optional[str] = None):
     else:
         client_api = ExProcessClientAPI()
 
-    client_api.init(rank)
+    client_api.init(rank=rank)
 
 
 def receive(timeout: Optional[float] = None) -> Optional[FLModel]:
@@ -70,6 +70,8 @@ def send(model: FLModel, clear_cache: bool = True) -> None:
         model (FLModel): Sends a FLModel object.
         clear_cache: clear cache after send
     """
+    if not isinstance(model, FLModel):
+        raise TypeError("model needs to be an instance of FLModel")
     global client_api
     return client_api.send(model, clear_cache)
 

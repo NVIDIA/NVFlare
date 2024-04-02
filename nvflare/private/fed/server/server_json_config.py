@@ -42,7 +42,6 @@ class WorkFlow:
         """
         self.id = id
         self.controller = controller
-        self.controller.set_communicator(WFCommServer())
 
 
 class ServerJsonConfigurator(FedJsonConfigurator):
@@ -128,13 +127,13 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             return
 
         if re.search(r"^workflows\.#[0-9]+$", path):
-            workflow = self.authorize_and_build_component(element, config_ctx, node)
-            if not isinstance(workflow, Controller):
-                raise ConfigError('"workflow" must be a Controller object, but got {}'.format(type(workflow)))
+            controller = self.authorize_and_build_component(element, config_ctx, node)
+            if not isinstance(controller, Controller):
+                raise ConfigError('"controller" must be a Controller object, but got {}'.format(type(controller)))
 
             cid = element.get("id", None)
             if not cid:
-                cid = type(workflow).__name__
+                cid = type(controller).__name__
 
             if not isinstance(cid, str):
                 raise ConfigError('"id" must be str but got {}'.format(type(cid)))
@@ -145,8 +144,12 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             if cid in self.components:
                 raise ConfigError('duplicate component id "{}"'.format(cid))
 
-            self.workflows.append(WorkFlow(cid, workflow))
-            self.components[cid] = workflow
+            communicator = WFCommServer()
+            self.handlers.append(communicator)
+            controller.set_communicator(communicator)
+
+            self.workflows.append(WorkFlow(cid, controller))
+            self.components[cid] = controller
             return
 
     def _get_all_workflows_ids(self):
