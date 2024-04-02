@@ -210,10 +210,10 @@ class PipeHandler(object):
         """Starts the PipeHandler.
         Note: before calling this method, the pipe managed by this PipeHandler must have been opened.
         """
-        if not self.reader.is_alive():
+        if self.reader and not self.reader.is_alive():
             self.reader.start()
 
-        if not self.heartbeat_sender.is_alive():
+        if self.heartbeat_sender and not self.heartbeat_sender.is_alive():
             self.heartbeat_sender.start()
 
     def stop(self, close_pipe=True):
@@ -258,7 +258,8 @@ class PipeHandler(object):
         p = self.pipe
         if p:
             try:
-                p.send(self._make_event_message(Topic.END, data))
+                # fire and forget
+                p.send(self._make_event_message(Topic.END, data), 0.1)
             except Exception as ex:
                 self.logger.debug(f"exception notify_end: {secure_format_exception(ex)}")
 
@@ -267,7 +268,8 @@ class PipeHandler(object):
         p = self.pipe
         if p:
             try:
-                p.send(self._make_event_message(Topic.ABORT, data))
+                # fire and forget
+                p.send(self._make_event_message(Topic.ABORT, data), 0.1)
             except Exception as ex:
                 self.logger.debug(f"exception notify_abort: {secure_format_exception(ex)}")
 
@@ -346,6 +348,7 @@ class PipeHandler(object):
                 last_heartbeat_sent_time = now
 
             time.sleep(self._check_interval)
+        self.heartbeat_sender = None
 
     def get_next(self) -> Optional[Message]:
         """Gets the next message from the message queue.
