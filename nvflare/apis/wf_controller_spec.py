@@ -39,8 +39,7 @@ class WFControllerSpec(ABC):
             data (any): data to be sent to clients.
             targets (List[str]): the list of target client names.
             timeout (int): time to wait for clients to perform task.
-            wait_time_after_min_received (int): time to wait after
-                minimum number of clients responses has been received.
+            wait_time_after_min_received (int): time to wait after minimum number of clients responses have been received.
             blocking (bool): whether to block to wait for task result.
             callback (Callable[any]): callback when a result is received, only called when blocking=False.
 
