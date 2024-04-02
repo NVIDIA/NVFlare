@@ -13,7 +13,7 @@
 # limitations under the License.
 import threading
 import time
-from typing import Dict, Optional
+from typing import Optional
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
