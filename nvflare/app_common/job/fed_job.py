@@ -33,10 +33,10 @@ class FedApp:
     def __init__(self, server_app: ServerApp, client_app: ClientApp) -> None:
         super().__init__()
 
-        if not isinstance(server_app, ServerApp):
+        if server_app and not isinstance(server_app, ServerApp):
             raise ValueError(f"server_app must be ServerApp, but got {server_app.__class__}")
-        if not isinstance(client_app, ClientApp):
-            raise ValueError(f"server_app must be ClientApp, but got {client_app.__class__}")
+        if client_app and not isinstance(client_app, ClientApp):
+            raise ValueError(f"client_app must be ClientApp, but got {client_app.__class__}")
 
         self.server_app: ServerApp = server_app
         self.client_app: ClientApp = client_app
@@ -246,7 +246,7 @@ class FedJob:
                 trimmed = line.strip()
                 if trimmed.startswith('from ') and ('import ' in trimmed):
                     yield trimmed
-                elif trimmed.startswith('import'):
+                elif trimmed.startswith('import '):
                     yield trimmed
 
     def _get_deploy_map(self):
