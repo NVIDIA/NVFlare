@@ -24,7 +24,7 @@ class TestExecTaskFuncWrapper(unittest.TestCase):
         # Test initialization with a function that requires arguments
         task_fn_path = "nvflare.fuel.utils.class_utils.instantiate_class"
         task_fn_args = {"class_path": "foo", "init_params": {}}
-        wrapper = ExecTaskFuncWrapper(task_fn_path, task_fn_args)
+        wrapper = ExecTaskFuncWrapper(task_fn_path=task_fn_path, task_main_args=None, task_fn_args=task_fn_args)
 
         self.assertEqual(wrapper.task_fn_path, task_fn_path)
         self.assertEqual(wrapper.task_fn_args, task_fn_args)
@@ -34,7 +34,7 @@ class TestExecTaskFuncWrapper(unittest.TestCase):
         # Test initialization with a function that does not require arguments
         task_fn_path = "nvflare.utils.cli_utils.get_home_dir"
         task_fn_args = {"class_path": "foo", "init_params": {}}
-        wrapper = ExecTaskFuncWrapper(task_fn_path, task_fn_args)
+        wrapper = ExecTaskFuncWrapper(task_fn_path=task_fn_path, task_main_args=None, task_fn_args=task_fn_args)
 
         self.assertEqual(wrapper.task_fn_path, task_fn_path)
         self.assertEqual(wrapper.task_fn_args, task_fn_args)
@@ -57,7 +57,7 @@ class TestExecTaskFuncWrapper(unittest.TestCase):
         task_fn_args = {"init_params": {}}
 
         with self.assertRaises(ValueError) as context:
-            wrapper = ExecTaskFuncWrapper(task_fn_path, task_fn_args)
+            wrapper = ExecTaskFuncWrapper(task_fn_path=task_fn_path, task_main_args=None, task_fn_args=task_fn_args)
 
         expected_msg = f"function '{task_fn_path}' requires 2 arguments, but 1 provided"
         self.assertEqual(str(context.exception), expected_msg)
@@ -68,11 +68,22 @@ class TestExecTaskFuncWrapper(unittest.TestCase):
         # def augment(to_dict: dict, from_dict: dict, from_override_to=False, append_list="components")
         task_fn_path = "nvflare.fuel.utils.dict_utils.augment"
         task_fn_args = {"to_dict": {}, "from_dict": {}}
-        wrapper = ExecTaskFuncWrapper(task_fn_path, task_fn_args)
+        wrapper = ExecTaskFuncWrapper(task_fn_path=task_fn_path, task_main_args=None, task_fn_args=task_fn_args)
 
         self.assertEqual(wrapper.task_fn_path, task_fn_path)
         self.assertEqual(wrapper.task_fn_args, task_fn_args)
         self.assertTrue(wrapper.task_fn_require_args)
+
+    def test_app_scripts_and_args(self):
+        # Test initialization with a function that requires arguments but only partially are provided
+        # the missing arg has default value
+        # def augment(to_dict: dict, from_dict: dict, from_override_to=False, append_list="components")
+        task_fn_path = "nvflare.cli.main"
+        task_main_args = "--batch_size 4"
+        wrapper = ExecTaskFuncWrapper(task_fn_path=task_fn_path, task_main_args=task_main_args)
+
+        self.assertEqual(wrapper.task_fn_path, task_fn_path)
+        self.assertEqual(wrapper.get_sys_argv(), ["nvflare/cli.py", "--batch_size", "4"])
 
     def test_run(self):
         message_bus = DataBus()
@@ -82,7 +93,7 @@ class TestExecTaskFuncWrapper(unittest.TestCase):
         # Test the run method
         task_fn_path = "nvflare.fuel.utils.dict_utils.augment"
         task_fn_args = {"to_dict": {}, "from_dict": {}}
-        wrapper = ExecTaskFuncWrapper(task_fn_path, task_fn_args)
+        wrapper = ExecTaskFuncWrapper(task_fn_path=task_fn_path, task_main_args=None, task_fn_args=task_fn_args)
 
         with patch.object(wrapper, "run") as mock_task_fn:
             wrapper.run()
