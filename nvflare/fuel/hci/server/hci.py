@@ -17,7 +17,8 @@ import socketserver
 import ssl
 import threading
 
-from nvflare.fuel.hci.conn import Connection, receive_til_end
+from nvflare.fuel.hci.binary_proto import CT_BINARY, receive_all
+from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey, make_meta, validate_proto
 from nvflare.fuel.hci.security import IdentityKey, get_identity_info
 from nvflare.security.logging import secure_log_traceback
@@ -36,6 +37,7 @@ class _MsgHandler(socketserver.BaseRequestHandler):
     """
 
     def handle(self):
+        conn = None
         try:
             conn = Connection(self.request, self.server)
             conn.set_prop(ConnProps.CA_CERT, self.server.ca_cert)
@@ -58,44 +60,54 @@ class _MsgHandler(socketserver.BaseRequestHandler):
                     "authentication error", meta=make_meta(MetaStatusValue.NOT_AUTHENTICATED, info="invalid credential")
                 )
             else:
-                req = receive_til_end(self.request).strip()
-                command = None
-                req_json = validate_proto(req)
-                conn.request = req_json
-                if req_json is not None:
-                    meta = req_json.get(ProtoKey.META, None)
-                    if meta and isinstance(meta, dict):
-                        cmd_timeout = meta.get(MetaKey.CMD_TIMEOUT)
-                        if cmd_timeout:
-                            conn.set_prop(ConnProps.CMD_TIMEOUT, cmd_timeout)
+                ct, req, extra = receive_all(self.request)
+                if ct == CT_BINARY and not extra:
+                    conn.append_error(
+                        "no data received from client",
+                        meta=make_meta(MetaStatusValue.INTERNAL_ERROR, info="no data received"),
+                    )
+                else:
+                    req = req.strip()
+                    command = None
+                    req_json = validate_proto(req)
+                    conn.request = req_json
+                    conn.content_type = ct
+                    conn.extra = extra
 
-                        custom_props = meta.get(MetaKey.CUSTOM_PROPS)
-                        if custom_props:
-                            conn.set_prop(ConnProps.CUSTOM_PROPS, custom_props)
+                    if req_json is not None:
+                        meta = req_json.get(ProtoKey.META, None)
+                        if meta and isinstance(meta, dict):
+                            cmd_timeout = meta.get(MetaKey.CMD_TIMEOUT)
+                            if cmd_timeout:
+                                conn.set_prop(ConnProps.CMD_TIMEOUT, cmd_timeout)
 
-                    data = req_json[ProtoKey.DATA]
-                    for item in data:
-                        it = item[ProtoKey.TYPE]
-                        if it == ProtoKey.COMMAND:
-                            command = item[ProtoKey.DATA]
-                            break
+                            custom_props = meta.get(MetaKey.CUSTOM_PROPS)
+                            if custom_props:
+                                conn.set_prop(ConnProps.CUSTOM_PROPS, custom_props)
 
-                    if command is None:
+                        data = req_json[ProtoKey.DATA]
+                        for item in data:
+                            it = item[ProtoKey.TYPE]
+                            if it == ProtoKey.COMMAND:
+                                command = item[ProtoKey.DATA]
+                                break
+
+                        if command is None:
+                            conn.append_error(
+                                "protocol violation",
+                                meta=make_meta(MetaStatusValue.INTERNAL_ERROR, "protocol violation"),
+                            )
+                        else:
+                            self.server.cmd_reg.process_command(conn, command)
+                    else:
+                        # not json encoded
                         conn.append_error(
                             "protocol violation", meta=make_meta(MetaStatusValue.INTERNAL_ERROR, "protocol violation")
                         )
-                    else:
-                        self.server.cmd_reg.process_command(conn, command)
-                else:
-                    # not json encoded
-                    conn.append_error(
-                        "protocol violation", meta=make_meta(MetaStatusValue.INTERNAL_ERROR, "protocol violation")
-                    )
-
-            if not conn.ended:
-                conn.close()
-        except Exception:
+        except:
             secure_log_traceback()
+        if conn and not conn.ended:
+            conn.close()
 
 
 def initialize_hci():

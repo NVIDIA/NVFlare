@@ -15,18 +15,10 @@
 import logging
 import os
 
-from nvflare.fuel.hci.chunk import MAX_CHUNK_SIZE, Sender
+from nvflare.fuel.hci.binary_proto import send_binary_file
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.server.constants import ConnProps
-
-
-class _BytesSender:
-    def __init__(self, conn: Connection):
-        self.conn = conn
-
-    def send(self, data):
-        self.conn.flush_bytes(data)
 
 
 class BinaryTransfer:
@@ -46,17 +38,7 @@ class BinaryTransfer:
             return
 
         self.logger.debug(f"called to send {full_path} ...")
-        bytes_sender = _BytesSender(conn)
-        sender = Sender(send_data_func=bytes_sender.send)
-        buffer_size = MAX_CHUNK_SIZE
-        bytes_sent = 0
-        with open(full_path, mode="rb") as f:
-            chunk = f.read(buffer_size)
-            while chunk:
-                sender.send(chunk)
-                bytes_sent += len(chunk)
-                chunk = f.read(buffer_size)
-            sender.close()
+        bytes_sent = send_binary_file(conn.sock, full_path, "")
         self.logger.debug(f"finished sending {full_path}: {bytes_sent} bytes sent")
 
     @staticmethod

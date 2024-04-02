@@ -2,7 +2,7 @@
 
 ## sag_pt_executor
     name = "sag_pt_executor"
-    description = "scatter & gather workflow and cross-site evaluation with PyTorch Executor" 
+    description = "FedAvg with scatter & gather workflow and cross-site evaluation with PyTorch Executor" 
     class_name  =  "CIFAR10Executor"
     controller_type = "server"
     executor_type = "Executor"

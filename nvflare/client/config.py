@@ -41,8 +41,7 @@ class ConfigKey:
     PIPE = "pipe"
     CLASS_NAME = "CLASS_NAME"
     ARG = "ARG"
-    SITE_NAME = "SITE_NAME"
-    JOB_ID = "JOB_ID"
+    TASK_NAME = "TASK_NAME"
     TASK_EXCHANGE = "TASK_EXCHANGE"
     METRICS_EXCHANGE = "METRICS_EXCHANGE"
 
@@ -121,7 +120,7 @@ class ClientConfig:
             config = {}
         self.config = config
 
-    def get_config(self):
+    def get_config(self) -> Dict:
         return self.config
 
     def get_pipe_channel_name(self, section: str) -> str:

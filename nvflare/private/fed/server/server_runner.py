@@ -122,12 +122,14 @@ class ServerRunner(TBI):
             wf = self.config.workflows[self.current_wf_index]
             try:
                 with self.engine.new_context() as fl_ctx:
-                    self.log_info(fl_ctx, "starting workflow {} ({}) ...".format(wf.id, type(wf.responder)))
+                    self.log_info(fl_ctx, "starting workflow {} ({}) ...".format(wf.id, type(wf.controller)))
 
                     fl_ctx.set_prop(FLContextKey.WORKFLOW, wf.id, sticky=True)
-                    wf.responder.initialize_run(fl_ctx)
 
-                    self.log_info(fl_ctx, "Workflow {} ({}) started".format(wf.id, type(wf.responder)))
+                    wf.controller.communicator.initialize_run(fl_ctx)
+                    wf.controller.initialize(fl_ctx)
+
+                    self.log_info(fl_ctx, "Workflow {} ({}) started".format(wf.id, type(wf.controller)))
                     self.log_debug(fl_ctx, "firing event EventType.START_WORKFLOW")
                     self.fire_event(EventType.START_WORKFLOW, fl_ctx)
 
@@ -137,7 +139,7 @@ class ServerRunner(TBI):
                         self.current_wf = wf
 
                 with self.engine.new_context() as fl_ctx:
-                    wf.responder.control_flow(self.abort_signal, fl_ctx)
+                    wf.controller.control_flow(self.abort_signal, fl_ctx)
             except Exception as e:
                 with self.engine.new_context() as fl_ctx:
                     self.log_exception(fl_ctx, "Exception in workflow {}: {}".format(wf.id, secure_format_exception(e)))
@@ -155,7 +157,8 @@ class ServerRunner(TBI):
 
                     self.log_info(fl_ctx, f"Workflow: {wf.id} finalizing ...")
                     try:
-                        wf.responder.finalize_run(fl_ctx)
+                        wf.controller.stop_controller(fl_ctx)
+                        wf.controller.communicator.finalize_run(fl_ctx)
                     except Exception as e:
                         self.log_exception(
                             fl_ctx, "Error finalizing workflow {}: {}".format(wf.id, secure_format_exception(e))
@@ -304,7 +307,7 @@ class ServerRunner(TBI):
                 )
                 with self.wf_lock:
                     if self.current_wf:
-                        self.current_wf.responder.handle_exception(task_id, fl_ctx)
+                        self.current_wf.controller.communicator.handle_exception(task_id, fl_ctx)
                 return self._task_try_again()
 
             self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_DATA_FILTER")
@@ -330,7 +333,13 @@ class ServerRunner(TBI):
                     self.log_debug(fl_ctx, "no current workflow - asked client to try again later")
                     return "", "", None
 
-                task_name, task_id, task_data = self.current_wf.responder.process_task_request(client, fl_ctx)
+                self.log_debug(fl_ctx, "firing event EventType.BEFORE_PROCESS_TASK_REQUEST")
+                self.fire_event(EventType.BEFORE_PROCESS_TASK_REQUEST, fl_ctx)
+                task_name, task_id, task_data = self.current_wf.controller.communicator.process_task_request(
+                    client, fl_ctx
+                )
+                self.log_debug(fl_ctx, "firing event EventType.AFTER_PROCESS_TASK_REQUEST")
+                self.fire_event(EventType.AFTER_PROCESS_TASK_REQUEST, fl_ctx)
 
                 if task_name and task_name != SpecialTaskName.TRY_AGAIN:
                     if task_data:
@@ -371,7 +380,10 @@ class ServerRunner(TBI):
                 if self.current_wf is None:
                     return
 
-                self.current_wf.responder.handle_dead_job(client_name=client_name, fl_ctx=fl_ctx)
+                fl_ctx.set_prop(FLContextKey.DEAD_JOB_CLIENT_NAME, client_name)
+                self.log_debug(fl_ctx, "firing event EventType.JOB_DEAD")
+                self.fire_event(EventType.JOB_DEAD, fl_ctx)
+
             except Exception as e:
                 self.log_exception(
                     fl_ctx, f"Error processing dead job by workflow {self.current_wf.id}: {secure_format_exception(e)}"
@@ -475,7 +487,7 @@ class ServerRunner(TBI):
                 self.log_debug(fl_ctx, "firing event EventType.BEFORE_PROCESS_SUBMISSION")
                 self.fire_event(EventType.BEFORE_PROCESS_SUBMISSION, fl_ctx)
 
-                self.current_wf.responder.process_submission(
+                self.current_wf.controller.communicator.process_submission(
                     client=client, task_name=task_name, task_id=task_id, result=result, fl_ctx=fl_ctx
                 )
                 self.log_info(fl_ctx, "finished processing client result by {}".format(self.current_wf.id))
@@ -501,11 +513,11 @@ class ServerRunner(TBI):
         self.log_debug(fl_ctx, f"received task_check on task {task_id}")
 
         with self.wf_lock:
-            if self.current_wf is None or self.current_wf.responder is None:
+            if self.current_wf is None or self.current_wf.controller is None:
                 self.log_info(fl_ctx, "no current workflow - dropped task_check.")
                 return make_reply(ReturnCode.TASK_UNKNOWN)
 
-            task = self.current_wf.responder.process_task_check(task_id=task_id, fl_ctx=fl_ctx)
+            task = self.current_wf.controller.communicator.process_task_check(task_id=task_id, fl_ctx=fl_ctx)
             if task:
                 self.log_debug(fl_ctx, f"task {task_id} is still good")
                 return make_reply(ReturnCode.OK)

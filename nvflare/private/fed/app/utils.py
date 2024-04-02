@@ -20,6 +20,9 @@ import time
 
 import psutil
 
+from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.fuel.hci.security import hash_password
 from nvflare.private.defs import SSLConstants
 from nvflare.private.fed.runner import Runner
@@ -98,3 +101,12 @@ def version_check():
         raise RuntimeError("Python versions 3.11 and above are not yet supported. Please use Python 3.8, 3.9 or 3.10.")
     if sys.version_info < (3, 8):
         raise RuntimeError("Python versions 3.7 and below are not supported. Please use Python 3.8, 3.9 or 3.10")
+
+
+def component_security_check(fl_ctx: FLContext):
+    exceptions = fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
+    if exceptions:
+        for _, exception in exceptions.items():
+            if isinstance(exception, UnsafeComponentError):
+                print(f"Unsafe component configured, could not start {fl_ctx.get_identity_name()}!!")
+                raise RuntimeError(exception)

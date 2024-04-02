@@ -331,9 +331,6 @@ class SimulatorRunner(FLComponent):
             client_name, self.args
         )
         self.federated_clients.append(client)
-        app_root = os.path.join(self.simulator_root, "app_" + client_name)
-        app_custom_folder = os.path.join(app_root, "custom")
-        sys.path.append(app_custom_folder)
 
     def _set_client_status(self):
         for client in self.federated_clients:
@@ -508,6 +505,7 @@ class SimulatorClientRunner(FLComponent):
         self.deploy_args = deploy_args
         self.build_ctx = build_ctx
         self.kv_list = parse_vars(args.set)
+        self.logging_config = os.path.join(self.args.workspace, "local", WorkspaceConstants.LOGGING_CONFIG)
 
         self.end_run_clients = []
 
@@ -576,10 +574,13 @@ class SimulatorClientRunner(FLComponent):
 
     def do_one_task(self, client, num_of_threads, gpu, lock, timeout=60.0, task_name=RunnerTask.TASK_EXEC):
         open_port = get_open_ports(1)[0]
+        client_workspace = os.path.join(self.args.workspace, SimulatorConstants.JOB_NAME, "app_" + client.client_name)
         command = (
             sys.executable
             + " -m nvflare.private.fed.app.simulator.simulator_worker -o "
-            + self.args.workspace
+            + client_workspace
+            + " --logging_config "
+            + self.logging_config
             + " --client "
             + client.client_name
             + " --token "

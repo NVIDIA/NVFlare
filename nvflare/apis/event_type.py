@@ -34,9 +34,12 @@ class EventType(object):
     JOB_COMPLETED = "_job_completed"
     JOB_ABORTED = "_job_aborted"
     JOB_CANCELLED = "_job_cancelled"
+    JOB_DEAD = "_job_dead"
 
     BEFORE_PULL_TASK = "_before_pull_task"
     AFTER_PULL_TASK = "_after_pull_task"
+    BEFORE_PROCESS_TASK_REQUEST = "_before_process_task_request"
+    AFTER_PROCESS_TASK_REQUEST = "_after_process_task_request"
     BEFORE_PROCESS_SUBMISSION = "_before_process_submission"
     AFTER_PROCESS_SUBMISSION = "_after_process_submission"
 
@@ -48,6 +51,8 @@ class EventType(object):
     AFTER_TASK_EXECUTION = "_after_task_execution"
     BEFORE_SEND_TASK_RESULT = "_before_send_task_result"
     AFTER_SEND_TASK_RESULT = "_after_send_task_result"
+    BEFORE_PROCESS_RESULT_OF_UNKNOWN_TASK = "_before_process_result_of_unknown_task"
+    AFTER_PROCESS_RESULT_OF_UNKNOWN_TASK = "_after_process_result_of_unknown_task"
 
     CRITICAL_LOG_AVAILABLE = "_critical_log_available"
     ERROR_LOG_AVAILABLE = "_error_log_available"
@@ -71,8 +76,14 @@ class EventType(object):
 
     BEFORE_CLIENT_REGISTER = "_before_client_register"
     AFTER_CLIENT_REGISTER = "_after_client_register"
-    CLIENT_REGISTERED = "_client_registered"
+    CLIENT_REGISTER_RECEIVED = "_client_register_received"
+    CLIENT_REGISTER_PROCESSED = "_client_register_processed"
+    CLIENT_QUIT = "_client_quit"
     SYSTEM_BOOTSTRAP = "_system_bootstrap"
+    BEFORE_CLIENT_HEARTBEAT = "_before_client_heartbeat"
+    AFTER_CLIENT_HEARTBEAT = "_after_client_heartbeat"
+    CLIENT_HEARTBEAT_RECEIVED = "_client_heartbeat_received"
+    CLIENT_HEARTBEAT_PROCESSED = "_client_heartbeat_processed"
 
     AUTHORIZE_COMMAND_CHECK = "_authorize_command_check"
     BEFORE_BUILD_COMPONENT = "_before_build_component"

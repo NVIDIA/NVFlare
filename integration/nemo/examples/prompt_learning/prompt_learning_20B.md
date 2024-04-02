@@ -1,13 +1,13 @@
 ## Federated p-tuning using a 20 billion parameter GPT model
 
-In this example, we utilize NeMo's [prompt learning](https://docs.nvidia.com/deeplearning/nemo/user-guide/docs/en/stable/nlp/nemo_megatron/prompt_learning.html)
+In this example, we utilize NeMo's [prompt learning](https://docs.nvidia.com/deeplearning/nemo/user-guide/docs/en/v1.17.0/nlp/nemo_megatron/prompt_learning.html)
 feature to showcase how to adapt a large language model (LLM) to 
 a downstream task such as financial sentiment predictions. 
 
 The prompt learning technique shown in the example is p-tuning which adds a small prompt encoder network to the LLM
 to produce virtual tokens that guide the model toward the desired output of the downstream task.
 
-For more details on how to change hyperparameters for prompt learning in NeMo, see this [tutorial](https://github.com/NVIDIA/NeMo/blob/main/tutorials/nlp/Multitask_Prompt_and_PTuning.ipynb) which is also the basis for this NVFlare tutorial.
+For more details on how to change hyperparameters for prompt learning in NeMo, see this [tutorial](https://github.com/NVIDIA/NeMo/blob/v1.17.0/tutorials/nlp/Multitask_Prompt_and_PTuning.ipynb) which is also the basis for this NVFlare tutorial.
 
 ## Dependencies
 This example running a 20B GPT model requires more computational resources.
@@ -15,13 +15,18 @@ To run three clients in parallel, we require at least six GPUs with 64 GB memory
 (Ampere or later GPU architecture).
 The example was tested on 6xA100 GPUs with 80 GB each.
 
-We assume you followed the instructions [here](../../README.md#requirements) 
-to install the NeMo framework and the NeMo-NVFlare package. 
+We assume you followed the instructions [here](./README.md) 
+to install the NeMo framework and mount the required code. 
 
 The example was tested using the [NeMo Docker container](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/nemo), 
 available with `docker pull nvcr.io/nvidia/nemo:23.02`.
 
 For downloading the pre-trained model, we use [git lfs](https://git-lfs.com).
+Install it in the container with
+```
+apt update
+apt install git-lfs
+```
 
 ## Download the pre-trained LLM
 In this example, we use a [Megatron-GPT 20B](https://huggingface.co/nvidia/nemo-megatron-gpt-20B), a transformer-based language model based on the GPT architecture.
@@ -29,7 +34,8 @@ In this example, we use a [Megatron-GPT 20B](https://huggingface.co/nvidia/nemo-
 # download the model from HuggingFace using git lfs
 git clone https://huggingface.co/nvidia/nemo-megatron-gpt-20B
 ```
-After download, the checkpoint `nemo_gpt20B_bf16_tp4.nemo` should have a size of 38 GB. 
+> Note, this will take some time. After download, the checkpoint `nemo_gpt20B_bf16_tp4.nemo` should have a size of 38 GB. 
+> You can check the download status with `du -sh nemo-megatron-gpt-20B/nemo_gpt20B_bf16_tp4.nemo`.
 
 Next, in order to minimize the number of GPUs needed to simulate each client, 
 we convert the downloaded checkpoint that was trained using tensor parallel of size 4, to tensor parallel of size 2.
@@ -115,27 +121,30 @@ In a standard terminal, run
 ```
 python3 create_configs.py --job_folder "jobs/gpt_p-tuning_local_20B" --num_clients 3 --devices 2 --aggregation_epochs 50 --num_rounds 1
 ```
-Next, submit the federated p-tuning job using the admin prompt.
-Replace `[PWD]` with the path to this directory.
+Next, submit the federated p-tuning job in the terminal running the admin command prompt.
+
 ```
-submit_job [PWD]/jobs/gpt_p-tuning_local_20B
+submit_job /workspace/jobs/gpt_p-tuning_local_20B
 ```
 
 #### 2. Federated P-Tuning
 We use the [FedAvg](https://arxiv.org/abs/1602.05629) algorithm to p-tune the model in a federated scenario. 
 First, create and modify the configuration files again. 
 This time, we increase the number of FL rounds and decrease the number of local epochs per round to match the federated scenario.
-Here, each client p-tunes for one local epoch before sending their local model updates to the server for aggregation. This is repeated for 50 FL rounds.
+Here, each client p-tunes for one local epoch before sending their local model updates to the server for aggregation. 
+This is repeated for 50 FL rounds.
+
+In a standard terminal, run
 ```
 python3 create_configs.py --job_folder "jobs/gpt_p-tuning_fedavg_20B" --num_clients 3 --devices 2 --aggregation_epochs 1 --num_rounds 50
 ```
-Next, simulate the federated p-tuning using FedAvg.
+Next, simulate the federated p-tuning using FedAvg in the terminal running the admin command prompt.
 ```
-submit_job [PWD]/jobs/gpt_p-tuning_fedavg_20B
+submit_job /workspace/jobs/gpt_p-tuning_fedavg_20B
 ```
 You can visualize the training process using TensorBoard
 ```
-tensorboard --logdir /tmp/nvflare/nemo
+tensorboard --logdir /tmp/nvflare/poc
 ```
 
 ## Results

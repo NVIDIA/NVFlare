@@ -154,12 +154,13 @@ class ServerEngineSpec(EngineSpec, ABC):
         pass
 
     @abstractmethod
-    def start_client_job(self, job_id, client_sites):
+    def start_client_job(self, job_id, client_sites, fl_ctx: FLContext):
         """To send the start client run commands to the clients
 
         Args:
             client_sites: client sites
             job_id: job_id
+            fl_ctx: FLContext
 
         Returns:
 
@@ -187,7 +188,7 @@ class ServerEngineSpec(EngineSpec, ABC):
 
     @abstractmethod
     def cancel_client_resources(
-        self, resource_check_results: Dict[str, Tuple[bool, str]], resource_reqs: Dict[str, dict]
+        self, resource_check_results: Dict[str, Tuple[bool, str]], resource_reqs: Dict[str, dict], fl_ctx: FLContext
     ):
         """Cancels the request resources for the job.
 
@@ -195,6 +196,7 @@ class ServerEngineSpec(EngineSpec, ABC):
             resource_check_results: A dict of {client_name: client_check_result}
                 where client_check_result is a tuple of (is_resource_enough, resource reserve token if any)
             resource_reqs: A dict of {client_name: resource requirements dict}
+            fl_ctx: FLContext
         """
         pass
 

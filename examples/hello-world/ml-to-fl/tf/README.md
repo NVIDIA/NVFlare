@@ -1,18 +1,37 @@
 # TensorFlow Deep Learning to Federated Learning transition with NVFlare
 
+We will demonstrate how to transform an existing DL code into an FL application step-by-step:
+
+1. [How to modify an existing training script using DL2FL Client API](#transform-cifar10-tensorflow-training-code-to-fl-with-nvflare-client-api)
+
+2. [How to modify an existing multi GPU training script using DL2FL Client API](#transform-cifar10-tensorflow-multi-gpu-training-code-to-fl-with-nvflare-client-api)
+
+## Software Requirements
+
 Please install the requirements first, it is suggested to install inside a virtual environment:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Note that for running with GPUs, we recommend using [NVIDIA TensorFlow docker](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow)
+Please also configure the job templates folder:
 
-We will demonstrate how to transform an existing DL code into an FL application step-by-step:
+```bash
+nvflare config -jt ../../../../job_templates/
+nvflare job list_templates
+```
 
-1. [How to modify an existing training script using DL2FL Client API](#transform-cifar10-tensorflow-training-code-to-fl-with-nvflare-client-api)
+## Minimum Hardware Requirements
 
-2. [How to modify an existing multi GPU training script using DL2FL Client API](#transform-cifar10-tensorflow-multi-gpu-training-code-to-fl-with-nvflare-client-api)
+| Example name | minimum requirements |
+| ------------ | -------------------- |
+| [How to modify an existing training script using DL2FL Client API](#transform-cifar10-tensorflow-training-code-to-fl-with-nvflare-client-api) | 1 CPU or 1 GPU* |
+| [How to modify an existing multi GPU training script using DL2FL Client API](#transform-cifar10-tensorflow-multi-gpu-training-code-to-fl-with-nvflare-client-api) | 2 CPUs or 2 GPUs* |
+
+\* depends on whether TF can found GPU or not
+
+
+For running with GPUs, please check the [note](#notes-on-running-with-gpus)
 
 ## Transform CIFAR10 TensorFlow training code to FL with NVFLARE Client API
 
@@ -46,7 +65,6 @@ Please refer to [JOB CLI tutorial](../../../tutorials/job_cli.ipynb) on how to g
 We choose the [tensorflow job template](../../../../job_templates/sag_tf/) and run the following command to create the job:
 
 ```bash
-nvflare config -jt ../../../../job_templates
 nvflare job create -force -j ./jobs/tensorflow -w sag_tf -sd ./code/ -f config_fed_client.conf app_script=cifar10_tf_fl.py
 ```
 
@@ -82,7 +100,6 @@ Please refer to [JOB CLI tutorial](../../../tutorials/job_cli.ipynb) on how to g
 We choose the [tensorflow job template](../../../../job_templates/sag_tf/) and run the following command to create the job:
 
 ```bash
-nvflare config -jt ../../../../job_templates
 nvflare job create -force -j ./jobs/tensorflow_multi_gpu -w sag_tf -sd ./code/ -f config_fed_client.conf app_script=cifar10_tf_multi_gpu_fl.py
 ```
 
@@ -90,7 +107,27 @@ Then we can run the job using the simulator:
 
 ```bash
 bash ./prepare_data.sh
-TF_GPU_ALLOCATOR=cuda_malloc_async nvflare simulator -n 2 -t 2 ./jobs/tensorflow_multi_gpu -w tensorflow_multi_gpu_workspace
+nvflare simulator -n 2 -t 2 ./jobs/tensorflow_multi_gpu -w tensorflow_multi_gpu_workspace
 ```
 
-Note that the flag "TF_GPU_ALLOCATOR=cuda_malloc_async" is only needed if you are going to run more than one process in the same GPU.
+## Notes on running with GPUs
+
+
+If you choose to run the example using GPUs, it is important to note that,
+by default, TensorFlow will attempt to allocate all available GPU memory at the start.
+In scenarios where multiple clients are involved, you have a couple of options to address this.
+
+One approach is to include specific flags to prevent TensorFlow from allocating all GPU memory.
+For instance:
+
+```bash
+TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async nvflare simulator -n 2 -t 2 ./jobs/tensorflow_multi_gpu -w tensorflow_multi_gpu_workspace
+```
+
+If you possess more GPUs than clients,
+an alternative strategy is to run one client on each GPU.
+This can be achieved as illustrated below:
+
+```bash
+nvflare simulator -n 2 -gpu 0,1 ./jobs/tensorflow_multi_gpu -w tensorflow_multi_gpu_workspace
+```

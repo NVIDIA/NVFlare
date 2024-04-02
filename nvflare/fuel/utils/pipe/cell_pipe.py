@@ -211,6 +211,16 @@ class CellPipe(Pipe):
         self.logger.info(f"registered CellPipe request CB for {self.channel}")
 
     def send(self, msg: Message, timeout=None) -> bool:
+        """Sends the specified message to the peer.
+
+        Args:
+            msg: the message to be sent
+            timeout: if specified, number of secs to wait for the peer to read the message.
+                If not specified, wait indefinitely.
+
+        Returns:
+            Whether the message is read by the peer.
+        """
         with self.pipe_lock:
             if self.closed:
                 raise BrokenPipeError("pipe closed")

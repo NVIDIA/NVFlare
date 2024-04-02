@@ -16,7 +16,9 @@ import random
 from typing import List
 
 from nvflare.apis.fl_constant import FLMetaKey
+from nvflare.apis.wf_controller_spec import WFControllerSpec
 from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.app_common.abstract.model import make_model_learnable
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
@@ -26,7 +28,7 @@ from nvflare.security.logging import secure_format_exception
 from .model_controller import ModelController
 
 
-class BaseFedAvg(ModelController):
+class BaseFedAvg(ModelController, WFControllerSpec):
     """The base controller for FedAvg Workflow. *Note*: This class is based on the experimental `ModelController`.
 
     Implements [FederatedAveraging](https://arxiv.org/abs/1602.05629).
@@ -142,5 +144,8 @@ class BaseFedAvg(ModelController):
 
         self.model = FLModelUtils.update_model(self.model, aggr_result)
 
-        self.fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self.model, private=True, sticky=True)
+        # persistor uses Learnable format to save model
+        ml = make_model_learnable(weights=self.model.params, meta_props=self.model.meta)
+        self.fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, ml, private=True, sticky=True)
+
         self.event(AppEventType.AFTER_SHAREABLE_TO_LEARNABLE)

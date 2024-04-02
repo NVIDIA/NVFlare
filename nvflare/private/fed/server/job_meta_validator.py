@@ -33,6 +33,16 @@ logger = logging.getLogger(__name__)
 class JobMetaValidator(JobMetaValidatorSpec):
     """Job validator"""
 
+    def _validate_zf(self, job_name, zf):
+        meta = self._validate_meta(job_name, zf)
+        site_list = self._validate_deploy_map(job_name, meta)
+        self._validate_app(job_name, meta, zf)
+        clients = self._get_all_clients(site_list)
+        self._validate_min_clients(job_name, meta, clients)
+        self._validate_resource(job_name, meta)
+        self._validate_mandatory_clients(job_name, meta, clients)
+        return meta
+
     def validate(self, job_name: str, job_data: bytes) -> Tuple[bool, str, dict]:
         """Validate job
 
@@ -46,14 +56,15 @@ class JobMetaValidator(JobMetaValidatorSpec):
 
         meta = {}
         try:
-            with ZipFile(BytesIO(job_data), "r") as zf:
-                meta = self._validate_meta(job_name, zf)
-                site_list = self._validate_deploy_map(job_name, meta)
-                self._validate_app(job_name, meta, zf)
-                clients = self._get_all_clients(site_list)
-                self._validate_min_clients(job_name, meta, clients)
-                self._validate_resource(job_name, meta)
-                self._validate_mandatory_clients(job_name, meta, clients)
+            if isinstance(job_data, bytes):
+                with ZipFile(BytesIO(job_data), "r") as zf:
+                    meta = self._validate_zf(job_name, zf)
+            elif isinstance(job_data, str):
+                # job_data is a file name
+                with ZipFile(job_data, "r") as zf:
+                    meta = self._validate_zf(job_name, zf)
+            else:
+                raise TypeError(f"job_data must be bytes or str but got {type(job_data)}")
         except ValueError as e:
             return False, str(e), meta
 

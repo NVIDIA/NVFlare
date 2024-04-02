@@ -19,6 +19,11 @@ from typing import List
 
 from .table import Table
 
+LINE_END = "\x03"  # Indicates the end of the line (end of text)
+ALL_END = "\x04"  # Marks the end of a complete transmission (End of Transmission)
+
+MAX_BLOCK_SIZE = 1024
+
 
 class ProtoKey(object):
 
