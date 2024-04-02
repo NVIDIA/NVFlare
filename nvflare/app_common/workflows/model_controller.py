@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from abc import abstractmethod
-from typing import List, Union
+from abc import ABC
+from typing import Callable, List, Union
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, OperatorMethod, Task, TaskOperatorKey
@@ -22,6 +22,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.apis.wf_controller_spec import WFControllerSpec
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
@@ -36,7 +37,7 @@ from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
 
 @experimental
-class ModelController(Controller, FLComponentWrapper):
+class ModelController(Controller, FLComponentWrapper, WFControllerSpec, ABC):
     def __init__(
         self,
         min_clients: int = 1000,
@@ -157,33 +158,82 @@ class ModelController(Controller, FLComponentWrapper):
 
         return data_shareable
 
-    def send_model_and_wait(
+    def send_model(
         self,
-        targets: Union[List[Client], List[str], None] = None,
-        data: FLModel = None,
         task_name=AppConstants.TASK_TRAIN,
+        data: FLModel = None,
+        targets: Union[List[Client], List[str], None] = None,
         timeout: int = 0,
         wait_time_after_min_received: int = 10,
+        blocking: bool = True,
+        callback: Callable[[FLModel], None] = None,
     ) -> List:
-        """Send the current global model or given data to a list of targets
-
-        The task is scheduled into a task list.  Clients can request tasks and controller will dispatch the task to eligible clients.
+        """Send a task with data to a list of targets.
 
         Args:
-            targets: the list of eligible clients or client names or None (all clients). Defaults to None.
-            data: FLModel to be sent to clients. If no data is given, send `self.model`.
-            task_name (str, optional): Name of the train task. Defaults to "train".
-            timeout (int, optional): Time to wait for clients to do local training. Defaults to 0, i.e., never time out.
-            wait_time_after_min_received (int, optional): Time to wait before beginning aggregation after
+            task_name (str, optional): name of the task. Defaults to "train".
+            data (FLModel): FLModel to be sent to clients. If no data is given, send `self.model`.
+            targets (List[str]): the list of target client names or None (all clients). Defaults to None.
+            timeout (int, optional): time to wait for clients to perform task. Defaults to 0, i.e., never time out.
+            wait_time_after_min_received (int, optional): time to wait after
                 minimum number of clients responses has been received. Defaults to 10.
+            blocking (bool): whether to block to wait for task result.
+            callback (Callable[FLModel]): callback when a result is received, only called when blocking=False.
+
+        Returns:
+            List[FLModel] if blocking=True else None
         """
 
         if not isinstance(task_name, str):
-            raise TypeError("train_task_name must be a string but got {}".format(type(task_name)))
+            raise TypeError("task_name must be a string but got {}".format(type(task_name)))
         check_non_negative_int("timeout", timeout)
         check_non_negative_int("wait_time_after_min_received", wait_time_after_min_received)
 
-        # Create train_task
+        if targets:
+            targets = [client.name if isinstance(client, Client) else client for client in targets]
+
+        task = self._prepare_task(data=data, task_name=task_name, timeout=timeout, callback=callback)
+
+        if blocking:
+            self._results = []  # reset results list
+            self.info(f"Sending task {task_name} to {targets}")
+            self.broadcast_and_wait(
+                task=task,
+                targets=targets,
+                min_responses=self._min_clients,
+                wait_time_after_min_received=wait_time_after_min_received,
+                fl_ctx=self.fl_ctx,
+                abort_signal=self.abort_signal,
+            )
+
+            if targets is not None:
+                if len(self._results) != self._min_clients:
+                    self.warning(
+                        f"Number of results ({len(self._results)}) is different from min_clients ({self._min_clients})."
+                    )
+
+            # de-refernce the internel results before returning
+            results = self._results
+            self._results = []
+            return results
+        else:
+            self.info(f"Sending task {task_name} to {targets}")
+            self.broadcast(
+                task=task,
+                targets=targets,
+                min_responses=self._min_clients,
+                wait_time_after_min_received=wait_time_after_min_received,
+                fl_ctx=self.fl_ctx,
+            )
+
+    def _prepare_task(
+        self,
+        data: FLModel,
+        task_name: str,
+        timeout: int,
+        callback: Callable,
+    ):
+        # Create task
         data_shareable = self._build_shareable(data)
 
         operator = {
@@ -192,37 +242,17 @@ class ModelController(Controller, FLComponentWrapper):
             TaskOperatorKey.TIMEOUT: timeout,
         }
 
-        train_task = Task(
+        task = Task(
             name=task_name,
             data=data_shareable,
             operator=operator,
-            props={},
+            props={AppConstants.TASK_PROP_CALLBACK: callback},
             timeout=timeout,
             before_task_sent_cb=self._prepare_task_data,
             result_received_cb=self._process_result,
         )
 
-        self._results = []  # reset results list
-        self.info(f"Sending task {task_name} to {[client.name for client in targets]}")
-        self.broadcast_and_wait(
-            task=train_task,
-            targets=targets,
-            min_responses=self._min_clients,
-            wait_time_after_min_received=wait_time_after_min_received,
-            fl_ctx=self.fl_ctx,
-            abort_signal=self.abort_signal,
-        )
-
-        if targets is not None:
-            if len(self._results) != self._min_clients:
-                self.warning(
-                    f"Number of results ({len(self._results)}) is different from min_clients ({self._min_clients})."
-                )
-
-        # de-refernce the internel results before returning
-        results = self._results
-        self._results = []
-        return results
+        return task
 
     def _prepare_task_data(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
         fl_ctx.set_prop(AppConstants.TRAIN_SHAREABLE, client_task.task.data, private=True, sticky=False)
@@ -245,10 +275,14 @@ class ModelController(Controller, FLComponentWrapper):
         result_model.meta["current_round"] = self._current_round
         result_model.meta["total_rounds"] = self._num_rounds
 
-        self._results.append(result_model)
+        callback = client_task.task.get_prop(AppConstants.TASK_PROP_CALLBACK)
+        if callback:
+            callback(result_model)
+        else:
+            self._results.append(result_model)
 
-        # Cleanup task result
-        client_task.result = None
+            # Cleanup task result
+            client_task.result = None
 
     def process_result_of_unknown_task(
         self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
@@ -277,15 +311,6 @@ class ModelController(Controller, FLComponentWrapper):
                 return
 
         self.fl_ctx.set_prop(AppConstants.TRAINING_RESULT, result, private=True, sticky=False)
-
-    @abstractmethod
-    def run(self):
-        """Main `run` routine called by the Controller's `control_flow` to execute the workflow.
-
-        Returns: None.
-
-        """
-        raise NotImplementedError
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext) -> None:
         self._phase = AppConstants.PHASE_TRAIN
