@@ -22,7 +22,7 @@ from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.pipe.file_accessor import FileAccessor
 from nvflare.fuel.utils.pipe.file_name_utils import file_name_to_message, message_to_file_name
 from nvflare.fuel.utils.pipe.fobs_file_accessor import FobsFileAccessor
-from nvflare.fuel.utils.pipe.pipe import Message, Pipe
+from nvflare.fuel.utils.pipe.pipe import Message, Pipe, Topic
 from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_number, check_str
 
 
@@ -260,6 +260,10 @@ class FilePipe(Pipe):
         """
         if not self.pipe_path:
             raise BrokenPipeError("pipe is not open")
+
+        if not timeout and msg.topic in [Topic.END, Topic.ABORT, Topic.HEARTBEAT]:
+            timeout = 5.0
+
         return self.put_f(msg, timeout)
 
     def receive(self, timeout=None):
