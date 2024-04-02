@@ -20,7 +20,7 @@ from nvflare.fuel.utils.function_utils import find_task_fn, require_arguments
 
 
 class ExecTaskFuncWrapper:
-    def __init__(self, task_fn_path: str, task_fn_args: Dict = None):
+    def __init__(self, task_fn_path: str, task_main_args: str = None, task_fn_args: Dict = None):
         """Wrapper for function given function path and args
 
         Args:
@@ -28,10 +28,10 @@ class ExecTaskFuncWrapper:
             task_fn_args (Dict, optional): function arguments to pass in.
         """
         self.task_fn_path = task_fn_path
+        self.task_main_args = task_main_args
         self.task_fn_args = task_fn_args
         self.client_api = None
         self.logger = logging.getLogger(self.__class__.__name__)
-
         self.task_fn = find_task_fn(task_fn_path)
         require_args, args_size, args_default_size = require_arguments(self.task_fn)
         self.check_fn_inputs(task_fn_path, require_args, args_size, args_default_size)
@@ -44,12 +44,8 @@ class ExecTaskFuncWrapper:
         self.logger.info(msg)
         try:
             if self.task_fn.__name__ == "main":
-                args_list = []
-                for k, v in self.task_fn_args.items():
-                    args_list.extend(["--" + str(k), str(v)])
-
                 curr_argv = sys.argv
-                sys.argv = [self.task_fn_path.rsplit(".", 1)[0].replace(".", "/") + ".py"] + args_list
+                sys.argv = self.get_sys_argv()
                 self.task_fn()
                 sys.argv = curr_argv
             elif self.task_fn_require_args:
@@ -62,6 +58,10 @@ class ExecTaskFuncWrapper:
             if self.client_api:
                 self.client_api.exec_queue.ask_abort(msg)
             raise e
+
+    def get_sys_argv(self):
+        args_list = [] if not self.task_main_args else self.task_main_args.split()
+        return [self.task_fn_path.rsplit(".", 1)[0].replace(".", "/") + ".py"] + args_list
 
     def check_fn_inputs(self, task_fn_path, require_args: bool, required_args_size: int, args_default_size: int):
         """Check if the provided task_fn_args are compatible with the task_fn."""

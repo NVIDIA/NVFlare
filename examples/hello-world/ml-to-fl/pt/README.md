@@ -105,10 +105,10 @@ After we modify our training script, we need to put it into a [job structure](ht
 
 Please refer to [JOB CLI tutorial](../../../tutorials/job_cli.ipynb) on how to generate a job easily from our existing job templates.
 
-We choose the [sag_pt job template](../../../../job_templates/sag_pt) and run the following command to create the job:
+We will use the in-process client API, we choose the [sag_pt in_proc job template](../../../../job_templates/sag_pt_in_proc) and run the following command to create the job:
 
 ```bash
-nvflare job create -force -j ./jobs/client_api -w sag_pt -sd ./code/ \
+nvflare job create -force -j ./jobs/client_api -w sag_pt_in_proc -sd ./code/ \
     -f config_fed_client.conf app_script=cifar10_fl.py
 ```
 
@@ -120,6 +120,7 @@ nvflare simulator -n 2 -t 2 ./jobs/client_api -w client_api_workspace
 ```
 
 Congratulations! You have finished an FL training!
+
 
 ## The Decorator use case
 
@@ -194,10 +195,10 @@ To transform the existing code to FL training code, we made the following change
 
 The modified code can be found in [./code/cifar10_lightning_fl.py](./code/cifar10_lightning_fl.py)
 
-Then we can create the job using sag_pt template:
+Then we can create the job using sag_pt_in_proc template:
 
 ```bash
-nvflare job create -force -j ./jobs/lightning -w sag_pt -sd ./code/ \
+nvflare job create -force -j ./jobs/lightning -w sag_pt_in_proc -sd ./code/ \
     -f config_fed_client.conf app_script=cifar10_lightning_fl.py \
     -f config_fed_server.conf key_metric=val_acc_epoch model_class_path=lit_net.LitNet
 ```
@@ -244,8 +245,8 @@ models back.
 
 The modified code can be found in [./code/cifar10_ddp_fl.py](./code/cifar10_ddp_fl.py)
 
-
-We can create the job using the following command:
+In this example, we are going to to use a different job template, where we leverage Client API with sub-process launcher
+instead of in-process launcher in other examples. Here is the command we use to create the job: 
 
 ```bash
 nvflare job create -force -j ./jobs/client_api_ddp -w sag_pt_deploy_map -sd ./code/ \
