@@ -294,8 +294,6 @@ class SubWorkerExecutor(Runner):
 
     def _close(self, data):
         self.done = True
-        self.cell.stop()
-        # mpm.stop()
 
     def run(self):
         self.logger.info("SubWorkerExecutor process started.")
