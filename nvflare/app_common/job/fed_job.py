@@ -34,9 +34,9 @@ class FedApp:
         super().__init__()
 
         if server_app and not isinstance(server_app, ServerApp):
-            raise ValueError(f"server_app must be ServerApp, but got {server_app.__class__}")
+            raise ValueError(f"server_app must be type of ServerApp, but got {server_app.__class__}")
         if client_app and not isinstance(client_app, ClientApp):
-            raise ValueError(f"client_app must be ClientApp, but got {client_app.__class__}")
+            raise ValueError(f"client_app must be type of ClientApp, but got {client_app.__class__}")
 
         self.server_app: ServerApp = server_app
         self.client_app: ClientApp = client_app
@@ -46,10 +46,10 @@ class FedJob:
     def __init__(self, job_name, min_clients, mandatory_clients=None) -> None:
         super().__init__()
 
+        self.job_name = job_name
         self.min_clients = min_clients
         self.mandatory_clients = mandatory_clients
 
-        self.job_name = job_name
         self.fed_apps: Dict[str, FedApp] = {}
         self.deploy_map = {}
         self.resource_specs = {}
@@ -58,7 +58,7 @@ class FedJob:
 
     def add_fed_app(self, app_name: str, fed_app: FedApp):
         if not isinstance(fed_app, FedApp):
-            raise RuntimeError(f"server_app must be FedApp, but got {fed_app.__class__}")
+            raise RuntimeError(f"server_app must be type of FedApp, but got {fed_app.__class__}")
 
         self.fed_apps[app_name] = fed_app
 
@@ -106,6 +106,7 @@ class FedJob:
             shutil.rmtree(job_root, ignore_errors=True)
 
         for app_name, fed_app in self.fed_apps.items():
+            self.custom_modules = []
             config_dir = os.path.join(job_root, self.job_name, app_name, CONFIG)
             custom_dir = os.path.join(job_root, self.job_name, app_name, CUSTOM)
             os.makedirs(config_dir, exist_ok=True)

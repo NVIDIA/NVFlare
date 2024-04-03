@@ -26,7 +26,7 @@ class ClientApp(BaseApp):
 
     def add_executor(self, tasks: List[str], executor: Executor):
         if not isinstance(executor, Executor):
-            raise RuntimeError(f"workflow must be Executor, but got {executor.__class__}")
+            raise RuntimeError(f"workflow must be type of Executor, but got {executor.__class__}")
 
         e = _ExecutorDef()
         e.tasks = tasks

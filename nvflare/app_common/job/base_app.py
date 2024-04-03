@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+from abc import ABC
 from typing import Dict, List
 
 from nvflare.apis.filter import Filter
@@ -27,14 +27,15 @@ class _FilterDef:
         self.filter = filter
 
 
-class BaseApp(object):
+class BaseApp(ABC):
     def __init__(self) -> None:
         super().__init__()
 
         self.task_data_filters: [dict[str, Filter]] = []
         self.task_result_filters: [dict[str, Filter]] = []
-        self.handlers: [FLComponent] = []
         self.components: Dict[str, object] = {}
+
+        self.handlers: [FLComponent] = []
 
     def add_component(self, cid: str, component):
         if cid in self.components.keys():
@@ -46,27 +47,16 @@ class BaseApp(object):
             self.handlers.append(component)
 
     def add_task_data_filter(self, tasks: List[str], filter: Filter):
-        if not isinstance(filter, Filter):
-            raise RuntimeError(f"filter must be Filter, but got {filter.__class__}")
-
-        for task in tasks:
-            for fd in self.task_data_filters:
-                if task in fd.tasks:
-                    raise RuntimeError(f"Task {task} already defined in task_data_filters.")
-
-        # self.task_result_filters[tasks] = filter
-        self.task_data_filters.append(_FilterDef(tasks, filter))
-        # self.task_data_filters[tasks] = filter
+        self._add_task_filter(tasks, filter, self.task_data_filters)
 
     def add_task_result_filter(self, tasks: List[str], filter: Filter):
+        self._add_task_filter(tasks, filter, self.task_result_filters)
+
+    def _add_task_filter(self, tasks, filter, filters):
         if not isinstance(filter, Filter):
-            raise RuntimeError(f"filter must be Filter, but got {filter.__class__}")
-
+            raise RuntimeError(f"filter must be type of Filter, but got {filter.__class__}")
         for task in tasks:
-            for fd in self.task_result_filters:
+            for fd in filters:
                 if task in fd.tasks:
-                    raise RuntimeError(f"Task {task} already defined in task_result_filters.")
-
-        # self.task_result_filters[tasks] = filter
-        self.task_result_filters.append(_FilterDef(tasks, filter))
-
+                    raise RuntimeError(f"Task {task} already defined in the task filters.")
+        filters.append(_FilterDef(tasks, filter))

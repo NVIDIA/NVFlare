@@ -27,7 +27,7 @@ class ServerApp(BaseApp):
 
     def add_workflow(self, cid, controller: Controller):
         if not isinstance(controller, Controller):
-            raise RuntimeError(f"workflow must be Controller, but got {controller.__class__}")
+            raise RuntimeError(f"workflow must be type of Controller, but got {controller.__class__}")
 
         # self.add_component(cid, controller)
         if cid in self.components.keys() or cid in self.ids:
@@ -39,5 +39,4 @@ class ServerApp(BaseApp):
 
         self.workflows.append(WorkFlow(cid, controller))
         self.ids.append(cid)
-        # self.workflows.append(controller)
 

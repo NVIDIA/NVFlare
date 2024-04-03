@@ -59,8 +59,8 @@ class HelloPTJob:
         client_app = ClientApp()
         executor = Cifar10Trainer(lr=0.01, epochs=1)
         client_app.add_executor(["train", "submit_model", "get_weights"], executor)
-        executor = Cifar10Validator()
-        client_app.add_executor(["validate"], executor)
+        validator = Cifar10Validator()
+        client_app.add_executor(["validate"], validator)
 
         task_filter = AddShareable()
         client_app.add_task_result_filter(["train"], task_filter)
@@ -86,6 +86,7 @@ class HelloPTJob:
         server_app.add_workflow("scatter_and_gather", controller)
         controller = CrossSiteModelEval(model_locator_id="model_locator")
         server_app.add_workflow("cross_site_validate", controller)
+
         component = PTFileModelPersistor()
         server_app.add_component("persistor", component)
         component = FullModelShareableGenerator()
