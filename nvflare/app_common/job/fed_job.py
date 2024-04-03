@@ -30,7 +30,7 @@ META_JSON = "meta.json"
 
 
 class FedApp:
-    def __init__(self, server_app: ServerApp, client_app: ClientApp) -> None:
+    def __init__(self, server_app: ServerApp = None, client_app: ClientApp = None) -> None:
         super().__init__()
 
         if server_app and not isinstance(server_app, ServerApp):
@@ -52,6 +52,7 @@ class FedJob:
         self.job_name = job_name
         self.fed_apps: Dict[str, FedApp] = {}
         self.deploy_map = {}
+        self.resource_specs = {}
 
         self.custom_modules = []
 
@@ -62,10 +63,18 @@ class FedJob:
         self.fed_apps[app_name] = fed_app
 
     def set_site_app(self, site_name: str, app_name: str):
-        if not app_name in self.fed_apps.keys():
+        if app_name not in self.fed_apps.keys():
             raise RuntimeError(f"fed_app {app_name} does not exist.")
 
         self.deploy_map[site_name] = app_name
+
+    def add_resource_spec(self, site_name: str, resource_spec: Dict):
+        if site_name in self.resource_specs.keys():
+            raise RuntimeError(f"{site_name} resource specs already exist.")
+        if not isinstance(resource_spec, dict):
+            raise RuntimeError(f"resource_spec must be a dict. But got: {resource_spec.__class__}")
+
+        self.resource_specs[site_name] = resource_spec
 
     def _generate_meta(self, job_root):
         """ generate the job meta.json
@@ -76,7 +85,7 @@ class FedJob:
         meta_file = os.path.join(job_root, self.job_name, META_JSON)
         meta_json = {
             "name": self.job_name,
-            "resource_spec": {},
+            "resource_spec": self.resource_specs,
             "min_clients": self.min_clients,
             "deploy_map": self._get_deploy_map()
         }

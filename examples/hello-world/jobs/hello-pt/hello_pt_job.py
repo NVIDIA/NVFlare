@@ -43,9 +43,13 @@ class HelloPTJob:
 
         app = FedApp(server_app=server_app, client_app=client_app)
         job.add_fed_app("app", app)
+
+        # app = FedApp(client_app=client_app)
+        # job.add_fed_app("client_app", app)
         # job.set_site_app("server", "app")
         # job.set_site_app("site-1", "app")
-        # job.set_site_app("site-2", "app")
+        # job.set_site_app("site-2", "client_app")
+        # job.add_resource_spec("site-1", {"memory": "8GB"})
 
         job.set_site_app("@ALL", "app")
 
