@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import gc
 from abc import ABC
 from typing import Callable, List, Union
 
@@ -283,6 +284,8 @@ class ModelController(Controller, FLComponentWrapper, WFControllerSpec, ABC):
 
             # Cleanup task result
             client_task.result = None
+
+        gc.collect()
 
     def process_result_of_unknown_task(
         self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
