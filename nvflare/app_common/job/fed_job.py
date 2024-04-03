@@ -18,8 +18,7 @@ from typing import Dict
 import os
 
 from nvflare import SimulatorRunner
-from nvflare.app_common.job.client_app import ClientApp
-from nvflare.app_common.job.server_app import ServerApp
+from nvflare.app_common.job.fed_app import FedApp
 from nvflare.private.fed.app.fl_conf import FL_PACKAGES
 
 CONFIG = "config"
@@ -27,19 +26,6 @@ CUSTOM = "custom"
 FED_SERVER_JSON = "config_fed_server.json"
 FED_CLIENT_JSON = "config_fed_client.json"
 META_JSON = "meta.json"
-
-
-class FedApp:
-    def __init__(self, server_app: ServerApp = None, client_app: ClientApp = None) -> None:
-        super().__init__()
-
-        if server_app and not isinstance(server_app, ServerApp):
-            raise ValueError(f"server_app must be type of ServerApp, but got {server_app.__class__}")
-        if client_app and not isinstance(client_app, ClientApp):
-            raise ValueError(f"client_app must be type of ClientApp, but got {client_app.__class__}")
-
-        self.server_app: ServerApp = server_app
-        self.client_app: ClientApp = client_app
 
 
 class FedJob:

@@ -11,11 +11,30 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import List
 
+from nvflare.apis.executor import Executor
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.impl.wf_comm_server import WFCommServer
 from nvflare.app_common.job.base_app import BaseApp
+from nvflare.private.fed.client.client_json_config import _ExecutorDef
 from nvflare.private.fed.server.server_json_config import WorkFlow
+
+
+class ClientApp(BaseApp):
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.executors: [_ExecutorDef] = []
+
+    def add_executor(self, tasks: List[str], executor: Executor):
+        if not isinstance(executor, Executor):
+            raise RuntimeError(f"workflow must be type of Executor, but got {executor.__class__}")
+
+        e = _ExecutorDef()
+        e.tasks = tasks
+        e.executor = executor
+        self.executors.append(e)
 
 
 class ServerApp(BaseApp):
@@ -40,3 +59,15 @@ class ServerApp(BaseApp):
         self.workflows.append(WorkFlow(cid, controller))
         self.ids.append(cid)
 
+
+class FedApp:
+    def __init__(self, server_app: ServerApp = None, client_app: ClientApp = None) -> None:
+        super().__init__()
+
+        if server_app and not isinstance(server_app, ServerApp):
+            raise ValueError(f"server_app must be type of ServerApp, but got {server_app.__class__}")
+        if client_app and not isinstance(client_app, ClientApp):
+            raise ValueError(f"client_app must be type of ClientApp, but got {client_app.__class__}")
+
+        self.server_app: ServerApp = server_app
+        self.client_app: ClientApp = client_app

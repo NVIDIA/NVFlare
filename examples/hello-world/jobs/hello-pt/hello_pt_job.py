@@ -16,9 +16,8 @@ from cifar10trainer import Cifar10Trainer
 from cifar10validator import Cifar10Validator
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.aggregators import InTimeAccumulateWeightedAggregator
-from nvflare.app_common.job.client_app import ClientApp
-from nvflare.app_common.job.fed_job import FedJob, FedApp
-from nvflare.app_common.job.server_app import ServerApp
+from nvflare.app_common.job.fed_app import ClientApp, ServerApp, FedApp
+from nvflare.app_common.job.fed_job import FedJob
 from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
