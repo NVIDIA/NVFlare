@@ -48,7 +48,7 @@ class FedAvg(BaseFedAvg):
 
             clients = self.sample_clients(self._min_clients)
 
-            results = self.send_model_and_wait(targets=clients, data=self.model)
+            results = self.send_model(targets=clients, data=self.model)
 
             aggregate_results = self.aggregate(
                 results, aggregate_fn=None

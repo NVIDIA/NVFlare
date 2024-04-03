@@ -24,7 +24,8 @@ from nvflare.fuel.utils import fobs
 class PTInProcessClientAPIExecutor(InProcessClientAPIExecutor):
     def __init__(
         self,
-        task_fn_path: str,
+        task_script_path: str,
+        task_script_args: str = "",
         task_fn_args: Dict = None,
         task_wait_time: Optional[float] = None,
         result_pull_interval: float = 0.5,
@@ -38,7 +39,8 @@ class PTInProcessClientAPIExecutor(InProcessClientAPIExecutor):
         submit_model_task_name: str = "submit_model",
     ):
         super(PTInProcessClientAPIExecutor, self).__init__(
-            task_fn_path=task_fn_path,
+            task_script_path=task_script_path,
+            task_script_args=task_script_args,
             task_fn_args=task_fn_args,
             task_wait_time=task_wait_time,
             result_pull_interval=result_pull_interval,
