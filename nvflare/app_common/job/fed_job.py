@@ -37,8 +37,8 @@ class FedJob:
         self.mandatory_clients = mandatory_clients
 
         self.fed_apps: Dict[str, FedApp] = {}
-        self.deploy_map = {}
-        self.resource_specs = {}
+        self.deploy_map: Dict[str, str] = {}
+        self.resource_specs: Dict[str, Dict] = {}
 
         self.custom_modules = []
 
