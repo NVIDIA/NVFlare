@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -46,12 +46,12 @@ class AppDefinedShareableGenerator(ShareableGenerator, ComponentBase, ABC):
         pass
 
     @abstractmethod
-    def apply_weights_to_model(self, model_obj: Any, weights: Any, meta: dict) -> Any:
-        """Apply trained weights and meta to the base model
+    def update_model(self, model_obj: Any, training_result: Any, meta: dict) -> Any:
+        """Update model with training result and meta
 
         Args:
-            model_obj: base model object that weights will be applied to
-            weights: trained weights
+            model_obj: base model object to be updated
+            training_result: training result to be applied to the model object
             meta: trained meta
 
         Returns: the updated model object
@@ -88,7 +88,7 @@ class AppDefinedShareableGenerator(ShareableGenerator, ComponentBase, ABC):
         base_model_obj = base_model_learnable.get(ModelLearnableKey.WEIGHTS)
 
         dxo = from_shareable(shareable)
-        trained_weights = dxo.data
+        training_result = dxo.data
         trained_meta = dxo.meta
-        model_obj = self.apply_weights_to_model(model_obj=base_model_obj, weights=trained_weights, meta=trained_meta)
+        model_obj = self.update_model(model_obj=base_model_obj, training_result=training_result, meta=trained_meta)
         return make_model_learnable(model_obj, {})
