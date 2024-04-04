@@ -21,12 +21,13 @@ from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AlgorithmConstants, AppConstants
+from nvflare.app_common.utils.fl_component_wrapper import FLComponentWrapper
 
 from .base_fedavg import BaseFedAvg
 
 
 class Scaffold(BaseFedAvg):
-    """Controller for Scaffold Workflow. *Note*: This class is based on the experimental `ModelController`.
+    """Controller for Scaffold Workflow. *Note*: This class is based on `WFController`.
     Implements [SCAFFOLD](https://proceedings.mlr.press/v119/karimireddy20a.html).
 
     Provides the implementations for the `run` routine, controlling the main workflow:
@@ -51,7 +52,7 @@ class Scaffold(BaseFedAvg):
     """
 
     def initialize(self):
-        super().initialize()
+        FLComponentWrapper.initialize(self)
         self._global_ctrl_weights = copy.deepcopy(self.model.params)
         # Initialize correction term with zeros
         for k in self._global_ctrl_weights.keys():
@@ -69,7 +70,7 @@ class Scaffold(BaseFedAvg):
             global_model = self.model
             global_model.meta[AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL] = self._global_ctrl_weights
 
-            results = self.send_model_and_wait(targets=clients, data=global_model)
+            results = self.send_model(targets=clients, data=global_model)
 
             aggregate_results = self.aggregate(results, aggregate_fn=scaffold_aggregate_fn)
 

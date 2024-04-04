@@ -82,7 +82,8 @@ def main():
     while flare.is_running():
         input_model = flare.receive()
         if rank == 0:
-            print(f"current_round={input_model.current_round}")
+            print(f"\n[Current Round={input_model.current_round}, Site = {flare.get_site_name()}]\n")
+
             # (4) loads model from NVFlare
             net.load_state_dict(input_model.params)
 

@@ -2,7 +2,7 @@
 
 ## sag_pt_deploy_map
     name = "sag_pt_deploy_map"
-    description = "SAG workflow with pytorch, deploy_map, site-specific configs"
+    description = "FedAvg with scatter and gather workflow using pytorch, deploy_map, site-specific configs"
     class_name  =  "ScatterAndGather"
     controller_type = "server"
     executor_type = "launcher_executor"

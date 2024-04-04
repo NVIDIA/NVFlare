@@ -24,11 +24,11 @@ from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.security.logging import secure_format_exception
 
-from .model_controller import ModelController
+from .wf_controller import WFController
 
 
-class BaseFedAvg(ModelController):
-    """The base controller for FedAvg Workflow. *Note*: This class is based on the experimental `ModelController`.
+class BaseFedAvg(WFController):
+    """The base controller for FedAvg Workflow. *Note*: This class is based on the `WFController`.
 
     Implements [FederatedAveraging](https://arxiv.org/abs/1602.05629).
     The model persistor (persistor_id) is used to load the initial global model which is sent to a list of clients.
