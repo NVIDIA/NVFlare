@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from abc import ABC
+import gc
+from abc import ABC, abstractmethod
 from typing import Callable, List, Union
 
 from nvflare.apis.client import Client
@@ -22,7 +23,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.apis.wf_controller_spec import WFControllerSpec
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
@@ -30,14 +30,12 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fl_component_wrapper import FLComponentWrapper
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
-from nvflare.fuel.utils.experimental import experimental
 from nvflare.fuel.utils.validation_utils import check_non_negative_int, check_positive_int, check_str
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
 
-@experimental
-class ModelController(Controller, FLComponentWrapper, WFControllerSpec, ABC):
+class ModelController(Controller, FLComponentWrapper, ABC):
     def __init__(
         self,
         min_clients: int = 1000,
@@ -160,7 +158,7 @@ class ModelController(Controller, FLComponentWrapper, WFControllerSpec, ABC):
 
     def send_model(
         self,
-        task_name=AppConstants.TASK_TRAIN,
+        task_name: str = AppConstants.TASK_TRAIN,
         data: FLModel = None,
         targets: Union[List[Client], List[str], None] = None,
         timeout: int = 0,
@@ -172,13 +170,13 @@ class ModelController(Controller, FLComponentWrapper, WFControllerSpec, ABC):
 
         Args:
             task_name (str, optional): name of the task. Defaults to "train".
-            data (FLModel): FLModel to be sent to clients. If no data is given, send `self.model`.
-            targets (List[str]): the list of target client names or None (all clients). Defaults to None.
+            data (FLModel, optional): FLModel to be sent to clients. If no data is given, send `self.model`.
+            targets (List[str], optional): the list of target client names or None (all clients). Defaults to None.
             timeout (int, optional): time to wait for clients to perform task. Defaults to 0, i.e., never time out.
             wait_time_after_min_received (int, optional): time to wait after
                 minimum number of clients responses has been received. Defaults to 10.
-            blocking (bool): whether to block to wait for task result.
-            callback (Callable[FLModel]): callback when a result is received, only called when blocking=False.
+            blocking (bool, optional): whether to block to wait for task result.
+            callback (Callable[[FLModel], None], optional): callback when a result is received, only called when blocking=False.
 
         Returns:
             List[FLModel] if blocking=True else None
@@ -186,42 +184,49 @@ class ModelController(Controller, FLComponentWrapper, WFControllerSpec, ABC):
 
         if not isinstance(task_name, str):
             raise TypeError("task_name must be a string but got {}".format(type(task_name)))
+        if data and not isinstance(data, FLModel):
+            raise TypeError("data must be a FLModel or None but got {}".format(type(data)))
         check_non_negative_int("timeout", timeout)
         check_non_negative_int("wait_time_after_min_received", wait_time_after_min_received)
-
-        if targets:
-            targets = [client.name if isinstance(client, Client) else client for client in targets]
+        if not blocking and not isinstance(callback, Callable):
+            raise TypeError("callback must be defined if blocking is False, but got {}".format(type(callback)))
 
         task = self._prepare_task(data=data, task_name=task_name, timeout=timeout, callback=callback)
 
+        if targets:
+            targets = [client.name if isinstance(client, Client) else client for client in targets]
+            min_responses = len(targets)
+            self.info(f"Sending task {task_name} to {targets}")
+        else:
+            min_responses = len(self.engine.get_clients())
+            self.info(f"Sending task {task_name} to all clients")
+
         if blocking:
             self._results = []  # reset results list
-            self.info(f"Sending task {task_name} to {targets}")
             self.broadcast_and_wait(
                 task=task,
                 targets=targets,
-                min_responses=self._min_clients,
+                min_responses=min_responses,
                 wait_time_after_min_received=wait_time_after_min_received,
                 fl_ctx=self.fl_ctx,
                 abort_signal=self.abort_signal,
             )
 
             if targets is not None:
-                if len(self._results) != self._min_clients:
+                if len(self._results) != min_responses:
                     self.warning(
-                        f"Number of results ({len(self._results)}) is different from min_clients ({self._min_clients})."
+                        f"Number of results ({len(self._results)}) is different from number of targets ({min_responses})."
                     )
 
-            # de-refernce the internel results before returning
+            # de-reference the internel results before returning
             results = self._results
             self._results = []
             return results
         else:
-            self.info(f"Sending task {task_name} to {targets}")
             self.broadcast(
                 task=task,
                 targets=targets,
-                min_responses=self._min_clients,
+                min_responses=min_responses,
                 wait_time_after_min_received=wait_time_after_min_received,
                 fl_ctx=self.fl_ctx,
             )
@@ -277,12 +282,17 @@ class ModelController(Controller, FLComponentWrapper, WFControllerSpec, ABC):
 
         callback = client_task.task.get_prop(AppConstants.TASK_PROP_CALLBACK)
         if callback:
-            callback(result_model)
+            try:
+                callback(result_model)
+            except Exception as e:
+                self.error(f"Unsuccessful callback {callback} for task {client_task.task.name}")
         else:
             self._results.append(result_model)
 
             # Cleanup task result
             client_task.result = None
+
+        gc.collect()
 
     def process_result_of_unknown_task(
         self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
@@ -311,6 +321,15 @@ class ModelController(Controller, FLComponentWrapper, WFControllerSpec, ABC):
                 return
 
         self.fl_ctx.set_prop(AppConstants.TRAINING_RESULT, result, private=True, sticky=False)
+
+    @abstractmethod
+    def run(self):
+        """Main `run` routine called by the Controller's `control_flow` to execute the workflow.
+
+        Returns: None.
+
+        """
+        raise NotImplementedError
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext) -> None:
         self._phase = AppConstants.PHASE_TRAIN
