@@ -15,18 +15,45 @@
 from abc import ABC, abstractmethod
 from typing import Callable, List, Union
 
-from nvflare.apis.wf_controller_spec import WFControllerSpec
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.workflows.model_controller import ModelController
 
 
-class WFController(ModelController, WFControllerSpec, ABC):
-    """Workflow Controller for FLModel based ModelController."""
+class WFController(ModelController, ABC):
+    """Workflow Controller API for FLModel-based ModelController."""
 
     @abstractmethod
     def run(self):
         """Main `run` routine for the controller workflow."""
         raise NotImplementedError
+
+    def send_model_and_wait(
+        self,
+        task_name: str = "train",
+        data: FLModel = None,
+        targets: Union[List[str], None] = None,
+        timeout: int = 0,
+        wait_time_after_min_received: int = 10,
+    ) -> List[FLModel]:
+        """Send a task with data to targets and wait for results.
+
+        Args:
+            task_name (str, optional): name of the task. Defaults to "train".
+            data (FLModel, optional): FLModel to be sent to clients. Defaults to None.
+            targets (List[str], optional): the list of target client names or None (all clients). Defaults to None.
+            timeout (int, optional): time to wait for clients to perform task. Defaults to 0 (never time out).
+            wait_time_after_min_received (int, optional): time to wait after minimum number of client responses have been received. Defaults to 10.
+
+        Returns:
+            List[FLModel]
+        """
+        return super().send_model(
+            task_name=task_name,
+            data=data,
+            targets=targets,
+            timeout=timeout,
+            wait_time_after_min_received=wait_time_after_min_received,
+        )
 
     def send_model(
         self,
@@ -35,10 +62,9 @@ class WFController(ModelController, WFControllerSpec, ABC):
         targets: Union[List[str], None] = None,
         timeout: int = 0,
         wait_time_after_min_received: int = 10,
-        blocking: bool = True,
         callback: Callable[[FLModel], None] = None,
-    ) -> Union[List[FLModel], None]:
-        """Send a task with data to targets.
+    ) -> None:
+        """Send a task with data to targets (non-blocking). Callback is called when a result is received.
 
         Args:
             task_name (str, optional): name of the task. Defaults to "train".
@@ -46,18 +72,36 @@ class WFController(ModelController, WFControllerSpec, ABC):
             targets (List[str], optional): the list of target client names or None (all clients). Defaults to None.
             timeout (int, optional): time to wait for clients to perform task. Defaults to 0 (never time out).
             wait_time_after_min_received (int, optional): time to wait after minimum number of client responses have been received. Defaults to 10.
-            blocking (bool, optional): whether to block to wait for task result. Defaults to True.
-            callback (Callable[[FLModel], None], optional): callback when a result is received. Only called when blocking=False. Defaults to None.
+            callback (Callable[[FLModel], None], optional): callback when a result is received. Defaults to None.
 
         Returns:
-            List[FLModel] if blocking = True else None
+            None
         """
-        return super().send_model(
+        super().send_model(
             task_name=task_name,
             data=data,
             targets=targets,
             timeout=timeout,
             wait_time_after_min_received=wait_time_after_min_received,
-            blocking=blocking,
+            blocking=False,
             callback=callback,
         )
+
+    def load_model(self):
+        """Load initial model from persistor. If persistor is not configured, returns empty FLModel.
+
+        Returns:
+            FLModel
+        """
+        return super().load_model()
+
+    def save_model(self, model: FLModel):
+        """Saves model with persistor. If persistor is not configured, does not save.
+
+        Args:
+            model (FLModel): model to save.
+
+        Returns:
+            None
+        """
+        super().save_model(model)

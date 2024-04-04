@@ -36,6 +36,7 @@ class FLModelDecomposer(fobs.Decomposer):
             externalizer.externalize(b.params),
             externalizer.externalize(b.optimizer_params),
             externalizer.externalize(b.metrics),
+            b.start_round,
             b.current_round,
             b.total_rounds,
             externalizer.externalize(b.meta),
@@ -43,13 +44,14 @@ class FLModelDecomposer(fobs.Decomposer):
 
     def recompose(self, data: tuple, manager: DatumManager = None) -> FLModel:
         assert isinstance(data, tuple)
-        pt, params, opt_params, metrics, cr, tr, meta = data
+        pt, params, opt_params, metrics, sr, cr, tr, meta = data
         internalizer = Internalizer(manager)
         return FLModel(
             params_type=pt,
             params=internalizer.internalize(params),
             optimizer_params=internalizer.internalize(opt_params),
             metrics=internalizer.internalize(metrics),
+            start_round=sr,
             current_round=cr,
             total_rounds=tr,
             meta=internalizer.internalize(meta),
