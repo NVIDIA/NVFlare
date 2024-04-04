@@ -1,0 +1,19 @@
+# The minimal set of changes to scale the ESM2nv model to 3B
+
+defaults:
+  - base_config
+
+name: esm2-3B
+
+model:
+  micro_batch_size: 1
+  num_layers: 36
+  hidden_size: 2560
+  num_attention_heads: 40
+
+  tokenizer:
+    model_name: "facebook/esm2_t36_3B_UR50D"
+
+  # model/data parallelism
+  tensor_model_parallel_size: 2 # model parallelism
+

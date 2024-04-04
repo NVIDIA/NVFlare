@@ -1,0 +1,66 @@
+name: esm2nv_flip
+defaults:
+  - pretrain_esm2_650M
+do_training: True # set to false if data preprocessing steps must be completed
+do_testing: False # set to true to run evaluation on test data after training
+#restore_from_path: ${oc.env:BIONEMO_HOME}/models/protein/esm2nv/esm2nv_650M_converted.nemo # path to nemo checkpoint of the protein model. Other options: esm2nv_3B_converted.nemo
+restore_from_path: /bionemo_nvflare_examples/bionemo/models/esm2nv_650M_converted.nemo
+##restore_from_path: /tmp/nvflare/bionemo/local_site1_finetune_esm2nv_alpha100.0_freeze_encoder2/simulate_job/app_site-1/esm2nv_flip/esm2nv_flip_scl_finetuning_encoder_frozen_True/checkpoints/esm2nv_flip_model.nemo
+target: bionemo.model.protein.esm1nv.ESM2nvModel # target class for protein model
+##target: bionemo.model.protein.downstream.FineTuneProteinModel # target class for finetuned protein model
+infer_target: bionemo.model.protein.esm1nv.infer.ESM1nvInference # target inference class for protein model
+
+trainer:
+  devices: 2 # number of GPUs or CPUs
+  num_nodes: 1 
+  max_epochs: 100
+  val_check_interval: 20
+  limit_val_batches: 1000 # number of batches in validation step, use fraction for fraction of data, 0 to disable
+  limit_test_batches: 1000 # number of batches in test step, use fraction for fraction of data, 0 to disable
+
+exp_manager:
+  wandb_logger_kwargs:
+    project: ${name}_${model.data.task_name}_finetuning
+    name: ${name}_${model.data.task_name}_finetuning_encoder_frozen_${model.encoder_frozen}
+
+model:
+  encoder_frozen: True # encoder trainable or frozen
+  post_process: False # must be False for downstream task
+  micro_batch_size: 8 # NOTE: adjust to occupy ~ 90% of GPU memory
+  global_batch_size: null # if null will be computed automatically
+  tensor_model_parallel_size: 1  # model parallelism
+  loss_func: CrossEntropyLoss
+  hidden_layer_size: 512
+  dropout: 0.1
+  
+  data:
+    task_name: scl # options: aav, bind, conservation, gb1, meltome, sav, scl, secondary_structure
+    task_type: classification #'token-level-classification'  # alternative: classification, regression
+    preprocessed_data_path: /tmp/fasta # path where all preprocessed FLIP datasets are saved
+    dataset_path: ${model.data.preprocessed_data_path}/mixed_soft3 # path to a training data
+    dataset:
+      train: data_train_site-2
+      val: data_val_site-2
+      test: data_test_site-2
+    sequence_column: "sequence" # name of column with protein sequence in csv file
+    target_column: ["TARGET"] #["3state", "resolved"] # names of label columns in csv file
+    target_sizes: [10] # number of classes in each label for classifications or 1 for regression
+    num_classes: 10
+    num_workers: 8
+    shuffle: True # shuffle training dataset
+    max_seq_length: ${model.seq_length}
+    emb_batch_size: ${model.micro_batch_size}
+  
+  finetuning_optim: # optimizer parameters for downstream task model
+    name: adam
+    lr: 0.0005
+    betas:
+      - 0.9
+      - 0.999
+    eps: 1e-8
+    weight_decay: 0.0005
+    sched:
+      name: WarmupAnnealing
+      min_lr: 0.00001
+      last_epoch: -1
+      warmup_steps: 10

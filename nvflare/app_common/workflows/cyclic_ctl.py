@@ -16,8 +16,11 @@ import gc
 import random
 
 from nvflare.apis.client import Client
+from nvflare.apis.controller_spec import ClientTask, Task
+from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.impl.controller import ClientTask, Controller, Task
+from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
@@ -145,6 +148,19 @@ class CyclicController(Controller):
         return targets
 
     def _process_result(self, client_task: ClientTask, fl_ctx: FLContext):
+        result = client_task.result
+        rc = result.get_return_code()
+        client_name = client_task.client.name
+
+        # Raise errors if ReturnCode is not OK.
+        if rc and rc != ReturnCode.OK:
+            self.system_panic(
+                f"Result from {client_name} is bad, error code: {rc}. "
+                f"{self.__class__.__name__} exiting at round {self._current_round}.",
+                fl_ctx=fl_ctx,
+            )
+            return False
+
         # submitted shareable is stored in client_task.result
         # we need to update task.data with that shareable so the next target
         # will get the updated shareable
@@ -159,6 +175,8 @@ class CyclicController(Controller):
         task.data.set_header(AppConstants.CURRENT_ROUND, self._current_round)
         task.data.set_header(AppConstants.NUM_ROUNDS, self._num_rounds)
         task.data.add_cookie(AppConstants.CONTRIBUTION_ROUND, self._current_round)
+
+        gc.collect()
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         try:
@@ -249,11 +267,11 @@ class CyclicController(Controller):
         finally:
             pass
 
-    def handle_dead_job(self, client_name: str, fl_ctx: FLContext):
-        super().handle_dead_job(client_name, fl_ctx)
-
-        new_client_list = []
-        for client in self._participating_clients:
-            if client_name != client.name:
-                new_client_list.append(client)
-        self._participating_clients = new_client_list
+    def handle_event(self, event_type, fl_ctx):
+        if event_type == EventType.JOB_DEAD:
+            client_name = fl_ctx.get_prop(FLContextKey.DEAD_JOB_CLIENT_NAME)
+            new_client_list = []
+            for client in self._participating_clients:
+                if client_name != client.name:
+                    new_client_list.append(client)
+            self._participating_clients = new_client_list

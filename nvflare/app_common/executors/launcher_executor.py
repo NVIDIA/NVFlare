@@ -45,7 +45,7 @@ class LauncherExecutor(TaskExchanger):
         external_execution_wait: float = 5.0,
         peer_read_timeout: Optional[float] = None,
         monitor_interval: float = 1.0,
-        read_interval: float = 0.1,
+        read_interval: float = 0.5,
         heartbeat_interval: float = 5.0,
         heartbeat_timeout: float = 30.0,
         workers: int = 1,
@@ -142,6 +142,8 @@ class LauncherExecutor(TaskExchanger):
                 self._abort_signal.trigger(f"{EventType.END_RUN} event received - telling external to stop")
             self.finalize(fl_ctx)
             self.log_info(fl_ctx, f"{EventType.END_RUN} event received - telling external to stop")
+            super().handle_event(event_type, fl_ctx)
+        else:
             super().handle_event(event_type, fl_ctx)
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:

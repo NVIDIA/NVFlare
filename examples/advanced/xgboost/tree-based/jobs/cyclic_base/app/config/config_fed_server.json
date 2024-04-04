@@ -1,5 +1,6 @@
 {
   "format_version": 2,
+  "num_rounds": 20,
 
   "server": {
     "heart_beat_timeout": 600,
@@ -29,7 +30,7 @@
       "id": "cyclic_ctl",
       "name": "CyclicController",
       "args": {
-        "num_rounds": 20,
+        "num_rounds": "{num_rounds}",
         "task_assignment_timeout": 60,
         "persistor_id": "persistor",
         "shareable_generator_id": "shareable_generator",

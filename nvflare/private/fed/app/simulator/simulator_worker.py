@@ -231,15 +231,11 @@ def main(args):
     thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
     thread.start()
 
-    log_config_file_path = os.path.join(args.workspace, "startup", WorkspaceConstants.LOGGING_CONFIG)
-    if not os.path.isfile(log_config_file_path):
-        log_config_file_path = os.path.join(os.path.dirname(__file__), WorkspaceConstants.LOGGING_CONFIG)
-    logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
-    workspace = os.path.join(args.workspace, SimulatorConstants.JOB_NAME, "app_" + args.client)
-    log_file = os.path.join(workspace, WorkspaceConstants.LOG_FILE_NAME)
+    logging.config.fileConfig(fname=args.logging_config, disable_existing_loggers=False)
+    log_file = os.path.join(args.workspace, WorkspaceConstants.LOG_FILE_NAME)
     add_logfile_handler(log_file)
 
-    os.chdir(workspace)
+    os.chdir(args.workspace)
     fobs_initialize()
     AuthorizationService.initialize(EmptyAuthorizer())
     # AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
@@ -265,6 +261,7 @@ def main(args):
 def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-o", type=str, help="WORKSPACE folder", required=True)
+    parser.add_argument("--logging_config", type=str, help="logging config file", required=True)
     parser.add_argument("--client", type=str, help="Client name", required=True)
     parser.add_argument("--token", type=str, help="Client token", required=True)
     parser.add_argument("--port", type=str, help="Listen port", required=True)

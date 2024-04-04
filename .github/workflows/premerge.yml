@@ -17,8 +17,6 @@ name: pre-merge
 on:
   # quick tests for pull requests and the releasing branches
   push:
-    branches:
-      - dev
   pull_request:
   workflow_dispatch:
 

@@ -12,12 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import gc
 import traceback
 
+from nvflare.apis.controller_spec import ClientTask, Task
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.impl.controller import ClientTask, Task
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.aggregator import Aggregator
@@ -247,6 +248,8 @@ class ScatterAndGatherAutoFedRL(ScatterAndGather):
                 # Call the self._engine to persist the snapshot of all the FLComponents
                 self._engine.persist_components(fl_ctx, completed=False)
 
+                gc.collect()
+
             self._phase = AppConstants.PHASE_FINISHED
             self.log_info(fl_ctx, "Finished ScatterAndGather Training.")
         except Exception as e:
@@ -283,6 +286,8 @@ class ScatterAndGatherAutoFedRL(ScatterAndGather):
 
         # Cleanup task result
         client_task.result = None
+
+        gc.collect()
 
     def _process_val_result(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
         result = client_task.result

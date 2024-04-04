@@ -150,12 +150,14 @@ class FLContextKey(object):
     COMMUNICATION_ERROR = "Flare_communication_error__"
     UNAUTHENTICATED = "Flare_unauthenticated__"
     CLIENT_RESOURCE_SPECS = "__client_resource_specs"
+    RESOURCE_CHECK_RESULT = "__resource_check_result"
     JOB_PARTICIPANTS = "__job_participants"
     JOB_BLOCK_REASON = "__job_block_reason"  # why the job should be blocked from scheduling
     SSID = "__ssid__"
     CLIENT_TOKEN = "__client_token"
     AUTHORIZATION_RESULT = "_authorization_result"
     AUTHORIZATION_REASON = "_authorization_reason"
+    DEAD_JOB_CLIENT_NAME = "_dead_job_client_name"
 
     CLIENT_REGISTER_DATA = "_client_register_data"
     SECURITY_ITEMS = "_security_items"
@@ -414,6 +416,7 @@ class FLMetaKey:
     FILTER_HISTORY = "filter_history"
     CONFIGS = "configs"
     VALIDATE_TYPE = "validate_type"
+    START_ROUND = "start_round"
     CURRENT_ROUND = "current_round"
     TOTAL_ROUNDS = "total_rounds"
     JOB_ID = "job_id"
@@ -452,6 +455,12 @@ class ConfigVarName:
 
     # client: timeout for submitTaskResult requests
     SUBMIT_TASK_RESULT_TIMEOUT = "submit_task_result_timeout"
+
+    # client and server: max number of request workers for reliable message
+    RM_MAX_REQUEST_WORKERS = "rm_max_request_workers"
+
+    # client and server: query interval for reliable message
+    RM_QUERY_INTERVAL = "rm_query_interval"
 
 
 class SystemVarName:

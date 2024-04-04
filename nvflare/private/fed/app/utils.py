@@ -20,7 +20,9 @@ import time
 
 import psutil
 
-from nvflare.apis.fl_constant import WorkspaceConstants
+from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.security import hash_password
 from nvflare.fuel.sec.security_content_service import SecurityContentService
@@ -107,3 +109,12 @@ def init_security_content_service(workspace_dir):
     os.makedirs(os.path.join(workspace_dir, WorkspaceConstants.STARTUP_FOLDER_NAME), exist_ok=True)
     workspace_obj = Workspace(root_dir=workspace_dir)
     SecurityContentService.initialize(content_folder=workspace_obj.get_startup_kit_dir())
+
+
+def component_security_check(fl_ctx: FLContext):
+    exceptions = fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
+    if exceptions:
+        for _, exception in exceptions.items():
+            if isinstance(exception, UnsafeComponentError):
+                print(f"Unsafe component configured, could not start {fl_ctx.get_identity_name()}!!")
+                raise RuntimeError(exception)

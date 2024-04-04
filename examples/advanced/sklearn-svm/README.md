@@ -34,7 +34,7 @@ Under this setting, federated learning can be formulated in two steps:
 
 Unlike other iterative federated algorithms, federated SVM only involves 
 these two training steps. Hence, in the server config, we have
-```json
+```
 "num_rounds": 2
 ```
 The first round is the training round, performing local training and global aggregation. 
@@ -116,10 +116,10 @@ Below is a sample config for site-1, saved to `./jobs/sklearn_svm_3_uniform/app_
 ```
 
 ## Run experiment with FL simulator
-[FL simulator](https://nvflare.readthedocs.io/en/latest/user_guide/fl_simulator.html) is used to simulate FL experiments or debug codes, not for real FL deployment.
+[FL simulator](https://nvflare.readthedocs.io/en/latest/user_guide/nvflare_cli/fl_simulator.html) is used to simulate FL experiments or debug codes, not for real FL deployment.
 We can run the FL simulator with three clients under the uniform data split with
 ```commandline
 bash run_experiment_simulator.sh
 ```
 Running with default [SVC](https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html) classifier, the 
-resulting global model's AUC is 0.806 which can be seen in the clients' logs.
+resulting global model's AUC is 0.8088 which can be seen in the clients' logs.

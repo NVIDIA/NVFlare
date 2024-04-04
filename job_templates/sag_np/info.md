@@ -2,7 +2,7 @@
 
 ## sag_np
     name = "sag_np"
-    description = "Scatter and Gather Workflow using NumPy" 
+    description = "FedAvg with Scatter and Gather Workflow using NumPy" 
     class_name  =  "ScatterAndGather"
     controller_type = "server"
     executor_type = "launcher_executor"

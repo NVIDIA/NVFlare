@@ -123,8 +123,27 @@ class SimpleJobDefManager(JobDefManagerSpec):
     def job_uri(self, jid: str):
         return os.path.join(self.uri_root, jid)
 
-    def create(self, meta: dict, uploaded_content: bytes, fl_ctx: FLContext) -> Dict[str, Any]:
+    def create(self, meta: dict, uploaded_content: Union[str, bytes], fl_ctx: FLContext) -> Dict[str, Any]:
         # validate meta to make sure it has:
+        jid = meta.get(JobMetaKey.JOB_ID.value, None)
+        if not jid:
+            jid = new_job_id()
+            meta[JobMetaKey.JOB_ID.value] = jid
+
+        now = time.time()
+        meta[JobMetaKey.SUBMIT_TIME.value] = now
+        meta[JobMetaKey.SUBMIT_TIME_ISO.value] = datetime.datetime.fromtimestamp(now).astimezone().isoformat()
+        meta[JobMetaKey.START_TIME.value] = ""
+        meta[JobMetaKey.DURATION.value] = "N/A"
+        meta[JobMetaKey.DATA_STORAGE_FORMAT.value] = 2
+        meta[JobMetaKey.STATUS.value] = RunStatus.SUBMITTED.value
+
+        # write it to the store
+        store = self._get_job_store(fl_ctx)
+        store.create_object(self.job_uri(jid), uploaded_content, meta, overwrite_existing=True)
+        return meta
+
+    def clone(self, from_jid: str, meta: dict, fl_ctx: FLContext) -> Dict[str, Any]:
         jid = meta.get(JobMetaKey.JOB_ID.value, None)
         if not jid:
             jid = new_job_id()
@@ -138,9 +157,10 @@ class SimpleJobDefManager(JobDefManagerSpec):
         meta[JobMetaKey.STATUS.value] = RunStatus.SUBMITTED.value
 
         # write it to the store
-        stored_data = {JobDataKey.JOB_DATA.value: uploaded_content, JobDataKey.WORKSPACE_DATA.value: None}
         store = self._get_job_store(fl_ctx)
-        store.create_object(self.job_uri(jid), fobs.dumps(stored_data), meta, overwrite_existing=True)
+        store.clone_object(
+            from_uri=self.job_uri(from_jid), to_uri=self.job_uri(jid), meta=meta, overwrite_existing=True
+        )
         return meta
 
     def delete(self, jid: str, fl_ctx: FLContext):
@@ -184,45 +204,39 @@ class SimpleJobDefManager(JobDefManagerSpec):
 
     def get_app(self, job: Job, app_name: str, fl_ctx: FLContext) -> bytes:
         temp_dir = tempfile.mkdtemp()
-        job_id_dir = self._load_job_data_from_store(job.job_id, temp_dir, fl_ctx)
+        job_id_dir = self._load_job_data_from_store(job, temp_dir, fl_ctx)
         job_folder = os.path.join(job_id_dir, job.meta[JobMetaKey.JOB_FOLDER_NAME.value])
         fullpath_src = os.path.join(job_folder, app_name)
         result = zip_directory_to_bytes(fullpath_src, "")
         shutil.rmtree(temp_dir)
         return result
 
-    def get_apps(self, job: Job, fl_ctx: FLContext) -> Dict[str, bytes]:
-        temp_dir = tempfile.mkdtemp()
-        job_id_dir = self._load_job_data_from_store(job.job_id, temp_dir, fl_ctx)
-        job_folder = os.path.join(job_id_dir, job.meta[JobMetaKey.JOB_FOLDER_NAME.value])
-        result_dict = {}
-        for app in job.get_deployment():
-            fullpath_src = os.path.join(job_folder, app)
-            result_dict[app] = zip_directory_to_bytes(fullpath_src, "")
-        shutil.rmtree(temp_dir)
-        return result_dict
-
-    def _load_job_data_from_store(self, jid: str, temp_dir: str, fl_ctx: FLContext):
-        data_bytes = self.get_content(jid, fl_ctx)
-        job_id_dir = os.path.join(temp_dir, jid)
+    def _load_job_data_from_store(self, job: Job, temp_dir: str, fl_ctx: FLContext):
+        data_bytes = self.get_content(job.meta, fl_ctx)
+        job_id_dir = os.path.join(temp_dir, job.job_id)
         if os.path.exists(job_id_dir):
             shutil.rmtree(job_id_dir)
         os.mkdir(job_id_dir)
         unzip_all_from_bytes(data_bytes, job_id_dir)
         return job_id_dir
 
-    def get_content(self, jid: str, fl_ctx: FLContext) -> Optional[bytes]:
+    def get_content(self, meta: dict, fl_ctx: FLContext) -> Optional[bytes]:
         store = self._get_job_store(fl_ctx)
+        jid = meta.get(JobMetaKey.JOB_ID.value)
+        if not jid:
+            raise RuntimeError("no Job ID in meta")
+
         try:
             stored_data = store.get_data(self.job_uri(jid))
+            storage_format = meta.get(JobMetaKey.DATA_STORAGE_FORMAT.value)
+            if storage_format:
+                # new format
+                return stored_data
+            else:
+                # old format
+                return fobs.loads(stored_data).get(JobDataKey.JOB_DATA.value)
         except StorageException:
             return None
-        return fobs.loads(stored_data).get(JobDataKey.JOB_DATA.value)
-
-    def get_job_data(self, jid: str, fl_ctx: FLContext) -> dict:
-        store = self._get_job_store(fl_ctx)
-        stored_data = store.get_data(self.job_uri(jid))
-        return fobs.loads(stored_data)
 
     def set_status(self, jid: str, status: RunStatus, fl_ctx: FLContext):
         meta = {JobMetaKey.STATUS.value: status.value}
