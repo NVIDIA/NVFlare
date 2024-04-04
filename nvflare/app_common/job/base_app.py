@@ -18,21 +18,12 @@ from nvflare.apis.filter import Filter
 from nvflare.apis.fl_component import FLComponent
 
 
-class _FilterDef:
-
-    def __init__(self, tasks, filter) -> None:
-        super().__init__()
-
-        self.tasks = tasks
-        self.filter = filter
-
-
 class BaseApp(ABC):
     def __init__(self) -> None:
         super().__init__()
 
-        self.task_data_filters: [dict[str, Filter]] = []
-        self.task_result_filters: [dict[str, Filter]] = []
+        self.task_data_filters: [(List[str], Filter)] = []
+        self.task_result_filters: [(List[str], Filter)] = []
         self.components: Dict[str, object] = {}
 
         self.handlers: [FLComponent] = []
@@ -59,4 +50,4 @@ class BaseApp(ABC):
             for fd in filters:
                 if task in fd.tasks:
                     raise RuntimeError(f"Task {task} already defined in the task filters.")
-        filters.append(_FilterDef(tasks, filter))
+        filters.append((tasks, filter))

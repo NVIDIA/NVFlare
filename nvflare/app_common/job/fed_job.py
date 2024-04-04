@@ -187,27 +187,27 @@ class FedJob:
                 }
             )
         app_config["task_data_filters"] = []
-        for task_filter in app.task_data_filters:
+        for tasks, filter in app.task_data_filters:
             app_config["task_data_filters"].append(
                 {
-                    "tasks": task_filter.tasks,
+                    "tasks": tasks,
                     "filters": [
                         {
                             # self._get_filters(task_filter.filter, custom_dir)
-                            "path": self._get_class_path(task_filter.filter, custom_dir)
+                            "path": self._get_class_path(filter, custom_dir)
                         }
                     ]
                 }
             )
         app_config["task_result_filters"] = []
-        for result_filer in app.task_result_filters:
+        for tasks, filter in app.task_result_filters:
             app_config["task_result_filters"].append(
                 {
-                    "tasks": result_filer.tasks,
+                    "tasks": tasks,
                     "filters": [
                         {
                             # self._get_filters(result_filer.filter, custom_dir)
-                            "path": self._get_class_path(result_filer.filter, custom_dir)
+                            "path": self._get_class_path(filter, custom_dir)
                         }
                     ]
                 }
