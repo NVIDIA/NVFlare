@@ -28,27 +28,15 @@ Model accuracy can be visualized in tensorboard:
 tensorboard --logdir /tmp/nvflare/xgboost_v2_workspace/simulate_job/tb_events
 ```
 
-### Run federated experiments in real world
+## Timeout configuration
 
-To run in a federated setting, follow [Real-World FL](https://nvflare.readthedocs.io/en/main/real_world_fl.html) to
-start the overseer, FL servers and FL clients.
-
-You need to download the HIGGS data on each client site.
-You will also need to install the xgboost on each client site and server site.
-
-You can still generate the data splits and job configs using the scripts provided.
-
-You will need to copy the generated data split file into each client site.
-You might also need to modify the `data_path` in the `data_site-XXX.json`
-inside the `/tmp/nvflare/xgboost_higgs_dataset` folder,
-since each site might save the HIGGS dataset in different places.
-
-Then you can use admin client to submit the job via `submit_job` command.
+Please refer to [Reliable Federated XGBoost Timeout Mechanism](https://nvflare.readthedocs.io/en/2.4/user_guide/reliable_xgboost.html)
 
 ## Customization
 
-The provided XGBoost executor can be customized using Boost parameters
-provided in `xgb_params` argument.
+The provided FedXGBHistogramExecutor can be customized by passing
+[xgboost parameters](https://xgboost.readthedocs.io/en/stable/parameter.html)
+in the `xgb_params` argument.
 
 If the parameter change alone is not sufficient and code changes are required,
 a custom executor can be implemented to make calls to xgboost library directly.
@@ -59,13 +47,25 @@ overwrite the `xgb_train()` method.
 To use other dataset, can inherit the base class `XGBDataLoader` and
 implement the `load_data()` method.
 
+## Run in real world
+
+To run in a federated setting, follow [Real-World FL](https://nvflare.readthedocs.io/en/main/real_world_fl.html) to
+start the overseer, FL servers and FL clients.
+
+1. Each participating site need to install xgboost and nvflare.
+2. Each participating site need to have their own data loader
+   or use the same dataloader but with different location to load data
+   (can refer to higgs_data_loader.py to write one for their own data)
+
+Then you can use admin client to submit the job via `submit_job` command.
+
 ## GPU support
 By default, CPU based training is used.
 
 If the CUDA is installed on the site, tree construction and prediction can be
 accelerated using GPUs.
 
-To enable GPU accelerated training, in `config_fed_client` set the args of 
+To enable GPU accelerated training, in `config_fed_client` set the args of
 `FedXGBHistogramExecutor` to `"use_gpus": true` and set `"tree_method": "hist"`
 in `xgb_params`.
 

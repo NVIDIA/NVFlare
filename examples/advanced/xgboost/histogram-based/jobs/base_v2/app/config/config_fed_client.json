@@ -1,6 +1,5 @@
 {
   "format_version": 2,
-  "num_rounds": 100,
   "executors": [
     {
       "tasks": [
@@ -20,7 +19,9 @@
             "eval_metric": "auc",
             "tree_method": "hist",
             "nthread": 16
-          }
+          },
+          "per_msg_timeout": 100,
+          "tx_timeout": 500
         }
       }
     }
