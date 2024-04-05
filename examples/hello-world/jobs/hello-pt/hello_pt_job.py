@@ -16,8 +16,8 @@ from cifar10trainer import Cifar10Trainer
 from cifar10validator import Cifar10Validator
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.aggregators import InTimeAccumulateWeightedAggregator
-from nvflare.app_common.job.fed_app import ClientApp, ServerApp, FedApp
-from nvflare.app_common.job.fed_job import FedJob
+from nvflare.app_common.job.fed_app_config import ClientAppConfig, ServerAppConfig, FedAppConfig
+from nvflare.app_common.job.fed_job_config import FedJobConfig
 from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
@@ -33,17 +33,17 @@ class HelloPTJob:
         super().__init__()
         self.job = self.define_job()
 
-    def define_job(self) -> FedJob:
-        # job = FedJob(job_name="hello-pt", min_clients=2, mandatory_clients="site-1")
-        job: FedJob = FedJob(job_name="hello-pt", min_clients=2)
+    def define_job(self) -> FedJobConfig:
+        # job = FedJobConfig(job_name="hello-pt", min_clients=2, mandatory_clients="site-1")
+        job: FedJobConfig = FedJobConfig(job_name="hello-pt", min_clients=2)
 
         server_app = self._create_server_app()
         client_app = self._create_client_app()
 
-        app = FedApp(server_app=server_app, client_app=client_app)
+        app = FedAppConfig(server_app=server_app, client_app=client_app)
         job.add_fed_app("app", app)
 
-        # app = FedApp(client_app=client_app)
+        # app = FedAppConfig(client_app=client_app)
         # job.add_fed_app("client_app", app)
         # job.set_site_app("server", "app")
         # job.set_site_app("site-1", "app")
@@ -55,7 +55,7 @@ class HelloPTJob:
         return job
 
     def _create_client_app(self):
-        client_app = ClientApp()
+        client_app = ClientAppConfig()
         executor = Cifar10Trainer(lr=0.01, epochs=1)
         client_app.add_executor(["train", "submit_model", "get_weights"], executor)
         validator = Cifar10Validator()
@@ -68,7 +68,7 @@ class HelloPTJob:
         return client_app
 
     def _create_server_app(self):
-        server_app = ServerApp()
+        server_app = ServerAppConfig()
         controller = InitializeGlobalWeights(task_name="get_weights")
         server_app.add_workflow("pre_train", controller)
         controller = ScatterAndGather(

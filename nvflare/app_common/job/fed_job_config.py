@@ -18,7 +18,7 @@ from typing import Dict
 import os
 
 from nvflare import SimulatorRunner
-from nvflare.app_common.job.fed_app import FedApp
+from nvflare.app_common.job.fed_app_config import FedAppConfig
 from nvflare.private.fed.app.fl_conf import FL_PACKAGES
 
 CONFIG = "config"
@@ -28,7 +28,7 @@ FED_CLIENT_JSON = "config_fed_client.json"
 META_JSON = "meta.json"
 
 
-class FedJob:
+class FedJobConfig:
     def __init__(self, job_name, min_clients, mandatory_clients=None) -> None:
         super().__init__()
 
@@ -36,15 +36,15 @@ class FedJob:
         self.min_clients = min_clients
         self.mandatory_clients = mandatory_clients
 
-        self.fed_apps: Dict[str, FedApp] = {}
+        self.fed_apps: Dict[str, FedAppConfig] = {}
         self.deploy_map: Dict[str, str] = {}
         self.resource_specs: Dict[str, Dict] = {}
 
         self.custom_modules = []
 
-    def add_fed_app(self, app_name: str, fed_app: FedApp):
-        if not isinstance(fed_app, FedApp):
-            raise RuntimeError(f"server_app must be type of FedApp, but got {fed_app.__class__}")
+    def add_fed_app(self, app_name: str, fed_app: FedAppConfig):
+        if not isinstance(fed_app, FedAppConfig):
+            raise RuntimeError(f"server_app must be type of FedAppConfig, but got {fed_app.__class__}")
 
         self.fed_apps[app_name] = fed_app
 

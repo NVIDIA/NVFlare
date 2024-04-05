@@ -18,7 +18,7 @@ from nvflare.apis.filter import Filter
 from nvflare.apis.fl_component import FLComponent
 
 
-class BaseApp(ABC):
+class BaseAppConfig(ABC):
     def __init__(self) -> None:
         super().__init__()
 

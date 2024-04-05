@@ -54,7 +54,7 @@ class ClientTaskWorker(FLComponent):
         client_engine.fire_event(EventType.SYSTEM_START, client_engine.new_context())
 
     def create_client_runner(self, client):
-        """Create the ClientRunner for the client to run the ClientApp.
+        """Create the ClientRunner for the client to run the ClientAppConfig.
 
         Args:
             client: the client to run
