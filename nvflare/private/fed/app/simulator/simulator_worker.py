@@ -236,6 +236,11 @@ def main(args):
     add_logfile_handler(log_file)
 
     os.chdir(args.workspace)
+    startup = os.path.join(args.workspace, WorkspaceConstants.STARTUP_FOLDER_NAME)
+    os.makedirs(startup, exist_ok=True)
+    local = os.path.join(args.workspace, WorkspaceConstants.SITE_FOLDER_NAME)
+    os.makedirs(local, exist_ok=True)
+
     fobs_initialize()
     AuthorizationService.initialize(EmptyAuthorizer())
     # AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)

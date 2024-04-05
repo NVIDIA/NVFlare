@@ -134,9 +134,7 @@ class SimulatorRunner(FLComponent):
         if not os.path.isfile(log_config_file_path):
             log_config_file_path = os.path.join(os.path.dirname(__file__), WorkspaceConstants.LOGGING_CONFIG)
         logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
-        local_dir = os.path.join(self.args.workspace, "local")
-        os.makedirs(local_dir, exist_ok=True)
-        shutil.copyfile(log_config_file_path, os.path.join(local_dir, WorkspaceConstants.LOGGING_CONFIG))
+        # self._setup_local_startup(log_config_file_path)
 
         self.args.log_config = None
         self.args.config_folder = "config"
@@ -153,13 +151,11 @@ class SimulatorRunner(FLComponent):
         AuthorizationService.initialize(EmptyAuthorizer())
         AuditService.the_auditor = SimulatorAuditor()
 
-        self.simulator_root = os.path.join(self.args.workspace, SimulatorConstants.JOB_NAME)
-        if os.path.exists(self.simulator_root):
-            shutil.rmtree(self.simulator_root)
-
-        os.makedirs(self.simulator_root)
-        log_file = os.path.join(self.simulator_root, WorkspaceConstants.LOG_FILE_NAME)
-        add_logfile_handler(log_file)
+        # self.simulator_root = os.path.join(self.args.workspace, SimulatorConstants.WORKSPACE)
+        self.simulator_root = os.path.join(self.args.workspace)
+        self._cleanup_workspace()
+        # log_file = os.path.join(self.simulator_root, WorkspaceConstants.LOG_FILE_NAME)
+        # add_logfile_handler(log_file)
 
         try:
             data_bytes, job_name, meta = self.validate_job_data()
@@ -235,7 +231,7 @@ class SimulatorRunner(FLComponent):
             self.args.sp_scheme = parsed_url.scheme
 
             self.logger.info("Deploy the Apps.")
-            self._deploy_apps(job_name, data_bytes, meta)
+            self._deploy_apps(job_name, data_bytes, meta, log_config_file_path)
 
             return True
 
@@ -243,6 +239,25 @@ class SimulatorRunner(FLComponent):
             self.logger.error(f"Simulator setup error: {secure_format_exception(e)}")
             secure_log_traceback()
             return False
+
+    def _cleanup_workspace(self):
+        os.makedirs(self.simulator_root, exist_ok=True)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            startup_dir = os.path.join(self.args.workspace, "startup")
+            temp_start_up = os.path.join(temp_dir, "startup")
+            if os.path.exists(startup_dir):
+                shutil.move(startup_dir, temp_start_up)
+            if os.path.exists(self.simulator_root):
+                shutil.rmtree(self.simulator_root)
+            if os.path.exists(temp_start_up):
+                shutil.move(temp_start_up, startup_dir)
+
+    def _setup_local_startup(self, log_config_file_path, workspace):
+        local_dir = os.path.join(workspace, "local")
+        startup = os.path.join(workspace, "startup")
+        os.makedirs(local_dir, exist_ok=True)
+        shutil.copyfile(log_config_file_path, os.path.join(local_dir, WorkspaceConstants.LOGGING_CONFIG))
+        shutil.copytree(os.path.join(self.simulator_root, "startup"), startup)
 
     def validate_job_data(self):
         # Validate the simulate job
@@ -279,7 +294,7 @@ class SimulatorRunner(FLComponent):
         if no_app_clients:
             raise RuntimeError(f"The job does not have App to run for clients: {no_app_clients}")
 
-    def _deploy_apps(self, job_name, data_bytes, meta):
+    def _deploy_apps(self, job_name, data_bytes, meta, log_config_file_path):
         with tempfile.TemporaryDirectory() as temp_dir:
             if os.path.exists(temp_dir):
                 shutil.rmtree(temp_dir)
@@ -287,22 +302,25 @@ class SimulatorRunner(FLComponent):
             unzip_all_from_bytes(data_bytes, temp_dir)
             temp_job_folder = os.path.join(temp_dir, job_name)
 
-            app_server_root = os.path.join(self.simulator_root, "app_server")
+            app_server_root = os.path.join(self.simulator_root, "server", SimulatorConstants.JOB_NAME, "app_server")
             for app_name, participants in meta.get(JobMetaKey.DEPLOY_MAP).items():
                 if len(participants) == 1 and participants[0].upper() == ALL_SITES:
                     participants = ["server"]
                     participants.extend([client for client in self.client_names])
 
                 for p in participants:
+                    self._setup_local_startup(log_config_file_path, os.path.join(self.simulator_root, p))
                     if p == "server":
                         app = os.path.join(temp_job_folder, app_name)
                         shutil.copytree(app, app_server_root)
+                        log_file = os.path.join(self.simulator_root, p, WorkspaceConstants.LOG_FILE_NAME)
+                        add_logfile_handler(log_file)
                     elif p in self.client_names:
-                        app_client_root = os.path.join(self.simulator_root, "app_" + p)
+                        app_client_root = os.path.join(self.simulator_root, p, SimulatorConstants.JOB_NAME, "app_" + p)
                         app = os.path.join(temp_job_folder, app_name)
                         shutil.copytree(app, app_client_root)
 
-            job_meta_file = os.path.join(self.simulator_root, WorkspaceConstants.JOB_META_FILE)
+            job_meta_file = os.path.join(self.simulator_root,"server", WorkspaceConstants.JOB_META_FILE)
             with open(job_meta_file, "w") as f:
                 json.dump(meta, f, indent=4)
 
@@ -447,7 +465,11 @@ class SimulatorRunner(FLComponent):
         client_runner.run(gpu)
 
     def start_server_app(self):
-        app_server_root = os.path.join(self.simulator_root, "app_server")
+        # app_server_root = os.path.join(self.simulator_root, "app_server")
+        app_server_root = os.path.join(self.simulator_root, "server", SimulatorConstants.JOB_NAME, "app_server")
+        self.args.workspace = app_server_root
+        os.chdir(self.args.workspace)
+
         self.args.server_config = os.path.join("config", JobConstants.SERVER_JOB_CONFIG)
         app_custom_folder = os.path.join(app_server_root, "custom")
         sys.path.append(app_custom_folder)
@@ -574,7 +596,8 @@ class SimulatorClientRunner(FLComponent):
 
     def do_one_task(self, client, num_of_threads, gpu, lock, timeout=60.0, task_name=RunnerTask.TASK_EXEC):
         open_port = get_open_ports(1)[0]
-        client_workspace = os.path.join(self.args.workspace, SimulatorConstants.JOB_NAME, "app_" + client.client_name)
+        # client_workspace = os.path.join(self.args.workspace, SimulatorConstants.JOB_NAME, "app_" + client.client_name)
+        client_workspace = os.path.join(self.args.workspace)
         command = (
             sys.executable
             + " -m nvflare.private.fed.app.simulator.simulator_worker -o "
