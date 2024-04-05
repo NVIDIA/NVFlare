@@ -218,7 +218,7 @@ class ModelController(Controller, FLComponentWrapper, ABC):
                         f"Number of results ({len(self._results)}) is different from number of targets ({min_responses})."
                     )
 
-            # de-reference the internel results before returning
+            # de-reference the internal results before returning
             results = self._results
             self._results = []
             return results
