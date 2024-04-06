@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import argparse
+import copy
 import logging.config
 import os
 import sys
@@ -146,7 +147,7 @@ class ClientTaskWorker(FLComponent):
 
             client = self._create_client(args, build_ctx, deploy_args)
 
-            app_root = os.path.join(args.workspace, SimulatorConstants.JOB_NAME, "app_" + client.client_name)
+            app_root = os.path.join(args.workspace, client.client_name, SimulatorConstants.JOB_NAME, "app_" + client.client_name)
             app_custom_folder = os.path.join(app_root, "custom")
             sys.path.append(app_custom_folder)
 
@@ -185,9 +186,11 @@ class ClientTaskWorker(FLComponent):
         return client
 
     def _set_client_status(self, client, deploy_args, simulator_root):
-        app_client_root = os.path.join(simulator_root, "app_" + client.client_name)
+        app_client_root = os.path.join(simulator_root, client.client_name,
+                                       SimulatorConstants.JOB_NAME, "app_" + client.client_name)
         client.app_client_root = app_client_root
-        client.args = deploy_args
+        client.args = copy.deepcopy(deploy_args)
+        client.args.workspace = os.path.join(client.args.workspace, client.client_name)
         # self.create_client_runner(client)
         client.simulate_running = False
         client.status = ClientStatus.STARTED

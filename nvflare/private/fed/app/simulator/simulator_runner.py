@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import copy
 import json
 import logging.config
 import os
@@ -420,7 +420,8 @@ class SimulatorRunner(FLComponent):
                 }
 
                 self.logger.info("Deploy and start the Server App.")
-                server_thread = threading.Thread(target=self.start_server_app, args=[])
+                args = copy.deepcopy(self.args)
+                server_thread = threading.Thread(target=self.start_server_app, args=[args])
                 server_thread.start()
 
                 # wait for the server app is started
@@ -464,21 +465,21 @@ class SimulatorRunner(FLComponent):
         client_runner = SimulatorClientRunner(self.args, clients, self.client_config, self.deploy_args, self.build_ctx)
         client_runner.run(gpu)
 
-    def start_server_app(self):
+    def start_server_app(self, args):
         # app_server_root = os.path.join(self.simulator_root, "app_server")
         app_server_root = os.path.join(self.simulator_root, "server", SimulatorConstants.JOB_NAME, "app_server")
-        self.args.workspace = app_server_root
-        os.chdir(self.args.workspace)
+        args.workspace = app_server_root
+        os.chdir(args.workspace)
 
-        self.args.server_config = os.path.join("config", JobConstants.SERVER_JOB_CONFIG)
+        args.server_config = os.path.join("config", JobConstants.SERVER_JOB_CONFIG)
         app_custom_folder = os.path.join(app_server_root, "custom")
         sys.path.append(app_custom_folder)
 
-        startup = os.path.join(self.args.workspace, WorkspaceConstants.STARTUP_FOLDER_NAME)
+        startup = os.path.join(args.workspace, WorkspaceConstants.STARTUP_FOLDER_NAME)
         os.makedirs(startup, exist_ok=True)
-        local = os.path.join(self.args.workspace, WorkspaceConstants.SITE_FOLDER_NAME)
+        local = os.path.join(args.workspace, WorkspaceConstants.SITE_FOLDER_NAME)
         os.makedirs(local, exist_ok=True)
-        workspace = Workspace(root_dir=self.args.workspace, site_name="server")
+        workspace = Workspace(root_dir=args.workspace, site_name="server")
 
         self.server.job_cell = self.server.create_job_cell(
             SimulatorConstants.JOB_NAME,
@@ -491,7 +492,7 @@ class SimulatorRunner(FLComponent):
         snapshot = None
         kv_list = [f"secure_train={self.server.secure_train}"]
         server_app_runner.start_server_app(
-            workspace, self.args, app_server_root, self.args.job_id, snapshot, self.logger, kv_list=kv_list
+            workspace, args, app_server_root, args.job_id, snapshot, self.logger, kv_list=kv_list
         )
 
         # start = time.time()
@@ -522,7 +523,8 @@ class SimulatorClientRunner(FLComponent):
         self.federated_clients = clients
         self.run_client_index = -1
 
-        self.simulator_root = os.path.join(self.args.workspace, SimulatorConstants.JOB_NAME)
+        # self.simulator_root = os.path.join(self.args.workspace, SimulatorConstants.JOB_NAME)
+        self.simulator_root = os.path.join(self.args.workspace)
         self.client_config = client_config
         self.deploy_args = deploy_args
         self.build_ctx = build_ctx
@@ -597,13 +599,15 @@ class SimulatorClientRunner(FLComponent):
     def do_one_task(self, client, num_of_threads, gpu, lock, timeout=60.0, task_name=RunnerTask.TASK_EXEC):
         open_port = get_open_ports(1)[0]
         # client_workspace = os.path.join(self.args.workspace, SimulatorConstants.JOB_NAME, "app_" + client.client_name)
-        client_workspace = os.path.join(self.args.workspace)
+        client_workspace = os.path.join(self.args.workspace, client.client_name)
+        logging_config = os.path.join(self.args.workspace, client.client_name,
+                                      "local", WorkspaceConstants.LOGGING_CONFIG)
         command = (
             sys.executable
             + " -m nvflare.private.fed.app.simulator.simulator_worker -o "
             + client_workspace
             + " --logging_config "
-            + self.logging_config
+            + logging_config
             + " --client "
             + client.client_name
             + " --token "
@@ -633,6 +637,9 @@ class SimulatorClientRunner(FLComponent):
         conn = self._create_connection(open_port, timeout=timeout)
 
         self.build_ctx["client_name"] = client.client_name
+        deploy_args = copy.deepcopy(self.deploy_args)
+        deploy_args.workspace = os.path.join(deploy_args.workspace, client.client_name,
+                                             SimulatorConstants.JOB_NAME, "app_" + client.client_name)
         data = {
             # SimulatorConstants.CLIENT: client,
             SimulatorConstants.CLIENT_CONFIG: self.client_config,

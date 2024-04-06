@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import copy
+
 import json
 import os
 import shutil
@@ -28,7 +28,6 @@ from nvflare.security.logging import secure_format_exception
 
 from .base_client_deployer import BaseClientDeployer
 from .server_deployer import ServerDeployer
-from ...simulator.simulator_const import SimulatorConstants
 
 
 class SimulatorDeployer(ServerDeployer):
@@ -84,11 +83,7 @@ class SimulatorDeployer(ServerDeployer):
         # federated_client.start_heartbeat()
         federated_client.run_manager = None
 
-        deploy_args = copy.deepcopy(args)
-        # deploy_args.workspace = os.path.join(deploy_args.workspace, client_name, SimulatorConstants.JOB_NAME, "app_" + client_name)
-        deploy_args.workspace = os.path.join(deploy_args.workspace, client_name)
-
-        return federated_client, client_config, deploy_args, build_ctx
+        return federated_client, client_config, args, build_ctx
 
     def _create_client_cell(self, client_config, client_name, federated_client):
         target = client_config["servers"][0].get("service").get("target")
