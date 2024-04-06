@@ -298,21 +298,17 @@ class SimulatorRunner(FLComponent):
             unzip_all_from_bytes(data_bytes, temp_dir)
             temp_job_folder = os.path.join(temp_dir, job_name)
 
-            app_server_root = os.path.join(self.simulator_root, "server", SimulatorConstants.JOB_NAME, "app_server")
             for app_name, participants in meta.get(JobMetaKey.DEPLOY_MAP).items():
                 if len(participants) == 1 and participants[0].upper() == ALL_SITES:
                     participants = ["server"]
                     participants.extend([client for client in self.client_names])
 
                 for p in participants:
-                    self._setup_local_startup(log_config_file_path, os.path.join(self.simulator_root, p))
-                    if p == "server":
+                    if p == "server" or p in self.client_names:
+                        app_root = os.path.join(self.simulator_root, p, SimulatorConstants.JOB_NAME, "app_" + p)
+                        self._setup_local_startup(log_config_file_path, os.path.join(self.simulator_root, p))
                         app = os.path.join(temp_job_folder, app_name)
-                        shutil.copytree(app, app_server_root)
-                    elif p in self.client_names:
-                        app_client_root = os.path.join(self.simulator_root, p, SimulatorConstants.JOB_NAME, "app_" + p)
-                        app = os.path.join(temp_job_folder, app_name)
-                        shutil.copytree(app, app_client_root)
+                        shutil.copytree(app, app_root)
 
             job_meta_file = os.path.join(self.simulator_root, "server", WorkspaceConstants.JOB_META_FILE)
             with open(job_meta_file, "w") as f:
