@@ -134,7 +134,6 @@ class SimulatorRunner(FLComponent):
         if not os.path.isfile(log_config_file_path):
             log_config_file_path = os.path.join(os.path.dirname(__file__), WorkspaceConstants.LOGGING_CONFIG)
         logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
-        # self._setup_local_startup(log_config_file_path)
 
         self.args.log_config = None
         self.args.config_folder = "config"
@@ -151,11 +150,8 @@ class SimulatorRunner(FLComponent):
         AuthorizationService.initialize(EmptyAuthorizer())
         AuditService.the_auditor = SimulatorAuditor()
 
-        # self.simulator_root = os.path.join(self.args.workspace, SimulatorConstants.WORKSPACE)
         self.simulator_root = os.path.join(self.args.workspace)
         self._cleanup_workspace()
-        # log_file = os.path.join(self.simulator_root, WorkspaceConstants.LOG_FILE_NAME)
-        # add_logfile_handler(log_file)
 
         try:
             data_bytes, job_name, meta = self.validate_job_data()
@@ -320,7 +316,7 @@ class SimulatorRunner(FLComponent):
                         app = os.path.join(temp_job_folder, app_name)
                         shutil.copytree(app, app_client_root)
 
-            job_meta_file = os.path.join(self.simulator_root,"server", WorkspaceConstants.JOB_META_FILE)
+            job_meta_file = os.path.join(self.simulator_root, "server", WorkspaceConstants.JOB_META_FILE)
             with open(job_meta_file, "w") as f:
                 json.dump(meta, f, indent=4)
 
@@ -523,7 +519,6 @@ class SimulatorClientRunner(FLComponent):
         self.federated_clients = clients
         self.run_client_index = -1
 
-        # self.simulator_root = os.path.join(self.args.workspace, SimulatorConstants.JOB_NAME)
         self.simulator_root = os.path.join(self.args.workspace)
         self.client_config = client_config
         self.deploy_args = deploy_args
@@ -598,10 +593,10 @@ class SimulatorClientRunner(FLComponent):
 
     def do_one_task(self, client, num_of_threads, gpu, lock, timeout=60.0, task_name=RunnerTask.TASK_EXEC):
         open_port = get_open_ports(1)[0]
-        # client_workspace = os.path.join(self.args.workspace, SimulatorConstants.JOB_NAME, "app_" + client.client_name)
         client_workspace = os.path.join(self.args.workspace, client.client_name)
-        logging_config = os.path.join(self.args.workspace, client.client_name,
-                                      "local", WorkspaceConstants.LOGGING_CONFIG)
+        logging_config = os.path.join(
+            self.args.workspace, client.client_name, "local", WorkspaceConstants.LOGGING_CONFIG
+        )
         command = (
             sys.executable
             + " -m nvflare.private.fed.app.simulator.simulator_worker -o "
@@ -638,12 +633,11 @@ class SimulatorClientRunner(FLComponent):
 
         self.build_ctx["client_name"] = client.client_name
         deploy_args = copy.deepcopy(self.deploy_args)
-        deploy_args.workspace = os.path.join(deploy_args.workspace, client.client_name,
-                                             SimulatorConstants.JOB_NAME, "app_" + client.client_name)
+        deploy_args.workspace = os.path.join(deploy_args.workspace, client.client_name)
         data = {
             # SimulatorConstants.CLIENT: client,
             SimulatorConstants.CLIENT_CONFIG: self.client_config,
-            SimulatorConstants.DEPLOY_ARGS: self.deploy_args,
+            SimulatorConstants.DEPLOY_ARGS: deploy_args,
             SimulatorConstants.BUILD_CTX: self.build_ctx,
         }
         conn.send(data)
