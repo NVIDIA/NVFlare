@@ -40,10 +40,12 @@ class BaseFedAvg(WFController):
         """The base controller for FedAvg Workflow. *Note*: This class is based on the `WFController`.
 
         Implements [FederatedAveraging](https://arxiv.org/abs/1602.05629).
-        The model persistor (persistor_id) is used to load the initial global model which is sent to a list of clients.
+
+        A model persistor can be configured via the `persistor_id` argument of the `WFController`.
+        The model persistor is used to load the initial global model which is sent to a list of clients.
         Each client sends it's updated weights after local training which is aggregated.
         Next, the global model is updated.
-        The model_persistor also saves the model after training.
+        The model_persistor will also save the model after training.
 
         Provides the default implementations for the follow routines:
             - def sample_clients(self, min_clients)
