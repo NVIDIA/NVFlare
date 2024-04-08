@@ -46,12 +46,7 @@ class KM(WFController):
 
     def start_fl_collect_max_idx(self):
         self.logger.info("send initial message to all sites to start FL \n")
-        model = FLModel(
-            params={},
-            start_round=1,
-            current_round=1,
-            total_rounds=self.num_rounds
-        )
+        model = FLModel(params={}, start_round=1, current_round=1, total_rounds=self.num_rounds)
 
         results = self.send_model_and_wait(data=model)
         return results
