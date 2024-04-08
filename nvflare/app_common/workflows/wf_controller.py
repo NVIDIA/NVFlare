@@ -23,13 +23,13 @@ class WFController(ModelController, ABC):
     def __init__(
         self,
         *args,
-        persistor_id: str = "persistor",
+        persistor_id: str = "",
         **kwargs,
     ):
         """Workflow Controller API for FLModel-based ModelController.
 
         Args:
-            persistor_id (str, optional): ID of the persistor component. Defaults to "persistor".
+            persistor_id (str, optional): ID of the persistor component. Defaults to "".
         """
         super().__init__(*args, persistor_id, **kwargs)
 

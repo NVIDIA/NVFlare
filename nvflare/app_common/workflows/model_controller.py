@@ -90,11 +90,9 @@ class ModelController(Controller, FLComponentWrapper, ABC):
 
     def _build_shareable(self, data: FLModel = None) -> Shareable:
         data_shareable: Shareable = FLModelUtils.to_shareable(data)
-        if not data_shareable.get_header(AppConstants.CURRENT_ROUND):
-            data_shareable.set_header(AppConstants.CURRENT_ROUND, self._current_round)
-        if not data_shareable.get_header(AppConstants.NUM_ROUNDS):
-            data_shareable.set_header(AppConstants.NUM_ROUNDS, self._num_rounds)
-        data_shareable.add_cookie(AppConstants.CONTRIBUTION_ROUND, self._current_round)
+        data_shareable.add_cookie(
+            AppConstants.CONTRIBUTION_ROUND, data_shareable.get_header(AppConstants.CURRENT_ROUND)
+        )
 
         return data_shareable
 
