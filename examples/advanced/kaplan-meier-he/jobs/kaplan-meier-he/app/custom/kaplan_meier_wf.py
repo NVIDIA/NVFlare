@@ -46,9 +46,14 @@ class KM(WFController):
 
     def start_fl_collect_max_idx(self):
         self.logger.info("send initial message to all sites to start FL \n")
-        model = FLModel(params={}, current_round=1, total_rounds=self.num_rounds)
+        model = FLModel(
+            params={},
+            start_round=1,
+            current_round=1,
+            total_rounds=self.num_rounds
+        )
 
-        results = self.send_model(data=model)
+        results = self.send_model_and_wait(data=model)
         return results
 
     def aggr_max_idx(self, sag_result: Dict[str, Dict[str, FLModel]]):
@@ -70,11 +75,12 @@ class KM(WFController):
         model = FLModel(
             params={"max_idx_global": result},
             params_type=ParamsType.FULL,
+            start_round=1,
             current_round=2,
             total_rounds=self.num_rounds,
         )
 
-        results = self.send_model(data=model)
+        results = self.send_model_and_wait(data=model)
         return results
 
     def aggr_he_hist(self, sag_result: Dict[str, Dict[str, FLModel]]):
@@ -121,9 +127,10 @@ class KM(WFController):
         model = FLModel(
             params={"hist_obs_global": hist_obs_global_serial, "hist_cen_global": hist_cen_global_serial},
             params_type=ParamsType.FULL,
+            start_round=1,
             current_round=3,
             total_rounds=self.num_rounds,
         )
 
-        results = self.send_model(data=model)
+        results = self.send_model_and_wait(data=model)
         return results
