@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import builtins
 import inspect
 import json
 import shutil
@@ -62,13 +63,13 @@ class FedJobConfig:
 
         self.resource_specs[site_name] = resource_spec
 
-    def _generate_meta(self, job_root):
+    def _generate_meta(self, job_dir):
         """ generate the job meta.json
 
         Returns:
 
         """
-        meta_file = os.path.join(job_root, self.job_name, META_JSON)
+        meta_file = os.path.join(job_dir, META_JSON)
         meta_json = {
             "name": self.job_name,
             "resource_spec": self.resource_specs,
@@ -88,13 +89,14 @@ class FedJobConfig:
         Returns:
 
         """
-        if os.path.exists(job_root):
-            shutil.rmtree(job_root, ignore_errors=True)
+        job_dir = os.path.join(job_root, self.job_name)
+        if os.path.exists(job_dir):
+            shutil.rmtree(job_dir, ignore_errors=True)
 
         for app_name, fed_app in self.fed_apps.items():
             self.custom_modules = []
-            config_dir = os.path.join(job_root, self.job_name, app_name, CONFIG)
-            custom_dir = os.path.join(job_root, self.job_name, app_name, CUSTOM)
+            config_dir = os.path.join(job_dir, app_name, CONFIG)
+            custom_dir = os.path.join(job_dir, app_name, CUSTOM)
             os.makedirs(config_dir, exist_ok=True)
 
             if fed_app.server_app:
@@ -103,7 +105,7 @@ class FedJobConfig:
             if fed_app.client_app:
                 self._get_client_app(config_dir, custom_dir, fed_app)
 
-        self._generate_meta(job_root)
+        self._generate_meta(job_dir)
 
     def simulator_run(self, job_root, workspace, clients=None, n_clients=None, threads=None, gpu=None):
         self.generate_job_config(job_root)
@@ -125,7 +127,7 @@ class FedJobConfig:
                 {
                     "id": workflow.id,
                     "path": self._get_class_path(workflow.controller, custom_dir),
-                    "args": self._get_args(workflow.controller)
+                    "args": self._get_args(workflow.controller, custom_dir)
                 }
             )
         self._get_base_app(custom_dir, fed_app.server_app, server_app)
@@ -166,7 +168,7 @@ class FedJobConfig:
                     "tasks": e.tasks,
                     "executor": {
                         "path": self._get_class_path(e.executor, custom_dir),
-                        "args": self._get_args(e.executor)
+                        "args": self._get_args(e.executor, custom_dir)
                     }
                 }
             )
@@ -183,7 +185,7 @@ class FedJobConfig:
                 {
                     "id": cid,
                     "path": self._get_class_path(component, custom_dir),
-                    "args": self._get_args(component)
+                    "args": self._get_args(component, custom_dir)
                 }
             )
         app_config["task_data_filters"] = []
@@ -194,7 +196,8 @@ class FedJobConfig:
                     "filters": [
                         {
                             # self._get_filters(task_filter.filter, custom_dir)
-                            "path": self._get_class_path(filter, custom_dir)
+                            "path": self._get_class_path(filter, custom_dir),
+                            "args": self._get_args(filter, custom_dir)
                         }
                     ]
                 }
@@ -207,21 +210,29 @@ class FedJobConfig:
                     "filters": [
                         {
                             # self._get_filters(result_filer.filter, custom_dir)
-                            "path": self._get_class_path(filter, custom_dir)
+                            "path": self._get_class_path(filter, custom_dir),
+                            "args": self._get_args(filter, custom_dir)
                         }
                     ]
                 }
             )
 
-    def _get_args(self, component):
+    def _get_args(self, component, custom_dir):
         constructor = component.__class__.__init__
         parameters = inspect.signature(constructor).parameters
         attrs = component.__dict__
         args = {}
+
         for param in parameters:
             attr_key = param if param in attrs.keys() else "_" + param
             if attr_key in attrs.keys() and parameters[param].default != attrs[attr_key]:
-                args[param] = attrs[attr_key]
+                if type(attrs[attr_key]).__name__ in dir(builtins):
+                    args[param] = attrs[attr_key]
+                else:
+                    args[param] = {
+                        "path": self._get_class_path(attrs[attr_key], custom_dir),
+                        "args": self._get_args(attrs[attr_key], custom_dir)
+                    }
 
         return args
 
@@ -230,7 +241,8 @@ class FedJobConfig:
         for f in filters:
             r.append(
                 {
-                    "path": self._get_class_path(f, custom_dir)
+                    "path": self._get_class_path(f, custom_dir),
+                    "args": self._get_args(f, custom_dir)
                 }
             )
         return r
