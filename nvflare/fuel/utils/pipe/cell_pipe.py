@@ -271,15 +271,27 @@ class CellPipe(Pipe):
             )
             return True
 
-        return self.cell.send_request(
+        reply = self.cell.send_request(
             channel=self.channel,
             topic=msg.topic,
             target=self.peer_fqcn,
             request=_to_cell_message(msg),
             timeout=timeout,
             optional=optional,
-            wait_for_reply=False,
         )
+        if reply:
+            rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
+            if rc == ReturnCode.OK:
+                return True
+            else:
+                err = f"failed to send '{msg.topic}' to '{self.peer_fqcn}' in channel '{self.channel}': {rc}"
+                if optional:
+                    self.logger.debug(err)
+                else:
+                    self.logger.error(err)
+                return False
+        else:
+            return False
 
     def _receive_message(self, request: CellMessage) -> Union[None, CellMessage]:
         sender = request.get_header(MessageHeaderKey.ORIGIN)
