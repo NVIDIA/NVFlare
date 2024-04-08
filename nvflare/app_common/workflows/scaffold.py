@@ -21,7 +21,6 @@ from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AlgorithmConstants, AppConstants
-from nvflare.app_common.utils.fl_component_wrapper import FLComponentWrapper
 
 from .base_fedavg import BaseFedAvg
 
@@ -51,8 +50,12 @@ class Scaffold(BaseFedAvg):
             If n is 0 then no persist.
     """
 
-    def initialize(self):
-        FLComponentWrapper.initialize(self)
+    def initialize(self, fl_ctx):
+        super().initialize(fl_ctx)
+        self.model = self.load_model()
+        self.model.start_round = self.start_round
+        self.model.total_rounds = self.num_rounds
+
         self._global_ctrl_weights = copy.deepcopy(self.model.params)
         # Initialize correction term with zeros
         for k in self._global_ctrl_weights.keys():
@@ -61,27 +64,28 @@ class Scaffold(BaseFedAvg):
     def run(self) -> None:
         self.info("Start FedAvg.")
 
-        for self._current_round in range(self._num_rounds):
-            self.info(f"Round {self._current_round} started.")
+        for self.current_round in range(self.start_round, self.start_round + self.num_rounds):
+            self.info(f"Round {self.current_round} started.")
+            self.model.current_round = self.current_round
 
-            clients = self.sample_clients(self._min_clients)
+            clients = self.sample_clients(self.min_clients)
 
             # Add SCAFFOLD global control terms to global model meta
             global_model = self.model
             global_model.meta[AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL] = self._global_ctrl_weights
 
-            results = self.send_model(targets=clients, data=global_model)
+            results = self.send_model_and_wait(targets=clients, data=global_model)
 
             aggregate_results = self.aggregate(results, aggregate_fn=scaffold_aggregate_fn)
 
-            self.update_model(aggregate_results)
+            self.model = self.update_model(self.model, aggregate_results)
 
             # update SCAFFOLD global controls
             ctr_diff = aggregate_results.meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF]
             for v_name, v_value in ctr_diff.items():
                 self._global_ctrl_weights[v_name] += v_value
 
-            self.save_model()
+            self.save_model(self.model)
 
         self.info("Finished FedAvg.")
 
@@ -96,13 +100,13 @@ def scaffold_aggregate_fn(results: List[FLModel]) -> FLModel:
             data=_result.params,
             weight=_result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0),
             contributor_name=_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN),
-            contribution_round=_result.meta.get("current_round", None),
+            contribution_round=_result.current_round,
         )
         crtl_aggregation_helper.add(
             data=_result.meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF],
             weight=_result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0),
             contributor_name=_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN),
-            contribution_round=_result.meta.get("current_round", None),
+            contribution_round=_result.current_round,
         )
 
     aggregated_dict = aggregation_helper.get_result()
@@ -113,7 +117,7 @@ def scaffold_aggregate_fn(results: List[FLModel]) -> FLModel:
         meta={
             AlgorithmConstants.SCAFFOLD_CTRL_DIFF: crtl_aggregation_helper.get_result(),
             "nr_aggregated": len(results),
-            "current_round": results[0].meta["current_round"],
+            "current_round": results[0].current_round,
         },
     )
 
