@@ -16,7 +16,7 @@ from .base_fedavg import BaseFedAvg
 
 
 class FedAvg(BaseFedAvg):
-    """Controller for FedAvg Workflow. *Note*: This class is based on the experimental `ModelController`.
+    """Controller for FedAvg Workflow. *Note*: This class is based on the `WFController`.
     Implements [FederatedAveraging](https://arxiv.org/abs/1602.05629).
 
     Provides the implementations for the `run` routine, controlling the main workflow:
@@ -29,6 +29,7 @@ class FedAvg(BaseFedAvg):
             Workflow starts to wait for `wait_time_after_min_received`. Note that the workflow will move forward
             when all available clients have responded regardless of this value. Defaults to 1000.
         num_rounds (int, optional): The total number of training rounds. Defaults to 5.
+        start_round (int, optional): The starting round number.
         persistor_id (str, optional): ID of the persistor component. Defaults to "persistor".
         ignore_result_error (bool, optional): whether this controller can proceed if client result has errors.
             Defaults to False.
@@ -43,19 +44,24 @@ class FedAvg(BaseFedAvg):
     def run(self) -> None:
         self.info("Start FedAvg.")
 
-        for self._current_round in range(self._num_rounds):
-            self.info(f"Round {self._current_round} started.")
+        model = self.load_model()
+        model.start_round = self.start_round
+        model.total_rounds = self.num_rounds
 
-            clients = self.sample_clients(self._min_clients)
+        for self.current_round in range(self.start_round, self.start_round + self.num_rounds):
+            self.info(f"Round {self.current_round} started.")
 
-            results = self.send_model(targets=clients, data=self.model)
+            clients = self.sample_clients(self.min_clients)
+
+            model.current_round = self.current_round
+            results = self.send_model_and_wait(targets=clients, data=model)
 
             aggregate_results = self.aggregate(
                 results, aggregate_fn=None
             )  # if no `aggregate_fn` provided, default `WeightedAggregationHelper` is used
 
-            self.update_model(aggregate_results)
+            model = self.update_model(model, aggregate_results)
 
-            self.save_model()
+            self.save_model(model)
 
         self.info("Finished FedAvg.")

@@ -207,7 +207,7 @@ class TaskExchanger(Executor):
                         return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
                     current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
-                    if current_round:
+                    if current_round is not None:
                         result.set_header(AppConstants.CURRENT_ROUND, current_round)
 
                     if not self.check_output_shareable(task_name, result, fl_ctx):
