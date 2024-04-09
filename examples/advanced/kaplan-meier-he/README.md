@@ -43,11 +43,11 @@ python baseline_kaplan_meier.py
 ```
 By default, this will generate a KM curve image `km_curve_baseline.png` under the current working directory.
 
-Then we run a 5-client federated job with simulator, begin with splitting and generating the data files for each clients:
+Then we run a 5-client federated job with simulator, begin with splitting and generating the data files for each client:
 ```commandline
 python utils/prepare_data.py --out_path "/tmp/flare/dataset/km_data"
 ```
-Then we prepare HE context for clients and server, note that this step is done by secure provisioning for real-life applications, but for simulator, we use this step to distribute the HE context. 
+Then we prepare HE context for clients and server, note that this step is done by secure provisioning for real-life applications, but in this study experimenting with BFV scheme, we use this step to distribute the HE context. 
 ```commandline
 python utils/prepare_he_context.py --out_path "/tmp/flare/he_context"
 ```
