@@ -246,11 +246,11 @@ class FedJobConfig:
                 script: str = attrs[attr_key].strip()
                 if script.startswith("python"):
                     script = script.split(" ")[1].strip()
-                    if script.startswith(CUSTOM):
-                        script = script.replace(CUSTOM + os.sep, "", 1)
-                        os.makedirs(custom_dir, exist_ok=True)
-                        dest_file = os.path.join(custom_dir, script)
-                        self._copy_source_file(custom_dir, script, dest_file)
+                if script.startswith(CUSTOM):
+                    script = script.replace(CUSTOM + os.sep, "", 1)
+                    os.makedirs(custom_dir, exist_ok=True)
+                    dest_file = os.path.join(custom_dir, script)
+                    self._copy_source_file(custom_dir, script, dest_file)
 
     def _get_filters(self, filters, custom_dir):
         r = []

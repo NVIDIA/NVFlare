@@ -97,7 +97,7 @@ class FedJob:
         )
         client_app.add_component("config_preparer", component)
 
-        client_app.add_component("net", Net())  # TODO: find another way to register files that need to be included in custom folder
+        # client_app.add_component("net", Net())  # TODO: find another way to register files that need to be included in custom folder
 
         return client_app
 
@@ -114,7 +114,8 @@ class FedJob:
         server_app.add_workflow("cross_site_validate", controller)
 
         component = PTFileModelPersistor(
-            model={"path": model_class_path}
+            # model={"path": model_class_path}
+            model=Net()
         )
 
         server_app.add_component("persistor", component)
@@ -137,7 +138,7 @@ class FedJob:
         )
         server_app.add_component("receiver", component)
 
-        server_app.add_component("net", Net())  # TODO: have another way to register needed scripts
+        # server_app.add_component("net", Net())  # TODO: have another way to register needed scripts
 
         return server_app
 
@@ -160,7 +161,7 @@ if __name__ == "__main__":
         client_app = job.create_client_app(site_name=f"site-{i}", app_script="cifar10_fl.py")  # TODO: don't require site_name here
         job.to(client_app, f"site-{i}")
 
-    #job.export_job("/tmp/nvflare/jobs")
+    # job.export_job("/tmp/nvflare/jobs")
     job.simulator_run("/tmp/nvflare/jobs")
 
 
