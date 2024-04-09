@@ -1,7 +1,7 @@
 # Secure Federated Kaplan-Meier Analysis via Homomorphic Encryption
 
 This example illustrates two features:
-* How to perform Kaplan-Meirer survival analysis in federated setting securely via Homomorphic Encryption (HE).
+* How to perform Kaplan-Meier survival analysis in federated setting securely via Homomorphic Encryption (HE).
 * How to use the Flare Workflow Controller API to contract a workflow to facilitate HE under simulator mode.  
 
 ## Secure Multi-party Kaplan-Meier Analysis
@@ -50,6 +50,20 @@ python utils/prepare_data.py --out_path "/tmp/flare/dataset/km_data"
 Then we prepare HE context for clients and server, note that this step is done by secure provisioning for real-life applications, but in this study experimenting with BFV scheme, we use this step to distribute the HE context. 
 ```commandline
 python utils/prepare_he_context.py --out_path "/tmp/flare/he_context"
+```
+
+Next, we set the location of the job templates directory.
+```commandline
+nvflare config -jt ./job_templates
+```
+
+Then we can generate the job configuration from the `kaplan_meier_he` template:
+
+```commandline
+N_CLIENTS=5
+nvflare job create -force -j "./jobs/kaplan-meier-he" -w "kaplan_meier_he" -sd "./src" \
+-f config_fed_client.conf app_script="kaplan_meier_train.py" app_config="--data_root /tmp/flare/dataset/km_data --he_context_path /tmp/flare/he_context/he_context_client.txt" \
+-f config_fed_server.conf min_clients=${N_CLIENTS} he_context_path="/tmp/flare/he_context/he_context_server.txt"
 ```
 
 And we can run the federated job:
