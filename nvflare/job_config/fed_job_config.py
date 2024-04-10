@@ -19,8 +19,8 @@ import shutil
 from typing import Dict
 
 from nvflare import SimulatorRunner
-from nvflare.job_config.fed_app_config import FedAppConfig
 from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
+from nvflare.job_config.fed_app_config import FedAppConfig
 from nvflare.private.fed.app.fl_conf import FL_PACKAGES
 
 CONFIG = "config"
@@ -137,6 +137,13 @@ class FedJobConfig:
             json_dump = json.dumps(server_app, indent=4)
             outfile.write(json_dump)
 
+        self._copy_ext_scripts(custom_dir, fed_app.server_app.ext_scripts)
+
+    def _copy_ext_scripts(self, custom_dir, ext_scripts):
+        for script in ext_scripts:
+            dest_file = os.path.join(custom_dir, script)
+            self._copy_source_file(custom_dir, script, dest_file)
+
     def _get_class_path(self, obj, custom_dir):
         module = obj.__module__
         source_file = inspect.getsourcefile(obj.__class__)
@@ -155,6 +162,7 @@ class FedJobConfig:
                 self._copy_source_file(custom_dir, source_file, dest_file)
 
     def _copy_source_file(self, custom_dir, source_file, dest_file):
+        os.makedirs(custom_dir, exist_ok=True)
         with open(source_file, "r") as sf:
             import_lines = list(self.locate_imports(sf, dest_file))
         for line in import_lines:
@@ -180,6 +188,8 @@ class FedJobConfig:
         with open(client_config, "w") as outfile:
             json_dump = json.dumps(client_app, indent=4)
             outfile.write(json_dump)
+
+        self._copy_ext_scripts(custom_dir, fed_app.client_app.ext_scripts)
 
     def _get_base_app(self, custom_dir, app, app_config):
         app_config["components"] = []
@@ -231,7 +241,6 @@ class FedJobConfig:
             if attr_key in attrs.keys() and parameters[param].default != attrs[attr_key]:
                 if type(attrs[attr_key]).__name__ in dir(builtins):
                     args[param] = attrs[attr_key]
-                    self._process_launcher_script(component, attrs, attr_key, param, custom_dir)
                 else:
                     args[param] = {
                         "path": self._get_class_path(attrs[attr_key], custom_dir),
@@ -239,18 +248,6 @@ class FedJobConfig:
                     }
 
         return args
-
-    def _process_launcher_script(self, component, attrs, attr_key, param, custom_dir):
-        if isinstance(component, SubprocessLauncher):
-            if param in ["script", "clean_up_script"]:
-                script: str = attrs[attr_key].strip()
-                if script.startswith("python"):
-                    script = script.split(" ")[1].strip()
-                if script.startswith(CUSTOM):
-                    script = script.replace(CUSTOM + os.sep, "", 1)
-                    os.makedirs(custom_dir, exist_ok=True)
-                    dest_file = os.path.join(custom_dir, script)
-                    self._copy_source_file(custom_dir, script, dest_file)
 
     def _get_filters(self, filters, custom_dir):
         r = []

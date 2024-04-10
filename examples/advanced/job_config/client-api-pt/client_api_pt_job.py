@@ -69,6 +69,8 @@ class FedJob:
         )
         client_app.add_executor(["train"], executor)
 
+        client_app.add_ext_script(app_script)
+
         component = SubprocessLauncher(script=f"python3 custom/{app_script}  {app_config}", launch_once=True)
         client_app.add_component("launcher", component)
 

@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os.path
 from abc import ABC
 from typing import Dict, List
 
@@ -25,6 +26,7 @@ class BaseAppConfig(ABC):
         self.task_data_filters: [(List[str], Filter)] = []
         self.task_result_filters: [(List[str], Filter)] = []
         self.components: Dict[str, object] = {}
+        self.ext_scripts = []
 
         self.handlers: [FLComponent] = []
 
@@ -42,6 +44,15 @@ class BaseAppConfig(ABC):
 
     def add_task_result_filter(self, tasks: List[str], filter: Filter):
         self._add_task_filter(tasks, filter, self.task_result_filters)
+
+    def add_ext_script(self, ext_script: str):
+        if not isinstance(ext_script, str):
+            raise RuntimeError(f"ext_script must be type of str, but got {ext_script.__class__}")
+
+        if not os.path.exists(ext_script):
+            raise RuntimeError(f"Could not locate external script: {ext_script}")
+
+        self.ext_scripts.append(ext_script)
 
     def _add_task_filter(self, tasks, filter, filters):
         if not isinstance(filter, Filter):
