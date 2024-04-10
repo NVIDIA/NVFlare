@@ -15,8 +15,8 @@
 import uuid
 from typing import Union
 
-from nvflare.app_common.job.fed_app_config import ClientAppConfig, ServerAppConfig, FedAppConfig
-from nvflare.app_common.job.fed_job_config import FedJobConfig
+from nvflare.job_config.fed_app_config import FedAppConfig
+from nvflare.job_config.fed_job_config import FedJobConfig
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
 from nvflare.app_opt.pt import PTFileModelPersistor
@@ -31,7 +31,7 @@ from nvflare.fuel.utils.pipe.file_pipe import FilePipe
 from net import Net
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
-from nvflare.app_common.job.fed_app_config import ClientAppConfig, ServerAppConfig
+from nvflare.job_config.fed_app_config import ClientAppConfig, ServerAppConfig
 
 # TODO: FedApp -> server, FedApp -> client
 

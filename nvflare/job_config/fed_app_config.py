@@ -16,7 +16,7 @@ from typing import List
 from nvflare.apis.executor import Executor
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.impl.wf_comm_server import WFCommServer
-from nvflare.app_common.job.base_app_config import BaseAppConfig
+from nvflare.job_config.base_app_config import BaseAppConfig
 from nvflare.private.fed.client.client_json_config import _ExecutorDef
 from nvflare.private.fed.server.server_json_config import WorkFlow
 
