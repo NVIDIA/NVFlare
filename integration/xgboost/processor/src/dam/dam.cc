@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 #include <iostream>
+#include <cstring>
 #include "dam.h"
 
 void print_buffer(uint8_t *buffer, int size) {
