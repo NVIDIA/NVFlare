@@ -14,6 +14,7 @@
 
 import gc
 import random
+from typing import List, Union
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import ReturnCode
@@ -48,7 +49,7 @@ class CyclicController(Controller):
         task_check_period: float = 0.5,
         persist_every_n_rounds: int = 1,
         snapshot_every_n_rounds: int = 1,
-        order: str = RelayOrder.FIXED,
+        order: Union[str, List[str]] = RelayOrder.FIXED,
         allow_early_termination=False,
     ):
         """A sample implementation to demonstrate how to use relay method for Cyclic Federated Learning.
@@ -66,11 +67,12 @@ class CyclicController(Controller):
                 If n is 0 then no persist.
             snapshot_every_n_rounds (int, optional): persist the server state every n rounds. Defaults to 1.
                 If n is 0 then no persist.
-            order (str, optional): the order of relay.
-                If FIXED means the same order for every round.
-                If RANDOM means random order for every round.
-                If RANDOM_WITHOUT_SAME_IN_A_ROW means every round the order gets shuffled but a client will never be
-                run twice in a row (in different round).
+            order (Union[str, List[str]], optional): The order of relay.
+                - If a string is provided:
+                    - "FIXED": Same order for every round.
+                    - "RANDOM": Random order for every round.
+                    - "RANDOM_WITHOUT_SAME_IN_A_ROW": Shuffled order, no repetition in consecutive rounds.
+                - If a list of strings is provided, it represents a custom order for relay.
             allow_early_termination: whether to allow early workflow termination from clients
 
         Raises:
@@ -90,8 +92,8 @@ class CyclicController(Controller):
         if not isinstance(task_name, str):
             raise TypeError("task_name must be a string but got {}".format(type(task_name)))
 
-        if order not in SUPPORTED_ORDERS:
-            raise ValueError(f"order must be in {SUPPORTED_ORDERS}")
+        if order not in SUPPORTED_ORDERS and not isinstance(order, list):
+            raise ValueError(f"order must be in {SUPPORTED_ORDERS} or a list")
 
         self._num_rounds = num_rounds
         self._start_round = 0
@@ -131,21 +133,34 @@ class CyclicController(Controller):
         fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self._num_rounds, private=True, sticky=True)
         self.fire_event(AppEventType.INITIAL_MODEL_LOADED, fl_ctx)
 
-        self._participating_clients = self._engine.get_clients()
+        self._participating_clients: List[Client] = self._engine.get_clients()
         if len(self._participating_clients) <= 1:
-            self.system_panic("Not enough client sites.", fl_ctx)
+            self.system_panic(f"Not enough client sites ({len(self._participating_clients)}).", fl_ctx)
         self._last_client = None
 
-    def _get_relay_orders(self, fl_ctx: FLContext):
-        targets = list(self._participating_clients)
-        if len(targets) <= 1:
-            self.system_panic("Not enough client sites.", fl_ctx)
-        if self._order == RelayOrder.RANDOM:
-            random.shuffle(targets)
-        elif self._order == RelayOrder.RANDOM_WITHOUT_SAME_IN_A_ROW:
-            random.shuffle(targets)
-            if self._last_client == targets[0]:
-                targets = targets.append(targets.pop(0))
+    def _get_relay_orders(self, fl_ctx: FLContext) -> Union[List[Client], None]:
+        if len(self._participating_clients) <= 1:
+            self.system_panic(f"Not enough client sites ({len(self._participating_clients)}).", fl_ctx)
+            return None
+
+        active_clients_map = {}
+        for t in self._participating_clients:
+            if not self.get_client_death_time(t.name):
+                active_clients_map[t.name] = t
+
+        if isinstance(self._order, list):
+            targets = []
+            for c_name in self._order:
+                if c_name not in active_clients_map:
+                    self.system_panic(f"Required client site ({c_name}) is not in active clients.", fl_ctx)
+                    return None
+                targets.append(active_clients_map[c_name])
+        else:
+            targets = list(active_clients_map.values())
+            if self._order == RelayOrder.RANDOM or self._order == RelayOrder.RANDOM_WITHOUT_SAME_IN_A_ROW:
+                random.shuffle(targets)
+                if self._order == RelayOrder.RANDOM_WITHOUT_SAME_IN_A_ROW and self._last_client == targets[0]:
+                    targets.append(targets.pop(0))
         self._last_client = targets[-1]
         return targets
 
@@ -191,22 +206,27 @@ class CyclicController(Controller):
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         try:
-            self.log_debug(fl_ctx, "Cyclic starting.")
+            self.log_info(fl_ctx, "Cyclic starting.")
 
             for self._current_round in range(self._start_round, self._end_round):
                 if self._is_done:
+                    self.log_info(fl_ctx, "Cyclic is done.")
                     return
 
                 if abort_signal.triggered:
+                    self.log_info(fl_ctx, "abort signal triggered.")
                     return
 
-                self.log_debug(fl_ctx, "Starting current round={}.".format(self._current_round))
+                self.log_info(fl_ctx, "Starting current round={}.".format(self._current_round))
                 fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=True)
 
                 # Task for one cyclic
                 targets = self._get_relay_orders(fl_ctx)
+                if not targets:
+                    self.log_info(fl_ctx, "No cyclic targets.")
+                    return
                 targets_names = [t.name for t in targets]
-                self.log_debug(fl_ctx, f"Relay on {targets_names}")
+                self.log_info(fl_ctx, f"Relay on {targets_names}")
 
                 shareable = self.shareable_generator.learnable_to_shareable(self._last_learnable, fl_ctx)
                 shareable.set_header(AppConstants.CURRENT_ROUND, self._current_round)
@@ -241,10 +261,10 @@ class CyclicController(Controller):
                     # Call the self._engine to persist the snapshot of all the FLComponents
                     self._engine.persist_components(fl_ctx, completed=False)
 
-                self.log_debug(fl_ctx, "Ending current round={}.".format(self._current_round))
+                self.log_info(fl_ctx, "Ending current round={}.".format(self._current_round))
                 gc.collect()
 
-            self.log_debug(fl_ctx, "Cyclic ended.")
+            self.log_info(fl_ctx, "Cyclic ended.")
         except Exception as e:
             error_msg = f"Cyclic control_flow exception: {secure_format_exception(e)}"
             self.log_error(fl_ctx, error_msg)
@@ -279,12 +299,3 @@ class CyclicController(Controller):
             self._start_round = self._current_round
         finally:
             pass
-
-    def handle_dead_job(self, client_name: str, fl_ctx: FLContext):
-        super().handle_dead_job(client_name, fl_ctx)
-
-        new_client_list = []
-        for client in self._participating_clients:
-            if client_name != client.name:
-                new_client_list.append(client)
-        self._participating_clients = new_client_list
