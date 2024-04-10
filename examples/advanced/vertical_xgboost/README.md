@@ -2,6 +2,10 @@
 This example shows how to use vertical federated learning with [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on tabular data.
 Here we use the optimized gradient boosting library [XGBoost](https://github.com/dmlc/xgboost) and leverage its federated learning support.
 
+Note that we use "NVFlare as XGBoost Communicator" by default, for details please refer to
+[NVFlare federated xgboost](https://nvflare.readthedocs.io/en/2.4/user_guide/federated_xgboost.html)
+
+
 Before starting please make sure you set up a [virtual environment](../../README.md#set-up-a-virtual-environment) and install the additional requirements:
 ```
 python3 -m pip install -r requirements.txt
