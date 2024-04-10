@@ -18,6 +18,7 @@ import threading
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, SystemComponents
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.utils.obj_utils import get_logger
 from nvflare.private.fed.app.utils import component_security_check
 from nvflare.private.fed.server.fed_server import FederatedServer
 from nvflare.private.fed.server.job_runner import JobRunner
@@ -32,6 +33,7 @@ class ServerDeployer:
     def __init__(self):
         """Init the ServerDeployer."""
         self.cmd_modules = ServerCommandModules.cmd_modules
+        self.logger = get_logger(self)
         self.server_config = None
         self.secure_train = None
         self.app_validator = None
@@ -70,6 +72,7 @@ class ServerDeployer:
         # We only deploy the first server right now .....
         first_server = sorted(self.server_config)[0]
         heart_beat_timeout = first_server.get("heart_beat_timeout", 600)
+        self.logger.info(f"server heartbeat timeout set to {heart_beat_timeout}")
 
         if self.host:
             target = first_server["service"].get("target", None)
@@ -129,7 +132,7 @@ class ServerDeployer:
             services.status = ServerStatus.STARTED
 
             services.engine.fire_event(EventType.SYSTEM_START, fl_ctx)
-            print("deployed FL server trainer.")
+            self.logger.info("deployed FLARE Server.")
 
         return services
 

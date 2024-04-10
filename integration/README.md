@@ -1,6 +1,6 @@
 # Integration Directory
 Integration directory will be the place to host various NVIDIA FLARE integrations with other frameworks.
-**The code will may not be maintained by NVIDIA FLARE team**, but will require Pull Request
+**The code may not be maintained by NVIDIA FLARE team**, but will require Pull Request
 approval process. 
 
 ## Requirements
