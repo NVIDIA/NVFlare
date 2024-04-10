@@ -14,9 +14,9 @@
 import builtins
 import inspect
 import json
+import os
 import shutil
 from typing import Dict
-import os
 
 from nvflare import SimulatorRunner
 from nvflare.app_common.job.fed_app_config import FedAppConfig
@@ -65,7 +65,7 @@ class FedJobConfig:
         self.resource_specs[site_name] = resource_spec
 
     def _generate_meta(self, job_dir):
-        """ generate the job meta.json
+        """generate the job meta.json
 
         Returns:
 
@@ -75,7 +75,7 @@ class FedJobConfig:
             "name": self.job_name,
             "resource_spec": self.resource_specs,
             "min_clients": self.min_clients,
-            "deploy_map": self._get_deploy_map()
+            "deploy_map": self._get_deploy_map(),
         }
         if self.mandatory_clients:
             meta_json["mandatory_clients"] = self.mandatory_clients
@@ -85,7 +85,7 @@ class FedJobConfig:
             outfile.write(json_dump)
 
     def generate_job_config(self, job_root):
-        """ generate the job config
+        """generate the job config
 
         Returns:
 
@@ -117,7 +117,7 @@ class FedJobConfig:
             clients=clients,
             n_clients=n_clients,
             threads=threads,
-            gpu=gpu
+            gpu=gpu,
         )
         simulator.run()
 
@@ -128,7 +128,7 @@ class FedJobConfig:
                 {
                     "id": workflow.id,
                     "path": self._get_class_path(workflow.controller, custom_dir),
-                    "args": self._get_args(workflow.controller, custom_dir)
+                    "args": self._get_args(workflow.controller, custom_dir),
                 }
             )
         self._get_base_app(custom_dir, fed_app.server_app, server_app)
@@ -171,8 +171,8 @@ class FedJobConfig:
                     "tasks": e.tasks,
                     "executor": {
                         "path": self._get_class_path(e.executor, custom_dir),
-                        "args": self._get_args(e.executor, custom_dir)
-                    }
+                        "args": self._get_args(e.executor, custom_dir),
+                    },
                 }
             )
         self._get_base_app(custom_dir, fed_app.client_app, client_app)
@@ -188,7 +188,7 @@ class FedJobConfig:
                 {
                     "id": cid,
                     "path": self._get_class_path(component, custom_dir),
-                    "args": self._get_args(component, custom_dir)
+                    "args": self._get_args(component, custom_dir),
                 }
             )
         app_config["task_data_filters"] = []
@@ -200,9 +200,9 @@ class FedJobConfig:
                         {
                             # self._get_filters(task_filter.filter, custom_dir)
                             "path": self._get_class_path(filter, custom_dir),
-                            "args": self._get_args(filter, custom_dir)
+                            "args": self._get_args(filter, custom_dir),
                         }
-                    ]
+                    ],
                 }
             )
         app_config["task_result_filters"] = []
@@ -214,9 +214,9 @@ class FedJobConfig:
                         {
                             # self._get_filters(result_filer.filter, custom_dir)
                             "path": self._get_class_path(filter, custom_dir),
-                            "args": self._get_args(filter, custom_dir)
+                            "args": self._get_args(filter, custom_dir),
                         }
-                    ]
+                    ],
                 }
             )
 
@@ -235,7 +235,7 @@ class FedJobConfig:
                 else:
                     args[param] = {
                         "path": self._get_class_path(attrs[attr_key], custom_dir),
-                        "args": self._get_args(attrs[attr_key], custom_dir)
+                        "args": self._get_args(attrs[attr_key], custom_dir),
                     }
 
         return args
@@ -255,12 +255,7 @@ class FedJobConfig:
     def _get_filters(self, filters, custom_dir):
         r = []
         for f in filters:
-            r.append(
-                {
-                    "path": self._get_class_path(f, custom_dir),
-                    "args": self._get_args(f, custom_dir)
-                }
-            )
+            r.append({"path": self._get_class_path(f, custom_dir), "args": self._get_args(f, custom_dir)})
         return r
 
     def locate_imports(self, sf, dest_file):
@@ -268,9 +263,9 @@ class FedJobConfig:
             for line in sf:
                 df.write(line)
                 trimmed = line.strip()
-                if trimmed.startswith('from ') and ('import ' in trimmed):
+                if trimmed.startswith("from ") and ("import " in trimmed):
                     yield trimmed
-                elif trimmed.startswith('import '):
+                elif trimmed.startswith("import "):
                     yield trimmed
 
     def _get_deploy_map(self):
