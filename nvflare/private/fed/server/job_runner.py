@@ -443,7 +443,7 @@ class JobRunner(FLComponent):
                                     },
                                     fl_ctx,
                                 )
-                                self.log_info(f"Updated the schedule history of Job: {job_id}")
+                                self.log_info(fl_ctx, f"Updated the schedule history of Job: {job_id}")
 
                             if failed_clients:
                                 deployable_clients = {k: v for k, v in client_sites.items() if k not in failed_clients}
