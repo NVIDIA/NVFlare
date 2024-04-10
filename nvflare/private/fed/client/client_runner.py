@@ -413,11 +413,13 @@ class ClientRunner(FLComponent):
 
                 time.sleep(task_fetch_interval)
 
-    def send_job_heartbeat(self, interval=30.0):
-        wait_times = int(interval / 2)
+    def send_job_heartbeat(self, interval=10.0):
         request = Shareable()
+        last_hb_time = 0.0
+        short_sleep = 1.0
+        fl_ctx = self.engine.new_context()
         while not self.asked_to_stop:
-            with self.engine.new_context() as fl_ctx:
+            if time.time() - last_hb_time >= interval:
                 self.engine.send_aux_request(
                     targets=[FQCN.ROOT_SERVER],
                     topic=ReservedTopic.JOB_HEART_BEAT,
@@ -426,11 +428,8 @@ class ClientRunner(FLComponent):
                     fl_ctx=fl_ctx,
                     optional=True,
                 )
-
-                for i in range(wait_times):
-                    time.sleep(2)
-                    if self.asked_to_stop:
-                        break
+                last_hb_time = time.time()
+            time.sleep(short_sleep)
 
     def fetch_and_run_one_task(self, fl_ctx) -> (float, bool):
         """Fetches and runs a task.

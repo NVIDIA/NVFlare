@@ -77,6 +77,12 @@ def _get_client_task(target, task: Task):
     return None
 
 
+class _DeadClientStatus:
+    def __init__(self):
+        self.report_time = time.time()
+        self.dead_time = None
+
+
 class Controller(Responder, ControllerSpec, ABC):
     def __init__(self, task_check_period=0.2):
         """Manage life cycles of tasks and their destinations.
@@ -92,7 +98,7 @@ class Controller(Responder, ControllerSpec, ABC):
         self._task_lock = Lock()
         self._task_monitor = threading.Thread(target=self._monitor_tasks, args=())
         self._task_check_period = task_check_period
-        self._dead_client_reports = {}  # clients that reported the job is dead on it: name => report time
+        self._dead_clients = {}  # clients that reported the job is dead on it: name => _DeadClientStatus
         self._dead_clients_lock = Lock()  # need lock since dead_clients can be modified from different threads
         # make sure _check_tasks, process_task_request, process_submission does not interfere with each other
         self._controller_lock = Lock()
@@ -114,6 +120,28 @@ class Controller(Responder, ControllerSpec, ABC):
         self._engine = engine
         self.start_controller(fl_ctx)
         self._task_monitor.start()
+
+    def client_is_dead(self, client_name: str):
+        """This method is called when a client is deemed dead.
+
+        Args:
+            client_name: name of the client
+
+        Returns: None
+
+        """
+        pass
+
+    def client_is_revived(self, client_name: str):
+        """This method is called when a client is revived.
+
+        Args:
+            client_name: name of the client
+
+        Returns: None
+
+        """
+        pass
 
     def _try_again(self) -> Tuple[str, str, Shareable]:
         # TODO: how to tell client no shareable available now?
@@ -173,9 +201,6 @@ class Controller(Responder, ControllerSpec, ABC):
     def _do_process_task_request(self, client: Client, fl_ctx: FLContext) -> Tuple[str, str, Shareable]:
         if not isinstance(client, Client):
             raise TypeError("client must be an instance of Client, but got {}".format(type(client)))
-
-        with self._dead_clients_lock:
-            self._dead_client_reports.pop(client.name, None)
 
         if not isinstance(fl_ctx, FLContext):
             raise TypeError("fl_ctx must be an instance of FLContext, but got {}".format(type(fl_ctx)))
@@ -331,9 +356,10 @@ class Controller(Responder, ControllerSpec, ABC):
         """
         # record the report and to be used by the task monitor
         with self._dead_clients_lock:
-            self.log_info(fl_ctx, f"received dead job report from client {client_name}")
-            if not self._dead_client_reports.get(client_name):
-                self._dead_client_reports[client_name] = time.time()
+            self.log_warning(fl_ctx, f"received dead job report for client {client_name}")
+            if not self._dead_clients.get(client_name):
+                self.log_warning(fl_ctx, f"client {client_name} is placed on dead client watch list")
+                self._dead_clients[client_name] = _DeadClientStatus()
 
     def process_task_check(self, task_id: str, fl_ctx: FLContext):
         with self._task_lock:
@@ -368,13 +394,6 @@ class Controller(Responder, ControllerSpec, ABC):
     ):
         if not isinstance(client, Client):
             raise TypeError("client must be an instance of Client, but got {}".format(type(client)))
-
-        # reset the dead job report!
-        # note that due to potential race conditions, a client may fail to include the job id in its
-        # heartbeat (since the job hasn't started at the time of heartbeat report), but then includes
-        # the job ID later.
-        with self._dead_clients_lock:
-            self._dead_client_reports.pop(client.name, None)
 
         if not isinstance(fl_ctx, FLContext):
             raise TypeError("fl_ctx must be an instance of FLContext, but got {}".format(type(fl_ctx)))
@@ -651,10 +670,8 @@ class Controller(Responder, ControllerSpec, ABC):
         """Cancel the specified task.
 
         Change the task completion_status, which will inform task monitor to clean up this task
-
-        .. note::
-
-            We only mark the task as completed and leave it to the task monitor to clean up. This is to avoid potential deadlock of task_lock.
+        We only mark the task as completed and leave it to the task monitor to clean up.
+        This is to avoid potential deadlock of task_lock.
 
         Args:
             task (Task): the task to be cancelled
@@ -979,27 +996,64 @@ class Controller(Responder, ControllerSpec, ABC):
     def _check_dead_clients(self):
         if self._engine:
             clients = self._engine.get_clients()
+            dead_clients = []
             with self._dead_clients_lock:
                 for client in clients:
-                    if self._client_still_alive(client.name):
-                        return False
+                    if not self._client_still_alive(client.name):
+                        dead_clients.append(client.name)
 
-                # All the clients are dead, abort the job run.
+            if dead_clients and len(clients) == len(dead_clients):
                 with self._engine.new_context() as fl_ctx:
                     self.system_panic("All clients are dead", fl_ctx)
-            return True
+                    return True
         return False
 
     def _client_still_alive(self, client_name):
         now = time.time()
-        report_time = self._dead_client_reports.get(client_name, None)
-        grace_period = ConfigService.get_float_var(name=_CONFIG_VAR_DEAD_CLIENT_GRACE_PERIOD, default=30.0)
+        status = self._dead_clients.get(client_name, None)
+        grace_period = ConfigService.get_float_var(name=_CONFIG_VAR_DEAD_CLIENT_GRACE_PERIOD, default=60.0)
 
-        if not report_time:
+        if not status:
             # this client is still alive
             return True
-        elif now - report_time < grace_period:
+
+        assert isinstance(status, _DeadClientStatus)
+        if status.dead_time:
+            return False
+
+        if now - status.report_time < grace_period:
             # this report is still fresh - consider the client to be still alive
             return True
 
+        # consider client dead
+        status.dead_time = now
+        self.logger.error(f"Client {client_name} is deemed dead!")
+        self.client_is_dead(client_name)
         return False
+
+    def get_client_death_time(self, client_name: str):
+        """Get the time that the client was deemed dead
+
+        Args:
+            client_name: name of the client
+
+        Returns: time at which the client was deemed dead; or None if the client is not dead
+
+        """
+        status = self._dead_clients.get(client_name)
+        if status:
+            assert isinstance(status, _DeadClientStatus)
+            return status.dead_time
+        return None
+
+    def process_job_heartbeat(self, fl_ctx: FLContext):
+        peer_ctx = fl_ctx.get_peer_context()
+        assert isinstance(peer_ctx, FLContext)
+        client_name = peer_ctx.get_identity_name()
+        with self._dead_clients_lock:
+            if client_name in self._dead_clients:
+                self.log_info(fl_ctx, f"Client {client_name} is removed from watch list")
+                status = self._dead_clients.pop(client_name)
+                if status.dead_time:
+                    self.log_info(fl_ctx, f"Client {client_name} is revived")
+                    self.client_is_revived(client_name)
