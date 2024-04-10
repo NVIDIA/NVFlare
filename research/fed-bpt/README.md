@@ -16,14 +16,7 @@ with the addition of installing NVFlare for running federated learning and some 
 ```commandline
 conda create --name fedbpt python=3.8
 conda activate fedbpt
-pip install transformers==4.38.2
-pip install fastNLP==0.6.0
-pip install datasets
-pip install cma
-pip install scikit-learn
-pip install tensorboard
-pip install cvxopt
-pip install nvflare==2.4.1rc
+pip install -r requirements.txt
 ```
 
 ## 2. Run a federated learning experiment
@@ -51,9 +44,12 @@ nvflare job create -force -j "./jobs/fedbpt" -w "fedbpt" -sd "./src" \
 --local_popsize 5 \
 --perturb 1 \
 --model_name roberta-large \
+--eval_clients site-1 \
 --llama_causal 1" \
 -f app/config/config_fed_server.conf min_clients=${N_CLIENTS} num_rounds=200 seed=${SEED}
 ```
+By default, we only evaluate the global model on client `site-1` as in our setting, the global test set is shared by clients.
+
 Start the FL simulator with `N_CLIENTS` clients in parallel.
 The following setting requires a GPU with at least 24 GB memory and enough system memory to run the clients in parallel (we recommend at least 40 GB).
 For a system with less resources, you can set -t to be a lower number and simulate the clients running sequentially.
@@ -61,6 +57,7 @@ For a system with less resources, you can set -t to be a lower number and simula
 OUT_DIR="/tmp/nvflare/fedbpt"
 nvflare simulator ./jobs/fedbpt -n ${N_CLIENTS} -t ${N_CLIENTS} -w ${OUT_DIR}
 ```
+If you have more GPUs available on your system, you can use the `--gpu` argument of the simulator to run clients on different GPUs in parallel.
 
 ## 3. Example results
 The training results showing the global testing accuracy over 200 rounds is shown below. 

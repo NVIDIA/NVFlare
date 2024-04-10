@@ -87,6 +87,12 @@ parser.add_argument("--loss_type", default="ce", type=str)
 parser.add_argument("--cat_or_add", default="add", type=str)
 parser.add_argument("--parallel", action="store_true", help="Whether to allow parallel evaluation")
 # fl args
+parser.add_argument(
+    "--eval_clients",
+    default="site-1",
+    type=str,
+    help="Provide the name of client that should evaluate the global model. Can be comma-spearated list, e.g., `site-1,site-2`",
+)
 parser.add_argument("--num_users", default=10, type=int)
 parser.add_argument("--iid", default=1, type=int)
 parser.add_argument("--local_popsize", default=20, type=int)
@@ -120,6 +126,7 @@ batch_size = args.batch_size
 bound = args.bound
 sigma = args.sigma
 alpha = args.alpha
+eval_clients = args.eval_clients.split(",")
 
 if args.local_popsize > 0:
     args.local_popsize = args.local_popsize
@@ -227,25 +234,28 @@ while flare.is_running():
     )
     local_sigma_current = global_es.sigma
 
-    print("Global es evaluate on test data...")
-    global_api_setting["best_prompt"] = local_es.mean
-    model_forward_api.load_client_record(global_api_setting)
-    global_test_acc = model_forward_api.eval(prompt_embedding=local_es.mean, test_data=test_data)
-    print("Global test acc: {}".format(round(global_test_acc, 4)))
-    print("Global prompt norm: {}".format(np.linalg.norm(local_es.mean)))
-    writer.add_scalar("global_test_acc", global_test_acc, current_round)
+    if flare.get_site_name() in eval_clients:
+        print("Global es evaluate on test data...")
+        global_api_setting["best_prompt"] = local_es.mean
+        model_forward_api.load_client_record(global_api_setting)
+        global_test_acc = model_forward_api.eval(prompt_embedding=local_es.mean, test_data=test_data)
+        print("Global test acc: {}".format(round(global_test_acc, 4)))
+        print("Global prompt norm: {}".format(np.linalg.norm(local_es.mean)))
+        writer.add_scalar("global_test_acc", global_test_acc, current_round)
 
-    if args.norm_prompt and np.linalg.norm(local_es.mean) < args.prompt_norm_threshold_upper:
-        args.prompt_norm_threshold += 1
-        model_forward_api.args = args
-        print("Set prompt_norm_threshold as {}".format(args.prompt_norm_threshold))
-    if args.save_prompt:
-        if global_test_acc > best_test_acc:
-            best_test_acc = global_test_acc
-            torch.save(
-                model_forward_api.model.prompt_embedding.cpu().detach(),
-                "results/llama/sst2/larger_global_pop_new_sigma_pert/fl_prompt.pt",
-            )
+        if args.norm_prompt and np.linalg.norm(local_es.mean) < args.prompt_norm_threshold_upper:
+            args.prompt_norm_threshold += 1
+            model_forward_api.args = args
+            print("Set prompt_norm_threshold as {}".format(args.prompt_norm_threshold))
+        if args.save_prompt:
+            if global_test_acc > best_test_acc:
+                best_test_acc = global_test_acc
+                torch.save(
+                    model_forward_api.model.prompt_embedding.cpu().detach(),
+                    "results/llama/sst2/larger_global_pop_new_sigma_pert/fl_prompt.pt",
+                )
+    else:
+        global_test_acc = None
 
     client_sigmas = {}
 
