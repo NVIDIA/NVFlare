@@ -4,6 +4,9 @@
 Please make sure to finish the [preparation steps](../README.md) before running the following steps.
 To run this example with NVFlare, follow the steps below or this [notebook](./xgboost_histogram_higgs.ipynb) for an interactive experience.
 
+Note that we use "NVFlare as XGBoost Communicator" by default, for details please refer to
+[NVFlare federated xgboost](https://nvflare.readthedocs.io/en/2.4/user_guide/federated_xgboost.html)
+
 ### Environment Preparation
 
 Switch to this directory and install additional requirements (suggest to do this inside virtual environment):
@@ -17,7 +20,7 @@ bash run_experiment_centralized.sh
 ```
 
 ### Run federated experiments with simulator locally
-Next, we will use the NVFlare simulator to run FL training automatically.
+Next, we will use the NVFlare simulator to run:
 ```
 nvflare simulator jobs/higgs_2_histogram_v2_uniform_split_uniform_lr \
    -w /tmp/nvflare/xgboost_v2_workspace -n 2 -t 2
@@ -30,7 +33,7 @@ tensorboard --logdir /tmp/nvflare/xgboost_v2_workspace/simulate_job/tb_events
 
 ## Timeout configuration
 
-Please refer to [Reliable Federated XGBoost Timeout Mechanism](https://nvflare.readthedocs.io/en/2.4/user_guide/reliable_xgboost.html)
+Please refer to [Federated XGBoost Timeout Mechanism](https://nvflare.readthedocs.io/en/2.4/user_guide/federated_xgboost/timeout.html)
 
 ## Customization
 
@@ -145,10 +148,14 @@ Each app is deployed to its own client site. Here is the `meta.json`,
       "min_clients": 4
     }
 
-## Loose integration
+## NVFlare as XGBoost Launcher
 
 We can use the NVFlare controller/executor just to launch the external xgboost
 federated server and client.
+
+For more information on the difference between "NVFlare as XGBoost Launcher"
+and "NVFlare as XGBoost Communicator" please refer to
+[NVFlare federated xgboost](https://nvflare.readthedocs.io/en/2.4/user_guide/federated_xgboost.html)
 
 ### Run federated experiments with simulator locally
 Next, we will use the NVFlare simulator to run FL training automatically.

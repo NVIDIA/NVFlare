@@ -18,6 +18,10 @@ For more details, please refer to the READMEs for
 and [tree-based](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/xgboost/tree-based/README.md) 
 methods.
 
+For histogram-based collaboration we use "NVFlare as XGBoost Communicator" by default,
+for details please refer to [NVFlare federated xgboost](https://nvflare.readthedocs.io/en/2.4/user_guide/federated_xgboost.html)
+
+
 ## Data Preparation
 ### Download and Store Data
 To run the examples, we first download the dataset from the link above, which is a single `.csv` file.
