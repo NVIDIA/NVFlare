@@ -328,6 +328,9 @@ class ServerRunner(FLComponent):
                     self.log_info(fl_ctx, "no current workflow - asked client to try again later")
                     return "", "", None
 
+                if self.current_wf.responder:
+                    self.current_wf.responder.process_job_heartbeat(fl_ctx=fl_ctx)
+
                 task_name, task_id, task_data = self.current_wf.responder.process_task_request(client, fl_ctx)
 
                 if task_name and task_name != SpecialTaskName.TRY_AGAIN:
@@ -441,6 +444,9 @@ class ServerRunner(FLComponent):
                     self.log_info(fl_ctx, "no current workflow - dropped submission.")
                     return
 
+                if self.current_wf.responder:
+                    self.current_wf.responder.process_job_heartbeat(fl_ctx)
+
                 wf_id = result.get_cookie(ReservedHeaderKey.WORKFLOW, None)
                 if wf_id is not None and wf_id != self.current_wf.id:
                     self.log_info(
@@ -500,6 +506,9 @@ class ServerRunner(FLComponent):
 
     def _handle_job_heartbeat(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         self.log_debug(fl_ctx, "received client job_heartbeat")
+        with self.wf_lock:
+            if self.current_wf and self.current_wf.responder:
+                self.current_wf.responder.process_job_heartbeat(fl_ctx=fl_ctx)
         return make_reply(ReturnCode.OK)
 
     def _handle_task_check(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
@@ -514,6 +523,9 @@ class ServerRunner(FLComponent):
             if self.current_wf is None or self.current_wf.responder is None:
                 self.log_info(fl_ctx, "no current workflow - dropped task_check.")
                 return make_reply(ReturnCode.TASK_UNKNOWN)
+
+            if self.current_wf.responder:
+                self.current_wf.responder.process_job_heartbeat(fl_ctx)
 
             # filter task result
             task = self.current_wf.responder.process_task_check(task_id=task_id, fl_ctx=fl_ctx)

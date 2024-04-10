@@ -77,6 +77,18 @@ class Responder(FLComponent, ABC):
         pass
 
     @abstractmethod
+    def process_job_heartbeat(self, fl_ctx: FLContext):
+        """Called by the Engine to handle heartbeat received from clients.
+
+        Args:
+            fl_ctx: the FLContext
+
+        Returns: None
+
+        """
+        pass
+
+    @abstractmethod
     def handle_dead_job(self, client_name: str, fl_ctx: FLContext):
         """Called by the Engine to handle the case that the job on the client is dead.
 
