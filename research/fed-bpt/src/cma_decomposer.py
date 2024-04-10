@@ -27,7 +27,7 @@ from cma.sigma_adaptation import CMAAdaptSigmaCSA
 from cma.transformations import DiagonalDecoding, GenoPheno
 from cma.utilities.utils import BlancClass, DictFromTagsInString, ElapsedWCTime, MoreToWrite, SolutionDict
 
-from nvflare.app_common.decomposers.common_decomposers import Float64ScalarDecomposer, NumpyArrayDecomposer
+from nvflare.app_common.decomposers.numpy_decomposers import Float64ScalarDecomposer, NumpyArrayDecomposer
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs import Decomposer
 from nvflare.fuel.utils.fobs.datum import DatumManager

@@ -45,7 +45,8 @@ class GlobalES(FedAvg):
         task_check_period (float, optional): interval for checking status of tasks. Defaults to 0.5.
         persist_every_n_rounds (int, optional): persist the global model every n rounds. Defaults to 1.
             If n is 0 then no persist.
-        frac: Fraction of the number of clients used to determine the parents selection parameter. Sets popsize. Defaults to 1.
+        frac: Fraction of the number of clients used to determine the parents selection parameter. Sets popsize.
+            Defaults to 1.
         sigma: initial standard deviation. Defaults to 1.
         intrinsic_dim: intrinsic dimimension of the initial solution. Defaults to 500.
         seed: Seed for CMAEvolutionStrategy. Defaults to 42.
@@ -64,13 +65,13 @@ class GlobalES(FedAvg):
     def run(self) -> None:
         local_cma_mu = 0.0
 
-        m = max(int(self.frac * self._min_clients), 1)
+        m = max(int(self.frac * self.min_clients), 1)
 
         self.info("Start FedBPT.")
         cma_opts = {
             "seed": self.seed,
             "popsize": m,
-            "maxiter": self._num_rounds,  # args.epochs,
+            "maxiter": self.num_rounds,  # args.epochs,
             "verbose": -1,
             "CMA_mu": m,
         }
@@ -82,19 +83,19 @@ class GlobalES(FedAvg):
         local_sigma_current = global_es.sigma
 
         client_prompt_dict = {}
-        for c in range(self._min_clients):
+        for c in range(self.min_clients):
             client_prompt_dict[c] = [copy.deepcopy(global_es.mean)]
         server_prompts = [copy.deepcopy(global_es.mean)]
 
         # best_test_acc = 0
-        for self._current_round in range(self._num_rounds):
+        for self.current_round in range(self.start_round, self.start_round + self.num_rounds):
             global_solutions = []
             global_fitnesses = []
             client_sigma_list = []
 
-            self.info(f"Round {self._current_round} started.")
+            self.info(f"Round {self.current_round} started.")
 
-            clients = self.sample_clients(self._min_clients)
+            clients = self.sample_clients(self.min_clients)
 
             global_model = FLModel(params={"global_es": global_es})
             results = self.send_model_and_wait(targets=clients, data=global_model)
