@@ -73,6 +73,8 @@ class FLModelUtils:
         dxo.meta.update(meta)
 
         shareable = dxo.to_shareable()
+        if fl_model.start_round is not None:
+            shareable.set_header(AppConstants.START_ROUND, fl_model.start_round)
         if fl_model.current_round is not None:
             shareable.set_header(AppConstants.CURRENT_ROUND, fl_model.current_round)
         if fl_model.total_rounds is not None:
@@ -120,6 +122,7 @@ class FLModelUtils:
                 if MetaKey.INITIAL_METRICS in meta:
                     metrics = meta[MetaKey.INITIAL_METRICS]
 
+        start_round = shareable.get_header(AppConstants.START_ROUND, None)
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
         total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS, None)
         validate_type = shareable.get_header(AppConstants.VALIDATE_TYPE, None)
@@ -138,6 +141,7 @@ class FLModelUtils:
             params_type=params_type,
             params=params,
             metrics=metrics,
+            start_round=start_round,
             current_round=current_round,
             total_rounds=total_rounds,
             meta=meta,
@@ -168,6 +172,7 @@ class FLModelUtils:
         params_type = dxo.data.get(FLModelConst.PARAMS_TYPE, None)
         metrics = dxo.data.get(FLModelConst.METRICS, None)
         optimizer_params = dxo.data.get(FLModelConst.OPTIMIZER_PARAMS, None)
+        start_round = dxo.data.get(FLModelConst.START_ROUND, None)
         current_round = dxo.data.get(FLModelConst.CURRENT_ROUND, None)
         total_rounds = dxo.data.get(FLModelConst.TOTAL_ROUNDS, None)
         meta = dxo.data.get(FLModelConst.META, None)
@@ -177,6 +182,7 @@ class FLModelUtils:
             params_type=params_type,
             metrics=metrics,
             optimizer_params=optimizer_params,
+            start_round=start_round,
             current_round=current_round,
             total_rounds=total_rounds,
             meta=meta,

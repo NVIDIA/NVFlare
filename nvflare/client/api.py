@@ -50,7 +50,7 @@ def init(rank: Optional[str] = None):
     else:
         client_api = ExProcessClientAPI()
 
-    client_api.init(rank)
+    client_api.init(rank=rank)
 
 
 def receive(timeout: Optional[float] = None) -> Optional[FLModel]:

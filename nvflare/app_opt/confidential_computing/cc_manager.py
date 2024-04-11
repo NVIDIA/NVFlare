@@ -15,6 +15,7 @@ import threading
 import time
 from typing import Dict, List
 
+from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, RunProcessKey
@@ -146,6 +147,13 @@ class CCManager(FLComponent):
                     ):
                         threading.Thread(target=self._shutdown_system, args=[reason, fl_ctx]).start()
                         break
+        elif event_type == EventType.SUBMIT_JOB:
+            job_meta = fl_ctx.get_prop(FLContextKey.JOB_META, {})
+            byoc = job_meta.get(AppValidationKey.BYOC, False)
+            if byoc:
+                fl_ctx.set_prop(
+                    key=FLContextKey.JOB_BLOCK_REASON, value="BYOC job not allowed for CC", sticky=False, private=True
+                )
 
     def _setup_cc_authorizers(self, fl_ctx):
         engine = fl_ctx.get_engine()
