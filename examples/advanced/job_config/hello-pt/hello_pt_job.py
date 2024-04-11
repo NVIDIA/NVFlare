@@ -14,18 +14,19 @@
 from add_shareable_parameter import AddShareable
 from cifar10trainer import Cifar10Trainer
 from cifar10validator import Cifar10Validator
+from print_shareable_parameter import PrintShareable
+from pt_model_locator import PTModelLocator
+
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.aggregators import InTimeAccumulateWeightedAggregator
-from nvflare.job_config.fed_app_config import ClientAppConfig, ServerAppConfig, FedAppConfig
-from nvflare.job_config.fed_job_config import FedJobConfig
 from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
 from nvflare.app_common.workflows.initialize_global_weights import InitializeGlobalWeights
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.app_opt.pt import PTFileModelPersistor
-from print_shareable_parameter import PrintShareable
-from pt_model_locator import PTModelLocator
+from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig, ServerAppConfig
+from nvflare.job_config.fed_job_config import FedJobConfig
 
 
 class HelloPTJob:
@@ -80,7 +81,7 @@ class HelloPTJob:
             persistor_id="persistor",
             shareable_generator_id="shareable_generator",
             train_task_name="train",
-            train_timeout=0
+            train_timeout=0,
         )
         server_app.add_workflow("scatter_and_gather", controller)
         controller = CrossSiteModelEval(model_locator_id="model_locator")
@@ -91,8 +92,7 @@ class HelloPTJob:
         component = FullModelShareableGenerator()
         server_app.add_component("shareable_generator", component)
         component = InTimeAccumulateWeightedAggregator(
-            expected_data_kind=DataKind.WEIGHTS,
-            aggregation_weights={"site-1": 1.0, "site-2": 1.0}
+            expected_data_kind=DataKind.WEIGHTS, aggregation_weights={"site-1": 1.0, "site-2": 1.0}
         )
         server_app.add_component("aggregator", component)
         component = PTModelLocator()
@@ -113,7 +113,7 @@ class HelloPTJob:
         self.job.simulator_run(job_root, workspace, threads=2)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     job = HelloPTJob()
 
     # job.export_job("/tmp/nvflare/jobs")

@@ -15,23 +15,23 @@
 import uuid
 from typing import Union
 
-from nvflare.job_config.fed_app_config import FedAppConfig
-from nvflare.job_config.fed_job_config import FedJobConfig
+from net import Net
+
+from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
+from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
+from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
+from nvflare.app_common.widgets.metric_relay import MetricRelay
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
+from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt import PTFileModelPersistor
 from nvflare.app_opt.pt.client_api_launcher_executor import PTClientAPILauncherExecutor
-from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
-from nvflare.app_common.widgets.metric_relay import MetricRelay
-from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
-from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
+from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.pipe.file_pipe import FilePipe
-from net import Net
-from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
-from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
-from nvflare.job_config.fed_app_config import ClientAppConfig, ServerAppConfig
+from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig, ServerAppConfig
+from nvflare.job_config.fed_job_config import FedJobConfig
 
 # TODO: FedApp -> server, FedApp -> client
 
@@ -43,7 +43,7 @@ class FedJob:
         self.workspace = workspace
         self.root_url = ""
 
-        #self.job = self.define_job()
+        # self.job = self.define_job()
         self.job: FedJobConfig = FedJobConfig(job_name=self.job_name, min_clients=1)
 
     def to(self, app: Union[ClientAppConfig, ServerAppConfig], target):
@@ -75,28 +75,16 @@ class FedJob:
         client_app.add_component("launcher", component)
 
         # TODO: Use CellPipe, create CellPipe objects as part of components that require it. Automatically set root_url in CellPipe
-        component = FilePipe(
-            mode=Mode.PASSIVE,
-            root_path=f"{self.workspace}/{self.job_id}/{site_name}"
-        )
+        component = FilePipe(mode=Mode.PASSIVE, root_path=f"{self.workspace}/{self.job_id}/{site_name}")
         client_app.add_component("pipe", component)
 
-        component = FilePipe(
-            mode=Mode.PASSIVE,
-            root_path=f"{self.workspace}/{self.job_id}-1/{site_name}"
-        )
+        component = FilePipe(mode=Mode.PASSIVE, root_path=f"{self.workspace}/{self.job_id}-1/{site_name}")
         client_app.add_component("metrics_pipe", component)
 
-        component = MetricRelay(
-            pipe_id="metrics_pipe",
-            event_type="fed.analytix_log_stats",
-            read_interval=0.1
-        )
+        component = MetricRelay(pipe_id="metrics_pipe", event_type="fed.analytix_log_stats", read_interval=0.1)
         client_app.add_component("metric_relay", component)
 
-        component = ExternalConfigurator(
-            component_ids=["metric_relay"]
-        )
+        component = ExternalConfigurator(component_ids=["metric_relay"])
         client_app.add_component("config_preparer", component)
 
         # client_app.add_component("net", Net())  # TODO: find another way to register files that need to be included in custom folder
@@ -105,11 +93,7 @@ class FedJob:
 
     def create_server_app(self, min_clients, num_rounds, model_class_path="net.Net"):
         server_app = ServerAppConfig()
-        controller = FedAvg(
-            min_clients=min_clients,
-            num_rounds=num_rounds,
-            persistor_id="persistor"
-        )
+        controller = FedAvg(min_clients=min_clients, num_rounds=num_rounds, persistor_id="persistor")
         server_app.add_workflow("fedavg_ctl", controller)
 
         controller = CrossSiteModelEval(model_locator_id="model_locator")
@@ -122,22 +106,16 @@ class FedJob:
 
         server_app.add_component("persistor", component)
 
-        component = PTFileModelLocator(
-            pt_persistor_id="persistor"
-        )
+        component = PTFileModelLocator(pt_persistor_id="persistor")
         server_app.add_component("model_locator", component)
 
         component = ValidationJsonGenerator()
         server_app.add_component("json_generator", component)
 
-        component = IntimeModelSelector(
-            key_metric="accuracy"
-        )
+        component = IntimeModelSelector(key_metric="accuracy")
         server_app.add_component("model_selector", component)
 
-        component = TBAnalyticsReceiver(
-            events=["fed.analytix_log_stats"]
-        )
+        component = TBAnalyticsReceiver(events=["fed.analytix_log_stats"])
         server_app.add_component("receiver", component)
 
         # server_app.add_component("net", Net())  # TODO: have another way to register needed scripts
@@ -160,10 +138,10 @@ if __name__ == "__main__":
     job.to(server_app, "server")
 
     for i in range(n_clients):
-        client_app = job.create_client_app(site_name=f"site-{i}", app_script="cifar10_fl.py")  # TODO: don't require site_name here
+        client_app = job.create_client_app(
+            site_name=f"site-{i}", app_script="cifar10_fl.py"
+        )  # TODO: don't require site_name here
         job.to(client_app, f"site-{i}")
 
     # job.export_job("/tmp/nvflare/jobs")
     job.simulator_run("/tmp/nvflare/jobs")
-
-
