@@ -16,6 +16,7 @@ import inspect
 import json
 import os
 import shutil
+from enum import Enum
 from typing import Dict
 
 from nvflare import SimulatorRunner
@@ -240,6 +241,8 @@ class FedJobConfig:
             if attr_key in attrs.keys() and parameters[param].default != attrs[attr_key]:
                 if type(attrs[attr_key]).__name__ in dir(builtins):
                     args[param] = attrs[attr_key]
+                elif issubclass(attrs[attr_key].__class__, Enum):
+                    args[param] = attrs[attr_key].value
                 else:
                     args[param] = {
                         "path": self._get_class_path(attrs[attr_key], custom_dir),
