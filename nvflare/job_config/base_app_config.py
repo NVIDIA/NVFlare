@@ -20,6 +20,11 @@ from nvflare.apis.fl_component import FLComponent
 
 
 class BaseAppConfig(ABC):
+    """BaseAppConfig holds the base essential component data for the ServerApp and ClientApp, including the
+    task_data_filters, task_result_filters, system components and used external scripts.
+
+    """
+
     def __init__(self) -> None:
         super().__init__()
 

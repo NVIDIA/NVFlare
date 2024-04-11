@@ -22,6 +22,11 @@ from nvflare.private.fed.server.server_json_config import WorkFlow
 
 
 class ClientAppConfig(BaseAppConfig):
+    """ClientAppConfig represents the ClientApp inside the Job. It holds the BaseAppConfig components and the task
+    executors components data for the ClientApp.
+
+    """
+
     def __init__(self) -> None:
         super().__init__()
 
@@ -38,6 +43,11 @@ class ClientAppConfig(BaseAppConfig):
 
 
 class ServerAppConfig(BaseAppConfig):
+    """ServerAppConfig represents the ServerApp inside the Job. it holds the BaseAppConfig components and the
+    workflow components data for the ServerApp.
+
+    """
+
     def __init__(self) -> None:
         super().__init__()
 
@@ -61,6 +71,11 @@ class ServerAppConfig(BaseAppConfig):
 
 
 class FedAppConfig:
+    """FedAppConfig represents the App information inside the Job. It contains either a ServerApp, or a ClientApp, or
+    both of them.
+
+    """
+
     def __init__(self, server_app: ServerAppConfig = None, client_app: ClientAppConfig = None) -> None:
         super().__init__()
 

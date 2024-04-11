@@ -89,6 +89,9 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
         self.expected_data_kind = expected_data_kind
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
+        # _initialize() can not be called from the constructor. Because it changes the data, even the data format
+        # of the aggregation_weights and exclude_vars parameters. Inspect could not figure out the passed in
+        # parameters when re-construct the object creation configuration.
         if event_type == EventType.START_RUN:
             self._initialize(self.aggregation_weights, self.exclude_vars, self.expected_data_kind)
 
