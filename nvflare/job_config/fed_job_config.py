@@ -19,7 +19,6 @@ import shutil
 from typing import Dict
 
 from nvflare import SimulatorRunner
-from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
 from nvflare.job_config.fed_app_config import FedAppConfig
 from nvflare.private.fed.app.fl_conf import FL_PACKAGES
 
