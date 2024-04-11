@@ -28,7 +28,7 @@ from nvflare.fuel.f3.drivers.grpc.streamer_pb2_grpc import (
     add_StreamerServicer_to_server,
 )
 from nvflare.fuel.utils.obj_utils import get_logger
-from nvflare.security.logging import secure_format_exception
+from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 from .base_driver import BaseDriver
 from .driver_params import DriverCap, DriverParams
@@ -69,15 +69,14 @@ class StreamConnection(Connection):
                 try:
                     self.context.abort(grpc.StatusCode.CANCELLED, "service closed")
                 except Exception as ex:
-                    # ignore any exception when aborting
-                    self.logger.debug(f"exception aborting GRPC context: {secure_format_exception(ex)}")
+                    self.logger.error(f"exception aborting GRPC context: {secure_format_exception(ex)}")
                 self.context = None
                 self.logger.info("Closed GRPC context")
             if self.channel:
                 try:
                     self.channel.close()
                 except Exception as ex:
-                    self.logger.debug(f"exception closing GRPC channel: {secure_format_exception(ex)}")
+                    self.logger.error(f"exception closing GRPC channel: {secure_format_exception(ex)}")
                 self.channel = None
                 self.logger.info("Closed GRPC Channel")
 
@@ -88,7 +87,7 @@ class StreamConnection(Connection):
             self.logger.debug(f"{self.side}: queued frame #{seq}")
             self.oq.append(Frame(seq=seq, data=bytes(frame)))
         except BaseException as ex:
-            raise CommError(CommError.ERROR, f"Error sending frame: {ex}")
+            raise CommError(CommError.ERROR, f"Error sending frame: {secure_format_exception(ex)}")
 
     def read_loop(self, msg_iter):
         ct = threading.current_thread()
@@ -106,7 +105,9 @@ class StreamConnection(Connection):
                     self.logger.error(f"{self.side}: Frame receiver not registered for connection: {self.name}")
         except Exception as ex:
             if not self.closing:
-                self.logger.debug(f"{self.side}: exception {type(ex)} in read_loop")
+                self.logger.error(f"{self}: exception {type(ex)} in read_loop: {secure_format_exception(ex)}")
+                self.logger.debug(secure_format_traceback())
+
         if self.oq:
             self.logger.debug(f"{self.side}: closing queue")
             self.oq.close()
@@ -150,7 +151,7 @@ class Servicer(StreamerServicer):
             t.start()
             yield from connection.generate_output()
         except BaseException as ex:
-            self.logger.error(f"Connection closed due to error: {ex}")
+            self.logger.error(f"Connection closed due to error: {secure_format_exception(ex)}")
         finally:
             if t is not None:
                 t.join()
@@ -189,7 +190,7 @@ class Server:
                 self.logger.info(f"added insecure port at {addr}")
         except Exception as ex:
             error = f"cannot listen on {addr}: {type(ex)}: {secure_format_exception(ex)}"
-            self.logger.debug(error)
+            self.logger.error(error)
 
     def start(self):
         self.grpc_server.start()
@@ -260,8 +261,6 @@ class GrpcDriver(BaseDriver):
             self.logger.debug("CLIENT: added connection")
             received = stub.Stream(connection.generate_output())
             connection.read_loop(received)
-        except grpc.FutureCancelledError:
-            self.logger.debug("RPC Cancelled")
         except Exception as ex:
             self.logger.error(f"connection {connection} error: {type(ex)}: {secure_format_exception(ex)}")
         finally:
