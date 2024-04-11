@@ -87,7 +87,7 @@ class StreamConnection(Connection):
             self.logger.debug(f"{self.side}: queued frame #{seq}")
             self.oq.append(Frame(seq=seq, data=bytes(frame)))
         except BaseException as ex:
-            raise CommError(CommError.ERROR, f"Error sending frame: {ex}")
+            raise CommError(CommError.ERROR, f"Error sending frame: {secure_format_exception(ex)}")
 
     def read_loop(self, msg_iter):
         ct = threading.current_thread()
@@ -151,7 +151,7 @@ class Servicer(StreamerServicer):
             t.start()
             yield from connection.generate_output()
         except BaseException as ex:
-            self.logger.error(f"Connection closed due to error: {ex}")
+            self.logger.error(f"Connection closed due to error: {secure_format_exception(ex)}")
         finally:
             if t is not None:
                 t.join()
