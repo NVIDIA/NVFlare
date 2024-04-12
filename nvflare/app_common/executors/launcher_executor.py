@@ -181,11 +181,11 @@ class LauncherExecutor(TaskExchanger):
         total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS, None)
         if task_name == self._train_task_name:
             if current_round is None:
-                self.log_error(fl_ctx, "missing current round")
+                self.log_error(fl_ctx, f"missing current round required by task {task_name}")
                 return False
 
             if total_rounds is None:
-                self.log_error(fl_ctx, "missing total number of rounds")
+                self.log_error(fl_ctx, f"missing total number of rounds required by task {task_name}")
                 return False
         return True
 

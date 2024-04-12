@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import random
-from typing import List
+from typing import Callable, List, Union
 
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
@@ -185,3 +185,43 @@ class BaseFedAvg(WFController):
             self.persist_every_n_rounds != 0 and (self.current_round + 1) % self.persist_every_n_rounds == 0
         ) or self.current_round == self.num_rounds - 1:
             super().save_model(model)
+
+    def prepare_model(self, model: FLModel):
+        model.start_round = self.start_round
+        model.current_round = self.current_round
+        model.total_rounds = self.num_rounds
+        return model
+
+    def send_model_and_wait(
+        self,
+        task_name: str = "train",
+        data: FLModel = None,
+        targets: Union[List[str], None] = None,
+        timeout: int = 0,
+        wait_time_after_min_received: int = 10,
+    ) -> List[FLModel]:
+        return super().send_model_and_wait(
+            task_name=task_name,
+            data=self.prepare_model(data),
+            targets=targets,
+            timeout=timeout,
+            wait_time_after_min_received=wait_time_after_min_received,
+        )
+
+    def send_model(
+        self,
+        task_name: str = "train",
+        data: FLModel = None,
+        targets: Union[List[str], None] = None,
+        timeout: int = 0,
+        wait_time_after_min_received: int = 10,
+        callback: Callable[[FLModel], None] = None,
+    ) -> None:
+        super().send_model(
+            task_name=task_name,
+            data=self.prepare_model(data),
+            targets=targets,
+            timeout=timeout,
+            wait_time_after_min_received=wait_time_after_min_received,
+            callback=callback,
+        )

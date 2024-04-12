@@ -37,7 +37,7 @@ from nvflare.security.logging import secure_format_exception
 class ModelController(Controller, FLComponentWrapper, ABC):
     def __init__(
         self,
-        persistor_id="",
+        persistor_id="persistor",
         ignore_result_error: bool = False,
         allow_empty_global_weights: bool = False,
         task_check_period: float = 0.5,
@@ -79,11 +79,11 @@ class ModelController(Controller, FLComponentWrapper, ABC):
         if self._persistor_id:
             self._persistor = self._engine.get_component(self._persistor_id)
             if not isinstance(self._persistor, LearnablePersistor):
-                self.panic(
+                self.warning(
                     f"Model Persistor {self._persistor_id} must be a LearnablePersistor type object, "
                     f"but got {type(self._persistor)}"
                 )
-                return
+                self._persistor = None
 
         self.engine = self.fl_ctx.get_engine()
         FLComponentWrapper.initialize(self)
