@@ -274,6 +274,7 @@ class FedJobConfig:
         return r
 
     def locate_imports(self, sf, dest_file):
+        os.makedirs(os.path.dirname(dest_file), exist_ok=True)
         with open(dest_file, "w") as df:
             for line in sf:
                 df.write(line)
