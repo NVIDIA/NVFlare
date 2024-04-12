@@ -36,7 +36,7 @@ class PTInProcessClientAPIExecutor(InProcessClientAPIExecutor):
         train_task_name: str = "train",
         evaluate_task_name: str = "evaluate",
         submit_model_task_name: str = "submit_model",
-        params_exchange_format=ExchangeFormat.PYTORCH
+        params_exchange_format=ExchangeFormat.PYTORCH,
     ):
         super(PTInProcessClientAPIExecutor, self).__init__(
             task_script_path=task_script_path,
