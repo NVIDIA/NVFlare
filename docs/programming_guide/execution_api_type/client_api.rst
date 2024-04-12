@@ -215,7 +215,7 @@ subprocess launcher Executor configuration
     When set to False, the executor essentially invokes ``python <training scripts>.py`` every round of training.
     Typically, launch_once is set to True.
 
-    A corresponding `:class:`LauncherExecutor<nvflare.app_common.executors.launcher_executor.LauncherExecutor>`
+    A corresponding :class:`LauncherExecutor<nvflare.app_common.executors.launcher_executor.LauncherExecutor>`
     is used as the executor to handle the tasks and perform the data exchange using the pipe.
     For the Pipe component we provide implementations of :class:`FilePipe<nvflare.fuel.utils.pipe.file_pipe>`
     and :class:`CellPipe<nvflare.fuel.utils.pipe.cell_pipe>`.
