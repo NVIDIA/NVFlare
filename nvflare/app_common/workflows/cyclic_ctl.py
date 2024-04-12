@@ -312,8 +312,8 @@ class CyclicController(Controller):
             pass
 
     def handle_event(self, event_type, fl_ctx):
-        if event_type == EventType.JOB_DEAD:
-            client_name = fl_ctx.get_prop(FLContextKey.DEAD_JOB_CLIENT_NAME)
+        if event_type == EventType.JOB_DEAD_REPORT_RECEIVED:
+            client_name = fl_ctx.get_prop(FLContextKey.DISCONNECTED_CLIENT_NAME)
             new_client_list = []
             for client in self._participating_clients:
                 if client_name != client.name:

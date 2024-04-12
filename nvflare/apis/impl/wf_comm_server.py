@@ -20,7 +20,7 @@ from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, SendOrder, Task, TaskCompletionStatus
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import job_from_meta
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_copy
@@ -79,6 +79,13 @@ def _get_client_task(target, task: Task):
     return None
 
 
+class _DeadClientStatus:
+
+    def __init__(self):
+        self.report_time = time.time()
+        self.death_time = None
+
+
 class WFCommServer(FLComponent, WFCommSpec):
     def __init__(self, task_check_period=0.2):
         """Manage life cycles of tasks and their destinations.
@@ -93,9 +100,10 @@ class WFCommServer(FLComponent, WFCommSpec):
         self._client_task_map = {}  # client_task_id => client_task
         self._all_done = False
         self._task_lock = Lock()
-        self._task_monitor = threading.Thread(target=self._monitor_tasks, args=())
+        self._task_monitor = threading.Thread(target=self._monitor_tasks, args=(), daemon=True)
         self._task_check_period = task_check_period
-        self._dead_client_reports = {}  # clients that reported the job is dead on it: name => report time
+        self._dead_client_grace = 60.0
+        self._dead_clients = {}  # clients that reported the job is dead on it: name => _DeadClientStatus
         self._dead_clients_lock = Lock()  # need lock since dead_clients can be modified from different threads
         # make sure check_tasks, process_task_request, process_submission does not interfere with each other
         self._controller_lock = Lock()
@@ -112,13 +120,17 @@ class WFCommServer(FLComponent, WFCommSpec):
         """
         engine = fl_ctx.get_engine()
         if not engine:
-            self.system_panic(f"Engine not found. {self.__class__.__name__} exiting.", fl_ctx)
+            self.system_panic(f"Engine not found. {self.name} exiting.", fl_ctx)
             return
 
         self._engine = engine
+        self._dead_client_grace = ConfigService.get_float_var(
+            name=_CONFIG_VAR_DEAD_CLIENT_GRACE_PERIOD,
+            conf=SystemConfigs.APPLICATION_CONF,
+            default=60.0)
         self._task_monitor.start()
 
-    def _try_again(self) -> Tuple[str, str, Shareable]:
+    def _try_again(self) -> Tuple[str, str, Optional[Shareable]]:
         # TODO: how to tell client no shareable available now?
         return "", "", None
 
@@ -135,7 +147,7 @@ class WFCommServer(FLComponent, WFCommSpec):
                     "collector must be an instance of GroupInfoCollector, but got {}".format(type(collector))
                 )
             collector.add_info(
-                group_name=self.controller._name,
+                group_name=self.name,
                 info={
                     "tasks": {t.name: [ct.client.name for ct in t.client_tasks] for t in self._tasks},
                 },
@@ -150,12 +162,13 @@ class WFCommServer(FLComponent, WFCommSpec):
         """
         if event_type == InfoCollector.EVENT_TYPE_GET_STATS:
             self._set_stats(fl_ctx)
-        elif event_type == EventType.JOB_DEAD:
-            client_name = fl_ctx.get_prop(FLContextKey.DEAD_JOB_CLIENT_NAME)
-            with self._dead_clients_lock:
-                self.log_info(fl_ctx, f"received dead job report from client {client_name}")
-                if not self._dead_client_reports.get(client_name):
-                    self._dead_client_reports[client_name] = time.time()
+
+    def process_dead_client_report(self, client_name: str, fl_ctx: FLContext):
+        with self._dead_clients_lock:
+            self.log_warning(fl_ctx, f"received dead job report for client {client_name}")
+            if not self._dead_clients.get(client_name):
+                self.log_warning(fl_ctx, f"client {client_name} is placed on dead client watch list")
+                self._dead_clients[client_name] = _DeadClientStatus()
 
     def process_task_request(self, client: Client, fl_ctx: FLContext) -> Tuple[str, str, Shareable]:
         """Called by runner when a client asks for a task.
@@ -182,9 +195,6 @@ class WFCommServer(FLComponent, WFCommSpec):
     def _do_process_task_request(self, client: Client, fl_ctx: FLContext) -> Tuple[str, str, Shareable]:
         if not isinstance(client, Client):
             raise TypeError("client must be an instance of Client, but got {}".format(type(client)))
-
-        with self._dead_clients_lock:
-            self._dead_client_reports.pop(client.name, None)
 
         if not isinstance(fl_ctx, FLContext):
             raise TypeError("fl_ctx must be an instance of FLContext, but got {}".format(type(fl_ctx)))
@@ -371,13 +381,6 @@ class WFCommServer(FLComponent, WFCommSpec):
         if not isinstance(client, Client):
             raise TypeError("client must be an instance of Client, but got {}".format(type(client)))
 
-        # reset the dead job report!
-        # note that due to potential race conditions, a client may fail to include the job id in its
-        # heartbeat (since the job hasn't started at the time of heartbeat report), but then includes
-        # the job ID later.
-        with self._dead_clients_lock:
-            self._dead_client_reports.pop(client.name, None)
-
         if not isinstance(fl_ctx, FLContext):
             raise TypeError("fl_ctx must be an instance of FLContext, but got {}".format(type(fl_ctx)))
         if not isinstance(result, Shareable):
@@ -490,18 +493,23 @@ class WFCommServer(FLComponent, WFCommSpec):
     ):
         """Schedule a broadcast task.  This is a non-blocking call.
 
-        The task is scheduled into a task list.  Clients can request tasks and controller will dispatch the task to eligible clients.
+        The task is scheduled into a task list.
+        Clients can request tasks and controller will dispatch the task to eligible clients.
 
         Args:
             task (Task): the task to be scheduled
             fl_ctx (FLContext): FLContext associated with this task
-            targets (Union[List[Client], List[str], None], optional): the list of eligible clients or client names or None (all clients). Defaults to None.
-            min_responses (int, optional): the condition to mark this task as completed because enough clients respond with submission. Defaults to 1.
-            wait_time_after_min_received (int, optional): a grace period for late clients to contribute their submission.  0 means no grace period.
+            targets (Union[List[Client], List[str], None], optional): the list of eligible clients or client names
+                or None (all clients). Defaults to None.
+            min_responses (int, optional): the condition to mark this task as completed because enough clients
+                respond with submission. Defaults to 1.
+            wait_time_after_min_received (int, optional): a grace period for late clients to contribute their
+                submission.  0 means no grace period.
               Submission of late clients in the grace period are still collected as valid submission. Defaults to 0.
 
         Raises:
-            ValueError: min_responses is greater than the length of targets since this condition will make the task, if allowed to be scheduled, never exit.
+            ValueError: min_responses is greater than the length of targets since this condition will make the task,
+                if allowed to be scheduled, never exit.
         """
         _check_inputs(task=task, fl_ctx=fl_ctx, targets=targets)
         _check_positive_int("min_responses", min_responses)
@@ -527,16 +535,21 @@ class WFCommServer(FLComponent, WFCommSpec):
     ):
         """Schedule a broadcast task.  This is a blocking call.
 
-        The task is scheduled into a task list.  Clients can request tasks and controller will dispatch the task to eligible clients.
+        The task is scheduled into a task list.  Clients can request tasks and controller will dispatch the task
+        to eligible clients.
 
         Args:
             task (Task): the task to be scheduled
             fl_ctx (FLContext): FLContext associated with this task
-            targets (Union[List[Client], List[str], None], optional): the list of eligible clients or client names or None (all clients). Defaults to None.
-            min_responses (int, optional): the condition to mark this task as completed because enough clients respond with submission. Defaults to 1.
-            wait_time_after_min_received (int, optional): a grace period for late clients to contribute their submission.  0 means no grace period.
+            targets (Union[List[Client], List[str], None], optional): the list of eligible clients or client names
+                or None (all clients). Defaults to None.
+            min_responses (int, optional): the condition to mark this task as completed because enough clients
+                respond with submission. Defaults to 1.
+            wait_time_after_min_received (int, optional): a grace period for late clients to contribute their
+                submission.  0 means no grace period.
             Submission of late clients in the grace period are still collected as valid submission. Defaults to 0.
-            abort_signal (Optional[Signal], optional): as this is a blocking call, this abort_signal informs this method to return. Defaults to None.
+            abort_signal (Optional[Signal], optional): as this is a blocking call, this abort_signal informs
+                this method to return. Defaults to None.
         """
         self.broadcast(
             task=task,
@@ -550,13 +563,16 @@ class WFCommServer(FLComponent, WFCommSpec):
     def broadcast_forever(self, task: Task, fl_ctx: FLContext, targets: Union[List[Client], List[str], None] = None):
         """Schedule a broadcast task.  This is a non-blocking call.
 
-        The task is scheduled into a task list.  Clients can request tasks and controller will dispatch the task to eligible clients.
+        The task is scheduled into a task list.  Clients can request tasks and controller will dispatch
+        the task to eligible clients.
+
         This broadcast will not end.
 
         Args:
             task (Task): the task to be scheduled
             fl_ctx (FLContext): FLContext associated with this task
-            targets (Union[List[Client], List[str], None], optional): the list of eligible clients or client names or None (all clients). Defaults to None.
+            targets (Union[List[Client], List[str], None], optional): the list of eligible clients or client names
+                or None (all clients). Defaults to None.
         """
         _check_inputs(task=task, fl_ctx=fl_ctx, targets=targets)
         manager = BcastForeverTaskManager()
@@ -572,14 +588,18 @@ class WFCommServer(FLComponent, WFCommSpec):
     ):
         """Schedule a single task to targets.  This is a non-blocking call.
 
-        The task is scheduled into a task list.  Clients can request tasks and controller will dispatch the task to eligible clients based on the send_order.
+        The task is scheduled into a task list.  Clients can request tasks and controller will dispatch the task
+        to eligible clients based on the send_order.
 
         Args:
             task (Task): the task to be scheduled
             fl_ctx (FLContext): FLContext associated with this task
-            targets (Union[List[Client], List[str], None], optional): the list of eligible clients or client names or None (all clients). Defaults to None.
-            send_order (SendOrder, optional): the order for clients to become eligible.  SEQUENTIAL means the order in targets is enforced.  ANY means
-            clients in targets and haven't received task are eligible for task. Defaults to SendOrder.SEQUENTIAL.
+            targets (Union[List[Client], List[str], None], optional): the list of eligible clients or client names
+                or None (all clients). Defaults to None.
+            send_order (SendOrder, optional): the order for clients to become eligible.
+                SEQUENTIAL means the order in targets is enforced.
+                ANY means clients in targets and haven't received task are eligible for task.
+                Defaults to SendOrder.SEQUENTIAL.
             task_assignment_timeout (int, optional): how long to wait for one client to pick the task. Defaults to 0.
 
         Raises:
@@ -625,16 +645,21 @@ class WFCommServer(FLComponent, WFCommSpec):
     ):
         """Schedule a single task to targets.  This is a blocking call.
 
-        The task is scheduled into a task list.  Clients can request tasks and controller will dispatch the task to eligible clients based on the send_order.
+        The task is scheduled into a task list.  Clients can request tasks and controller will dispatch the task
+        to eligible clients based on the send_order.
 
         Args:
             task (Task): the task to be scheduled
             fl_ctx (FLContext): FLContext associated with this task
-            targets (Union[List[Client], List[str], None], optional): the list of eligible clients or client names or None (all clients). Defaults to None.
-            send_order (SendOrder, optional): the order for clients to become eligible.  SEQUENTIAL means the order in targets is enforced.  ANY means
-            clients in targets and haven't received task are eligible for task. Defaults to SendOrder.SEQUENTIAL.
+            targets (Union[List[Client], List[str], None], optional): the list of eligible clients or client names
+                or None (all clients). Defaults to None.
+            send_order (SendOrder, optional): the order for clients to become eligible.
+                SEQUENTIAL means the order in targets is enforced.
+                ANY means clients in targets and haven't received task are eligible for task.
+                Defaults to SendOrder.SEQUENTIAL.
             task_assignment_timeout (int, optional): how long to wait for one client to pick the task. Defaults to 0.
-            abort_signal (Optional[Signal], optional): as this is a blocking call, this abort_signal informs this method to return. Defaults to None.
+            abort_signal (Optional[Signal], optional): as this is a blocking call, this abort_signal informs this
+                method to return. Defaults to None.
 
         """
         self.send(
@@ -663,11 +688,13 @@ class WFCommServer(FLComponent, WFCommSpec):
 
         note::
 
-            We only mark the task as completed and leave it to the task monitor to clean up. This is to avoid potential deadlock of task_lock.
+            We only mark the task as completed and leave it to the task monitor to clean up.
+            This is to avoid potential deadlock of task_lock.
 
         Args:
             task (Task): the task to be cancelled
-            completion_status (str, optional): the completion status for this cancellation. Defaults to TaskCompletionStatus.CANCELLED.
+            completion_status (str, optional): the completion status for this cancellation.
+                Defaults to TaskCompletionStatus.CANCELLED.
             fl_ctx (Optional[FLContext], optional): FLContext associated with this cancellation. Defaults to None.
         """
         task.completion_status = completion_status
@@ -676,7 +703,8 @@ class WFCommServer(FLComponent, WFCommSpec):
         """Cancel all standing tasks in this controller.
 
         Args:
-            completion_status (str, optional): the completion status for this cancellation. Defaults to TaskCompletionStatus.CANCELLED.
+            completion_status (str, optional): the completion status for this cancellation.
+                Defaults to TaskCompletionStatus.CANCELLED.
             fl_ctx (Optional[FLContext], optional): FLContext associated with this cancellation. Defaults to None.
         """
         with self._task_lock:
@@ -695,11 +723,6 @@ class WFCommServer(FLComponent, WFCommSpec):
         """
         self.cancel_all_tasks()  # unconditionally cancel all tasks
         self._all_done = True
-        try:
-            if self._task_monitor.is_alive():
-                self._task_monitor.join()
-        except RuntimeError:
-            self.log_debug(fl_ctx, "unable to join monitor thread (not started?)")
 
     def relay(
         self,
@@ -713,18 +736,23 @@ class WFCommServer(FLComponent, WFCommSpec):
     ):
         """Schedule a single task to targets in one-after-another style.  This is a non-blocking call.
 
-        The task is scheduled into a task list.  Clients can request tasks and controller will dispatch the task to eligible clients based on the send_order.
+        The task is scheduled into a task list.  Clients can request tasks and controller will dispatch the task
+        to eligible clients based on the send_order.
 
         Args:
             task (Task): the task to be scheduled
             fl_ctx (FLContext): FLContext associated with this task
-            targets (Union[List[Client], List[str], None], optional): the list of eligible clients or client names or None (all clients). Defaults to None.
+            targets (Union[List[Client], List[str], None], optional): the list of eligible clients or client names
+                or None (all clients). Defaults to None.
             send_order (SendOrder, optional): the order for clients to become eligible.
               SEQUENTIAL means the order in targets is enforced.
-              ANY means any clients that are inside the targets and haven't received the task are eligible. Defaults to SendOrder.SEQUENTIAL.
+              ANY means any clients that are inside the targets and haven't received the task are eligible.
+              Defaults to SendOrder.SEQUENTIAL.
             task_assignment_timeout (int, optional): how long to wait for one client to pick the task. Defaults to 0.
-            task_result_timeout (int, optional): how long to wait for current working client to reply its result. Defaults to 0.
-            dynamic_targets (bool, optional): allow clients not in targets to join at the end of targets list. Defaults to True.
+            task_result_timeout (int, optional): how long to wait for current working client to reply its result.
+                Defaults to 0.
+            dynamic_targets (bool, optional): allow clients not in targets to join at the end of targets list.
+                Defaults to True.
 
         Raises:
             ValueError: when task_assignment_timeout is greater than task's timeout
@@ -792,18 +820,25 @@ class WFCommServer(FLComponent, WFCommSpec):
     ):
         """Schedule a single task to targets in one-after-another style.  This is a blocking call.
 
-        The task is scheduled into a task list.  Clients can request tasks and controller will dispatch the task to eligible clients based on the send_order.
+        The task is scheduled into a task list.  Clients can request tasks and controller will dispatch the task
+        to eligible clients based on the send_order.
 
         Args:
             task (Task): the task to be scheduled
             fl_ctx (FLContext): FLContext associated with this task
-            targets (Union[List[Client], List[str], None], optional): the list of eligible clients or client names or None (all clients). Defaults to None.
-            send_order (SendOrder, optional): the order for clients to become eligible.  SEQUENTIAL means the order in targets is enforced.  ANY means
-            clients in targets and haven't received task are eligible for task. Defaults to SendOrder.SEQUENTIAL.
+            targets (Union[List[Client], List[str], None], optional): the list of eligible clients or client names
+                or None (all clients). Defaults to None.
+            send_order (SendOrder, optional): the order for clients to become eligible.
+                SEQUENTIAL means the order in targets is enforced.
+                ANY means clients in targets and haven't received task are eligible for task.
+                Defaults to SendOrder.SEQUENTIAL.
             task_assignment_timeout (int, optional): how long to wait for one client to pick the task. Defaults to 0.
-            task_result_timeout (int, optional): how long to wait for current working client to reply its result. Defaults to 0.
-            dynamic_targets (bool, optional): allow clients not in targets to join at the end of targets list. Defaults to True.
-            abort_signal (Optional[Signal], optional): as this is a blocking call, this abort_signal informs this method to return. Defaults to None.
+            task_result_timeout (int, optional): how long to wait for current working client to reply its result.
+                Defaults to 0.
+            dynamic_targets (bool, optional): allow clients not in targets to join at the end of targets list.
+                Defaults to True.
+            abort_signal (Optional[Signal], optional): as this is a blocking call, this abort_signal informs
+                this method to return. Defaults to None.
         """
         self.relay(
             task=task,
@@ -816,8 +851,33 @@ class WFCommServer(FLComponent, WFCommSpec):
         )
         self.wait_for_task(task, abort_signal)
 
+    def _check_dead_clients(self):
+        if not self._dead_clients:
+            return
+
+        now = time.time()
+        with self._dead_clients_lock:
+            for client_name, status in self._dead_clients.items():
+                if status.death_time:
+                    # already dead
+                    continue
+
+                if now - status.report_time < self._dead_client_grace:
+                    # this report is still fresh - consider the client to be still alive
+                    continue
+
+                # consider client dead
+                status.death_time = now
+                self.logger.error(f"Client {client_name} is deemed disconnected!")
+                with self._engine.new_context() as fl_ctx:
+                    fl_ctx.set_prop(FLContextKey.DISCONNECTED_CLIENT_NAME, client_name)
+                    self.fire_event(EventType.CLIENT_DISCONNECTED, fl_ctx)
+
     def _monitor_tasks(self):
         while not self._all_done:
+            # determine clients are still active or not
+            self._check_dead_clients()
+
             should_abort_job = self._job_policy_violated()
             if not should_abort_job:
                 self.check_tasks()
@@ -907,7 +967,10 @@ class WFCommServer(FLComponent, WFCommSpec):
         See whether the task is only waiting for response from a dead client
         """
         now = time.time()
-        lead_time = ConfigService.get_float_var(name=_CONFIG_VAR_DEAD_CLIENT_CHECK_LEAD_TIME, default=30.0)
+        lead_time = ConfigService.get_float_var(
+            name=_CONFIG_VAR_DEAD_CLIENT_CHECK_LEAD_TIME,
+            conf=SystemConfigs.APPLICATION_CONF,
+            default=30.0)
         if now - task.schedule_time < lead_time:
             # due to potential race conditions, we'll wait for at least 1 minute after the task
             # is started before checking dead clients.
@@ -923,13 +986,13 @@ class WFCommServer(FLComponent, WFCommSpec):
 
                 # either we have not sent the task to this client or we have not received response
                 # is the client already dead?
-                if self._client_still_alive(target):
+                if self.get_client_disconnect_time(target):
+                    # this client is dead - remember it
+                    dead_clients.append(target)
+                else:
                     # this client is still alive
                     # we let the task continue its course since we still have live clients
                     return None
-                else:
-                    # this client is dead - remember it
-                    dead_clients.append(target)
 
         return dead_clients
 
@@ -969,10 +1032,10 @@ class WFCommServer(FLComponent, WFCommSpec):
                 dead_clients = []
 
                 for client in clients:
-                    if self._client_still_alive(client.name):
-                        alive_clients.append(client.name)
-                    else:
+                    if self.get_client_disconnect_time(client.name):
                         dead_clients.append(client.name)
+                    else:
+                        alive_clients.append(client.name)
 
                 if not dead_clients:
                     return False
@@ -995,16 +1058,27 @@ class WFCommServer(FLComponent, WFCommSpec):
                         return True
             return False
 
-    def _client_still_alive(self, client_name):
-        now = time.time()
-        report_time = self._dead_client_reports.get(client_name, None)
-        grace_period = ConfigService.get_float_var(name=_CONFIG_VAR_DEAD_CLIENT_GRACE_PERIOD, default=30.0)
+    def client_is_active(self, client_name: str, fl_ctx: FLContext):
+        with self._dead_clients_lock:
+            if client_name in self._dead_clients:
+                self.log_info(fl_ctx, f"Client {client_name} is removed from watch list")
+                status = self._dead_clients.pop(client_name)
+                if status.death_time:
+                    self.log_info(fl_ctx, f"Client {client_name} is reconnected")
+                    fl_ctx.set_prop(FLContextKey.RECONNECTED_CLIENT_NAME, client_name)
+                    self.fire_event(EventType.CLIENT_RECONNECTED, fl_ctx)
 
-        if not report_time:
-            # this client is still alive
-            return True
-        elif now - report_time < grace_period:
-            # this report is still fresh - consider the client to be still alive
-            return True
+    def get_client_disconnect_time(self, client_name: str):
+        """Get the time that the client was deemed disconnected
 
-        return False
+        Args:
+            client_name: name of the client
+
+        Returns: time at which the client was deemed disconnected; or None if the client is not disconnected
+
+        """
+        status = self._dead_clients.get(client_name)
+        if status:
+            assert isinstance(status, _DeadClientStatus)
+            return status.death_time
+        return None
