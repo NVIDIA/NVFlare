@@ -111,7 +111,6 @@ class TaskExchanger(Executor):
             )
             self.pipe_handler.set_status_cb(self._pipe_status_cb)
             self.pipe.open(self.pipe_channel_name)
-        elif event_type == EventType.BEFORE_TASK_EXECUTION:
             self.pipe_handler.start()
         elif event_type == EventType.ABOUT_TO_END_RUN:
             self.log_info(fl_ctx, "Stopping pipe handler")
