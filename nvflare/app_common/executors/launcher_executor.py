@@ -44,7 +44,7 @@ class LauncherExecutor(TaskExchanger):
         last_result_transfer_timeout: float = 300.0,
         external_pre_init_timeout: float = 60.0,
         peer_read_timeout: Optional[float] = 60.0,
-        monitor_interval: float = 1.0,
+        monitor_interval: float = 0.1,
         read_interval: float = 0.5,
         heartbeat_interval: float = 5.0,
         heartbeat_timeout: float = 60.0,
@@ -373,8 +373,8 @@ class LauncherExecutor(TaskExchanger):
                 if self.launcher is None:
                     break
 
+                # no task is running
                 if self._current_task is None:
-                    self.pause_pipe_handler()
                     continue
 
                 task_name = self._current_task
@@ -390,16 +390,19 @@ class LauncherExecutor(TaskExchanger):
                     continue
 
                 elif run_status == LauncherRunStatus.NOT_RUNNING:
+                    # pause pipe handler because external process is not running
                     self.pause_pipe_handler()
                     continue
 
                 elif run_status == LauncherRunStatus.RUNNING:
+                    # resume pipe handler when external process is running
                     self.resume_pipe_handler()
                     continue
 
                 elif (
                     run_status == LauncherRunStatus.COMPLETE_FAILED or run_status == LauncherRunStatus.COMPLETE_SUCCESS
                 ):
+                    # pause pipe handler because external process is completed
                     self.pause_pipe_handler()
                     if not self._launcher_finish:
                         self._launcher_finish_time = time.time()
