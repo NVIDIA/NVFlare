@@ -28,25 +28,52 @@ from .wf_controller import WFController
 
 
 class BaseFedAvg(WFController):
-    """The base controller for FedAvg Workflow. *Note*: This class is based on the `WFController`.
+    def __init__(
+        self,
+        *args,
+        min_clients: int = 1000,
+        num_rounds: int = 5,
+        start_round: int = 0,
+        persist_every_n_rounds: int = 1,
+        **kwargs,
+    ):
+        """The base controller for FedAvg Workflow. *Note*: This class is based on the `WFController`.
 
-    Implements [FederatedAveraging](https://arxiv.org/abs/1602.05629).
-    The model persistor (persistor_id) is used to load the initial global model which is sent to a list of clients.
-    Each client sends it's updated weights after local training which is aggregated.
-    Next, the global model is updated.
-    The model_persistor also saves the model after training.
+        Implements [FederatedAveraging](https://arxiv.org/abs/1602.05629).
 
-    Provides the default implementations for the follow routines:
-        - def sample_clients(self, min_clients)
-        - def aggregate(self, results: List[FLModel], aggregate_fn=None) -> FLModel
-        - def update_model(self, aggr_result)
+        A model persistor can be configured via the `persistor_id` argument of the `WFController`.
+        The model persistor is used to load the initial global model which is sent to a list of clients.
+        Each client sends it's updated weights after local training which is aggregated.
+        Next, the global model is updated.
+        The model_persistor will also save the model after training.
 
-    The `run` routine needs to be implemented by the derived class:
+        Provides the default implementations for the follow routines:
+            - def sample_clients(self, min_clients)
+            - def aggregate(self, results: List[FLModel], aggregate_fn=None) -> FLModel
+            - def update_model(self, aggr_result)
 
-        - def run(self)
-    """
+        The `run` routine needs to be implemented by the derived class:
 
-    def sample_clients(self, min_clients):
+            - def run(self)
+
+        Args:
+            min_clients (int, optional): The minimum number of clients responses before
+                Workflow starts to wait for `wait_time_after_min_received`. Note that the workflow will move forward
+                when all available clients have responded regardless of this value. Defaults to 1000.
+            num_rounds (int, optional): The total number of training rounds. Defaults to 5.
+            start_round (int, optional): The starting round number.
+            persist_every_n_rounds (int, optional): persist the global model every n rounds. Defaults to 1.
+                If n is 0 then no persist.
+        """
+        super().__init__(*args, **kwargs)
+
+        self.min_clients = min_clients
+        self.num_rounds = num_rounds
+        self.start_round = start_round
+        self.persist_every_n_rounds = persist_every_n_rounds
+        self.current_round = None
+
+    def sample_clients(self, num_clients):
         """Called by the `run` routine to get a list of available clients.
 
         Args:
@@ -55,15 +82,16 @@ class BaseFedAvg(WFController):
         Returns: list of clients.
 
         """
-        self._min_clients = min_clients
 
         clients = self.engine.get_clients()
-        if len(clients) < self._min_clients:
-            self._min_clients = len(clients)
 
-        if self._min_clients < len(clients):
+        if num_clients <= len(clients):
             random.shuffle(clients)
-            clients = clients[0 : self._min_clients]
+            clients = clients[0:num_clients]
+        else:
+            self.info(
+                f"num_clients ({num_clients}) is greater than the number of available clients. Returning all clients."
+            )
 
         return clients
 
@@ -85,7 +113,7 @@ class BaseFedAvg(WFController):
                 data=_result.params,
                 weight=_result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0),
                 contributor_name=_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN),
-                contribution_round=_result.meta.get("current_round", None),
+                contribution_round=_result.current_round,
             )
 
         aggregated_dict = aggregation_helper.get_result()
@@ -93,7 +121,7 @@ class BaseFedAvg(WFController):
         aggr_result = FLModel(
             params=aggregated_dict,
             params_type=results[0].params_type,
-            meta={"nr_aggregated": len(results), "current_round": results[0].meta["current_round"]},
+            meta={"nr_aggregated": len(results), "current_round": results[0].current_round},
         )
         return aggr_result
 
@@ -114,7 +142,7 @@ class BaseFedAvg(WFController):
         if not aggregate_fn:
             aggregate_fn = self._aggregate_fn
 
-        self.info(f"aggregating {len(results)} update(s) at round {self._current_round}")
+        self.info(f"aggregating {len(results)} update(s) at round {self.current_round}")
         try:
             aggr_result = aggregate_fn(results)
         except Exception as e:
@@ -130,10 +158,11 @@ class BaseFedAvg(WFController):
 
         return aggr_result
 
-    def update_model(self, aggr_result):
+    def update_model(self, model, aggr_result):
         """Called by the `run` routine to update the current global model (self.model) given the aggregated result.
 
         Args:
+            model: FLModel to be updated.
             aggr_result: aggregated FLModel.
 
         Returns: None.
@@ -141,10 +170,18 @@ class BaseFedAvg(WFController):
         """
         self.event(AppEventType.BEFORE_SHAREABLE_TO_LEARNABLE)
 
-        self.model = FLModelUtils.update_model(self.model, aggr_result)
+        model = FLModelUtils.update_model(model, aggr_result)
 
         # persistor uses Learnable format to save model
-        ml = make_model_learnable(weights=self.model.params, meta_props=self.model.meta)
+        ml = make_model_learnable(weights=model.params, meta_props=model.meta)
         self.fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, ml, private=True, sticky=True)
 
         self.event(AppEventType.AFTER_SHAREABLE_TO_LEARNABLE)
+
+        return model
+
+    def save_model(self, model: FLModel):
+        if (
+            self.persist_every_n_rounds != 0 and (self.current_round + 1) % self.persist_every_n_rounds == 0
+        ) or self.current_round == self.num_rounds - 1:
+            super().save_model(model)

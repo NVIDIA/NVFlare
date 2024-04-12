@@ -52,7 +52,7 @@ from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, zip_directory_to_bytes
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeployer
-from nvflare.private.fed.app.utils import kill_child_processes
+from nvflare.private.fed.app.utils import init_security_content_service, kill_child_processes
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorServerAppRunner
@@ -152,6 +152,7 @@ class SimulatorRunner(FLComponent):
 
         self.simulator_root = os.path.join(self.args.workspace)
         self._cleanup_workspace()
+        init_security_content_service(self.args.workspace)
 
         try:
             data_bytes, job_name, meta = self.validate_job_data()

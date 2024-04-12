@@ -30,29 +30,21 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fl_component_wrapper import FLComponentWrapper
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
-from nvflare.fuel.utils.validation_utils import check_non_negative_int, check_positive_int, check_str
+from nvflare.fuel.utils.validation_utils import check_non_negative_int, check_str
 from nvflare.security.logging import secure_format_exception
-from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
 
 class ModelController(Controller, FLComponentWrapper, ABC):
     def __init__(
         self,
-        min_clients: int = 1000,
-        num_rounds: int = 5,
         persistor_id="",
         ignore_result_error: bool = False,
         allow_empty_global_weights: bool = False,
         task_check_period: float = 0.5,
-        persist_every_n_rounds: int = 1,
     ):
         """FLModel based controller.
 
         Args:
-            min_clients (int, optional): The minimum number of clients responses before
-                Workflow starts to wait for `wait_time_after_min_received`. Note that the workflow will move forward
-                when all available clients have responded regardless of this value. Defaults to 1000.
-            num_rounds (int, optional): The total number of training rounds. Defaults to 5.
             persistor_id (str, optional): ID of the persistor component. Defaults to "persistor".
             ignore_result_error (bool, optional): whether this controller can proceed if client result has errors.
                 Defaults to False.
@@ -60,99 +52,47 @@ class ModelController(Controller, FLComponentWrapper, ABC):
                 empty global weights at first round, such that clients start training from scratch without any global info.
                 Defaults to False.
             task_check_period (float, optional): interval for checking status of tasks. Defaults to 0.5.
-            persist_every_n_rounds (int, optional): persist the global model every n rounds. Defaults to 1.
-                If n is 0 then no persist.
         """
         super().__init__(task_check_period=task_check_period)
 
         # Check arguments
-        check_positive_int("min_clients", min_clients)
-        check_non_negative_int("num_rounds", num_rounds)
-        check_non_negative_int("persist_every_n_rounds", persist_every_n_rounds)
         check_str("persistor_id", persistor_id)
         if not isinstance(task_check_period, (int, float)):
             raise TypeError(f"task_check_period must be an int or float but got {type(task_check_period)}")
         elif task_check_period <= 0:
             raise ValueError("task_check_period must be greater than 0.")
         self._task_check_period = task_check_period
-        self.persistor_id = persistor_id
-        self.persistor = None
+        self._persistor_id = persistor_id
+        self._persistor = None
 
         # config data
-        self._min_clients = min_clients
-        self._num_rounds = num_rounds
-        self._persist_every_n_rounds = persist_every_n_rounds
-        self.ignore_result_error = ignore_result_error
-        self.allow_empty_global_weights = allow_empty_global_weights
-
-        # workflow phases: init, train, validate
-        self._phase = AppConstants.PHASE_INIT
-        self._current_round = None
+        self._ignore_result_error = ignore_result_error
+        self._allow_empty_global_weights = allow_empty_global_weights
 
         # model related
-        self.model = None
         self._results = []
 
     def start_controller(self, fl_ctx: FLContext) -> None:
         self.fl_ctx = fl_ctx
         self.info("Initializing ModelController workflow.")
 
-        if self.persistor_id:
-            self.persistor = self._engine.get_component(self.persistor_id)
-            if not isinstance(self.persistor, LearnablePersistor):
+        if self._persistor_id:
+            self._persistor = self._engine.get_component(self._persistor_id)
+            if not isinstance(self._persistor, LearnablePersistor):
                 self.panic(
-                    f"Model Persistor {self.persistor_id} must be a LearnablePersistor type object, "
-                    f"but got {type(self.persistor)}"
+                    f"Model Persistor {self._persistor_id} must be a LearnablePersistor type object, "
+                    f"but got {type(self._persistor)}"
                 )
                 return
-
-        # initialize global model
-        if self.persistor:
-            global_weights = self.persistor.load(self.fl_ctx)
-
-            if not isinstance(global_weights, ModelLearnable):
-                self.panic(
-                    f"Expected global weights to be of type `ModelLearnable` but received {type(global_weights)}"
-                )
-                return
-
-            if global_weights.is_empty():
-                if not self.allow_empty_global_weights:
-                    # if empty not allowed, further check whether it is available from fl_ctx
-                    global_weights = self.fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
-
-            if not global_weights.is_empty():
-                self.model = FLModel(
-                    params_type=ParamsType.FULL,
-                    params=global_weights[ModelLearnableKey.WEIGHTS],
-                    meta=global_weights[ModelLearnableKey.META],
-                )
-            elif self.allow_empty_global_weights:
-                self.model = FLModel(params_type=ParamsType.FULL, params={})
-            else:
-                self.panic(
-                    f"Neither `persistor` {self.persistor_id} or `fl_ctx` returned a global model! If this was intended, set `self.allow_empty_global_weights` to `True`."
-                )
-                return
-        else:
-            self.model = FLModel(params_type=ParamsType.FULL, params={})
-
-        # persistor uses Learnable format to save model
-        ml = make_model_learnable(weights=self.model.params, meta_props=self.model.meta)
-        self.fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, ml, private=True, sticky=True)
-        self.event(AppEventType.INITIAL_MODEL_LOADED)
 
         self.engine = self.fl_ctx.get_engine()
         FLComponentWrapper.initialize(self)
 
     def _build_shareable(self, data: FLModel = None) -> Shareable:
-        if not data:  # if no data is given, send self.model
-            data = self.model
-
         data_shareable: Shareable = FLModelUtils.to_shareable(data)
-        data_shareable.set_header(AppConstants.CURRENT_ROUND, self._current_round)
-        data_shareable.set_header(AppConstants.NUM_ROUNDS, self._num_rounds)
-        data_shareable.add_cookie(AppConstants.CONTRIBUTION_ROUND, self._current_round)
+        data_shareable.add_cookie(
+            AppConstants.CONTRIBUTION_ROUND, data_shareable.get_header(AppConstants.CURRENT_ROUND)
+        )
 
         return data_shareable
 
@@ -170,13 +110,13 @@ class ModelController(Controller, FLComponentWrapper, ABC):
 
         Args:
             task_name (str, optional): name of the task. Defaults to "train".
-            data (FLModel, optional): FLModel to be sent to clients. If no data is given, send `self.model`.
+            data (FLModel, optional): FLModel to be sent to clients. If no data is given, send empty FLModel.
             targets (List[str], optional): the list of target client names or None (all clients). Defaults to None.
             timeout (int, optional): time to wait for clients to perform task. Defaults to 0, i.e., never time out.
             wait_time_after_min_received (int, optional): time to wait after
                 minimum number of clients responses has been received. Defaults to 10.
-            blocking (bool, optional): whether to block to wait for task result.
-            callback (Callable[[FLModel], None], optional): callback when a result is received, only called when blocking=False.
+            blocking (bool, optional): whether to block to wait for task result. Defaults to True.
+            callback (Callable[[FLModel], None], optional): callback when a result is received, only called when blocking=False. Defaults to None.
 
         Returns:
             List[FLModel] if blocking=True else None
@@ -190,6 +130,10 @@ class ModelController(Controller, FLComponentWrapper, ABC):
         check_non_negative_int("wait_time_after_min_received", wait_time_after_min_received)
         if not blocking and not isinstance(callback, Callable):
             raise TypeError("callback must be defined if blocking is False, but got {}".format(type(callback)))
+
+        if not data:
+            self.warning("data is None. Sending empty FLModel.")
+            data = FLModel(params_type=ParamsType.FULL, params={})
 
         task = self._prepare_task(data=data, task_name=task_name, timeout=timeout, callback=callback)
 
@@ -218,7 +162,7 @@ class ModelController(Controller, FLComponentWrapper, ABC):
                         f"Number of results ({len(self._results)}) is different from number of targets ({min_responses})."
                     )
 
-            # de-reference the internel results before returning
+            # de-reference the internal results before returning
             results = self._results
             self._results = []
             return results
@@ -268,17 +212,15 @@ class ModelController(Controller, FLComponentWrapper, ABC):
         result = client_task.result
         client_name = client_task.client.name
 
-        self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=True)
+        # Turn result into FLModel
+        result_model = FLModelUtils.from_shareable(result)
+        result_model.meta["client_name"] = client_name
+
+        self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, result_model.current_round, private=True, sticky=True)
 
         self.event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT)
         self._accept_train_result(client_name=client_name, result=result, fl_ctx=fl_ctx)
         self.event(AppEventType.AFTER_CONTRIBUTION_ACCEPT)
-
-        # Turn result into FLModel
-        result_model = FLModelUtils.from_shareable(result)
-        result_model.meta["client_name"] = client_name
-        result_model.meta["current_round"] = self._current_round
-        result_model.meta["total_rounds"] = self._num_rounds
 
         callback = client_task.task.get_prop(AppConstants.TASK_PROP_CALLBACK)
         if callback:
@@ -297,7 +239,7 @@ class ModelController(Controller, FLComponentWrapper, ABC):
     def process_result_of_unknown_task(
         self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
     ) -> None:
-        if self._phase == AppConstants.PHASE_TRAIN and task_name == task_name:
+        if task_name == AppConstants.TASK_TRAIN:
             self._accept_train_result(client_name=client.name, result=result, fl_ctx=fl_ctx)
             self.info(f"Result of unknown task {task_name} sent to aggregator.")
         else:
@@ -307,16 +249,18 @@ class ModelController(Controller, FLComponentWrapper, ABC):
         self.fl_ctx = fl_ctx
         rc = result.get_return_code()
 
+        current_round = result.get_header(AppConstants.CURRENT_ROUND, None)
+
         # Raise panic if bad peer context or execution exception.
         if rc and rc != ReturnCode.OK:
-            if self.ignore_result_error:
+            if self._ignore_result_error:
                 self.warning(
-                    f"Ignore the train result from {client_name} at round {self._current_round}. Train result error code: {rc}",
+                    f"Ignore the train result from {client_name} at round {current_round}. Train result error code: {rc}",
                 )
             else:
                 self.panic(
                     f"Result from {client_name} is bad, error code: {rc}. "
-                    f"{self.__class__.__name__} exiting at round {self._current_round}."
+                    f"{self.__class__.__name__} exiting at round {current_round}."
                 )
                 return
 
@@ -332,50 +276,72 @@ class ModelController(Controller, FLComponentWrapper, ABC):
         raise NotImplementedError
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext) -> None:
-        self._phase = AppConstants.PHASE_TRAIN
-        fl_ctx.set_prop(AppConstants.PHASE, self._phase, private=True, sticky=False)
-        fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self._num_rounds, private=True, sticky=False)
         self.fl_ctx = fl_ctx
         self.abort_signal = abort_signal
         try:
             self.info("Beginning model controller run.")
             self.event(AppEventType.TRAINING_STARTED)
-            self._phase = AppConstants.PHASE_TRAIN
 
             self.run()
-            self._phase = AppConstants.PHASE_FINISHED
         except Exception as e:
             error_msg = f"Exception in model controller run: {secure_format_exception(e)}"
             self.exception(error_msg)
             self.panic(error_msg)
 
-    def save_model(self):
-        if self.persistor:
-            if (
-                self._persist_every_n_rounds != 0 and (self._current_round + 1) % self._persist_every_n_rounds == 0
-            ) or self._current_round == self._num_rounds - 1:
-                self.info("Start persist model on server.")
-                self.event(AppEventType.BEFORE_LEARNABLE_PERSIST)
-                # persistor uses Learnable format to save model
-                ml = make_model_learnable(weights=self.model.params, meta_props=self.model.meta)
-                self.persistor.save(ml, self.fl_ctx)
-                self.event(AppEventType.AFTER_LEARNABLE_PERSIST)
-                self.info("End persist model on server.")
+    def load_model(self):
+        # initialize global model
+        model = None
+        if self._persistor:
+            self.info("loading initial model from persistor")
+            global_weights = self._persistor.load(self.fl_ctx)
+
+            if not isinstance(global_weights, ModelLearnable):
+                self.panic(
+                    f"Expected global weights to be of type `ModelLearnable` but received {type(global_weights)}"
+                )
+                return
+
+            if global_weights.is_empty():
+                if not self._allow_empty_global_weights:
+                    # if empty not allowed, further check whether it is available from fl_ctx
+                    global_weights = self.fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
+
+            if not global_weights.is_empty():
+                model = FLModel(
+                    params_type=ParamsType.FULL,
+                    params=global_weights[ModelLearnableKey.WEIGHTS],
+                    meta=global_weights[ModelLearnableKey.META],
+                )
+            elif self._allow_empty_global_weights:
+                model = FLModel(params_type=ParamsType.FULL, params={})
+            else:
+                self.panic(
+                    f"Neither `persistor` {self._persistor_id} or `fl_ctx` returned a global model! If this was intended, set `self._allow_empty_global_weights` to `True`."
+                )
+                return
+        else:
+            self.info("persistor not configured, creating empty initial FLModel")
+            model = FLModel(params_type=ParamsType.FULL, params={})
+
+        # persistor uses Learnable format to save model
+        ml = make_model_learnable(weights=model.params, meta_props=model.meta)
+        self.fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, ml, private=True, sticky=True)
+        self.event(AppEventType.INITIAL_MODEL_LOADED)
+
+        return model
+
+    def save_model(self, model):
+        if self._persistor:
+            self.info("Start persist model on server.")
+            self.event(AppEventType.BEFORE_LEARNABLE_PERSIST)
+            # persistor uses Learnable format to save model
+            ml = make_model_learnable(weights=model.params, meta_props=model.meta)
+            self._persistor.save(ml, self.fl_ctx)
+            self.event(AppEventType.AFTER_LEARNABLE_PERSIST)
+            self.info("End persist model on server.")
+        else:
+            self.error("persistor not configured, model will not be saved")
 
     def stop_controller(self, fl_ctx: FLContext):
-        self._phase = AppConstants.PHASE_FINISHED
         self.fl_ctx = fl_ctx
         self.finalize()
-
-    def handle_event(self, event_type: str, fl_ctx: FLContext):
-        super().handle_event(event_type, fl_ctx)
-        if event_type == InfoCollector.EVENT_TYPE_GET_STATS:
-            collector = fl_ctx.get_prop(InfoCollector.CTX_KEY_STATS_COLLECTOR, None)
-            if collector:
-                if not isinstance(collector, GroupInfoCollector):
-                    raise TypeError("collector must be GroupInfoCollector but got {}".format(type(collector)))
-
-                collector.add_info(
-                    group_name=self._name,
-                    info={"phase": self._phase, "current_round": self._current_round, "num_rounds": self._num_rounds},
-                )
