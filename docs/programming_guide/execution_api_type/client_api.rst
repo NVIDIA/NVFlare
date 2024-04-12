@@ -175,16 +175,10 @@ On the other hand, the LauncherExecutor employs a sub-process to execute trainin
 and training scripts residing in separate processes. Communication between them is facilitated by either CellPipe
 (default) or FilePipe.
 
-When the training process involves either a single GPU or no GPUs, and the training script doesn't integrate third-party
-training systems, the in-process executor is preferable (when available in 2.5.0). For scenarios involving multi-GPU training or
-the utilization of external training infrastructure, opting for the Launcher executor might be more suitable.
-
 
 Choice of different Pipes
 =========================
-In the 2.5.x release, for most users, we recommend utilizing the default setting with the in-process executor
-(defaulting to memory-based data exchanges).
-Conversely, in the 2.4.x release, we suggest using the default setting with CellPipe for most users.
+We suggest using the default setting with CellPipe for most users.
 
 CellPipe facilitates TCP-based cell-to-cell connections between the Executor and training script processes on
 the local host. The term cell represents logical endpoints. This communication enables the exchange of models, metrics,
@@ -201,9 +195,6 @@ Configuration
 Different configurations are available for each type of executor.
 
 Definition lists:
-
-in-process executor configuration
-    will discuss in 2.5.0 release
 
 subprocess launcher Executor configuration
     In the config_fed_client in the FLARE app, in order to launch the training script we use the
