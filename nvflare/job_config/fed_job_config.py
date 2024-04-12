@@ -231,13 +231,16 @@ class FedJobConfig:
             )
 
     def _get_args(self, component, custom_dir):
-        constructor = component.__class__.__init__
-        parameters = inspect.signature(constructor).parameters
+        parameters = self._get_init_parameters(component)
         attrs = component.__dict__
         args = {}
 
         for param in parameters:
             attr_key = param if param in attrs.keys() else "_" + param
+
+            if attr_key in ["args", "kwargs"]:
+                continue
+
             if attr_key in attrs.keys() and parameters[param].default != attrs[attr_key]:
                 if type(attrs[attr_key]).__name__ in dir(builtins):
                     args[param] = attrs[attr_key]
@@ -250,6 +253,19 @@ class FedJobConfig:
                     }
 
         return args
+
+    def _get_init_parameters(self, component):
+        class__ = component.__class__
+        parameters = {}
+        self._retrieve_parameters(class__, parameters)
+        return parameters
+
+    def _retrieve_parameters(self, class__, parameters):
+        constructor = class__.__init__
+        parameters.update(inspect.signature(constructor).parameters)
+        for item in class__.__bases__:
+            parameters.update(self._retrieve_parameters(item, parameters))
+        return parameters
 
     def _get_filters(self, filters, custom_dir):
         r = []
