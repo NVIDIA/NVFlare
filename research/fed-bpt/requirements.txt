@@ -1,0 +1,8 @@
+transformers==4.38.2
+fastNLP==0.6.0
+datasets
+cma
+scikit-learn
+tensorboard
+cvxopt
+nvflare~=2.4.1rc
