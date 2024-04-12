@@ -176,7 +176,7 @@ and training scripts residing in separate processes. Communication between them 
 (default) or FilePipe.
 
 When the training process involves either a single GPU or no GPUs, and the training script doesn't integrate third-party
-training systems, the in-process executor is preferable (when available). For scenarios involving multi-GPU training or
+training systems, the in-process executor is preferable (when available in 2.5.0). For scenarios involving multi-GPU training or
 the utilization of external training infrastructure, opting for the Launcher executor might be more suitable.
 
 
