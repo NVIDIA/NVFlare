@@ -84,7 +84,7 @@ def main():
     df["uid"] = df.index.to_series().map(lambda x: "uid_" + str(x))
 
     # split cols
-    cols_labelowner = int(cols_total * 0.2)
+    cols_labelowner = int(cols_total * 0.4)
     site_col_size = split_num_proportion(cols_total-cols_labelowner, args.site_num-1)
     site_col_size.insert(0, cols_labelowner)
     site_row_size = split_num_proportion(rows_total - rows_overlap, args.site_num)
@@ -117,6 +117,15 @@ def main():
             os.makedirs(data_path, exist_ok=True)
 
         df_split.to_csv(path_or_buf=os.path.join(data_path, args.out_file), index=False)
+
+        df_train_valid = df_split.drop("uid", axis=1)
+        # assign first 80% rows to train
+        df_train = df_train_valid.iloc[: int(0.8 * df_train_valid.shape[0])]
+        # assign last 20% rows to valid
+        df_valid = df_train_valid.iloc[int(0.8 * df_train_valid.shape[0]) :]
+        # save train and valid data
+        df_train.to_csv(path_or_buf=os.path.join(data_path, "train.csv"), index=False, header=False)
+        df_valid.to_csv(path_or_buf=os.path.join(data_path, "valid.csv"), index=False, header=False)
 
 
 if __name__ == "__main__":

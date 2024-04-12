@@ -27,7 +27,7 @@
       "path": "local_psi.LocalPSI",
       "args": {
         "psi_writer_id": "psi_writer",
-        "data_split_path": "/media/ziyuexu/Research/Experiment/SecureFedXGBoost/NVFlare/dataset/vertical_xgb_data/site-x/data.csv",
+        "data_split_path": "/media/ziyuexu/Research/Experiment/SecureFedXGBoost/NVFlare/nvflare_secureboost/examples/advanced/xgboost_secure/dataset/vertical_xgb_data_lite/site-x/data.csv",
         "id_col": "uid"
       }
     },

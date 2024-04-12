@@ -42,8 +42,8 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         else:
             label = ""
         # for Vertical XGBoost, read from csv with label_column and set data_split_mode to 1 for column mode
-        dtrain = xgb.DMatrix(train_path + f"?format=csv{label}", data_split_mode=1)
-        dvalid = xgb.DMatrix(valid_path + f"?format=csv{label}", data_split_mode=1)
+        dtrain = xgb.DMatrix(train_path + f"?format=csv{label}", data_split_mode=3)
+        dvalid = xgb.DMatrix(valid_path + f"?format=csv{label}", data_split_mode=3)
 
         if PRINT_SAMPLE:
             # print number of rows and columns for each worker
@@ -69,14 +69,14 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         # Run training, all the features in training API is available.
         bst = xgb.train(param, dtrain, num_round, evals=watchlist)
 
-        # Save the model, only ask process 0 to save the model.
+        # Save the model, every rank's model is different.
+        bst.save_model(f"./model/test.model.secure{xgb.collective.get_rank()}.json")
         if xgb.collective.get_rank() == 0:
-            bst.save_model("./model/test.model.base.json")
             xgb.collective.communicator_print("Finished training\n")
 
 
 def run_federated() -> None:
-    port = 9999
+    port = 7777
     world_size = int(sys.argv[1])
 
     server = multiprocessing.Process(target=run_server, args=(port, world_size))

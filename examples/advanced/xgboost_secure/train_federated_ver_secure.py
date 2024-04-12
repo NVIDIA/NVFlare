@@ -8,6 +8,7 @@ import xgboost.federated
 import pandas as pd
 
 PRINT_SAMPLE = False
+DATASET_ROOT = "./dataset/vertical_xgb_data"
 
 def run_server(port: int, world_size: int) -> None:
     xgboost.federated.run_federated_server(port, world_size)
@@ -18,14 +19,19 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         'xgboost_communicator': 'federated',
         'federated_server_address': f'localhost:{port}',
         'federated_world_size': world_size,
-        'federated_rank': rank
+        'federated_rank': rank,
+        'plugin_name': 'dummy',
+        'loader_params_key': 'LIBRARY_PATH',
+        'loader_params_map': '/tmp',
+        'proc_params_key': '',
+        'proc_params_map': '',
     }
 
     # Always call this before using distributed module
     with xgb.collective.CommunicatorContext(**communicator_env):
         # Specify file path, rank 0 as the label owner, others as the feature owner
-        train_path = f'./dataset/vertical_xgb_data/site-{rank + 1}/train.csv'
-        valid_path = f'./dataset/vertical_xgb_data/site-{rank + 1}/valid.csv'
+        train_path = f'{DATASET_ROOT}/site-{rank + 1}/train.csv'
+        valid_path = f'{DATASET_ROOT}/site-{rank + 1}/valid.csv'
 
         # Load file directly to tell the match from loading with DMatrix
         df_train = pd.read_csv(train_path, header=None)

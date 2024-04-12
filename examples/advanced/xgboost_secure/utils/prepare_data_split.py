@@ -22,6 +22,7 @@ from sklearn.model_selection import train_test_split
 def data_split_args_parser():
     parser = argparse.ArgumentParser(description="Generate training/testing split for dataset")
     parser.add_argument("--data_path", type=str, help="Path to data file")
+    parser.add_argument("--row_ratio", type=float, help="Ratio of subsample row set")
     parser.add_argument("--test_ratio", type=float, help="Ratio of testing set")
     parser.add_argument(
         "--out_folder",
@@ -37,10 +38,26 @@ def main():
     args = parser.parse_args()
 
     df = pd.read_csv(args.data_path)
+    df_pos = df[df.Class == 1]
+    df_neg = df[df.Class == 0]
+    # print the number of positive and negative samples
+    print("Number of positive samples: ", len(df_pos))
+    print("Number of negative samples: ", len(df_neg))
+
+    # specify negtive ratio
+    pos_ratio = args.row_ratio
+    neg_ratio = pos_ratio * len(df_pos) / len(df_neg)
+
+    df_pos = df_pos.sample(frac=pos_ratio)
+    df_neg = df_neg.sample(frac=neg_ratio)
 
     # Split data into training and testing sets
-    X = df.drop("Class", axis=1)
-    y = df.Class
+    X_pos = df_pos.drop(["Class","Time","Amount","V18","V19","V20","V21","V22","V23","V24","V25","V26","V27","V28"], axis=1)
+    y_pos = df_pos.Class
+    X_neg = df_neg.drop(["Class","Time","Amount","V18","V19","V20","V21","V22","V23","V24","V25","V26","V27","V28"], axis=1)
+    y_neg = df_neg.Class
+    X = pd.concat([X_pos, X_neg])
+    y = pd.concat([y_pos, y_neg])
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=args.test_ratio, random_state=77)
     df_train = pd.concat([y_train, X_train], axis=1)
     df_test = pd.concat([y_test, X_test], axis=1)
@@ -48,8 +65,8 @@ def main():
     # Save training and testing sets
     if not os.path.exists(args.out_folder):
         os.makedirs(args.out_folder, exist_ok=True)
-    df_train.to_csv(path_or_buf=os.path.join(args.out_folder, "train.csv"), index=False)
-    df_test.to_csv(path_or_buf=os.path.join(args.out_folder, "test.csv"), index=False)
+    df_train.to_csv(path_or_buf=os.path.join(args.out_folder, "train_lite.csv"), index=False, header=False)
+    df_test.to_csv(path_or_buf=os.path.join(args.out_folder, "test_lite.csv"), index=False, header=False)
 
 
 if __name__ == "__main__":
