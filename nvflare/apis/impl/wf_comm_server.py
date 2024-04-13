@@ -20,7 +20,7 @@ from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, SendOrder, Task, TaskCompletionStatus
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, SystemConfigs
+from nvflare.apis.fl_constant import FLContextKey, SystemConfigs, ConfigVarName
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import job_from_meta
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_copy
@@ -39,12 +39,6 @@ from .task_manager import TaskCheckStatus, TaskManager
 _TASK_KEY_ENGINE = "___engine"
 _TASK_KEY_MANAGER = "___mgr"
 _TASK_KEY_DONE = "___done"
-
-# wait this long since client death report before treating the client as dead
-_CONFIG_VAR_DEAD_CLIENT_GRACE_PERIOD = "dead_client_grace_period"
-
-# wait this long since job schedule time before starting to check dead clients
-_CONFIG_VAR_DEAD_CLIENT_CHECK_LEAD_TIME = "dead_client_check_lead_time"
 
 
 def _check_positive_int(name, value):
@@ -80,7 +74,6 @@ def _get_client_task(target, task: Task):
 
 
 class _DeadClientStatus:
-
     def __init__(self):
         self.report_time = time.time()
         self.death_time = None
@@ -103,7 +96,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         self._task_monitor = threading.Thread(target=self._monitor_tasks, args=(), daemon=True)
         self._task_check_period = task_check_period
         self._dead_client_grace = 60.0
-        self._dead_clients = {}  # clients that reported the job is dead on it: name => _DeadClientStatus
+        self._dead_clients = {}  # clients reported dead: name => _DeadClientStatus
         self._dead_clients_lock = Lock()  # need lock since dead_clients can be modified from different threads
         # make sure check_tasks, process_task_request, process_submission does not interfere with each other
         self._controller_lock = Lock()
@@ -125,9 +118,8 @@ class WFCommServer(FLComponent, WFCommSpec):
 
         self._engine = engine
         self._dead_client_grace = ConfigService.get_float_var(
-            name=_CONFIG_VAR_DEAD_CLIENT_GRACE_PERIOD,
-            conf=SystemConfigs.APPLICATION_CONF,
-            default=60.0)
+            name=ConfigVarName.DEAD_CLIENT_GRACE_PERIOD, conf=SystemConfigs.APPLICATION_CONF, default=60.0
+        )
         self._task_monitor.start()
 
     def _try_again(self) -> Tuple[str, str, Optional[Shareable]]:
@@ -968,31 +960,29 @@ class WFCommServer(FLComponent, WFCommSpec):
         """
         now = time.time()
         lead_time = ConfigService.get_float_var(
-            name=_CONFIG_VAR_DEAD_CLIENT_CHECK_LEAD_TIME,
-            conf=SystemConfigs.APPLICATION_CONF,
-            default=30.0)
+            name=ConfigVarName.DEAD_CLIENT_CHECK_LEAD_TIME, conf=SystemConfigs.APPLICATION_CONF, default=30.0
+        )
         if now - task.schedule_time < lead_time:
             # due to potential race conditions, we'll wait for at least 1 minute after the task
             # is started before checking dead clients.
             return None
 
         dead_clients = []
-        with self._dead_clients_lock:
-            for target in task.targets:
-                ct = _get_client_task(target, task)
-                if ct is not None and ct.result_received_time:
-                    # response has been received from this client
-                    continue
+        for target in task.targets:
+            ct = _get_client_task(target, task)
+            if ct is not None and ct.result_received_time:
+                # response has been received from this client
+                continue
 
-                # either we have not sent the task to this client or we have not received response
-                # is the client already dead?
-                if self.get_client_disconnect_time(target):
-                    # this client is dead - remember it
-                    dead_clients.append(target)
-                else:
-                    # this client is still alive
-                    # we let the task continue its course since we still have live clients
-                    return None
+            # either we have not sent the task to this client or we have not received response
+            # is the client already dead?
+            if self.get_client_disconnect_time(target):
+                # this client is dead - remember it
+                dead_clients.append(target)
+            else:
+                # this client is still alive
+                # we let the task continue its course since we still have live clients
+                return None
 
         return dead_clients
 
@@ -1027,41 +1017,41 @@ class WFCommServer(FLComponent, WFCommSpec):
 
         with self._engine.new_context() as fl_ctx:
             clients = self._engine.get_clients()
-            with self._dead_clients_lock:
-                alive_clients = []
-                dead_clients = []
+            alive_clients = []
+            dead_clients = []
 
-                for client in clients:
-                    if self.get_client_disconnect_time(client.name):
-                        dead_clients.append(client.name)
-                    else:
-                        alive_clients.append(client.name)
+            for client in clients:
+                if self.get_client_disconnect_time(client.name):
+                    dead_clients.append(client.name)
+                else:
+                    alive_clients.append(client.name)
 
-                if not dead_clients:
-                    return False
+            if not dead_clients:
+                return False
 
-                if not alive_clients:
-                    self.log_error(fl_ctx, f"All clients are dead: {dead_clients}")
+            if not alive_clients:
+                self.log_error(fl_ctx, f"All clients are dead: {dead_clients}")
+                return True
+
+            job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
+            job = job_from_meta(job_meta)
+            if len(alive_clients) < job.min_sites:
+                self.log_error(fl_ctx, f"Alive clients {len(alive_clients)} < required min {job.min_sites}")
+                return True
+
+            # check required clients:
+            if dead_clients and job.required_sites:
+                dead_required_clients = [c for c in dead_clients if c in job.required_sites]
+                if dead_required_clients:
+                    self.log_error(fl_ctx, f"Required client(s) dead: {dead_required_clients}")
                     return True
-
-                job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
-                job = job_from_meta(job_meta)
-                if len(alive_clients) < job.min_sites:
-                    self.log_error(fl_ctx, f"Alive clients {len(alive_clients)} < required min {job.min_sites}")
-                    return True
-
-                # check required clients:
-                if dead_clients and job.required_sites:
-                    dead_required_clients = [c for c in dead_clients if c in job.required_sites]
-                    if dead_required_clients:
-                        self.log_error(fl_ctx, f"Required client(s) dead: {dead_required_clients}")
-                        return True
             return False
 
-    def client_is_active(self, client_name: str, fl_ctx: FLContext):
+    def client_is_active(self, client_name: str, reason: str, fl_ctx: FLContext):
         with self._dead_clients_lock:
+            self.log_debug(fl_ctx, f"client {client_name} is active: {reason}")
             if client_name in self._dead_clients:
-                self.log_info(fl_ctx, f"Client {client_name} is removed from watch list")
+                self.log_info(fl_ctx, f"Client {client_name} is removed from watch list: {reason}")
                 status = self._dead_clients.pop(client_name)
                 if status.death_time:
                     self.log_info(fl_ctx, f"Client {client_name} is reconnected")
@@ -1079,6 +1069,5 @@ class WFCommServer(FLComponent, WFCommSpec):
         """
         status = self._dead_clients.get(client_name)
         if status:
-            assert isinstance(status, _DeadClientStatus)
             return status.death_time
         return None

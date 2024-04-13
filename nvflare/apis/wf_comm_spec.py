@@ -305,11 +305,12 @@ class WFCommSpec(ABC):
         """
         raise NotImplementedError
 
-    def client_is_active(self, client_name: str, fl_ctx: FLContext):
+    def client_is_active(self, client_name: str, reason: str, fl_ctx: FLContext):
         """Called by the Engine to notify us that the client is active .
 
         Args:
             client_name: name of the client that is active
+            reason: why client is considered active
             fl_ctx: the FLContext
         """
         raise NotImplementedError

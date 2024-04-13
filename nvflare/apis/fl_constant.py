@@ -465,6 +465,12 @@ class ConfigVarName:
     # client and server: query interval for reliable message
     RM_QUERY_INTERVAL = "rm_query_interval"
 
+    # server: wait this long since client death report before treating the client as dead/disconnected
+    DEAD_CLIENT_GRACE_PERIOD = "dead_client_grace_period"
+
+    # server: wait this long since job schedule time before starting to check dead/disconnected clients
+    DEAD_CLIENT_CHECK_LEAD_TIME = "dead_client_check_lead_time"
+
 
 class SystemVarName:
     """

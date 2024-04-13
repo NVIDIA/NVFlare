@@ -116,7 +116,7 @@ class ServerRunner(TBI):
 
     def _handle_sync_runner(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         # simply ack
-        self._report_client_active(fl_ctx)
+        self._report_client_active("syncRunner", fl_ctx)
         return make_reply(ReturnCode.OK)
 
     def _execute_run(self):
@@ -279,7 +279,7 @@ class ServerRunner(TBI):
             self.log_debug(fl_ctx, "invalid task request: no peer context - asked client to try again later")
             return self._task_try_again()
 
-        self._report_client_active(fl_ctx)
+        self._report_client_active("getTask", fl_ctx)
 
         peer_job_id = peer_ctx.get_job_id()
         if not peer_job_id or peer_job_id != self.job_id:
@@ -410,7 +410,7 @@ class ServerRunner(TBI):
             fl_ctx: FLContext
         """
         self.log_info(fl_ctx, f"got result from client {client.name} for task: name={task_name}, id={task_id}")
-        self._report_client_active(fl_ctx)
+        self._report_client_active("submitTaskResult", fl_ctx)
 
         if not isinstance(result, Shareable):
             self.log_error(fl_ctx, "invalid result submission: must be Shareable but got {}".format(type(result)))
@@ -506,21 +506,21 @@ class ServerRunner(TBI):
                     "Error processing client result by {}: {}".format(self.current_wf.id, secure_format_exception(e)),
                 )
 
-    def _report_client_active(self, fl_ctx: FLContext):
+    def _report_client_active(self, reason: str, fl_ctx: FLContext):
         with self.wf_lock:
             if self.current_wf and self.current_wf.controller:
                 peer_ctx = fl_ctx.get_peer_context()
                 assert isinstance(peer_ctx, FLContext)
                 client_name = peer_ctx.get_identity_name()
-                self.current_wf.controller.communicator.client_is_active(client_name, fl_ctx)
+                self.current_wf.controller.communicator.client_is_active(client_name, reason, fl_ctx)
 
     def _handle_job_heartbeat(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         self.log_debug(fl_ctx, "received client job_heartbeat")
-        self._report_client_active(fl_ctx)
+        self._report_client_active("jobHeartbeat", fl_ctx)
         return make_reply(ReturnCode.OK)
 
     def _handle_task_check(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
-        self._report_client_active(fl_ctx)
+        self._report_client_active("taskCheck", fl_ctx)
         task_id = request.get_header(ReservedHeaderKey.TASK_ID)
         if not task_id:
             self.log_error(fl_ctx, f"missing {ReservedHeaderKey.TASK_ID} in task_check request")
