@@ -144,7 +144,7 @@ class FedJobConfig:
             dest_file = os.path.join(custom_dir, script)
             package = "".join(script.rsplit(".py", 1)).replace(os.sep, ".")
             if "." in package:
-                module = package.rsplit('.', 1)[0]
+                module = package.rsplit(".", 1)[0]
             else:
                 module = ""
             self._copy_source_file(custom_dir, module, script, dest_file)
@@ -183,7 +183,7 @@ class FedJobConfig:
             input_source = import_module
             if import_module.startswith("."):
                 if module:
-                    import_module = module.rsplit('.', 1)[0] + import_module
+                    import_module = module.rsplit(".", 1)[0] + import_module
                 else:
                     import_module = ""
                 input_source = input_source[1:]
