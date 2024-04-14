@@ -142,12 +142,7 @@ class FedJobConfig:
     def _copy_ext_scripts(self, custom_dir, ext_scripts):
         for script in ext_scripts:
             dest_file = os.path.join(custom_dir, script)
-            package = "".join(script.rsplit(".py", 1)).replace(os.sep, ".")
-            if "." in package:
-                module = package.rsplit('.', 1)[0]
-            else:
-                module = ""
-            self._copy_source_file(custom_dir, module, script, dest_file)
+            self._copy_source_file(custom_dir, script, dest_file)
 
     def _get_class_path(self, obj, custom_dir):
         module = obj.__module__
@@ -163,35 +158,16 @@ class FedJobConfig:
                 self.custom_modules.append(module)
                 os.makedirs(custom_dir, exist_ok=True)
                 dest_file = os.path.join(custom_dir, module.replace(".", os.sep) + ".py")
-                # dest_file = os.path.join(custom_dir, input_source.replace(".", os.sep) + ".py")
 
-                self._copy_source_file(custom_dir, module, source_file, dest_file)
+                self._copy_source_file(custom_dir, source_file, dest_file)
 
-    def _copy_source_file(self, custom_dir, module, source_file, dest_file):
+    def _copy_source_file(self, custom_dir, source_file, dest_file):
         os.makedirs(custom_dir, exist_ok=True)
-        source_dir = os.path.dirname(source_file)
         with open(source_file, "r") as sf:
             import_lines = list(self.locate_imports(sf, dest_file))
         for line in import_lines:
             import_module = line.split(" ")[1]
-
-            # # if import_module.startswith("."):
-            # #     import_module = module + import_module
-            #
-            # import_source_file = os.path.join(source_dir, import_module.replace(".", os.sep) + ".py")
-            input_source = import_module
-            if import_module.startswith("."):
-                if module:
-                    import_module = module + import_module
-                else:
-                    import_module = import_module.replace(".", "", 1)
-                import_source_file = import_module.replace(".", os.sep) + ".py"
-            else:
-                if module:
-                    import_module = module + "." + import_module
-                import_source_file = os.path.join(source_dir, input_source.replace(".", os.sep) + ".py")
-            # import_source_file = import_module.replace(".", os.sep) + ".py"
-
+            import_source_file = import_module.replace(".", os.sep) + ".py"
             if os.path.exists(import_source_file):
                 self._get_custom_file(custom_dir, import_module, import_source_file)
 
@@ -286,9 +262,11 @@ class FedJobConfig:
 
     def _retrieve_parameters(self, class__, parameters):
         constructor = class__.__init__
-        parameters.update(inspect.signature(constructor).parameters)
-        for item in class__.__bases__:
-            parameters.update(self._retrieve_parameters(item, parameters))
+        constructor__parameters = inspect.signature(constructor).parameters
+        parameters.update(constructor__parameters)
+        if "args" in constructor__parameters.keys() and "kwargs" in constructor__parameters.keys():
+            for item in class__.__bases__:
+                parameters.update(self._retrieve_parameters(item, parameters))
         return parameters
 
     def _get_filters(self, filters, custom_dir):
