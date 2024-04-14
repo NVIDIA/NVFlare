@@ -329,7 +329,7 @@ class ServerRunner(FLComponent):
                     return "", "", None
 
                 if self.current_wf.responder:
-                    self.current_wf.responder.process_job_heartbeat(fl_ctx=fl_ctx)
+                    self.current_wf.responder.process_job_heartbeat(fl_ctx=fl_ctx, reason="getTask")
 
                 task_name, task_id, task_data = self.current_wf.responder.process_task_request(client, fl_ctx)
 
@@ -371,7 +371,6 @@ class ServerRunner(FLComponent):
             try:
                 if self.current_wf is None:
                     return
-
                 self.current_wf.responder.handle_dead_job(client_name=client_name, fl_ctx=fl_ctx)
             except Exception as e:
                 self.log_exception(
@@ -445,7 +444,7 @@ class ServerRunner(FLComponent):
                     return
 
                 if self.current_wf.responder:
-                    self.current_wf.responder.process_job_heartbeat(fl_ctx)
+                    self.current_wf.responder.process_job_heartbeat(fl_ctx, "submitTask")
 
                 wf_id = result.get_cookie(ReservedHeaderKey.WORKFLOW, None)
                 if wf_id is not None and wf_id != self.current_wf.id:
@@ -508,7 +507,7 @@ class ServerRunner(FLComponent):
         self.log_debug(fl_ctx, "received client job_heartbeat")
         with self.wf_lock:
             if self.current_wf and self.current_wf.responder:
-                self.current_wf.responder.process_job_heartbeat(fl_ctx=fl_ctx)
+                self.current_wf.responder.process_job_heartbeat(fl_ctx=fl_ctx, reason="jobHeartbeat")
         return make_reply(ReturnCode.OK)
 
     def _handle_task_check(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
@@ -525,7 +524,7 @@ class ServerRunner(FLComponent):
                 return make_reply(ReturnCode.TASK_UNKNOWN)
 
             if self.current_wf.responder:
-                self.current_wf.responder.process_job_heartbeat(fl_ctx)
+                self.current_wf.responder.process_job_heartbeat(fl_ctx, "taskCheck")
 
             # filter task result
             task = self.current_wf.responder.process_task_check(task_id=task_id, fl_ctx=fl_ctx)
