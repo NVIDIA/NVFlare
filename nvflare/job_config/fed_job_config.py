@@ -142,7 +142,12 @@ class FedJobConfig:
     def _copy_ext_scripts(self, custom_dir, ext_scripts):
         for script in ext_scripts:
             dest_file = os.path.join(custom_dir, script)
-            self._copy_source_file(custom_dir, script, dest_file)
+            package = "".join(script.rsplit(".py", 1)).replace(os.sep, ".")
+            if "." in package:
+                module = package.rsplit('.', 1)[0]
+            else:
+                module = ""
+            self._copy_source_file(custom_dir, module, script, dest_file)
 
     def _get_class_path(self, obj, custom_dir):
         module = obj.__module__
@@ -155,19 +160,32 @@ class FedJobConfig:
         package = module.split(".")[0]
         if os.path.exists(source_file):
             if package not in FL_PACKAGES and module not in self.custom_modules:
-                self.custom_modules.append(module)
-                os.makedirs(custom_dir, exist_ok=True)
-                dest_file = os.path.join(custom_dir, module.replace(".", os.sep) + ".py")
+                module_path = module.replace(".", os.sep)
+                if module_path in source_file:
+                    index = source_file.index(module_path)
+                    dest = source_file[index:]
 
-                self._copy_source_file(custom_dir, source_file, dest_file)
+                    self.custom_modules.append(module)
+                    os.makedirs(custom_dir, exist_ok=True)
+                    # dest_file = os.path.join(custom_dir, module.replace(".", os.sep) + ".py")
+                    dest_file = os.path.join(custom_dir, dest)
 
-    def _copy_source_file(self, custom_dir, source_file, dest_file):
+                    self._copy_source_file(custom_dir, module, source_file, dest_file)
+
+    def _copy_source_file(self, custom_dir, module, source_file, dest_file):
         os.makedirs(custom_dir, exist_ok=True)
+        source_dir = os.path.dirname(source_file)
         with open(source_file, "r") as sf:
             import_lines = list(self.locate_imports(sf, dest_file))
         for line in import_lines:
             import_module = line.split(" ")[1]
-            import_source_file = import_module.replace(".", os.sep) + ".py"
+
+            input_source = import_module
+            if import_module.startswith("."):
+                import_module = module.rsplit('.', 1)[0] + import_module
+                input_source = input_source[1:]
+
+            import_source_file = os.path.join(source_dir, input_source.replace(".", os.sep) + ".py")
             if os.path.exists(import_source_file):
                 self._get_custom_file(custom_dir, import_module, import_source_file)
 
