@@ -182,7 +182,10 @@ class FedJobConfig:
 
             input_source = import_module
             if import_module.startswith("."):
-                import_module = module.rsplit('.', 1)[0] + import_module
+                if module:
+                    import_module = module.rsplit('.', 1)[0] + import_module
+                else:
+                    import_module = ""
                 input_source = input_source[1:]
 
             import_source_file = os.path.join(source_dir, input_source.replace(".", os.sep) + ".py")
