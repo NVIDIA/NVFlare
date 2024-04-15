@@ -328,6 +328,9 @@ class AioGrpcDriver(BaseDriver):
             msg_iter = stub.Stream(connection.generate_output())
             conn_ctx.conn = connection
             await connection.read_loop(msg_iter)
+        except asyncio.CancelledError:
+            self.logger.error("CLIENT: RPC cancelled")
+            self.logger.error(secure_format_traceback())
         except grpc.FutureCancelledError:
             self.logger.info("CLIENT: Future cancelled")
         except Exception as ex:
