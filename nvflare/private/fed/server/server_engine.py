@@ -587,12 +587,13 @@ class ServerEngine(ServerEngineInternalSpec):
     def notify_dead_job(self, job_id: str, client_name: str, reason: str):
         shareable = Shareable()
         shareable.set_header(ServerCommandKey.FL_CLIENT, client_name)
+        shareable.set_header(ServerCommandKey.REASON, reason)
         self.send_command_to_child_runner_process(
             job_id=job_id,
             command_name=ServerCommandNames.HANDLE_DEAD_JOB,
             command_data=shareable,
             timeout=0.0,
-            optional=True
+            optional=True,
         )
         self.logger.warning(f"notified SJ of dead-job: {job_id=}; {client_name=}; {reason=}")
 

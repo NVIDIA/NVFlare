@@ -20,7 +20,7 @@ from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, SendOrder, Task, TaskCompletionStatus
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, SystemConfigs, ConfigVarName
+from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import job_from_meta
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_copy
@@ -161,6 +161,8 @@ class WFCommServer(FLComponent, WFCommSpec):
             if not self._dead_clients.get(client_name):
                 self.log_warning(fl_ctx, f"client {client_name} is placed on dead client watch list")
                 self._dead_clients[client_name] = _DeadClientStatus()
+            else:
+                self.log_warning(fl_ctx, f"discarded dead client report {client_name=}: already on watch list")
 
     def process_task_request(self, client: Client, fl_ctx: FLContext) -> Tuple[str, str, Shareable]:
         """Called by runner when a client asks for a task.

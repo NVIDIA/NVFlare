@@ -36,7 +36,6 @@ from nvflare.apis.fl_constant import (
 )
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import NotAuthenticated
-from nvflare.apis.shareable import Shareable
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.cell import Cell
@@ -140,13 +139,8 @@ class BaseServer(ABC):
                 self.lock.release()
         except RuntimeError:
             self.logger.info("canceling sync locks")
-        try:
-            # if self.cell:
-            #     self.cell.stop()
-            pass
-        finally:
-            self.logger.info("server off")
-            return 0
+        self.logger.info("server off")
+        return 0
 
     def deploy(self, args, grpc_args=None, secure_train=False):
         """Start a grpc server and listening the designated port."""

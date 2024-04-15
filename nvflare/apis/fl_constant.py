@@ -264,6 +264,7 @@ class ServerCommandKey(object):
     CLIENTS = "clients"
     COLLECTOR = "collector"
     TURN_TO_COLD = "__turn_to_cold__"
+    REASON = "reason"
 
 
 class FedEventHeader(object):
