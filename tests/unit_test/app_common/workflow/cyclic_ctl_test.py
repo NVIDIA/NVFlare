@@ -24,8 +24,15 @@ from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.apis.wf_comm_spec import WFCommSpec
 from nvflare.app_common.abstract.learnable import Learnable
 from nvflare.app_common.workflows.cyclic_ctl import CyclicController, RelayOrder
+
+
+class MockCommunicator(WFCommSpec):
+    def get_client_disconnect_time(self, client_name):
+        return None
+
 
 SITE_1_ID = uuid.uuid4()
 SITE_2_ID = uuid.uuid4()
@@ -71,6 +78,7 @@ class TestCyclicController:
     @pytest.mark.parametrize("order,active_clients,expected_result", ORDER_TEST_CASES)
     def test_get_relay_orders(self, order, active_clients, expected_result):
         ctl = CyclicController(order=order)
+        ctl.set_communicator(MockCommunicator())
         ctx = FLContext()
         ctl._participating_clients = active_clients
         targets = ctl._get_relay_orders(ctx)
