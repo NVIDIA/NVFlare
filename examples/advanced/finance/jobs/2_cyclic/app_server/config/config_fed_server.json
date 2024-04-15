@@ -24,7 +24,7 @@
     "workflows": [
         {
             "id": "cyclic_ctl",
-            "name": "CyclicController",
+            "path": "nvflare.app_common.workflows.cyclic_ctl.CyclicController",
             "args": {
                 "num_rounds": 50,
                 "task_assignment_timeout": 60,

@@ -23,7 +23,6 @@ import psutil
 from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeComponentError
-from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.security import hash_password
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.private.defs import SSLConstants
@@ -106,9 +105,9 @@ def version_check():
 
 
 def init_security_content_service(workspace_dir):
-    os.makedirs(os.path.join(workspace_dir, WorkspaceConstants.STARTUP_FOLDER_NAME), exist_ok=True)
-    workspace_obj = Workspace(root_dir=workspace_dir)
-    SecurityContentService.initialize(content_folder=workspace_obj.get_startup_kit_dir())
+    content_folder_path = os.path.join(workspace_dir, WorkspaceConstants.STARTUP_FOLDER_NAME)
+    os.makedirs(content_folder_path, exist_ok=True)
+    SecurityContentService.initialize(content_folder=content_folder_path)
 
 
 def component_security_check(fl_ctx: FLContext):
