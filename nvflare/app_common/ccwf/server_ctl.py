@@ -345,7 +345,9 @@ class ServerSideController(Controller):
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.BEFORE_PROCESS_TASK_REQUEST:
-            self._update_client_status(fl_ctx)
+            peer_ctx = fl_ctx.get_peer_context()
+            if peer_ctx and self.workflow_id in peer_ctx.get_prop(Constant.STATUS_REPORTS, {}):
+                self._update_client_status(fl_ctx)
 
     def process_config_reply(self, client_name: str, reply: Shareable, fl_ctx: FLContext) -> bool:
         return True
