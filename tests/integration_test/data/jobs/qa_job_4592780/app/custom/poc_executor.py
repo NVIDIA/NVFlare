@@ -1,7 +1,9 @@
 # Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
-from datetime import datetime
 import logging
-import random, re
+import random
+import re
+from datetime import datetime
+
 import torch
 
 # Client API
@@ -21,7 +23,7 @@ def main():
 
     # 'site-2'
     site_name = input_model.meta.get("site_name")
-    multiplier = re.search(r'\d+', site_name).group()
+    multiplier = re.search(r"\d+", site_name).group()
     print("@@@ site_name: ", site_name)
 
     start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -55,15 +57,17 @@ def main():
         # between 0-1, increase with time
         t = time.time() / 1e10
         print(f"fake evaluate data: {data}")
-        print(f"fake evaluate result: {t}, generated at {datetime.utcfromtimestamp(t * 1e10).strftime('%Y-%m-%d %H:%M:%S')}")
+        print(
+            f"fake evaluate result: {t}, generated at {datetime.utcfromtimestamp(t * 1e10).strftime('%Y-%m-%d %H:%M:%S')}"
+        )
         return t
-    
+
     accuracy = evaluate(params)
 
     output_model = flare.FLModel(
         params=params,
         metrics={"accuracy": accuracy},
-        meta={"NUM_STEPS_CURRENT_ROUND": 2, "start": start_time, "end": end_time}
+        meta={"NUM_STEPS_CURRENT_ROUND": 2, "start": start_time, "end": end_time},
     )
 
     print("@@@ output_model: ", output_model)

@@ -1,17 +1,21 @@
 # Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
-from datetime import datetime
-import nvflare.client as flare
-import torch
-import re
-import random
 import logging
+import random
+import re
+from datetime import datetime
+
+import torch
+
+import nvflare.client as flare
 
 
 def evaluate(data):
 
     t = time.time() / 1e10
     print(f"fake evaluate data: {data}")
-    print(f"fake evaluate result: {t}, generated at {datetime.utcfromtimestamp(t * 1e10).strftime('%Y-%m-%d %H:%M:%S')}")
+    print(
+        f"fake evaluate result: {t}, generated at {datetime.utcfromtimestamp(t * 1e10).strftime('%Y-%m-%d %H:%M:%S')}"
+    )
     return t
 
 
@@ -24,7 +28,7 @@ def main():
     print("@@@ Round number in this round: ", round_num)
 
     site_name = input_model.meta.get("site_name")
-    multiplier = re.search(r'\d+', site_name).group()
+    multiplier = re.search(r"\d+", site_name).group()
     print("@@@ site_name: ", site_name)
 
     start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -46,14 +50,14 @@ def main():
     end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     logging.info("Finished Training")
 
-    params ={ "fc1.weight": weight, "fc1.bias": bias }
+    params = {"fc1.weight": weight, "fc1.bias": bias}
 
     accuracy = evaluate(params)
 
     output_model = flare.FLModel(
         params=params,
         metrics={"accuracy": accuracy},
-        meta={"NUM_STEPS_CURRENT_ROUND": 2, "start": start_time, "end": end_time}
+        meta={"NUM_STEPS_CURRENT_ROUND": 2, "start": start_time, "end": end_time},
     )
 
     print("@@@ output_model: ", output_model)

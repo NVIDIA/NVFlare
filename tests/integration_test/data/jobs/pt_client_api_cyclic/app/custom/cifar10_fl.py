@@ -22,7 +22,6 @@ from net import Net
 # (1) import nvflare client API
 import nvflare.client as flare
 
-
 # (optional) set a fix place so we don't need to download everytime
 DATASET_PATH = "/tmp/nvflare/data"
 # (optional) We change to use GPU to speed things up.
