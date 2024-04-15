@@ -31,7 +31,18 @@ META_JSON = "meta.json"
 
 
 class FedJobConfig:
+    """FedJobConfig represents the job in the NVFlare."""
+
     def __init__(self, job_name, min_clients, mandatory_clients=None) -> None:
+        """FedJobConfig uses the job_name,  min_clients and optional mandatory_clients to create the object.
+        It also provides the method to add in the FedApp, the deployment map of the FedApp and participants,
+        and the resource _spec requirements of the participants if needed.
+
+        Args:
+            job_name: the name of the NVFlare job
+            min_clients: the minimum number of clients for the job
+            mandatory_clients: mandatory clients to run the job (optional)
+        """
         super().__init__()
 
         self.job_name = job_name
@@ -142,11 +153,7 @@ class FedJobConfig:
     def _copy_ext_scripts(self, custom_dir, ext_scripts):
         for script in ext_scripts:
             dest_file = os.path.join(custom_dir, script)
-            package = "".join(script.rsplit(".py", 1)).replace(os.sep, ".")
-            if "." in package:
-                module = package.rsplit(".", 1)[0]
-            else:
-                module = ""
+            module = "".join(script.rsplit(".py", 1)).replace(os.sep, ".")
             self._copy_source_file(custom_dir, module, script, dest_file)
 
     def _get_class_path(self, obj, custom_dir):
@@ -180,15 +187,14 @@ class FedJobConfig:
         for line in import_lines:
             import_module = line.split(" ")[1]
 
-            input_source = import_module
+            import_source = import_module
             if import_module.startswith("."):
-                if module:
-                    import_module = module.rsplit(".", 1)[0] + import_module
-                else:
-                    import_module = ""
-                input_source = input_source[1:]
+                import_source = import_source[1:]
+                new_module = module.split(".")[0:-1]
+                new_module.append(import_source)
+                import_module = ".".join(new_module)
 
-            import_source_file = os.path.join(source_dir, input_source.replace(".", os.sep) + ".py")
+            import_source_file = os.path.join(source_dir, import_source.replace(".", os.sep) + ".py")
             if os.path.exists(import_source_file):
                 self._get_custom_file(custom_dir, import_module, import_source_file)
 
