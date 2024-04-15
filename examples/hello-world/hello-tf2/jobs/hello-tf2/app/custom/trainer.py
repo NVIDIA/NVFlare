@@ -14,7 +14,7 @@
 
 import os
 
-os.enviro["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
+os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
 
 import numpy as np
 import tensorflow as tf
