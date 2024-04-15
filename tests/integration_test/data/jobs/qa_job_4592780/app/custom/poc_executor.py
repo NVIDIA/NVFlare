@@ -1,4 +1,4 @@
-import time
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 from datetime import datetime
 import logging
 import random, re

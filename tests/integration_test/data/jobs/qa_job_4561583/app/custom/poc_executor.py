@@ -1,4 +1,4 @@
-from typing import Any
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 
 import torch
 from torch import utils

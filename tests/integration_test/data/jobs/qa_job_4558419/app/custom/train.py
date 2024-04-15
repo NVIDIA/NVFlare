@@ -1,4 +1,4 @@
-import time
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 from datetime import datetime
 import nvflare.client as flare
 import torch
