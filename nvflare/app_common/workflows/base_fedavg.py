@@ -71,6 +71,7 @@ class BaseFedAvg(WFController):
         self.num_rounds = num_rounds
         self.start_round = start_round
         self.persist_every_n_rounds = persist_every_n_rounds
+
         self.current_round = None
 
     def sample_clients(self, num_clients):
@@ -106,7 +107,7 @@ class BaseFedAvg(WFController):
             raise ValueError(f"Result from client(s) {empty_clients} is empty!")
 
     @staticmethod
-    def _aggregate_fn(results: List[FLModel]) -> FLModel:
+    def aggregate_fn(results: List[FLModel]) -> FLModel:
         aggregation_helper = WeightedAggregationHelper()
         for _result in results:
             aggregation_helper.add(
@@ -140,7 +141,7 @@ class BaseFedAvg(WFController):
         self._check_results(results)
 
         if not aggregate_fn:
-            aggregate_fn = self._aggregate_fn
+            aggregate_fn = self.aggregate_fn
 
         self.info(f"aggregating {len(results)} update(s) at round {self.current_round}")
         try:

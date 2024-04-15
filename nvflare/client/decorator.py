@@ -27,7 +27,8 @@ def _replace_func_args(func, kwargs, model: FLModel):
 
 
 class ObjectHolder:
-    pass
+    def __init__(self):
+        self.metrics = None
 
 
 object_holder = ObjectHolder()
@@ -71,7 +72,7 @@ def train(
 
             if object_holder.metrics is not None:
                 return_value.metrics = object_holder.metrics
-                object_holder = None
+                object_holder = ObjectHolder()
 
             send(model=return_value)
 

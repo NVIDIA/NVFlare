@@ -32,3 +32,7 @@ test_configs:
   xgboost:
     - ./data/test_configs/standalone_job/xgb_histogram_examples.yml
     - ./data/test_configs/standalone_job/xgb_tree_examples.yml
+  client_api:
+    - ./data/test_configs/standalone_job/client_api.yml
+  client_api_qa:
+    - ./data/test_configs/standalone_job/client_api_qa.yml

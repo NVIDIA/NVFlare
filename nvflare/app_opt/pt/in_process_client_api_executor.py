@@ -36,6 +36,7 @@ class PTInProcessClientAPIExecutor(InProcessClientAPIExecutor):
         train_task_name: str = "train",
         evaluate_task_name: str = "evaluate",
         submit_model_task_name: str = "submit_model",
+        params_exchange_format=ExchangeFormat.PYTORCH,
     ):
         super(PTInProcessClientAPIExecutor, self).__init__(
             task_script_path=task_script_path,
@@ -48,7 +49,7 @@ class PTInProcessClientAPIExecutor(InProcessClientAPIExecutor):
             submit_model_task_name=submit_model_task_name,
             from_nvflare_converter_id=from_nvflare_converter_id,
             to_nvflare_converter_id=to_nvflare_converter_id,
-            params_exchange_format=ExchangeFormat.PYTORCH,
+            params_exchange_format=params_exchange_format,
             params_transfer_type=params_transfer_type,
             log_pull_interval=log_pull_interval,
         )

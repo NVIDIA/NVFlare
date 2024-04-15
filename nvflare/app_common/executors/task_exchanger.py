@@ -35,10 +35,10 @@ class TaskExchanger(Executor):
         pipe_id: str,
         read_interval: float = 0.5,
         heartbeat_interval: float = 5.0,
-        heartbeat_timeout: Optional[float] = 30.0,
+        heartbeat_timeout: Optional[float] = 60.0,
         resend_interval: float = 2.0,
         max_resends: Optional[int] = None,
-        peer_read_timeout: Optional[float] = 5.0,
+        peer_read_timeout: Optional[float] = 60.0,
         task_wait_time: Optional[float] = None,
         result_poll_interval: float = 0.5,
         pipe_channel_name=PipeChannelName.TASK,
@@ -48,19 +48,16 @@ class TaskExchanger(Executor):
         Args:
             pipe_id (str): component id of pipe.
             read_interval (float): how often to read from pipe.
-                Defaults to 0.5.
             heartbeat_interval (float): how often to send heartbeat to peer.
-                Defaults to 5.0.
             heartbeat_timeout (float, optional): how long to wait for a
                 heartbeat from the peer before treating the peer as dead,
-                0 means DO NOT check for heartbeat. Defaults to 30.0.
+                0 means DO NOT check for heartbeat.
             resend_interval (float): how often to resend a message if failing to send.
                 None means no resend. Note that if the pipe does not support resending,
-                then no resend. Defaults to 2.0.
+                then no resend.
             max_resends (int, optional): max number of resend. None means no limit.
                 Defaults to None.
             peer_read_timeout (float, optional): time to wait for peer to accept sent message.
-                Defaults to 5.0.
             task_wait_time (float, optional): how long to wait for a task to complete.
                 None means waiting forever. Defaults to None.
             result_poll_interval (float): how often to poll task result.
@@ -145,7 +142,7 @@ class TaskExchanger(Executor):
         task_id = shareable.get_header(key=FLContextKey.TASK_ID)
 
         # send to peer
-        self.log_debug(fl_ctx, "sending task to peer ...")
+        self.log_info(fl_ctx, f"sending task to peer {self.peer_read_timeout=}")
         req = Message.new_request(topic=task_name, data=shareable, msg_id=task_id)
         start_time = time.time()
         has_been_read = self.pipe_handler.send_to_peer(req, timeout=self.peer_read_timeout, abort_signal=abort_signal)
@@ -155,6 +152,8 @@ class TaskExchanger(Executor):
                 f"peer does not accept task '{task_name}' in {time.time()-start_time} secs - aborting task!",
             )
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+
+        self.log_info(fl_ctx, f"task {task_name} sent to peer in {time.time()-start_time} secs")
 
         # wait for result
         self.log_debug(fl_ctx, "Waiting for result from peer")
@@ -213,6 +212,8 @@ class TaskExchanger(Executor):
                     if not self.check_output_shareable(task_name, result, fl_ctx):
                         self.log_error(fl_ctx, "bad task result from peer")
                         return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+
+                    self.log_info(fl_ctx, f"received result of {task_name} from peer in {time.time()-start} secs")
                     return result
                 except Exception as ex:
                     self.log_error(fl_ctx, f"Failed to convert result: {secure_format_exception(ex)}")
