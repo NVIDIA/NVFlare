@@ -195,6 +195,10 @@ def check_client_status_ready(response: dict) -> bool:
     if "client_statuses" not in response["details"]:
         return False
 
+    for row in response["details"]["client_statuses"][1:]:
+        if row[3] == "No Reply":
+            return False
+
     return True
 
 
