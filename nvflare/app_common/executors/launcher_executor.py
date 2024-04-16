@@ -181,12 +181,11 @@ class LauncherExecutor(TaskExchanger):
         total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS, None)
         if task_name == self._train_task_name:
             if current_round is None:
-                self.log_error(fl_ctx, f"missing current round required by task {task_name}")
-                return False
+                self.log_warning(fl_ctx, f"no current round for task {task_name}")
 
             if total_rounds is None:
-                self.log_error(fl_ctx, f"missing total number of rounds required by task {task_name}")
-                return False
+                self.log_warning(fl_ctx, f"no total number of rounds for task {task_name}")
+
         return True
 
     def check_output_shareable(self, task_name: str, shareable: Shareable, fl_ctx: FLContext) -> bool:

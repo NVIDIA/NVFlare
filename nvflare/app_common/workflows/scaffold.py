@@ -53,6 +53,8 @@ class Scaffold(BaseFedAvg):
     def initialize(self, fl_ctx):
         super().initialize(fl_ctx)
         self.model = self.load_model()
+        self.model.start_round = self.start_round
+        self.model.total_rounds = self.num_rounds
 
         self._global_ctrl_weights = copy.deepcopy(self.model.params)
         # Initialize correction term with zeros
@@ -64,6 +66,7 @@ class Scaffold(BaseFedAvg):
 
         for self.current_round in range(self.start_round, self.start_round + self.num_rounds):
             self.info(f"Round {self.current_round} started.")
+            self.model.current_round = self.current_round
 
             clients = self.sample_clients(self.min_clients)
 

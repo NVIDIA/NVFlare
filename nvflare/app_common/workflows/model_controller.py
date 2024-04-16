@@ -96,7 +96,7 @@ class ModelController(Controller, FLComponentWrapper, ABC):
 
         return data_shareable
 
-    def send_model(
+    def broadcast_model(
         self,
         task_name: str = AppConstants.TASK_TRAIN,
         data: FLModel = None,
@@ -216,7 +216,8 @@ class ModelController(Controller, FLComponentWrapper, ABC):
         result_model = FLModelUtils.from_shareable(result)
         result_model.meta["client_name"] = client_name
 
-        self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, result_model.current_round, private=True, sticky=True)
+        if result_model.current_round is not None:
+            self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, result_model.current_round, private=True, sticky=True)
 
         self.event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT)
         self._accept_train_result(client_name=client_name, result=result, fl_ctx=fl_ctx)

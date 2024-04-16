@@ -45,9 +45,12 @@ class FedAvg(BaseFedAvg):
         self.info("Start FedAvg.")
 
         model = self.load_model()
+        model.start_round = self.start_round
+        model.total_rounds = self.num_rounds
 
         for self.current_round in range(self.start_round, self.start_round + self.num_rounds):
             self.info(f"Round {self.current_round} started.")
+            model.current_round = self.current_round
 
             clients = self.sample_clients(self.min_clients)
 
