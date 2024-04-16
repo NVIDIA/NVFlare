@@ -1029,7 +1029,7 @@ class Controller(Responder, ControllerSpec, ABC):
         return False
 
     def get_client_death_time(self, client_name: str):
-        """Get the time that the client was deemed dead
+        """Get the time that the client was deemed dead/disconnected
 
         Args:
             client_name: name of the client
