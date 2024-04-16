@@ -69,7 +69,8 @@ SIMULATOR_POOL_STATS = "simulator_cell_stats.json"
 
 class SimulatorRunner(FLComponent):
     def __init__(
-        self, job_folder: str, workspace: str, clients=None, n_clients=None, threads=None, gpu=None, max_clients=100
+        self, job_folder: str, workspace: str, clients=None, n_clients=None, threads=None, gpu=None, max_clients=100,
+            end_run_all=False
     ):
         super().__init__()
 
@@ -80,6 +81,7 @@ class SimulatorRunner(FLComponent):
         self.threads = threads
         self.gpu = gpu
         self.max_clients = max_clients
+        self.end_run_all = end_run_all
 
         self.ask_to_stop = False
 
@@ -145,6 +147,7 @@ class SimulatorRunner(FLComponent):
         self.args.env = os.path.join("config", AppFolderConstants.CONFIG_ENV)
         cwd = os.getcwd()
         self.args.job_folder = os.path.join(cwd, self.args.job_folder)
+        self.args.end_run_all = self.end_run_all
 
         if not os.path.exists(self.args.workspace):
             os.makedirs(self.args.workspace)
@@ -519,16 +522,16 @@ class SimulatorClientRunner(FLComponent):
             lock = threading.Lock()
             timeout = self.kv_list.get("simulator_worker_timeout", 60.0)
             for i in range(self.args.threads):
-                executor.submit(lambda p: self.run_client_thread(*p), [self.args.threads, gpu, lock, i, timeout])
+                executor.submit(lambda p: self.run_client_thread(*p), [self.args.threads, gpu, lock, self.args.end_run_all, timeout])
 
             # wait for the server and client running thread to finish.
             executor.shutdown()
 
-            for client in self.federated_clients:
-                if client.client_name not in self.end_run_clients:
-                    self.do_one_task(
-                        client, self.args.threads, gpu, lock, timeout=timeout, task_name=RunnerTask.END_RUN
-                    )
+            # for client in self.federated_clients:
+            #     if client.client_name not in self.end_run_clients:
+            #         self.do_one_task(
+            #             client, self.args.threads, gpu, lock, timeout=timeout, task_name=RunnerTask.END_RUN
+            #         )
 
         except Exception as e:
             self.logger.error(f"SimulatorClientRunner run error: {secure_format_exception(e)}")
@@ -548,7 +551,7 @@ class SimulatorClientRunner(FLComponent):
             # Ignore the exception for the simulator client shutdown
             self.logger.warn(f"Exception happened to client{client.name} during shutdown ")
 
-    def run_client_thread(self, num_of_threads, gpu, lock, rank, timeout=60):
+    def run_client_thread(self, num_of_threads, gpu, lock, end_run_all, timeout=60):
         stop_run = False
         interval = 1
         client_to_run = None  # indicates the next client to run
@@ -571,8 +574,25 @@ class SimulatorClientRunner(FLComponent):
                         self.end_run_clients.append(end_run_client)
 
                 client.simulate_running = False
+
+            if end_run_all:
+                self._end_run_clients(client, gpu, lock, num_of_threads, timeout)
         except Exception as e:
             self.logger.error(f"run_client_thread error: {secure_format_exception(e)}")
+
+    def _end_run_clients(self, client, gpu, lock, num_of_threads, timeout):
+        while len(self.end_run_clients) != len(self.federated_clients):
+            end_run_client = None
+            with lock:
+                for client in self.federated_clients:
+                    if client.client_name not in self.end_run_clients and not client.simulate_running:
+                        end_run_client = client
+                        self.end_run_clients.append(end_run_client.client_name)
+                        break
+            if end_run_client:
+                end_run_client.simulate_running = True
+                self.do_one_task(client, num_of_threads, gpu, lock, timeout=timeout, task_name=RunnerTask.END_RUN)
+                end_run_client.simulate_running = False
 
     def do_one_task(self, client, num_of_threads, gpu, lock, timeout=60.0, task_name=RunnerTask.TASK_EXEC):
         open_port = get_open_ports(1)[0]
