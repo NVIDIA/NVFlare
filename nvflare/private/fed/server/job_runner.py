@@ -444,6 +444,7 @@ class JobRunner(FLComponent):
                                     },
                                     fl_ctx,
                                 )
+                                self.log_info(fl_ctx, f"Updated the schedule history of Job: {job_id}")
 
                             if failed_clients:
                                 deployable_clients = {k: v for k, v in client_sites.items() if k not in failed_clients}
@@ -465,6 +466,7 @@ class JobRunner(FLComponent):
                             with self.lock:
                                 self.running_jobs[job_id] = ready_job
                             job_manager.set_status(ready_job.job_id, RunStatus.RUNNING, fl_ctx)
+                            self.log_info(fl_ctx, f"Job: {job_id} started to run, status changed to RUNNING.")
                         except Exception as e:
                             if job_id:
                                 if job_id in self.running_jobs:
