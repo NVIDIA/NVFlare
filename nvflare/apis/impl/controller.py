@@ -155,4 +155,6 @@ class Controller(FLComponent, ControllerSpec, ABC):
         Returns: time at which the client was deemed dead; or None if the client is not dead.
 
         """
+        if not self.communicator:
+            return None
         return self.communicator.get_client_disconnect_time(client_name)
