@@ -124,7 +124,7 @@ class ClientSecurityHandler(SecurityHandler):
 
     def _process_before_all_gather_v(self, fl_ctx: FLContext):
         rank = fl_ctx.get_prop(Constant.PARAM_KEY_RANK)
-        self.info(fl_ctx, f"start")
+        self.info(fl_ctx, "start")
         buffer = fl_ctx.get_prop(Constant.PARAM_KEY_SEND_BUF)
         aggr_ctx = self.data_converter.decode_aggregation_context(buffer, fl_ctx)
 

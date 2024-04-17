@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import concurrent.futures
-import time
 
 
 class Decrypter:

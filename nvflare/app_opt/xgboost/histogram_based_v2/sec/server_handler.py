@@ -109,7 +109,7 @@ class ServerSecurityHandler(SecurityHandler):
         fl_ctx.set_prop(
             key=Constant.PARAM_KEY_SEND_BUF, value=os.urandom(Constant.DUMMY_BUFFER_SIZE), private=True, sticky=False
         )
-        self.info(fl_ctx, f"send dummy buf to XGB server")
+        self.info(fl_ctx, "send dummy buf to XGB server")
 
     def _process_after_all_gather_v(self, fl_ctx: FLContext):
         # this is called after the Server has finished gathering
