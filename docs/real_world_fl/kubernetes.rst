@@ -5,7 +5,7 @@ Amazon Elastic Kubernetes Service Deployment
 ############################################
 In this document, we will describe how to run the entire NVIDIA FLARE inside one Amazon Elastic Kubernetes Service (EKS).  For information
 how to run NVIDIA FLARE inside microk8s (local kubernetes cluster), please refer to :ref:`_helm_chart`.  That document describes how to
-provision one NVIDIA FLARE system, configure your microk8s cluter, deploy the servers, the overseer and the clients to that cluster, and
+provision one NVIDIA FLARE system, configure your microk8s cluster, deploy the servers, the overseer and the clients to that cluster, and
 control and submit jobs to that NVIDIA FLARE from admin console.
 
 
@@ -14,7 +14,7 @@ Start the EKS
 We assume that you have one AWS account which allows you to start one EKS.  We also assume you have eksctl, aws and kubectl installed in your local machine.
 Note that the versions of those CLI may affect the operations.  We suggest keep them updated.
 
-The first thing is to start the EKS with eksctl.  The following is a sample yaml file, ``cluter.yaml``, to create EKS with one command.
+The first thing is to start the EKS with eksctl.  The following is a sample yaml file, ``cluster.yaml``, to create EKS with one command.
 
 .. code-block:: yaml
 
@@ -43,11 +43,13 @@ Provision
 =========
 
 With NVIDIA FLARE installed in your local machine, you can create one set of startup kits easily with ``nvflare provision``.  If there is a project.yml file
-in your current working directory, ``nvflare provision`` will create a workspace directory.  If that project.yml file does not exist, ``nvflare provsiion`` will
+in your current working directory, ``nvflare provision`` will create a workspace directory.  If that project.yml file does not exist, ``nvflare provision`` will
 create a sample project.yml for you.  For simplicity, we suggest you remove/rename any existing project.yml and workspace directory.  Then provision the
 set of startup kits from scratch.  When selecting the sampel project.yml during provisioning time, select non-HA one as most clusters support HA easily.
 
-After provisioning, you will have a workspace/example_project/prod_00 folder, which includes server, site-1, site-2 and admin@nvidia.com folders.
+After provisioning, you will have a workspace/example_project/prod_00 folder, which includes server, site-1, site-2 and admin@nvidia.com folders.  If you
+would like to use other names instead of ``site-1``, ``site-2``, etc, you can remove the workspace folder and modify the project.yml file.  After that,
+you can run ``nvflare provision`` command to get the new set of startup kits.
 
 Persistent Volume
 =================
@@ -178,6 +180,7 @@ All pods can be deployed with ``kubectl apply -f`` so we just need the following
     kubectl apply -f bb8.yaml
 
 Your helper pod should be up and running very soon.  Now copy the startup kits to the cluster with
+
 .. code-block:: shell
 
     kubectl cp workspace/example_project/prod_00/server <helper-pod>:/workspace/nvfl/
@@ -186,6 +189,9 @@ And the same for site-1, site-2, admin@nvidia.com.
 
 This will make the entire startup kits available at the nvflare-pv-claim of the cluster so that NVIDIA FLARE system
 can mount that nvflare-pv-claim and access the startup kits.
+
+After copying those folders to nvflare-pv-claim, you can shutdown the helper pod.  The nvflare-pv-claim and its contents will stay and is
+available to server/client/admin pods.
 
 Start Server Pod
 ================
@@ -261,8 +267,9 @@ to connect.  Therefore, the followings are two separate yaml files that work tog
         run: nvflare
 
     
-Note that the pod will use nvflare/nvflare:2.4.0 container image.  If you build your own for additional dependencies, you will need to update
-the yaml file.
+Note that the pod will use nvflare/nvflare:2.4.0 container image from dockerhub.com.  This image only includes the necessary dependencies to start
+NVIDIA FLARE system.  If you require additional dependencies, such as Torch or MONAI, you will need to build and publish your own image and update
+the yaml file accordingly.
 
 Start Client Pods
 =================
