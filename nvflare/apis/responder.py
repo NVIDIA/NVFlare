@@ -77,11 +77,12 @@ class Responder(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def process_job_heartbeat(self, fl_ctx: FLContext):
+    def process_job_heartbeat(self, fl_ctx: FLContext, reason: str):
         """Called by the Engine to handle heartbeat received from clients.
 
         Args:
             fl_ctx: the FLContext
+            reason: reason of the HB
 
         Returns: None
 

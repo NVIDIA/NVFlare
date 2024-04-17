@@ -139,14 +139,14 @@ class CyclicController(Controller):
         self._last_client = None
 
     def _get_relay_orders(self, fl_ctx: FLContext) -> Union[List[Client], None]:
-        if len(self._participating_clients) <= 1:
-            self.system_panic(f"Not enough client sites ({len(self._participating_clients)}).", fl_ctx)
-            return None
-
         active_clients_map = {}
         for t in self._participating_clients:
             if not self.get_client_death_time(t.name):
                 active_clients_map[t.name] = t
+
+        if len(active_clients_map) <= 1:
+            self.system_panic(f"Not enough client sites (active_clients={len(active_clients_map)}).", fl_ctx)
+            return None
 
         if isinstance(self._order, list):
             targets = []
