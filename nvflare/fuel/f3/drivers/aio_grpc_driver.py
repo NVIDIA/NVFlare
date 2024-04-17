@@ -104,7 +104,6 @@ class AioStreamSession(Connection):
             self.aio_ctx.run_coro(self.oq.put(f))
         except asyncio.CancelledError:
             self.logger.error("RPC cancelled")
-            self.logger.error(secure_format_traceback())
         except Exception as ex:
             self.logger.error(f"exception send_frame: {self}: {secure_format_exception(ex)}")
             if not self.closing:
@@ -185,7 +184,6 @@ class Servicer(StreamerServicer):
                 yield item
         except asyncio.CancelledError:
             self.logger.error("SERVER: RPC cancelled")
-            self.logger.error(secure_format_traceback())
         except Exception as ex:
             self.logger.error(f"{connection}: connection exception: {secure_format_exception(ex)}")
             self.logger.error(secure_format_traceback())
@@ -280,7 +278,6 @@ class AioGrpcDriver(BaseDriver):
                 await self.server.start(conn_ctx)
             except asyncio.CancelledError:
                 self.logger.error("RPC cancelled")
-                self.logger.error(secure_format_traceback())
             except Exception as ex:
                 conn_ctx.error = f"failed to start server: {type(ex)}: {secure_format_exception(ex)}"
                 self.logger.error(conn_ctx.error)
@@ -337,9 +334,8 @@ class AioGrpcDriver(BaseDriver):
             await connection.read_loop(msg_iter)
         except asyncio.CancelledError:
             self.logger.error("CLIENT: RPC cancelled")
-            self.logger.error(secure_format_traceback())
         except grpc.FutureCancelledError:
-            self.logger.info("CLIENT: Future cancelled")
+            self.logger.error("CLIENT: Future cancelled")
         except Exception as ex:
             conn_ctx.error = f"connection {connection} error: {type(ex)}: {secure_format_exception(ex)}"
             self.logger.error(conn_ctx.error)
