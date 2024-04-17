@@ -69,8 +69,15 @@ SIMULATOR_POOL_STATS = "simulator_cell_stats.json"
 
 class SimulatorRunner(FLComponent):
     def __init__(
-        self, job_folder: str, workspace: str, clients=None, n_clients=None, threads=None, gpu=None, max_clients=100,
-            end_run_all=False
+        self,
+        job_folder: str,
+        workspace: str,
+        clients=None,
+        n_clients=None,
+        threads=None,
+        gpu=None,
+        max_clients=100,
+        end_run_all=False,
     ):
         super().__init__()
 
@@ -522,16 +529,12 @@ class SimulatorClientRunner(FLComponent):
             lock = threading.Lock()
             timeout = self.kv_list.get("simulator_worker_timeout", 60.0)
             for i in range(self.args.threads):
-                executor.submit(lambda p: self.run_client_thread(*p), [self.args.threads, gpu, lock, self.args.end_run_all, timeout])
+                executor.submit(
+                    lambda p: self.run_client_thread(*p), [self.args.threads, gpu, lock, self.args.end_run_all, timeout]
+                )
 
             # wait for the server and client running thread to finish.
             executor.shutdown()
-
-            # for client in self.federated_clients:
-            #     if client.client_name not in self.end_run_clients:
-            #         self.do_one_task(
-            #             client, self.args.threads, gpu, lock, timeout=timeout, task_name=RunnerTask.END_RUN
-            #         )
 
         except Exception as e:
             self.logger.error(f"SimulatorClientRunner run error: {secure_format_exception(e)}")
