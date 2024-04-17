@@ -14,5 +14,3 @@
 
 from nvflare.app_opt.xgboost.histogram_based_v2.fed_controller import XGBFedController
 from nvflare.app_opt.xgboost.histogram_based_v2.fed_executor import FedXGBHistogramExecutor
-from nvflare.app_opt.xgboost.histogram_based_v2.mock.mock_controller import MockXGBController
-from nvflare.app_opt.xgboost.histogram_based_v2.mock.mock_executor import MockXGBExecutor

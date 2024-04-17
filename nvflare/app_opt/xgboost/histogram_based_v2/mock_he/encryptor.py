@@ -71,7 +71,4 @@ class Encryptor:
 
 def _do_enc(item):
     pubkey, numbers = item
-    ev = []
-    for v in numbers:
-        ev.append(pubkey.encrypt(v))
-    return ev
+    return numbers

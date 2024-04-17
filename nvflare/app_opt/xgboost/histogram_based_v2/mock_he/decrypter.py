@@ -53,12 +53,4 @@ class Decrypter:
 def _do_decrypt(item):
     # t = time.time()
     private_key, numbers = item
-    ev = []
-    for v in numbers:
-        if isinstance(v, int):
-            d = v
-        else:
-            d = private_key.decrypt(v)
-        ev.append(d)
-    # print(f"decrypted {len(numbers)} numbers in {time.time()-t} secs")
-    return ev
+    return numbers

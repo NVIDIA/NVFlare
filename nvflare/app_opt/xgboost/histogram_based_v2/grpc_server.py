@@ -17,7 +17,10 @@ import concurrent.futures as futures
 import grpc
 
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import GRPC_DEFAULT_OPTIONS
-from nvflare.app_opt.xgboost.histogram_based_v2.proto.federated_pb2_grpc import FederatedServicer, add_FederatedServicer_to_server
+from nvflare.app_opt.xgboost.histogram_based_v2.proto.federated_pb2_grpc import (
+    FederatedServicer,
+    add_FederatedServicer_to_server,
+)
 from nvflare.fuel.utils.obj_utils import get_logger
 from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_int
 from nvflare.security.logging import secure_format_exception
