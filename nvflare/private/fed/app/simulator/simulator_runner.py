@@ -58,7 +58,7 @@ from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorServerAppRunner
 from nvflare.private.fed.simulator.simulator_audit import SimulatorAuditor
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, split_gpus
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, get_simulator_app_root, split_gpus
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 from nvflare.security.security import EmptyAuthorizer
 
@@ -150,7 +150,7 @@ class SimulatorRunner(FLComponent):
         AuthorizationService.initialize(EmptyAuthorizer())
         AuditService.the_auditor = SimulatorAuditor()
 
-        self.simulator_root = os.path.join(self.args.workspace)
+        self.simulator_root = self.args.workspace
         self._cleanup_workspace()
         init_security_content_service(self.args.workspace)
 
@@ -306,7 +306,7 @@ class SimulatorRunner(FLComponent):
 
                 for p in participants:
                     if p == "server" or p in self.client_names:
-                        app_root = os.path.join(self.simulator_root, p, SimulatorConstants.JOB_NAME, "app_" + p)
+                        app_root = get_simulator_app_root(self.simulator_root, p)
                         self._setup_local_startup(log_config_file_path, os.path.join(self.simulator_root, p))
                         app = os.path.join(temp_job_folder, app_name)
                         shutil.copytree(app, app_root)
@@ -343,7 +343,7 @@ class SimulatorRunner(FLComponent):
 
     def _set_client_status(self):
         for client in self.federated_clients:
-            app_client_root = os.path.join(self.simulator_root, "app_" + client.client_name)
+            app_client_root = get_simulator_app_root(self.simulator_root, client.client_name)
             client.app_client_root = app_client_root
             client.args = self.args
             # self.create_client_runner(client)
@@ -457,7 +457,6 @@ class SimulatorRunner(FLComponent):
         client_runner.run(gpu)
 
     def start_server_app(self, args):
-        # app_server_root = os.path.join(self.simulator_root, "app_server")
         app_server_root = os.path.join(self.simulator_root, "server", SimulatorConstants.JOB_NAME, "app_server")
         args.workspace = app_server_root
         os.chdir(args.workspace)
@@ -517,7 +516,7 @@ class SimulatorClientRunner(FLComponent):
         self.federated_clients = clients
         self.run_client_index = -1
 
-        self.simulator_root = os.path.join(self.args.workspace)
+        self.simulator_root = self.args.workspace
         self.client_config = client_config
         self.deploy_args = deploy_args
         self.build_ctx = build_ctx

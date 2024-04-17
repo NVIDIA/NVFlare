@@ -37,7 +37,7 @@ from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorClientAppRunner
 from nvflare.private.fed.simulator.simulator_audit import SimulatorAuditor
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, get_simulator_app_root
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 from nvflare.security.security import EmptyAuthorizer
 
@@ -146,9 +146,7 @@ class ClientTaskWorker(FLComponent):
 
             client = self._create_client(args, build_ctx, deploy_args)
 
-            app_root = os.path.join(
-                args.workspace, client.client_name, SimulatorConstants.JOB_NAME, "app_" + client.client_name
-            )
+            app_root = get_simulator_app_root(args.workspace, client.client_name)
             app_custom_folder = os.path.join(app_root, "custom")
             sys.path.append(app_custom_folder)
 
@@ -187,9 +185,7 @@ class ClientTaskWorker(FLComponent):
         return client
 
     def _set_client_status(self, client, deploy_args, simulator_root):
-        app_client_root = os.path.join(
-            simulator_root, client.client_name, SimulatorConstants.JOB_NAME, "app_" + client.client_name
-        )
+        app_client_root = get_simulator_app_root(simulator_root, client.client_name)
         client.app_client_root = app_client_root
         client.args = deploy_args
         # self.create_client_runner(client)
