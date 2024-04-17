@@ -372,10 +372,6 @@ class LauncherExecutor(TaskExchanger):
                 if self.launcher is None:
                     break
 
-                # no task is running
-                if self._current_task is None:
-                    continue
-
                 task_name = self._current_task
                 run_status = self._execute_launcher_method_in_thread_executor(
                     method_name="check_run_status",
