@@ -23,7 +23,7 @@ class WFController(ModelController, ABC):
     def __init__(
         self,
         *args,
-        persistor_id: str = "",
+        persistor_id: str = "persistor",
         **kwargs,
     ):
         """Workflow Controller API for FLModel-based ModelController.
@@ -58,7 +58,7 @@ class WFController(ModelController, ABC):
         Returns:
             List[FLModel]
         """
-        return super().send_model(
+        return super().broadcast_model(
             task_name=task_name,
             data=data,
             targets=targets,
@@ -88,7 +88,7 @@ class WFController(ModelController, ABC):
         Returns:
             None
         """
-        super().send_model(
+        super().broadcast_model(
             task_name=task_name,
             data=data,
             targets=targets,

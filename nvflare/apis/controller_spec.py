@@ -542,3 +542,14 @@ class ControllerSpec(ABC):
             fl_ctx: the FL context
         """
         pass
+
+    def get_client_disconnect_time(self, client_name):
+        """Get the time that the client is deemed disconnected.
+
+        Args:
+            client_name: the name of the client
+
+        Returns: time at which the client was deemed disconnected; or None if the client is not disconnected.
+
+        """
+        return None

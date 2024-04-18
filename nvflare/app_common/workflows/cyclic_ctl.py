@@ -18,8 +18,7 @@ from typing import List, Union
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task
-from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, ReturnCode
+from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import Shareable
@@ -141,20 +140,24 @@ class CyclicController(Controller):
         self._last_client = None
 
     def _get_relay_orders(self, fl_ctx: FLContext) -> Union[List[Client], None]:
-        if len(self._participating_clients) <= 1:
-            self.system_panic(f"Not enough client sites ({len(self._participating_clients)}).", fl_ctx)
+        active_clients_map = {}
+        for t in self._participating_clients:
+            if not self.get_client_disconnect_time(t.name):
+                active_clients_map[t.name] = t
+
+        if len(active_clients_map) <= 1:
+            self.system_panic(f"Not enough active client sites ({len(active_clients_map)}).", fl_ctx)
             return None
 
         if isinstance(self._order, list):
             targets = []
-            active_clients_map = {t.name: t for t in self._participating_clients}
             for c_name in self._order:
                 if c_name not in active_clients_map:
                     self.system_panic(f"Required client site ({c_name}) is not in active clients.", fl_ctx)
                     return None
                 targets.append(active_clients_map[c_name])
         else:
-            targets = list(self._participating_clients)
+            targets = list(active_clients_map.values())
             if self._order == RelayOrder.RANDOM or self._order == RelayOrder.RANDOM_WITHOUT_SAME_IN_A_ROW:
                 random.shuffle(targets)
                 if self._order == RelayOrder.RANDOM_WITHOUT_SAME_IN_A_ROW and self._last_client == targets[0]:
@@ -310,12 +313,3 @@ class CyclicController(Controller):
             self._start_round = self._current_round
         finally:
             pass
-
-    def handle_event(self, event_type, fl_ctx):
-        if event_type == EventType.JOB_DEAD:
-            client_name = fl_ctx.get_prop(FLContextKey.DEAD_JOB_CLIENT_NAME)
-            new_client_list = []
-            for client in self._participating_clients:
-                if client_name != client.name:
-                    new_client_list.append(client)
-            self._participating_clients = new_client_list
