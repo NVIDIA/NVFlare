@@ -583,6 +583,13 @@ class SimulatorClientRunner(FLComponent):
             self.logger.error(f"run_client_thread error: {secure_format_exception(e)}")
 
     def _end_run_clients(self, client, gpu, lock, num_of_threads, timeout):
+        """ After the WF reaches the END_RUN, each running thread will try to pick up one of the remaining client
+        which has not run the END_RUN yet, then execute the END_RUN handler, until all the clients have done so.
+        These client END_RUN event handler only execute when "end_run_for_all" has been set.
+
+        Multiple client running threads will try to pick up the client from the same clients pool.
+
+        """
         while len(self.end_run_clients) != len(self.federated_clients):
             end_run_client = None
             with lock:
