@@ -33,7 +33,7 @@ def define_simulator_parser(simulator_parser):
     simulator_parser.add_argument(
         "--end_run_for_all",
         default=False,
-        action='store_true',
+        action="store_true",
         help="flag to indicate if running END_RUN event for all clients",
     )
 
