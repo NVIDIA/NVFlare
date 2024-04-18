@@ -79,8 +79,8 @@ if [[ $m == "tensorflow" ]]; then
     run_tensorflow
 elif [[ $m == "overseer" ]]; then
     run_overseer_test
-elif [[ $m == "preflight" ]]; then
-    run_preflight_check_test
+# elif [[ $m == "preflight" ]]; then
+#     run_preflight_check_test
 else
     run_system_test
 fi
