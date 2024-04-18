@@ -50,10 +50,10 @@ class FedAvg(BaseFedAvg):
 
         for self.current_round in range(self.start_round, self.start_round + self.num_rounds):
             self.info(f"Round {self.current_round} started.")
+            model.current_round = self.current_round
 
             clients = self.sample_clients(self.min_clients)
 
-            model.current_round = self.current_round
             results = self.send_model_and_wait(targets=clients, data=model)
 
             aggregate_results = self.aggregate(

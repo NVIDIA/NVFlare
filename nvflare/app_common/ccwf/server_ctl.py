@@ -440,9 +440,6 @@ class ServerSideController(Controller):
         peer_ctx = fl_ctx.get_peer_context()
         assert isinstance(peer_ctx, FLContext)
         client_name = peer_ctx.get_identity_name()
-        if client_name not in self.client_statuses:
-            self.log_error(fl_ctx, f"received result from unknown client {client_name}!")
-            return
 
         # see whether status is available
         reports = peer_ctx.get_prop(Constant.STATUS_REPORTS)
@@ -452,6 +449,10 @@ class ServerSideController(Controller):
 
         my_report = reports.get(self.workflow_id)
         if not my_report:
+            return
+
+        if client_name not in self.client_statuses:
+            self.log_error(fl_ctx, f"received result from unknown client {client_name}!")
             return
 
         report = status_report_from_dict(my_report)
