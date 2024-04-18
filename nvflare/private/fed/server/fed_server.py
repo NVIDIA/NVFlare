@@ -36,7 +36,6 @@ from nvflare.apis.fl_constant import (
 )
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import NotAuthenticated
-from nvflare.apis.shareable import Shareable
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.cell import Cell
@@ -140,13 +139,8 @@ class BaseServer(ABC):
                 self.lock.release()
         except RuntimeError:
             self.logger.info("canceling sync locks")
-        try:
-            # if self.cell:
-            #     self.cell.stop()
-            pass
-        finally:
-            self.logger.info("server off")
-            return 0
+        self.logger.info("server off")
+        return 0
 
     def deploy(self, args, grpc_args=None, secure_train=False):
         """Start a grpc server and listening the designated port."""
@@ -624,26 +618,17 @@ class FederatedServer(BaseServer):
                     # this is a dict: token => nvflare.apis.client.Client
                     client = participating_clients.get(client_token, None)
                     if client:
-                        self._notify_dead_job(client, job_id)
+                        self._notify_dead_job(client, job_id, "missing job on client")
 
         return jobs_need_abort
 
-    def _notify_dead_job(self, client, job_id: str):
+    def _notify_dead_job(self, client, job_id: str, reason: str):
         try:
-            with self.engine.lock:
-                shareable = Shareable()
-                shareable.set_header(ServerCommandKey.FL_CLIENT, client.name)
-                fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
-                request = new_cell_message({}, shareable)
-                self.cell.fire_and_forget(
-                    targets=fqcn,
-                    channel=CellChannel.SERVER_COMMAND,
-                    topic=ServerCommandNames.HANDLE_DEAD_JOB,
-                    message=request,
-                    optional=True,
-                )
-        except Exception:
-            self.logger.info("Could not connect to server runner process")
+            self.engine.notify_dead_job(job_id, client.name, reason)
+        except Exception as ex:
+            self.logger.info(
+                f"Failed to notify_dead_job to runner process of job {job_id}: {secure_format_exception(ex)}"
+            )
 
     def notify_dead_client(self, client):
         """Called to do further processing of the dead client
@@ -662,7 +647,7 @@ class FederatedServer(BaseServer):
             assert isinstance(process_info, dict)
             participating_clients = process_info.get(RunProcessKey.PARTICIPANTS, None)
             if participating_clients and client.token in participating_clients:
-                self._notify_dead_job(client, job_id)
+                self._notify_dead_job(client, job_id, "client dead")
 
     def start_run(self, job_id, run_root, conf, args, snapshot):
         # Create the FL Engine
