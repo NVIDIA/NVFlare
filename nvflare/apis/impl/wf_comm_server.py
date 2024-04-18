@@ -76,7 +76,7 @@ def _get_client_task(target, task: Task):
 class _DeadClientStatus:
     def __init__(self):
         self.report_time = time.time()
-        self.death_time = None
+        self.disconnect_time = None
 
 
 class WFCommServer(FLComponent, WFCommSpec):
@@ -852,16 +852,16 @@ class WFCommServer(FLComponent, WFCommSpec):
         now = time.time()
         with self._dead_clients_lock:
             for client_name, status in self._dead_clients.items():
-                if status.death_time:
-                    # already dead
+                if status.disconnect_time:
+                    # already disconnected
                     continue
 
                 if now - status.report_time < self._dead_client_grace:
                     # this report is still fresh - consider the client to be still alive
                     continue
 
-                # consider client dead
-                status.death_time = now
+                # consider client disconnected
+                status.disconnect_time = now
                 self.logger.error(f"Client {client_name} is deemed disconnected!")
                 with self._engine.new_context() as fl_ctx:
                     fl_ctx.set_prop(FLContextKey.DISCONNECTED_CLIENT_NAME, client_name)
@@ -1055,7 +1055,7 @@ class WFCommServer(FLComponent, WFCommSpec):
             if client_name in self._dead_clients:
                 self.log_info(fl_ctx, f"Client {client_name} is removed from watch list: {reason}")
                 status = self._dead_clients.pop(client_name)
-                if status.death_time:
+                if status.disconnect_time:
                     self.log_info(fl_ctx, f"Client {client_name} is reconnected")
                     fl_ctx.set_prop(FLContextKey.RECONNECTED_CLIENT_NAME, client_name)
                     self.fire_event(EventType.CLIENT_RECONNECTED, fl_ctx)
@@ -1071,5 +1071,5 @@ class WFCommServer(FLComponent, WFCommSpec):
         """
         status = self._dead_clients.get(client_name)
         if status:
-            return status.death_time
+            return status.disconnect_time
         return None

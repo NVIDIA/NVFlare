@@ -147,12 +147,12 @@ class Controller(FLComponent, ControllerSpec, ABC):
         self.communicator.cancel_all_tasks(completion_status, fl_ctx)
 
     def get_client_disconnect_time(self, client_name):
-        """Get the time that the client is deemed dead.
+        """Get the time when the client is deemed disconnected.
 
         Args:
             client_name: the name of the client
 
-        Returns: time at which the client was deemed dead; or None if the client is not dead.
+        Returns: time at which the client was deemed disconnected; or None if the client is not disconnected.
 
         """
         if not self.communicator:
