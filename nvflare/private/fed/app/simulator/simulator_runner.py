@@ -599,7 +599,9 @@ class SimulatorClientRunner(FLComponent):
                 self.end_run_clients.append(end_run_client.client_name)
             if end_run_client:
                 end_run_client.simulate_running = True
-                self.do_one_task(end_run_client, num_of_threads, gpu, lock, timeout=timeout, task_name=RunnerTask.END_RUN)
+                self.do_one_task(
+                    end_run_client, num_of_threads, gpu, lock, timeout=timeout, task_name=RunnerTask.END_RUN
+                )
                 end_run_client.simulate_running = False
 
     def _pick_next_client(self):
