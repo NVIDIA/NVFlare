@@ -357,7 +357,7 @@ class ReliableMessage:
         """
         if not cls._shutdown_asked:
             cls._shutdown_asked = True
-            cls._executor.shutdown(cancel_futures=True, wait=False)
+            cls._executor.shutdown(wait=False)
             cls._logger.info("ReliableMessage is shutdown")
 
     @classmethod

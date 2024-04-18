@@ -13,42 +13,36 @@ These items could be user_ids or feature names depending on your use case.
 
 ```
 {
-  "format_version": 2,
-  "executors": [
+  format_version = 2
+  executors = [
     {
-      "tasks": [
-        "PSI"
-      ],
-      "executor": {
-        "id": "Executor",
-        "name": "PSIExecutor",
-        "args": {
-          "psi_algo_id": "dh_psi"
-        }
+      tasks = ["PSI"]
+      executor {
+        id = "Executor"
+        path = "nvflare.app_common.psi.psi_executor.PSIExecutor"
+        args.psi_algo_id = "dh_psi"
       }
     }
-  ],
-  "components": [
+  ]
+
+  components = [
     {
-      "id": "dh_psi",
-      "name": "DhPSITaskHandler",
-      "args": {
-        "local_psi_id": "local_psi"
+      id = "dh_psi"
+      path = "nvflare.app_opt.psi.dh_psi.dh_psi_task_handler.DhPSITaskHandler"
+      args.local_psi_id = "local_psi"
+    },
+    {
+      id = "local_psi"
+      path = "local_psi.LocalPSI"
+      args {
+        psi_writer_id = "psi_writer"
+        data_root_dir = "/tmp/nvflare/psi/data"
       }
     },
     {
-      "id": "local_psi",
-      "path": "local_psi.LocalPSI",
-      "args": {
-        "psi_writer_id": "psi_writer"
-      }
-    },
-    {
-      "id": "psi_writer",
-      "name": "FilePSIWriter",
-      "args": {
-        "output_path": "psi/intersection.txt"
-      }
+      id = "psi_writer",
+      path = "nvflare.app_common.psi.file_psi_writer.FilePSIWriter"
+      args.output_path = "psi/intersection.txt"
     }
   ]
 }
@@ -67,17 +61,16 @@ a file writer
 Just specify the built-in PSI controller. 
 ```
 {
-  "format_version": 2,
-  "workflows": [
+  format_version = 2,
+  workflows = [
     {
-      "id": "controller",
-      "name": "DhPSIController",
-      "args": {
+      id = "DhPSIController"
+      path = "nvflare.app_common.psi.dh_psi.dh_psi_controller.DhPSIController"
+      args{
       }
     }
   ]
 }
-
 ```
 **Code**
  the code is really trivial just needs to implement one method in PSI interface
