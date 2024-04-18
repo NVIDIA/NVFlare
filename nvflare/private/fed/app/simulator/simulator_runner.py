@@ -590,10 +590,12 @@ class SimulatorClientRunner(FLComponent):
         Multiple client running threads will try to pick up the client from the same clients pool.
 
         """
+        # Each thread only stop picking up the NOT-DONE client until all clients have run the END_RUN event.
         while len(self.end_run_clients) != len(self.federated_clients):
             end_run_client = None
             with lock:
                 for client in self.federated_clients:
+                    # Ensure the client has not run the END_RUN event
                     if client.client_name not in self.end_run_clients and not client.simulate_running:
                         end_run_client = client
                         self.end_run_clients.append(end_run_client.client_name)
