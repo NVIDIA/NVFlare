@@ -77,7 +77,7 @@ class SimulatorRunner(FLComponent):
         threads=None,
         gpu=None,
         max_clients=100,
-        end_run_all=False,
+        end_run_for_all=False,
     ):
         super().__init__()
 
@@ -88,7 +88,7 @@ class SimulatorRunner(FLComponent):
         self.threads = threads
         self.gpu = gpu
         self.max_clients = max_clients
-        self.end_run_all = end_run_all
+        self.end_run_for_all = end_run_for_all
 
         self.ask_to_stop = False
 
@@ -154,7 +154,7 @@ class SimulatorRunner(FLComponent):
         self.args.env = os.path.join("config", AppFolderConstants.CONFIG_ENV)
         cwd = os.getcwd()
         self.args.job_folder = os.path.join(cwd, self.args.job_folder)
-        self.args.end_run_all = self.end_run_all
+        self.args.end_run_for_all = self.end_run_for_all
 
         if not os.path.exists(self.args.workspace):
             os.makedirs(self.args.workspace)
@@ -528,7 +528,8 @@ class SimulatorClientRunner(FLComponent):
             timeout = self.kv_list.get("simulator_worker_timeout", 60.0)
             for i in range(self.args.threads):
                 executor.submit(
-                    lambda p: self.run_client_thread(*p), [self.args.threads, gpu, lock, self.args.end_run_all, timeout]
+                    lambda p: self.run_client_thread(*p),
+                    [self.args.threads, gpu, lock, self.args.end_run_for_all, timeout],
                 )
 
             # wait for the server and client running thread to finish.
@@ -552,7 +553,7 @@ class SimulatorClientRunner(FLComponent):
             # Ignore the exception for the simulator client shutdown
             self.logger.warn(f"Exception happened to client{client.name} during shutdown ")
 
-    def run_client_thread(self, num_of_threads, gpu, lock, end_run_all, timeout=60):
+    def run_client_thread(self, num_of_threads, gpu, lock, end_run_for_all, timeout=60):
         stop_run = False
         interval = 1
         client_to_run = None  # indicates the next client to run
@@ -576,7 +577,7 @@ class SimulatorClientRunner(FLComponent):
 
                 client.simulate_running = False
 
-            if end_run_all:
+            if end_run_for_all:
                 self._end_run_clients(client, gpu, lock, num_of_threads, timeout)
         except Exception as e:
             self.logger.error(f"run_client_thread error: {secure_format_exception(e)}")
