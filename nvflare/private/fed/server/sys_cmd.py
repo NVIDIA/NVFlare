@@ -76,6 +76,14 @@ class SystemCommandModule(CommandModule, CommandUtil):
                     authz_func=self.authorize_client_operation,
                     visible=True,
                 ),
+                CommandSpec(
+                    name="dead",
+                    description="send dead client msg to SJ",
+                    usage="dead <client-name>",
+                    handler_func=self.dead_client,
+                    authz_func=self.must_be_project_admin,
+                    visible=False,
+                ),
             ],
         )
 
@@ -175,3 +183,13 @@ class SystemCommandModule(CommandModule, CommandUtil):
         table = conn.append_table(["Sites", "Env"], name=MetaKey.CLIENTS)
         for k, v in site_resources.items():
             table.add_row([str(k), str(v)], meta=v)
+
+    def dead_client(self, conn: Connection, args: List[str]):
+        if len(args) != 3:
+            conn.append_error(f"Usage: {args[0]} client_name job_id")
+            return
+        client_name = args[1]
+        job_id = args[2]
+        engine = conn.app_ctx
+        engine.notify_dead_job(job_id, client_name, f"AdminCommand: {args[0]}")
+        conn.append_string(f"called notify_dead_job for client {client_name=} {job_id=}")

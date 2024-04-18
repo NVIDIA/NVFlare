@@ -284,6 +284,37 @@ class WFCommSpec(ABC):
         """
         raise NotImplementedError
 
+    def get_client_disconnect_time(self, client_name):
+        """Get the time that the client is deemed disconnected.
+
+        Args:
+            client_name: the name of the client
+
+        Returns: time at which the client was deemed disconnected; or None if the client is not disconnected.
+
+        """
+        raise NotImplementedError
+
+    def process_dead_client_report(self, client_name: str, fl_ctx: FLContext):
+        """Called by the Engine to process dead client report.
+
+        Args:
+            client_name: name of the client that dead report is received
+            fl_ctx: the FLContext
+
+        """
+        raise NotImplementedError
+
+    def client_is_active(self, client_name: str, reason: str, fl_ctx: FLContext):
+        """Called by the Engine to notify us that the client is active .
+
+        Args:
+            client_name: name of the client that is active
+            reason: why client is considered active
+            fl_ctx: the FLContext
+        """
+        raise NotImplementedError
+
     def process_task_check(self, task_id: str, fl_ctx: FLContext):
         """Called by the Engine to check whether a specified task still exists.
         Args:

@@ -37,7 +37,7 @@ from nvflare.security.logging import secure_format_exception
 class ModelController(Controller, FLComponentWrapper, ABC):
     def __init__(
         self,
-        persistor_id="",
+        persistor_id="persistor",
         ignore_result_error: bool = False,
         allow_empty_global_weights: bool = False,
         task_check_period: float = 0.5,
@@ -79,11 +79,11 @@ class ModelController(Controller, FLComponentWrapper, ABC):
         if self._persistor_id:
             self._persistor = self._engine.get_component(self._persistor_id)
             if not isinstance(self._persistor, LearnablePersistor):
-                self.panic(
+                self.warning(
                     f"Model Persistor {self._persistor_id} must be a LearnablePersistor type object, "
                     f"but got {type(self._persistor)}"
                 )
-                return
+                self._persistor = None
 
         self.engine = self.fl_ctx.get_engine()
         FLComponentWrapper.initialize(self)
@@ -96,7 +96,7 @@ class ModelController(Controller, FLComponentWrapper, ABC):
 
         return data_shareable
 
-    def send_model(
+    def broadcast_model(
         self,
         task_name: str = AppConstants.TASK_TRAIN,
         data: FLModel = None,
@@ -216,7 +216,8 @@ class ModelController(Controller, FLComponentWrapper, ABC):
         result_model = FLModelUtils.from_shareable(result)
         result_model.meta["client_name"] = client_name
 
-        self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, result_model.current_round, private=True, sticky=True)
+        if result_model.current_round is not None:
+            self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, result_model.current_round, private=True, sticky=True)
 
         self.event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT)
         self._accept_train_result(client_name=client_name, result=result, fl_ctx=fl_ctx)
