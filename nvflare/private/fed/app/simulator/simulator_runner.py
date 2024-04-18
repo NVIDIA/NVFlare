@@ -580,23 +580,34 @@ class SimulatorClientRunner(FLComponent):
                 client.simulate_running = False
 
             if end_run_for_all:
-                self._end_run_clients(client, gpu, lock, num_of_threads, timeout)
+                self._end_run_clients(gpu, lock, num_of_threads, timeout)
         except Exception as e:
             self.logger.error(f"run_client_thread error: {secure_format_exception(e)}")
 
-    def _end_run_clients(self, client, gpu, lock, num_of_threads, timeout):
+    def _end_run_clients(self, gpu, lock, num_of_threads, timeout):
+        """After the WF reaches the END_RUN, each running thread will try to pick up one of the remaining client
+        which has not run the END_RUN yet, then execute the END_RUN handler, until all the clients have done so.
+        These client END_RUN event handler only execute when "end_run_for_all" has been set.
+
+        Multiple client running threads will try to pick up the client from the same clients pool.
+
+        """
+        # Each thread only stop picking up the NOT-DONE client until all clients have run the END_RUN event.
         while len(self.end_run_clients) != len(self.federated_clients):
-            end_run_client = None
             with lock:
-                for client in self.federated_clients:
-                    if client.client_name not in self.end_run_clients and not client.simulate_running:
-                        end_run_client = client
-                        self.end_run_clients.append(end_run_client.client_name)
-                        break
+                end_run_client = self._pick_next_client()
+                self.end_run_clients.append(end_run_client.client_name)
             if end_run_client:
                 end_run_client.simulate_running = True
-                self.do_one_task(client, num_of_threads, gpu, lock, timeout=timeout, task_name=RunnerTask.END_RUN)
+                self.do_one_task(end_run_client, num_of_threads, gpu, lock, timeout=timeout, task_name=RunnerTask.END_RUN)
                 end_run_client.simulate_running = False
+
+    def _pick_next_client(self):
+        for client in self.federated_clients:
+            # Ensure the client has not run the END_RUN event
+            if client.client_name not in self.end_run_clients and not client.simulate_running:
+                return client
+        return None
 
     def do_one_task(self, client, num_of_threads, gpu, lock, timeout=60.0, task_name=RunnerTask.TASK_EXEC):
         open_port = get_open_ports(1)[0]
