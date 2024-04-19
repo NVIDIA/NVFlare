@@ -13,10 +13,10 @@
 # limitations under the License.
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.xgb.adaptors.grpc_server_adaptor import GrpcServerAdaptor
-from nvflare.app_common.xgb.controller import XGBController
-from nvflare.app_common.xgb.defs import Constant
-from nvflare.app_common.xgb.mock.mock_server_runner import MockServerRunner
+from nvflare.app_opt.xgboost.histogram_based_v2.adaptors.grpc_server_adaptor import GrpcServerAdaptor
+from nvflare.app_opt.xgboost.histogram_based_v2.controller import XGBController
+from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
+from nvflare.app_opt.xgboost.histogram_based_v2.mock.mock_server_runner import MockServerRunner
 
 
 class MockXGBController(XGBController):

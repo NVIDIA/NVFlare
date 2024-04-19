@@ -18,11 +18,13 @@ from xgboost import callback
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
+from nvflare.app_common.tracking.log_writer import LogWriter
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.runners.xgb_runner import AppRunner
 from nvflare.app_opt.xgboost.histogram_based_v2.tb import TensorBoardCallback
 from nvflare.app_opt.xgboost.histogram_based_v2.xgb_params import XGBoostParams
+from nvflare.app_opt.xgboost.metrics_cb import MetricsCallback
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.obj_utils import get_logger
 
@@ -36,6 +38,7 @@ class XGBClientRunner(AppRunner, FLComponent):
         verbose_eval,
         use_gpus,
         model_file_name,
+        metrics_writer_id: str = None,
     ):
         FLComponent.__init__(self)
         self.early_stopping_rounds = early_stopping_rounds
@@ -55,12 +58,19 @@ class XGBClientRunner(AppRunner, FLComponent):
         self._tb_dir = None
         self._model_dir = None
         self._stopped = False
+        self._metrics_writer_id = metrics_writer_id
+        self._metrics_writer = None
 
     def initialize(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
         self._data_loader = engine.get_component(self.data_loader_id)
         if not isinstance(self._data_loader, XGBDataLoader):
             self.system_panic(f"data_loader should be type XGBDataLoader but got {type(self._data_loader)}", fl_ctx)
+
+        if self._metrics_writer_id:
+            self._metrics_writer = engine.get_component(self._metrics_writer_id)
+            if not isinstance(self._metrics_writer, LogWriter):
+                self.system_panic("writer should be type LogWriter", fl_ctx)
 
     def _xgb_train(self, params: XGBoostParams, train_data, val_data) -> xgb.core.Booster:
         """XGBoost training logic.
@@ -75,6 +85,9 @@ class XGBClientRunner(AppRunner, FLComponent):
         watchlist = [(val_data, "eval"), (train_data, "train")]
 
         callbacks = [callback.EvaluationMonitor(rank=self._rank)]
+        if self._metrics_writer:
+            callbacks.append(MetricsCallback(self._metrics_writer))
+
         tensorboard, flag = optional_import(module="torch.utils.tensorboard")
         if flag and self._tb_dir:
             callbacks.append(TensorBoardCallback(self._tb_dir, tensorboard))

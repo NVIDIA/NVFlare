@@ -14,11 +14,11 @@
 import os
 import time
 
-import nvflare.app_common.xgb.proto.federated_pb2 as pb2
+import nvflare.app_opt.xgboost.histogram_based_v2.proto.federated_pb2 as pb2
 from nvflare.apis.fl_component import FLComponent
-from nvflare.app_common.xgb.defs import Constant
-from nvflare.app_common.xgb.grpc_client import GrpcClient
-from nvflare.app_common.xgb.runners.xgb_runner import AppRunner
+from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
+from nvflare.app_opt.xgboost.histogram_based_v2.grpc_client import GrpcClient
+from nvflare.app_opt.xgboost.histogram_based_v2.runners.xgb_runner import AppRunner
 
 
 class MockClientRunner(AppRunner, FLComponent):

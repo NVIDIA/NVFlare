@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.xgb.adaptors.grpc_client_adaptor import GrpcClientAdaptor
-from nvflare.app_common.xgb.executor import XGBExecutor
-from nvflare.app_common.xgb.mock.mock_secure_client_runner import MockSecureClientRunner
+from nvflare.app_opt.xgboost.histogram_based_v2.adaptors.grpc_client_adaptor import GrpcClientAdaptor
+from nvflare.app_opt.xgboost.histogram_based_v2.executor import XGBExecutor
+from nvflare.app_opt.xgboost.histogram_based_v2.mock.mock_secure_client_runner import MockSecureClientRunner
 
 
 class MockSecureXGBExecutor(XGBExecutor):

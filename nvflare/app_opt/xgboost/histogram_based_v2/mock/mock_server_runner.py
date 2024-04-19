@@ -11,10 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.app_common.xgb.defs import Constant
-from nvflare.app_common.xgb.grpc_server import GrpcServer
-from nvflare.app_common.xgb.mock.aggr_servicer import AggrServicer
-from nvflare.app_common.xgb.runners.xgb_runner import AppRunner
+from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
+from nvflare.app_opt.xgboost.histogram_based_v2.grpc_server import GrpcServer
+from nvflare.app_opt.xgboost.histogram_based_v2.mock.aggr_servicer import AggrServicer
+from nvflare.app_opt.xgboost.histogram_based_v2.runners.xgb_runner import AppRunner
 
 
 class MockServerRunner(AppRunner):

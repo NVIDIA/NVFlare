@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import grpc
+
 import nvflare.app_opt.xgboost.histogram_based_v2.proto.federated_pb2 as pb2
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
@@ -135,7 +137,9 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
             return pb2.AllgatherReply(receive_buffer=rcv_buf)
         except Exception as ex:
             self._abort(reason=f"send_all_gather exception: {secure_format_exception(ex)}")
-            return None
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(ex))
+            return pb2.AllgatherReply(receive_buffer=None)
 
     def AllgatherV(self, request: pb2.AllgatherVRequest, context):
         try:
@@ -147,7 +151,9 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
             return pb2.AllgatherVReply(receive_buffer=rcv_buf)
         except Exception as ex:
             self._abort(reason=f"send_all_gather_v exception: {secure_format_exception(ex)}")
-            return None
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(ex))
+            return pb2.AllgatherVReply(receive_buffer=None)
 
     def Allreduce(self, request: pb2.AllreduceRequest, context):
         try:
@@ -161,7 +167,9 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
             return pb2.AllreduceReply(receive_buffer=rcv_buf)
         except Exception as ex:
             self._abort(reason=f"send_all_reduce exception: {secure_format_exception(ex)}")
-            return None
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(ex))
+            return pb2.AllreduceReply(receive_buffer=None)
 
     def Broadcast(self, request: pb2.BroadcastRequest, context):
         try:
@@ -174,4 +182,6 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
             return pb2.BroadcastReply(receive_buffer=rcv_buf)
         except Exception as ex:
             self._abort(reason=f"send_broadcast exception: {secure_format_exception(ex)}")
-            return None
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(ex))
+            return pb2.BroadcastReply(receive_buffer=None)

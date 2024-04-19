@@ -17,9 +17,9 @@ import random
 from typing import Dict, List, Tuple
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.xgb.aggr import Aggregator
-from nvflare.app_common.xgb.defs import Constant
-from nvflare.app_common.xgb.sec.data_converter import (
+from nvflare.app_opt.xgboost.histogram_based_v2.aggr import Aggregator
+from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
+from nvflare.app_opt.xgboost.histogram_based_v2.sec.data_converter import (
     AggregationContext,
     DataConverter,
     FeatureAggregationResult,
