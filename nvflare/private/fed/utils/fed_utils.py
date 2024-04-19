@@ -41,6 +41,7 @@ from nvflare.private.privacy_manager import PrivacyManager, PrivacyService
 from nvflare.security.logging import secure_format_exception
 from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
 
+from ..simulator.simulator_const import SimulatorConstants
 from .app_authz import AppAuthzService
 
 
@@ -334,3 +335,7 @@ def get_return_code(process, job_id, workspace, logger):
     else:
         return_code = process.poll()
     return return_code
+
+
+def get_simulator_app_root(simulator_root, site_name):
+    return os.path.join(simulator_root, site_name, SimulatorConstants.JOB_NAME, "app_" + site_name)
