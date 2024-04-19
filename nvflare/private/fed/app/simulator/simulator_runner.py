@@ -519,7 +519,7 @@ class SimulatorClientRunner(FLComponent):
         self.kv_list = parse_vars(args.set)
         self.logging_config = os.path.join(self.args.workspace, "local", WorkspaceConstants.LOGGING_CONFIG)
 
-        self.end_run_clients = []
+        self.clients_finished_end_run = []
 
     def run(self, gpu):
         try:
@@ -575,7 +575,7 @@ class SimulatorClientRunner(FLComponent):
                 )
                 if end_run_client:
                     with lock:
-                        self.end_run_clients.append(end_run_client)
+                        self.clients_finished_end_run.append(end_run_client)
 
                 client.simulate_running = False
 
@@ -593,7 +593,7 @@ class SimulatorClientRunner(FLComponent):
 
         """
         # Each thread only stop picking up the NOT-DONE client until all clients have run the END_RUN event.
-        while len(self.end_run_clients) != len(self.federated_clients):
+        while len(self.clients_finished_end_run) != len(self.federated_clients):
             with lock:
                 end_run_client = self._pick_next_client()
             if end_run_client:
@@ -606,9 +606,9 @@ class SimulatorClientRunner(FLComponent):
     def _pick_next_client(self):
         for client in self.federated_clients:
             # Ensure the client has not run the END_RUN event
-            if client.client_name not in self.end_run_clients and not client.simulate_running:
+            if client.client_name not in self.clients_finished_end_run and not client.simulate_running:
                 client.simulate_running = True
-                self.end_run_clients.append(client.client_name)
+                self.clients_finished_end_run.append(client.client_name)
                 return client
         return None
 
