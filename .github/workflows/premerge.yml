@@ -29,15 +29,15 @@ jobs:
         os: [ ubuntu-22.04, ubuntu-20.04 ]
         python-version: [ "3.8", "3.9", "3.10" ]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -e .[dev]
+          python3 -m pip install --upgrade pip
+          python3 -m pip install --no-cache-dir -e .[dev]
       - name: Run unit test
         run: ./runtest.sh
 
@@ -49,15 +49,15 @@ jobs:
         os: [ ubuntu-22.04, ubuntu-20.04 ]
         python-version: [ "3.8", "3.9", "3.10" ]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -e .[dev]
-          pip install build twine torch torchvision
+          python3 -m pip install --upgrade pip
+          python3 -m pip install --no-cache-dir -e .[dev]
+          python3 -m pip install --no-cache-dir build twine torch torchvision
       - name: Run wheel build
         run: python3 -m build --wheel

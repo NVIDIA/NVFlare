@@ -159,7 +159,8 @@ class FLContextKey(object):
     CLIENT_TOKEN = "__client_token"
     AUTHORIZATION_RESULT = "_authorization_result"
     AUTHORIZATION_REASON = "_authorization_reason"
-    DEAD_JOB_CLIENT_NAME = "_dead_job_client_name"
+    DISCONNECTED_CLIENT_NAME = "_disconnected_client_name"
+    RECONNECTED_CLIENT_NAME = "_reconnected_client_name"
 
     CLIENT_REGISTER_DATA = "_client_register_data"
     SECURITY_ITEMS = "_security_items"
@@ -263,6 +264,7 @@ class ServerCommandKey(object):
     CLIENTS = "clients"
     COLLECTOR = "collector"
     TURN_TO_COLD = "__turn_to_cold__"
+    REASON = "reason"
 
 
 class FedEventHeader(object):
@@ -463,6 +465,12 @@ class ConfigVarName:
 
     # client and server: query interval for reliable message
     RM_QUERY_INTERVAL = "rm_query_interval"
+
+    # server: wait this long since client death report before treating the client as dead/disconnected
+    DEAD_CLIENT_GRACE_PERIOD = "dead_client_grace_period"
+
+    # server: wait this long since job schedule time before starting to check dead/disconnected clients
+    DEAD_CLIENT_CHECK_LEAD_TIME = "dead_client_check_lead_time"
 
 
 class SystemVarName:

@@ -71,6 +71,7 @@ class BaseFedAvg(WFController):
         self.num_rounds = num_rounds
         self.start_round = start_round
         self.persist_every_n_rounds = persist_every_n_rounds
+
         self.current_round = None
 
     def sample_clients(self, num_clients):
