@@ -249,12 +249,12 @@ class Connector(ABC, FLComponent):
         job_id = fl_ctx.get_job_id()
         starter = _AppletStarter(self.applet, self.in_process, workspace, job_id)
         if self.in_process:
-            self.logger.info(f"starting applet in another thread")
+            self.logger.info("starting applet in another thread")
             t = threading.Thread(
                 target=starter.start,
                 args=(app_ctx,),
                 daemon=True,
-                name=f"applet",
+                name="applet",
             )
             t.start()
             if not starter.started:
@@ -268,7 +268,7 @@ class Connector(ABC, FLComponent):
                 target=starter.start,
                 args=(app_ctx,),
                 daemon=True,
-                name=f"applet",
+                name="applet",
             )
             self.process.start()
 
