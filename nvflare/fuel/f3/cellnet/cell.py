@@ -27,6 +27,7 @@ from nvflare.fuel.f3.stream_cell import StreamCell
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import StreamFuture
 from nvflare.private.defs import CellChannel
+from nvflare.security.logging import secure_format_exception
 
 CHANNELS_TO_EXCLUDE = (
     CellChannel.CLIENT_MAIN,
@@ -233,15 +234,21 @@ class Cell(StreamCell):
         return waiter.result
 
     def _future_wait(self, future, timeout):
+        # future could have an error!
         last_progress = 0
         while not future.waiter.wait(timeout):
+            if future.error:
+                return False
             current_progress = future.get_progress()
             if last_progress == current_progress:
                 return False
             else:
                 self.logger.debug(f"{current_progress=}")
                 last_progress = current_progress
-        return True
+        if future.error:
+            return False
+        else:
+            return True
 
     def _encode_message(self, msg: Message):
         try:
@@ -250,11 +257,43 @@ class Cell(StreamCell):
             self.logger.error(f"Can't encode {msg=} {exc=}")
             raise exc
 
-    def _send_request(self, channel, target, topic, request, timeout=10.0, secure=False, optional=False):
+    def _send_request(
+        self,
+        channel,
+        target,
+        topic,
+        request,
+        timeout=10.0,
+        secure=False,
+        optional=False,
+    ):
+        """Stream one request to the target
+
+        Args:
+            channel: message channel name
+            target: FQCN of the target cell
+            topic: topic of the message
+            request: request message
+            timeout: how long to wait
+            secure: is P2P security to be applied
+            optional: is the message optional
+
+        Returns: reply data
+
+        """
         self._encode_message(request)
         return self._send_one_request(channel, target, topic, request, timeout, secure, optional)
 
-    def _send_one_request(self, channel, target, topic, request, timeout=10.0, secure=False, optional=False):
+    def _send_one_request(
+        self,
+        channel,
+        target,
+        topic,
+        request,
+        timeout=10.0,
+        secure=False,
+        optional=False,
+    ):
         req_id = str(uuid.uuid4())
         request.add_headers({StreamHeaderKey.STREAM_REQ_ID: req_id})
 
@@ -263,42 +302,46 @@ class Cell(StreamCell):
 
         waiter = SimpleWaiter(req_id=req_id, result=make_reply(ReturnCode.TIMEOUT))
         self.requests_dict[req_id] = waiter
-        future = self.send_blob(
-            channel=channel, topic=topic, target=target, message=request, secure=secure, optional=optional
-        )
 
-        self.logger.debug(f"{req_id=}: Waiting starts")
+        try:
+            future = self.send_blob(
+                channel=channel, topic=topic, target=target, message=request, secure=secure, optional=optional
+            )
 
-        # Three stages, sending, waiting for receiving first byte, receiving
+            self.logger.debug(f"{req_id=}: Waiting starts")
 
-        # sending with progress timeout
-        self.logger.debug(f"{req_id=}: entering sending wait {timeout=}")
-        sending_complete = self._future_wait(future, timeout)
-        if not sending_complete:
-            self.logger.info(f"{req_id=}: sending timeout {timeout=}")
+            # Three stages, sending, waiting for receiving first byte, receiving
+            # sending with progress timeout
+            self.logger.debug(f"{req_id=}: entering sending wait {timeout=}")
+            sending_complete = self._future_wait(future, timeout)
+            if not sending_complete:
+                self.logger.debug(f"{req_id=}: sending timeout {timeout=}")
+                return self._get_result(req_id)
+
+            self.logger.debug(f"{req_id=}: sending complete")
+
+            # waiting for receiving first byte
+            self.logger.debug(f"{req_id=}: entering remote process wait {timeout=}")
+            if not waiter.in_receiving.wait(timeout):
+                self.logger.debug(f"{req_id=}: remote processing timeout {timeout=}")
+                return self._get_result(req_id)
+            self.logger.debug(f"{req_id=}: in receiving")
+
+            # receiving with progress timeout
+            r_future = waiter.receiving_future
+            self.logger.debug(f"{req_id=}: entering receiving wait {timeout=}")
+            receiving_complete = self._future_wait(r_future, timeout)
+            if not receiving_complete:
+                self.logger.info(f"{req_id=}: receiving timeout {timeout=}")
+                return self._get_result(req_id)
+            self.logger.debug(f"{req_id=}: receiving complete")
+            waiter.result = Message(r_future.headers, r_future.result())
+            decode_payload(waiter.result, encoding_key=StreamHeaderKey.PAYLOAD_ENCODING)
+            self.logger.debug(f"{req_id=}: return result {waiter.result=}")
             return self._get_result(req_id)
-        self.logger.debug(f"{req_id=}: sending complete")
-
-        # waiting for receiving first byte
-        self.logger.debug(f"{req_id=}: entering remote process wait {timeout=}")
-        if not waiter.in_receiving.wait(timeout):
-            self.logger.info(f"{req_id=}: remote processing timeout {timeout=}")
+        except Exception as ex:
+            self.logger.error(f"exception sending request: {secure_format_exception(ex)}")
             return self._get_result(req_id)
-        self.logger.debug(f"{req_id=}: in receiving")
-
-        # receiving with progress timeout
-        r_future = waiter.receiving_future
-        self.logger.debug(f"{req_id=}: entering receiving wait {timeout=}")
-        receiving_complete = self._future_wait(r_future, timeout)
-        if not receiving_complete:
-            self.logger.info(f"{req_id=}: receiving timeout {timeout=}")
-            return self._get_result(req_id)
-        self.logger.debug(f"{req_id=}: receiving complete")
-        waiter.result = Message(r_future.headers, r_future.result())
-        decode_payload(waiter.result, encoding_key=StreamHeaderKey.PAYLOAD_ENCODING)
-        self.logger.debug(f"{req_id=}: return result {waiter.result=}")
-        result = self._get_result(req_id)
-        return result
 
     def _process_reply(self, future: StreamFuture):
         headers = future.headers

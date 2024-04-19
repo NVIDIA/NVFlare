@@ -31,12 +31,12 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         launch_timeout: Optional[float] = None,
         task_wait_timeout: Optional[float] = None,
         last_result_transfer_timeout: float = 300.0,
-        external_execution_wait: float = 5.0,
-        peer_read_timeout: Optional[float] = None,
+        external_pre_init_timeout: float = 60.0,
+        peer_read_timeout: Optional[float] = 60.0,
         monitor_interval: float = 0.01,
         read_interval: float = 0.5,
         heartbeat_interval: float = 5.0,
-        heartbeat_timeout: float = 30.0,
+        heartbeat_timeout: float = 60.0,
         workers: int = 4,
         train_with_evaluation: bool = True,
         train_task_name: str = "train",
@@ -51,22 +51,23 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         """Initializes the ClientAPILauncherExecutor.
 
         Args:
-            pipe_id (Optional[str]): Identifier for obtaining the Pipe from NVFlare components.
+            pipe_id (str): Identifier for obtaining the Pipe from NVFlare components.
             launcher_id (Optional[str]): Identifier for obtaining the Launcher from NVFlare components.
             launch_timeout (Optional[float]): Timeout for the Launcher's "launch_task" method to complete (None for no timeout).
             task_wait_timeout (Optional[float]): Timeout for retrieving the task result (None for no timeout).
-            last_result_transfer_timeout (float): Timeout for transmitting the last result from an external process (default: 5.0).
+            last_result_transfer_timeout (float): Timeout for transmitting the last result from an external process.
                 This value should be greater than the time needed for sending the whole result.
-            peer_read_timeout (Optional[float]): Timeout for waiting the task to be read by the peer from the pipe (None for no timeout).
-            monitor_interval (float): Interval for monitoring the launcher (default: 0.01).
-            read_interval (float): Interval for reading from the pipe (default: 0.5).
-            heartbeat_interval (float): Interval for sending heartbeat to the peer (default: 5.0).
-            heartbeat_timeout (float): Timeout for waiting for a heartbeat from the peer (default: 30.0).
-            workers (int): Number of worker threads needed (default: 4).
-            train_with_evaluation (bool): Whether to run training with global model evaluation (default: True).
-            train_task_name (str): Task name of train mode (default: train).
-            evaluate_task_name (str): Task name of evaluate mode (default: evaluate).
-            submit_model_task_name (str): Task name of submit_model mode (default: submit_model).
+            external_pre_init_timeout (float): Time to wait for external process before it calls flare.init().
+            peer_read_timeout (float, optional): time to wait for peer to accept sent message.
+            monitor_interval (float): Interval for monitoring the launcher.
+            read_interval (float): Interval for reading from the pipe.
+            heartbeat_interval (float): Interval for sending heartbeat to the peer.
+            heartbeat_timeout (float): Timeout for waiting for a heartbeat from the peer.
+            workers (int): Number of worker threads needed.
+            train_with_evaluation (bool): Whether to run training with global model evaluation.
+            train_task_name (str): Task name of train mode.
+            evaluate_task_name (str): Task name of evaluate mode.
+            submit_model_task_name (str): Task name of submit_model mode.
             from_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
                 This ParamsConverter will be called when model is sent from nvflare controller side to executor side.
             to_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
@@ -83,7 +84,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             launch_timeout=launch_timeout,
             task_wait_timeout=task_wait_timeout,
             last_result_transfer_timeout=last_result_transfer_timeout,
-            external_execution_wait=external_execution_wait,
+            external_pre_init_timeout=external_pre_init_timeout,
             peer_read_timeout=peer_read_timeout,
             monitor_interval=monitor_interval,
             read_interval=read_interval,

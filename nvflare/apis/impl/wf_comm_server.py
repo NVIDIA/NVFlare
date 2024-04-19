@@ -139,7 +139,7 @@ class WFCommServer(FLComponent, WFCommSpec):
                     "collector must be an instance of GroupInfoCollector, but got {}".format(type(collector))
                 )
             collector.add_info(
-                group_name=self.name,
+                group_name=self.controller.name,
                 info={
                     "tasks": {t.name: [ct.client.name for ct in t.client_tasks] for t in self._tasks},
                 },

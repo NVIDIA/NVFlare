@@ -15,6 +15,7 @@
 from typing import Any, Dict, Union
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
@@ -83,6 +84,18 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
         self._single_dxo_key = ""
         self._weigh_by_local_iter = weigh_by_local_iter
 
+        self.aggregation_weights = aggregation_weights
+        self.exclude_vars = exclude_vars
+        self.expected_data_kind = expected_data_kind
+
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        # _initialize() can not be called from the constructor. Because it changes the data, even the data format
+        # of the aggregation_weights and exclude_vars parameters. Inspect could not figure out the passed in
+        # parameters when re-construct the object creation configuration.
+        if event_type == EventType.START_RUN:
+            self._initialize(self.aggregation_weights, self.exclude_vars, self.expected_data_kind)
+
+    def _initialize(self, aggregation_weights, exclude_vars, expected_data_kind):
         # Check expected data kind
         if isinstance(expected_data_kind, dict):
             for k, v in expected_data_kind.items():
@@ -97,7 +110,6 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
                     f"expected_data_kind = {expected_data_kind} is not {DataKind.WEIGHT_DIFF} or {DataKind.WEIGHTS} or {DataKind.METRICS}"
                 )
             self.expected_data_kind = {self._single_dxo_key: expected_data_kind}
-
         # Check exclude_vars
         if exclude_vars:
             if not isinstance(exclude_vars, dict) and not isinstance(exclude_vars, str):
@@ -111,7 +123,6 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
                         "A dict exclude_vars should specify exclude_vars for every key in expected_data_kind. "
                         f"But missed these keys: {missing_keys}"
                     )
-
         exclude_vars_dict = dict()
         for k in self.expected_data_kind.keys():
             if isinstance(exclude_vars, dict):
@@ -127,7 +138,6 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
         if self._single_dxo_key in self.expected_data_kind:
             exclude_vars_dict[self._single_dxo_key] = exclude_vars
         self.exclude_vars = exclude_vars_dict
-
         # Check aggregation weights
         if _is_nested_aggregation_weights(aggregation_weights):
             missing_keys = _get_missing_keys(expected_data_kind, aggregation_weights)
@@ -136,7 +146,6 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
                     "A dict of dict aggregation_weights should specify aggregation_weights "
                     f"for every key in expected_data_kind. But missed these keys: {missing_keys}"
                 )
-
         aggregation_weights = aggregation_weights or {}
         aggregation_weights_dict = dict()
         for k in self.expected_data_kind.keys():
@@ -146,7 +155,6 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
                 # assume same aggregation weights for each entry of DXO collection.
                 aggregation_weights_dict[k] = aggregation_weights
         self.aggregation_weights = aggregation_weights_dict
-
         # Set up DXO aggregators
         self.dxo_aggregators = dict()
         for k in self.expected_data_kind.keys():
