@@ -30,6 +30,12 @@ def define_simulator_parser(simulator_parser):
     simulator_parser.add_argument("-t", "--threads", type=int, help="number of parallel running clients")
     simulator_parser.add_argument("-gpu", "--gpu", type=str, help="list of GPU Device Ids, comma separated")
     simulator_parser.add_argument("-m", "--max_clients", type=int, default=100, help="max number of clients")
+    simulator_parser.add_argument(
+        "--end_run_for_all",
+        default=False,
+        action="store_true",
+        help="flag to indicate if running END_RUN event for all clients",
+    )
 
 
 def run_simulator(simulator_args):
@@ -41,6 +47,7 @@ def run_simulator(simulator_args):
         threads=simulator_args.threads,
         gpu=simulator_args.gpu,
         max_clients=simulator_args.max_clients,
+        end_run_for_all=simulator_args.end_run_for_all,
     )
     run_status = simulator.run()
 
