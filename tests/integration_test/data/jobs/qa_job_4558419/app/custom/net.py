@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,22 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# A workflow to check if PR got broken hyperlinks
-name: Check Markdown links
+import torch.nn as nn
 
-on:
-  push:
-  pull_request:
 
-jobs:
-  markdown-link-check:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - uses: gaurav-nelson/github-action-markdown-link-check@1.0.15
-      with:
-        max-depth: -1
-        use-verbose-mode: 'yes'
-        config-file: '.github/workflows/mlc_config.json'
-        check-modified-files-only: 'yes'
-        base-branch: 'main'
+class Net(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc1 = nn.Linear(10**3, 10**5)
+
+    def forward(self, x):
+        x = self.fc1(x)
+        return x
