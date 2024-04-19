@@ -596,7 +596,6 @@ class SimulatorClientRunner(FLComponent):
         while len(self.end_run_clients) != len(self.federated_clients):
             with lock:
                 end_run_client = self._pick_next_client()
-                self.end_run_clients.append(end_run_client.client_name)
             if end_run_client:
                 self.do_one_task(
                     end_run_client, num_of_threads, gpu, lock, timeout=timeout, task_name=RunnerTask.END_RUN
@@ -609,6 +608,7 @@ class SimulatorClientRunner(FLComponent):
             # Ensure the client has not run the END_RUN event
             if client.client_name not in self.end_run_clients and not client.simulate_running:
                 client.simulate_running = True
+                self.end_run_clients.append(client.client_name)
                 return client
         return None
 
