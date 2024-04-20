@@ -1,0 +1,71 @@
+{
+    "format_version": 2,
+    "min_clients": 8,
+    "num_rounds": 50,
+    "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits/cifar10_fedbn_alpha1.0_bd52371e-8aaf-4850-a5c9-33cef2d6131c",
+    "alpha": 1.0,
+    "server": {
+        "heart_beat_timeout": 600
+    },
+    "task_data_filters": [],
+    "task_result_filters": [],
+    "components": [
+        {
+            "id": "data_splitter",
+            "path": "pt.utils.cifar10_data_splitter.Cifar10DataSplitter",
+            "args": {
+                "split_dir": "{TRAIN_SPLIT_ROOT}",
+                "num_sites": "{min_clients}",
+                "alpha": "{alpha}"
+            }
+        },
+        {
+            "id": "persistor",
+            "name": "PTFileModelPersistor",
+            "args": {
+                "model": {
+                    "path": "custom.pt.networks.cifar10_nets.ModerateBNCNN",
+                    "args": {}
+                }
+            }
+        },
+        {
+            "id": "model_selector",
+            "name": "IntimeModelSelector",
+            "args": {}
+        },
+        {
+            "id": "model_locator",
+            "name": "PTFileModelLocator",
+            "args": {
+                "pt_persistor_id": "persistor"
+            }
+        },
+        {
+            "id": "json_generator",
+            "name": "ValidationJsonGenerator",
+            "args": {}
+        }
+    ],
+    "workflows": [
+        {
+            "id": "fedbn_ctl",
+            "path": "custom.fedbn.FedBN",
+            "args": {
+                "min_clients": "{min_clients}",
+                "num_rounds": "{num_rounds}",
+                "persistor_id": "persistor"
+            }
+        },
+        {
+            "id": "cross_site_model_eval",
+            "name": "CrossSiteModelEval",
+            "args": {
+                "model_locator_id": "model_locator",
+                "submit_model_timeout": 600,
+                "validation_timeout": 6000,
+                "cleanup_models": true
+            }
+        }
+    ]
+}
