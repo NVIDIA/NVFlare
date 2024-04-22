@@ -19,7 +19,12 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         'xgboost_communicator': 'federated',
         'federated_server_address': f'localhost:{port}',
         'federated_world_size': world_size,
-        'federated_rank': rank
+        'federated_rank': rank,
+        'plugin_name': 'dummy',
+        'loader_params_key': 'LIBRARY_PATH',
+        'loader_params_map': '/tmp',
+        'proc_params_key': '',
+        'proc_params_map': '',
     }
 
     # Always call this before using distributed module

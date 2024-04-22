@@ -1,0 +1,12 @@
+{
+    "name": "vertical_xgb_gpu",
+    "resource_spec": {},
+    "min_clients": 2,
+    "deploy_map": {
+        "app": [
+            "@ALL"
+        ]
+    },
+    "job_folder_name": "vertical_xgb",
+    "byoc": true
+}

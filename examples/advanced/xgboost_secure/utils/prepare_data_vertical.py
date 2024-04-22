@@ -25,28 +25,10 @@ def data_split_args_parser():
     parser.add_argument("--data_path", type=str, help="Path to data file")
     parser.add_argument("--site_num", type=int, default=2, help="Total number of sites")
     parser.add_argument(
-        "--rows_total_percentage",
-        type=float,
-        default=1.0,
-        help="Percentage of dataset_rows_total to use for rows_total",
-    )
-    parser.add_argument(
-        "--rows_overlap_percentage",
-        type=float,
-        default=1.0,
-        help="Percentage of rows_total to use for rows_overlap between sites",
-    )
-    parser.add_argument(
         "--out_path",
         type=str,
         default="./dataset",
         help="Output path for the data split file",
-    )
-    parser.add_argument(
-        "--out_file",
-        type=str,
-        default="data.csv",
-        help="Output file name for the data split file",
     )
     return parser
 
@@ -70,24 +52,18 @@ def main():
 
     df = pd.read_csv(args.data_path, header=None)
 
-    dataset_rows_total, cols_total = df.shape[0], df.shape[1]
-    rows_total = int(dataset_rows_total * args.rows_total_percentage)
-    rows_overlap = int(rows_total * args.rows_overlap_percentage)
+    rows_total, cols_total = df.shape[0], df.shape[1]
 
     print(f"site_num: {args.site_num}")
     print(
-        f"dataset_num_rows: {dataset_rows_total}, rows_total_percentage: {args.rows_total_percentage}, rows_total: {rows_total}"
+        f"rows_total: {rows_total}, cols_total: {cols_total}"
     )
-    print(f"rows_overlap_percentage: {args.rows_overlap_percentage}, rows_overlap: {rows_overlap}")
-    print(f"cols_total: {cols_total}")
 
-    df["uid"] = df.index.to_series().map(lambda x: "uid_" + str(x))
-
-    # split cols
+    # split col
     cols_labelowner = int(cols_total * 0.4)
     site_col_size = split_num_proportion(cols_total-cols_labelowner, args.site_num-1)
     site_col_size.insert(0, cols_labelowner)
-    site_row_size = split_num_proportion(rows_total - rows_overlap, args.site_num)
+    print(f"site_col_size: {site_col_size}")
 
     if os.path.exists(args.out_path):
         shutil.rmtree(args.out_path)
@@ -96,33 +72,17 @@ def main():
         col_start = sum(site_col_size[:site])
         col_end = sum(site_col_size[: site + 1])
 
-        row_start = sum(site_row_size[:site])
-        row_end = sum(site_row_size[: site + 1])
-
-        df_split = pd.concat(
-            [
-                df.iloc[row_start:row_end, np.r_[col_start:col_end, cols_total]],
-                df.iloc[
-                    rows_total - rows_overlap : rows_total,
-                    np.r_[col_start:col_end, cols_total],
-                ],
-            ]
-        )
-        df_split = df_split.sample(frac=1)
-        print(f"site-{site+1} split rows [{row_start}:{row_end}],[{rows_total - rows_overlap}:{rows_total}]")
+        df_split = df.iloc[:, col_start:col_end]
         print(f"site-{site+1} split cols [{col_start}:{col_end}]")
 
         data_path = os.path.join(args.out_path, f"site-{site + 1}")
         if not os.path.exists(data_path):
             os.makedirs(data_path, exist_ok=True)
 
-        df_split.to_csv(path_or_buf=os.path.join(data_path, args.out_file), index=False)
-
-        df_train_valid = df_split.drop("uid", axis=1)
         # assign first 80% rows to train
-        df_train = df_train_valid.iloc[: int(0.8 * df_train_valid.shape[0])]
+        df_train = df_split.iloc[:int(0.8 * df_split.shape[0]), :]
         # assign last 20% rows to valid
-        df_valid = df_train_valid.iloc[int(0.8 * df_train_valid.shape[0]) :]
+        df_valid = df_split.iloc[int(0.8 * df_split.shape[0]):, :]
         # save train and valid data
         df_train.to_csv(path_or_buf=os.path.join(data_path, "train.csv"), index=False, header=False)
         df_valid.to_csv(path_or_buf=os.path.join(data_path, "valid.csv"), index=False, header=False)
