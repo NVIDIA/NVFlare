@@ -18,6 +18,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import SystemConfigs, SystemVarName
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.impl.wf_comm_server import WFCommServer
+from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
@@ -45,7 +46,7 @@ class WorkFlow:
 
 
 class ServerJsonConfigurator(FedJsonConfigurator):
-    def __init__(self, config_file_name: str, args, app_root: str, kv_list=None, exclude_libs=True):
+    def __init__(self, workspace_obj: Workspace, config_file_name: str, args, app_root: str, kv_list=None, exclude_libs=True):
         """This class parses server config from json file.
 
         Args:
@@ -70,6 +71,7 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             SystemVarName.SITE_NAME: "server",
             SystemVarName.WORKSPACE: args.workspace,
             SystemVarName.SECURE_MODE: self.cmd_vars.get("secure_train", True),
+            SystemVarName.JOB_CUSTOM_DIR: workspace_obj.get_app_custom_dir(args.job_id),
         }
 
         FedJsonConfigurator.__init__(

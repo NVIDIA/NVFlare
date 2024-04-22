@@ -17,6 +17,7 @@ import re
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import SystemConfigs, SystemVarName
+from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
@@ -37,7 +38,14 @@ FL_MODULES = ["apis", "app_common", "widgets", "app_opt"]
 
 
 class ClientJsonConfigurator(FedJsonConfigurator):
-    def __init__(self, config_file_name: str, args, app_root: str, kv_list=None, exclude_libs=True):
+    def __init__(
+            self,
+            workspace_obj: Workspace,
+            config_file_name: str,
+            args,
+            app_root: str,
+            kv_list=None,
+            exclude_libs=True):
         """To init the ClientJsonConfigurator.
 
         Args:
@@ -67,6 +75,7 @@ class ClientJsonConfigurator(FedJsonConfigurator):
             SystemVarName.WORKSPACE: args.workspace,
             SystemVarName.ROOT_URL: sp_url,
             SystemVarName.SECURE_MODE: self.cmd_vars.get("secure_train", True),
+            SystemVarName.JOB_CUSTOM_DIR: workspace_obj.get_app_custom_dir(args.job_id),
         }
 
         FedJsonConfigurator.__init__(

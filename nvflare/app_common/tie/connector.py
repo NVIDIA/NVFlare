@@ -27,7 +27,7 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.tie.applet import Applet
-from nvflare.app_common.tie.defs import Constant
+from nvflare.app_common.tie.defs import Constant, VALID_APPLET_ENV
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.log_utils import add_log_file_handler, configure_logging
 from nvflare.fuel.utils.validation_utils import check_object_type
@@ -85,19 +85,24 @@ class Connector(ABC, FLComponent):
     The Connector class defines commonly required methods for all Connector implementations.
     """
 
-    def __init__(self, in_process: bool):
+    def __init__(self, applet_env: str):
         """Constructor of Connector
 
         Args:
-            in_process: whether to start applet in the same process or not
+            applet_env: applet's running env
         """
         FLComponent.__init__(self)
         self.abort_signal = None
         self.applet = None
-        self.in_process = in_process
+        self.applet_env = applet_env
         self.starter = None
         self.process = None
         self.engine = None
+
+        if applet_env not in VALID_APPLET_ENV:
+            raise ValueError(f"invalid applet_env {applet_env}: must be in {VALID_APPLET_ENV}")
+
+        self.in_process = self.applet_env == Constant.APPLET_ENV_THREAD
 
     def set_applet(self, applet: Applet):
         """Set the applet that will be used to run app processing logic.
@@ -247,6 +252,12 @@ class Connector(ABC, FLComponent):
         engine = fl_ctx.get_engine()
         workspace = engine.get_workspace()
         job_id = fl_ctx.get_job_id()
+
+        if self.applet_env == Constant.APPLET_ENV_SELF:
+            self.logger.info("starting applet by itself")
+            self.applet.start(app_ctx)
+            return
+
         starter = _AppletStarter(self.applet, self.in_process, workspace, job_id)
         if self.in_process:
             self.logger.info("starting applet in another thread")
@@ -278,6 +289,10 @@ class Connector(ABC, FLComponent):
         Returns: None
 
         """
+        if self.applet_env == Constant.APPLET_ENV_SELF:
+            self.applet.stop()
+            return
+
         if self.in_process:
             applet = self.applet
             self.applet = None
@@ -295,6 +310,13 @@ class Connector(ABC, FLComponent):
         Returns: a tuple of (whether the applet is stopped, exit code)
 
         """
+        if self.applet_env == Constant.APPLET_ENV_SELF:
+            if self.applet:
+                return self.applet.is_stopped()
+            else:
+                self.logger.warning("applet is not set with the connector")
+                return True, 0
+
         if self.in_process:
             if self.starter:
                 if self.starter.stopped:
