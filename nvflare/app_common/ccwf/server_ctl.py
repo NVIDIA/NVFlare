@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import random
 import time
 from datetime import datetime
+from typing import List
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task
@@ -57,7 +59,7 @@ class ClientStatus:
 class ServerSideController(Controller):
     def __init__(
         self,
-        num_rounds: int,
+        num_rounds: int = 1,
         start_round: int = 0,
         task_name_prefix: str = "wf",
         configure_task_timeout=Constant.CONFIG_TASK_TIMEOUT,
@@ -65,10 +67,10 @@ class ServerSideController(Controller):
         start_task_timeout=Constant.START_TASK_TIMEOUT,
         task_check_period: float = Constant.TASK_CHECK_INTERVAL,
         job_status_check_interval: float = Constant.JOB_STATUS_CHECK_INTERVAL,
-        starting_client=None,
+        starting_client: str = "",
         starting_client_policy: str = DefaultValuePolicy.ANY,
         participating_clients=None,
-        result_clients=None,
+        result_clients: List[str] = [],
         result_clients_policy: str = DefaultValuePolicy.ALL,
         max_status_report_interval: float = Constant.PER_CLIENT_STATUS_REPORT_TIMEOUT,
         progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
@@ -182,6 +184,8 @@ class ServerSideController(Controller):
             allow_none=False,
         )
 
+        random.shuffle(self.participating_clients)
+        self.log_info(fl_ctx, f"Using participating clients: {self.participating_clients}")
         self.starting_client = validate_candidate(
             var_name="starting_client",
             candidate=self.starting_client,
@@ -189,6 +193,7 @@ class ServerSideController(Controller):
             default_policy=self.starting_client_policy,
             allow_none=True,
         )
+        self.log_info(fl_ctx, f"Starting client: {self.starting_client}")
 
         self.result_clients = validate_candidates(
             var_name="result_clients",

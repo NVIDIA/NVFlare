@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import random
+
 SYMBOL_ALL = "@all"
 SYMBOL_NONE = "@none"
 
@@ -24,12 +26,13 @@ class DefaultValuePolicy:
 
     DISALLOW = "disallow"
     ANY = "any"
+    RANDOM = "random"
     EMPTY = "empty"
     ALL = "all"
 
     @classmethod
     def valid_policy(cls, p: str):
-        return p in [cls.DISALLOW, cls.ANY, cls.EMPTY, cls.ALL]
+        return p in [cls.DISALLOW, cls.ANY, cls.RANDOM, cls.EMPTY, cls.ALL]
 
 
 def check_positive_int(name, value):
@@ -263,6 +266,8 @@ def validate_candidate(var_name: str, candidate, base: list, default_policy: str
             return ""
         elif default_policy == DefaultValuePolicy.ANY:
             return base[0]
+        elif default_policy == DefaultValuePolicy.RANDOM:
+            return random.choice(base)
         else:
             raise ValueError(f"invalid value '{candidate}' in '{var_name}': it must be one of {base}")
     else:

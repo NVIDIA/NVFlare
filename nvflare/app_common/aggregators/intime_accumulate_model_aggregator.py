@@ -196,6 +196,11 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
             return False
 
         contributor_name = shareable.get_peer_prop(key=ReservedKey.IDENTITY_NAME, default="?")
+
+        peer_ctx = fl_ctx.get_peer_context()
+        if contributor_name == "?" and peer_ctx:
+            contributor_name = peer_ctx.get_identity_name("?")
+
         contribution_round = shareable.get_cookie(AppConstants.CONTRIBUTION_ROUND)
 
         rc = shareable.get_return_code()
