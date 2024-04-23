@@ -23,6 +23,7 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.app_common.abstract.params_converter import ParamsConverter
+from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.exec_task_fn_wrapper import ExecTaskFuncWrapper
 from nvflare.app_common.tracking.tracker_types import ANALYTIC_EVENT_TYPE
 from nvflare.app_common.widgets.streaming import send_analytic_dxo
@@ -69,7 +70,7 @@ class InProcessClientAPIExecutor(Executor):
             raise ValueError(f"invalid task_script_path '{task_script_path}'")
 
         # only support main() for backward compatibility
-        self._task_fn_path = task_script_path.replace(".py", ".main")
+        self._task_script_path = task_script_path
         self._task_script_args = task_script_args
         self._task_wait_time = task_wait_time
 
@@ -84,9 +85,6 @@ class InProcessClientAPIExecutor(Executor):
         self._to_nvflare_converter_id = to_nvflare_converter_id
         self._to_nvflare_converter: Optional[ParamsConverter] = None
 
-        self._task_fn_wrapper = ExecTaskFuncWrapper(
-            task_fn_path=self._task_fn_path, task_main_args=self._task_script_args
-        )
         self._engine = None
         self._task_fn_thread = None
         self._log_thread = None
@@ -96,6 +94,8 @@ class InProcessClientAPIExecutor(Executor):
         self._data_bus.subscribe([TOPIC_LOG_DATA], self.log_result_callback)
         self.local_result = None
         self._fl_ctx = None
+        self._task_fn_path = None
+        self._task_fn_wrapper = None
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -104,8 +104,18 @@ class InProcessClientAPIExecutor(Executor):
             self._fl_ctx = fl_ctx
             self._init_converter(fl_ctx)
 
+            self._task_fn_path = self._task_script_path.replace(".py", ".main")
+            self._task_fn_wrapper = ExecTaskFuncWrapper(
+                task_fn_path=self._task_fn_path, task_main_args=self._task_script_args
+            )
+
             self._task_fn_thread = threading.Thread(target=self._task_fn_wrapper.run)
             self._task_fn_thread.start()
+
+            meta = self._prepare_task_meta(fl_ctx, None)
+            self.client_api = InProcessClientAPI(task_metadata=meta, result_check_interval=0.5)
+            self.client_api.init()
+            self._data_bus.put_data(CLIENT_API_KEY, self.client_api)
 
         elif event_type == EventType.END_RUN:
             self._event_manager.fire_event(TOPIC_STOP, "END_RUN received")
@@ -118,9 +128,7 @@ class InProcessClientAPIExecutor(Executor):
             fl_ctx.set_prop("abort_signal", abort_signal)
 
             meta = self._prepare_task_meta(fl_ctx, task_name)
-            client_api = InProcessClientAPI(task_metadata=meta, result_check_interval=0.5)
-            client_api.init()
-            self._data_bus.put_data(CLIENT_API_KEY, client_api)
+            self.client_api.set_meta(meta)
 
             shareable.set_header(FLMetaKey.JOB_ID, fl_ctx.get_job_id())
             shareable.set_header(FLMetaKey.SITE_NAME, fl_ctx.get_identity_name())
@@ -142,6 +150,14 @@ class InProcessClientAPIExecutor(Executor):
                 if self.local_result:
                     result = self.local_result
                     self.local_result = None
+
+                    if not isinstance(result, Shareable):
+                        self.log_error(fl_ctx, f"bad task result from peer: expect Shareable but got {type(result)}")
+                        return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+
+                    current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
+                    if current_round is not None:
+                        result.set_header(AppConstants.CURRENT_ROUND, current_round)
                     if self._to_nvflare_converter is not None:
                         result = self._to_nvflare_converter.process(task_name, result, fl_ctx)
                     return result

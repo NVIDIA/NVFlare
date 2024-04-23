@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import copy
 import json
 import logging.config
 import os
@@ -58,7 +58,7 @@ from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorServerAppRunner
 from nvflare.private.fed.simulator.simulator_audit import SimulatorAuditor
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, split_gpus
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, get_simulator_app_root, split_gpus
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 from nvflare.security.security import EmptyAuthorizer
 
@@ -69,7 +69,15 @@ SIMULATOR_POOL_STATS = "simulator_cell_stats.json"
 
 class SimulatorRunner(FLComponent):
     def __init__(
-        self, job_folder: str, workspace: str, clients=None, n_clients=None, threads=None, gpu=None, max_clients=100
+        self,
+        job_folder: str,
+        workspace: str,
+        clients=None,
+        n_clients=None,
+        threads=None,
+        gpu=None,
+        max_clients=100,
+        end_run_for_all=False,
     ):
         super().__init__()
 
@@ -80,6 +88,7 @@ class SimulatorRunner(FLComponent):
         self.threads = threads
         self.gpu = gpu
         self.max_clients = max_clients
+        self.end_run_for_all = end_run_for_all
 
         self.ask_to_stop = False
 
@@ -134,9 +143,6 @@ class SimulatorRunner(FLComponent):
         if not os.path.isfile(log_config_file_path):
             log_config_file_path = os.path.join(os.path.dirname(__file__), WorkspaceConstants.LOGGING_CONFIG)
         logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
-        local_dir = os.path.join(self.args.workspace, "local")
-        os.makedirs(local_dir, exist_ok=True)
-        shutil.copyfile(log_config_file_path, os.path.join(local_dir, WorkspaceConstants.LOGGING_CONFIG))
 
         self.args.log_config = None
         self.args.config_folder = "config"
@@ -145,6 +151,7 @@ class SimulatorRunner(FLComponent):
         self.args.env = os.path.join("config", AppFolderConstants.CONFIG_ENV)
         cwd = os.getcwd()
         self.args.job_folder = os.path.join(cwd, self.args.job_folder)
+        self.args.end_run_for_all = self.end_run_for_all
 
         if not os.path.exists(self.args.workspace):
             os.makedirs(self.args.workspace)
@@ -153,15 +160,9 @@ class SimulatorRunner(FLComponent):
         AuthorizationService.initialize(EmptyAuthorizer())
         AuditService.the_auditor = SimulatorAuditor()
 
+        self.simulator_root = self.args.workspace
+        self._cleanup_workspace()
         init_security_content_service(self.args.workspace)
-
-        self.simulator_root = os.path.join(self.args.workspace, SimulatorConstants.JOB_NAME)
-        if os.path.exists(self.simulator_root):
-            shutil.rmtree(self.simulator_root)
-
-        os.makedirs(self.simulator_root)
-        log_file = os.path.join(self.simulator_root, WorkspaceConstants.LOG_FILE_NAME)
-        add_logfile_handler(log_file)
 
         try:
             data_bytes, job_name, meta = self.validate_job_data()
@@ -237,7 +238,7 @@ class SimulatorRunner(FLComponent):
             self.args.sp_scheme = parsed_url.scheme
 
             self.logger.info("Deploy the Apps.")
-            self._deploy_apps(job_name, data_bytes, meta)
+            self._deploy_apps(job_name, data_bytes, meta, log_config_file_path)
 
             return True
 
@@ -245,6 +246,25 @@ class SimulatorRunner(FLComponent):
             self.logger.error(f"Simulator setup error: {secure_format_exception(e)}")
             secure_log_traceback()
             return False
+
+    def _cleanup_workspace(self):
+        os.makedirs(self.simulator_root, exist_ok=True)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            startup_dir = os.path.join(self.args.workspace, "startup")
+            temp_start_up = os.path.join(temp_dir, "startup")
+            if os.path.exists(startup_dir):
+                shutil.move(startup_dir, temp_start_up)
+            if os.path.exists(self.simulator_root):
+                shutil.rmtree(self.simulator_root)
+            if os.path.exists(temp_start_up):
+                shutil.move(temp_start_up, startup_dir)
+
+    def _setup_local_startup(self, log_config_file_path, workspace):
+        local_dir = os.path.join(workspace, "local")
+        startup = os.path.join(workspace, "startup")
+        os.makedirs(local_dir, exist_ok=True)
+        shutil.copyfile(log_config_file_path, os.path.join(local_dir, WorkspaceConstants.LOGGING_CONFIG))
+        shutil.copytree(os.path.join(self.simulator_root, "startup"), startup)
 
     def validate_job_data(self):
         # Validate the simulate job
@@ -281,7 +301,7 @@ class SimulatorRunner(FLComponent):
         if no_app_clients:
             raise RuntimeError(f"The job does not have App to run for clients: {no_app_clients}")
 
-    def _deploy_apps(self, job_name, data_bytes, meta):
+    def _deploy_apps(self, job_name, data_bytes, meta, log_config_file_path):
         with tempfile.TemporaryDirectory() as temp_dir:
             if os.path.exists(temp_dir):
                 shutil.rmtree(temp_dir)
@@ -289,22 +309,19 @@ class SimulatorRunner(FLComponent):
             unzip_all_from_bytes(data_bytes, temp_dir)
             temp_job_folder = os.path.join(temp_dir, job_name)
 
-            app_server_root = os.path.join(self.simulator_root, "app_server")
             for app_name, participants in meta.get(JobMetaKey.DEPLOY_MAP).items():
                 if len(participants) == 1 and participants[0].upper() == ALL_SITES:
                     participants = ["server"]
                     participants.extend([client for client in self.client_names])
 
                 for p in participants:
-                    if p == "server":
+                    if p == "server" or p in self.client_names:
+                        app_root = get_simulator_app_root(self.simulator_root, p)
+                        self._setup_local_startup(log_config_file_path, os.path.join(self.simulator_root, p))
                         app = os.path.join(temp_job_folder, app_name)
-                        shutil.copytree(app, app_server_root)
-                    elif p in self.client_names:
-                        app_client_root = os.path.join(self.simulator_root, "app_" + p)
-                        app = os.path.join(temp_job_folder, app_name)
-                        shutil.copytree(app, app_client_root)
+                        shutil.copytree(app, app_root)
 
-            job_meta_file = os.path.join(self.simulator_root, WorkspaceConstants.JOB_META_FILE)
+            job_meta_file = os.path.join(self.simulator_root, "server", WorkspaceConstants.JOB_META_FILE)
             with open(job_meta_file, "w") as f:
                 json.dump(meta, f, indent=4)
 
@@ -336,7 +353,7 @@ class SimulatorRunner(FLComponent):
 
     def _set_client_status(self):
         for client in self.federated_clients:
-            app_client_root = os.path.join(self.simulator_root, "app_" + client.client_name)
+            app_client_root = get_simulator_app_root(self.simulator_root, client.client_name)
             client.app_client_root = app_client_root
             client.args = self.args
             # self.create_client_runner(client)
@@ -404,7 +421,8 @@ class SimulatorRunner(FLComponent):
                 }
 
                 self.logger.info("Deploy and start the Server App.")
-                server_thread = threading.Thread(target=self.start_server_app, args=[])
+                args = copy.deepcopy(self.args)
+                server_thread = threading.Thread(target=self.start_server_app, args=[args])
                 server_thread.start()
 
                 # wait for the server app is started
@@ -448,17 +466,23 @@ class SimulatorRunner(FLComponent):
         client_runner = SimulatorClientRunner(self.args, clients, self.client_config, self.deploy_args, self.build_ctx)
         client_runner.run(gpu)
 
-    def start_server_app(self):
-        app_server_root = os.path.join(self.simulator_root, "app_server")
-        self.args.server_config = os.path.join("config", JobConstants.SERVER_JOB_CONFIG)
+    def start_server_app(self, args):
+        app_server_root = os.path.join(self.simulator_root, "server", SimulatorConstants.JOB_NAME, "app_server")
+        args.workspace = app_server_root
+        os.chdir(args.workspace)
+
+        log_file = os.path.join(self.simulator_root, "server", WorkspaceConstants.LOG_FILE_NAME)
+        add_logfile_handler(log_file)
+
+        args.server_config = os.path.join("config", JobConstants.SERVER_JOB_CONFIG)
         app_custom_folder = os.path.join(app_server_root, "custom")
         sys.path.append(app_custom_folder)
 
-        startup = os.path.join(self.args.workspace, WorkspaceConstants.STARTUP_FOLDER_NAME)
+        startup = os.path.join(args.workspace, WorkspaceConstants.STARTUP_FOLDER_NAME)
         os.makedirs(startup, exist_ok=True)
-        local = os.path.join(self.args.workspace, WorkspaceConstants.SITE_FOLDER_NAME)
+        local = os.path.join(args.workspace, WorkspaceConstants.SITE_FOLDER_NAME)
         os.makedirs(local, exist_ok=True)
-        workspace = Workspace(root_dir=self.args.workspace, site_name="server")
+        workspace = Workspace(root_dir=args.workspace, site_name="server")
 
         self.server.job_cell = self.server.create_job_cell(
             SimulatorConstants.JOB_NAME,
@@ -471,7 +495,7 @@ class SimulatorRunner(FLComponent):
         snapshot = None
         kv_list = [f"secure_train={self.server.secure_train}"]
         server_app_runner.start_server_app(
-            workspace, self.args, app_server_root, self.args.job_id, snapshot, self.logger, kv_list=kv_list
+            workspace, args, app_server_root, args.job_id, snapshot, self.logger, kv_list=kv_list
         )
 
         # start = time.time()
@@ -489,8 +513,8 @@ class SimulatorRunner(FLComponent):
     def dump_stats(self, workspace: Workspace):
         stats_dict = StatsPoolManager.to_dict()
         json_object = json.dumps(stats_dict, indent=4)
-        os.makedirs(os.path.join(workspace.get_run_dir(SimulatorConstants.JOB_NAME), POOL_STATS_DIR))
-        file = os.path.join(workspace.get_run_dir(SimulatorConstants.JOB_NAME), POOL_STATS_DIR, SIMULATOR_POOL_STATS)
+        os.makedirs(os.path.join(workspace.get_root_dir(), POOL_STATS_DIR))
+        file = os.path.join(workspace.get_root_dir(), POOL_STATS_DIR, SIMULATOR_POOL_STATS)
         with open(file, "w") as outfile:
             outfile.write(json_object)
 
@@ -502,14 +526,14 @@ class SimulatorClientRunner(FLComponent):
         self.federated_clients = clients
         self.run_client_index = -1
 
-        self.simulator_root = os.path.join(self.args.workspace, SimulatorConstants.JOB_NAME)
+        self.simulator_root = self.args.workspace
         self.client_config = client_config
         self.deploy_args = deploy_args
         self.build_ctx = build_ctx
         self.kv_list = parse_vars(args.set)
         self.logging_config = os.path.join(self.args.workspace, "local", WorkspaceConstants.LOGGING_CONFIG)
 
-        self.end_run_clients = []
+        self.clients_finished_end_run = []
 
     def run(self, gpu):
         try:
@@ -519,16 +543,13 @@ class SimulatorClientRunner(FLComponent):
             lock = threading.Lock()
             timeout = self.kv_list.get("simulator_worker_timeout", 60.0)
             for i in range(self.args.threads):
-                executor.submit(lambda p: self.run_client_thread(*p), [self.args.threads, gpu, lock, i, timeout])
+                executor.submit(
+                    lambda p: self.run_client_thread(*p),
+                    [self.args.threads, gpu, lock, self.args.end_run_for_all, timeout],
+                )
 
             # wait for the server and client running thread to finish.
             executor.shutdown()
-
-            for client in self.federated_clients:
-                if client.client_name not in self.end_run_clients:
-                    self.do_one_task(
-                        client, self.args.threads, gpu, lock, timeout=timeout, task_name=RunnerTask.END_RUN
-                    )
 
         except Exception as e:
             self.logger.error(f"SimulatorClientRunner run error: {secure_format_exception(e)}")
@@ -548,7 +569,7 @@ class SimulatorClientRunner(FLComponent):
             # Ignore the exception for the simulator client shutdown
             self.logger.warn(f"Exception happened to client{client.name} during shutdown ")
 
-    def run_client_thread(self, num_of_threads, gpu, lock, rank, timeout=60):
+    def run_client_thread(self, num_of_threads, gpu, lock, end_run_for_all, timeout=60):
         stop_run = False
         interval = 1
         client_to_run = None  # indicates the next client to run
@@ -568,21 +589,55 @@ class SimulatorClientRunner(FLComponent):
                 )
                 if end_run_client:
                     with lock:
-                        self.end_run_clients.append(end_run_client)
+                        self.clients_finished_end_run.append(end_run_client)
 
                 client.simulate_running = False
+
+            if end_run_for_all:
+                self._end_run_clients(gpu, lock, num_of_threads, timeout)
         except Exception as e:
             self.logger.error(f"run_client_thread error: {secure_format_exception(e)}")
 
+    def _end_run_clients(self, gpu, lock, num_of_threads, timeout):
+        """After the WF reaches the END_RUN, each running thread will try to pick up one of the remaining client
+        which has not run the END_RUN yet, then execute the END_RUN handler, until all the clients have done so.
+        These client END_RUN event handler only execute when "end_run_for_all" has been set.
+
+        Multiple client running threads will try to pick up the client from the same clients pool.
+
+        """
+        # Each thread only stop picking up the NOT-DONE client until all clients have run the END_RUN event.
+        while len(self.clients_finished_end_run) != len(self.federated_clients):
+            with lock:
+                end_run_client = self._pick_next_client()
+            if end_run_client:
+                self.do_one_task(
+                    end_run_client, num_of_threads, gpu, lock, timeout=timeout, task_name=RunnerTask.END_RUN
+                )
+                with lock:
+                    end_run_client.simulate_running = False
+
+    def _pick_next_client(self):
+        for client in self.federated_clients:
+            # Ensure the client has not run the END_RUN event
+            if client.client_name not in self.clients_finished_end_run and not client.simulate_running:
+                client.simulate_running = True
+                self.clients_finished_end_run.append(client.client_name)
+                return client
+        return None
+
     def do_one_task(self, client, num_of_threads, gpu, lock, timeout=60.0, task_name=RunnerTask.TASK_EXEC):
         open_port = get_open_ports(1)[0]
-        client_workspace = os.path.join(self.args.workspace, SimulatorConstants.JOB_NAME, "app_" + client.client_name)
+        client_workspace = os.path.join(self.args.workspace, client.client_name)
+        logging_config = os.path.join(
+            self.args.workspace, client.client_name, "local", WorkspaceConstants.LOGGING_CONFIG
+        )
         command = (
             sys.executable
             + " -m nvflare.private.fed.app.simulator.simulator_worker -o "
             + client_workspace
             + " --logging_config "
-            + self.logging_config
+            + logging_config
             + " --client "
             + client.client_name
             + " --token "
@@ -612,10 +667,12 @@ class SimulatorClientRunner(FLComponent):
         conn = self._create_connection(open_port, timeout=timeout)
 
         self.build_ctx["client_name"] = client.client_name
+        deploy_args = copy.deepcopy(self.deploy_args)
+        deploy_args.workspace = os.path.join(deploy_args.workspace, client.client_name)
         data = {
             # SimulatorConstants.CLIENT: client,
             SimulatorConstants.CLIENT_CONFIG: self.client_config,
-            SimulatorConstants.DEPLOY_ARGS: self.deploy_args,
+            SimulatorConstants.DEPLOY_ARGS: deploy_args,
             SimulatorConstants.BUILD_CTX: self.build_ctx,
         }
         conn.send(data)

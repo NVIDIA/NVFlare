@@ -50,12 +50,9 @@ class InProcessClientAPI(APISpec):
         self.meta = task_metadata
         self.result_check_interval = result_check_interval
 
-        self.start_round = None
         self.fl_model = None
         self.sys_info = {}
         self.client_config: Optional[ClientConfig] = None
-        self.current_round = None
-        self.total_rounds = None
         self.logger = logging.getLogger(self.__class__.__name__)
         self.event_manager = EventManager(self.data_bus)
         self.abort_reason = ""
@@ -95,6 +92,9 @@ class InProcessClientAPI(APISpec):
         else:
             client_config.config = self.meta
         self.client_config = client_config
+
+    def set_meta(self, meta: dict):
+        self.meta = meta
 
     def receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
         if self.fl_model:
@@ -149,14 +149,7 @@ class InProcessClientAPI(APISpec):
         else:
             self.receive()
 
-        if self.fl_model:
-            self.current_round = self.fl_model.current_round
-            self.total_rounds = self.fl_model.total_rounds
-            self.start_round = self.fl_model.meta.get(FLMetaKey.START_ROUND, 0)
-        else:
-            return False
-
-        return self.current_round < self.start_round + self.total_rounds
+        return self.fl_model is not None
 
     def is_train(self) -> bool:
         if self.rank != "0":

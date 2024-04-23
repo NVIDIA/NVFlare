@@ -263,6 +263,8 @@ class HandleDeadJobCommand(CommandProcessor):
 
         """
         client_name = data.get_header(ServerCommandKey.FL_CLIENT)
+        reason = data.get_header(ServerCommandKey.REASON)
+        self.logger.warning(f"received dead job notification: {reason=}")
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
         if server_runner:
             server_runner.handle_dead_job(client_name, fl_ctx)
