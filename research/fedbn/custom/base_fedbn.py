@@ -21,9 +21,8 @@ from nvflare.app_common.abstract.model import make_model_learnable
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.app_common.workflows.model_controller import ModelController
 from nvflare.security.logging import secure_format_exception
-
-from .model_controller import ModelController
 
 from .fl_bn_model_utils import FLBNModelUtils
 
