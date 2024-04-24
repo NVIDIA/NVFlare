@@ -39,10 +39,10 @@ _TASK_KEY_MANAGER = "___mgr"
 _TASK_KEY_DONE = "___done"
 
 # wait this long since client death report before treating the client as dead
-_CONFIG_VAR_DEAD_CLIENT_GRACE_PERIOD = "dead_client_grace_period"
+_CONFIG_VAR_DEAD_CLIENT_GRACE_PERIOD = "NVFLARE_DEAD_CLIENT_GRACE_PERIOD"
 
 # wait this long since job schedule time before starting to check dead clients
-_CONFIG_VAR_DEAD_CLIENT_CHECK_LEAD_TIME = "dead_client_check_lead_time"
+_CONFIG_VAR_DEAD_CLIENT_CHECK_LEAD_TIME = "NVFLARE_DEAD_CLIENT_CHECK_LEAD_TIME"
 
 
 def _check_positive_int(name, value):
@@ -887,6 +887,7 @@ class Controller(Responder, ControllerSpec, ABC):
                 # consider client dead
                 status.death_time = now
                 self.logger.error(f"Client {client_name} is deemed dead!")
+                self.client_is_dead(client_name)
 
     def _check_tasks(self):
         with self._controller_lock:

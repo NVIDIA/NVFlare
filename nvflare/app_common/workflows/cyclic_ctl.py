@@ -143,6 +143,7 @@ class CyclicController(Controller):
         for t in self._participating_clients:
             if not self.get_client_death_time(t.name):
                 active_clients_map[t.name] = t
+        self.log_info(fl_ctx, f"{active_clients_map=}")
 
         if len(active_clients_map) <= 1:
             self.system_panic(f"Not enough client sites (active_clients={len(active_clients_map)}).", fl_ctx)
@@ -180,6 +181,7 @@ class CyclicController(Controller):
             except Exception as ex:
                 if rc != ReturnCode.EARLY_TERMINATION:
                     self.log_error(fl_ctx, f"exception {secure_format_exception(ex)} from shareable_to_learnable")
+                    self.system_panic(f"exception {secure_format_exception(ex)} from shareable_to_learnable", fl_ctx)
                 else:
                     self.log_warning(
                         fl_ctx,
@@ -299,3 +301,12 @@ class CyclicController(Controller):
             self._start_round = self._current_round
         finally:
             pass
+
+    def client_is_dead(self, client_name: str):
+        with self._engine.new_context() as fl_ctx:
+            self.log_info(fl_ctx, f"{client_name} is dead")
+            if isinstance(self._order, list):
+                if client_name in self._order:
+                    error_msg = "required client is dead, stop job"
+                    self.log_error(fl_ctx, error_msg)
+                    self.system_panic(error_msg, fl_ctx)
