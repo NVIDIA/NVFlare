@@ -48,9 +48,11 @@ import nvflare.client as flare
 
 # (optional) metrics
 from nvflare.client.tracking import SummaryWriter
-summary_writer = SummaryWriter()
 
 print_config()
+
+# (2) initializes NVFlare client API
+flare.init()
 
 # Setup data directory
 directory = os.environ.get("MONAI_DATA_DIRECTORY")
@@ -94,12 +96,11 @@ trainer = SupervisedTrainer(
     train_handlers=StatsHandler(),
 )
 
-# (2) initializes NVFlare client API
-flare.init()
-
 # (optional) calculate total steps
 steps = max_epochs * len(train_loader)
 # Run the training
+
+summary_writer = SummaryWriter()
 while flare.is_running():
     # (3) receives FLModel from NVFlare
     input_model = flare.receive()
