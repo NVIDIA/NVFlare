@@ -8,7 +8,7 @@ import xgboost.federated
 import pandas as pd
 
 PRINT_SAMPLE = False
-DATASET_ROOT = "./dataset/horizontal_xgb_data"
+DATASET_ROOT = "./dataset/vertical_xgb_data"
 
 def run_server(port: int, world_size: int) -> None:
     xgboost.federated.run_federated_server(port, world_size)
@@ -20,7 +20,7 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         'federated_server_address': f'localhost:{port}',
         'federated_world_size': world_size,
         'federated_rank': rank,
-        'plugin_name': 'dummy',
+        'plugin_name': 'mock',
         'loader_params_key': 'LIBRARY_PATH',
         'loader_params_map': '/tmp',
         'proc_params_key': '',
@@ -42,10 +42,13 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
             print(f'Direct load: rank={rank}, one sample row of the data: \n {df_train.iloc[0]}')
 
         # Load file, file will not be sharded in federated mode.
-        label = "&label_column=0"
+        if rank == 0:
+            label = "&label_column=0"
+        else:
+            label = ""
         # for Vertical XGBoost, read from csv with label_column and set data_split_mode to 1 for column mode
-        dtrain = xgb.DMatrix(train_path + f"?format=csv{label}", data_split_mode=3)
-        dvalid = xgb.DMatrix(valid_path + f"?format=csv{label}", data_split_mode=3)
+        dtrain = xgb.DMatrix(train_path + f"?format=csv{label}", data_split_mode=1)
+        dvalid = xgb.DMatrix(valid_path + f"?format=csv{label}", data_split_mode=1)
 
         if PRINT_SAMPLE:
             # print number of rows and columns for each worker
@@ -71,14 +74,14 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         # Run training, all the features in training API is available.
         bst = xgb.train(param, dtrain, num_round, evals=watchlist)
 
-        # Save the model, every rank's model is different.
-        bst.save_model(f"./model/test.model.hori.secure{xgb.collective.get_rank()}.json")
+        # Save the model, only ask process 0 to save the model.
         if xgb.collective.get_rank() == 0:
+            bst.save_model("./model/test.model.vert.base.json")
             xgb.collective.communicator_print("Finished training\n")
 
 
 def run_federated() -> None:
-    port = 5555
+    port = 9999
     world_size = int(sys.argv[1])
 
     server = multiprocessing.Process(target=run_server, args=(port, world_size))
