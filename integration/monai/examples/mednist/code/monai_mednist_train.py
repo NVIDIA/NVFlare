@@ -52,9 +52,6 @@ summary_writer = SummaryWriter()
 
 print_config()
 
-# (2) initializes NVFlare client API
-flare.init()
-
 # Setup data directory
 directory = os.environ.get("MONAI_DATA_DIRECTORY")
 root_dir = tempfile.mkdtemp() if directory is None else directory
@@ -96,6 +93,9 @@ trainer = SupervisedTrainer(
     inferer=SimpleInferer(),
     train_handlers=StatsHandler(),
 )
+
+# (2) initializes NVFlare client API
+flare.init()
 
 # (optional) calculate total steps
 steps = max_epochs * len(train_loader)
