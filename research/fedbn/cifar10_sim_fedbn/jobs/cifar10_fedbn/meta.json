@@ -1,9 +1,0 @@
-{
-    "name": "cifar10_fedbn_alpha1.0",
-    "deploy_map": {
-        "cifar10_fedbn": [
-            "@ALL"
-        ]
-    },
-    "min_clients": 8
-}
