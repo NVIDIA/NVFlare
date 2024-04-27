@@ -468,7 +468,7 @@ class SimulatorRunner(FLComponent):
 
     def start_server_app(self, args):
         app_server_root = os.path.join(self.simulator_root, "server", SimulatorConstants.JOB_NAME, "app_server")
-        args.workspace = app_server_root
+        args.workspace = os.path.join(self.simulator_root, "server")
         os.chdir(args.workspace)
 
         log_file = os.path.join(self.simulator_root, "server", WorkspaceConstants.LOG_FILE_NAME)
