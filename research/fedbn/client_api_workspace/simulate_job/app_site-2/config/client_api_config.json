@@ -7,9 +7,9 @@
         "mode": "ACTIVE",
         "site_name": "site-2",
         "token": "simulate_job",
-        "root_url": "tcp://0:51676",
+        "root_url": "tcp://0:42749",
         "secure_mode": false,
-        "workspace_dir": "/project/6033556/chenmh/cmh_proj/G/test_nvflare/NVFlare/research/fedbn/client_api_workspace"
+        "workspace_dir": "/lustre06/project/6090561/chenmh/cmh_proj/NVFlare/research/fedbn/client_api_workspace"
       }
     }
   },
@@ -29,9 +29,9 @@
         "mode": "ACTIVE",
         "site_name": "site-2",
         "token": "simulate_job",
-        "root_url": "tcp://0:51676",
+        "root_url": "tcp://0:42749",
         "secure_mode": false,
-        "workspace_dir": "/project/6033556/chenmh/cmh_proj/G/test_nvflare/NVFlare/research/fedbn/client_api_workspace"
+        "workspace_dir": "/lustre06/project/6090561/chenmh/cmh_proj/NVFlare/research/fedbn/client_api_workspace"
       }
     }
   }

@@ -5,7 +5,7 @@
       "CLASS_NAME": "nvflare.fuel.utils.pipe.cell_pipe.CellPipe",
       "ARG": {
         "mode": "ACTIVE",
-        "site_name": "site-1",
+        "site_name": "site-3",
         "token": "simulate_job",
         "root_url": "tcp://0:42749",
         "secure_mode": false,
@@ -13,7 +13,7 @@
       }
     }
   },
-  "SITE_NAME": "site-1",
+  "SITE_NAME": "site-3",
   "JOB_ID": "simulate_job",
   "TASK_EXCHANGE": {
     "train_with_eval": true,
@@ -27,7 +27,7 @@
       "CLASS_NAME": "nvflare.fuel.utils.pipe.cell_pipe.CellPipe",
       "ARG": {
         "mode": "ACTIVE",
-        "site_name": "site-1",
+        "site_name": "site-3",
         "token": "simulate_job",
         "root_url": "tcp://0:42749",
         "secure_mode": false,
