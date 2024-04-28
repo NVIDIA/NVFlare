@@ -40,30 +40,22 @@ Download the necessary datasets by running:
 
 # Run FedBN on different data splits
 
-FedBN (8 clients). Here we run for 50 rounds, with 4 local epochs. 
+We will use the in-process client API, we choose the sag_pt job template and run the following command to create the job:
 ```
-cd ./cifar10_sim_fedbn
-./run_cifar10_sim_fedbn.sh
+./create_job.sh
 ```
 
 Execution
 
 Run the FedBN simulation with the following command:
 ```
-./run_simulator.sh cifar10_fedbn 1.0 8 8
+./run_job.sh
 ```
 
-> **_NOTE:_** The RESULT_ROOT=/tmp/nvflare/sim_cifar10 is set in run_simulator.sh
-
-
 ## Visualizing Results
-To visualize training losses, use the plot_tensorboard_event.py script located in:
-[./custom/figs/plot_tensorboard_events.py](./custom/figs/plot_tensorboard_events.py).
-
-> **_NOTE:_** Ensure you have the necessary plotting libraries by installing them from: [./custom/figs/plot-requirements.txt](./custom/figs/plot-requirements.txt) to plot.
-
+To visualize training losses, we use the [Comet ML](https://www.comet.com/site/).
 Below is an example of the loss visualization output:
-![FedBN Loss Results](./custom/figs/savefig_example.png)
+![FedBN Loss Results](./figs/loss.jpeg)
 
 
 ## Citation

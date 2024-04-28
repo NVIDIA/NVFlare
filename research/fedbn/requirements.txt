@@ -1,0 +1,4 @@
+nvflare~=2.4.0rc
+torch
+torchvision
+comet_ml

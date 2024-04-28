@@ -23,14 +23,15 @@ from net import Net
 import nvflare.client as flare
 
 # (optional) metrics
-from nvflare.client.tracking import SummaryWriter
+import comet_ml
 
 # (optional) set a fix place so we don't need to download everytime
 DATASET_PATH = "/tmp/nvflare/data"
 # (optional) We change to use GPU to speed things up.
 # if you want to use CPU, change DEVICE="cpu"
 DEVICE = "cuda:0"
-
+# input your own comet ml account API key
+COMET_API_KEY = ""
 
 def load_state_dict_skip_bn(model, state_dict):
     new_state_dict = {k: v for k, v in state_dict.items() if 'bn' not in k}
@@ -40,21 +41,23 @@ def load_state_dict_skip_bn(model, state_dict):
 def main():
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
-    batch_size = 16
-    epochs = 64
+    batch_size = 4
+    epochs = 2
 
     trainset = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=True, download=True, transform=transform)
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=2)
+    trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=8)
 
     testset = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=False, download=True, transform=transform)
-    testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=2)
+    testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=8)
 
     net = Net()
 
     # (2) initializes NVFlare client API
     flare.init()
 
-    summary_writer = SummaryWriter()
+    comet_ml.init()
+    exp = comet_ml.Experiment(project_name="fedbn_cifar10", api_key=COMET_API_KEY)
+
     while flare.is_running():
         # (3) receives FLModel from NVFlare
         input_model = flare.receive()
@@ -64,7 +67,7 @@ def main():
         load_state_dict_skip_bn(net, input_model.params)
 
         criterion = nn.CrossEntropyLoss()
-        optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+        optimizer = optim.Adam(net.parameters(), lr=0.001)
 
         # (optional) use GPU to speed things up
         net.to(DEVICE)
@@ -93,7 +96,7 @@ def main():
                     print(f"[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
                     global_step = input_model.current_round * steps + epoch * len(trainloader) + i
 
-                    summary_writer.add_scalar(tag="loss_for_each_batch", scalar=running_loss, global_step=global_step)
+                    exp.log_metrics({'loss': running_loss}, step=global_step)
                     running_loss = 0.0
 
         print("Finished Training")
