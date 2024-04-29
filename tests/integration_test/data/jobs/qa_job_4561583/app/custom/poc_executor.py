@@ -1,7 +1,7 @@
 # Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 
-import lightning as L
 import pl_net
+import pytorch_lightning as L
 import torch
 from torch import utils
 
