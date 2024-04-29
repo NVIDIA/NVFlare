@@ -113,7 +113,7 @@ class InProcessClientAPIExecutor(Executor):
             self._task_fn_thread.start()
 
             meta = self._prepare_task_meta(fl_ctx, None)
-            self._client_api = InProcessClientAPI(task_metadata=meta, result_check_interval=0.5)
+            self._client_api = InProcessClientAPI(task_metadata=meta, result_check_interval=self._result_pull_interval)
             self._client_api.init()
             self._data_bus.put_data(CLIENT_API_KEY, self._client_api)
 
