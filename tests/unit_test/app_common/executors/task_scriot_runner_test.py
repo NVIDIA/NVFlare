@@ -14,7 +14,7 @@
 import os
 import unittest
 
-from nvflare.app_common.executors.exec_task_fn_wrapper import TaskScriptRunner
+from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
 
 
 class TestExecTaskFuncWrapper(unittest.TestCase):

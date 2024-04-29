@@ -24,7 +24,7 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.app_common.abstract.params_converter import ParamsConverter
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.executors.exec_task_fn_wrapper import TaskScriptRunner
+from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
 from nvflare.app_common.tracking.tracker_types import ANALYTIC_EVENT_TYPE
 from nvflare.app_common.widgets.streaming import send_analytic_dxo
 from nvflare.client.api_spec import CLIENT_API_KEY
