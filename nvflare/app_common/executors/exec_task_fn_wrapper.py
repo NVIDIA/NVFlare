@@ -75,10 +75,3 @@ def log_print(*args, logger=TaskScriptRunner.logger, **kwargs):
     # Create a message from print arguments
     message = " ".join(str(arg) for arg in args)
     logger.info(message)
-
-
-def tee_print(*args, logger=TaskScriptRunner.logger, **kwargs):
-    # Create a message from print arguments
-    message = " ".join(str(arg) for arg in args)
-    logger.info(message)
-    print_fn(*args, **kwargs)
