@@ -38,6 +38,7 @@ class ClientControllerExecutor(Executor):
         task_name_prefix: str = "",
         persistor_id=AppConstants.DEFAULT_PERSISTOR_ID,
         final_result_ack_timeout=Constant.FINAL_RESULT_ACK_TIMEOUT,
+        max_task_timeout: int = Constant.MAX_TASK_TIMEOUT,
     ):
         """
         ClientControllerExecutor for running controllers on client-side using WFCommClient.
@@ -47,17 +48,20 @@ class ClientControllerExecutor(Executor):
             task_name_prefix: prefix of task names. All CCWF task names are prefixed with this.
             persistor_id: ID of the persistor component
             final_result_ack_timeout: timeout for sending final result to participating clients
+            max_task_timeout: Maximum task timeout for Controllers using WFCommClient when `task.timeout` is set to 0. Defaults to 3600.
         """
         check_number_range("final_result_ack_timeout", final_result_ack_timeout, min_value=1.0)
 
         Executor.__init__(self)
         self.controller_id_list = controller_id_list
         self.task_name_prefix = task_name_prefix
+        self.persistor_id = persistor_id
+        self.final_result_ack_timeout = final_result_ack_timeout
+        self.max_task_timeout = max_task_timeout
+
         self.start_task_name = make_task_name(task_name_prefix, Constant.BASENAME_START)
         self.configure_task_name = make_task_name(task_name_prefix, Constant.BASENAME_CONFIG)
         self.report_final_result_task_name = make_task_name(task_name_prefix, Constant.BASENAME_REPORT_FINAL_RESULT)
-        self.final_result_ack_timeout = final_result_ack_timeout
-        self.persistor_id = persistor_id
 
         self.persistor = None
 
@@ -111,7 +115,7 @@ class ClientControllerExecutor(Executor):
     def initialize_controller(self, controller_id, fl_ctx):
         controller = self.engine.get_component(controller_id)
 
-        comm = WFCommClient()
+        comm = WFCommClient(max_task_timeout=self.max_task_timeout)
         controller.set_communicator(comm)
         controller.config = self.config
         controller.initialize(fl_ctx)

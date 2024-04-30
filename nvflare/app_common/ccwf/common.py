@@ -87,6 +87,7 @@ class Constant:
     LEARN_TASK_ABORT_TIMEOUT = 5.0
     FINAL_RESULT_ACK_TIMEOUT = 10
     GET_MODEL_TIMEOUT = 10
+    MAX_TASK_TIMEOUT = 3600
 
     PROP_KEY_TRAIN_CLIENTS = "cwf.train_clients"
 

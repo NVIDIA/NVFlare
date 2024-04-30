@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import random
 import time
 from datetime import datetime
 from typing import List
@@ -80,7 +79,7 @@ class ServerSideController(Controller):
         Constructor
 
         Args:
-            num_rounds - the number of rounds to be performed. This is a workflow config parameter.
+            num_rounds - the number of rounds to be performed. This is a workflow config parameter. Defaults to 1.
             start_round - the starting round number. This is a workflow config parameter.
             task_name_prefix - the prefix for task names of this workflow.
                 The workflow requires multiple tasks (e.g. config and start) between the server controller and the client.
@@ -99,7 +98,8 @@ class ServerSideController(Controller):
             starting_client - name of the starting client.
             starting_client_policy - how to determine the starting client if the name is not explicitly specified.
                 Possible values are:
-                    ANY - any one of the participating clients (randomly chosen)
+                    ANY - any one of the participating clients (the first client)
+                    RANDOM - a random client
                     EMPTY - no starting client
                     DISALLOW - does not allow implicit - starting_client must be explicitly specified
             start_task_timeout - how long to wait for the starting client to finish the “start” task.
@@ -184,7 +184,6 @@ class ServerSideController(Controller):
             allow_none=False,
         )
 
-        random.shuffle(self.participating_clients)
         self.log_info(fl_ctx, f"Using participating clients: {self.participating_clients}")
         self.starting_client = validate_candidate(
             var_name="starting_client",

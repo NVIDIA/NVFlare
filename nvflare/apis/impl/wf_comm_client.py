@@ -24,20 +24,26 @@ from nvflare.apis.shareable import make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.task_utils import apply_filters
 from nvflare.apis.wf_comm_spec import WFCommSpec
+from nvflare.app_common.ccwf.common import Constant
 from nvflare.private.fed.utils.fed_utils import get_target_names
 from nvflare.private.privacy_manager import Scope
 from nvflare.security.logging import secure_format_exception
-
-MAX_TASK_TIMEOUT = 3600
 
 
 class WFCommClient(FLComponent, WFCommSpec):
     def __init__(
         self,
+        max_task_timeout: int = Constant.MAX_TASK_TIMEOUT,
     ) -> None:
+        """Communicator using aux channel communication.
+
+        Args:
+            max_task_timeout (int, optional): Maximum task timeout when `task.timeout` is set to 0. Defaults to 3600.
+        """
         super().__init__()
         self.task_data_filters = {}
         self.task_result_filters = {}
+        self.max_task_timeout = max_task_timeout
 
     def broadcast(
         self,
@@ -104,8 +110,9 @@ class WFCommClient(FLComponent, WFCommSpec):
             raise ValueError(f"The task timeout must >= 0. But got {task.timeout}")
 
         if task.timeout == 0:
-            task.timeout = MAX_TASK_TIMEOUT
+            task.timeout = self.max_task_timeout
 
+        # Note: set request here since task.data can be modified by user callback before_task_sent_cb
         request = task.data
 
         request.set_header(ReservedKey.TASK_NAME, task.name)
