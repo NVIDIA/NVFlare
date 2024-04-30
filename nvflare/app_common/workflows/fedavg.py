@@ -57,8 +57,8 @@ class FedAvg(BaseFedAvg):
             results = self.send_model_and_wait(targets=clients, data=model)
 
             aggregate_results = self.aggregate(
-                results, aggregate_fn=None
-            )  # if no `aggregate_fn` provided, default `WeightedAggregationHelper` is used
+                results, aggregate_fn=self.aggregate_fn
+            )  # using default aggregate_fn with `WeightedAggregationHelper`. Can overwrite self.aggregrate_fn with signature Callable[List[FLModel], FLModel]
 
             model = self.update_model(model, aggregate_results)
 
