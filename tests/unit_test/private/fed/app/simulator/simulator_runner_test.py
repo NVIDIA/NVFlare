@@ -14,18 +14,24 @@
 
 import os
 import shutil
+import threading
+import time
 import uuid
-from unittest.mock import patch
+from tempfile import TemporaryDirectory
+from unittest.mock import Mock, patch
 
 import pytest
 
-from nvflare.apis.fl_constant import WorkspaceConstants
+from nvflare.apis.fl_constant import FLContextKey, MachineStatus, WorkspaceConstants
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
 from nvflare.private.fed.utils.fed_utils import split_gpus
 
 
 class MockCell:
     def get_root_url_for_child(self):
+        return "tcp://0:123"
+
+    def get_internal_listener_url(self):
         return "tcp://0:123"
 
 
@@ -120,3 +126,32 @@ class TestSimulatorRunner:
     def test_split_gpus_fail(self, gpus):
         with pytest.raises(ValueError):
             split_gpus(gpus)
+
+    @patch("nvflare.private.fed.app.deployer.simulator_deployer.SimulatorServer.deploy")
+    @patch("nvflare.private.fed.app.utils.FedAdminServer")
+    @patch("nvflare.private.fed.client.fed_client.FederatedClient.register")
+    @patch("nvflare.private.fed.server.fed_server.BaseServer.get_cell", return_value=MockCell())
+    def test_start_server_app(self, mock_deploy, mock_admin, mock_register, mock_cell):
+        with TemporaryDirectory() as workspace:
+            job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
+            runner = SimulatorRunner(
+                job_folder=job_folder,
+                workspace=workspace,
+            )
+            runner.setup()
+
+            with patch("nvflare.private.fed.simulator.simulator_server.SimulatorServer.run_engine"):
+                with patch("nvflare.private.fed.simulator.simulator_server.SimulatorServer.create_job_cell"):
+                    server_thread = threading.Thread(target=runner.start_server_app, args=[runner.args])
+                    server_thread.start()
+
+                    while runner.server.engine.engine_info.status != MachineStatus.STARTED:
+                        time.sleep(1.0)
+                        if not server_thread.is_alive():
+                            raise RuntimeError("Could not start the Server App.")
+                    fl_ctx = runner.server.engine.new_context()
+                    workspace_obj = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+                    assert workspace_obj.get_root_dir() == os.path.join(workspace, "server")
+
+                    runner.server.logger = Mock()
+                    runner.server.engine.asked_to_stop = True
