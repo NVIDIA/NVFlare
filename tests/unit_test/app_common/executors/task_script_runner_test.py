@@ -17,11 +17,17 @@ import unittest
 from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
 
 
-class TestExecTaskFuncWrapper(unittest.TestCase):
+class TestTaskScriptRunner(unittest.TestCase):
     def test_app_scripts_and_args(self):
         curr_dir = os.getcwd()
-        script_path = "cli.py"
+        script_path = "nvflare/cli.py"
         script_args = "--batch_size 4"
+        wrapper = TaskScriptRunner(script_path=script_path, script_args=script_args)
+
+        self.assertTrue(wrapper.script_path.endswith(script_path))
+        self.assertEqual(wrapper.get_sys_argv(), [os.path.join(curr_dir, "nvflare", "cli.py"), "--batch_size", "4"])
+
+        script_path = "cli.py"
         wrapper = TaskScriptRunner(script_path=script_path, script_args=script_args)
 
         self.assertTrue(wrapper.script_path.endswith(script_path))
