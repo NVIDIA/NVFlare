@@ -26,7 +26,7 @@ export PYTHONPATH=${PWD}/..
 Use nvflare simulator to run the example:
 
 ```
-nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 ./jobs/hell        o-pt-mlflow
+nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 ./jobs/hello-pt-mlflow
 ```
 
 ### 3. Access the logs and results
