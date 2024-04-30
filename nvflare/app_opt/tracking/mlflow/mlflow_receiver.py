@@ -112,7 +112,6 @@ class MLflowReceiver(AnalyticsReceiver):
 
         sites = fl_ctx.get_engine().get_clients()
         self._init_buffer(sites)
-
         self.mlflow_setup(art_full_path, experiment_name, experiment_tags, sites)
 
     def mlflow_setup(self, art_full_path, experiment_name, experiment_tags, sites):
