@@ -20,7 +20,11 @@ import time
 
 import psutil
 
+from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.fuel.hci.security import hash_password
+from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.private.defs import SSLConstants
 from nvflare.private.fed.runner import Runner
 from nvflare.private.fed.server.admin import FedAdminServer
@@ -98,3 +102,18 @@ def version_check():
         raise RuntimeError("Python versions 3.11 and above are not yet supported. Please use Python 3.8, 3.9 or 3.10.")
     if sys.version_info < (3, 8):
         raise RuntimeError("Python versions 3.7 and below are not supported. Please use Python 3.8, 3.9 or 3.10")
+
+
+def init_security_content_service(workspace_dir):
+    content_folder_path = os.path.join(workspace_dir, WorkspaceConstants.STARTUP_FOLDER_NAME)
+    os.makedirs(content_folder_path, exist_ok=True)
+    SecurityContentService.initialize(content_folder=content_folder_path)
+
+
+def component_security_check(fl_ctx: FLContext):
+    exceptions = fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
+    if exceptions:
+        for _, exception in exceptions.items():
+            if isinstance(exception, UnsafeComponentError):
+                print(f"Unsafe component configured, could not start {fl_ctx.get_identity_name()}!!")
+                raise RuntimeError(exception)

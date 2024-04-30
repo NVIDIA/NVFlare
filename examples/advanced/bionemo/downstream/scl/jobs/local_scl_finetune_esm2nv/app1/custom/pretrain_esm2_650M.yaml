@@ -1,0 +1,14 @@
+# The minimal set of changes to scale the ESM2nv model to 650M
+
+defaults:
+  - base_config
+
+name: esm2-650M
+
+model:
+  # These parameters are similar to pretrain_ESM1b_small
+  num_layers: 33
+  hidden_size: 1280
+
+  tokenizer:
+    model_name: "facebook/esm2_t33_650M_UR50D"

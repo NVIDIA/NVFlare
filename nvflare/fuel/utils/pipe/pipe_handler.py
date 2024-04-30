@@ -61,7 +61,7 @@ class PipeHandler(object):
         heartbeat_interval=5.0,
         heartbeat_timeout=30.0,
         resend_interval=2.0,
-        max_resends=None,
+        max_resends=5,
         default_request_timeout=5.0,
     ):
         """Constructor of the PipeHandler.
@@ -107,6 +107,9 @@ class PipeHandler(object):
         self.peer_is_up_or_dead = threading.Event()
         self._pause = False
         self._last_heartbeat_received_time = None
+        self._check_interval = 0.01
+        self.heartbeat_sender = threading.Thread(target=self._heartbeat)
+        self.heartbeat_sender.daemon = True
 
     def set_status_cb(self, cb, *args, **kwargs):
         """Set CB for status handling. When the peer status is changed (ABORT, END, GONE), this CB is called.
@@ -163,6 +166,7 @@ class PipeHandler(object):
     def _send_to_pipe(self, msg: Message, timeout=None, abort_signal: Signal = None):
         pipe = self.pipe
         if not pipe:
+            self.logger.error("cannot send message to pipe since it's already closed")
             return False
 
         if not timeout or not pipe.can_resend() or not self.resend_interval:
@@ -178,6 +182,7 @@ class PipeHandler(object):
                 return sent
 
             if self.max_resends is not None and num_sends > self.max_resends:
+                self.logger.error(f"abort sending after {num_sends} tries")
                 return False
 
             if self.asked_to_stop:
@@ -205,8 +210,11 @@ class PipeHandler(object):
         """Starts the PipeHandler.
         Note: before calling this method, the pipe managed by this PipeHandler must have been opened.
         """
-        if not self.reader.is_alive():
+        if self.reader and not self.reader.is_alive():
             self.reader.start()
+
+        if self.heartbeat_sender and not self.heartbeat_sender.is_alive():
+            self.heartbeat_sender.start()
 
     def stop(self, close_pipe=True):
         """Stops the handler and optionally close the monitored pipe.
@@ -231,7 +239,7 @@ class PipeHandler(object):
         Args:
             msg: message to be sent
             timeout: how long to wait for the peer to read the data.
-                If not specified, return False immediately.
+                If not specified, will use ``self.default_request_timeout``.
             abort_signal:
 
         Returns:
@@ -250,7 +258,8 @@ class PipeHandler(object):
         p = self.pipe
         if p:
             try:
-                p.send(self._make_event_message(Topic.END, data))
+                # fire and forget
+                p.send(self._make_event_message(Topic.END, data), 0.1)
             except Exception as ex:
                 self.logger.debug(f"exception notify_end: {secure_format_exception(ex)}")
 
@@ -259,7 +268,8 @@ class PipeHandler(object):
         p = self.pipe
         if p:
             try:
-                p.send(self._make_event_message(Topic.ABORT, data))
+                # fire and forget
+                p.send(self._make_event_message(Topic.ABORT, data), 0.1)
             except Exception as ex:
                 self.logger.debug(f"exception notify_abort: {secure_format_exception(ex)}")
 
@@ -285,15 +295,13 @@ class PipeHandler(object):
 
     def _try_read(self):
         self._last_heartbeat_received_time = time.time()
-        last_heartbeat_sent_time = 0.0
         while not self.asked_to_stop:
-            now = time.time()
-
             if self._pause:
                 time.sleep(self.read_interval)
                 continue
 
             msg = self.pipe.receive()
+            now = time.time()
 
             if msg:
                 self._last_heartbeat_received_time = now
@@ -306,6 +314,11 @@ class PipeHandler(object):
                     break
             else:
                 # is peer gone?
+                # ask the pipe for the last known active time of the peer
+                last_peer_active_time = self.pipe.get_last_peer_active_time()
+                if last_peer_active_time > self._last_heartbeat_received_time:
+                    self._last_heartbeat_received_time = last_peer_active_time
+
                 if (
                     self.heartbeat_timeout
                     and now - self._last_heartbeat_received_time > self.heartbeat_timeout
@@ -318,13 +331,24 @@ class PipeHandler(object):
                     )
                     break
 
+            time.sleep(self.read_interval)
+        self.reader = None
+
+    def _heartbeat(self):
+        last_heartbeat_sent_time = 0.0
+        while not self.asked_to_stop:
+            if self._pause:
+                time.sleep(self._check_interval)
+                continue
+            now = time.time()
+
             # send heartbeat to the peer
             if now - last_heartbeat_sent_time > self.heartbeat_interval:
                 self.send_to_peer(self._make_event_message(Topic.HEARTBEAT, ""))
                 last_heartbeat_sent_time = now
 
-            time.sleep(self.read_interval)
-        self.reader = None
+            time.sleep(self._check_interval)
+        self.heartbeat_sender = None
 
     def get_next(self) -> Optional[Message]:
         """Gets the next message from the message queue.

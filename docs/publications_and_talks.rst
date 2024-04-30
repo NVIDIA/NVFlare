@@ -7,6 +7,10 @@ Publications
 Non-exhaustive list of papers and publications related to NVIDIA FLARE, 
 including papers using NVIDIA FLARE's predecessor libraries included in the `Clara Train SDK <https://catalog.ngc.nvidia.com/orgs/nvidia/containers/clara-train-sdk>`__.
 
+Publications: 2024
+------------------
+* **2024-02** `Empowering Federated Learning for Massive Models with NVIDIA FLARE <https://arxiv.org/abs/2402.07792>`__ (Accepted to `FL@FM-TheWebConf'24 <https://federated-learning.org/fl@fm-www-2024>`__))
+
 Publications: 2023
 ------------------
 * **2023-10** `Communication-Efficient Vertical Federated Learning with Limited Overlapping Samples <https://arxiv.org/abs/2303.16270>`__ (`ICCV 2023 <https://iccv2023.thecvf.com/>`__)
@@ -45,6 +49,11 @@ Blogs & Videos
 ==============
 NVIDIA FLARE related blogs and other media.
 
+Blogs & Videos: 2024
+--------------------
+* **2024-03** `Turning Machine Learning to Federated Learning in Minutes with NVIDIA FLARE 2.4 <https://developer.nvidia.com/blog/turning-machine-learning-to-federated-learning-in-minutes-with-nvidia-flare-2-4/>`__ (NVIDIA Technical Blog)
+* **2024-02** `Scalable Federated Learning with NVIDIA FLARE for Enhanced LLM Performance <https://developer.nvidia.com/blog/scalable-federated-learning-with-nvidia-flare-for-enhanced-llm-performance/>`__ (NVIDIA Technical Blog)
+
 Blogs & Videos: 2023
 --------------------
 * **2023-09** `Preventing Health Data Leaks with Federated Learning Using NVIDIA FLARE <https://developer.nvidia.com/blog/preventing-health-data-leaks-with-federated-learning-using-nvidia-flare/>`__ (Roche Technical Blog)
@@ -81,6 +90,10 @@ Blogs & Videos: 2019
 Talks
 =====
 Recent talks and Webinars covering federated learning research and NVIDIA FLARE.
+
+Talks: 2024
+-----------
+* **2024-03** `Empowering Federated Learning for Massive Models with NVIDIA FLARE <https://youtu.be/-P2ML9Kw0FA>`__ (`SFBigAnalytics Meetup <https://www.meetup.com/sf-big-analytics/?_cookie-check=Efm7MGh7mO4YiV8A>`__)
 
 Talks: 2023
 -----------

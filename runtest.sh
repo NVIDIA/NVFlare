@@ -91,8 +91,8 @@ function dry_run() {
 function check_license() {
     folders_to_check_license="nvflare examples tests integration research"
     echo "checking license header in folder: $folders_to_check_license"
-    (grep -r --include "*.py" --exclude-dir "*protos*" -L \
-    "\(# Copyright (c) \(2021\|2022\|2023\), NVIDIA CORPORATION.  All rights reserved.\)\|\(This file is released into the public domain.\)" \
+    (grep -r --include "*.py" --exclude-dir "*protos*" --exclude "modeling_roberta.py" -L \
+    "\(# Copyright (c) \(2021\|2022\|2023\|2024\), NVIDIA CORPORATION.  All rights reserved.\)\|\(This file is released into the public domain.\)" \
     ${folders_to_check_license} || true) > no_license.lst
     if [ -s no_license.lst ]; then
         # The file is not-empty.

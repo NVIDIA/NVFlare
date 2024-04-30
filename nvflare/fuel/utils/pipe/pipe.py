@@ -99,14 +99,15 @@ class Pipe(AttributesExportable, ABC):
 
     @abstractmethod
     def send(self, msg: Message, timeout=None) -> bool:
-        """Send the specified message to the peer.
+        """Sends the specified message to the peer.
 
         Args:
             msg: the message to be sent
             timeout: if specified, number of secs to wait for the peer to read the message.
+                If not specified, wait indefinitely.
 
-        Returns: whether the message is read by the peer.
-        If timeout is not specified, always return False.
+        Returns:
+            Whether the message is read by the peer.
 
         """
         pass
@@ -117,8 +118,10 @@ class Pipe(AttributesExportable, ABC):
 
         Args:
             timeout: how long (number of seconds) to try
+                If not specified, return right away.
 
-        Returns: the message received; or None if no message
+        Returns:
+            the message received; or None if no message
 
         """
         pass
@@ -136,6 +139,14 @@ class Pipe(AttributesExportable, ABC):
     def can_resend(self) -> bool:
         """Whether the pipe is able to resend a message."""
         pass
+
+    def get_last_peer_active_time(self):
+        """Get the last time that the peer is known to be active
+
+        Returns: the last time that the peer is known to be active; or 0 if this info is not available
+
+        """
+        return 0
 
     def export(self, export_mode: str) -> Tuple[str, dict]:
         if export_mode == ExportMode.SELF:

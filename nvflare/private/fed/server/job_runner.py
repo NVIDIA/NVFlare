@@ -49,7 +49,8 @@ def _send_to_clients(admin_server, client_sites: List[str], engine, message, tim
 
     if timeout is None:
         timeout = admin_server.timeout
-    replies = admin_server.send_requests(requests, timeout_secs=timeout, optional=optional)
+    with admin_server.sai.new_context() as fl_ctx:
+        replies = admin_server.send_requests(requests, fl_ctx, timeout_secs=timeout, optional=optional)
     return replies
 
 
@@ -248,7 +249,7 @@ class JobRunner(FLComponent):
         if err:
             raise RuntimeError(f"Could not start the server App for job: {job_id}.")
 
-        replies = engine.start_client_job(job_id, client_sites)
+        replies = engine.start_client_job(job_id, client_sites, fl_ctx)
         client_sites_names = list(client_sites.keys())
         check_client_replies(replies=replies, client_sites=client_sites_names, command=f"start job ({job_id})")
         display_sites = ",".join(client_sites_names)
@@ -443,6 +444,7 @@ class JobRunner(FLComponent):
                                     },
                                     fl_ctx,
                                 )
+                                self.log_info(fl_ctx, f"Updated the schedule history of Job: {job_id}")
 
                             if failed_clients:
                                 deployable_clients = {k: v for k, v in client_sites.items() if k not in failed_clients}
@@ -464,6 +466,7 @@ class JobRunner(FLComponent):
                             with self.lock:
                                 self.running_jobs[job_id] = ready_job
                             job_manager.set_status(ready_job.job_id, RunStatus.RUNNING, fl_ctx)
+                            self.log_info(fl_ctx, f"Job: {job_id} started to run, status changed to RUNNING.")
                         except Exception as e:
                             if job_id:
                                 if job_id in self.running_jobs:

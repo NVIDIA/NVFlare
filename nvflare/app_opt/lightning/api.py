@@ -19,17 +19,7 @@ from pytorch_lightning.callbacks import Callback
 from torch import Tensor
 
 from nvflare.app_common.abstract.fl_model import FLModel, MetaKey
-from nvflare.client.api import (
-    clear,
-    get_config,
-    get_model_registry,
-    init,
-    is_evaluate,
-    is_submit_model,
-    is_train,
-    receive,
-    send,
-)
+from nvflare.client.api import clear, get_config, init, is_evaluate, is_submit_model, is_train, receive, send
 from nvflare.client.config import ConfigKey
 
 from .callbacks import RestoreState
@@ -75,16 +65,17 @@ def patch(trainer: pl.Trainer, restore_state: bool = True, load_state_dict_stric
                     self.__fl_meta__ = {"CUSTOM_VAR": "VALUE_OF_THE_VAR"}
 
     """
-    fl_callback = FLCallback(rank=trainer.global_rank, load_state_dict_strict=load_state_dict_strict)
     callbacks = trainer.callbacks
-    if isinstance(callbacks, list):
-        callbacks.append(fl_callback)
-    elif isinstance(callbacks, Callback):
-        callbacks = [callbacks, fl_callback]
-    else:
-        callbacks = [fl_callback]
+    if isinstance(callbacks, Callback):
+        callbacks = [callbacks]
+    elif not isinstance(callbacks, list):
+        callbacks = []
 
-    if restore_state:
+    if not any(isinstance(cb, FLCallback) for cb in callbacks):
+        fl_callback = FLCallback(rank=trainer.global_rank, load_state_dict_strict=load_state_dict_strict)
+        callbacks.append(fl_callback)
+
+    if restore_state and not any(isinstance(cb, RestoreState) for cb in callbacks):
         callbacks.append(RestoreState())
 
     trainer.callbacks = callbacks
@@ -196,7 +187,6 @@ class FLCallback(Callback):
 
     def _receive_model(self, trainer) -> FLModel:
         """Receives model from NVFlare."""
-        registry = get_model_registry()
         model = None
         _is_training = False
         _is_evaluation = False
@@ -208,8 +198,6 @@ class FLCallback(Callback):
             _is_submit_model = is_submit_model()
 
         model = trainer.strategy.broadcast(model, src=0)
-        task_name = trainer.strategy.broadcast(registry.task_name, src=0)
-        registry.set_task_name(task_name)
         self._is_training = trainer.strategy.broadcast(_is_training, src=0)
         self._is_evaluation = trainer.strategy.broadcast(_is_evaluation, src=0)
         self._is_submit_model = trainer.strategy.broadcast(_is_submit_model, src=0)
@@ -217,7 +205,7 @@ class FLCallback(Callback):
 
     def _send_model(self, output_model: FLModel):
         try:
-            send(output_model, clear_registry=False)
+            send(output_model, clear_cache=False)
         except Exception as e:
             raise RuntimeError(f"failed to send FL model: {e}")
 

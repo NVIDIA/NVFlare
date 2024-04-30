@@ -15,8 +15,9 @@ The example was tested using the [NeMo Docker container](https://catalog.ngc.nvi
 available with `docker pull nvcr.io/nvidia/nemo:23.06`. 
 In the following, we assume this example folder of the container is mounted to `/workspace` and all downloading, etc. operations are based on this root path.
 
-Start the docker container using 
+Start the docker container from **this directory** using
 ```
+# cd NVFlare/integration/nemo/examples/supervised_fine_tuning
 DOCKER_IMAGE="nvcr.io/nvidia/nemo:23.06"
 docker run --runtime=nvidia -it --rm --shm-size=16g -p 8888:8888 -p 6006:6006 --ulimit memlock=-1 --ulimit stack=67108864 \
 -v ${PWD}:/workspace -w /workspace ${DOCKER_IMAGE}
@@ -225,7 +226,7 @@ Below is the accuracy of the models on these tasks.
 As shown, FedAvg is able to generate a model with the best overall performance.    
 
 ## Inference
-We use NeMo's [inference script](https://github.com/NVIDIA/NeMo/blob/main/examples/nlp/language_modeling/megatron_gpt_eval.py) for generation task with models after SFT. 
+We use NeMo's [inference script](https://github.com/NVIDIA/NeMo/blob/v1.20.0/examples/nlp/language_modeling/megatron_gpt_eval.py) for generation task with models after SFT. 
 Below, we define some test examples to feed to the SFT model to see its predictions.
 
 First, we ask the model to generate an answer to an open question: "Tell me an interesting fact about space travel." 

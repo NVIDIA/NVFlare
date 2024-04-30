@@ -7,7 +7,7 @@
             ],
             "executor": {
                 "id": "Executor",
-                "name": "FedXGBHistogramExecutor",
+                "path": "nvflare.app_opt.xgboost.histogram_based.executor.FedXGBHistogramExecutor",
                 "args": {
                     "data_loader_id": "dataloader",
                     "num_rounds": 100,

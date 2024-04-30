@@ -267,6 +267,19 @@ class ControllerSpec(ABC):
         pass
 
     @abstractmethod
+    def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
+        """This is the control logic for the RUN.
+
+        NOTE: this is running in a separate thread, and its life is the duration of the RUN.
+
+        Args:
+            fl_ctx: the FL context
+            abort_signal: the abort signal. If triggered, this method stops waiting and returns to the caller.
+
+        """
+        pass
+
+    @abstractmethod
     def stop_controller(self, fl_ctx: FLContext):
         """Stops the controller.
 
@@ -280,7 +293,6 @@ class ControllerSpec(ABC):
         """
         pass
 
-    @abstractmethod
     def process_result_of_unknown_task(
         self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
     ):
@@ -530,3 +542,14 @@ class ControllerSpec(ABC):
             fl_ctx: the FL context
         """
         pass
+
+    def get_client_disconnect_time(self, client_name):
+        """Get the time that the client is deemed disconnected.
+
+        Args:
+            client_name: the name of the client
+
+        Returns: time at which the client was deemed disconnected; or None if the client is not disconnected.
+
+        """
+        return None

@@ -14,10 +14,13 @@
 
 import gc
 import random
+from typing import List, Union
 
 from nvflare.apis.client import Client
+from nvflare.apis.controller_spec import ClientTask, Task
+from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.impl.controller import ClientTask, Controller, Task
+from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
@@ -47,7 +50,8 @@ class CyclicController(Controller):
         task_check_period: float = 0.5,
         persist_every_n_rounds: int = 1,
         snapshot_every_n_rounds: int = 1,
-        order: str = RelayOrder.FIXED,
+        order: Union[str, List[str]] = RelayOrder.FIXED,
+        allow_early_termination=False,
     ):
         """A sample implementation to demonstrate how to use relay method for Cyclic Federated Learning.
 
@@ -64,11 +68,13 @@ class CyclicController(Controller):
                 If n is 0 then no persist.
             snapshot_every_n_rounds (int, optional): persist the server state every n rounds. Defaults to 1.
                 If n is 0 then no persist.
-            order (str, optional): the order of relay.
-                If FIXED means the same order for every round.
-                If RANDOM means random order for every round.
-                If RANDOM_WITHOUT_SAME_IN_A_ROW means every round the order gets shuffled but a client will never be
-                run twice in a row (in different round).
+            order (Union[str, List[str]], optional): The order of relay.
+                - If a string is provided:
+                    - "FIXED": Same order for every round.
+                    - "RANDOM": Random order for every round.
+                    - "RANDOM_WITHOUT_SAME_IN_A_ROW": Shuffled order, no repetition in consecutive rounds.
+                - If a list of strings is provided, it represents a custom order for relay.
+            allow_early_termination: whether to allow early workflow termination from clients
 
         Raises:
             TypeError: when any of input arguments does not have correct type
@@ -87,13 +93,14 @@ class CyclicController(Controller):
         if not isinstance(task_name, str):
             raise TypeError("task_name must be a string but got {}".format(type(task_name)))
 
-        if order not in SUPPORTED_ORDERS:
-            raise ValueError(f"order must be in {SUPPORTED_ORDERS}")
+        if order not in SUPPORTED_ORDERS and not isinstance(order, list):
+            raise ValueError(f"order must be in {SUPPORTED_ORDERS} or a list")
 
         self._num_rounds = num_rounds
         self._start_round = 0
         self._end_round = self._start_round + self._num_rounds
         self._current_round = 0
+        self._is_done = False
         self._last_learnable = None
         self.persistor_id = persistor_id
         self.shareable_generator_id = shareable_generator_id
@@ -106,6 +113,7 @@ class CyclicController(Controller):
         self._participating_clients = None
         self._last_client = None
         self._order = order
+        self._allow_early_termination = allow_early_termination
 
     def start_controller(self, fl_ctx: FLContext):
         self.log_debug(fl_ctx, "starting controller")
@@ -126,23 +134,40 @@ class CyclicController(Controller):
         fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self._num_rounds, private=True, sticky=True)
         self.fire_event(AppEventType.INITIAL_MODEL_LOADED, fl_ctx)
 
-        self._participating_clients = self._engine.get_clients()
+        self._participating_clients: List[Client] = self._engine.get_clients()
         if len(self._participating_clients) <= 1:
             self.system_panic("Not enough client sites.", fl_ctx)
         self._last_client = None
 
-    def _get_relay_orders(self, fl_ctx: FLContext):
-        targets = list(self._participating_clients)
-        if len(targets) <= 1:
-            self.system_panic("Not enough client sites.", fl_ctx)
-        if self._order == RelayOrder.RANDOM:
-            random.shuffle(targets)
-        elif self._order == RelayOrder.RANDOM_WITHOUT_SAME_IN_A_ROW:
-            random.shuffle(targets)
-            if self._last_client == targets[0]:
-                targets = targets.append(targets.pop(0))
+    def _get_relay_orders(self, fl_ctx: FLContext) -> Union[List[Client], None]:
+        active_clients_map = {}
+        for t in self._participating_clients:
+            if not self.get_client_disconnect_time(t.name):
+                active_clients_map[t.name] = t
+
+        if len(active_clients_map) <= 1:
+            self.system_panic(f"Not enough active client sites ({len(active_clients_map)}).", fl_ctx)
+            return None
+
+        if isinstance(self._order, list):
+            targets = []
+            for c_name in self._order:
+                if c_name not in active_clients_map:
+                    self.system_panic(f"Required client site ({c_name}) is not in active clients.", fl_ctx)
+                    return None
+                targets.append(active_clients_map[c_name])
+        else:
+            targets = list(active_clients_map.values())
+            if self._order == RelayOrder.RANDOM or self._order == RelayOrder.RANDOM_WITHOUT_SAME_IN_A_ROW:
+                random.shuffle(targets)
+                if self._order == RelayOrder.RANDOM_WITHOUT_SAME_IN_A_ROW and self._last_client == targets[0]:
+                    targets.append(targets.pop(0))
         self._last_client = targets[-1]
         return targets
+
+    def _stop_workflow(self, task: Task):
+        self.cancel_task(task)
+        self._is_done = True
 
     def _process_result(self, client_task: ClientTask, fl_ctx: FLContext):
         # submitted shareable is stored in client_task.result
@@ -150,9 +175,42 @@ class CyclicController(Controller):
         # will get the updated shareable
         task = client_task.task
 
-        # update the global learnable with the received result (shareable)
-        # e.g. the received result could be weight_diffs, the learnable could be full weights.
-        self._last_learnable = self.shareable_generator.shareable_to_learnable(client_task.result, fl_ctx)
+        result = client_task.result
+        if isinstance(result, Shareable):
+            # update the global learnable with the received result (shareable)
+            # e.g. the received result could be weight_diffs, the learnable could be full weights.
+            rc = result.get_return_code()
+            try:
+                self._last_learnable = self.shareable_generator.shareable_to_learnable(result, fl_ctx)
+            except Exception as ex:
+                if rc != ReturnCode.EARLY_TERMINATION:
+                    self._stop_workflow(task)
+                    self.log_error(fl_ctx, f"exception {secure_format_exception(ex)} from shareable_to_learnable")
+                    return
+                else:
+                    self.log_warning(
+                        fl_ctx,
+                        f"ignored {secure_format_exception(ex)} from shareable_to_learnable in early termination",
+                    )
+
+            if rc == ReturnCode.EARLY_TERMINATION:
+                if self._allow_early_termination:
+                    # the workflow is done
+                    self._stop_workflow(task)
+                    self.log_info(fl_ctx, f"Stopping workflow due to {rc} from client {client_task.client.name}")
+                    return
+                else:
+                    self.log_warning(
+                        fl_ctx,
+                        f"Ignored {rc} from client {client_task.client.name} because early termination is not allowed",
+                    )
+        else:
+            self._stop_workflow(task)
+            self.log_error(
+                fl_ctx,
+                f"Stopping workflow due to result from client {client_task.client.name} is not a Shareable",
+            )
+            return
 
         # prepare task shareable data for next client
         task.data = self.shareable_generator.learnable_to_shareable(self._last_learnable, fl_ctx)
@@ -160,11 +218,16 @@ class CyclicController(Controller):
         task.data.set_header(AppConstants.NUM_ROUNDS, self._num_rounds)
         task.data.add_cookie(AppConstants.CONTRIBUTION_ROUND, self._current_round)
 
+        gc.collect()
+
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         try:
             self.log_debug(fl_ctx, "Cyclic starting.")
 
             for self._current_round in range(self._start_round, self._end_round):
+                if self._is_done:
+                    return
+
                 if abort_signal.triggered:
                     return
 
@@ -173,6 +236,8 @@ class CyclicController(Controller):
 
                 # Task for one cyclic
                 targets = self._get_relay_orders(fl_ctx)
+                if targets is None:
+                    return
                 targets_names = [t.name for t in targets]
                 self.log_debug(fl_ctx, f"Relay on {targets_names}")
 
@@ -248,12 +313,3 @@ class CyclicController(Controller):
             self._start_round = self._current_round
         finally:
             pass
-
-    def handle_dead_job(self, client_name: str, fl_ctx: FLContext):
-        super().handle_dead_job(client_name, fl_ctx)
-
-        new_client_list = []
-        for client in self._participating_clients:
-            if client_name != client.name:
-                new_client_list.append(client)
-        self._participating_clients = new_client_list

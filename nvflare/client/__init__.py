@@ -19,7 +19,6 @@ from nvflare.apis.analytix import AnalyticsDataType as AnalyticsDataType
 from nvflare.app_common.abstract.fl_model import FLModel as FLModel
 from nvflare.app_common.abstract.fl_model import ParamsType as ParamsType
 
-from .api import clear as clear
 from .api import get_config as get_config
 from .api import get_job_id as get_job_id
 from .api import get_site_name as get_site_name
@@ -34,3 +33,4 @@ from .api import send as send
 from .api import system_info as system_info
 from .decorator import evaluate as evaluate
 from .decorator import train as train
+from .ipc.ipc_agent import IPCAgent

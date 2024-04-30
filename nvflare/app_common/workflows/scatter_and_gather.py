@@ -12,13 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import gc
 from typing import Any
 
 from nvflare.apis.client import Client
-from nvflare.apis.controller_spec import OperatorMethod, TaskOperatorKey
+from nvflare.apis.controller_spec import ClientTask, OperatorMethod, Task, TaskOperatorKey
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.impl.controller import ClientTask, Controller, Task
+from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.aggregator import Aggregator
@@ -299,6 +300,8 @@ class ScatterAndGather(Controller):
                 if self._snapshot_every_n_rounds != 0 and self._current_round % self._snapshot_every_n_rounds == 0:
                     self._engine.persist_components(fl_ctx, completed=False)
 
+                gc.collect()
+
             self._phase = AppConstants.PHASE_FINISHED
             self.log_info(fl_ctx, "Finished ScatterAndGather Training.")
         except Exception as e:
@@ -334,6 +337,8 @@ class ScatterAndGather(Controller):
 
         # Cleanup task result
         client_task.result = None
+
+        gc.collect()
 
     def process_result_of_unknown_task(
         self, client: Client, task_name, client_task_id, result: Shareable, fl_ctx: FLContext

@@ -30,14 +30,14 @@ from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.private.fed.app.deployer.base_client_deployer import BaseClientDeployer
-from nvflare.private.fed.app.utils import check_parent_alive
+from nvflare.private.fed.app.utils import check_parent_alive, init_security_content_service
 from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorClientAppRunner
 from nvflare.private.fed.simulator.simulator_audit import SimulatorAuditor
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, get_simulator_app_root
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 from nvflare.security.security import EmptyAuthorizer
 
@@ -146,7 +146,7 @@ class ClientTaskWorker(FLComponent):
 
             client = self._create_client(args, build_ctx, deploy_args)
 
-            app_root = os.path.join(args.workspace, SimulatorConstants.JOB_NAME, "app_" + client.client_name)
+            app_root = get_simulator_app_root(args.workspace, client.client_name)
             app_custom_folder = os.path.join(app_root, "custom")
             sys.path.append(app_custom_folder)
 
@@ -185,7 +185,7 @@ class ClientTaskWorker(FLComponent):
         return client
 
     def _set_client_status(self, client, deploy_args, simulator_root):
-        app_client_root = os.path.join(simulator_root, "app_" + client.client_name)
+        app_client_root = get_simulator_app_root(simulator_root, client.client_name)
         client.app_client_root = app_client_root
         client.args = deploy_args
         # self.create_client_runner(client)
@@ -231,19 +231,24 @@ def main(args):
     thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
     thread.start()
 
-    log_config_file_path = os.path.join(args.workspace, "startup", WorkspaceConstants.LOGGING_CONFIG)
-    if not os.path.isfile(log_config_file_path):
-        log_config_file_path = os.path.join(os.path.dirname(__file__), WorkspaceConstants.LOGGING_CONFIG)
-    logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
-    workspace = os.path.join(args.workspace, SimulatorConstants.JOB_NAME, "app_" + args.client)
-    log_file = os.path.join(workspace, WorkspaceConstants.LOG_FILE_NAME)
+    logging.config.fileConfig(fname=args.logging_config, disable_existing_loggers=False)
+    log_file = os.path.join(args.workspace, WorkspaceConstants.LOG_FILE_NAME)
     add_logfile_handler(log_file)
 
-    os.chdir(workspace)
+    app_custom_folder = os.path.join(args.workspace, "custom")
+    sys.path.append(app_custom_folder)
+    os.chdir(args.workspace)
+    startup = os.path.join(args.workspace, WorkspaceConstants.STARTUP_FOLDER_NAME)
+    os.makedirs(startup, exist_ok=True)
+    local = os.path.join(args.workspace, WorkspaceConstants.SITE_FOLDER_NAME)
+    os.makedirs(local, exist_ok=True)
+
     fobs_initialize()
     AuthorizationService.initialize(EmptyAuthorizer())
     # AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
     AuditService.the_auditor = SimulatorAuditor()
+
+    init_security_content_service(args.workspace)
 
     if args.gpu:
         os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
@@ -263,6 +268,7 @@ def main(args):
 def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-o", type=str, help="WORKSPACE folder", required=True)
+    parser.add_argument("--logging_config", type=str, help="logging config file", required=True)
     parser.add_argument("--client", type=str, help="Client name", required=True)
     parser.add_argument("--token", type=str, help="Client token", required=True)
     parser.add_argument("--port", type=str, help="Listen port", required=True)

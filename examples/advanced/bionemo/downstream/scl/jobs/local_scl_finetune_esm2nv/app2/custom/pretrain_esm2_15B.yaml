@@ -1,0 +1,19 @@
+# The minimal set of changes to scale the ESM2nv model to 15B
+
+defaults:
+  - base_config
+
+name: esm2-15B
+
+model:
+  micro_batch_size: 1
+  num_layers: 48
+  hidden_size: 5120
+  num_attention_heads: 40
+
+  tokenizer:
+    # NOTE: this tokenizer doesnt exist?
+    model_name: "facebook/esm2_t48_15B_UR50D"
+
+  # model/data parallelism
+  tensor_model_parallel_size: 8
