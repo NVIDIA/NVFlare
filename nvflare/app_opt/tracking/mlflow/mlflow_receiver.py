@@ -112,11 +112,6 @@ class MLflowReceiver(AnalyticsReceiver):
 
         sites = fl_ctx.get_engine().get_clients()
         self._init_buffer(sites)
-        if not self.tracking_uri:
-            ws = fl_ctx.get_engine().get_workspace()
-            backend_store_dir = os.path.join(ws.root_dir, fl_ctx.get_job_id(), "mlruns")
-            self.tracking_uri = f"file:///{backend_store_dir}"
-            mlflow.set_tracking_uri(uri=self.tracking_uri)
 
         self.mlflow_setup(art_full_path, experiment_name, experiment_tags, sites)
 
