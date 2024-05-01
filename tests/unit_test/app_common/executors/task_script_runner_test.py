@@ -50,6 +50,6 @@ class TestTaskScriptRunner(unittest.TestCase):
         wrapper = TaskScriptRunner(script_path=script_path)
 
         self.assertTrue(wrapper.script_path.endswith(script_path))
-        self.assertEqual(wrapper.get_sys_argv(), [os.path.join(curr_dir, "nvflare", "app_common", "executors", "__init__.py")])
-
-
+        self.assertEqual(
+            wrapper.get_sys_argv(), [os.path.join(curr_dir, "nvflare", "app_common", "executors", "__init__.py")]
+        )
