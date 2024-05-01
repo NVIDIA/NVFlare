@@ -248,7 +248,10 @@ Client API configuration.  You can further nail down the selection by choice of 
 in-process or not, type of models ( GNN, NeMo LLM), workflow patterns ( Swarm learning or standard fedavg with scatter and gather (sag)) etc.
 
 
+Sending custom type/class data
+==============================
 
+Users will need to write custom Decomposer following :ref:`serialization`.
 
-
-
+Then use ```fobs.register()``` to register this Decomposer on client code side,
+NVFlare client side and NVFlare server side.
