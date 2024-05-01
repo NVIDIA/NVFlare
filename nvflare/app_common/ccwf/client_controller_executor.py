@@ -29,6 +29,7 @@ from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.ccwf.common import Constant, StatusReport, make_task_name, topic_for_end_workflow
 from nvflare.fuel.utils.validation_utils import check_number_range
+from nvflare.security.logging import secure_format_exception
 
 
 class ClientControllerExecutor(Executor):
@@ -77,6 +78,7 @@ class ClientControllerExecutor(Executor):
         self.me = None
         self.is_starting_client = False
         self.workflow_done = False
+        self.fatal_system_error = False
 
     def get_config_prop(self, name: str, default=None):
         """
@@ -149,6 +151,11 @@ class ClientControllerExecutor(Executor):
                 self.asked_to_stop = True
                 self.finalize(fl_ctx)
 
+        elif event_type == EventType.FATAL_SYSTEM_ERROR:
+            if self.is_starting_client and not self.fatal_system_error:
+                self.fatal_system_error = True
+                self.fire_fed_event(EventType.FATAL_SYSTEM_ERROR, Shareable(), fl_ctx)
+
     def _add_status_report(self, report: StatusReport, fl_ctx: FLContext):
         reports = fl_ctx.get_prop(Constant.STATUS_REPORTS)
         if not reports:
@@ -182,6 +189,10 @@ class ClientControllerExecutor(Executor):
             self.workflow_done = True
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+        if self.workflow_done:
+            self.log_error(fl_ctx, f"ClientControllerExecutor is finalized, not executing task {task_name}.")
+            return make_reply(ReturnCode.ERROR)
+
         if task_name == self.configure_task_name:
             self.config = shareable[Constant.CONFIG]
             my_wf_id = self.get_config_prop(FLContextKey.WORKFLOW)
@@ -210,7 +221,15 @@ class ClientControllerExecutor(Executor):
                 self.controller = self.initialize_controller(controller_id, fl_ctx)
                 self.log_info(fl_ctx, f"Starting control flow {self.controller.name}")
 
-                res = self.controller.control_flow(abort_signal, fl_ctx)
+                try:
+                    res = self.controller.control_flow(abort_signal, fl_ctx)
+                except Exception as e:
+                    error_msg = f"{controller_id} control_flow exception: {secure_format_exception(e)}"
+                    self.log_error(fl_ctx, error_msg)
+                    self.system_panic(error_msg, fl_ctx)
+
+                if abort_signal.triggered:
+                    return make_reply(ReturnCode.TASK_ABORTED)
 
                 if hasattr(self.controller, "persistor"):
                     self.broadcast_final_result(self.controller.persistor.load(fl_ctx), fl_ctx)
@@ -219,7 +238,10 @@ class ClientControllerExecutor(Executor):
 
                 self.log_info(fl_ctx, f"Finished control flow {self.controller.name}")
 
-            self.update_status(action="finished_start_task", error=None, all_done=True)
+                self.update_status(action=f"finished_{controller_id}", error=None, all_done=True)
+
+            self.update_status(action=f"finished_start_task", error=None, all_done=True)
+
             return make_reply(ReturnCode.OK)
 
         elif task_name == self.report_final_result_task_name:

@@ -159,6 +159,9 @@ class WFCommClient(FLComponent, WFCommSpec):
                             client_task.result = error_reply
                             break
 
+                        if not reply.get_peer_props() and fl_ctx.get_peer_context():
+                            reply.set_peer_props(fl_ctx.get_peer_context().get_all_public_props())
+
                         # assign replies to client task, prepare for the result_received_cb
                         client_task.result = reply
 
