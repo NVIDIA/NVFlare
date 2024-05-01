@@ -61,19 +61,27 @@ class TaskScriptRunner:
         return [self.script_path] + args_list
 
     def get_script_full_path(self, script_path) -> str:
-        target_files = None
+        target_file = None
+        cwd = os.getcwd()
         script_filename = os.path.basename(script_path)
-        script_dir = os.path.dirname(script_path)
+        script_dirs = os.path.dirname(script_path)
         for r, dirs, files in os.walk(os.getcwd()):
-            path_components = r.split(os.sep)
-            if script_dir == "" or script_dir in path_components:
-                target_files = [os.path.join(r, f) for f in files if f == script_filename]
+            for f in files:
+                absolute_path = os.path.join(r, f)
+                relative_path = os.path.relpath(absolute_path, cwd)
+                if relative_path == script_path:
+                    target_file = absolute_path
+                    break
 
-            if target_files:
+                if not script_dirs and f == script_filename:
+                    target_file = absolute_path
+                    break
+            if target_file:
                 break
-        if not target_files:
+
+        if not target_file:
             raise ValueError(f"{script_path} is not found")
-        return target_files[0]
+        return target_file
 
 
 def log_print(*args, logger=TaskScriptRunner.logger, **kwargs):
