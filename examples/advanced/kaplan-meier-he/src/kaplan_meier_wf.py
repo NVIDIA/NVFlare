@@ -18,6 +18,7 @@ from typing import Dict
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.workflows.wf_controller import WFController
 
+
 # Controller Workflow
 class KM(WFController):
     def __init__(self, min_clients: int):
@@ -53,7 +54,7 @@ class KM(WFController):
 
         hist_obs_global = {}
         hist_cen_global = {}
-        for idx in range(hist_idx_max+1):
+        for idx in range(hist_idx_max + 1):
             hist_obs_global[idx] = 0
             hist_cen_global[idx] = 0
 

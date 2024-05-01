@@ -108,9 +108,7 @@ def main():
                 hist_obs[idx[i]] = observed[i]
                 hist_cen[idx[i]] = censored[i]
             # Send histograms to server
-            response = FLModel(
-                params={"hist_obs": hist_obs, "hist_cen": hist_cen}, params_type=ParamsType.FULL
-            )
+            response = FLModel(params={"hist_obs": hist_obs, "hist_cen": hist_cen}, params_type=ParamsType.FULL)
             flare.send(response)
 
         elif curr_round == 2:
