@@ -33,6 +33,7 @@ DEVICE = "cuda:0"
 # input your own comet ml account API key
 COMET_API_KEY = ""
 
+# key function for FedBN
 def load_state_dict_skip_bn(model, state_dict):
     new_state_dict = {k: v for k, v in state_dict.items() if 'bn' not in k}
     model.load_state_dict(new_state_dict, strict=False)
