@@ -29,7 +29,7 @@ We first illustrate the baseline centralized Kaplan-Meier analysis without any s
 
 To run the baseline script, simply execute:
 ```commandline
-python baseline_kaplan_meier.py
+python utils/baseline_kaplan_meier.py
 ```
 By default, this will generate a KM curve image `km_curve_baseline.png` under `/tmp` directory. The resutling KM curve is shown below:
 ![KM survival baseline](figs/km_curve_baseline.png)
