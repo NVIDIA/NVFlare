@@ -42,7 +42,7 @@ app_server  app_site-1  app_site-2  log.txt tb_events
 By default, MLflow will create an experiment log directory under a directory named "mlruns" in the simulator's workspace. If you ran the simulator with "/tmp/nvflare" as the workspace, then you can launch the MLflow UI with:
 
 ```
-mlflow ui --backend-store-uri /tmp/nvflare/mlruns/
+mlflow ui --backend-store-uri /tmp/nvflare/server/simulate_job/mlruns/
 ```
 
 ### 4. MLflow Streaming

@@ -3,8 +3,8 @@ import random
 import re
 import time
 
-import lightning as L
 import net
+import pytorch_lightning as L
 import torch
 from torch import nn, optim
 
