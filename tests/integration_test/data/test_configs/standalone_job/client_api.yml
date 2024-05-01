@@ -107,7 +107,7 @@ tests:
       - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
     teardown:
       - rm -rf /tmp/nvflare/data
-  - test_name: "run pt-decorator"
+  - test_name: "run decorator"
     event_sequence:
       - "trigger":
           "type": "server_log"
@@ -126,7 +126,65 @@ tests:
       - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
     teardown:
       - rm -rf /tmp/nvflare/data
-  - test_name: "run lightning"
+  - test_name: "run lightning-client-api"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job lightning" ]
+        "result":
+          "type": "job_submit_success"
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
+    setup:
+      - python -m pip install pytorch_lightning
+      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
+    teardown:
+      - rm -rf /tmp/nvflare/data
+  - test_name: "run pt-client-api-in-process"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job pt_client_api_in_process" ]
+        "result":
+          "type": "job_submit_success"
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
+    setup:
+      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
+    teardown:
+      - rm -rf /tmp/nvflare/data
+  - test_name: "run decorator-in-process"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job decorator" ]
+        "result":
+          "type": "job_submit_success"
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
+    setup:
+      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
+    teardown:
+      - rm -rf /tmp/nvflare/data
+  - test_name: "run lightning-client-api-in-process"
     event_sequence:
       - "trigger":
           "type": "server_log"
