@@ -15,16 +15,22 @@ python3 utils/prepare_data_traintest_split.py \
 --test_ratio 0.2 \
 --out_folder "${SPLIT_PATH}"
 
+echo "Split training/validation data"
+OUTPUT_PATH="${PWD}/dataset/base_xgb_data"
+python3 utils/prepare_data_base.py \
+--data_path "${SPLIT_PATH}/train.csv" \
+--out_path "${OUTPUT_PATH}"
+
 echo "Split training/validation data vertically"
 OUTPUT_PATH="${PWD}/dataset/vertical_xgb_data"
 python3 utils/prepare_data_vertical.py \
 --data_path "${SPLIT_PATH}/train.csv" \
---site_num 2 \
+--site_num 3 \
 --out_path "${OUTPUT_PATH}"
 
 echo "Split training/validation data horizontally"
 OUTPUT_PATH="${PWD}/dataset/horizontal_xgb_data"
 python3 utils/prepare_data_horizontal.py \
 --data_path "${SPLIT_PATH}/train.csv" \
---site_num 2 \
+--site_num 3 \
 --out_path "${OUTPUT_PATH}"

@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import pandas as pd
 def data_split_args_parser():
     parser = argparse.ArgumentParser(description="Generate data split for dataset")
     parser.add_argument("--data_path", type=str, help="Path to data file")
-    parser.add_argument("--site_num", type=int, default=2, help="Total number of sites")
+    parser.add_argument("--site_num", type=int, default=3, help="Total number of sites")
     parser.add_argument(
         "--out_path",
         type=str,
@@ -83,6 +83,9 @@ def main():
         df_train = df_split.iloc[:int(0.8 * df_split.shape[0]), :]
         # assign last 20% rows to valid
         df_valid = df_split.iloc[int(0.8 * df_split.shape[0]):, :]
+
+        print(f"rows_training: {int(0.8 * df_split.shape[0])}")
+
         # save train and valid data
         df_train.to_csv(path_or_buf=os.path.join(data_path, "train.csv"), index=False, header=False)
         df_valid.to_csv(path_or_buf=os.path.join(data_path, "valid.csv"), index=False, header=False)
