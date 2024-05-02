@@ -26,7 +26,6 @@ from nvflare.app_common.workflows.base_fedavg import BaseFedAvg
 
 
 class FedAvgNewtonRaphson(BaseFedAvg):
-
     def __init__(self, damping_factor, epsilon=1.0, *args, **kwargs):
         super().__init__(*args, **kwargs)
         """
