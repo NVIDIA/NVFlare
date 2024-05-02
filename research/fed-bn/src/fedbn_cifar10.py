@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# (optional) metrics
+import comet_ml
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -22,9 +24,6 @@ from net import Net
 # (1) import nvflare client API
 import nvflare.client as flare
 
-# (optional) metrics
-import comet_ml
-
 # (optional) set a fix place so we don't need to download everytime
 DATASET_PATH = "/tmp/nvflare/data"
 # (optional) We change to use GPU to speed things up.
@@ -33,9 +32,10 @@ DEVICE = "cuda:0"
 # input your own comet ml account API key
 COMET_API_KEY = ""
 
+
 # key function for FedBN
 def load_state_dict_skip_bn(model, state_dict):
-    new_state_dict = {k: v for k, v in state_dict.items() if 'bn' not in k}
+    new_state_dict = {k: v for k, v in state_dict.items() if "bn" not in k}
     model.load_state_dict(new_state_dict, strict=False)
 
 
@@ -75,7 +75,6 @@ def main():
         # (optional) calculate total steps
         steps = epochs * len(trainloader)
         for epoch in range(epochs):  # loop over the dataset multiple times
-
             running_loss = 0.0
             for i, data in enumerate(trainloader, 0):
                 # get the inputs; data is a list of [inputs, labels]
@@ -97,7 +96,7 @@ def main():
                     print(f"[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
                     global_step = input_model.current_round * steps + epoch * len(trainloader) + i
 
-                    exp.log_metrics({'loss': running_loss}, step=global_step)
+                    exp.log_metrics({"loss": running_loss}, step=global_step)
                     running_loss = 0.0
 
         print("Finished Training")
