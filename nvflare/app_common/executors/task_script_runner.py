@@ -62,20 +62,22 @@ class TaskScriptRunner:
 
     def get_script_full_path(self, script_path) -> str:
         target_file = None
-        cwd = os.getcwd()
         script_filename = os.path.basename(script_path)
         script_dirs = os.path.dirname(script_path)
+
         for r, dirs, files in os.walk(os.getcwd()):
             for f in files:
                 absolute_path = os.path.join(r, f)
-                relative_path = os.path.relpath(absolute_path, cwd)
-                if relative_path == script_path:
-                    target_file = absolute_path
-                    break
+                if absolute_path.endswith(script_path):
+                    parent_dir = absolute_path[: absolute_path.find(script_path)].rstrip(os.sep)
+                    if os.path.isdir(parent_dir):
+                        target_file = absolute_path
+                        break
 
                 if not script_dirs and f == script_filename:
                     target_file = absolute_path
                     break
+
             if target_file:
                 break
 

@@ -53,3 +53,22 @@ class TestTaskScriptRunner(unittest.TestCase):
         self.assertEqual(
             wrapper.get_sys_argv(), [os.path.join(curr_dir, "nvflare", "app_common", "executors", "__init__.py")]
         )
+
+    def test_app_scripts_with_sub_dirs3(self):
+        curr_dir = os.getcwd()
+        script_path = "executors/task_script_runner.py"
+        wrapper = TaskScriptRunner(script_path=script_path)
+
+        self.assertTrue(wrapper.script_path.endswith(script_path))
+        self.assertEqual(
+            wrapper.get_sys_argv(),
+            [os.path.join(curr_dir, "nvflare", "app_common", "executors", "task_script_runner.py")],
+        )
+
+    def test_app_scripts_with_sub_dirs4(self):
+        curr_dir = os.getcwd()
+        script_path = "in_process/api.py"
+        wrapper = TaskScriptRunner(script_path=script_path)
+
+        self.assertTrue(wrapper.script_path.endswith(script_path))
+        self.assertEqual(wrapper.get_sys_argv(), [os.path.join(curr_dir, "nvflare", "client", "in_process", "api.py")])
