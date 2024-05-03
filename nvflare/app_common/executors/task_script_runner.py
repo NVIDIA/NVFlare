@@ -33,18 +33,21 @@ class TaskScriptRunner:
         self.script_args = script_args
         self.client_api = None
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.script_path = self.get_script_full_path(script_path)
+        self.script_path = script_path
+        self.script_full_path = self.get_script_full_path(script_path)
+        self.script_module_name = find_module_name(script_path)
 
     def run(self):
         """Call the task_fn with any required arguments."""
-        self.logger.info(f"\n start task run() with {self.script_path}")
+        self.logger.info(f"\n start task run() with {self.script_full_path}")
         try:
             import runpy
 
             curr_argv = sys.argv
             builtins.print = log_print
             sys.argv = self.get_sys_argv()
-            runpy.run_path(self.script_path, run_name="__main__")
+            runpy.run_module(self.script_module_name, run_name="__main__", alter_sys=True)
+
             sys.argv = curr_argv
 
         except Exception as e:
@@ -58,7 +61,7 @@ class TaskScriptRunner:
 
     def get_sys_argv(self):
         args_list = [] if not self.script_args else self.script_args.split()
-        return [self.script_path] + args_list
+        return [self.script_full_path] + args_list
 
     def get_script_full_path(self, script_path) -> str:
         target_file = None
@@ -90,3 +93,18 @@ def log_print(*args, logger=TaskScriptRunner.logger, **kwargs):
     # Create a message from print arguments
     message = " ".join(str(arg) for arg in args)
     logger.info(message)
+
+
+def find_module_name(module_path: str) -> str:
+    """Return Module name given a module path.
+
+    Args:
+        module_path (str): module path
+    Returns:
+        str
+
+    ex: train.py -> train
+        custom/train.py -> custom.train
+    """
+    tokens = module_path.rsplit(".", 1)
+    return tokens[0].replace("/", ".")
