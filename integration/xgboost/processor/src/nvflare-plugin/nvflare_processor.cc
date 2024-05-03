@@ -23,24 +23,24 @@ using std::vector;
 using std::cout;
 using std::endl;
 
-void* NVFlareProcessor::ProcessGHPairs(size_t &size, std::vector<double>& pairs) {
+void* NVFlareProcessor::ProcessGHPairs(size_t *size, const std::vector<double>& pairs) {
     cout << "ProcessGHPairs called with pairs size: " << pairs.size() << endl;
     gh_pairs_ = new std::vector<double>(pairs);
 
     DamEncoder encoder(kDataSetHGPairs);
     encoder.AddFloatArray(pairs);
-    auto buffer = encoder.Finish(size);
+    auto buffer = encoder.Finish(*size);
 
     return buffer;
 }
 
-void* NVFlareProcessor::HandleGHPairs(size_t &size, void *buffer, size_t buf_size)  {
+void* NVFlareProcessor::HandleGHPairs(size_t *size, void *buffer, size_t buf_size)  {
     cout << "HandleGHPairs called with buffer size: " << buf_size << " Active: " << active_ << endl;
-    size = buf_size;
+    *size = buf_size;
     return buffer;
 }
 
-void *NVFlareProcessor::ProcessAggregation(size_t &size, std::map<int, std::vector<int>> nodes) {
+void *NVFlareProcessor::ProcessAggregation(size_t *size, std::map<int, std::vector<int>> nodes) {
     cout << "ProcessAggregation called with " << nodes.size() << " nodes" << endl;
 
     int64_t data_set_id;
@@ -107,7 +107,7 @@ void *NVFlareProcessor::ProcessAggregation(size_t &size, std::map<int, std::vect
         encoder.AddIntArray(rows);
     }
 
-    auto buffer = encoder.Finish(size);
+    auto buffer = encoder.Finish(*size);
     return buffer;
 }
 
@@ -124,7 +124,8 @@ std::vector<double> NVFlareProcessor::HandleAggregation(void *buffer, size_t buf
     while (remaining > kPrefixLen) {
         DamDecoder decoder(reinterpret_cast<uint8_t *>(pointer), remaining);
         if (!decoder.IsValid()) {
-            cout << "Not DAM encoded buffer ignored at offset: " << (int)(pointer - (char *)buffer) << endl;
+            cout << "Not DAM encoded buffer ignored at offset: "
+                 << static_cast<int>((pointer - reinterpret_cast<char *>(buffer))) << endl;
             break;
         }
         auto size = decoder.Size();
@@ -153,6 +154,31 @@ std::vector<double> NVFlareProcessor::HandleAggregation(void *buffer, size_t buf
     return result;
 }
 
+void *NVFlareProcessor::ProcessHistograms(size_t *size, const std::vector<double>& histograms) {
+    cout << "HandleHistograms called with " << histograms.size() << " entries" << endl;
+
+    DamEncoder encoder(kDataSetHistograms);
+    encoder.AddFloatArray(histograms);
+    return encoder.Finish(*size);
+}
+
+std::vector<double> NVFlareProcessor::HandleHistograms(void *buffer, size_t buf_size) {
+    cout << "HandleHistograms called with buffer size: " << buf_size << endl;
+
+    DamDecoder decoder(reinterpret_cast<uint8_t *>(buffer), buf_size);
+    if (!decoder.IsValid()) {
+        cout << "Not DAM encoded buffer, ignored" << endl;
+        return std::vector<double>();
+    }
+
+    if (decoder.GetDataSetId() != kDataSetHistogramResult) {
+        cout << "Invalid dataset: " << decoder.GetDataSetId() << endl;
+        return std::vector<double>();
+    }
+
+    return decoder.DecodeFloatArray();
+}
+
 extern "C" {
 
 processing::Processor *LoadProcessor(char *plugin_name) {
@@ -163,4 +189,5 @@ processing::Processor *LoadProcessor(char *plugin_name) {
 
     return new NVFlareProcessor();
 }
-}
+
+}  // extern "C"
