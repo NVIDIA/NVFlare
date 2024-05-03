@@ -1,8 +1,8 @@
 # Job Template Information Card
 
-## kaplan_meier_he
-    name = "kaplan_meier_he"
-    description = "Kaplan-Meier survival analysis with homomorphic encryption"
+## kaplan_meier
+    name = "kaplan_meier"
+    description = "Kaplan-Meier survival analysis"
     class_name  =  "KM"
     controller_type = "server"
     executor_type = "launcher_executor"
