@@ -11,12 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import importlib
 import json
 import logging
 import logging.config
 import os
+import pkgutil
 import sys
+import warnings
 from logging.handlers import RotatingFileHandler
 from typing import List
 
@@ -34,6 +36,8 @@ from nvflare.fuel.f3.stats_pool import CsvRecordHandler, StatsPoolManager
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.authz import AuthorizationService
 from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
+from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils.fobs.fobs import register_custom_folder
 from nvflare.private.defs import RequestHeader, SSLConstants
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.decomposers import private_decomposers
@@ -198,10 +202,35 @@ def get_scope_info():
         return [], "processing_error"
 
 
-def fobs_initialize():
+def fobs_initialize(workspace: Workspace, job_id: str = None):
     flare_decomposers.register()
     common_decomposers.register()
     private_decomposers.register()
+
+    warnings.filterwarnings("ignore")
+
+    package = importlib.import_module("nvflare")
+    for module_info in pkgutil.walk_packages(path=package.__path__, prefix=package.__name__ + "."):
+        if module_info.ispkg:
+            folder_name = module_info.module_finder.path
+            package_name = module_info.name
+            folder = os.path.join(folder_name, package_name.split(".")[-1])
+            fobs.register_folder(folder, package_name)
+
+    site_custom_dir = workspace.get_client_custom_dir()
+    # folders = [x[0] for x in os.walk(site_custom_dir)]
+    # for folder in folders:
+    #     package = folder[len(site_custom_dir)+1:].replace(os.sep, ".")
+    #     fobs.register_folder(folder, package)
+    register_custom_folder(site_custom_dir)
+
+    if job_id:
+        app_custom_dir = workspace.get_app_config_dir(job_id)
+        # folders = [x[0] for x in os.walk(app_custom_dir)]
+        # for folder in folders:
+        #     package = folder[len(site_custom_dir)+1:].replace(os.sep, ".")
+        #     fobs.register_folder(folder, package)
+        register_custom_folder(app_custom_dir)
 
 
 def set_stats_pool_config_for_job(workspace: Workspace, job_id: str, prefix=None):

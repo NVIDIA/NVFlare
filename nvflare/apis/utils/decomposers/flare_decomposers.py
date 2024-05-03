@@ -81,11 +81,11 @@ def register():
 
     fobs.register(DictDecomposer(Shareable))
 
-    fobs.register(DXODecomposer)
+    # fobs.register(DXODecomposer)
 
     fobs.register_data_classes(Client, RunSnapshot, Signal, Namespace, Datum, DatumRef)
 
-    fobs.register_folder(os.path.dirname(__file__), __package__)
+    # fobs.register_folder(os.path.dirname(__file__), __package__)
 
     register.registered = True
 

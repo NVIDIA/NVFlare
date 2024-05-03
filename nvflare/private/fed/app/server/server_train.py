@@ -25,6 +25,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.fobs import fobs
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger, create_privacy_manager
 from nvflare.private.fed.app.utils import create_admin_server, version_check
@@ -64,13 +65,16 @@ def main(args):
     try:
         os.chdir(args.workspace)
 
-        fobs_initialize()
+        fobs_initialize(workspace)
+
+        z = fobs. _decomposers
 
         conf = FLServerStarterConfiger(
             workspace=workspace,
             args=args,
             kv_list=args.set,
         )
+
         log_level = os.environ.get("FL_LOG_LEVEL", "")
         numeric_level = getattr(logging, log_level.upper(), None)
         if isinstance(numeric_level, int):

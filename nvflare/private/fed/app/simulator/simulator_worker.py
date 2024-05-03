@@ -146,9 +146,10 @@ class ClientTaskWorker(FLComponent):
 
             client = self._create_client(args, build_ctx, deploy_args)
 
-            app_root = get_simulator_app_root(args.workspace, client.client_name)
+            app_root = get_simulator_app_root(args.simulator_root, client.client_name)
             app_custom_folder = os.path.join(app_root, "custom")
             sys.path.append(app_custom_folder)
+            os.chdir(app_custom_folder)
 
             self.create_client_engine(client, deploy_args)
 
@@ -243,7 +244,7 @@ def main(args):
     local = os.path.join(args.workspace, WorkspaceConstants.SITE_FOLDER_NAME)
     os.makedirs(local, exist_ok=True)
 
-    fobs_initialize()
+    fobs_initialize(None)
     AuthorizationService.initialize(EmptyAuthorizer())
     # AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
     AuditService.the_auditor = SimulatorAuditor()
