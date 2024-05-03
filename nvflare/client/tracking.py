@@ -65,7 +65,7 @@ class SummaryWriter:
         )
 
     def flush(self):
-        """ Skip flushing which would normally write the event file to disk """
+        """Skip flushing which would normally write the event file to disk"""
         pass
 
 

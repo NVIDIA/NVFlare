@@ -1,48 +1,47 @@
 # Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
-# 
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-# 
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
-# 
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# 
+#
 # MONAI Example adopted from https://github.com/Project-MONAI/tutorials/blob/main/2d_classification/monai_101.ipynb
-# 
-# Copyright (c) MONAI Consortium  
-# Licensed under the Apache License, Version 2.0 (the "License");  
-# you may not use this file except in compliance with the License.  
-# You may obtain a copy of the License at  
+#
+# Copyright (c) MONAI Consortium
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #     http://www.apache.org/licenses/LICENSE-2.0
-# Unless required by applicable law or agreed to in writing, software  
-# distributed under the License is distributed on an "AS IS" BASIS,  
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  
-# See the License for the specific language governing permissions and  
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
 # limitations under the License.
 
 import logging
-import numpy as np
 import os
-from pathlib import Path
 import sys
 import tempfile
-import torch
+from pathlib import Path
 
+import numpy as np
+import torch
 from monai.apps import MedNISTDataset
 from monai.config import print_config
 from monai.data import DataLoader
 from monai.engines import SupervisedTrainer
-from monai.handlers import StatsHandler
+from monai.handlers import StatsHandler, TensorBoardStatsHandler
 from monai.inferers import SimpleInferer
 from monai.networks import eval_mode
 from monai.networks.nets import densenet121
-from monai.transforms import LoadImageD, EnsureChannelFirstD, ScaleIntensityD, Compose
-from monai.handlers import TensorBoardStatsHandler
+from monai.transforms import Compose, EnsureChannelFirstD, LoadImageD, ScaleIntensityD
 
 # (1) import nvflare client API
 import nvflare.client as flare
@@ -52,6 +51,7 @@ from nvflare.client.tracking import SummaryWriter
 
 print_config()
 
+
 def main():
     # (2) initializes NVFlare client API
     flare.init()
@@ -60,7 +60,6 @@ def main():
     directory = os.environ.get("MONAI_DATA_DIRECTORY")
     root_dir = tempfile.mkdtemp() if directory is None else directory
     print(root_dir)
-
 
     # Use MONAI transforms to preprocess data
     transform = Compose(
@@ -98,9 +97,7 @@ def main():
 
     # TensorBoardStatsHandler plots loss at every iteration and plots metrics at every epoch, same as StatsHandler
     summary_writer = SummaryWriter()
-    train_tensorboard_stats_handler = TensorBoardStatsHandler(
-        summary_writer=summary_writer
-    )
+    train_tensorboard_stats_handler = TensorBoardStatsHandler(summary_writer=summary_writer)
     train_tensorboard_stats_handler.attach(trainer)
 
     # (optional) calculate total steps
@@ -128,8 +125,9 @@ def main():
             # Check the prediction on the test dataset
             dataset_dir = Path(root_dir, "MedNIST")
             class_names = sorted(f"{x.name}" for x in dataset_dir.iterdir() if x.is_dir())
-            testdata = MedNISTDataset(root_dir=root_dir, transform=transform, section="test", download=False,
-                                      runtime_cache=True)
+            testdata = MedNISTDataset(
+                root_dir=root_dir, transform=transform, section="test", download=False, runtime_cache=True
+            )
             correct = 0
             total = 0
             max_items_to_print = 10
