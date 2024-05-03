@@ -310,11 +310,11 @@ class SubWorkerExecutor(Runner):
 def main(args):
     workspace = Workspace(args.workspace, args.client_name)
     app_custom_folder = workspace.get_client_custom_dir()
-    if os.path.isdir(app_custom_folder):
+    if os.path.isdir(app_custom_folder) and app_custom_folder not in sys.path:
         sys.path.append(app_custom_folder)
     configure_logging(workspace)
 
-    fobs_initialize(None)
+    fobs_initialize(workspace)
 
     SecurityContentService.initialize(content_folder=workspace.get_startup_kit_dir())
 

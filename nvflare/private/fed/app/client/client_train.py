@@ -66,7 +66,7 @@ def main(args):
 
     try:
         os.chdir(args.workspace)
-        fobs_initialize(None)
+        fobs_initialize(workspace)
 
         conf = FLClientStarterConfiger(
             workspace=workspace,

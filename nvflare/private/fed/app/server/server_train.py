@@ -67,8 +67,6 @@ def main(args):
 
         fobs_initialize(workspace)
 
-        z = fobs. _decomposers
-
         conf = FLServerStarterConfiger(
             workspace=workspace,
             args=args,

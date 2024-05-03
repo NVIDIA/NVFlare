@@ -16,6 +16,7 @@ import importlib
 import inspect
 import logging
 import os
+import sys
 from enum import Enum
 from os.path import dirname, join
 from typing import Any, BinaryIO, Dict, Type, TypeVar, Union
@@ -206,6 +207,9 @@ def register_folder(folder: str, package: str):
 
 
 def register_custom_folder(folder: str):
+    if os.path.isdir(folder) and folder not in sys.path:
+        sys.path.append(folder)
+
     for root, dirs, files in os.walk(folder):
         for filename in files:
             if filename.endswith(".py"):

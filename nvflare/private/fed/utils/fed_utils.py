@@ -207,8 +207,18 @@ def fobs_initialize(workspace: Workspace, job_id: str = None):
     common_decomposers.register()
     private_decomposers.register()
 
-    warnings.filterwarnings("ignore")
+    register_nvflare_decomposers()
 
+    site_custom_dir = workspace.get_client_custom_dir()
+    register_custom_folder(site_custom_dir)
+
+    if job_id:
+        app_custom_dir = workspace.get_app_config_dir(job_id)
+        register_custom_folder(app_custom_dir)
+
+
+def register_nvflare_decomposers():
+    warnings.filterwarnings("ignore")
     package = importlib.import_module("nvflare")
     for module_info in pkgutil.walk_packages(path=package.__path__, prefix=package.__name__ + "."):
         if module_info.ispkg:
@@ -216,23 +226,6 @@ def fobs_initialize(workspace: Workspace, job_id: str = None):
             package_name = module_info.name
             folder = os.path.join(folder_name, package_name.split(".")[-1])
             fobs.register_folder(folder, package_name)
-
-    site_custom_dir = workspace.get_client_custom_dir()
-    # folders = [x[0] for x in os.walk(site_custom_dir)]
-    # for folder in folders:
-    #     package = folder[len(site_custom_dir)+1:].replace(os.sep, ".")
-    #     fobs.register_folder(folder, package)
-    if os.path.isdir(site_custom_dir) and site_custom_dir not in sys.path:
-        sys.path.append(site_custom_dir)
-    register_custom_folder(site_custom_dir)
-
-    if job_id:
-        app_custom_dir = workspace.get_app_config_dir(job_id)
-        # folders = [x[0] for x in os.walk(app_custom_dir)]
-        # for folder in folders:
-        #     package = folder[len(site_custom_dir)+1:].replace(os.sep, ".")
-        #     fobs.register_folder(folder, package)
-        register_custom_folder(app_custom_dir)
 
 
 def set_stats_pool_config_for_job(workspace: Workspace, job_id: str, prefix=None):

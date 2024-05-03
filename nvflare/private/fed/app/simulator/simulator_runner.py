@@ -476,7 +476,8 @@ class SimulatorRunner(FLComponent):
 
         args.server_config = os.path.join("config", JobConstants.SERVER_JOB_CONFIG)
         app_custom_folder = os.path.join(app_server_root, "custom")
-        sys.path.append(app_custom_folder)
+        if os.path.isdir(app_custom_folder) and app_custom_folder not in sys.path:
+            sys.path.append(app_custom_folder)
 
         startup = os.path.join(args.workspace, WorkspaceConstants.STARTUP_FOLDER_NAME)
         os.makedirs(startup, exist_ok=True)

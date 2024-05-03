@@ -219,7 +219,7 @@ class FLClientStarterConfiger(JsonConfigurator):
             kv_list: key value pair list
         """
         site_custom_folder = workspace.get_site_custom_dir()
-        if os.path.isdir(site_custom_folder):
+        if os.path.isdir(site_custom_folder) and site_custom_folder not in sys.path:
             sys.path.append(site_custom_folder)
 
         self.args = args
