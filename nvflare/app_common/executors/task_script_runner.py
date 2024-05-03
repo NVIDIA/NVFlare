@@ -37,7 +37,7 @@ class TaskScriptRunner:
 
     def run(self):
         """Call the task_fn with any required arguments."""
-        self.logger.info(f"\n start task run() with {self.script_path}")
+        self.logger.info(f"start task run() with {self.script_path}")
         try:
             import runpy
 

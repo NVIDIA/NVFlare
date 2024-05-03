@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import random
 from typing import List
 
 from nvflare.apis.fl_constant import FLMetaKey
@@ -48,7 +47,6 @@ class BaseFedAvg(WFController):
         The model_persistor will also save the model after training.
 
         Provides the default implementations for the follow routines:
-            - def sample_clients(self, min_clients)
             - def aggregate(self, results: List[FLModel], aggregate_fn=None) -> FLModel
             - def update_model(self, aggr_result)
 
@@ -73,28 +71,6 @@ class BaseFedAvg(WFController):
         self.persist_every_n_rounds = persist_every_n_rounds
 
         self.current_round = None
-
-    def sample_clients(self, num_clients):
-        """Called by the `run` routine to get a list of available clients.
-
-        Args:
-            min_clients: number of clients to return.
-
-        Returns: list of clients.
-
-        """
-
-        clients = self.engine.get_clients()
-
-        if num_clients <= len(clients):
-            random.shuffle(clients)
-            clients = clients[0:num_clients]
-        else:
-            self.info(
-                f"num_clients ({num_clients}) is greater than the number of available clients. Returning all clients."
-            )
-
-        return clients
 
     @staticmethod
     def _check_results(results: List[FLModel]):

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import gc
+import random
 from abc import ABC, abstractmethod
 from typing import Callable, List, Union
 
@@ -342,6 +343,23 @@ class ModelController(Controller, FLComponentWrapper, ABC):
             self.info("End persist model on server.")
         else:
             self.error("persistor not configured, model will not be saved")
+
+    def sample_clients(self, num_clients):
+        clients = self.engine.get_clients()
+
+        if num_clients < len(clients):
+            random.shuffle(clients)
+            clients = clients[0:num_clients]
+            self.info(
+                f"num_clients ({num_clients}) is less than the number of available clients. Returning a random subset of {num_clients} clients."
+            )
+        elif num_clients > len(clients):
+            self.info(
+                f"num_clients ({num_clients}) is greater than the number of available clients. Returning all clients."
+            )
+        self.info(f"Sampled clients: {[client.name for client in clients]}")
+
+        return clients
 
     def stop_controller(self, fl_ctx: FLContext):
         self.fl_ctx = fl_ctx
