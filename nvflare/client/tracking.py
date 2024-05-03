@@ -64,6 +64,10 @@ class SummaryWriter:
             **kwargs,
         )
 
+    def flush(self):
+        """ Skip flushing which would normally write the event file to disk """
+        pass
+
 
 class WandBWriter:
     """WandBWriter mimics the usage of weights and biases.

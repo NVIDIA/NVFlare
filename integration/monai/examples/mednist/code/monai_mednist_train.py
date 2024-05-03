@@ -32,8 +32,6 @@ from pathlib import Path
 import sys
 import tempfile
 import torch
-from collections.abc import Mapping
-from typing import cast
 
 from monai.apps import MedNISTDataset
 from monai.config import print_config
@@ -44,7 +42,7 @@ from monai.inferers import SimpleInferer
 from monai.networks import eval_mode
 from monai.networks.nets import densenet121
 from monai.transforms import LoadImageD, EnsureChannelFirstD, ScaleIntensityD, Compose
-from monai.networks.utils import copy_model_state, get_state_dict
+from monai.handlers import TensorBoardStatsHandler
 
 # (1) import nvflare client API
 import nvflare.client as flare
@@ -98,11 +96,17 @@ def main():
         train_handlers=StatsHandler(),
     )
 
+    # TensorBoardStatsHandler plots loss at every iteration and plots metrics at every epoch, same as StatsHandler
+    summary_writer = SummaryWriter()
+    train_tensorboard_stats_handler = TensorBoardStatsHandler(
+        summary_writer=summary_writer
+    )
+    train_tensorboard_stats_handler.attach(trainer)
+
     # (optional) calculate total steps
     steps = max_epochs * len(train_loader)
     # Run the training
 
-    summary_writer = SummaryWriter()
     while flare.is_running():
         # (3) receives FLModel from NVFlare
         input_model = flare.receive()
@@ -117,7 +121,9 @@ def main():
         # (5) wraps evaluation logic into a method to re-use for
         #       evaluation on both trained and received model
         def evaluate(input_weights):
-            model.load_state_dict(input_weights)
+            # Create model for evaluation
+            eval_model = densenet121(spatial_dims=2, in_channels=1, out_channels=6).to(DEVICE)
+            eval_model.load_state_dict(input_weights)
 
             # Check the prediction on the test dataset
             dataset_dir = Path(root_dir, "MedNIST")
@@ -128,9 +134,9 @@ def main():
             total = 0
             max_items_to_print = 10
             _print = 0
-            with eval_mode(model):
+            with eval_mode(eval_model):
                 for item in DataLoader(testdata, batch_size=512, num_workers=0):  # changed to do batch processing
-                    prob = np.array(model(item["image"].to(DEVICE)).detach().to("cpu"))
+                    prob = np.array(eval_model(item["image"].to(DEVICE)).detach().to("cpu"))
                     pred = [class_names[p] for p in prob.argmax(axis=1)]
                     gt = item["class_name"]
                     # changed the logic a bit from tutorial to compute accuracy on full test set
@@ -145,7 +151,7 @@ def main():
                         correct += float(_pred == _gt)
 
             print(f"Accuracy of the network on the {total} test images: {100 * correct // total} %")
-            return correct // total
+            return correct / total
 
         # (6) evaluate on received model for model selection
         accuracy = evaluate(input_model.params)
