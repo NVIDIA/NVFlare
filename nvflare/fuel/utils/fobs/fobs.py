@@ -206,16 +206,24 @@ def register_folder(folder: str, package: str):
 
 
 def register_custom_folder(folder: str):
-    for root, dirnames, filenames in os.walk(folder):
-        for filename in filenames:
-            if filename.endswith('.py'):
-                with open(os.path.join(root, filename)) as file:
-                    node = ast.parse(file.read())
-                    classes = [n for n in node.body if isinstance(n, ast.ClassDef)]
-                    for cls_obj in classes:
+    for root, dirs, files in os.walk(folder):
+        for filename in files:
+            if filename.endswith(".py"):
+                module = filename[:-3]
+                sub_folder = root[len(folder):]
+                if sub_folder:
+                    sub_folder = sub_folder.strip(os.sep).replace(os.sep, ".")
+                    module = sub_folder + "." + module
+
+                imported = importlib.import_module(module)
+                for _, cls_obj in inspect.getmembers(imported, inspect.isclass):
+                    if issubclass(cls_obj, Decomposer) and not inspect.isabstract(cls_obj):
                         spec = inspect.getfullargspec(cls_obj.__init__)
-                        if issubclass(cls_obj, Decomposer) and not inspect.isabstract(cls_obj) and len(spec.args) == 1:
+                        if len(spec.args) == 1:
                             register(cls_obj)
+                        else:
+                            # Can't handle argument in constructor
+                            log.warning(f"Invalid driver, __init__ with extra arguments: {module}")
 
 
 def _register_decomposers():

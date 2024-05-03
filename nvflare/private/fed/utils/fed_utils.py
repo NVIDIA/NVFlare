@@ -222,6 +222,8 @@ def fobs_initialize(workspace: Workspace, job_id: str = None):
     # for folder in folders:
     #     package = folder[len(site_custom_dir)+1:].replace(os.sep, ".")
     #     fobs.register_folder(folder, package)
+    if os.path.isdir(site_custom_dir) and site_custom_dir not in sys.path:
+        sys.path.append(site_custom_dir)
     register_custom_folder(site_custom_dir)
 
     if job_id:
