@@ -31,11 +31,12 @@ def data_split_args_parser():
         default="site-",
         help="Site name prefix, default is site-",
     )
+    parser.add_argument("--bin_days", type=int, default=1, help="Bin days for categorizing data")
     parser.add_argument("--out_path", type=str, help="Output root path for split data files")
     return parser
 
 
-def prepare_data(data, site_num, bin_days: int = 7):
+def prepare_data(data, site_num, bin_days):
     # Get total data count
     total_data_num = data.shape[0]
     print(f"Total data count: {total_data_num}")
@@ -43,7 +44,7 @@ def prepare_data(data, site_num, bin_days: int = 7):
     event = data["Status"]
     time = data["Survival_in_days"]
     # Categorize data to a bin, default is a week (7 days)
-    time = np.ceil(time / bin_days).astype(int)
+    time = np.ceil(time / bin_days).astype(int) * bin_days
     # Shuffle data
     idx = np.random.permutation(total_data_num)
     # Split data to clients
@@ -68,7 +69,7 @@ def main():
     _, data = load_veterans_lung_cancer()
 
     # Prepare data
-    event_clients, time_clients = prepare_data(data=data, site_num=args.site_num)
+    event_clients, time_clients = prepare_data(data=data, site_num=args.site_num, bin_days=args.bin_days)
 
     # Save data to csv files
     if not os.path.exists(args.out_path):
