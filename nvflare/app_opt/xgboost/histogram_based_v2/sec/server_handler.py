@@ -14,6 +14,8 @@
 import os
 import threading
 
+from nvflare.app_opt.he import decomposers
+
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
@@ -32,6 +34,8 @@ class ServerSecurityHandler(SecurityHandler):
         self.aggr_result_dict = None
         self.aggr_result_to_send = None
         self.aggr_result_lock = threading.Lock()
+
+        decomposers.register()
 
     def _process_before_broadcast(self, fl_ctx: FLContext):
         self.info(fl_ctx, "start")
@@ -82,20 +86,25 @@ class ServerSecurityHandler(SecurityHandler):
         fl_ctx.set_prop(key=Constant.PARAM_KEY_RCV_BUF, value=self.encrypted_gh, private=True, sticky=False)
 
     def _process_before_all_gather_v(self, fl_ctx: FLContext):
-        self.info(fl_ctx, "start")
-        rank = fl_ctx.get_prop(Constant.PARAM_KEY_RANK)
         request = fl_ctx.get_prop(Constant.PARAM_KEY_REQUEST)
         assert isinstance(request, Shareable)
         has_encrypted_data = request.get_header(Constant.HEADER_KEY_ENCRYPTED_DATA)
         self.info(fl_ctx, f"{has_encrypted_data=}")
         if not has_encrypted_data:
-            self.info(fl_ctx, "no encrypted data - ignore")
+            self.info(fl_ctx, "start - non-secure data")
             return
 
-        fl_ctx.set_prop(key="in_aggr", value=True, private=True, sticky=False)
+        has_histograms = request.get_header(Constant.HEADER_KEY_ENCRYPTED_HISTOGRAMS)
+        split_mode = "horizontal" if has_histograms else "vertical"
+        self.info(fl_ctx, f"start - {split_mode}")
+
+        fl_ctx.set_prop(key=Constant.HEADER_KEY_IN_AGGR, value=True, private=True, sticky=False)
+        fl_ctx.set_prop(key=Constant.HEADER_KEY_ENCRYPTED_HISTOGRAMS, value=has_histograms, private=True, sticky=False)
+
+        rank = fl_ctx.get_prop(Constant.PARAM_KEY_RANK)
         send_buf = fl_ctx.get_prop(Constant.PARAM_KEY_SEND_BUF)
         if send_buf:
-            # the send_buf contains encoded aggr result (str) from this rank
+            # the send_buf contains encoded aggr result (str) or CKKS vector from this rank
             self.info(fl_ctx, f"got encrypted aggr data: {len(send_buf)} bytes")
             with self.aggr_result_lock:
                 self.aggr_result_to_send = None
@@ -113,9 +122,9 @@ class ServerSecurityHandler(SecurityHandler):
 
     def _process_after_all_gather_v(self, fl_ctx: FLContext):
         # this is called after the Server has finished gathering
-        # Note: this fl_ctx is the same as the one in _handle_before_all_gather_v!
+        # Note: this fl_ctx is the same as the one in _process_before_all_gather_v!
         rank = fl_ctx.get_prop(Constant.PARAM_KEY_RANK)
-        in_aggr = fl_ctx.get_prop("in_aggr")
+        in_aggr = fl_ctx.get_prop(Constant.HEADER_KEY_IN_AGGR)
         self.info(fl_ctx, f"start {in_aggr=}")
 
         if not in_aggr:
@@ -124,14 +133,32 @@ class ServerSecurityHandler(SecurityHandler):
 
         reply = fl_ctx.get_prop(Constant.PARAM_KEY_REPLY)
         assert isinstance(reply, Shareable)
+        has_histograms = fl_ctx.get_prop(Constant.HEADER_KEY_ENCRYPTED_HISTOGRAMS)
         reply.set_header(Constant.HEADER_KEY_ENCRYPTED_DATA, True)
+        reply.set_header(Constant.HEADER_KEY_ENCRYPTED_HISTOGRAMS, has_histograms)
         with self.aggr_result_lock:
             if not self.aggr_result_to_send:
                 if not self.aggr_result_dict:
                     return self._abort(f"Rank {rank}: no aggr result after AllGatherV!", fl_ctx)
-                self.aggr_result_to_send = self.aggr_result_dict
+
+                if has_histograms:
+                    self.aggr_result_to_send = self._histogram_sum(fl_ctx)
+                else:
+                    self.aggr_result_to_send = self.aggr_result_dict
 
                 # reset aggr_result_dict for next gather
                 self.aggr_result_dict = None
         self.info(fl_ctx, f"aggr_result_to_send {len(self.aggr_result_to_send)}")
         fl_ctx.set_prop(key=Constant.PARAM_KEY_RCV_BUF, value=self.aggr_result_to_send, private=True, sticky=False)
+
+    def _histogram_sum(self, fl_ctx: FLContext):
+
+        result = None
+
+        for rank, vector in self.aggr_result_dict.items():
+            if not result:
+                result = vector
+            else:
+                result = result + vector
+
+        return result
