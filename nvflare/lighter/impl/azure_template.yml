@@ -39,7 +39,7 @@ azure_start_svr_header_sh: |
       container=true
   fi
 
-  if [ $container = true ]
+  if [ $container == true ]
   then
     VM_IMAGE=Canonical:0001-com-ubuntu-server-focal:20_04-lts-gen2:latest
     VM_SIZE=Standard_D8s_v3
@@ -55,20 +55,20 @@ azure_start_svr_header_sh: |
     useDefault=false
     . $config_file
     report_status "$?" "Loading config file"
-    if [ $self_dns = false ] && [ $DERIVED_LOCATION != $LOCATION ]
+    if [ $self_dns == false ] && [ $DERIVED_LOCATION != $LOCATION ]
     then
       echo "Server name implies LOCATION=${DERIVED_LOCATION} but the config file specifies LOCATION=${LOCATION}.  Unable to continue provisioning."
       exit 1
     fi
   fi
 
-  if [ $useDefault = true ]
+  if [ $useDefault == true ]
   then
     while true
     do
       prompt VM_IMAGE "Cloud VM image, press ENTER to accept default ${VM_IMAGE}: "
       prompt VM_SIZE "Cloud VM size, press ENTER to accept default ${VM_SIZE}: "
-      if [ $self_dns = true ]
+      if [ $self_dns == true ]
       then
         prompt LOCATION "Cloud location, press ENTER to accept default ${LOCATION}: "        
         prompt ans "VM image = ${VM_IMAGE}, VM size = ${VM_SIZE}, location = ${LOCATION}, OK? (Y/n) "
@@ -79,7 +79,7 @@ azure_start_svr_header_sh: |
     done
   fi
 
-  if [ $container = false ]
+  if [ $container == false ]
   then
     echo "If the client requires additional dependencies, please copy the requirements.txt to ${DIR}."
     prompt ans "Press ENTER when it's done or no additional dependencies. "
@@ -95,7 +95,7 @@ azure_start_svr_header_sh: |
     echo "Creating Resource Group $RESOURCE_GROUP at Location $LOCATION"
     az group create --output none --name $RESOURCE_GROUP --location $LOCATION
     report_status "$?" "creating resource group"
-  elif [ $useDefault = true ]
+  elif [ $useDefault == true ]
   then
     report_status "1" "Only one NVFL server VM and its resource group is allowed.  $RESOURCE_GROUP exists and thus creating duplicate resource group"
   else
@@ -103,7 +103,7 @@ azure_start_svr_header_sh: |
   fi
 
   echo "Creating Virtual Machine, will take a few minutes"
-  if [ $self_dns = true ]
+  if [ $self_dns == true ]
   then
     az vm create \
       --output json \
@@ -200,7 +200,7 @@ azure_start_cln_header_sh: |
       container=true
   fi
 
-  if [ $container = true ]
+  if [ $container == true ]
   then
     VM_IMAGE=Canonical:0001-com-ubuntu-server-focal:20_04-lts-gen2:latest
     VM_SIZE=Standard_D8s_v3
@@ -217,7 +217,7 @@ azure_start_cln_header_sh: |
       report_status "$?" "Loading config file"
   fi
 
-  if [ $useDefault = true ]
+  if [ $useDefault == true ]
   then
     while true
     do
@@ -229,7 +229,7 @@ azure_start_cln_header_sh: |
     done
   fi
 
-  if [ $container = false ]
+  if [ $container == false ]
   then
     echo "If the client requires additional dependencies, please copy the requirements.txt to ${DIR}."
     prompt ans "Press ENTER when it's done or no additional dependencies. "
@@ -298,7 +298,7 @@ azure_start_common_sh: |
   cd $DIR/.. && sshpass -p $PASSWORD scp -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $PWD $DEST
   report_status "$?" "copying startup kits to VM"
 
-  if [ $container = true ]
+  if [ $container == true ]
   then
     echo "Installing and lauching container in $VM_NAME, may take a few minutes."
     scripts=$(cat << 'EOF'
@@ -505,7 +505,7 @@ azure_start_dsb_sh: |
 
   # credential=$(jq -r .value[0].message /tmp/dashboard.json | grep "Project admin")
   # echo "The VM was created with user: ${ADMIN_USERNAME} and password: ${PASSWORD}"
-  if [ "$secure" = true ]
+  if [ "$secure" == true ]
   then
     echo "URL is https://${IP_ADDRESS}"
   else

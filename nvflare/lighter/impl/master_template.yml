@@ -339,7 +339,7 @@ start_cln_sh: |
       shift
   done
 
-  if [ $doCloud = true ]
+  if [ $doCloud == true ]
   then
     case $csp in
       azure)
@@ -367,7 +367,7 @@ start_svr_sh: |
     key="$1"
     case $key in
       --cloud)
-        if [ $ha_mode = false ]
+        if [ $ha_mode == false ]
         then
           doCloud=true
           csp=$2
@@ -381,7 +381,7 @@ start_svr_sh: |
     shift
   done
 
-  if [ $doCloud = true ]
+  if [ $doCloud == true ]
   then
     case $csp in
       azure)
@@ -817,6 +817,14 @@ cloud_script_header: |
       ;;
       --image)
         image_name=$2
+        shift
+      ;;
+      --vpc-id)
+        vpc_id=$2
+        shift
+      ;;
+      --subnet-id)
+        subnet_id=$2
         shift
       ;;
     esac
