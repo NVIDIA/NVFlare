@@ -155,7 +155,7 @@ std::vector<double> NVFlareProcessor::HandleAggregation(void *buffer, size_t buf
 }
 
 void *NVFlareProcessor::ProcessHistograms(size_t *size, const std::vector<double>& histograms) {
-    cout << "HandleHistograms called with " << histograms.size() << " entries" << endl;
+    cout << "ProcessHistograms called with " << histograms.size() << " entries" << endl;
 
     DamEncoder encoder(kDataSetHistograms);
     encoder.AddFloatArray(histograms);

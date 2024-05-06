@@ -220,7 +220,7 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         if event:
             self.logger.info(f"Duplicate seq {op=} {rank=} {seq=}, wait till original req is done")
             event.wait(DUPLICATE_REQ_MAX_HOLD_TIME)
-            time.sleep(1) # To ensure the first request is returned first
+            time.sleep(1)  # To ensure the first request is returned first
             self.logger.info(f"Duplicate seq {op=} {rank=} {seq=} returned with empty buffer")
             return True
 

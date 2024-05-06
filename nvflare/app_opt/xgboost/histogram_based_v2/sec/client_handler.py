@@ -14,15 +14,15 @@
 import os
 import time
 
-from nvflare.app_opt.he import decomposers
-
-from nvflare.app_opt.he.homomorphic_encrypt import load_tenseal_context_from_workspace
-from nvflare.app_opt.xgboost.histogram_based_v2.sec.dam import DamDecoder
+import tenseal as ts
+from tenseal.tensors.ckksvector import CKKSVector
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.app_opt.he import decomposers
+from nvflare.app_opt.he.homomorphic_encrypt import load_tenseal_context_from_workspace
 from nvflare.app_opt.xgboost.histogram_based_v2.aggr import Aggregator
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.mock_he.adder import Adder
@@ -37,12 +37,13 @@ from nvflare.app_opt.xgboost.histogram_based_v2.mock_he.util import (
     generate_keys,
     split,
 )
+from nvflare.app_opt.xgboost.histogram_based_v2.sec.dam import DamDecoder
 from nvflare.app_opt.xgboost.histogram_based_v2.sec.data_converter import FeatureAggregationResult
-from nvflare.app_opt.xgboost.histogram_based_v2.sec.processor_data_converter import ProcessorDataConverter, \
-    DATA_SET_HISTOGRAMS
+from nvflare.app_opt.xgboost.histogram_based_v2.sec.processor_data_converter import (
+    DATA_SET_HISTOGRAMS,
+    ProcessorDataConverter,
+)
 from nvflare.app_opt.xgboost.histogram_based_v2.sec.sec_handler import SecurityHandler
-import tenseal as ts
-from tenseal.tensors.ckksvector import CKKSVector
 
 
 class ClientSecurityHandler(SecurityHandler):
@@ -139,14 +140,14 @@ class ClientSecurityHandler(SecurityHandler):
         buffer = fl_ctx.get_prop(Constant.PARAM_KEY_SEND_BUF)
 
         decoder = DamDecoder(buffer)
-        if not decoder.isValid():
+        if not decoder.is_valid():
             self.info(fl_ctx, "Not secure content - ignore")
             return
 
         if decoder.get_data_set_id() == DATA_SET_HISTOGRAMS:
-            self._process_before_all_gather_v_horizontal(fl_ctx, decoder)
+            self._process_before_all_gather_v_horizontal(fl_ctx)
         else:
-            self._process_before_all_gather_v_vertical(fl_ctx, decoder)
+            self._process_before_all_gather_v_vertical(fl_ctx)
 
     def _process_before_all_gather_v_vertical(self, fl_ctx: FLContext):
         rank = fl_ctx.get_prop(Constant.PARAM_KEY_RANK)
@@ -216,12 +217,15 @@ class ClientSecurityHandler(SecurityHandler):
         start = time.time()
         vector = ts.ckks_vector(self.tenseal_context, histograms)
         self.info(
-            fl_ctx, f"_process_before_all_gather_v: Histograms with {len(histograms)} entries "
-                    f"encrypted in {time.time()-start} secs"
+            fl_ctx,
+            f"_process_before_all_gather_v: Histograms with {len(histograms)} entries "
+            f"encrypted in {time.time()-start} secs",
         )
-        headers = {Constant.HEADER_KEY_ENCRYPTED_DATA: True,
-                   Constant.HEADER_KEY_ENCRYPTED_HISTOGRAMS: True,
-                   Constant.HEADER_KEY_ORIGINAL_BUF_SIZE: len(buffer)}
+        headers = {
+            Constant.HEADER_KEY_ENCRYPTED_DATA: True,
+            Constant.HEADER_KEY_HORIZONTAL: True,
+            Constant.HEADER_KEY_ORIGINAL_BUF_SIZE: len(buffer),
+        }
         fl_ctx.set_prop(key=Constant.PARAM_KEY_SEND_BUF, value=vector, private=True, sticky=False)
         fl_ctx.set_prop(key=Constant.PARAM_KEY_HEADERS, value=headers, private=True, sticky=False)
 
@@ -279,8 +283,8 @@ class ClientSecurityHandler(SecurityHandler):
             self.info(fl_ctx, "no encrypted result - ignore")
             return
 
-        has_histograms = reply.get_header(Constant.HEADER_KEY_ENCRYPTED_HISTOGRAMS)
-        if has_histograms:
+        horizontal = reply.get_header(Constant.HEADER_KEY_HORIZONTAL)
+        if horizontal:
             self._process_after_all_gather_v_horizontal(fl_ctx)
         else:
             self._process_after_all_gather_v_vertical(fl_ctx)
@@ -360,11 +364,9 @@ class ClientSecurityHandler(SecurityHandler):
             try:
                 self.tenseal_context = load_tenseal_context_from_workspace(self.tenseal_context_file, fl_ctx)
             except Exception as ex:
-                self.info(fl_ctx,
-                          f"Can't load tenseal context, horizontal secure XGBoost is not supported: {ex}")
+                self.info(fl_ctx, f"Can't load tenseal context, horizontal secure XGBoost is not supported: {ex}")
                 self.tenseal_context = None
         elif event_type == EventType.END_RUN:
             self.tenseal_context = None
         else:
             super().handle_event(event_type, fl_ctx)
-

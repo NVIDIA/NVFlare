@@ -150,4 +150,3 @@ class ProcessorDataConverter(DataConverter):
             float_array.append(ProcessorDataConverter.int_to_float(h))
 
         return float_array
-
