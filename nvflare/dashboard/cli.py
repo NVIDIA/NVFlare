@@ -138,6 +138,8 @@ def stop():
 def cloud(args):
     lighter_folder = os.path.dirname(utils.__file__)
     template = utils.load_yaml(os.path.join(lighter_folder, "impl", "master_template.yml"))
+    template.update(utils.load_yaml(os.path.join(lighter_folder, "impl", "aws_template.yml")))
+    template.update(utils.load_yaml(os.path.join(lighter_folder, "impl", "azure_template.yml")))
     tplt = tplt_utils.Template(template)
     cwd = os.getcwd()
     csp = args.cloud
