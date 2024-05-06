@@ -23,6 +23,7 @@ from multiprocessing.connection import Listener
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, RunnerTask, WorkspaceConstants
+from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.multi_process_executor_constants import CommunicationMetaData
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
@@ -150,7 +151,6 @@ class ClientTaskWorker(FLComponent):
             app_custom_folder = os.path.join(app_root, "custom")
             if os.path.isdir(app_custom_folder) and app_custom_folder not in sys.path:
                 sys.path.append(app_custom_folder)
-            os.chdir(app_custom_folder)
 
             self.create_client_engine(client, deploy_args)
 
@@ -245,8 +245,9 @@ def main(args):
     os.makedirs(startup, exist_ok=True)
     local = os.path.join(args.workspace, WorkspaceConstants.SITE_FOLDER_NAME)
     os.makedirs(local, exist_ok=True)
+    workspace = Workspace(root_dir=args.workspace, site_name=args.client)
 
-    fobs_initialize(None)
+    fobs_initialize(workspace)
     AuthorizationService.initialize(EmptyAuthorizer())
     # AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
     AuditService.the_auditor = SimulatorAuditor()

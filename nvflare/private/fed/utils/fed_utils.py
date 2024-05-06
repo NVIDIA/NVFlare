@@ -202,19 +202,29 @@ def get_scope_info():
         return [], "processing_error"
 
 
-def fobs_initialize(workspace: Workspace, job_id: str = None):
+def fobs_initialize(workspace: Workspace = None, job_id: str = None):
+    nvflare_fobs_initialize()
+
+    custom_fobs_initialize(workspace, job_id)
+
+
+def custom_fobs_initialize(workspace: Workspace = None, job_id: str = None):
+    if workspace:
+        site_custom_dir = workspace.get_client_custom_dir()
+        if os.path.exists(site_custom_dir):
+            register_custom_folder(site_custom_dir)
+
+        if job_id:
+            app_custom_dir = workspace.get_app_config_dir(job_id)
+            if os.path.exists(app_custom_dir):
+                register_custom_folder(app_custom_dir)
+
+
+def nvflare_fobs_initialize():
     flare_decomposers.register()
     common_decomposers.register()
     private_decomposers.register()
-
     register_nvflare_decomposers()
-
-    site_custom_dir = workspace.get_client_custom_dir()
-    register_custom_folder(site_custom_dir)
-
-    if job_id:
-        app_custom_dir = workspace.get_app_config_dir(job_id)
-        register_custom_folder(app_custom_dir)
 
 
 def register_nvflare_decomposers():

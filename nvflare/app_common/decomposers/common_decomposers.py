@@ -64,7 +64,7 @@ def register():
 
     fobs.register(DictDecomposer(Learnable))
     fobs.register(DictDecomposer(ModelLearnable))
-    fobs.register(FLModelDecomposer)
+    # fobs.register(FLModelDecomposer)
 
     fobs.register_data_classes(
         _CtxPropReq,

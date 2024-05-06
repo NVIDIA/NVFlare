@@ -64,7 +64,7 @@ def main(args):
 
     try:
         os.chdir(args.workspace)
-        fobs_initialize(workspace)
+        fobs_initialize(workspace=workspace, job_id=args.job_id)
 
         SecurityContentService.initialize(content_folder=workspace.get_startup_kit_dir())
 

@@ -69,7 +69,7 @@ def main(args):
     if os.path.exists(restart_file):
         os.remove(restart_file)
 
-    fobs_initialize(workspace)
+    fobs_initialize(workspace=workspace, job_id=args.job_id)
     # Initialize audit service since the job execution will need it!
     audit_file_name = workspace.get_audit_file_path()
     AuditService.initialize(audit_file_name)
