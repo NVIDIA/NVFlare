@@ -661,7 +661,7 @@ class SimulatorClientRunner(FLComponent):
         if not sys.path[0]:
             new_env["PYTHONPATH"] = os.pathsep.join(sys.path[1:])
         else:
-            new_env["PYTHONPATH"] = os.pathsep.join(sys.path)
+            new_env["PYTHONPATH"] = os.pathsep.join(sys.path[0:-1])
         _ = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
 
         conn = self._create_connection(open_port, timeout=timeout)
