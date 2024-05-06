@@ -20,9 +20,9 @@ from enum import Enum
 from tempfile import TemporaryDirectory
 from typing import Dict
 
-from nvflare import SimulatorRunner
 from nvflare.job_config.fed_app_config import FedAppConfig
 from nvflare.private.fed.app.fl_conf import FL_PACKAGES
+from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
 
 CONFIG = "config"
 CUSTOM = "custom"
