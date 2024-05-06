@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,15 +11,3 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-from . import _version
-
-__version__ = _version.get_versions()["version"]
-
-# https://github.com/microsoft/pylance-release/issues/856
-
-from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner as SimulatorRunner
-from nvflare.app_common.executors.script_executor import ScriptExecutor
-from nvflare.app_common.workflows.fedavg import FedAvg
-from nvflare.fed_job import FedJob, FilterType
-

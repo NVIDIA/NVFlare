@@ -84,7 +84,11 @@ class ModelLearnerExecutor(Executor):
 
     def _create_learner(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
-        self.learner = engine.get_component(self.learner_id)
+        if isinstance(self.learner_id, str):
+            self.learner = engine.get_component(self.learner_id)
+        else:
+            self.learner = self.learner_id
+
         if self.learner:
             self.learner_name = self.learner.__class__.__name__
 
