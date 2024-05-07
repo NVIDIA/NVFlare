@@ -58,8 +58,13 @@ from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorServerAppRunner
 from nvflare.private.fed.simulator.simulator_audit import SimulatorAuditor
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler, get_simulator_app_root, \
-    split_gpus, nvflare_fobs_initialize, custom_fobs_initialize
+from nvflare.private.fed.utils.fed_utils import (
+    add_logfile_handler,
+    custom_fobs_initialize,
+    get_simulator_app_root,
+    nvflare_fobs_initialize,
+    split_gpus,
+)
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 from nvflare.security.security import EmptyAuthorizer
 

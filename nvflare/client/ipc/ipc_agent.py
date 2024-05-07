@@ -26,6 +26,7 @@ from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.private.fed.utils.fed_utils import nvflare_fobs_initialize
 
 _SSL_ROOT_CERT = "rootCA.pem"
 _SHORT_SLEEP_TIME = 0.2
@@ -109,7 +110,7 @@ class IPCAgent:
             topic="*",
             cb=self._msg_received,
         )
-        numpy_decomposers.register()
+        nvflare_fobs_initialize()
 
     def start(self):
         """Start the agent. This method must be called to enable CJ/Agent communication.

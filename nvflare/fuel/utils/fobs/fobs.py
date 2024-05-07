@@ -214,7 +214,7 @@ def register_custom_folder(folder: str):
         for filename in files:
             if filename.endswith(".py"):
                 module = filename[:-3]
-                sub_folder = root[len(folder):]
+                sub_folder = root[len(folder) :]
                 if sub_folder:
                     sub_folder = sub_folder.strip(os.sep).replace(os.sep, ".")
                     module = sub_folder + "." + module
