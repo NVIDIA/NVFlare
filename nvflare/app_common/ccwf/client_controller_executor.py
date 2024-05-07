@@ -108,7 +108,7 @@ class ClientControllerExecutor(Executor):
         self.persistor = self.engine.get_component(self.persistor_id)
         if not isinstance(self.persistor, LearnablePersistor):
             self.log_warning(
-                fl_ctx, f"Persistor {self.persistor_id} must be a Persistor instance, but got {type(self.persistor)}"
+                fl_ctx, f"Persistor {self.persistor_id} must be a Persistor instance but got {type(self.persistor)}"
             )
             self.persistor = None
 
@@ -240,7 +240,7 @@ class ClientControllerExecutor(Executor):
 
                 self.update_status(action=f"finished_{controller_id}", error=None, all_done=True)
 
-            self.update_status(action=f"finished_start_task", error=None, all_done=True)
+            self.update_status(action="finished_start_task", error=None, all_done=True)
 
             return make_reply(ReturnCode.OK)
 
@@ -288,8 +288,11 @@ class ClientControllerExecutor(Executor):
 
     def _process_final_result(self, request: Shareable, fl_ctx: FLContext) -> Shareable:
         peer_ctx = fl_ctx.get_peer_context()
-        assert isinstance(peer_ctx, FLContext)
-        client_name = peer_ctx.get_identity_name()
+        if peer_ctx:
+            client_name = peer_ctx.get_identity_name()
+        else:
+            self.log_error(fl_ctx, "Request from unknown client")
+            return make_reply(ReturnCode.BAD_REQUEST_DATA)
         result = request.get(Constant.RESULT)
 
         if not result:
@@ -330,7 +333,10 @@ class ClientControllerExecutor(Executor):
     def broadcast_final_result(self, result: Learnable, fl_ctx: FLContext):
         targets = self.get_config_prop(Constant.RESULT_CLIENTS)
 
-        assert isinstance(targets, list)
+        if not isinstance(targets, list):
+            self.log_warning(fl_ctx, f"expected targets of result clients to be type list, but got {type(targets)}")
+            return None
+
         if self.me in targets:
             targets.remove(self.me)
 
@@ -360,7 +366,10 @@ class ClientControllerExecutor(Executor):
             fl_ctx=fl_ctx,
         )
 
-        assert isinstance(resp, dict)
+        if not isinstance(resp, dict):
+            self.log_error(fl_ctx, f"bad response for final result from clients, expected dict but got {type(resp)}")
+            return
+
         num_errors = 0
         for t in targets:
             reply = resp.get(t)
