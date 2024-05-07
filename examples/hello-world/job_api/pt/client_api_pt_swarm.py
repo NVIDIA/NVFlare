@@ -61,5 +61,5 @@ if __name__ == "__main__":
         job.to(PTFileModelPersistor(model=Net()), f"site-{i}")
         job.to(SimpleModelShareableGenerator(), f"site-{i}")
 
-    job.export_job("/tmp/nvflare/jobs/job_config")
+    # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir")

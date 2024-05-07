@@ -60,5 +60,5 @@ if __name__ == "__main__":
         executor = ModelLearnerExecutor(learner_id=learner)
         job.to(executor, f"site-{i+1}", gpu=0)  # data splitter assumes client names start from 1
 
-    job.export_job("/tmp/nvflare/jobs/job_config")
+    # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir")

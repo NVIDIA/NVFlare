@@ -152,5 +152,5 @@ if __name__ == "__main__":
         )
         job.to(executor, f"site-{i+1}", gpu=0)  # HIGGs data splitter assumes site names start from 1
 
-    job.export_job("/tmp/nvflare/jobs/job_config")
+    # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir")

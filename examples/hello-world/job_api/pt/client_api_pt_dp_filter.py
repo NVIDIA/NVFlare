@@ -42,5 +42,5 @@ if __name__ == "__main__":
         pp_filter = PercentilePrivacy(percentile=10, gamma=0.01)
         job.to(pp_filter, f"site-{i}", tasks=["train"], filter_type=FilterType.TASK_RESULT)
 
-    job.export_job("/tmp/nvflare/jobs/job_config")
+    # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir")
