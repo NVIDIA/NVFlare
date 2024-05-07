@@ -313,7 +313,7 @@ def get_target_names(targets):
             continue
 
         if name not in target_names:
-            target_names.append(t)
+            target_names.append(name)
     return target_names
 
 
