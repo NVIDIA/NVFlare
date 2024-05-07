@@ -154,9 +154,10 @@ class FedJobConfig:
 
     def _copy_ext_scripts(self, custom_dir, ext_scripts):
         for script in ext_scripts:
-            dest_file = os.path.join(custom_dir, script)
-            module = "".join(script.rsplit(".py", 1)).replace(os.sep, ".")
-            self._copy_source_file(custom_dir, module, script, dest_file)
+            if not os.path.isabs(script):
+                dest_file = os.path.join(custom_dir, script)
+                module = "".join(script.rsplit(".py", 1)).replace(os.sep, ".")
+                self._copy_source_file(custom_dir, module, script, dest_file)
 
     def _get_class_path(self, obj, custom_dir):
         module = obj.__module__
