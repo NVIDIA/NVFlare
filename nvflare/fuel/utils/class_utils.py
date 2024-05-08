@@ -15,11 +15,9 @@
 import importlib
 import inspect
 import logging
-import os
 import pkgutil
 from typing import Dict, List, Optional
 
-from nvflare.fuel.utils import fobs
 from nvflare.security.logging import secure_format_exception
 
 DEPRECATED_PACKAGES = ["nvflare.app_common.pt", "nvflare.app_common.homomorphic_encryption"]
@@ -91,7 +89,6 @@ class ModuleScanner:
         self._create_classes_table()
 
     def _create_classes_table(self):
-
         scan_result_table = {}
         for base in self.base_pkgs:
             package = importlib.import_module(base)
