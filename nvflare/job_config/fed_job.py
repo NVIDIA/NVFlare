@@ -14,30 +14,30 @@
 
 from typing import Any, List
 
-from nvflare.fuel.utils.import_utils import optional_import
-
-torch, torch_ok = optional_import(module="torch")
-if torch_ok:
-    import torch.nn as nn
-    from nvflare.app_opt.pt import PTFileModelPersistor
-    from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
-
 from nvflare.apis.executor import Executor
 from nvflare.apis.filter import Filter
 from nvflare.apis.impl.controller import Controller
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
-from nvflare.app_opt.misc.script_executor import ScriptExecutor
 from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.widgets.metric_relay import MetricRelay
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
+from nvflare.app_opt.misc.script_executor import ScriptExecutor
 from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.fuel.utils.constants import Mode
+from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.pipe.file_pipe import FilePipe
 from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig, ServerAppConfig
 from nvflare.job_config.fed_job_config import FedJobConfig
+
+torch, torch_ok = optional_import(module="torch")
+if torch_ok:
+    import torch.nn as nn
+
+    from nvflare.app_opt.pt import PTFileModelPersistor
+    from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
 
 
 class FilterType:

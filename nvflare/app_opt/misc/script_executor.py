@@ -16,10 +16,18 @@ from typing import Optional
 
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.in_process_client_api_executor import InProcessClientAPIExecutor
-from nvflare.app_opt.pt.decomposers import TensorDecomposer
-from nvflare.app_opt.pt.params_converter import NumpyToPTParamsConverter, PTToNumpyParamsConverter
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils.import_utils import optional_import
+
+torch, torch_ok = optional_import(module="torch")
+if torch_ok:
+    from nvflare.app_opt.pt.decomposers import TensorDecomposer
+    from nvflare.app_opt.pt.params_converter import NumpyToPTParamsConverter, PTToNumpyParamsConverter
+
+    DEFAULT_PARAMS_EXCHANGE_FORMAT = ExchangeFormat.PYTORCH
+else:
+    DEFAULT_PARAMS_EXCHANGE_FORMAT = ExchangeFormat.NUMPY
 
 
 class ScriptExecutor(InProcessClientAPIExecutor):
@@ -37,7 +45,7 @@ class ScriptExecutor(InProcessClientAPIExecutor):
         train_task_name: str = "train",
         evaluate_task_name: str = "evaluate",
         submit_model_task_name: str = "submit_model",
-        params_exchange_format=ExchangeFormat.PYTORCH,
+        params_exchange_format=DEFAULT_PARAMS_EXCHANGE_FORMAT,
     ):
         """Wrapper around InProcessClientAPIExecutor for different params_exchange_format. Currently defaulting to `params_exchange_format=ExchangeFormat.PYTORCH`.
 
@@ -58,15 +66,16 @@ class ScriptExecutor(InProcessClientAPIExecutor):
             params_transfer_type=params_transfer_type,
             log_pull_interval=log_pull_interval,
         )
-        if params_exchange_format == ExchangeFormat.PYTORCH:
-            fobs.register(TensorDecomposer)
+        if torch_ok:
+            if params_exchange_format == ExchangeFormat.PYTORCH:
+                fobs.register(TensorDecomposer)
 
-            if self._from_nvflare_converter is None:
-                self._from_nvflare_converter = NumpyToPTParamsConverter(
-                    [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION]
-                )
-            if self._to_nvflare_converter is None:
-                self._to_nvflare_converter = PTToNumpyParamsConverter(
-                    [AppConstants.TASK_TRAIN, AppConstants.TASK_SUBMIT_MODEL]
-                )
+                if self._from_nvflare_converter is None:
+                    self._from_nvflare_converter = NumpyToPTParamsConverter(
+                        [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION]
+                    )
+                if self._to_nvflare_converter is None:
+                    self._to_nvflare_converter = PTToNumpyParamsConverter(
+                        [AppConstants.TASK_TRAIN, AppConstants.TASK_SUBMIT_MODEL]
+                    )
         # TODO: support other params_exchange_format
