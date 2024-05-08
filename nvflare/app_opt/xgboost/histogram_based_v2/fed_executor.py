@@ -27,7 +27,8 @@ class FedXGBHistogramExecutor(XGBExecutor):
         verbose_eval=False,
         use_gpus=False,
         int_server_grpc_options=None,
-        req_timeout=60.0,
+        per_msg_timeout=10.0,
+        tx_timeout=100.0,
         model_file_name="model.json",
         metrics_writer_id: str = None,
         in_process=True,
@@ -35,7 +36,8 @@ class FedXGBHistogramExecutor(XGBExecutor):
         XGBExecutor.__init__(
             self,
             adaptor_component_id="",
-            req_timeout=req_timeout,
+            per_msg_timeout=per_msg_timeout,
+            tx_timeout=tx_timeout,
         )
         self.early_stopping_rounds = early_stopping_rounds
         self.xgb_params = xgb_params
