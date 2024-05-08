@@ -28,7 +28,7 @@ from nvflare.apis.impl.controller import Controller
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
-from nvflare.app_common.executors.script_executor import ScriptExecutor
+from nvflare.app_opt.misc.script_executor import ScriptExecutor
 from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.widgets.metric_relay import MetricRelay
