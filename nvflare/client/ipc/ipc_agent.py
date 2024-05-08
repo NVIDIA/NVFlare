@@ -18,7 +18,6 @@ import time
 import traceback
 from typing import Union
 
-from nvflare.app_common.decomposers import numpy_decomposers
 from nvflare.client.ipc import defs
 from nvflare.fuel.f3.cellnet.cell import Cell, Message
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
@@ -26,7 +25,7 @@ from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.utils.config_service import ConfigService
-from nvflare.private.fed.utils.fed_utils import nvflare_fobs_initialize
+from nvflare.private.fed.utils.fed_utils import register_nvflare_decomposers
 
 _SSL_ROOT_CERT = "rootCA.pem"
 _SHORT_SLEEP_TIME = 0.2
@@ -110,7 +109,7 @@ class IPCAgent:
             topic="*",
             cb=self._msg_received,
         )
-        nvflare_fobs_initialize()
+        register_nvflare_decomposers()
 
     def start(self):
         """Start the agent. This method must be called to enable CJ/Agent communication.
