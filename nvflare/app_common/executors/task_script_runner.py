@@ -54,7 +54,15 @@ class TaskScriptRunner:
             sys.argv = self.get_sys_argv()
             runpy.run_path(self.script_full_path, run_name="__main__")
             sys.argv = curr_argv
-
+        except ImportError as ie:
+            msg = "attempted relative import with no known parent package"
+            if ie.msg == msg:
+                xs = [p for p in sys.path if self.script_full_path.startswith(p)]
+                import_base_path = max(xs, key=len)
+                raise ImportError(
+                    f"{ie.msg}, the relative import is not support. python import is based off the sys.path: {import_base_path}")
+            else:
+                raise ie
         except Exception as e:
             msg = traceback.format_exc()
             self.logger.error(msg)
@@ -79,10 +87,8 @@ class TaskScriptRunner:
                 if absolute_path.endswith(script_path):
                     parent_dir = absolute_path[: absolute_path.find(script_path)].rstrip(os.sep)
                     if os.path.isdir(parent_dir):
-                        print(f"{parent_dir=}, {site_name=}")
                         path_components = parent_dir.split(os.path.sep)
                         if site_name in path_components:
-                            print(f"{absolute_path=},{site_name=}, {path_components=}")
                             target_file = absolute_path
                             break
 

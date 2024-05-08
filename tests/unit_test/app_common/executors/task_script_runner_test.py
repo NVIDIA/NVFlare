@@ -175,3 +175,24 @@ class TestTaskScriptRunner(unittest.TestCase):
         # assert failure here will not cause test to fail
         self.assertEqual(topic, TOPIC_ABORT)
         print("\n ===== calling abort_callback end")
+
+    def test_run_relative_import_scripts(self):
+        old_sys_path = sys.path
+        script_args = "--batch_size 4"
+        # test the run should not throw exception for the relative path import.
+        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/app_common/executors/custom"))
+        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/app_common/executors/server/custom"))
+        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/app_common/executors/site-1/custom"))
+
+        try:
+            script_path = "relative_import_train.py"
+            wrapper = TaskScriptRunner(
+                site_name="site-1", script_path=script_path, script_args=script_args, redirect_print_to_log=False
+            )
+            self.assertTrue(wrapper.script_full_path.endswith(script_path))
+            msg = "attempted relative import with no known parent package, the relative import is not support. python import is based off the sys.path: /home/chester/projects/NVFlare/tests/unit_test/app_common/executors/site-1/custom"
+            with pytest.raises(ImportError,match=msg):
+                # check the ImportError
+                wrapper.run()
+        finally:
+            sys.path = old_sys_path
