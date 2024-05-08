@@ -60,7 +60,8 @@ class TaskScriptRunner:
                 xs = [p for p in sys.path if self.script_full_path.startswith(p)]
                 import_base_path = max(xs, key=len)
                 raise ImportError(
-                    f"{ie.msg}, the relative import is not support. python import is based off the sys.path: {import_base_path}")
+                    f"{ie.msg}, the relative import is not support. python import is based off the sys.path: {import_base_path}"
+                )
             else:
                 raise ie
         except Exception as e:

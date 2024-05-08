@@ -191,7 +191,7 @@ class TestTaskScriptRunner(unittest.TestCase):
             )
             self.assertTrue(wrapper.script_full_path.endswith(script_path))
             msg = "attempted relative import with no known parent package, the relative import is not support. python import is based off the sys.path: /home/chester/projects/NVFlare/tests/unit_test/app_common/executors/site-1/custom"
-            with pytest.raises(ImportError,match=msg):
+            with pytest.raises(ImportError, match=msg):
                 # check the ImportError
                 wrapper.run()
         finally:
