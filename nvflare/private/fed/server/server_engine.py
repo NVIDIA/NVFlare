@@ -24,7 +24,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_component import FLComponent
@@ -447,8 +447,11 @@ class ServerEngine(ServerEngineInternalSpec):
                 engine=self, identity_name=self.server.project_name, job_id="", public_stickers={}, private_stickers={}
             ).new_context()
 
-    def get_component(self, component_id: str) -> object:
-        return self.run_manager.get_component(component_id)
+    def get_component(self, component_id: Union[str, object]) -> object:
+        if isinstance(component_id, str):
+            return self.run_manager.get_component(component_id)
+        else:
+            return component_id  # assume component_id is already an object
 
     def fire_event(self, event_type: str, fl_ctx: FLContext):
         self.run_manager.fire_event(event_type, fl_ctx)

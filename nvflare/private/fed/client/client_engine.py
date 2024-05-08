@@ -18,6 +18,7 @@ import re
 import shutil
 import sys
 import threading
+from typing import Union
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
@@ -96,8 +97,11 @@ class ClientEngine(ClientEngineInternalSpec):
     def new_context(self) -> FLContext:
         return self.fl_ctx_mgr.new_context()
 
-    def get_component(self, component_id: str) -> object:
-        return self.client.components.get(component_id)
+    def get_component(self, component_id: Union[str, object]) -> object:
+        if isinstance(component_id, str):
+            return self.client.components.get(component_id)
+        else:
+            return component_id  # assume component_id is already an object
 
     def get_engine_status(self):
         running_jobs = []

@@ -110,38 +110,26 @@ if __name__ == "__main__":
     # Create the federated learning job
     job = FedJob(name="kmeans")
 
-    controller = ScatterAndGather(
-        min_clients=n_clients,
-        num_rounds=num_rounds,
-        wait_time_after_min_received=0,
-        aggregator_id="aggregator",
-        persistor_id="persistor",  # TODO: Allow adding python objects rather than ids
-        shareable_generator_id="shareable_generator",
-        train_task_name="train",  # Client will start training once received such task.
-        train_timeout=0,
-    )
-    job.to(controller, "server")
+    # ScatterAndGather also expects an "aggregator" which we define here.
+    # The actual aggregation function is defined by an "assembler" to specify how to handle the collected updates.
+    # We use KMeansAssembler which is the assembler designed for k-Means algorithm.
+    aggregator = CollectAndAssembleAggregator(assembler_id=KMeansAssembler())
 
     # For kmeans with sklean, we need a custom persistor
     # JoblibModelParamPersistor is a persistor which save/read the model to/from file with JobLib format.
     persistor = JoblibModelParamPersistor(initial_params={"n_clusters": 2})
-    # When assigning the persistor to the server, we need to specify the id that's expected
-    # by the ScatterAndGather controller.
-    job.to(persistor, "server")
 
-    # Similarly, ScatterAndGather expects a "shareable_generator" which we need to assign to the server.
-    job.to(FullModelShareableGenerator(), "server")
-
-    # ScatterAndGather also expects an "aggregator" which we define here.
-    # The actual aggregation function is defined by an "assembler" to specify how to handle the collected updates.
-    aggregator = CollectAndAssembleAggregator(
-        assembler_id="kmeans_assembler"
-    )  # TODO: Allow adding KMeansAssembler() directly
-    job.to(aggregator, "server")
-
-    # This is the assembler designed for k-Means algorithm.
-    # As CollectAndAssembleAggregator expects an assembler_id, we need to specify it here.
-    job.to(KMeansAssembler(), "server", id="kmeans_assembler")
+    controller = ScatterAndGather(
+        min_clients=n_clients,
+        num_rounds=num_rounds,
+        wait_time_after_min_received=0,
+        aggregator_id=aggregator,
+        persistor_id=persistor,
+        shareable_generator_id=FullModelShareableGenerator(),
+        train_task_name="train",  # Client will start training once received such task.
+        train_timeout=0,
+    )
+    job.to(controller, "server")
 
     # Add clients
     for i in range(n_clients):
@@ -150,7 +138,7 @@ if __name__ == "__main__":
             task_script_args=f"--data_root_dir {data_output_dir}",
             params_exchange_format=ExchangeFormat.RAW,  # kmeans requires raw values only rather than PyTorch Tensors (the default)
         )
-        job.to(executor, f"site-{i+1}", gpu=0)  # HIGGs data splitter assumes site names start from 1
+        job.to(executor, f"site-{i+1}")  # HIGGs data splitter assumes site names start from 1
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir")

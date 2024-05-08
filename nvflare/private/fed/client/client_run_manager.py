@@ -149,8 +149,11 @@ class ClientRunManager(ClientEngineExecutorSpec):
     def dispatch(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         return self.aux_runner.dispatch(topic=topic, request=request, fl_ctx=fl_ctx)
 
-    def get_component(self, component_id: str) -> object:
-        return self.components.get(component_id)
+    def get_component(self, component_id: Union[str, object]) -> object:
+        if isinstance(component_id, str):
+            return self.components.get(component_id)
+        else:
+            return component_id  # assume component_id is already an object
 
     def get_all_components(self) -> dict:
         return self.components
