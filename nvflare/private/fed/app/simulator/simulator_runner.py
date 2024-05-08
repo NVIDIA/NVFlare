@@ -162,7 +162,6 @@ class SimulatorRunner(FLComponent):
         if not os.path.exists(self.args.workspace):
             os.makedirs(self.args.workspace)
         os.chdir(self.args.workspace)
-        # fobs_initialize(None)
         nvflare_fobs_initialize()
         AuthorizationService.initialize(EmptyAuthorizer())
         AuditService.the_auditor = SimulatorAuditor()

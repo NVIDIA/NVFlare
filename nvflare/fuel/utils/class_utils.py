@@ -91,19 +91,12 @@ class ModuleScanner:
         self._create_classes_table()
 
     def _create_classes_table(self):
-        # import warnings
-        # warnings.filterwarnings("ignore")
 
         scan_result_table = {}
         for base in self.base_pkgs:
             package = importlib.import_module(base)
 
             for module_info in pkgutil.walk_packages(path=package.__path__, prefix=package.__name__ + "."):
-                # if module_info.ispkg:
-                #     folder_name = module_info.module_finder.path
-                #     package_name = module_info.name
-                #     folder = os.path.join(folder_name, package_name.split(".")[-1])
-                #     fobs.register_folder(folder, package_name)
                 module_name = module_info.name
                 if any(module_name.startswith(deprecated_package) for deprecated_package in DEPRECATED_PACKAGES):
                     continue
