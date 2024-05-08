@@ -14,7 +14,13 @@
 
 from typing import Any, List
 
-import torch.nn as nn  # TODO: How to handle pytorch dependency?
+from nvflare.fuel.utils.import_utils import optional_import
+
+torch, torch_ok = optional_import(module="torch")
+if torch_ok:
+    import torch.nn as nn
+    from nvflare.app_opt.pt import PTFileModelPersistor
+    from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
 
 from nvflare.apis.executor import Executor
 from nvflare.apis.filter import Filter
@@ -27,8 +33,6 @@ from nvflare.app_common.widgets.external_configurator import ExternalConfigurato
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.widgets.metric_relay import MetricRelay
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
-from nvflare.app_opt.pt import PTFileModelPersistor
-from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
 from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.pipe.file_pipe import FilePipe
@@ -64,7 +68,7 @@ class FedApp:
             id = "component"
         self.app.add_component(self._check_id(id), component)
 
-    def set_persistor(self, model: nn.Module):  # TODO: support other persistors
+    def create_pt_persistor(self, model: nn.Module):
         component = PTFileModelPersistor(model=model)
         self.app.add_component("persistor", component)
 
@@ -90,7 +94,7 @@ class FedJob:
         The `to()` routine allows users to send different components to either the server or clients.
 
         Args:
-            job_name: the name of the NVFlare job
+            name: the name of the NVFlare job
             min_clients: the minimum number of clients for the job
             mandatory_clients: mandatory clients to run the job (optional)
             key_metric: Metric used to determine if the model is globally best.
@@ -140,9 +144,7 @@ class FedJob:
                     f"{target} doesn't have a `Controller` or `Executor`. Deploy one first before adding components!"
                 )
 
-            if isinstance(obj, nn.Module):  # if model, set a persistor
-                self._deploy_map[target].set_persistor(obj)
-            elif isinstance(obj, Filter):  # handle filters
+            if isinstance(obj, Filter):  # handle filters
                 if filter_type == FilterType.TASK_RESULT:
                     self._deploy_map[target].add_task_result_filter(tasks, obj)
                 elif filter_type == FilterType.TASK_DATA:
@@ -151,15 +153,18 @@ class FedJob:
                     raise ValueError(
                         f"Provided a filter for {target} without specifying valid `filter_type`. Select from `FilterType.TASK_RESULT` or `FilterType.TASK_DATA`."
                     )
-            else:  # handle other types
-                if id is None:  # handle built-in types and set ids
-                    if isinstance(obj, Aggregator):
-                        id = "aggregator"
-                    elif isinstance(obj, LearnablePersistor):
-                        id = "persistor"
-                    elif isinstance(obj, ShareableGenerator):
-                        id = "shareable_generator"
-                self._deploy_map[target].add_component(obj, id)
+            # handle built-in types and set ids
+            elif isinstance(obj, Aggregator):
+                self._deploy_map[target].add_component(obj, "aggregator" if id is None else id)
+            elif isinstance(obj, LearnablePersistor):
+                self._deploy_map[target].add_component(obj, "persistor" if id is None else id)
+            elif isinstance(obj, ShareableGenerator):
+                self._deploy_map[target].add_component(obj, "shareable_generator" if id is None else id)
+            # else assume a model is being set
+            else:  # TODO: handle other persistors
+                if torch_ok:
+                    if isinstance(obj, nn.Module):  # if model, create a PT persistor
+                        self._deploy_map[target].create_pt_persistor(obj)
 
     def _deploy(self, app: FedApp, target: str):
         if not isinstance(app, FedApp):
