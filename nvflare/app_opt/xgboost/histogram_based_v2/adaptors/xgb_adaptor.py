@@ -13,9 +13,12 @@
 # limitations under the License.
 from abc import abstractmethod
 
+from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.validation_utils import check_non_negative_int, check_positive_int
 
 from .adaptor import AppAdaptor
@@ -191,13 +194,6 @@ class XGBClientAdaptor(AppAdaptor):
         Returns: operation result
 
         """
-        reply = self.sender.send_to_server(op, req, self.abort_signal)
-        if isinstance(reply, Shareable):
-            rcv_buf = reply.get(Constant.PARAM_KEY_RCV_BUF)
-            return rcv_buf, reply
-        else:
-            raise RuntimeError(f"invalid reply for op {op}: expect Shareable but got {type(reply)}")
-
         req.set_header(Constant.MSG_KEY_XGB_OP, op)
 
         with self.engine.new_context() as fl_ctx:
