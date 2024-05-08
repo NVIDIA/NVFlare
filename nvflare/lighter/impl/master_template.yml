@@ -950,6 +950,14 @@ cloud_script_header: |
         image_name=$2
         shift
       ;;
+      --vpc-id)
+        vpc_id=$2
+        shift
+      ;;
+      --subnet-id)
+        subnet_id=$2
+        shift
+      ;;
     esac
     shift
   done
@@ -1669,6 +1677,13 @@ aws_start_svr_sh: |
   check_binary dig "Please install it first."
   check_binary jq "Please install it first."
 
+  if [ -z ${vpc_id+x} ]
+  then
+      using_default_vpc=true
+  else
+      using_default_vpc=false
+  fi
+
   if [ -z ${image_name+x} ]
   then
       container=false
@@ -1718,6 +1733,25 @@ aws_start_svr_sh: |
     prompt ans "Press ENTER when it's done or no additional dependencies. "
   fi
 
+  # Check if default VPC exists
+  if [ $using_default_vpc == true ]
+  then
+    echo "Checking if default VPC exists"
+    found_default_vpc=$(aws ec2 describe-vpcs | jq '.Vpcs[] | select(.IsDefault == true)')
+    if [ -z "${found_default_vpc}" ]
+    then
+      echo "No default VPC found.  Please create one before running this script with the following command."
+      echo "aws ec2 create-default-vpc"
+      echo "or specify your own vpc and subnet with --vpc-id and --subnet-id"
+      exit
+    else
+      echo "Default VPC found"
+    fi
+  else
+    echo "Please check the vpc-id $vpc_id and subnet-id $subnet_id are correct and they support EC2 with public IP and internet gateway with proper routing."
+    echo "This script will use the above info to create EC2 instance."
+  fi
+
   cd $DIR/..
   # Generate key pair
 
@@ -1730,8 +1764,12 @@ aws_start_svr_sh: |
   chmod 400 $KEY_FILE
 
   # Generate Security Group
-
-  sg_result=$(aws ec2 create-security-group --group-name $SECURITY_GROUP --description "NVFlare security group")
+  if [ $using_default_vpc == true ]
+  then
+    sg_result=$(aws ec2 create-security-group --group-name $SECURITY_GROUP --description "NVFlare security group")
+  else
+    sg_result=$(aws ec2 create-security-group --group-name $SECURITY_GROUP --description "NVFlare security group" --vpc-id $vpc_id)
+  fi
   report_status "$?" "Only one NVFL server VM and its security group is allowed.  $SECURITY_GROUP exists and thus creating duplicate security group"
   sg_id=$(echo $sg_result | jq -r .GroupId)
   my_public_ip=$(dig +short myip.opendns.com @resolver1.opendns.com)
@@ -1749,7 +1787,12 @@ aws_start_svr_sh: |
 
   echo "Creating VM at region $REGION, may take a few minutes."
 
-  aws ec2 run-instances --region $REGION --image-id $AMI_IMAGE --count 1 --instance-type $EC2_TYPE --key-name $KEY_PAIR --security-group-ids $sg_id > vm_create.json
+  if [ $using_default_vpc == true ]
+  then
+    aws ec2 run-instances --region $REGION --image-id $AMI_IMAGE --count 1 --instance-type $EC2_TYPE --key-name $KEY_PAIR --security-group-ids $sg_id > vm_create.json
+  else
+    aws ec2 run-instances --region $REGION --image-id $AMI_IMAGE --count 1 --instance-type $EC2_TYPE --key-name $KEY_PAIR --security-group-ids $sg_id --subnet-id $subnet_id > vm_create.json
+  fi
   report_status "$?" "creating VM"
   instance_id=$(jq -r .Instances[0].InstanceId vm_create.json)
 
@@ -1807,6 +1850,13 @@ aws_start_cln_sh: |
   check_binary dig "Please install it first."
   check_binary jq "Please install it first."
 
+  if [ -z ${vpc_id+x} ]
+  then
+      using_default_vpc=true
+  else
+      using_default_vpc=false
+  fi
+
   if [ -z ${image_name+x} ]
   then
       container=false
@@ -1855,6 +1905,25 @@ aws_start_cln_sh: |
     prompt ans "Press ENTER when it's done or no additional dependencies. "
   fi
 
+  # Check if default VPC exists
+  if [ $using_default_vpc == true ]
+  then
+    echo "Checking if default VPC exists"
+    found_default_vpc=$(aws ec2 describe-vpcs | jq '.Vpcs[] | select(.IsDefault == true)')
+    if [ -z "${found_default_vpc}" ]
+    then
+      echo "No default VPC found.  Please create one before running this script with the following command."
+      echo "aws ec2 create-default-vpc"
+      echo "or specify your own vpc and subnet with --vpc-id and --subnet-id"
+      exit
+    else
+      echo "Default VPC found"
+    fi
+  else
+    echo "Please check the vpc-id $vpc_id and subnet-id $subnet_id are correct and they support EC2 with public IP and internet gateway with proper routing."
+    echo "This script will use the above info to create EC2 instance."
+  fi
+
   cd $DIR/..
   # Generate key pair
 
@@ -1868,7 +1937,12 @@ aws_start_cln_sh: |
 
   # Generate Security Group
   # Try not reusing existing security group because we have to modify it for our own need.
-  sg_id=$(aws ec2 create-security-group --group-name $SECURITY_GROUP --description "NVFlare security group" | jq -r .GroupId)
+  if [ $using_default_vpc == true ]
+  then
+    sg_id=$(aws ec2 create-security-group --group-name $SECURITY_GROUP --description "NVFlare security group" | jq -r .GroupId)
+  else
+    sg_id=$(aws ec2 create-security-group --group-name $SECURITY_GROUP --description "NVFlare security group" --vpc-id $vpc_id | jq -r .GroupId)
+  fi
   report_status "$?" "creating security group"
   my_public_ip=$(dig +short myip.opendns.com @resolver1.opendns.com)
   if [ "$?" -eq 0 ] && [[ "$my_public_ip" =~ ^(([1-9]?[0-9]|1[0-9][0-9]|2([0-4][0-9]|5[0-5]))\.){3}([1-9]?[0-9]|1[0-9][0-9]|2([0-4][0-9]|5[0-5]))$ ]]
@@ -1884,7 +1958,12 @@ aws_start_cln_sh: |
 
   echo "Creating VM at region $REGION, may take a few minutes."
 
-  aws ec2 run-instances --region $REGION --image-id $AMI_IMAGE --count 1 --instance-type $EC2_TYPE --key-name $KEY_PAIR --security-group-ids $sg_id > vm_create.json
+  if [ $using_default_vpc == true ]
+  then
+    aws ec2 run-instances --region $REGION --image-id $AMI_IMAGE --count 1 --instance-type $EC2_TYPE --key-name $KEY_PAIR --security-group-ids $sg_id > vm_create.json
+  else
+    aws ec2 run-instances --region $REGION --image-id $AMI_IMAGE --count 1 --instance-type $EC2_TYPE --key-name $KEY_PAIR --security-group-ids $sg_id --subnet-id $subnet_id > vm_create.json
+  fi
   report_status "$?" "creating VM"
   instance_id=$(jq -r .Instances[0].InstanceId vm_create.json)
 
@@ -1949,6 +2028,13 @@ aws_start_dsb_sh: |
   check_binary dig "Please install it first."
   check_binary jq "Please install it first."
 
+  if [ -z ${vpc_id+x} ]
+  then
+      using_default_vpc=true
+  else
+      using_default_vpc=false
+  fi
+
   echo "One initial user will be created when starting dashboard."
   echo "Please enter the email address for this user."
   read email
@@ -1964,9 +2050,33 @@ aws_start_dsb_sh: |
   report_status "$?" "creating key pair"
   chmod 400 $KEY_FILE
 
-  # Generate Security Group
+  # Check if default VPC exists
+  if [ $using_default_vpc == true ]
+  then
+    echo "Checking if default VPC exists"
+    found_default_vpc=$(aws ec2 describe-vpcs | jq '.Vpcs[] | select(.IsDefault == true)')
+    if [ -z "${found_default_vpc}" ]
+    then
+      echo "No default VPC found.  Please create one before running this script with the following command."
+      echo "aws ec2 create-default-vpc"
+      echo "or specify your own vpc and subnet with --vpc-id and --subnet-id"
+      exit
+    else
+      echo "Default VPC found"
+    fi
+  else
+    echo "Please check the vpc-id $vpc_id and subnet-id $subnet_id are correct and they support EC2 with public IP and internet gateway with proper routing."
+    echo "This script will use the above info to create EC2 instance."
+  fi
 
-  sg_id=$(aws ec2 create-security-group --group-name $SECURITY_GROUP --description "NVFlare security group" | jq -r .GroupId)
+  # Generate Security Group
+  # Try not reusing existing security group because we have to modify it for our own need.
+  if [ $using_default_vpc == true ]
+  then
+    sg_id=$(aws ec2 create-security-group --group-name $SECURITY_GROUP --description "NVFlare security group" | jq -r .GroupId)
+  else
+    sg_id=$(aws ec2 create-security-group --group-name $SECURITY_GROUP --description "NVFlare security group" --vpc-id $vpc_id | jq -r .GroupId)
+  fi
   report_status "$?" "creating security group"
   echo "Security group id: ${sg_id}"
   my_public_ip=$(dig +short myip.opendns.com @resolver1.opendns.com)
@@ -1983,8 +2093,12 @@ aws_start_dsb_sh: |
   # Start provisioning
 
   echo "Creating VM at region $REGION, may take a few minutes."
-
-  aws ec2 run-instances --region $REGION --image-id $AMI_IMAGE --count 1 --instance-type $EC2_TYPE --key-name $KEY_PAIR --security-group-ids $sg_id > vm_create.json
+  if [ $using_default_vpc == true ]
+  then
+    aws ec2 run-instances --region $REGION --image-id $AMI_IMAGE --count 1 --instance-type $EC2_TYPE --key-name $KEY_PAIR --security-group-ids $sg_id > vm_create.json
+  else
+    aws ec2 run-instances --region $REGION --image-id $AMI_IMAGE --count 1 --instance-type $EC2_TYPE --key-name $KEY_PAIR --security-group-ids $sg_id --subnet-id $subnet_id > vm_create.json
+  fi
   report_status "$?" "creating VM"
   instance_id=$(jq -r .Instances[0].InstanceId vm_create.json)
 
