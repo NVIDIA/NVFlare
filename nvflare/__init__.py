@@ -20,5 +20,5 @@ __version__ = _version.get_versions()["version"]
 
 from nvflare.app_common.executors.script_executor import ScriptExecutor
 from nvflare.app_common.workflows.fedavg import FedAvg
-from nvflare.fed_job import FedJob, FilterType
+from nvflare.job_config.fed_job import FedJob, FilterType
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
