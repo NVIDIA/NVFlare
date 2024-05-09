@@ -57,6 +57,8 @@ To visualize training losses, we use the [Comet ML](https://www.comet.com/site/)
 Below is an example of the loss visualization output:
 ![FedBN Loss Results](./figs/loss.jpeg)
 
+> **Note**: To use Comet ML experiment tracking system, we need to get Comet API key to get access.
+> Alternatively, you can use Tensorboard or MLfow. 
 
 ## Citation
 If you find the code and dataset useful, please cite our paper.
