@@ -19,6 +19,7 @@ import threading
 import uuid
 from typing import Dict, List, Union
 
+from nvflare.fuel.common.defs import CellChannel
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell, TargetMessage
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessageType, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import decode_payload, encode_payload, make_reply
@@ -26,7 +27,6 @@ from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stream_cell import StreamCell
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import StreamFuture
-from nvflare.private.defs import CellChannel
 from nvflare.security.logging import secure_format_exception
 
 CHANNELS_TO_EXCLUDE = (
