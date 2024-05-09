@@ -16,7 +16,6 @@ import inspect
 import json
 import os
 import shutil
-import sys
 from enum import Enum
 from tempfile import TemporaryDirectory
 from typing import Dict
