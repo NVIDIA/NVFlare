@@ -13,7 +13,6 @@
 # limitations under the License.
 
 """Decomposers for types from app_common and Machine Learning libraries."""
-import os
 from typing import Any
 
 from nvflare.app_common.abstract.fl_model import FLModel

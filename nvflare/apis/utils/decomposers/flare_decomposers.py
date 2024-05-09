@@ -17,7 +17,6 @@ This module contains all the decomposers used to run NVFlare.
 The decomposers are registered at server/client startup.
 
 """
-import os
 from argparse import Namespace
 from typing import Any
 
