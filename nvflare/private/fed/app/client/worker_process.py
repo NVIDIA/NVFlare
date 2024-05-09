@@ -20,13 +20,14 @@ import os
 import sys
 import threading
 
-from nvflare.apis.fl_constant import FLContextKey, JobConstants
+from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, JobConstants, SystemConfigs
 from nvflare.apis.overseer_spec import SP
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.defs import EngineConstant
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
 from nvflare.private.fed.app.utils import monitor_parent_process
@@ -36,6 +37,7 @@ from nvflare.private.fed.utils.fed_utils import (
     add_logfile_handler,
     create_stats_pool_files_for_job,
     fobs_initialize,
+    register_ext_decomposers,
     set_stats_pool_config_for_job,
 )
 from nvflare.security.logging import secure_format_exception
@@ -93,6 +95,11 @@ def main(args):
             kv_list=args.set,
         )
         conf.configure()
+
+        decomposer_module = ConfigService.get_str_var(
+            name=ConfigVarName.DECOMPOSER_MODULE, conf=SystemConfigs.RESOURCES_CONF
+        )
+        register_ext_decomposers(decomposer_module)
 
         log_file = workspace.get_app_log_file_path(args.job_id)
         add_logfile_handler(log_file)

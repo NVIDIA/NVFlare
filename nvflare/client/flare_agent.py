@@ -29,6 +29,7 @@ from nvflare.fuel.utils.constants import PipeChannelName
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 from nvflare.fuel.utils.pipe.pipe import Message, Mode, Pipe
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler
+from nvflare.private.fed.utils.fed_utils import register_ext_decomposers
 
 
 class FlareAgentException(Exception):
@@ -75,6 +76,7 @@ class FlareAgent:
         metric_channel_name: str = PipeChannelName.METRIC,
         close_pipe: bool = True,
         close_metric_pipe: bool = True,
+        decomposer_module: str = None,
     ):
         """Constructor of Flare Agent.
 
@@ -102,6 +104,8 @@ class FlareAgent:
         """
         flare_decomposers.register()
         common_decomposers.register()
+        if decomposer_module:
+            register_ext_decomposers(decomposer_module)
 
         self.logger = logging.getLogger(self.__class__.__name__)
         self.pipe = pipe

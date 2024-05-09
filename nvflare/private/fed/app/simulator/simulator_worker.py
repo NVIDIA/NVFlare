@@ -247,7 +247,7 @@ def main(args):
     os.makedirs(local, exist_ok=True)
     workspace = Workspace(root_dir=args.workspace, site_name=args.client)
 
-    fobs_initialize(workspace)
+    fobs_initialize(workspace, job_id=SimulatorConstants.JOB_NAME)
     AuthorizationService.initialize(EmptyAuthorizer())
     # AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
     AuditService.the_auditor = SimulatorAuditor()

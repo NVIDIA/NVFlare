@@ -37,7 +37,7 @@ from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.authz import AuthorizationService
 from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
 from nvflare.fuel.utils import fobs
-from nvflare.fuel.utils.fobs.fobs import register_custom_folder
+from nvflare.fuel.utils.fobs.fobs import FOBS_DECOMPOSER_DIR, register_custom_folder
 from nvflare.private.defs import RequestHeader, SSLConstants
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.decomposers import private_decomposers
@@ -211,31 +211,37 @@ def fobs_initialize(workspace: Workspace = None, job_id: str = None):
 def custom_fobs_initialize(workspace: Workspace = None, job_id: str = None):
     if workspace:
         site_custom_dir = workspace.get_client_custom_dir()
-        if os.path.exists(site_custom_dir):
-            register_custom_folder(site_custom_dir)
+        decomposer_dir = os.path.join(site_custom_dir, FOBS_DECOMPOSER_DIR)
+        if os.path.exists(decomposer_dir):
+            register_custom_folder(decomposer_dir)
 
         if job_id:
             app_custom_dir = workspace.get_app_config_dir(job_id)
-            if os.path.exists(app_custom_dir):
-                register_custom_folder(app_custom_dir)
+            decomposer_dir = os.path.join(app_custom_dir, FOBS_DECOMPOSER_DIR)
+            if os.path.exists(decomposer_dir):
+                register_custom_folder(decomposer_dir)
 
 
 def nvflare_fobs_initialize():
     flare_decomposers.register()
     common_decomposers.register()
     private_decomposers.register()
-    register_nvflare_decomposers()
 
 
-def register_nvflare_decomposers():
-    warnings.filterwarnings("ignore")
-    package = importlib.import_module("nvflare")
-    for module_info in pkgutil.walk_packages(path=package.__path__, prefix=package.__name__ + "."):
-        if module_info.ispkg:
-            folder_name = module_info.module_finder.path
-            package_name = module_info.name
-            folder = os.path.join(folder_name, package_name.split(".")[-1])
-            fobs.register_folder(folder, package_name)
+def register_ext_decomposers(decomposer_module: str):
+    if decomposer_module:
+        warnings.filterwarnings("ignore")
+        try:
+            package = importlib.import_module(decomposer_module)
+            for module_info in pkgutil.walk_packages(path=package.__path__, prefix=package.__name__ + "."):
+                if module_info.ispkg:
+                    folder_name = module_info.module_finder.path
+                    package_name = module_info.name
+                    folder = os.path.join(folder_name, package_name.split(".")[-1])
+                    fobs.register_folder(folder, package_name)
+        except (ModuleNotFoundError, RuntimeError) as e:
+            # logger.warning(f"Could not register decomposers from: {decomposer_module}")
+            pass
 
 
 def set_stats_pool_config_for_job(workspace: Workspace, job_id: str, prefix=None):

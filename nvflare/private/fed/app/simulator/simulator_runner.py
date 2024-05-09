@@ -30,11 +30,13 @@ from urllib.parse import urlparse
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import (
+    ConfigVarName,
     FLMetaKey,
     JobConstants,
     MachineStatus,
     RunnerTask,
     RunProcessKey,
+    SystemConfigs,
     WorkspaceConstants,
 )
 from nvflare.apis.job_def import ALL_SITES, JobMetaKey
@@ -47,6 +49,7 @@ from nvflare.fuel.f3.stats_pool import StatsPoolManager
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, zip_directory_to_bytes
@@ -63,6 +66,7 @@ from nvflare.private.fed.utils.fed_utils import (
     custom_fobs_initialize,
     get_simulator_app_root,
     nvflare_fobs_initialize,
+    register_ext_decomposers,
     split_gpus,
 )
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
@@ -249,6 +253,11 @@ class SimulatorRunner(FLComponent):
             server_workspace = os.path.join(self.args.workspace, "server")
             workspace = Workspace(root_dir=server_workspace, site_name="server")
             custom_fobs_initialize(workspace)
+
+            decomposer_module = ConfigService.get_str_var(
+                name=ConfigVarName.DECOMPOSER_MODULE, conf=SystemConfigs.RESOURCES_CONF
+            )
+            register_ext_decomposers(decomposer_module)
 
             return True
 

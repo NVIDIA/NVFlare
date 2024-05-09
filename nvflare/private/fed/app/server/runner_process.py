@@ -20,13 +20,14 @@ import os
 import sys
 import threading
 
-from nvflare.apis.fl_constant import JobConstants
+from nvflare.apis.fl_constant import ConfigVarName, JobConstants, SystemConfigs
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
 from nvflare.private.fed.app.utils import monitor_parent_process
@@ -36,6 +37,7 @@ from nvflare.private.fed.utils.fed_utils import (
     add_logfile_handler,
     create_stats_pool_files_for_job,
     fobs_initialize,
+    register_ext_decomposers,
     set_stats_pool_config_for_job,
 )
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
@@ -96,6 +98,11 @@ def main(args):
         event_handlers = conf.handlers
         deployer = conf.deployer
         secure_train = conf.cmd_vars.get("secure_train", False)
+
+        decomposer_module = ConfigService.get_str_var(
+            name=ConfigVarName.DECOMPOSER_MODULE, conf=SystemConfigs.RESOURCES_CONF
+        )
+        register_ext_decomposers(decomposer_module)
 
         try:
             # create the FL server

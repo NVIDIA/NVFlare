@@ -43,6 +43,7 @@ from nvflare.security.logging import secure_format_exception
 
 FOBS_TYPE = "__fobs_type__"
 FOBS_DATA = "__fobs_data__"
+FOBS_DECOMPOSER_DIR = "nvflare_decomposers"
 MAX_CONTENT_LEN = 128
 MSGPACK_TYPES = (None, bool, int, float, str, bytes, bytearray, memoryview, list, dict)
 T = TypeVar("T")

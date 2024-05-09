@@ -13,6 +13,7 @@
 # limitations under the License.
 
 """Decomposers for types from app_common and Machine Learning libraries."""
+import os
 from typing import Any
 
 from nvflare.app_common.abstract.fl_model import FLModel
@@ -63,7 +64,7 @@ def register():
 
     fobs.register(DictDecomposer(Learnable))
     fobs.register(DictDecomposer(ModelLearnable))
-    # fobs.register(FLModelDecomposer)
+    fobs.register(FLModelDecomposer)
 
     fobs.register_data_classes(
         _CtxPropReq,
@@ -71,7 +72,7 @@ def register():
         _EventStats,
     )
 
-    # fobs.register_folder(os.path.dirname(__file__), __package__)
+    fobs.register_folder(os.path.dirname(__file__), __package__)
 
     register.registered = True
 

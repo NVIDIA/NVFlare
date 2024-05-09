@@ -18,6 +18,7 @@ import time
 import traceback
 from typing import Union
 
+from nvflare.app_common.decomposers import numpy_decomposers
 from nvflare.client.ipc import defs
 from nvflare.fuel.f3.cellnet.cell import Cell, Message
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
@@ -25,7 +26,7 @@ from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.utils.config_service import ConfigService
-from nvflare.private.fed.utils.fed_utils import register_nvflare_decomposers
+from nvflare.private.fed.utils.fed_utils import register_ext_decomposers
 
 _SSL_ROOT_CERT = "rootCA.pem"
 _SHORT_SLEEP_TIME = 0.2
@@ -43,6 +44,7 @@ class IPCAgent:
         flare_site_connection_timeout=60.0,
         flare_site_heartbeat_timeout=None,
         resend_result_interval=2.0,
+        decomposer_module=None,
     ):
         """Constructor of Flare Agent. The agent is responsible for communicating with the Flare Client Job cell (CJ)
         to get task and to submit task result.
@@ -109,7 +111,9 @@ class IPCAgent:
             topic="*",
             cb=self._msg_received,
         )
-        register_nvflare_decomposers()
+        numpy_decomposers.register()
+        if decomposer_module:
+            register_ext_decomposers(decomposer_module)
 
     def start(self):
         """Start the agent. This method must be called to enable CJ/Agent communication.
