@@ -19,9 +19,8 @@ import threading
 import uuid
 from typing import Dict, List, Union
 
-from nvflare.fuel.common.defs import CellChannel
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell, TargetMessage
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessageType, ReturnCode
+from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, MessageType, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import decode_payload, encode_payload, make_reply
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stream_cell import StreamCell

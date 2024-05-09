@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # this import is to let existing scripts import from nvflare.private.defs
-from nvflare.fuel.common.defs import CellChannel, CellChannelTopic, SSLConstants  # noqa: F401
+from nvflare.fuel.f3.cellnet.defs import CellChannel, CellChannelTopic, SSLConstants  # noqa: F401
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.hci.server.constants import ConnProps
 
