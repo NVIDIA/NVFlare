@@ -222,8 +222,8 @@ class TestTaskScriptRunner(unittest.TestCase):
         try:
             script_path = os.path.join(os.getcwd(), "tests/unit_test/data/jobs/in_proc_job/site-1/custom/train.py")
             wrapper = TaskScriptRunner(
-                    site_name="site-1", script_path=script_path, script_args=script_args, redirect_print_to_log=False
-             )
+                site_name="site-1", script_path=script_path, script_args=script_args, redirect_print_to_log=False
+            )
             wrapper.run()
         finally:
             sys.path = old_sys_path
