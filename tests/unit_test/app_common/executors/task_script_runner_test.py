@@ -91,9 +91,9 @@ class TestTaskScriptRunner(unittest.TestCase):
         old_sys_path = sys.path
         script_args = "--batch_size 4"
         # test the run should not throw exception for the relative path import.
-        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/app_common/executors/custom"))
-        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/app_common/executors/server/custom"))
-        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/app_common/executors/site-1/custom"))
+        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/data/jobs/in_proc_job/custom"))
+        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/data/jobs/in_proc_job/server/custom"))
+        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/data/jobs/in_proc_job/site-1/custom"))
 
         try:
             script_path = "train.py"
@@ -101,7 +101,7 @@ class TestTaskScriptRunner(unittest.TestCase):
                 site_name="site-1", script_path=script_path, script_args=script_args, redirect_print_to_log=False
             )
             self.assertTrue(wrapper.script_full_path.endswith(script_path))
-            expected_path = os.path.join(os.getcwd(), "tests/unit_test/app_common/executors/site-1/custom/train.py")
+            expected_path = os.path.join(os.getcwd(), "tests/unit_test/data/jobs/in_proc_job/site-1/custom/train.py")
             self.assertEqual(wrapper.get_sys_argv(), [expected_path, "--batch_size", "4"])
             wrapper.run()
         finally:
@@ -111,9 +111,9 @@ class TestTaskScriptRunner(unittest.TestCase):
         old_sys_path = sys.path
         script_args = "--batch_size 4"
         # test the run should not throw exception for the relative path import.
-        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/app_common/executors/custom"))
-        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/app_common/executors/server/custom"))
-        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/app_common/executors/site-1/custom"))
+        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/data/jobs/in_proc_job/custom"))
+        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/data/jobs/in_proc_job/server/custom"))
+        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/data/jobs/in_proc_job/site-1/custom"))
 
         try:
             script_path = "train.py"
@@ -121,7 +121,7 @@ class TestTaskScriptRunner(unittest.TestCase):
                 site_name="server", script_path=script_path, script_args=script_args, redirect_print_to_log=False
             )
             self.assertTrue(wrapper.script_full_path.endswith(script_path))
-            expected_path = os.path.join(os.getcwd(), "tests/unit_test/app_common/executors/server/custom/train.py")
+            expected_path = os.path.join(os.getcwd(), "tests/unit_test/data/jobs/in_proc_job/server/custom/train.py")
             self.assertEqual(wrapper.get_sys_argv(), [expected_path, "--batch_size", "4"])
             wrapper.run()
         finally:
@@ -131,9 +131,9 @@ class TestTaskScriptRunner(unittest.TestCase):
         old_sys_path = sys.path
         script_args = "--batch_size 4"
         # test the run should not throw exception for the relative path import.
-        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/app_common/executors/custom"))
-        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/app_common/executors/server/custom"))
-        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/app_common/executors/site-1/custom"))
+        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/data/jobs/in_proc_job/custom"))
+        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/data/jobs/in_proc_job/server/custom"))
+        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/data/jobs/in_proc_job/site-1/custom"))
 
         try:
             script_path = "src/train.py"
@@ -141,7 +141,7 @@ class TestTaskScriptRunner(unittest.TestCase):
                 site_name="", script_path=script_path, script_args=script_args, redirect_print_to_log=False
             )
             self.assertTrue(wrapper.script_full_path.endswith(script_path))
-            expected_path = os.path.join(os.getcwd(), "tests/unit_test/app_common/executors/custom/src/train.py")
+            expected_path = os.path.join(os.getcwd(), "tests/unit_test/data/jobs/in_proc_job/custom/src/train.py")
             self.assertEqual(wrapper.get_sys_argv(), [expected_path, "--batch_size", "4"])
             wrapper.run()
         finally:
@@ -151,9 +151,9 @@ class TestTaskScriptRunner(unittest.TestCase):
         old_sys_path = sys.path
         script_args = "--batch_size 4"
         # test the run should not throw exception for the relative path import.
-        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/app_common/executors/custom"))
-        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/app_common/executors/server/custom"))
-        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/app_common/executors/site-1/custom"))
+        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/data/jobs/in_proc_job/custom"))
+        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/data/jobs/in_proc_job/server/custom"))
+        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/data/jobs/in_proc_job/site-1/custom"))
 
         try:
             script_path = "failed_train.py"
@@ -180,9 +180,9 @@ class TestTaskScriptRunner(unittest.TestCase):
         old_sys_path = sys.path
         script_args = "--batch_size 4"
         # test the run should not throw exception for the relative path import.
-        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/app_common/executors/custom"))
-        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/app_common/executors/server/custom"))
-        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/app_common/executors/site-1/custom"))
+        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/data/jobs/in_proc_job/custom"))
+        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/data/jobs/in_proc_job/server/custom"))
+        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/data/jobs/in_proc_job/site-1/custom"))
 
         try:
             script_path = "relative_import_train.py"
@@ -190,9 +190,40 @@ class TestTaskScriptRunner(unittest.TestCase):
                 site_name="site-1", script_path=script_path, script_args=script_args, redirect_print_to_log=False
             )
             self.assertTrue(wrapper.script_full_path.endswith(script_path))
-            msg = "attempted relative import with no known parent package, the relative import is not support. python import is based off the sys.path: /home/chester/projects/NVFlare/tests/unit_test/app_common/executors/site-1/custom"
+            msg = "attempted relative import with no known parent package, the relative import is not support. python import is based off the sys.path: /home/chester/projects/NVFlare/tests/unit_test/data/jobs/in_proc_job/site-1/custom"
             with pytest.raises(ImportError, match=msg):
                 # check the ImportError
                 wrapper.run()
+        finally:
+            sys.path = old_sys_path
+
+    def test_run_abs_path_scripts(self):
+        old_sys_path = sys.path
+        script_args = "--batch_size 4"
+        # test the run should not throw exception for the relative path import.
+        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/data/jobs/in_proc_job/site-1/custom"))
+
+        try:
+            script_path = "/foo/dummy/train.py"
+
+            with pytest.raises(ValueError, match="script_path='/foo/dummy/train.py' not found"):
+                wrapper = TaskScriptRunner(
+                    site_name="site-1", script_path=script_path, script_args=script_args, redirect_print_to_log=False
+                )
+        finally:
+            sys.path = old_sys_path
+
+    def test_run_abs_path_scripts2(self):
+        old_sys_path = sys.path
+        script_args = "--batch_size 4"
+        # test the run should not throw exception for the relative path import.
+        sys.path.append(os.path.join(os.getcwd(), "tests/unit_test/data/jobs/in_proc_job/site-1/custom"))
+
+        try:
+            script_path = os.path.join(os.getcwd(), "tests/unit_test/data/jobs/in_proc_job/site-1/custom/train.py")
+            wrapper = TaskScriptRunner(
+                    site_name="site-1", script_path=script_path, script_args=script_args, redirect_print_to_log=False
+             )
+            wrapper.run()
         finally:
             sys.path = old_sys_path

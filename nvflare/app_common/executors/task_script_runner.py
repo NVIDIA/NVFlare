@@ -82,6 +82,11 @@ class TaskScriptRunner:
         script_filename = os.path.basename(script_path)
         script_dirs = os.path.dirname(script_path)
 
+        if os.path.isabs(script_path):
+            if not os.path.isfile(script_path):
+                raise ValueError(f"script_path='{script_path}' not found")
+            return script_path
+
         for r, dirs, files in os.walk(os.getcwd()):
             for f in files:
                 absolute_path = os.path.join(r, f)
