@@ -50,17 +50,23 @@ class BaseAppConfig(ABC):
     def add_task_result_filter(self, tasks: List[str], filter: Filter):
         self._add_task_filter(tasks, filter, self.task_result_filters)
 
-    def add_ext_script(self, ext_script: str):
+    def add_ext_script(self, ext_script: str, package_path: str = None):
         if not isinstance(ext_script, str):
             raise RuntimeError(f"ext_script must be type of str, but got {ext_script.__class__}")
 
         if not (os.path.isabs(ext_script) or os.path.exists(ext_script)):
             raise RuntimeError(f"Could not locate external script: {ext_script}")
 
+        if os.path.isabs(ext_script):
+            if not package_path or not ext_script.startswith(package_path):
+                raise RuntimeError(
+                    f"Absolute external script: {ext_script} must start with the package_path: {package_path}"
+                )
+
         if not ext_script.endswith(".py"):
             raise RuntimeError(f"External script: {ext_script} must be a '.py' file.")
 
-        self.ext_scripts.append(ext_script)
+        self.ext_scripts.append((ext_script, package_path))
 
     def _add_task_filter(self, tasks, filter, filters):
         if not isinstance(filter, Filter):
