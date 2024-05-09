@@ -104,8 +104,13 @@ class IPCAgent:
         self.cell.register_request_cb(channel=defs.CHANNEL, topic=defs.TOPIC_HEARTBEAT, cb=self._handle_heartbeat)
         self.cell.register_request_cb(channel=defs.CHANNEL, topic=defs.TOPIC_BYE, cb=self._handle_bye)
         self.cell.register_request_cb(channel=defs.CHANNEL, topic=defs.TOPIC_ABORT, cb=self._handle_abort_task)
-        self.cell.add_incoming_request_filter(
-            channel=defs.CHANNEL,
+        self.cell.core_cell.add_incoming_request_filter(
+            channel="*",
+            topic="*",
+            cb=self._msg_received,
+        )
+        self.cell.core_cell.add_incoming_reply_filter(
+            channel="*",
             topic="*",
             cb=self._msg_received,
         )
