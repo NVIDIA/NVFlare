@@ -138,6 +138,8 @@ def stop():
 def cloud(args):
     lighter_folder = os.path.dirname(utils.__file__)
     template = utils.load_yaml(os.path.join(lighter_folder, "impl", "master_template.yml"))
+    template.update(utils.load_yaml(os.path.join(lighter_folder, "impl", "aws_template.yml")))
+    template.update(utils.load_yaml(os.path.join(lighter_folder, "impl", "azure_template.yml")))
     tplt = tplt_utils.Template(template)
     cwd = os.getcwd()
     csp = args.cloud
@@ -151,7 +153,11 @@ def cloud(args):
         "t",
         exe=True,
     )
-    print(f"Dashboard launch script for cloud is written at {dest}.  Now running the script.")
+    print(f"Dashboard launch script for cloud is written at {dest}.  Now running it.")
+    if args.vpc_id and args.subnet_id:
+        option = [f"--vpc-id={args.vpc_id}", f"--subnet-id={args.subnet_id}"]
+        print(f"Option of the script: {option}")
+        dest = [dest] + option
     _ = subprocess.run(dest)
     os.remove(dest)
 
@@ -190,6 +196,18 @@ def define_dashboard_parser(parser):
     parser.add_argument("--cred", help="set credential directly in the form of USER_EMAIL:PASSWORD")
     parser.add_argument("-i", "--image", help="set the container image name")
     parser.add_argument("--local", action="store_true", help="start dashboard locally without docker image")
+    parser.add_argument(
+        "--vpc-id",
+        type=str,
+        default="",
+        help="VPC id for AWS EC2 instance.  Applicable to AWS only.  Ignored if subnet-id is not specified.",
+    )
+    parser.add_argument(
+        "--subnet-id",
+        type=str,
+        default="",
+        help="Subnet id for AWS EC2 instance.  Applicable to AWS only.  Ignored if vpc-id is not specified.",
+    )
 
 
 def handle_dashboard(args):

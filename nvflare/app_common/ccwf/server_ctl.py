@@ -14,6 +14,7 @@
 
 import time
 from datetime import datetime
+from typing import List
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task
@@ -57,7 +58,7 @@ class ClientStatus:
 class ServerSideController(Controller):
     def __init__(
         self,
-        num_rounds: int,
+        num_rounds: int = 1,
         start_round: int = 0,
         task_name_prefix: str = "wf",
         configure_task_timeout=Constant.CONFIG_TASK_TIMEOUT,
@@ -65,10 +66,10 @@ class ServerSideController(Controller):
         start_task_timeout=Constant.START_TASK_TIMEOUT,
         task_check_period: float = Constant.TASK_CHECK_INTERVAL,
         job_status_check_interval: float = Constant.JOB_STATUS_CHECK_INTERVAL,
-        starting_client=None,
+        starting_client: str = "",
         starting_client_policy: str = DefaultValuePolicy.ANY,
         participating_clients=None,
-        result_clients=None,
+        result_clients: List[str] = [],
         result_clients_policy: str = DefaultValuePolicy.ALL,
         max_status_report_interval: float = Constant.PER_CLIENT_STATUS_REPORT_TIMEOUT,
         progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
@@ -78,7 +79,7 @@ class ServerSideController(Controller):
         Constructor
 
         Args:
-            num_rounds - the number of rounds to be performed. This is a workflow config parameter.
+            num_rounds - the number of rounds to be performed. This is a workflow config parameter. Defaults to 1.
             start_round - the starting round number. This is a workflow config parameter.
             task_name_prefix - the prefix for task names of this workflow.
                 The workflow requires multiple tasks (e.g. config and start) between the server controller and the client.
@@ -97,7 +98,8 @@ class ServerSideController(Controller):
             starting_client - name of the starting client.
             starting_client_policy - how to determine the starting client if the name is not explicitly specified.
                 Possible values are:
-                    ANY - any one of the participating clients (randomly chosen)
+                    ANY - any one of the participating clients (the first client)
+                    RANDOM - a random client
                     EMPTY - no starting client
                     DISALLOW - does not allow implicit - starting_client must be explicitly specified
             start_task_timeout - how long to wait for the starting client to finish the “start” task.
@@ -182,6 +184,7 @@ class ServerSideController(Controller):
             allow_none=False,
         )
 
+        self.log_info(fl_ctx, f"Using participating clients: {self.participating_clients}")
         self.starting_client = validate_candidate(
             var_name="starting_client",
             candidate=self.starting_client,
@@ -189,6 +192,7 @@ class ServerSideController(Controller):
             default_policy=self.starting_client_policy,
             allow_none=True,
         )
+        self.log_info(fl_ctx, f"Starting client: {self.starting_client}")
 
         self.result_clients = validate_candidates(
             var_name="result_clients",

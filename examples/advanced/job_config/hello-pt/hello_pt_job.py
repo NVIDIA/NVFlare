@@ -109,12 +109,12 @@ class HelloPTJob:
     def export_job(self, job_root):
         self.job.generate_job_config(job_root)
 
-    def simulator_run(self, job_root, workspace):
-        self.job.simulator_run(job_root, workspace, threads=2)
+    def simulator_run(self, workspace):
+        self.job.simulator_run(workspace, threads=2)
 
 
 if __name__ == "__main__":
     job = HelloPTJob()
 
     # job.export_job("/tmp/nvflare/jobs")
-    job.simulator_run("/tmp/nvflare/jobs", "/tmp/nvflare/simulator_workspace")
+    job.simulator_run("/tmp/nvflare/simulator_workspace")

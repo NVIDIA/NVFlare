@@ -17,6 +17,7 @@ import json
 import os
 import shutil
 from enum import Enum
+from tempfile import TemporaryDirectory
 from typing import Dict
 
 from nvflare import SimulatorRunner
@@ -119,18 +120,19 @@ class FedJobConfig:
 
         self._generate_meta(job_dir)
 
-    def simulator_run(self, job_root, workspace, clients=None, n_clients=None, threads=None, gpu=None):
-        self.generate_job_config(job_root)
+    def simulator_run(self, workspace, clients=None, n_clients=None, threads=None, gpu=None):
+        with TemporaryDirectory() as job_root:
+            self.generate_job_config(job_root)
 
-        simulator = SimulatorRunner(
-            job_folder=os.path.join(job_root, self.job_name),
-            workspace=workspace,
-            clients=clients,
-            n_clients=n_clients,
-            threads=threads,
-            gpu=gpu,
-        )
-        simulator.run()
+            simulator = SimulatorRunner(
+                job_folder=os.path.join(job_root, self.job_name),
+                workspace=workspace,
+                clients=clients,
+                n_clients=n_clients,
+                threads=threads,
+                gpu=gpu,
+            )
+            simulator.run()
 
     def _get_server_app(self, config_dir, custom_dir, fed_app):
         server_app = {"format_version": 2, "workflows": []}
