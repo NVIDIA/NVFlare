@@ -161,6 +161,7 @@ class XGBController(Controller):
             topic=Constant.TOPIC_CLIENT_DONE,
             handler_f=self._process_client_done,
         )
+
     def _trigger_stop(self, fl_ctx: FLContext, error=None):
         # first trigger the abort_signal to tell all components (mainly the controller's control_flow and adaptor)
         # that check this signal to abort.

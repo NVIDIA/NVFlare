@@ -30,13 +30,7 @@ DUPLICATE_REQ_MAX_HOLD_TIME = 3600.0
 
 
 class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
-    def __init__(
-        self,
-        int_server_grpc_options=None,
-        in_process=True,
-        per_msg_timeout=10.0,
-        tx_timeout=100.0
-    ):
+    def __init__(self, int_server_grpc_options=None, in_process=True, per_msg_timeout=10.0, tx_timeout=100.0):
         XGBClientAdaptor.__init__(self, in_process, per_msg_timeout, tx_timeout)
         self.int_server_grpc_options = int_server_grpc_options
         self.in_process = in_process
