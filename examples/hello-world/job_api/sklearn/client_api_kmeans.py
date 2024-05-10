@@ -25,7 +25,7 @@ from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor
 from nvflare.client.config import ExchangeFormat
 
-preprocess = False  # if False, assume data is already preprocessed and split
+preprocess = True  # if False, assume data is already preprocessed and split
 
 
 def split_higgs(input_data_path, input_header_path, output_dir, site_num, sample_rate, site_name_prefix="site-"):
@@ -116,7 +116,7 @@ if __name__ == "__main__":
     # ScatterAndGather also expects an "aggregator" which we define here.
     # The actual aggregation function is defined by an "assembler" to specify how to handle the collected updates.
     # We use KMeansAssembler which is the assembler designed for k-Means algorithm.
-    aggregator = CollectAndAssembleAggregator(assembler_id=job.as_id(KMeansAssembler(), "server"))
+    aggregator = CollectAndAssembleAggregator(assembler_id=job.as_id(KMeansAssembler()))
 
     # For kmeans with sklean, we need a custom persistor
     # JoblibModelParamPersistor is a persistor which save/read the model to/from file with JobLib format.
@@ -126,9 +126,9 @@ if __name__ == "__main__":
         min_clients=n_clients,
         num_rounds=num_rounds,
         wait_time_after_min_received=0,
-        aggregator_id=job.as_id(aggregator, "server"),
-        persistor_id=job.as_id(persistor, "server"),
-        shareable_generator_id=job.as_id(FullModelShareableGenerator(), "server"),
+        aggregator_id=job.as_id(aggregator),
+        persistor_id=job.as_id(persistor),
+        shareable_generator_id=job.as_id(FullModelShareableGenerator()),
         train_task_name="train",  # Client will start training once received such task.
         train_timeout=0,
     )

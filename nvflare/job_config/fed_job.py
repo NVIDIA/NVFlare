@@ -108,6 +108,7 @@ class FedJob:
         self._deploy_map = {}
         self._deployed = False
         self._gpus = {}
+        self._components = {}
 
     def to(
         self, obj: Any, target: str, tasks: List[str] = None, gpu: int = None, filter_type: FilterType = None, id=None
@@ -127,9 +128,7 @@ class FedJob:
                 self._deploy_map[target] = ExecutorApp()
             if isinstance(obj, ScriptExecutor):
                 external_scripts = [obj._task_script_path]
-            else:
-                external_scripts = None
-            self._deploy_map[target].add_external_scripts(external_scripts)
+                self._deploy_map[target].add_external_scripts(external_scripts)
             self.clients.append(target)  # TODO: this doesn't work for multiple clients
             if gpu is not None:
                 if target not in self._gpus:  # GPU can only be selected once per client.
@@ -158,18 +157,26 @@ class FedJob:
                     if isinstance(obj, nn.Module):  # if model, create a PT persistor
                         self._deploy_map[target].create_pt_persistor(obj)
 
-    def as_id(self, obj: Any, target: str):
+        # add any other components the object might have referenced via id
+        self._add_referenced_components(obj, target)
+
+    def as_id(self, obj: Any):
         id = str(uuid.uuid4())
-
-        if target not in self._deploy_map:
-            if target == "server":
-                self._deploy_map[target] = ControllerApp(key_metric=self.key_metric)
-            else:
-                self._deploy_map[target] = ExecutorApp()
-
-        self._deploy_map[target].add_component(obj, id)
-
+        self._components[id] = obj
         return id
+
+    def _add_referenced_components(self, base_component, target):
+        """Adds any other components the object might have referenced via id"""
+        # Check all arguments for ids referenced with .as_id()
+        for (
+            base_arg,
+            base_id,
+        ) in base_component.__dict__.items():  # TODO: does this always to get arguments? Might need to check type.
+            if isinstance(base_id, str):  # could be id
+                if base_id in self._components:
+                    self._deploy_map[target].add_component(self._components[base_id], base_id)
+                    # add any components reverenced by this component
+                    self._add_referenced_components(self._components[base_id], target)
 
     def _deploy(self, app: FedApp, target: str):
         if not isinstance(app, FedApp):
@@ -219,8 +226,7 @@ class FedJob:
 
 class ExecutorApp(FedApp):
     def __init__(self):
-        """Wrapper around `ClientAppConfig`.
-        """
+        """Wrapper around `ClientAppConfig`."""
         super().__init__()
         self._create_client_app()
 

@@ -57,7 +57,7 @@ if __name__ == "__main__":
 
     for i in range(n_clients):
         learner = CIFAR10ModelLearner(train_idx_root=train_split_root, aggregation_epochs=aggregation_epochs, lr=0.01)
-        executor = ModelLearnerExecutor(learner_id=learner)
+        executor = ModelLearnerExecutor(learner_id=job.as_id(learner))
         job.to(executor, f"site-{i+1}", gpu=0)  # data splitter assumes client names start from 1
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
