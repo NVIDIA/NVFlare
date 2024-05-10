@@ -34,8 +34,10 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         self,
         int_server_grpc_options=None,
         in_process=True,
+        per_msg_timeout=10.0,
+        tx_timeout=100.0
     ):
-        XGBClientAdaptor.__init__(self, in_process)
+        XGBClientAdaptor.__init__(self, in_process, per_msg_timeout, tx_timeout)
         self.int_server_grpc_options = int_server_grpc_options
         self.in_process = in_process
         self.internal_xgb_server = None
