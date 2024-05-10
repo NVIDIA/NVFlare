@@ -147,14 +147,14 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
                 send_buf=request.send_buffer,
             )
 
-            self._finish_pending_req("allgather", request.rank, request.sequence_number)
-
             return pb2.AllgatherReply(receive_buffer=rcv_buf)
         except Exception as ex:
             self._abort(reason=f"send_all_gather exception: {secure_format_exception(ex)}")
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(str(ex))
             return pb2.AllgatherReply(receive_buffer=None)
+        finally:
+            self._finish_pending_req("allgather", request.rank, request.sequence_number)
 
     def AllgatherV(self, request: pb2.AllgatherVRequest, context):
         try:
@@ -167,13 +167,14 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
                 send_buf=request.send_buffer,
             )
 
-            self._finish_pending_req("allgatherv", request.rank, request.sequence_number)
             return pb2.AllgatherVReply(receive_buffer=rcv_buf)
         except Exception as ex:
             self._abort(reason=f"send_all_gather_v exception: {secure_format_exception(ex)}")
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(str(ex))
             return pb2.AllgatherVReply(receive_buffer=None)
+        finally:
+            self._finish_pending_req("allgatherv", request.rank, request.sequence_number)
 
     def Allreduce(self, request: pb2.AllreduceRequest, context):
         try:
@@ -188,13 +189,14 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
                 send_buf=request.send_buffer,
             )
 
-            self._finish_pending_req("allreduce", request.rank, request.sequence_number)
             return pb2.AllreduceReply(receive_buffer=rcv_buf)
         except Exception as ex:
             self._abort(reason=f"send_all_reduce exception: {secure_format_exception(ex)}")
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(str(ex))
             return pb2.AllreduceReply(receive_buffer=None)
+        finally:
+            self._finish_pending_req("allreduce", request.rank, request.sequence_number)
 
     def Broadcast(self, request: pb2.BroadcastRequest, context):
         try:
@@ -208,13 +210,14 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
                 root=request.root,
             )
 
-            self._finish_pending_req("broadcast", request.rank, request.sequence_number)
             return pb2.BroadcastReply(receive_buffer=rcv_buf)
         except Exception as ex:
             self._abort(reason=f"send_broadcast exception: {secure_format_exception(ex)}")
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(str(ex))
             return pb2.BroadcastReply(receive_buffer=None)
+        finally:
+            self._finish_pending_req("broadcast", request.rank, request.sequence_number)
 
     def _check_duplicate_seq(self, op: str, rank: int, seq: int):
         with self._lock:
