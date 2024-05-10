@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import threading
-from typing import Union
 
 from nvflare.apis.dxo import MetaKey
 from nvflare.apis.event_type import EventType
@@ -32,7 +31,7 @@ from nvflare.security.logging import secure_format_exception
 class ModelLearnerExecutor(Executor):
     def __init__(
         self,
-        learner_id: Union[str, ModelLearner],
+        learner_id,
         train_task=AppConstants.TASK_TRAIN,
         submit_model_task=AppConstants.TASK_SUBMIT_MODEL,
         validate_task=AppConstants.TASK_VALIDATION,
@@ -41,7 +40,7 @@ class ModelLearnerExecutor(Executor):
         """Key component to run learner on clients.
 
         Args:
-            learner_id (str|Learner): id of the learner object. Can be a ModelLearner object.
+            learner_id (str): id of the learner object
             train_task (str, optional): task name for train. Defaults to AppConstants.TASK_TRAIN.
             submit_model_task (str, optional): task name for submit model. Defaults to AppConstants.TASK_SUBMIT_MODEL.
             validate_task (str, optional): task name for validation. Defaults to AppConstants.TASK_VALIDATION.

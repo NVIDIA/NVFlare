@@ -12,14 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import uuid
 from typing import Any, List
 
 from nvflare.apis.executor import Executor
 from nvflare.apis.filter import Filter
 from nvflare.apis.impl.controller import Controller
-from nvflare.app_common.abstract.aggregator import Aggregator
-from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
-from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.widgets.metric_relay import MetricRelay
@@ -126,17 +124,18 @@ class FedJob:
             self._deploy_map[target].add_controller(obj, id)
         elif isinstance(obj, Executor):
             if target not in self._deploy_map:
-                if isinstance(obj, ScriptExecutor):
-                    external_scripts = [obj._task_script_path]
+                self._deploy_map[target] = ExecutorApp()
+            if isinstance(obj, ScriptExecutor):
+                external_scripts = [obj._task_script_path]
+            else:
+                external_scripts = None
+            self._deploy_map[target].add_external_scripts(external_scripts)
+            self.clients.append(target)  # TODO: this doesn't work for multiple clients
+            if gpu is not None:
+                if target not in self._gpus:  # GPU can only be selected once per client.
+                    self._gpus[target] = str(gpu)
                 else:
-                    external_scripts = None
-                self._deploy_map[target] = ExecutorApp(external_scripts=external_scripts)
-                self.clients.append(target)
-                if gpu is not None:
-                    if target not in self._gpus:  # GPU can only be selected once per client.
-                        self._gpus[target] = str(gpu)
-                    else:
-                        print(f"{target} already set to use GPU {self._gpus[target]}. Ignoring gpu={gpu}.")
+                    print(f"{target} already set to use GPU {self._gpus[target]}. Ignoring gpu={gpu}.")
             self._deploy_map[target].add_executor(obj, tasks=tasks)
         else:  # handle objects that are not Controller or Executor type
             if target not in self._deploy_map:
@@ -153,18 +152,24 @@ class FedJob:
                     raise ValueError(
                         f"Provided a filter for {target} without specifying valid `filter_type`. Select from `FilterType.TASK_RESULT` or `FilterType.TASK_DATA`."
                     )
-            # handle built-in types and set ids
-            elif isinstance(obj, Aggregator):
-                self._deploy_map[target].add_component(obj, "aggregator" if id is None else id)
-            elif isinstance(obj, LearnablePersistor):
-                self._deploy_map[target].add_component(obj, "persistor" if id is None else id)
-            elif isinstance(obj, ShareableGenerator):
-                self._deploy_map[target].add_component(obj, "shareable_generator" if id is None else id)
             # else assume a model is being set
             else:  # TODO: handle other persistors
                 if torch_ok:
                     if isinstance(obj, nn.Module):  # if model, create a PT persistor
                         self._deploy_map[target].create_pt_persistor(obj)
+
+    def as_id(self, obj: Any, target: str):
+        id = str(uuid.uuid4())
+
+        if target not in self._deploy_map:
+            if target == "server":
+                self._deploy_map[target] = ControllerApp(key_metric=self.key_metric)
+            else:
+                self._deploy_map[target] = ExecutorApp()
+
+        self._deploy_map[target].add_component(obj, id)
+
+        return id
 
     def _deploy(self, app: FedApp, target: str):
         if not isinstance(app, FedApp):
@@ -213,14 +218,10 @@ class FedJob:
 
 
 class ExecutorApp(FedApp):
-    def __init__(self, external_scripts: List = None):
+    def __init__(self):
         """Wrapper around `ClientAppConfig`.
-
-        Args:
-            external_scripts: List of external scripts that need to be deployed to the client. Defaults to None.
         """
         super().__init__()
-        self.external_scripts = external_scripts
         self._create_client_app()
 
     def add_executor(self, executor, tasks=None):
@@ -243,9 +244,14 @@ class ExecutorApp(FedApp):
         component = ExternalConfigurator(component_ids=["metric_relay"])
         self.app.add_component("config_preparer", component)
 
-        if self.external_scripts is not None:
-            for _script in self.external_scripts:
-                self.app.add_ext_script(_script)
+    def add_external_scripts(self, external_scripts: List):
+        """Register external scripts to the client app to include them in custom directory.
+
+        Args:
+            external_scripts: List of external scripts that need to be deployed to the client. Defaults to None.
+        """
+        for _script in external_scripts:
+            self.app.add_ext_script(_script)
 
 
 class ControllerApp(FedApp):
