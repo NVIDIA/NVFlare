@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import uuid
 import re
+import uuid
 from typing import Any, List
 
 from nvflare.apis.executor import Executor
@@ -77,12 +77,12 @@ class FedApp:
         else:
             while id in self._used_ids:
                 # increase integer counts in id
-                cnt = re.search(r'\d+', id)
+                cnt = re.search(r"\d+", id)
                 if cnt:
                     cnt = cnt.group()
-                    id = id.replace(cnt, str(int(cnt)+1))
+                    id = id.replace(cnt, str(int(cnt) + 1))
                 else:
-                    id = id + "0"
+                    id = id + "1"
         return id
 
     def _gen_tracked_id(self, id: str = "") -> str:
