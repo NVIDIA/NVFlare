@@ -27,7 +27,7 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.tie.applet import Applet
-from nvflare.app_common.tie.defs import Constant, VALID_APPLET_ENV
+from nvflare.app_common.tie.defs import VALID_APPLET_ENV, Constant
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.log_utils import add_log_file_handler, configure_logging
 from nvflare.fuel.utils.validation_utils import check_object_type
@@ -368,6 +368,7 @@ class Connector(ABC, FLComponent):
         if not fl_ctx:
             fl_ctx = self.engine.new_context()
 
+        self.logger.info(f"sending request with RM: {request=}; {type(request['flower.headers'])}")
         return ReliableMessage.send_request(
             target=target,
             topic=Constant.TOPIC_APP_REQUEST,

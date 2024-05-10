@@ -39,13 +39,8 @@ FL_MODULES = ["apis", "app_common", "widgets", "app_opt"]
 
 class ClientJsonConfigurator(FedJsonConfigurator):
     def __init__(
-            self,
-            workspace_obj: Workspace,
-            config_file_name: str,
-            args,
-            app_root: str,
-            kv_list=None,
-            exclude_libs=True):
+        self, workspace_obj: Workspace, config_file_name: str, args, app_root: str, kv_list=None, exclude_libs=True
+    ):
         """To init the ClientJsonConfigurator.
 
         Args:

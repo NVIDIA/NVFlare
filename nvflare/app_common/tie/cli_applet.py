@@ -22,7 +22,6 @@ from .defs import Constant
 
 
 class CLIApplet(Applet):
-
     def __init__(self):
         Applet.__init__(self)
         self._process = None
@@ -35,6 +34,14 @@ class CLIApplet(Applet):
 
         cli_cwd = ctx.get(Constant.APP_CTX_KEY_CLI_CWD)
         cli_env = ctx.get(Constant.APP_CTX_KEY_CLI_ENV)
+
+        if not cli_env:
+            cli_env = {}
+
+        for k, v in ctx.items():
+            if k not in [Constant.APP_CTX_KEY_CLI_CWD, Constant.APP_CTX_KEY_CLI_CWD, Constant.APP_CTX_KEY_CLI_ENV]:
+                cli_env[k] = str(v)
+
         env = os.environ.copy()
         if cli_env:
             if not isinstance(cli_env, dict):

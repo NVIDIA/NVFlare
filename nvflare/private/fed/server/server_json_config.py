@@ -46,7 +46,9 @@ class WorkFlow:
 
 
 class ServerJsonConfigurator(FedJsonConfigurator):
-    def __init__(self, workspace_obj: Workspace, config_file_name: str, args, app_root: str, kv_list=None, exclude_libs=True):
+    def __init__(
+        self, workspace_obj: Workspace, config_file_name: str, args, app_root: str, kv_list=None, exclude_libs=True
+    ):
         """This class parses server config from json file.
 
         Args:
