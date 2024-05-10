@@ -25,7 +25,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from nvflare.apis.fl_constant import FLContextKey, MachineStatus, WorkspaceConstants
-from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner, SimulatorClientRunner
+from nvflare.private.fed.app.simulator.simulator_runner import SimulatorClientRunner, SimulatorRunner
 from nvflare.private.fed.utils.fed_utils import split_gpus
 
 
