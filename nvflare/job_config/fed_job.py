@@ -13,20 +13,18 @@
 # limitations under the License.
 
 import uuid
+import re
 from typing import Any, List
 
 from nvflare.apis.executor import Executor
 from nvflare.apis.filter import Filter
 from nvflare.apis.impl.controller import Controller
-from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
+from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
-from nvflare.app_common.widgets.metric_relay import MetricRelay
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 from nvflare.app_opt.misc.script_executor import ScriptExecutor
 from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
-from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.import_utils import optional_import
-from nvflare.fuel.utils.pipe.file_pipe import FilePipe
 from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig, ServerAppConfig
 from nvflare.job_config.fed_job_config import FedJobConfig
 
@@ -64,7 +62,7 @@ class FedApp:
     def add_component(self, component, id=None):
         if id is None:
             id = "component"
-        self.app.add_component(self._check_id(id), component)
+        self.app.add_component(self._gen_tracked_id(id), component)
 
     def create_pt_persistor(self, model: nn.Module):
         component = PTFileModelPersistor(model=model)
@@ -73,16 +71,23 @@ class FedApp:
         component = PTFileModelLocator(pt_persistor_id="persistor")
         self.app.add_component("model_locator", component)
 
-    def _check_id(self, id: str = "") -> str:
+    def _generate_id(self, id: str = "") -> str:
         if id not in self._used_ids:
-            self._used_ids.append(id)
+            return id
         else:
-            cnt = 0
-            _id = f"{id}_{cnt}"
-            while _id in self._used_ids:
-                cnt += 1
-            id = f"{id}_{cnt}"
-            self._used_ids.append(id)
+            while id in self._used_ids:
+                # increase integer counts in id
+                cnt = re.search(r'\d+', id)
+                if cnt:
+                    cnt = cnt.group()
+                    id = id.replace(cnt, str(int(cnt)+1))
+                else:
+                    id = id + "0"
+        return id
+
+    def _gen_tracked_id(self, id: str = "") -> str:
+        id = self._generate_id(id)
+        self._used_ids.append(id)
         return id
 
 
@@ -238,17 +243,8 @@ class ExecutorApp(FedApp):
     def _create_client_app(self):
         self.app = ClientAppConfig()
 
-        component = FilePipe(  # TODO: support CellPipe, causes type error for passing secure_mode = "{SECURE_MODE}"
-            mode=Mode.PASSIVE,
-            root_path="{WORKSPACE}/{JOB_ID}/{SITE_NAME}",
-        )
-        self.app.add_component("metrics_pipe", component)
-
-        component = MetricRelay(pipe_id="metrics_pipe", event_type="fed.analytix_log_stats", read_interval=0.1)
-        self.app.add_component("metric_relay", component)
-
-        component = ExternalConfigurator(component_ids=["metric_relay"])
-        self.app.add_component("config_preparer", component)
+        component = ConvertToFedEvent(events_to_convert=["analytix_log_stats"], fed_event_prefix="fed.")
+        self.app.add_component("event_to_fed", component)
 
     def add_external_scripts(self, external_scripts: List):
         """Register external scripts to the client app to include them in custom directory.
@@ -274,7 +270,7 @@ class ControllerApp(FedApp):
     def add_controller(self, controller, id=None):
         if id is None:
             id = "controller"
-        self.app.add_workflow(self._check_id(id), controller)
+        self.app.add_workflow(self._gen_tracked_id(id), controller)
 
     def _create_server_app(self):
         self.app: ServerAppConfig = ServerAppConfig()
@@ -287,5 +283,6 @@ class ControllerApp(FedApp):
             self.app.add_component("model_selector", component)
 
         # TODO: make different tracking receivers configurable
-        component = TBAnalyticsReceiver(events=["fed.analytix_log_stats"])
-        self.app.add_component("receiver", component)
+        if torch_ok:
+            component = TBAnalyticsReceiver(events=["fed.analytix_log_stats"])
+            self.app.add_component("receiver", component)
