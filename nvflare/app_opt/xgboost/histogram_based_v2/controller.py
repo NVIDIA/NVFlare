@@ -332,12 +332,8 @@ class XGBController(Controller):
         send_buf = fl_ctx.get_prop(Constant.PARAM_KEY_SEND_BUF)
         assert isinstance(self.adaptor, XGBServerAdaptor)
         rcv_buf = self.adaptor.broadcast(rank, seq, root, send_buf, fl_ctx)
-        if not rcv_buf:
-            self.logger.info("======== rcv_buf is null")
-        else:
-            self.logger.info(f"========= rcb_buf len: {len(rcv_buf)}")
-        reply = Shareable()
 
+        reply = Shareable()
         fl_ctx.set_prop(key=Constant.PARAM_KEY_REPLY, value=reply, private=True, sticky=False)
         fl_ctx.set_prop(key=Constant.PARAM_KEY_RCV_BUF, value=rcv_buf, private=True, sticky=False)
         self.fire_event(Constant.EVENT_AFTER_BROADCAST, fl_ctx)
