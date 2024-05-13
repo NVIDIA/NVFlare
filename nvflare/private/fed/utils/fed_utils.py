@@ -229,31 +229,31 @@ def nvflare_fobs_initialize():
 
 
 def register_ext_decomposers(decomposer_module: Union[str, List[str]]):
-    if isinstance(decomposer_module, str):
-        modules = [decomposer_module]
-    elif isinstance(decomposer_module, list):
-        modules = decomposer_module
-    else:
-        raise TypeError(f"decomposer_module must be str or list of strs but got {type(decomposer_module)}")
+    if decomposer_module:
+        if isinstance(decomposer_module, str):
+            modules = [decomposer_module]
+        elif isinstance(decomposer_module, list):
+            modules = decomposer_module
+        else:
+            raise TypeError(f"decomposer_module must be str or list of strs but got {type(decomposer_module)}")
 
-    for module in modules:
-        register_decomposer_module(module)
+        for module in modules:
+            register_decomposer_module(module)
 
 
 def register_decomposer_module(decomposer_module):
-    if decomposer_module:
-        warnings.filterwarnings("ignore")
-        try:
-            package = importlib.import_module(decomposer_module)
-            for module_info in pkgutil.walk_packages(path=package.__path__, prefix=package.__name__ + "."):
-                if module_info.ispkg:
-                    folder_name = module_info.module_finder.path
-                    package_name = module_info.name
-                    folder = os.path.join(folder_name, package_name.split(".")[-1])
-                    fobs.register_folder(folder, package_name)
-        except (ModuleNotFoundError, RuntimeError) as e:
-            # logger.warning(f"Could not register decomposers from: {decomposer_module}")
-            pass
+    warnings.filterwarnings("ignore")
+    try:
+        package = importlib.import_module(decomposer_module)
+        for module_info in pkgutil.walk_packages(path=package.__path__, prefix=package.__name__ + "."):
+            if module_info.ispkg:
+                folder_name = module_info.module_finder.path
+                package_name = module_info.name
+                folder = os.path.join(folder_name, package_name.split(".")[-1])
+                fobs.register_folder(folder, package_name)
+    except (ModuleNotFoundError, RuntimeError) as e:
+        # logger.warning(f"Could not register decomposers from: {decomposer_module}")
+        pass
 
 
 def set_stats_pool_config_for_job(workspace: Workspace, job_id: str, prefix=None):
