@@ -101,6 +101,7 @@ class FlareAgent:
                 Usually for ``FilePipe`` we set to False, for ``CellPipe`` we set to True.
             close_metric_pipe (bool): whether to close the metric pipe when stopped. Defaults to True.
                 Usually for ``FilePipe`` we set to False, for ``CellPipe`` we set to True.
+            decomposer_module (str): the module name which contains the external decomposers.
         """
         flare_decomposers.register()
         common_decomposers.register()

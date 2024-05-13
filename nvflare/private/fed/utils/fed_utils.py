@@ -20,13 +20,13 @@ import pkgutil
 import sys
 import warnings
 from logging.handlers import RotatingFileHandler
-from typing import List
+from typing import List, Union
 
 from nvflare.apis.app_validation import AppValidator
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLContext
-from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, SiteType, WorkspaceConstants
+from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, FLMetaKey, SiteType, WorkspaceConstants
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.utils.decomposers import flare_decomposers
@@ -37,7 +37,7 @@ from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.authz import AuthorizationService
 from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
 from nvflare.fuel.utils import fobs
-from nvflare.fuel.utils.fobs.fobs import FOBS_DECOMPOSER_DIR, register_custom_folder
+from nvflare.fuel.utils.fobs.fobs import register_custom_folder
 from nvflare.private.defs import RequestHeader, SSLConstants
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.decomposers import private_decomposers
@@ -211,13 +211,13 @@ def fobs_initialize(workspace: Workspace = None, job_id: str = None):
 def custom_fobs_initialize(workspace: Workspace = None, job_id: str = None):
     if workspace:
         site_custom_dir = workspace.get_client_custom_dir()
-        decomposer_dir = os.path.join(site_custom_dir, FOBS_DECOMPOSER_DIR)
+        decomposer_dir = os.path.join(site_custom_dir, ConfigVarName.DECOMPOSER_MODULE)
         if os.path.exists(decomposer_dir):
             register_custom_folder(decomposer_dir)
 
         if job_id:
             app_custom_dir = workspace.get_app_config_dir(job_id)
-            decomposer_dir = os.path.join(app_custom_dir, FOBS_DECOMPOSER_DIR)
+            decomposer_dir = os.path.join(app_custom_dir, ConfigVarName.DECOMPOSER_MODULE)
             if os.path.exists(decomposer_dir):
                 register_custom_folder(decomposer_dir)
 
@@ -228,7 +228,19 @@ def nvflare_fobs_initialize():
     private_decomposers.register()
 
 
-def register_ext_decomposers(decomposer_module: str):
+def register_ext_decomposers(decomposer_module: Union[str, List[str]]):
+    if isinstance(decomposer_module, str):
+        modules = [decomposer_module]
+    elif isinstance(decomposer_module, list):
+        modules = decomposer_module
+    else:
+        raise TypeError(f"decomposer_module must be str or list of strs but got {type(decomposer_module)}")
+
+    for module in modules:
+        register_decomposer_module(module)
+
+
+def register_decomposer_module(decomposer_module):
     if decomposer_module:
         warnings.filterwarnings("ignore")
         try:
