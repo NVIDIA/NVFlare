@@ -15,6 +15,7 @@
 """Federated client launching script."""
 
 import argparse
+import multiprocessing
 import os
 import sys
 import time
@@ -141,6 +142,7 @@ def parse_arguments():
     parser.add_argument("--fed_client", "-s", type=str, help="client config json file", required=True)
     parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
     parser.add_argument("--local_rank", type=int, default=0)
+    parser.add_argument("--start_method", type=str, help="set the multiprocessing start method")
     args = parser.parse_args()
     return args
 
@@ -186,5 +188,7 @@ if __name__ == "__main__":
     # main()
     version_check()
     args = parse_arguments()
+    if args.start_method and args.start_method in ["spawn", "fork", "forkserver"]:
+        multiprocessing.set_start_method(args.start_method)
     rc = mpm.run(main_func=main, run_dir=args.workspace, args=args)
     sys.exit(rc)
