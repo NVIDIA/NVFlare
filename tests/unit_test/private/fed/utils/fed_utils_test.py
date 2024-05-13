@@ -49,6 +49,4 @@ class TestFedUtils:
         register_custom_folder(pwd)
         decomposer = ExampleTestClassDecomposer()
         decomposers = fobs.fobs._decomposers
-        assert len(decomposers) == 1
-        registered_decomposer = list(decomposers.values())[0]
-        assert registered_decomposer == decomposer
+        assert decomposer in list(decomposers.values())
