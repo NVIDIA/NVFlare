@@ -695,11 +695,10 @@ class SimulatorClientRunner(FLComponent):
         return stop_run, next_client, end_run_client
 
     def _get_new_sys_path(self):
-        if not sys.path[0]:
-            new_sys_path = sys.path[1:]
-        else:
-            new_sys_path = sys.path
-        new_sys_path = new_sys_path[0:-1]
+        new_sys_path = []
+        for i in range(0, len(sys.path) - 1):
+            if sys.path[i]:
+                new_sys_path.append(sys.path[i])
         return new_sys_path
 
     def _create_connection(self, open_port, timeout=60.0):

@@ -169,6 +169,19 @@ class TestSimulatorRunner:
         assert old_sys_path == new_sys_path
         sys.path = old_sys_path
 
+    def test_get_new_sys_path_with_multiple_empty(self):
+        args = Namespace(workspace="/tmp")
+        args.set = []
+        runner = SimulatorClientRunner(args, [], None, None, None)
+        old_sys_path = copy.deepcopy(sys.path)
+        sys.path.insert(0, "")
+        if len(sys.path) > 2:
+            sys.path.insert(2, "")
+        sys.path.append("/temp/test")
+        new_sys_path = runner._get_new_sys_path()
+        assert old_sys_path == new_sys_path
+        sys.path = old_sys_path
+
     def test_get_new_sys_path(self):
         args = Namespace(workspace="/tmp")
         args.set = []
