@@ -226,7 +226,9 @@ def register_custom_folder(folder: str):
                                 register(cls_obj)
                             else:
                                 # Can't handle argument in constructor
-                                log.warning(f"Invalid driver, __init__ with extra arguments: {module}")
+                                log.warning(
+                                    f"Invalid Decomposer from {module}: can't have argument in Decomposer's constructor"
+                                )
                 except (ModuleNotFoundError, RuntimeError):
                     pass
 
