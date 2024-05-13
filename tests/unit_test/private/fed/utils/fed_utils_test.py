@@ -45,8 +45,7 @@ class ExampleTestClassDecomposer(Decomposer):
 
 class TestFedUtils:
     def test_custom_fobs_initialize(self):
-        cwd = os.getcwd()
-        pwd = cwd + "/../.."
+        pwd = os.path.dirname(os.path.realpath(__file__))
         register_custom_folder(pwd)
         decomposer = ExampleTestClassDecomposer()
         decomposers = fobs.fobs._decomposers
