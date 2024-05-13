@@ -31,7 +31,7 @@ class ExampleTestClassDecomposer(Decomposer):
         self.type = ExampleTestClass.__name__
 
     def __eq__(self, other):
-        return self.type == other.type
+        return  hasattr(other, "type") and self.type == other.type
 
     def supported_type(self):
         return ExampleTestClass
