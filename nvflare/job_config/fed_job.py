@@ -14,7 +14,7 @@
 
 import re
 import uuid
-from typing import Any, List
+from typing import Any, List, Union
 
 from nvflare.apis.executor import Executor
 from nvflare.apis.filter import Filter
@@ -116,10 +116,18 @@ class FedJob:
         self._components = {}
 
     def to(
-        self, obj: Any, target: str, tasks: List[str] = None, gpu: int = None, filter_type: FilterType = None, id=None
+        self, obj: Any, target: str, tasks: List[str] = None, gpu: Union[int, List[int]] = None, filter_type: FilterType= None, id=None
     ):
         """assign an `obj` to a target (server or clients).
-        The obj will be given a default `id` if non is provided based on its type.
+
+        Args:
+            obj: The object to be assigned. The obj will be given a default `id` if non is provided based on its type.
+            target: The target location of th object. Can be "server" or a client name, e.g. "site-1".
+            tasks: In case object is an `Executor`, optional list of tasks the executor should handle.
+                Defaults to `None`. If `None`, all tasks will be handled using `[*]`.
+            gpu: GPU index or list of GPU indices used for simulating the run on that target.
+            filter_type: The type of filter used. Either `FilterType.TASK_RESULT` or `FilterType.TASK_DATA`.
+            id: Optional user-defined id for the object. Defaults to `None` and ID will automatically be assigned.
 
         Returns:
 
@@ -134,7 +142,8 @@ class FedJob:
             if isinstance(obj, ScriptExecutor):
                 external_scripts = [obj._task_script_path]
                 self._deploy_map[target].add_external_scripts(external_scripts)
-            self.clients.append(target)  # TODO: this doesn't work for multiple clients
+            if target not in self.clients:
+                self.clients.append(target)
             if gpu is not None:
                 if target not in self._gpus:  # GPU can only be selected once per client.
                     self._gpus[target] = str(gpu)
@@ -154,7 +163,8 @@ class FedJob:
                     self._deploy_map[target].add_task_data_filter(tasks, obj)
                 else:
                     raise ValueError(
-                        f"Provided a filter for {target} without specifying valid `filter_type`. Select from `FilterType.TASK_RESULT` or `FilterType.TASK_DATA`."
+                        f"Provided a filter for {target} without specifying a valid `filter_type`. "
+                        f"Select from `FilterType.TASK_RESULT` or `FilterType.TASK_DATA`."
                     )
             # else assume a model is being set
             else:  # TODO: handle other persistors
