@@ -11,19 +11,21 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import copy
 import os
 import shutil
+import sys
 import threading
 import time
 import uuid
+from argparse import Namespace
 from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
 import pytest
 
 from nvflare.apis.fl_constant import FLContextKey, MachineStatus, WorkspaceConstants
-from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
+from nvflare.private.fed.app.simulator.simulator_runner import SimulatorClientRunner, SimulatorRunner
 from nvflare.private.fed.utils.fed_utils import split_gpus
 
 
@@ -155,3 +157,37 @@ class TestSimulatorRunner:
 
                     runner.server.logger = Mock()
                     runner.server.engine.asked_to_stop = True
+
+    def test_get_new_sys_path_with_empty(self):
+        args = Namespace(workspace="/tmp")
+        args.set = []
+        runner = SimulatorClientRunner(args, [], None, None, None)
+        old_sys_path = copy.deepcopy(sys.path)
+        sys.path.insert(0, "")
+        sys.path.append("/temp/test")
+        new_sys_path = runner._get_new_sys_path()
+        assert old_sys_path == new_sys_path
+        sys.path = old_sys_path
+
+    def test_get_new_sys_path_with_multiple_empty(self):
+        args = Namespace(workspace="/tmp")
+        args.set = []
+        runner = SimulatorClientRunner(args, [], None, None, None)
+        old_sys_path = copy.deepcopy(sys.path)
+        sys.path.insert(0, "")
+        if len(sys.path) > 2:
+            sys.path.insert(2, "")
+        sys.path.append("/temp/test")
+        new_sys_path = runner._get_new_sys_path()
+        assert old_sys_path == new_sys_path
+        sys.path = old_sys_path
+
+    def test_get_new_sys_path(self):
+        args = Namespace(workspace="/tmp")
+        args.set = []
+        runner = SimulatorClientRunner(args, [], None, None, None)
+        old_sys_path = copy.deepcopy(sys.path)
+        sys.path.append("/temp/test")
+        new_sys_path = runner._get_new_sys_path()
+        assert old_sys_path == new_sys_path
+        sys.path = old_sys_path
