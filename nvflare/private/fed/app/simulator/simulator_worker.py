@@ -146,9 +146,10 @@ class ClientTaskWorker(FLComponent):
 
             client = self._create_client(args, build_ctx, deploy_args)
 
-            app_root = get_simulator_app_root(args.workspace, client.client_name)
+            app_root = get_simulator_app_root(args.simulator_root, client.client_name)
             app_custom_folder = os.path.join(app_root, "custom")
-            sys.path.append(app_custom_folder)
+            if os.path.isdir(app_custom_folder) and app_custom_folder not in sys.path:
+                sys.path.append(app_custom_folder)
 
             self.create_client_engine(client, deploy_args)
 
@@ -235,8 +236,6 @@ def main(args):
     log_file = os.path.join(args.workspace, WorkspaceConstants.LOG_FILE_NAME)
     add_logfile_handler(log_file)
 
-    app_custom_folder = os.path.join(args.workspace, "custom")
-    sys.path.append(app_custom_folder)
     os.chdir(args.workspace)
     startup = os.path.join(args.workspace, WorkspaceConstants.STARTUP_FOLDER_NAME)
     os.makedirs(startup, exist_ok=True)
