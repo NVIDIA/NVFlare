@@ -64,7 +64,9 @@ class TestInProcessClientAPI(unittest.TestCase):
 
     def test_init_subscriptions(self):
         client_api = InProcessClientAPI(self.task_metadata)
-        assert list(client_api.data_bus.subscribers.keys()) == [TOPIC_GLOBAL_RESULT, TOPIC_ABORT, TOPIC_STOP]
+        xs = list(client_api.data_bus.subscribers.keys())
+        xs.sort()
+        assert xs == [TOPIC_ABORT, TOPIC_GLOBAL_RESULT, TOPIC_STOP]
 
     def local_result_callback(self, data, topic):
         pass

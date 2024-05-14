@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import random
+
 SYMBOL_ALL = "@all"
 SYMBOL_NONE = "@none"
 
@@ -24,12 +26,13 @@ class DefaultValuePolicy:
 
     DISALLOW = "disallow"
     ANY = "any"
+    RANDOM = "random"
     EMPTY = "empty"
     ALL = "all"
 
     @classmethod
     def valid_policy(cls, p: str):
-        return p in [cls.DISALLOW, cls.ANY, cls.EMPTY, cls.ALL]
+        return p in [cls.DISALLOW, cls.ANY, cls.RANDOM, cls.EMPTY, cls.ALL]
 
 
 def check_positive_int(name, value):
@@ -144,6 +147,7 @@ def validate_candidates(var_name: str, candidates, base: list, default_policy: s
     1. Not explicitly specified (Python object None or empty list [])
     In this case, the default_policy decides the final result:
     - ANY: returns a list that contains a single item from the base
+    - RANDOM: returns a list that contains a random item from the base
     - EMPTY: returns an empty list
     - ALL: returns the base list
     - DISALLOW: raise exception - candidates must be explicitly specified
@@ -189,6 +193,8 @@ def validate_candidates(var_name: str, candidates, base: list, default_policy: s
             return base
         elif default_policy == DefaultValuePolicy.DISALLOW:
             raise ValueError(f"invalid value '{candidates}' in '{var_name}': it must be subset of {base}")
+        elif default_policy == DefaultValuePolicy.RANDOM:
+            return [random.choice(base)]
         else:
             # any
             return [base[0]]
@@ -222,6 +228,7 @@ def validate_candidate(var_name: str, candidate, base: list, default_policy: str
     1. Not explicitly specified (Python object None or empty string)
     In this case, the default_policy decides the final result:
     - ANY: returns the first item from the base
+    - RANDOM: returns a random item from the base
     - EMPTY: returns an empty str
     - ALL or DISALLOW: raise exception - candidate must be explicitly specified
 
@@ -263,6 +270,8 @@ def validate_candidate(var_name: str, candidate, base: list, default_policy: str
             return ""
         elif default_policy == DefaultValuePolicy.ANY:
             return base[0]
+        elif default_policy == DefaultValuePolicy.RANDOM:
+            return random.choice(base)
         else:
             raise ValueError(f"invalid value '{candidate}' in '{var_name}': it must be one of {base}")
     else:
