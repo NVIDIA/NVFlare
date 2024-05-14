@@ -17,7 +17,6 @@
 import argparse
 import multiprocessing
 import sys
-from sys import platform
 
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
 from nvflare.private.fed.app.utils import version_check
