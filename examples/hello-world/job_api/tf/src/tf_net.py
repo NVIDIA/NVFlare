@@ -18,6 +18,7 @@ from tensorflow.keras import Model, layers, losses
 class TFNet(Model):
     def __init__(self, input_shape):
         super().__init__()
+        self._input_shape = input_shape  # Required to get constructor arguments in job config
         self.conv1 = layers.Conv2D(6, 5, activation="relu")
         self.pool = layers.MaxPooling2D((2, 2), 2)
         self.conv2 = layers.Conv2D(16, 5, activation="relu")
