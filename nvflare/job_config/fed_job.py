@@ -24,6 +24,7 @@ from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 from nvflare.app_opt.misc.script_executor import ScriptExecutor
 from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
+from nvflare.fuel.utils.class_utils import get_component_init_parameters
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig, ServerAppConfig
 from nvflare.job_config.fed_job_config import FedJobConfig
@@ -116,7 +117,13 @@ class FedJob:
         self._components = {}
 
     def to(
-        self, obj: Any, target: str, tasks: List[str] = None, gpu: Union[int, List[int]] = None, filter_type: FilterType= None, id=None
+        self,
+        obj: Any,
+        target: str,
+        tasks: List[str] = None,
+        gpu: Union[int, List[int]] = None,
+        filter_type: FilterType = None,
+        id=None,
     ):
         """assign an `obj` to a target (server or clients).
 
@@ -173,7 +180,8 @@ class FedJob:
                         self._deploy_map[target].create_pt_persistor(obj)
 
         # add any other components the object might have referenced via id
-        self._add_referenced_components(obj, target)
+        if self._components:
+            self._add_referenced_components(obj, target)
 
     def as_id(self, obj: Any):
         id = str(uuid.uuid4())
@@ -183,15 +191,17 @@ class FedJob:
     def _add_referenced_components(self, base_component, target):
         """Adds any other components the object might have referenced via id"""
         # Check all arguments for ids referenced with .as_id()
-        for (
-            base_arg,
-            base_id,
-        ) in base_component.__dict__.items():  # TODO: does this always to get arguments? Might need to check type.
-            if isinstance(base_id, str):  # could be id
-                if base_id in self._components:
-                    self._deploy_map[target].add_component(self._components[base_id], base_id)
-                    # add any components reverenced by this component
-                    self._add_referenced_components(self._components[base_id], target)
+        if hasattr(base_component, "__dict__"):
+            parameters = get_component_init_parameters(base_component)
+            attrs = base_component.__dict__
+            for param in parameters:
+                if param in attrs:
+                    base_id = attrs[param]
+                    if isinstance(base_id, str):  # could be id
+                        if base_id in self._components:
+                            self._deploy_map[target].add_component(self._components[base_id], base_id)
+                            # add any components referenced by this component
+                            self._add_referenced_components(self._components[base_id], target)
 
     def _deploy(self, app: FedApp, target: str):
         if not isinstance(app, FedApp):
