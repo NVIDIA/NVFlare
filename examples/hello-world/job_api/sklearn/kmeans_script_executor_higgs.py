@@ -25,6 +25,8 @@ from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor
 from nvflare.client.config import ExchangeFormat
 
+preprocess = True  # if False, assume data is already preprocessed and split
+
 
 def split_higgs(input_data_path, input_header_path, output_dir, site_num, sample_rate, site_name_prefix="site-"):
     input_file = input_data_path
@@ -55,57 +57,58 @@ if __name__ == "__main__":
             f"gunzip -c {os.path.join(data_input_dir, 'HIGGS.csv.gz')} > {os.path.join(data_input_dir, 'higgs.csv')}"
         )
 
-    # Generate the csv header file
-    # Your list of data
-    features = [
-        "label",
-        "lepton_pt",
-        "lepton_eta",
-        "lepton_phi",
-        "missing_energy_magnitude",
-        "missing_energy_phi",
-        "jet_1_pt",
-        "jet_1_eta",
-        "jet_1_phi",
-        "jet_1_b_tag",
-        "jet_2_pt",
-        "jet_2_eta",
-        "jet_2_phi",
-        "jet_2_b_tag",
-        "jet_3_pt",
-        "jet_3_eta",
-        "jet_3_phi",
-        "jet_3_b_tag",
-        "jet_4_pt",
-        "jet_4_eta",
-        "jet_4_phi",
-        "jet_4_b_tag",
-        "m_jj",
-        "m_jjj",
-        "m_lv",
-        "m_jlv",
-        "m_bb",
-        "m_wbb",
-        "m_wwbb",
-    ]
+    if preprocess:  # if False, assume data is already preprocessed and split
+        # Generate the csv header file
+        # Your list of data
+        features = [
+            "label",
+            "lepton_pt",
+            "lepton_eta",
+            "lepton_phi",
+            "missing_energy_magnitude",
+            "missing_energy_phi",
+            "jet_1_pt",
+            "jet_1_eta",
+            "jet_1_phi",
+            "jet_1_b_tag",
+            "jet_2_pt",
+            "jet_2_eta",
+            "jet_2_phi",
+            "jet_2_b_tag",
+            "jet_3_pt",
+            "jet_3_eta",
+            "jet_3_phi",
+            "jet_3_b_tag",
+            "jet_4_pt",
+            "jet_4_eta",
+            "jet_4_phi",
+            "jet_4_b_tag",
+            "m_jj",
+            "m_jjj",
+            "m_lv",
+            "m_jlv",
+            "m_bb",
+            "m_wbb",
+            "m_wwbb",
+        ]
 
-    # Specify the file path
-    file_path = os.path.join(data_input_dir, "headers.csv")
+        # Specify the file path
+        file_path = os.path.join(data_input_dir, "headers.csv")
 
-    with open(file_path, "w", newline="") as file:
-        csv_writer = csv.writer(file)
-        csv_writer.writerow(features)
+        with open(file_path, "w", newline="") as file:
+            csv_writer = csv.writer(file)
+            csv_writer.writerow(features)
 
-    print(f"features written to {file_path}")
+        print(f"features written to {file_path}")
 
-    # Split the data
-    split_higgs(
-        input_data_path=os.path.join(data_input_dir, "higgs.csv"),
-        input_header_path=os.path.join(data_input_dir, "headers.csv"),
-        output_dir=data_output_dir,
-        site_num=n_clients,
-        sample_rate=0.3,
-    )
+        # Split the data
+        split_higgs(
+            input_data_path=os.path.join(data_input_dir, "higgs.csv"),
+            input_header_path=os.path.join(data_input_dir, "headers.csv"),
+            output_dir=data_output_dir,
+            site_num=n_clients,
+            sample_rate=0.3,
+        )
 
     # Create the federated learning job
     job = FedJob(name="kmeans")
@@ -113,7 +116,7 @@ if __name__ == "__main__":
     # ScatterAndGather also expects an "aggregator" which we define here.
     # The actual aggregation function is defined by an "assembler" to specify how to handle the collected updates.
     # We use KMeansAssembler which is the assembler designed for k-Means algorithm.
-    aggregator = CollectAndAssembleAggregator(assembler_id=KMeansAssembler())
+    aggregator = CollectAndAssembleAggregator(assembler_id=job.as_id(KMeansAssembler()))
 
     # For kmeans with sklean, we need a custom persistor
     # JoblibModelParamPersistor is a persistor which save/read the model to/from file with JobLib format.
@@ -123,9 +126,9 @@ if __name__ == "__main__":
         min_clients=n_clients,
         num_rounds=num_rounds,
         wait_time_after_min_received=0,
-        aggregator_id=aggregator,
-        persistor_id=persistor,
-        shareable_generator_id=FullModelShareableGenerator(),
+        aggregator_id=job.as_id(aggregator),
+        persistor_id=job.as_id(persistor),
+        shareable_generator_id=job.as_id(FullModelShareableGenerator()),
         train_task_name="train",  # Client will start training once received such task.
         train_timeout=0,
     )

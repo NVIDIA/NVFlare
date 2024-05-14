@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import gc
-from typing import Any, Union
+from typing import Any
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, OperatorMethod, Task, TaskOperatorKey
@@ -47,9 +47,9 @@ class ScatterAndGather(Controller):
         num_rounds: int = 5,
         start_round: int = 0,
         wait_time_after_min_received: int = 10,
-        aggregator_id: Union[str, Aggregator] = AppConstants.DEFAULT_AGGREGATOR_ID,
-        persistor_id: Union[str, LearnablePersistor] = "",
-        shareable_generator_id: Union[str, ShareableGenerator] = AppConstants.DEFAULT_SHAREABLE_GENERATOR_ID,
+        aggregator_id=AppConstants.DEFAULT_AGGREGATOR_ID,
+        persistor_id="",
+        shareable_generator_id=AppConstants.DEFAULT_SHAREABLE_GENERATOR_ID,
         train_task_name=AppConstants.TASK_TRAIN,
         train_timeout: int = 0,
         ignore_result_error: bool = False,
@@ -74,9 +74,9 @@ class ScatterAndGather(Controller):
             start_round (int, optional): Start round for training. Defaults to 0.
             wait_time_after_min_received (int, optional): Time to wait before beginning aggregation after
                 minimum number of clients responses has been received. Defaults to 10.
-            aggregator_id (str, optional): ID of the aggregator component. Defaults to "aggregator". Can be an Aggregator object.
-            persistor_id (str, optional): ID of the persistor component. Defaults to "persistor". Can be a LearnablePersistor object.
-            shareable_generator_id (str, optional): ID of the shareable generator. Defaults to "shareable_generator". Can be a ShareableGenerator object.
+            aggregator_id (str, optional): ID of the aggregator component. Defaults to "aggregator".
+            persistor_id (str, optional): ID of the persistor component. Defaults to "persistor".
+            shareable_generator_id (str, optional): ID of the shareable generator. Defaults to "shareable_generator".
             train_task_name (str, optional): Name of the train task. Defaults to "train".
             train_timeout (int, optional): Time to wait for clients to do local training.
             ignore_result_error (bool, optional): whether this controller can proceed if client result has errors.
@@ -109,6 +109,12 @@ class ScatterAndGather(Controller):
         _check_non_neg_int(persist_every_n_rounds, "persist_every_n_rounds")
         _check_non_neg_int(snapshot_every_n_rounds, "snapshot_every_n_rounds")
 
+        if not isinstance(aggregator_id, str):
+            raise TypeError("aggregator_id must be a string but got {}".format(type(aggregator_id)))
+        if not isinstance(persistor_id, str):
+            raise TypeError("persistor_id must be a string but got {}".format(type(persistor_id)))
+        if not isinstance(shareable_generator_id, str):
+            raise TypeError("shareable_generator_id must be a string but got {}".format(type(shareable_generator_id)))
         if not isinstance(train_task_name, str):
             raise TypeError("train_task_name must be a string but got {}".format(type(train_task_name)))
 

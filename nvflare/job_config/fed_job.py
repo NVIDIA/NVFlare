@@ -12,23 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, List
+import re
+import uuid
+from typing import Any, List, Union
 
 from nvflare.apis.executor import Executor
 from nvflare.apis.filter import Filter
 from nvflare.apis.impl.controller import Controller
-from nvflare.app_common.abstract.aggregator import Aggregator
-from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
-from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
-from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
+from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
-from nvflare.app_common.widgets.metric_relay import MetricRelay
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 from nvflare.app_opt.misc.script_executor import ScriptExecutor
 from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
-from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.import_utils import optional_import
-from nvflare.fuel.utils.pipe.file_pipe import FilePipe
 from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig, ServerAppConfig
 from nvflare.job_config.fed_job_config import FedJobConfig
 
@@ -66,7 +62,7 @@ class FedApp:
     def add_component(self, component, id=None):
         if id is None:
             id = "component"
-        self.app.add_component(self._check_id(id), component)
+        self.app.add_component(self._gen_tracked_id(id), component)
 
     def create_pt_persistor(self, model: nn.Module):
         component = PTFileModelPersistor(model=model)
@@ -75,16 +71,23 @@ class FedApp:
         component = PTFileModelLocator(pt_persistor_id="persistor")
         self.app.add_component("model_locator", component)
 
-    def _check_id(self, id: str = "") -> str:
+    def _generate_id(self, id: str = "") -> str:
         if id not in self._used_ids:
-            self._used_ids.append(id)
+            return id
         else:
-            cnt = 0
-            _id = f"{id}_{cnt}"
-            while _id in self._used_ids:
-                cnt += 1
-            id = f"{id}_{cnt}"
-            self._used_ids.append(id)
+            while id in self._used_ids:
+                # increase integer counts in id
+                cnt = re.search(r"\d+", id)
+                if cnt:
+                    cnt = cnt.group()
+                    id = id.replace(cnt, str(int(cnt) + 1))
+                else:
+                    id = id + "1"
+        return id
+
+    def _gen_tracked_id(self, id: str = "") -> str:
+        id = self._generate_id(id)
+        self._used_ids.append(id)
         return id
 
 
@@ -110,12 +113,21 @@ class FedJob:
         self._deploy_map = {}
         self._deployed = False
         self._gpus = {}
+        self._components = {}
 
     def to(
-        self, obj: Any, target: str, tasks: List[str] = None, gpu: int = None, filter_type: FilterType = None, id=None
+        self, obj: Any, target: str, tasks: List[str] = None, gpu: Union[int, List[int]] = None, filter_type: FilterType= None, id=None
     ):
         """assign an `obj` to a target (server or clients).
-        The obj will be given a default `id` if non is provided based on its type.
+
+        Args:
+            obj: The object to be assigned. The obj will be given a default `id` if non is provided based on its type.
+            target: The target location of th object. Can be "server" or a client name, e.g. "site-1".
+            tasks: In case object is an `Executor`, optional list of tasks the executor should handle.
+                Defaults to `None`. If `None`, all tasks will be handled using `[*]`.
+            gpu: GPU index or list of GPU indices used for simulating the run on that target.
+            filter_type: The type of filter used. Either `FilterType.TASK_RESULT` or `FilterType.TASK_DATA`.
+            id: Optional user-defined id for the object. Defaults to `None` and ID will automatically be assigned.
 
         Returns:
 
@@ -126,17 +138,17 @@ class FedJob:
             self._deploy_map[target].add_controller(obj, id)
         elif isinstance(obj, Executor):
             if target not in self._deploy_map:
-                if isinstance(obj, ScriptExecutor):
-                    external_scripts = [obj._task_script_path]
-                else:
-                    external_scripts = None
-                self._deploy_map[target] = ExecutorApp(external_scripts=external_scripts)
+                self._deploy_map[target] = ExecutorApp()
+            if isinstance(obj, ScriptExecutor):
+                external_scripts = [obj._task_script_path]
+                self._deploy_map[target].add_external_scripts(external_scripts)
+            if target not in self.clients:
                 self.clients.append(target)
-                if gpu is not None:
-                    if target not in self._gpus:  # GPU can only be selected once per client.
-                        self._gpus[target] = str(gpu)
-                    else:
-                        print(f"{target} already set to use GPU {self._gpus[target]}. Ignoring gpu={gpu}.")
+            if gpu is not None:
+                if target not in self._gpus:  # GPU can only be selected once per client.
+                    self._gpus[target] = str(gpu)
+                else:
+                    print(f"{target} already set to use GPU {self._gpus[target]}. Ignoring gpu={gpu}.")
             self._deploy_map[target].add_executor(obj, tasks=tasks)
         else:  # handle objects that are not Controller or Executor type
             if target not in self._deploy_map:
@@ -151,20 +163,35 @@ class FedJob:
                     self._deploy_map[target].add_task_data_filter(tasks, obj)
                 else:
                     raise ValueError(
-                        f"Provided a filter for {target} without specifying valid `filter_type`. Select from `FilterType.TASK_RESULT` or `FilterType.TASK_DATA`."
+                        f"Provided a filter for {target} without specifying a valid `filter_type`. "
+                        f"Select from `FilterType.TASK_RESULT` or `FilterType.TASK_DATA`."
                     )
-            # handle built-in types and set ids
-            elif isinstance(obj, Aggregator):
-                self._deploy_map[target].add_component(obj, "aggregator" if id is None else id)
-            elif isinstance(obj, LearnablePersistor):
-                self._deploy_map[target].add_component(obj, "persistor" if id is None else id)
-            elif isinstance(obj, ShareableGenerator):
-                self._deploy_map[target].add_component(obj, "shareable_generator" if id is None else id)
             # else assume a model is being set
             else:  # TODO: handle other persistors
                 if torch_ok:
                     if isinstance(obj, nn.Module):  # if model, create a PT persistor
                         self._deploy_map[target].create_pt_persistor(obj)
+
+        # add any other components the object might have referenced via id
+        self._add_referenced_components(obj, target)
+
+    def as_id(self, obj: Any):
+        id = str(uuid.uuid4())
+        self._components[id] = obj
+        return id
+
+    def _add_referenced_components(self, base_component, target):
+        """Adds any other components the object might have referenced via id"""
+        # Check all arguments for ids referenced with .as_id()
+        for (
+            base_arg,
+            base_id,
+        ) in base_component.__dict__.items():  # TODO: does this always to get arguments? Might need to check type.
+            if isinstance(base_id, str):  # could be id
+                if base_id in self._components:
+                    self._deploy_map[target].add_component(self._components[base_id], base_id)
+                    # add any components reverenced by this component
+                    self._add_referenced_components(self._components[base_id], target)
 
     def _deploy(self, app: FedApp, target: str):
         if not isinstance(app, FedApp):
@@ -213,14 +240,9 @@ class FedJob:
 
 
 class ExecutorApp(FedApp):
-    def __init__(self, external_scripts: List = None):
-        """Wrapper around `ClientAppConfig`.
-
-        Args:
-            external_scripts: List of external scripts that need to be deployed to the client. Defaults to None.
-        """
+    def __init__(self):
+        """Wrapper around `ClientAppConfig`."""
         super().__init__()
-        self.external_scripts = external_scripts
         self._create_client_app()
 
     def add_executor(self, executor, tasks=None):
@@ -231,21 +253,17 @@ class ExecutorApp(FedApp):
     def _create_client_app(self):
         self.app = ClientAppConfig()
 
-        component = FilePipe(  # TODO: support CellPipe, causes type error for passing secure_mode = "{SECURE_MODE}"
-            mode=Mode.PASSIVE,
-            root_path="{WORKSPACE}/{JOB_ID}/{SITE_NAME}",
-        )
-        self.app.add_component("metrics_pipe", component)
+        component = ConvertToFedEvent(events_to_convert=["analytix_log_stats"], fed_event_prefix="fed.")
+        self.app.add_component("event_to_fed", component)
 
-        component = MetricRelay(pipe_id="metrics_pipe", event_type="fed.analytix_log_stats", read_interval=0.1)
-        self.app.add_component("metric_relay", component)
+    def add_external_scripts(self, external_scripts: List):
+        """Register external scripts to the client app to include them in custom directory.
 
-        component = ExternalConfigurator(component_ids=["metric_relay"])
-        self.app.add_component("config_preparer", component)
-
-        if self.external_scripts is not None:
-            for _script in self.external_scripts:
-                self.app.add_ext_script(_script)
+        Args:
+            external_scripts: List of external scripts that need to be deployed to the client. Defaults to None.
+        """
+        for _script in external_scripts:
+            self.app.add_ext_script(_script)
 
 
 class ControllerApp(FedApp):
@@ -262,7 +280,7 @@ class ControllerApp(FedApp):
     def add_controller(self, controller, id=None):
         if id is None:
             id = "controller"
-        self.app.add_workflow(self._check_id(id), controller)
+        self.app.add_workflow(self._gen_tracked_id(id), controller)
 
     def _create_server_app(self):
         self.app: ServerAppConfig = ServerAppConfig()
@@ -275,5 +293,6 @@ class ControllerApp(FedApp):
             self.app.add_component("model_selector", component)
 
         # TODO: make different tracking receivers configurable
-        component = TBAnalyticsReceiver(events=["fed.analytix_log_stats"])
-        self.app.add_component("receiver", component)
+        if torch_ok:
+            component = TBAnalyticsReceiver(events=["fed.analytix_log_stats"])
+            self.app.add_component("receiver", component)
