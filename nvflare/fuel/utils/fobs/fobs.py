@@ -18,6 +18,7 @@ import os
 import sys
 from enum import Enum
 from os.path import dirname, join
+from types import NoneType
 from typing import Any, BinaryIO, Dict, Type, TypeVar, Union
 
 import msgpack
@@ -43,63 +44,29 @@ from nvflare.security.logging import secure_format_exception
 
 FOBS_TYPE = "__fobs_type__"
 FOBS_DATA = "__fobs_data__"
+FOBS_DECOMPOSER = "__fobs_dc__"
+
 MAX_CONTENT_LEN = 128
-MSGPACK_TYPES = (None, bool, int, float, str, bytes, bytearray, memoryview, list, dict)
+MSGPACK_TYPES = (NoneType, bool, int, float, str, bytes, bytearray, memoryview, list, dict)
 T = TypeVar("T")
 
 log = logging.getLogger(__name__)
 _decomposers: Dict[str, Decomposer] = {}
 _decomposers_registered = False
-_enum_auto_register = True
+# If this is enabled, FOBS will try to register generic decomposers automatically
+_enum_auto_registration = True
+_data_auto_registration = True
 
 
-class Packer:
-    def __init__(self, manager: DatumManager):
-        self.manager = manager
+def _get_type_name(cls: Type) -> str:
+    module = cls.__module__
+    if module == "builtins":
+        return cls.__qualname__
+    return module + "." + cls.__qualname__
 
-    def pack(self, obj: Any) -> dict:
 
-        if type(obj) in MSGPACK_TYPES:
-            return obj
-
-        type_name = _get_type_name(obj.__class__)
-        if type_name not in _decomposers:
-            if _enum_auto_register and isinstance(obj, Enum):
-                register_enum_types(type(obj))
-            else:
-                return obj
-
-        decomposed = _decomposers[type_name].decompose(obj, self.manager)
-        if self.manager:
-            decomposed = self.manager.externalize(decomposed)
-
-        return {FOBS_TYPE: type_name, FOBS_DATA: decomposed}
-
-    def unpack(self, obj: Any) -> Any:
-
-        if type(obj) is not dict or FOBS_TYPE not in obj:
-            return obj
-
-        type_name = obj[FOBS_TYPE]
-        if type_name not in _decomposers:
-            error = True
-            if _enum_auto_register:
-                cls = self._load_class(type_name)
-                if issubclass(cls, Enum):
-                    register_enum_types(cls)
-                    error = False
-            if error:
-                raise TypeError(f"Unknown type {type_name}, caused by mismatching decomposers")
-
-        data = obj[FOBS_DATA]
-        if self.manager:
-            data = self.manager.internalize(data)
-
-        decomposer = _decomposers[type_name]
-        return decomposer.recompose(data, self.manager)
-
-    @staticmethod
-    def _load_class(type_name: str):
+def _load_class(type_name: str):
+    try:
         parts = type_name.split(".")
         if len(parts) == 1:
             parts = ["builtins", type_name]
@@ -109,13 +76,8 @@ class Packer:
             mod = getattr(mod, comp)
 
         return mod
-
-
-def _get_type_name(cls: Type) -> str:
-    module = cls.__module__
-    if module == "builtins":
-        return cls.__qualname__
-    return module + "." + cls.__qualname__
+    except Exception as ex:
+        raise TypeError(f"Can't load class {type_name}: {ex}")
 
 
 def register(decomposer: Union[Decomposer, Type[Decomposer]]) -> None:
@@ -141,6 +103,80 @@ def register(decomposer: Union[Decomposer, Type[Decomposer]]) -> None:
         return
 
     _decomposers[name] = instance
+
+
+class Packer:
+    def __init__(self, manager: DatumManager):
+        self.manager = manager
+        self.enum_decomposer_name = _get_type_name(EnumTypeDecomposer)
+        self.data_decomposer_name = _get_type_name(DataClassDecomposer)
+
+    def pack(self, obj: Any) -> dict:
+
+        if type(obj) in MSGPACK_TYPES:
+            return obj
+
+        type_name = _get_type_name(obj.__class__)
+        if type_name not in _decomposers:
+            registered = False
+            if isinstance(obj, Enum):
+                if _enum_auto_registration:
+                    register_enum_types(type(obj))
+                    registered = True
+            else:
+                if callable(obj) or (not hasattr(obj, "__dict__")):
+                    raise TypeError(f"{type(obj)} can't be serialized by FOBS without a decomposer")
+                if _data_auto_registration:
+                    register_data_classes(type(obj))
+                    registered = True
+
+            if not registered:
+                return obj
+
+        decomposer = _decomposers[type_name]
+
+        decomposed = decomposer.decompose(obj, self.manager)
+        if self.manager:
+            decomposed = self.manager.externalize(decomposed)
+
+        return {FOBS_TYPE: type_name, FOBS_DATA: decomposed, FOBS_DECOMPOSER: _get_type_name(type(decomposer))}
+
+    def unpack(self, obj: Any) -> Any:
+
+        if type(obj) is not dict or FOBS_TYPE not in obj:
+            return obj
+
+        type_name = obj[FOBS_TYPE]
+        if type_name not in _decomposers:
+            registered = False
+            decomposer_name = obj.get(FOBS_DECOMPOSER)
+            cls = _load_class(type_name)
+            if not decomposer_name:
+                # Maintaining backward compatibility with auto enum registration
+                if _enum_auto_registration:
+                    if issubclass(cls, Enum):
+                        register_enum_types(cls)
+                        registered = True
+            else:
+                decomposer_class = _load_class(decomposer_name)
+                if decomposer_name == self.enum_decomposer_name or decomposer_name == self.data_decomposer_name:
+                    # Generic decomposer's __init__ takes the target class as argument
+                    decomposer = decomposer_class(cls)
+                else:
+                    decomposer = decomposer_class()
+
+                register(decomposer)
+                registered = True
+
+            if not registered:
+                raise TypeError(f"Type {type_name} has no decomposer registered")
+
+        data = obj[FOBS_DATA]
+        if self.manager:
+            data = self.manager.internalize(data)
+
+        decomposer = _decomposers[type_name]
+        return decomposer.recompose(data, self.manager)
 
 
 def register_data_classes(*data_classes: Type[T]) -> None:
@@ -170,14 +206,25 @@ def register_enum_types(*enum_types: Type[Enum]) -> None:
 
 
 def auto_register_enum_types(enabled=True) -> None:
-    """Enable or disable auto registering of enum classes
+    """Enable or disable auto registering of enum types
 
     Args:
         enabled: Auto-registering of enum classes is enabled if True
     """
-    global _enum_auto_register
+    global _enum_auto_registration
 
-    _enum_auto_register = enabled
+    _enum_auto_registration = enabled
+
+
+def auto_register_data_classes(enabled=True) -> None:
+    """Enable or disable auto registering of data classes
+
+    Args:
+        enabled: Auto-registering of data classes is enabled if True
+    """
+    global _data_auto_registration
+
+    _enum_data_registration = enabled
 
 
 def register_folder(folder: str, package: str):
@@ -317,7 +364,6 @@ def deserialize_stream(stream: BinaryIO, manager: DatumManager = None, **kwargs)
 
 def reset():
     """Reset FOBS to initial state. Used for unit test"""
-    # global _decomposers, _decomposers_registered
-    # _decomposers.clear()
-    # _decomposers_registered = False
-    pass
+    global _decomposers, _decomposers_registered
+    _decomposers.clear()
+    _decomposers_registered = False
