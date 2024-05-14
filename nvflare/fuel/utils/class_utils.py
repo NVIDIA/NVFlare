@@ -149,6 +149,14 @@ def _retrieve_parameters(class__, parameters):
 
 
 def get_component_init_parameters(component):
+    """To retrieve the initialize parameters of an object from the class constructor.
+
+    Args:
+        component: a class instance
+
+    Returns:
+
+    """
     class__ = component.__class__
     parameters = {}
     _retrieve_parameters(class__, parameters)
