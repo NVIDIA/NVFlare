@@ -21,6 +21,7 @@ from tempfile import TemporaryDirectory
 from typing import Dict
 
 from nvflare import SimulatorRunner
+from nvflare.fuel.utils.class_utils import get_component_init_parameters
 from nvflare.job_config.fed_app_config import FedAppConfig
 from nvflare.private.fed.app.fl_conf import FL_PACKAGES
 
@@ -260,7 +261,7 @@ class FedJobConfig:
             )
 
     def _get_args(self, component, custom_dir):
-        parameters = self._get_init_parameters(component)
+        parameters = get_component_init_parameters(component)
         attrs = component.__dict__
         args = {}
 
@@ -282,21 +283,6 @@ class FedJobConfig:
                     }
 
         return args
-
-    def _get_init_parameters(self, component):
-        class__ = component.__class__
-        parameters = {}
-        self._retrieve_parameters(class__, parameters)
-        return parameters
-
-    def _retrieve_parameters(self, class__, parameters):
-        constructor = class__.__init__
-        constructor__parameters = inspect.signature(constructor).parameters
-        parameters.update(constructor__parameters)
-        if "args" in constructor__parameters.keys() and "kwargs" in constructor__parameters.keys():
-            for item in class__.__bases__:
-                parameters.update(self._retrieve_parameters(item, parameters))
-        return parameters
 
     def _get_filters(self, filters, custom_dir):
         r = []
