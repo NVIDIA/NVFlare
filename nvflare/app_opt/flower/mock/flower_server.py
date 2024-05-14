@@ -14,9 +14,7 @@
 
 import argparse
 import logging
-import os
 
-from nvflare.app_opt.flower.defs import Constant
 from nvflare.app_opt.flower.grpc_server import GrpcServer
 from nvflare.app_opt.flower.mock.echo_servicer import EchoServicer
 
@@ -27,17 +25,16 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--max_workers", "-w", type=int, help="max number of workers", required=False, default=20)
-
+    parser.add_argument("--addr", "-a", type=str, help="server address", required=True)
+    parser.add_argument("--num_rounds", "-n", type=int, help="number of rounds", required=True)
     args = parser.parse_args()
 
-    env = os.environ
-    addr = env.get(Constant.APP_CTX_SERVER_ADDR)
-    if not addr:
-        raise RuntimeError(f"missing {Constant.APP_CTX_SERVER_ADDR} in env")
+    if not args.addr:
+        raise RuntimeError("missing server address '--addr/-a' in command")
 
-    print(f"starting server at {addr} max_workers={args.max_workers}")
+    print(f"starting server: {args.addr=} {args.max_workers=} {args.num_rounds=}")
     server = GrpcServer(
-        addr,
+        args.addr,
         max_workers=args.max_workers,
         grpc_options=None,
         servicer=EchoServicer(),

@@ -15,7 +15,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.tie.cli_applet import CLIApplet
 from nvflare.app_common.tie.executor import TieExecutor
 from nvflare.app_opt.flower.connectors.grpc_client_connector import GrpcClientConnector
-from nvflare.fuel.utils.validation_utils import check_object_type, check_str
 
 from .defs import Constant
 
@@ -23,8 +22,6 @@ from .defs import Constant
 class FlowerExecutor(TieExecutor):
     def __init__(
         self,
-        cli_cmd: str,
-        cli_env=None,
         start_task_name=Constant.START_TASK_NAME,
         configure_task_name=Constant.CONFIG_TASK_NAME,
         per_msg_timeout=10.0,
@@ -36,12 +33,6 @@ class FlowerExecutor(TieExecutor):
             configure_task_name=configure_task_name,
         )
 
-        check_str("cli_cmd", cli_cmd)
-        if cli_env:
-            check_object_type("cli_env", cli_env, dict)
-
-        self.cli_cmd = cli_cmd
-        self.cli_env = cli_env
         self.int_server_grpc_options = None
         self.per_msg_timeout = per_msg_timeout
         self.tx_timeout = tx_timeout
@@ -61,7 +52,4 @@ class FlowerExecutor(TieExecutor):
         self.num_rounds = config.get(Constant.CONF_KEY_NUM_ROUNDS)
 
     def get_connector_config(self, fl_ctx: FLContext) -> dict:
-        config = {Constant.CONF_KEY_NUM_ROUNDS: self.num_rounds, Constant.CONF_KEY_CLI_CMD: self.cli_cmd}
-        if self.cli_env:
-            config[Constant.CONF_KEY_CLI_ENV] = self.cli_env
-        return config
+        return {Constant.CONF_KEY_NUM_ROUNDS: self.num_rounds}

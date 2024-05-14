@@ -12,43 +12,48 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
+import logging
 import os
 import time
 
 import nvflare.app_opt.flower.proto.fleet_pb2 as pb2
-from nvflare.app_opt.flower.defs import Constant
 from nvflare.app_opt.flower.grpc_client import GrpcClient
 
 
 def main():
-    env = os.environ
-    addr = env.get(Constant.APP_CTX_SERVER_ADDR)
-    if not addr:
-        raise RuntimeError(f"missing {Constant.APP_CTX_SERVER_ADDR} in env")
+    logging.basicConfig()
+    logging.getLogger().setLevel(logging.INFO)
 
-    num_rounds = env.get(Constant.APP_CTX_NUM_ROUNDS)
-    if not num_rounds:
-        raise RuntimeError(f"missing {Constant.APP_CTX_NUM_ROUNDS} in env")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--addr", "-a", type=str, help="server address", required=True)
+    parser.add_argument("--client_name", "-c", type=str, help="client name", required=True)
+    parser.add_argument("--num_rounds", "-n", type=int, help="number of rounds", required=True)
+    args = parser.parse_args()
 
-    client_name = env.get(Constant.APP_CTX_CLIENT_NAME)
+    if not args.addr:
+        raise RuntimeError("missing server address '--addr/-a' in command")
 
-    num_rounds = int(num_rounds)
+    if not args.num_rounds:
+        raise RuntimeError("missing num rounds '--num_rounds/-n' in command")
 
-    print(f"starting client {client_name} to connect to server at {addr}")
+    if args.num_rounds <= 0:
+        raise RuntimeError("bad num rounds '--num_rounds/-n' in command: must be > 0")
 
-    client = GrpcClient(server_addr=addr)
+    print(f"starting client {args.client_name} to connect to server at {args.addr}")
+    client = GrpcClient(server_addr=args.addr)
     client.start()
 
     total_time = 0
     total_reqs = 0
-    for i in range(num_rounds):
+    for i in range(args.num_rounds):
         print(f"Test round {i}")
         data = os.urandom(10)
 
         headers = {
             "target": "server",
             "round": str(i),
-            "origin": client_name,
+            "origin": args.client_name,
         }
         req = pb2.MessageContainer(
             grpc_message_name="abc",

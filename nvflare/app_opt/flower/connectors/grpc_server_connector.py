@@ -37,8 +37,7 @@ class GrpcServerConnector(FlowerServerConnector):
         app_ctx = {
             Constant.APP_CTX_SERVER_ADDR: addr,
             Constant.APP_CTX_PORT: port,
-            Constant.APP_CTX_CLI_CMD: self.cli_cmd,
-            Constant.APP_CTX_CLI_ENV: self.cli_env,
+            Constant.APP_CTX_NUM_ROUNDS: self.num_rounds,
         }
         self.start_applet(app_ctx, fl_ctx)
 
@@ -81,6 +80,21 @@ class GrpcServerConnector(FlowerServerConnector):
         self._stop_server()
 
     def send_request_to_flower(self, request: Shareable, fl_ctx: FLContext) -> Shareable:
+        """Send the request received from FL client to Flower server.
+
+        This is done by:
+        1. convert the request to Flower-defined MessageContainer object
+        2. Send the MessageContainer object to Flower server via the internal GRPC client (LGC)
+        3. Convert the reply MessageContainer object received from the Flower server to Shareable
+        4. Return the reply Shareable object
+
+        Args:
+            request: the request received from FL client
+            fl_ctx: FL context
+
+        Returns: response from Flower server converted to Shareable
+
+        """
         result = self.internal_grpc_client.send_request(shareable_to_msg_container(request))
 
         if isinstance(result, pb2.MessageContainer):

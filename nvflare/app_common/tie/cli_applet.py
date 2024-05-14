@@ -14,6 +14,7 @@
 import os
 import shlex
 import subprocess
+from abc import ABC, abstractmethod
 
 from nvflare.security.logging import secure_format_exception
 
@@ -21,35 +22,39 @@ from .applet import Applet
 from .defs import Constant
 
 
-class CLIApplet(Applet):
+class CLIApplet(Applet, ABC):
     def __init__(self):
         Applet.__init__(self)
         self._process = None
         self._start_error = False
 
+    @abstractmethod
+    def get_command(self, ctx: dict) -> (str, str, dict):
+        """Subclass must implement this method to return the CLI command to be executed.
+
+        Args:
+            ctx: the applet context that contains execution env info
+
+        Returns: a tuple of:
+            command (str) - the CLI command to be executed
+            current work dir - the current work dir for the command execution
+            env - additional env vars to be added to system's env for the command execution
+
+        """
+        pass
+
     def start(self, ctx: dict):
-        cli_cmd = ctx.get(Constant.APP_CTX_KEY_CLI_CMD)
+        cli_cmd, cli_cwd, cli_env = self.get_command(ctx)
         if not cli_cmd:
-            raise RuntimeError(f"missing {Constant.APP_CTX_KEY_CLI_CMD} from app context")
-
-        cli_cwd = ctx.get(Constant.APP_CTX_KEY_CLI_CWD)
-        cli_env = ctx.get(Constant.APP_CTX_KEY_CLI_ENV)
-
-        if not cli_env:
-            cli_env = {}
-
-        for k, v in ctx.items():
-            if k not in [Constant.APP_CTX_KEY_CLI_CWD, Constant.APP_CTX_KEY_CLI_CWD, Constant.APP_CTX_KEY_CLI_ENV]:
-                cli_env[k] = str(v)
+            raise RuntimeError("failed to get cli command from app context")
 
         env = os.environ.copy()
         if cli_env:
             if not isinstance(cli_env, dict):
-                raise RuntimeError(f"expect {Constant.APP_CTX_KEY_CLI_ENV} to be dict but got {type(cli_env)}")
+                raise RuntimeError(f"expect cli env to be dict but got {type(cli_env)}")
             env.update(cli_env)
 
         command_seq = shlex.split(cli_cmd)
-
         try:
             self._process = subprocess.Popen(
                 command_seq,

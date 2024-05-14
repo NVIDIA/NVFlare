@@ -42,7 +42,6 @@ class GrpcClientConnector(FlowerClientConnector, NvFlowerServicer):
 
     def _start_client(self, server_addr: str, fl_ctx: FLContext):
         app_ctx = {
-            Constant.APP_CTX_CLI_CMD: self.cli_cmd,
             Constant.APP_CTX_CLIENT_NAME: self._client_name,
             Constant.APP_CTX_SERVER_ADDR: server_addr,
             Constant.APP_CTX_NUM_ROUNDS: self.num_rounds,
@@ -99,6 +98,19 @@ class GrpcClientConnector(FlowerClientConnector, NvFlowerServicer):
             self.system_panic(reason, fl_ctx)
 
     def SendReceive(self, request: pb2.MessageContainer, context):
+        """Process request received from a Flower client.
+        This implements the SendReceive method required by Flower gRPC server (LGS on FLARE Client).
+        1. convert the request to a Shareable object.
+        2. send the Shareable request to FLARE server.
+        3. convert the
+
+        Args:
+            request: the request received from the Flower client
+            context: gRPC context
+
+        Returns: the reply MessageContainer object
+
+        """
         try:
             reply = self._send_flower_request(msg_container_to_shareable(request))
             return shareable_to_msg_container(reply)

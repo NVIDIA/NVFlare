@@ -13,28 +13,13 @@
 # limitations under the License.
 from abc import abstractmethod
 
-from nvflare.apis.fl_constant import FLContextKey, SystemVarName
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable
 from nvflare.apis.signal import Signal
-from nvflare.apis.workspace import Workspace
 from nvflare.app_common.tie.connector import Connector
 from nvflare.app_common.tie.connector import Constant as TieConstant
 from nvflare.app_opt.flower.defs import Constant
-from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_int, check_str
-
-
-def resolve_vars(cli_cmd: str, fl_ctx: FLContext) -> str:
-    workspace_obj = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-    assert isinstance(workspace_obj, Workspace)
-    job_id = fl_ctx.get_job_id()
-    sys_vars = {
-        SystemVarName.JOB_ID: job_id,
-        SystemVarName.SITE_NAME: fl_ctx.get_identity_name(),
-        SystemVarName.WORKSPACE: workspace_obj.get_root_dir(),
-        SystemVarName.JOB_CUSTOM_DIR: workspace_obj.get_app_custom_dir(job_id),
-    }
-    return cli_cmd.format(**sys_vars)
+from nvflare.fuel.utils.validation_utils import check_positive_int
 
 
 class FlowerServerConnector(Connector):
@@ -44,8 +29,7 @@ class FlowerServerConnector(Connector):
 
     def __init__(self):
         Connector.__init__(self, TieConstant.APPLET_ENV_SELF)
-        self.cli_cmd = None
-        self.cli_env = None
+        self.num_rounds = None
 
     def configure(self, config: dict, fl_ctx: FLContext):
         """Called by Flower Controller to configure the site.
@@ -57,24 +41,39 @@ class FlowerServerConnector(Connector):
         Returns: None
 
         """
-        cli_cmd = config.get(Constant.CONF_KEY_CLI_CMD)
-        if not cli_cmd:
-            raise RuntimeError(f"{Constant.CONF_KEY_CLI_CMD} is not configured")
+        num_rounds = config.get(Constant.CONF_KEY_NUM_ROUNDS)
+        if num_rounds is None:
+            raise RuntimeError("num_rounds is not configured")
 
-        cli_env = config.get(Constant.CONF_KEY_CLI_ENV)
-        if cli_env:
-            check_object_type(Constant.CONF_KEY_CLI_ENV, cli_env, dict)
-        self.cli_env = cli_env
-
-        check_str(Constant.CONF_KEY_CLI_CMD, cli_cmd)
-        self.cli_cmd = resolve_vars(cli_cmd, fl_ctx)
-        self.log_info(fl_ctx, f"Configured CLI command: {self.cli_cmd}")
+        check_positive_int(Constant.CONF_KEY_NUM_ROUNDS, num_rounds)
+        self.num_rounds = num_rounds
 
     @abstractmethod
     def send_request_to_flower(self, request: Shareable, fl_ctx: FLContext) -> Shareable:
+        """Send request to the Flower server.
+        Subclass must implement this method to send this request to the Flower server.
+
+        Args:
+            request: the request received from FL client
+            fl_ctx: the FL context
+
+        Returns: reply from the Flower server converted to Shareable
+
+        """
         pass
 
     def process_app_request(self, op: str, request: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+        """This method is called by the FL Server when the request is received from a FL client.
+
+        Args:
+            op: the op code of the request.
+            request: the request received from FL client
+            fl_ctx: FL context
+            abort_signal: abort signal that could be triggered during the process
+
+        Returns: response from the Flower server converted to Shareable
+
+        """
         stopped, ec = self._is_stopped()
         if stopped:
             raise RuntimeError(f"dropped request '{op}' since connector is already stopped {ec=}")
@@ -90,14 +89,17 @@ class FlowerClientConnector(Connector):
     """
 
     def __init__(self, per_msg_timeout, tx_timeout):
-        """Constructor of XGBClientAdaptor"""
+        """Constructor of FlowerClientConnector
+
+        Args:
+            per_msg_timeout: per-msg timeout to be used when sending request to server via ReliableMessage
+            tx_timeout: tx timeout to be used when sending request to server via ReliableMessage
+        """
         Connector.__init__(self, TieConstant.APPLET_ENV_SELF)
         self.per_msg_timeout = per_msg_timeout
         self.tx_timeout = tx_timeout
         self.stopped = False
         self.num_rounds = None
-        self.cli_env = None
-        self.cli_cmd = None
 
     def configure(self, config: dict, fl_ctx: FLContext):
         """Called by Flower Executor to configure the target.
@@ -109,19 +111,6 @@ class FlowerClientConnector(Connector):
         Returns: None
 
         """
-        cli_cmd = config.get(Constant.CONF_KEY_CLI_CMD)
-        if not cli_cmd:
-            raise RuntimeError(f"{Constant.CONF_KEY_CLI_CMD} is not configured")
-
-        cli_env = config.get(Constant.CONF_KEY_CLI_ENV)
-        if cli_env:
-            check_object_type(Constant.CONF_KEY_CLI_ENV, cli_env, dict)
-        self.cli_env = cli_env
-
-        check_str(Constant.CONF_KEY_CLI_CMD, cli_cmd)
-        self.cli_cmd = resolve_vars(cli_cmd, fl_ctx)
-        self.log_info(fl_ctx, f"Configured CLI command: {self.cli_cmd}")
-
         num_rounds = config.get(Constant.CONF_KEY_NUM_ROUNDS)
         if num_rounds is None:
             raise RuntimeError("num_rounds is not configured")
