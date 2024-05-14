@@ -175,9 +175,15 @@ class FedJob:
                     )
             # else assume a model is being set
             else:  # TODO: handle other persistors
+                added_model = False
+                # Check different models framework types and add corresponding persistor
                 if torch_ok:
                     if isinstance(obj, nn.Module):  # if model, create a PT persistor
                         self._deploy_map[target].create_pt_persistor(obj)
+                        added_model = True
+
+                if not added_model:  # if it wasn't a model, add as component
+                    self._deploy_map[target].add_component(obj, id)
 
         # add any other components the object might have referenced via id
         if self._components:
@@ -202,6 +208,8 @@ class FedJob:
                             self._deploy_map[target].add_component(self._components[base_id], base_id)
                             # add any components referenced by this component
                             self._add_referenced_components(self._components[base_id], target)
+                            # remove already added components from tracked components
+                            self._components.pop(base_id)
 
     def _deploy(self, app: FedApp, target: str):
         if not isinstance(app, FedApp):
