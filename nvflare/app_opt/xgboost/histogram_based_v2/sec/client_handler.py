@@ -14,15 +14,10 @@
 import os
 import time
 
-import tenseal as ts
-from tenseal.tensors.ckksvector import CKKSVector
-
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.app_opt.he import decomposers
-from nvflare.app_opt.he.homomorphic_encrypt import load_tenseal_context_from_workspace
 from nvflare.app_opt.xgboost.histogram_based_v2.aggr import Aggregator
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.mock_he.adder import Adder
@@ -45,6 +40,17 @@ from nvflare.app_opt.xgboost.histogram_based_v2.sec.processor_data_converter imp
 )
 from nvflare.app_opt.xgboost.histogram_based_v2.sec.sec_handler import SecurityHandler
 
+try:
+    import tenseal as ts
+    from tenseal.tensors.ckksvector import CKKSVector
+
+    from nvflare.app_opt.he import decomposers
+    from nvflare.app_opt.he.homomorphic_encrypt import load_tenseal_context_from_workspace
+
+    tenseal_imported = True
+except Exception:
+    tenseal_imported = False
+
 
 class ClientSecurityHandler(SecurityHandler):
     def __init__(self, key_length=1024, num_workers=10, tenseal_context_file="client_context.tenseal"):
@@ -66,7 +72,8 @@ class ClientSecurityHandler(SecurityHandler):
         self.tenseal_context_file = tenseal_context_file
         self.tenseal_context = None
 
-        decomposers.register()
+        if tenseal_imported:
+            decomposers.register()
 
     def _process_before_broadcast(self, fl_ctx: FLContext):
         root = fl_ctx.get_prop(Constant.PARAM_KEY_ROOT)
@@ -209,7 +216,9 @@ class ClientSecurityHandler(SecurityHandler):
 
     def _process_before_all_gather_v_horizontal(self, fl_ctx: FLContext):
         if not self.tenseal_context:
-            return self._abort("Horizontal secure XGBoost not supported due to missing context", fl_ctx)
+            return self._abort(
+                "Horizontal secure XGBoost not supported due to missing context or missing module", fl_ctx
+            )
 
         buffer = fl_ctx.get_prop(Constant.PARAM_KEY_SEND_BUF)
         histograms = self.data_converter.decode_histograms(buffer, fl_ctx)
@@ -240,13 +249,13 @@ class ClientSecurityHandler(SecurityHandler):
             fid, masks, num_bins = fm
             if not groups:
                 gid = 0
-                GH_list = self.aggregator.aggregate(self.clear_ghs, masks, num_bins, None)
-                aggr_result.append((fid, gid, GH_list))
+                gh_list = self.aggregator.aggregate(self.clear_ghs, masks, num_bins, None)
+                aggr_result.append((fid, gid, gh_list))
             else:
                 for grp in groups:
                     gid, sample_ids = grp
-                    GH_list = self.aggregator.aggregate(self.clear_ghs, masks, num_bins, sample_ids)
-                    aggr_result.append((fid, gid, GH_list))
+                    gh_list = self.aggregator.aggregate(self.clear_ghs, masks, num_bins, sample_ids)
+                    aggr_result.append((fid, gid, gh_list))
         self.info(fl_ctx, f"aggregated clear-text in {time.time()-t} secs")
         self.aggr_result = aggr_result
 
@@ -323,15 +332,15 @@ class ClientSecurityHandler(SecurityHandler):
 
             for a in rr:
                 fid, gid, combined_numbers = a
-                GH_list = []
+                gh_list = []
                 for n in combined_numbers:
-                    GH_list.append(split(n))
+                    gh_list.append(split(n))
                 grp_result = combined_result.get(gid)
                 if not grp_result:
                     grp_result = {}
                     combined_result[gid] = grp_result
-                grp_result[fid] = FeatureAggregationResult(fid, GH_list)
-                self.info(fl_ctx, f"aggr from rank {r}: {fid=} {gid=} bins={len(GH_list)}")
+                grp_result[fid] = FeatureAggregationResult(fid, gh_list)
+                self.info(fl_ctx, f"aggr from rank {r}: {fid=} {gid=} bins={len(gh_list)}")
 
         final_result = {}
         for gid, far in combined_result.items():
@@ -362,9 +371,12 @@ class ClientSecurityHandler(SecurityHandler):
             self.decrypter = Decrypter(self.private_key, self.num_workers)
             self.adder = Adder(self.num_workers)
             try:
-                self.tenseal_context = load_tenseal_context_from_workspace(self.tenseal_context_file, fl_ctx)
+                if tenseal_imported:
+                    self.tenseal_context = load_tenseal_context_from_workspace(self.tenseal_context_file, fl_ctx)
+                else:
+                    self.debug(fl_ctx, "Tenseal module not loaded, horizontal secure XGBoost is not supported")
             except Exception as ex:
-                self.info(fl_ctx, f"Can't load tenseal context, horizontal secure XGBoost is not supported: {ex}")
+                self.debug(fl_ctx, f"Can't load tenseal context, horizontal secure XGBoost is not supported: {ex}")
                 self.tenseal_context = None
         elif event_type == EventType.END_RUN:
             self.tenseal_context = None

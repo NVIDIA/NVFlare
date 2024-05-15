@@ -17,9 +17,15 @@ import threading
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.app_opt.he import decomposers
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.sec.sec_handler import SecurityHandler
+
+try:
+    from nvflare.app_opt.he import decomposers
+
+    tenseal_imported = True
+except Exception:
+    tenseal_imported = False
 
 
 class ServerSecurityHandler(SecurityHandler):
@@ -34,7 +40,8 @@ class ServerSecurityHandler(SecurityHandler):
         self.aggr_result_to_send = None
         self.aggr_result_lock = threading.Lock()
 
-        decomposers.register()
+        if tenseal_imported:
+            decomposers.register()
 
     def _process_before_broadcast(self, fl_ctx: FLContext):
         self.info(fl_ctx, "start")

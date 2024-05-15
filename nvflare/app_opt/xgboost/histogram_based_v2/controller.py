@@ -148,18 +148,15 @@ class XGBController(Controller):
         adaptor.initialize(fl_ctx)
         self.adaptor = adaptor
 
-        engine = fl_ctx.get_engine()
-        engine.register_aux_message_handler(
-            topic=Constant.TOPIC_CLIENT_DONE,
-            message_handle_func=self._process_client_done,
-        )
         ReliableMessage.register_request_handler(
             topic=Constant.TOPIC_XGB_REQUEST,
             handler_f=self._process_xgb_request,
+            fl_ctx=fl_ctx,
         )
         ReliableMessage.register_request_handler(
             topic=Constant.TOPIC_CLIENT_DONE,
             handler_f=self._process_client_done,
+            fl_ctx=fl_ctx,
         )
 
     def _trigger_stop(self, fl_ctx: FLContext, error=None):
