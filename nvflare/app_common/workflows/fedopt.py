@@ -12,11 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 import time
+from typing import Union
 
 import torch
-from net import Net
 
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.security.logging import secure_format_exception
@@ -28,8 +27,15 @@ class FedOpt(FedAvg):
     def __init__(
         self,
         *args,
-        optimizer_args: dict = {"lr": 1.0, "momentum": 0.6},
-        lr_scheduler_args: dict = None,
+        source_model: Union[str, torch.nn.Module] = "net",
+        optimizer_args: dict = {
+            "path": "torch.optim.SGD",
+            "args": {"lr": 1.0, "momentum": 0.6},
+        },
+        lr_scheduler_args: dict = {
+            "path": "torch.optim.lr_scheduler.CosineAnnealingLR",
+            "args": {"T_max": 3, "eta_min": 0.9},
+        },
         device=None,
         **kwargs,
     ):
@@ -41,10 +47,9 @@ class FedOpt(FedAvg):
         but use FedAvg to update any other layers such as batch norm statistics.
 
         Args:
-            optimizer_args: dictionary of optimizer arguments, e.g.
-                {'lr': 1.0} (default).
-            lr_scheduler_args: dictionary of server-side learning rate scheduler arguments, e.g.
-                {'T_max': 100} (default: None).
+            source_model: component id of torch model object or a valid torch model object
+            optimizer_args: dictionary of optimizer arguments, with keys of 'optimizer_path' and 'args.
+            lr_scheduler_args: dictionary of server-side learning rate scheduler arguments, with keys of 'lr_scheduler_path' and 'args.
             device: specify the device to run server-side optimization, e.g. "cpu" or "cuda:0"
                 (will default to cuda if available and no device is specified).
 
@@ -53,14 +58,7 @@ class FedOpt(FedAvg):
         """
         super().__init__(*args, **kwargs)
 
-        if not optimizer_args:
-            self.warning("No optimizer_args provided. Using FedOpt with SGD and lr 1.0, momentum 0.6")
-            optimizer_args = {"lr": 1.0, "momentum": 0.6}
-        if not isinstance(optimizer_args, dict):
-            raise TypeError("optimizer_args must be a dict of format, e.g. {'lr': 1.0, 'momentum': 0.6}.")
-        if lr_scheduler_args is not None and not isinstance(lr_scheduler_args, dict):
-            raise TypeError("optimizer_args must be a dict of format, e.g. {'T_max': 100, 'eta_min': 0.9}")
-
+        self.source_model = source_model
         self.optimizer_args = optimizer_args
         self.lr_scheduler_args = lr_scheduler_args
         if device is None:
@@ -72,18 +70,29 @@ class FedOpt(FedAvg):
         self.optimizer = None
         self.lr_scheduler = None
 
-    def initialize(self, fl_ctx):
-        super().initialize(fl_ctx)
+    def run(self):
+        # set up source model
+        if isinstance(self.source_model, str):
+            self.torch_model = self.get_component(self.source_model)
+        else:
+            self.torch_model = self.source_model
 
-        self.torch_model = Net()
+        if self.torch_model is None:
+            self.panic("Model is not available")
+            return
+        elif not isinstance(self.torch_model, torch.nn.Module):
+            self.panic(f"expect model to be torch.nn.Module but got {type(self.torch_model)}")
+            return
+        else:
+            print("server model", self.torch_model)
         self.torch_model.to(self.device)
 
         # set up optimizer
         try:
-            self.optimizer = torch.optim.SGD(
-                params=self.torch_model.parameters(),
-                **self.optimizer_args,
-            )
+            if "args" not in self.optimizer_args:
+                self.optimizer_args["args"] = {}
+            self.optimizer_args["args"]["params"] = self.torch_model.parameters()
+            self.optimizer = self.build_component(self.optimizer_args)
         except Exception as e:
             error_msg = f"Exception while constructing optimizer: {secure_format_exception(e)}"
             self.exception(error_msg)
@@ -92,16 +101,17 @@ class FedOpt(FedAvg):
 
         # set up lr scheduler
         try:
-            self.lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                optimizer=self.optimizer,
-                T_max=self.num_rounds,
-                **self.lr_scheduler_args,
-            )
+            if "args" not in self.lr_scheduler_args:
+                self.lr_scheduler_args["args"] = {}
+            self.lr_scheduler_args["args"]["optimizer"] = self.optimizer
+            self.lr_scheduler = self.build_component(self.lr_scheduler_args)
         except Exception as e:
             error_msg = f"Exception while constructing lr_scheduler: {secure_format_exception(e)}"
             self.exception(error_msg)
             self.panic(error_msg)
             return
+
+        super().run()
 
     def optimizer_update(self, model_diff):
         """Updates the global model using the specified optimizer.

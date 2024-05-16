@@ -360,6 +360,12 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         self.info(f"Sampled clients: {[client.name for client in clients]}")
 
         return clients
+    
+    def get_component(self, component_id: str):
+        return self.engine.get_component(component_id)
+
+    def build_component(self, config_dict: dict):
+        return self.engine.build_component(config_dict)
 
     def stop_controller(self, fl_ctx: FLContext):
         self.fl_ctx = fl_ctx
