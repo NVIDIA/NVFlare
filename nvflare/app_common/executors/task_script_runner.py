@@ -47,7 +47,7 @@ class TaskScriptRunner:
 
     def run(self):
         """Call the task_fn with any required arguments."""
-        self.logger.info(f"\n start task run() with full path: {self.script_full_path}")
+        self.logger.info(f"start task run() with full path: {self.script_full_path}")
         try:
             curr_argv = sys.argv
             builtins.print = log_print if self.redirect_print_to_log else print_fn
