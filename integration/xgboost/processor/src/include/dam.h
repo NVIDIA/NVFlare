@@ -53,9 +53,9 @@ class DamEncoder {
         this->data_set_id = data_set_id;
     }
 
-    void AddIntArray(std::vector<int64_t> &value);
+    void AddIntArray(const std::vector<int64_t> &value);
 
-    void AddFloatArray(std::vector<double> &value);
+    void AddFloatArray(const std::vector<double> &value);
 
     std::uint8_t * Finish(size_t &size);
 
