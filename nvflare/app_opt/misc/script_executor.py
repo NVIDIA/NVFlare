@@ -29,6 +29,10 @@ if torch_ok:
 else:
     DEFAULT_PARAMS_EXCHANGE_FORMAT = ExchangeFormat.NUMPY
 
+tensorflow, tf_ok = optional_import(module="tensorflow")
+if tf_ok:
+    from nvflare.app_opt.tf.params_converter import KerasModelToNumpyParamsConverter, NumpyToKerasModelParamsConverter
+
 
 class ScriptExecutor(InProcessClientAPIExecutor):
     def __init__(
@@ -78,4 +82,10 @@ class ScriptExecutor(InProcessClientAPIExecutor):
                     self._to_nvflare_converter = PTToNumpyParamsConverter(
                         [AppConstants.TASK_TRAIN, AppConstants.TASK_SUBMIT_MODEL]
                     )
+        if tf_ok:
+            if params_exchange_format == ExchangeFormat.NUMPY:
+                if self._from_nvflare_converter is None:
+                    self._from_nvflare_converter = NumpyToKerasModelParamsConverter()
+                if self._to_nvflare_converter is None:
+                    self._to_nvflare_converter = KerasModelToNumpyParamsConverter()
         # TODO: support other params_exchange_format
