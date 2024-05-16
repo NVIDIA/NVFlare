@@ -20,10 +20,10 @@ from enum import Enum
 from tempfile import TemporaryDirectory
 from typing import Dict
 
+from nvflare import SimulatorRunner
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
 from nvflare.job_config.fed_app_config import FedAppConfig
 from nvflare.private.fed.app.fl_conf import FL_PACKAGES
-from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
 
 CONFIG = "config"
 CUSTOM = "custom"
@@ -261,26 +261,27 @@ class FedJobConfig:
             )
 
     def _get_args(self, component, custom_dir):
-        parameters = get_component_init_parameters(component)
-        attrs = component.__dict__
         args = {}
+        if hasattr(component, "__dict__"):
+            parameters = get_component_init_parameters(component)
+            attrs = component.__dict__
 
-        for param in parameters:
-            attr_key = param if param in attrs.keys() else "_" + param
+            for param in parameters:
+                attr_key = param if param in attrs.keys() else "_" + param
 
-            if attr_key in ["args", "kwargs"]:
-                continue
+                if attr_key in ["args", "kwargs"]:
+                    continue
 
-            if attr_key in attrs.keys() and parameters[param].default != attrs[attr_key]:
-                if type(attrs[attr_key]).__name__ in dir(builtins):
-                    args[param] = attrs[attr_key]
-                elif issubclass(attrs[attr_key].__class__, Enum):
-                    args[param] = attrs[attr_key].value
-                else:
-                    args[param] = {
-                        "path": self._get_class_path(attrs[attr_key], custom_dir),
-                        "args": self._get_args(attrs[attr_key], custom_dir),
-                    }
+                if attr_key in attrs.keys() and parameters[param].default != attrs[attr_key]:
+                    if type(attrs[attr_key]).__name__ in dir(builtins):
+                        args[param] = attrs[attr_key]
+                    elif issubclass(attrs[attr_key].__class__, Enum):
+                        args[param] = attrs[attr_key].value
+                    else:
+                        args[param] = {
+                            "path": self._get_class_path(attrs[attr_key], custom_dir),
+                            "args": self._get_args(attrs[attr_key], custom_dir),
+                        }
 
         return args
 
