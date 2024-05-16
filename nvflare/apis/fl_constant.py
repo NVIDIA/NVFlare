@@ -243,6 +243,7 @@ class ServerCommandNames(object):
     SHOW_STATS = "show_stats"
     GET_ERRORS = "get_errors"
     RESET_ERRORS = "reset_errors"
+    NOTIFY_JOB_START = "notify_job_start"
     UPDATE_RUN_STATUS = "update_run_status"
     HANDLE_DEAD_JOB = "handle_dead_job"
     SERVER_STATE = "server_state"

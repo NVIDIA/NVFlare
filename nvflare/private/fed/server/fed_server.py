@@ -32,10 +32,11 @@ from nvflare.apis.fl_constant import (
     ServerCommandKey,
     ServerCommandNames,
     SnapshotKey,
-    WorkspaceConstants,
+    WorkspaceConstants, SystemComponents,
 )
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import NotAuthenticated
+from nvflare.apis.job_def import RunStatus
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.cell import Cell
@@ -373,7 +374,19 @@ class FederatedServer(BaseServer):
                     run_process_info[RunProcessKey.PROCESS_FINISHED] = True
                 reply = make_cellnet_reply(F3ReturnCode.OK, "", None)
                 return reply
+        # elif command == ServerCommandNames.NOTIFY_JOB_START:
+        #     job_manager = self.engine.get_component(SystemComponents.JOB_MANAGER)
+        #     with self.engine.new_context() as fl_ctx:
+        #         job_manager.set_status(job_id, RunStatus.RUNNING, fl_ctx)
+        #         self.logger.info(f"Job: {job_id} started to run, status changed to RUNNING.")
+        #         # return make_cellnet_reply(F3ReturnCode.OK, "", None)
         elif command == ServerCommandNames.HEARTBEAT:
+            if job_id not in self.engine.run_processes:
+                self.engine.abort_app_on_server(job_id)
+                job_manager = self.engine.get_component(SystemComponents.JOB_MANAGER)
+                with self.engine.new_context() as fl_ctx:
+                    job_manager.set_status(job_id, RunStatus.FINISHED_ABORTED, fl_ctx)
+                self.logger.info(f"Job: {job_id} is not running. Abort the job.")
             return make_cellnet_reply(F3ReturnCode.OK, "", None)
         else:
             return make_cellnet_reply(F3ReturnCode.INVALID_REQUEST, "", None)
@@ -686,6 +699,14 @@ class FederatedServer(BaseServer):
             while self.engine.engine_info.status != MachineStatus.STOPPED:
                 if self.engine.asked_to_stop:
                     self.engine.engine_info.status = MachineStatus.STOPPED
+
+                request = new_cell_message({CellMessageHeaderKeys.JOB_ID: job_id}, {})
+                self.cell.fire_and_forget(
+                    targets=FQCN.ROOT_SERVER,
+                    channel=CellChannel.SERVER_PARENT_LISTENER,
+                    topic=ServerCommandNames.HEARTBEAT,
+                    message=request,
+                )
 
                 time.sleep(self.check_engine_frequency)
 
