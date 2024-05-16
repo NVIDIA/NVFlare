@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from tensorflow.keras import datasets
 from src.tf_net import TFNet
+from tensorflow.keras import datasets
 
 # (1) import nvflare client API
 import nvflare.client as flare

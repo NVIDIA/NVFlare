@@ -18,7 +18,7 @@ __version__ = _version.get_versions()["version"]
 
 # https://github.com/microsoft/pylance-release/issues/856
 
+from nvflare.app_common.executors.script_executor import ScriptExecutor
 from nvflare.app_common.workflows.fedavg import FedAvg
-from nvflare.app_opt.misc.script_executor import ScriptExecutor
 from nvflare.job_config.fed_job import FedJob, FilterType
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
