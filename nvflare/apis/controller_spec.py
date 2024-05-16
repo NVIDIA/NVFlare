@@ -88,7 +88,7 @@ class Task(object):
             name (str): name of the task
             data (Shareable): data of the task
             props: Any additional properties of the task
-            timeout: How long this task will last. If == 0, the task never time out.
+            timeout: How long this task will last. If == 0, the task never time out (WFCommServer-> never time out, WFCommClient-> time out after `max_task_timeout`).
             before_task_sent_cb: If provided, this callback would be called before controller sends the tasks to clients.
                 It needs to follow the before_task_sent_cb_signature.
             after_task_sent_cb: If provided, this callback would be called after controller sends the tasks to clients.

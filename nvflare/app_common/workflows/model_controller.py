@@ -63,7 +63,7 @@ class ModelController(Controller, FLComponentWrapper, ABC):
             raise ValueError("task_check_period must be greater than 0.")
         self._task_check_period = task_check_period
         self._persistor_id = persistor_id
-        self._persistor = None
+        self.persistor = None
 
         # config data
         self._ignore_result_error = ignore_result_error
@@ -77,13 +77,13 @@ class ModelController(Controller, FLComponentWrapper, ABC):
         self.info("Initializing ModelController workflow.")
 
         if self._persistor_id:
-            self._persistor = self._engine.get_component(self._persistor_id)
-            if not isinstance(self._persistor, LearnablePersistor):
+            self.persistor = self._engine.get_component(self._persistor_id)
+            if not isinstance(self.persistor, LearnablePersistor):
                 self.warning(
                     f"Model Persistor {self._persistor_id} must be a LearnablePersistor type object, "
-                    f"but got {type(self._persistor)}"
+                    f"but got {type(self.persistor)}"
                 )
-                self._persistor = None
+                self.persistor = None
 
         self.engine = self.fl_ctx.get_engine()
         FLComponentWrapper.initialize(self)
@@ -292,9 +292,9 @@ class ModelController(Controller, FLComponentWrapper, ABC):
     def load_model(self):
         # initialize global model
         model = None
-        if self._persistor:
+        if self.persistor:
             self.info("loading initial model from persistor")
-            global_weights = self._persistor.load(self.fl_ctx)
+            global_weights = self.persistor.load(self.fl_ctx)
 
             if not isinstance(global_weights, ModelLearnable):
                 self.panic(
@@ -332,12 +332,12 @@ class ModelController(Controller, FLComponentWrapper, ABC):
         return model
 
     def save_model(self, model):
-        if self._persistor:
+        if self.persistor:
             self.info("Start persist model on server.")
             self.event(AppEventType.BEFORE_LEARNABLE_PERSIST)
             # persistor uses Learnable format to save model
             ml = make_model_learnable(weights=model.params, meta_props=model.meta)
-            self._persistor.save(ml, self.fl_ctx)
+            self.persistor.save(ml, self.fl_ctx)
             self.event(AppEventType.AFTER_LEARNABLE_PERSIST)
             self.info("End persist model on server.")
         else:

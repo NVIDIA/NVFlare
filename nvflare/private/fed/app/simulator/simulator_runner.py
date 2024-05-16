@@ -684,10 +684,8 @@ class SimulatorClientRunner(FLComponent):
         if gpu:
             command += " --gpu " + str(gpu)
         new_env = os.environ.copy()
-        if not sys.path[0]:
-            new_env["PYTHONPATH"] = os.pathsep.join(sys.path[1:])
-        else:
-            new_env["PYTHONPATH"] = os.pathsep.join(sys.path)
+        new_env["PYTHONPATH"] = os.pathsep.join(self._get_new_sys_path())
+
         _ = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
 
         conn = self._create_connection(open_port, timeout=timeout)
@@ -721,6 +719,13 @@ class SimulatorClientRunner(FLComponent):
                 break
 
         return stop_run, next_client, end_run_client
+
+    def _get_new_sys_path(self):
+        new_sys_path = []
+        for i in range(0, len(sys.path) - 1):
+            if sys.path[i]:
+                new_sys_path.append(sys.path[i])
+        return new_sys_path
 
     def _create_connection(self, open_port, timeout=60.0):
         conn = None
