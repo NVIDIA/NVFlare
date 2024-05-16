@@ -116,3 +116,14 @@ class WFController(ModelController, ABC):
             None
         """
         super().save_model(model)
+
+    def sample_clients(self, num_clients):
+        """Returns a list of available clients.
+
+        Args:
+            min_clients: number of clients to return.
+
+        Returns: list of clients.
+
+        """
+        return super().sample_clients(num_clients)
