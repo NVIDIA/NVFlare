@@ -38,7 +38,12 @@ from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorClientAppRunner
 from nvflare.private.fed.simulator.simulator_audit import SimulatorAuditor
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, get_simulator_app_root
+from nvflare.private.fed.utils.fed_utils import (
+    add_logfile_handler,
+    fobs_initialize,
+    get_simulator_app_root,
+    register_ext_decomposers,
+)
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 from nvflare.security.security import EmptyAuthorizer
 
@@ -248,6 +253,7 @@ def main(args):
     workspace = Workspace(root_dir=args.workspace, site_name=args.client)
 
     fobs_initialize(workspace, job_id=SimulatorConstants.JOB_NAME)
+    register_ext_decomposers(args.decomposer_module)
     AuthorizationService.initialize(EmptyAuthorizer())
     # AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
     AuditService.the_auditor = SimulatorAuditor()
@@ -282,6 +288,7 @@ def parse_arguments():
     parser.add_argument("--root_url", "-r", type=str, help="cellnet root_url")
     parser.add_argument("--parent_url", "-p", type=str, help="cellnet parent_url")
     parser.add_argument("--task_name", type=str, help="end_run")
+    parser.add_argument("--decomposer_module", type=str, help="decomposer_module name", required=True)
     args = parser.parse_args()
     return args
 

@@ -652,6 +652,10 @@ class SimulatorClientRunner(FLComponent):
         logging_config = os.path.join(
             self.args.workspace, client.client_name, "local", WorkspaceConstants.LOGGING_CONFIG
         )
+        decomposer_module = ConfigService.get_str_var(
+            name=ConfigVarName.DECOMPOSER_MODULE, conf=SystemConfigs.RESOURCES_CONF
+        )
+
         command = (
             sys.executable
             + " -m nvflare.private.fed.app.simulator.simulator_worker -o "
@@ -674,6 +678,8 @@ class SimulatorClientRunner(FLComponent):
             + str(client.cell.get_internal_listener_url())
             + " --task_name "
             + str(task_name)
+            + " --decomposer_module "
+            + str(decomposer_module)
         )
         if gpu:
             command += " --gpu " + str(gpu)

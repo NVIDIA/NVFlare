@@ -89,11 +89,6 @@ def main(args):
             logger.critical("loglevel critical enabled")
         conf.configure()
 
-        decomposer_module = ConfigService.get_str_var(
-            name=ConfigVarName.DECOMPOSER_MODULE, conf=SystemConfigs.RESOURCES_CONF
-        )
-        register_ext_decomposers(decomposer_module)
-
         log_file = workspace.get_log_file_path()
         add_logfile_handler(log_file)
 
