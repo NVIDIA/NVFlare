@@ -85,7 +85,11 @@ class ScriptExecutor(InProcessClientAPIExecutor):
         if tf_ok:
             if params_exchange_format == ExchangeFormat.NUMPY:
                 if self._from_nvflare_converter is None:
-                    self._from_nvflare_converter = NumpyToKerasModelParamsConverter()
+                    self._from_nvflare_converter = NumpyToKerasModelParamsConverter(
+                        [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION]
+                    )
                 if self._to_nvflare_converter is None:
-                    self._to_nvflare_converter = KerasModelToNumpyParamsConverter()
+                    self._to_nvflare_converter = KerasModelToNumpyParamsConverter(
+                        [AppConstants.TASK_TRAIN, AppConstants.TASK_SUBMIT_MODEL]
+                    )
         # TODO: support other params_exchange_format
