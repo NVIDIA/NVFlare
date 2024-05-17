@@ -34,11 +34,14 @@ if torch_ok:
 
     from nvflare.app_opt.pt import PTFileModelPersistor
     from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
-    from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 
 tf, tf_ok = optional_import(module="tensorflow")
 if tf_ok:
     from nvflare.app_opt.tf.model_persistor import TFModelPersistor
+
+tb, tb_ok = optional_import(module="tensorboard")
+if torch_ok and tb_ok:
+    from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 
 
 class FilterType:
@@ -217,7 +220,7 @@ class FedJob:
                             # remove already added components from tracked components
                             self._components.pop(base_id)
 
-    def _deploy(self, app: FedApp, target: str):
+    def _set_site_app(self, app: FedApp, target: str):
         if not isinstance(app, FedApp):
             raise ValueError(f"App needs to be of type `FedApp` but was type {type(app)}")
 
@@ -236,19 +239,19 @@ class FedJob:
         self.job.add_fed_app(app_name, app_config)
         self.job.set_site_app(target, app_name)
 
-    def _run_deploy(self):
+    def _set_all_apps(self):
         if not self._deployed:
             for target in self._deploy_map:
-                self._deploy(self._deploy_map[target], target)
+                self._set_site_app(self._deploy_map[target], target)
 
             self._deployed = True
 
     def export_job(self, job_root):
-        self._run_deploy()
+        self._set_all_apps()
         self.job.generate_job_config(job_root)
 
     def simulator_run(self, workspace, threads: int = None):
-        self._run_deploy()
+        self._set_all_apps()
 
         n_clients = len(self.clients)
         if threads is None:
@@ -317,6 +320,6 @@ class ControllerApp(FedApp):
             self.app.add_component("model_selector", component)
 
         # TODO: make different tracking receivers configurable
-        if torch_ok:
+        if torch_ok and tb_ok:
             component = TBAnalyticsReceiver(events=["fed.analytix_log_stats"])
             self.app.add_component("receiver", component)
