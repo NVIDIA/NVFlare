@@ -26,6 +26,8 @@ DATA_SET_GH_PAIRS = 1
 DATA_SET_AGGREGATION = 2
 DATA_SET_AGGREGATION_WITH_FEATURES = 3
 DATA_SET_AGGREGATION_RESULT = 4
+DATA_SET_HISTOGRAMS = 5
+DATA_SET_HISTOGRAMS_RESULT = 6
 
 SCALE_FACTOR = 1000000.0  # Preserve 6 decimal places
 
@@ -99,6 +101,21 @@ class ProcessorDataConverter(DataConverter):
             for result in result_list:
                 encoder.add_float_array(self.to_float_array(result))
 
+        return encoder.finish()
+
+    def decode_histograms(self, buffer: bytes, fl_ctx: FLContext) -> List[float]:
+        decoder = DamDecoder(buffer)
+        if not decoder.is_valid():
+            return None
+        data_set_id = decoder.get_data_set_id()
+        if data_set_id != DATA_SET_HISTOGRAMS:
+            raise RuntimeError(f"Invalid DataSet: {data_set_id}")
+
+        return decoder.decode_float_array()
+
+    def encode_histograms_result(self, histograms: List[float], fl_ctx: FLContext) -> bytes:
+        encoder = DamEncoder(DATA_SET_HISTOGRAMS_RESULT)
+        encoder.add_float_array(histograms)
         return encoder.finish()
 
     @staticmethod
