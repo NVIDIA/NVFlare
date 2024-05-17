@@ -379,7 +379,9 @@ class FederatedServer(BaseServer):
             if job_id not in self.engine.run_processes:
                 self.engine.abort_app_on_server(job_id)
                 self._set_job_aborted(job_id)
-                self.logger.info(f"Job: {job_id} should not be running. Abort the job.")
+                self.logger.info(
+                    f"Job: {job_id} should not be running, but still sending the heartbeat calls. Abort the job."
+                )
             return make_cellnet_reply(F3ReturnCode.OK, "", None)
         else:
             return make_cellnet_reply(F3ReturnCode.INVALID_REQUEST, "", None)
@@ -708,13 +710,14 @@ class FederatedServer(BaseServer):
             self.run_manager = None
 
     def _send_parent_heartbeat(self, job_id):
-        request = new_cell_message({CellMessageHeaderKeys.JOB_ID: job_id}, {})
-        self.cell.fire_and_forget(
-            targets=FQCN.ROOT_SERVER,
-            channel=CellChannel.SERVER_PARENT_LISTENER,
-            topic=ServerCommandNames.HEARTBEAT,
-            message=request,
-        )
+        if self.cell:
+            request = new_cell_message({CellMessageHeaderKeys.JOB_ID: job_id}, {})
+            self.cell.fire_and_forget(
+                targets=FQCN.ROOT_SERVER,
+                channel=CellChannel.SERVER_PARENT_LISTENER,
+                topic=ServerCommandNames.HEARTBEAT,
+                message=request,
+            )
 
     def create_run_manager(self, workspace, job_id):
         return RunManager(
