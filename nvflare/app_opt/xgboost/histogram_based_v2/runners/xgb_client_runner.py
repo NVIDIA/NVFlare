@@ -133,6 +133,10 @@ class XGBClientRunner(AppRunner, FLComponent):
             "federated_server_address": f"{self._server_addr}",
             "federated_world_size": self._world_size,
             "federated_rank": self._rank,
+            "plugin_name": "nvflare",
+            "loader_params": {
+                "LIBRARY_PATH": "/tmp",
+            },
         }
         with xgb.collective.CommunicatorContext(**communicator_env):
             # Load the data. Dmatrix must be created with column split mode in CommunicatorContext for vertical FL
