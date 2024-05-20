@@ -36,7 +36,7 @@ def main():
         )
         model.summary()
 
-    model.fit(train_images, train_labels, epochs=1, validation_data=(test_images, test_labels))
+    model.fit(train_images, train_labels, epochs=10, validation_data=(test_images, test_labels))
 
     print("Finished Training")
 
