@@ -11,20 +11,22 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import importlib
 import json
 import logging
 import logging.config
 import os
+import pkgutil
 import sys
+import warnings
 from logging.handlers import RotatingFileHandler
-from typing import List
+from typing import List, Union
 
 from nvflare.apis.app_validation import AppValidator
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLContext
-from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, SiteType, WorkspaceConstants
+from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, FLMetaKey, SiteType, WorkspaceConstants
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.utils.decomposers import flare_decomposers
@@ -34,6 +36,8 @@ from nvflare.fuel.f3.stats_pool import CsvRecordHandler, StatsPoolManager
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.authz import AuthorizationService
 from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
+from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils.fobs.fobs import register_custom_folder
 from nvflare.private.defs import RequestHeader, SSLConstants
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.decomposers import private_decomposers
@@ -198,10 +202,58 @@ def get_scope_info():
         return [], "processing_error"
 
 
-def fobs_initialize():
+def fobs_initialize(workspace: Workspace = None, job_id: str = None):
+    nvflare_fobs_initialize()
+
+    custom_fobs_initialize(workspace, job_id)
+
+
+def custom_fobs_initialize(workspace: Workspace = None, job_id: str = None):
+    if workspace:
+        site_custom_dir = workspace.get_client_custom_dir()
+        decomposer_dir = os.path.join(site_custom_dir, ConfigVarName.DECOMPOSER_MODULE)
+        if os.path.exists(decomposer_dir):
+            register_custom_folder(decomposer_dir)
+
+        if job_id:
+            app_custom_dir = workspace.get_app_config_dir(job_id)
+            decomposer_dir = os.path.join(app_custom_dir, ConfigVarName.DECOMPOSER_MODULE)
+            if os.path.exists(decomposer_dir):
+                register_custom_folder(decomposer_dir)
+
+
+def nvflare_fobs_initialize():
     flare_decomposers.register()
     common_decomposers.register()
     private_decomposers.register()
+
+
+def register_ext_decomposers(decomposer_module: Union[str, List[str]]):
+    if decomposer_module:
+        if isinstance(decomposer_module, str):
+            modules = [decomposer_module]
+        elif isinstance(decomposer_module, list):
+            modules = decomposer_module
+        else:
+            raise TypeError(f"decomposer_module must be str or list of strs but got {type(decomposer_module)}")
+
+        for module in modules:
+            register_decomposer_module(module)
+
+
+def register_decomposer_module(decomposer_module):
+    warnings.filterwarnings("ignore")
+    try:
+        package = importlib.import_module(decomposer_module)
+        for module_info in pkgutil.walk_packages(path=package.__path__, prefix=package.__name__ + "."):
+            if module_info.ispkg:
+                folder_name = module_info.module_finder.path
+                package_name = module_info.name
+                folder = os.path.join(folder_name, package_name.split(".")[-1])
+                fobs.register_folder(folder, package_name)
+    except (ModuleNotFoundError, RuntimeError) as e:
+        # logger.warning(f"Could not register decomposers from: {decomposer_module}")
+        pass
 
 
 def set_stats_pool_config_for_job(workspace: Workspace, job_id: str, prefix=None):
