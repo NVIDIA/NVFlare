@@ -16,7 +16,7 @@ import tensorflow as tf
 from tensorflow.keras import datasets
 from tf_net import TFNet
 
-PATH = "./tf_model.ckpt"
+PATH = "./tf_model.weights.h5"
 
 
 def main():
@@ -30,7 +30,10 @@ def main():
     print("Number of devices: {}".format(strategy.num_replicas_in_sync))
 
     with strategy.scope():
-        model = TFNet(input_shape=(None, 32, 32, 3))
+        model = TFNet()
+        model.compile(
+            optimizer="adam", loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=["accuracy"]
+        )
         model.summary()
 
     model.fit(train_images, train_labels, epochs=1, validation_data=(test_images, test_labels))
