@@ -16,7 +16,7 @@ from .base_fedavg import BaseFedAvg
 
 
 class FedAvg(BaseFedAvg):
-    """Controller for FedAvg Workflow. *Note*: This class is based on the `WFController`.
+    """Controller for FedAvg Workflow. *Note*: This class is based on the `ModelController`.
     Implements [FederatedAveraging](https://arxiv.org/abs/1602.05629).
 
     Provides the implementations for the `run` routine, controlling the main workflow:
