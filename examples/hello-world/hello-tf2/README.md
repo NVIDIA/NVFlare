@@ -32,7 +32,7 @@ TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async
 ```
 
 If you possess more GPUs than clients, a good strategy is to run one client on each GPU.
-This can be achieved using the `-gpu` argument during simulation, e.g. `nvflare simulator -n 2 -gpu 0,1 [job]`
+This can be achieved using the `-gpu` argument during simulation, e.g., `nvflare simulator -n 2 -gpu 0,1 [job]`.
 
 
 ### 2. Run the experiment
