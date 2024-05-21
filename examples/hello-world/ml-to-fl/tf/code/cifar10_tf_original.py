@@ -12,10 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import tensorflow as tf
 from tensorflow.keras import datasets
 from tf_net import TFNet
 
-PATH = "./tf_model.ckpt"
+PATH = "./tf_model.weights.h5"
 
 
 def main():
@@ -24,10 +25,13 @@ def main():
     # Normalize pixel values to be between 0 and 1
     train_images, test_images = train_images / 255.0, test_images / 255.0
 
-    model = TFNet(input_shape=(None, 32, 32, 3))
+    model = TFNet()
+    model.compile(
+        optimizer="adam", loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=["accuracy"]
+    )
     model.summary()
 
-    model.fit(train_images, train_labels, epochs=1, validation_data=(test_images, test_labels))
+    model.fit(train_images, train_labels, epochs=10, validation_data=(test_images, test_labels))
 
     print("Finished Training")
 
