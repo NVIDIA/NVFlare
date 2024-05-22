@@ -162,9 +162,11 @@ class FedJobConfig:
     def _get_class_path(self, obj, custom_dir):
         module = obj.__module__
         source_file = inspect.getsourcefile(obj.__class__)
+        if module == "__main__":
+            module = os.path.basename(source_file).strip(".py")
         self._get_custom_file(custom_dir, module, source_file)
 
-        return obj.__module__ + "." + obj.__class__.__name__
+        return module + "." + obj.__class__.__name__
 
     def _get_custom_file(self, custom_dir, module, source_file):
         package = module.split(".")[0]
