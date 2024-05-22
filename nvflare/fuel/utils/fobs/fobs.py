@@ -18,7 +18,6 @@ import os
 import sys
 from enum import Enum
 from os.path import dirname, join
-from types import NoneType
 from typing import Any, BinaryIO, Dict, Type, TypeVar, Union
 
 import msgpack
@@ -47,7 +46,7 @@ FOBS_DATA = "__fobs_data__"
 FOBS_DECOMPOSER = "__fobs_dc__"
 
 MAX_CONTENT_LEN = 128
-MSGPACK_TYPES = (NoneType, bool, int, float, str, bytes, bytearray, memoryview, list, dict)
+MSGPACK_TYPES = (type(None), bool, int, float, str, bytes, bytearray, memoryview, list, dict)
 T = TypeVar("T")
 
 log = logging.getLogger(__name__)
