@@ -11,12 +11,12 @@ The Kaplan-Meier estimator takes into account the time of the event (e.g. "Survi
 
 One example dataset used here for Kaplan-Meier analysis is the `veterans_lung_cancer` dataset. This dataset contains information about the survival time of veterans with advanced lung cancer. Below we provide some samples of the dataset:
 
-| ID | Age | Celltype | Karnofsky | Diagtime | Prior | Treat    | Status | Survival Days |
-|----|-----|----------|-----------|----------|-------|----------|--------|--------------|
-| 1  | 64  | squamous | 70        | 5        | yes   | standard | TRUE   | 411          |
-| 20 | 55  | smallcell |  40        |3  |no|standard| FALSE  |123|
-|45|61|adeno|20|19|yes|standard| TRUE   |8|
- |63|62|large|90|2|no|standard| FALSE  |182|
+| ID | Age | Celltype   | Karnofsky  | Diagtime | Prior | Treat     | Status | Survival Days |
+|----|-----|------------|------------|----------|-------|-----------|--------|---------------|
+| 1  | 64  | squamous   | 70         | 5        | yes   | standard  | TRUE   | 411           |
+| 20 | 55  | smallcell  | 40         | 3        | no    | standard  | FALSE  | 123           |
+| 45 | 61  | adeno      | 20         | 19       | yes   | standard  | TRUE   | 8             |
+| 63 | 62  | large      | 90         | 2        | no    | standard  | FALSE  | 182           |
 
 To perform the analysis, in this data, we have:
 - Time `Survival Days`: days passed from the beginning of the observation till the end
@@ -39,8 +39,16 @@ Therefore, we would like to design a secure mechanism to enable collaborative Ka
 - Prevent the aggregation server to access ANY information from participants' submissions.
 
 This is achieved by two techniques:
-- Condense the raw event list to two histograms (one for observed events and the other for censored event) using binning at certain interval (e.g. a week), such that events happened within the same bin from different participants can be aggregated and will not be distinguishable for the final aggregated histograms. Note that coarser binning will lead to higher protection, but also lower resolution of the final Kaplan-Meier curve.
-- The local histograms will be encrypted as one single vector before sending to server, and the global aggregation operation at server side will be performed entirely within encryption space with HE. This will not cause any information loss, while the server will perform aggregation within encryption space.
+- Condense the raw event list to two histograms (one for observed events and the other for censored event) using binning at certain interval (e.g. a week)
+- Perform the aggregation of the histograms using Homomorphic Encryption (HE)
+
+With time-binning, the above event list will be converted to histograms: if using a week as interval:
+- Patient #1 will contribute 1 to the 411/7 = 58th bin of the observed event histogram
+- Patient #20 will contribute 1 to the 123/7 = 17th bin of the censored event histogram
+
+In this way, events happened within the same bin from different participants can be aggregated and will not be distinguishable for the final aggregated histograms. Note that coarser binning will lead to higher protection, but also lower resolution of the final Kaplan-Meier curve.
+
+Local histograms will then be encrypted as one single vector before sending to server, and the global aggregation operation at server side will be performed entirely within encryption space with HE. This will not cause any information loss, while the server will not be able to access any plain-text information.
 
 With these two settings, the server will have no access to any knowledge regarding local submissions, and participants will only receive global aggregated histograms that will not contain distinguishable information regarding any individual participants (client number >= 3 - if only two participants, one can infer the other party's info by subtracting its own histograms).
 
