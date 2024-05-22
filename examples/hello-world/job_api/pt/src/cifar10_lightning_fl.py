@@ -15,8 +15,8 @@
 import torch
 import torchvision
 import torchvision.transforms as transforms
+from lit_net import LitNet
 from pytorch_lightning import LightningDataModule, Trainer, seed_everything
-from src.lit_net import LitNet
 from torch.utils.data import DataLoader, random_split
 
 # (1) import nvflare lightning client API
