@@ -28,17 +28,14 @@ class TestBaseAppConfig:
         with tempfile.NamedTemporaryFile(dir=cwd, suffix=".py") as temp_file:
             script = os.path.basename(temp_file.name)
             self.app_config.add_ext_script(script)
-            assert (script, None) in self.app_config.ext_scripts
+            assert script in self.app_config.ext_scripts
 
     def test_add_ext_script(self):
         script = "/scripts/sample.py"
-        self.app_config.add_ext_script(script, "/scripts")
-        assert (script, "/scripts") in self.app_config.ext_scripts
+        self.app_config.add_ext_script(script)
+        assert script in self.app_config.ext_scripts
 
     def test_add_ext_script_error(self):
-        script = "/scripts/sample.py"
+        script = "scripts/sample.py"
         with pytest.raises(Exception):
             self.app_config.add_ext_script(script)
-
-        with pytest.raises(Exception):
-            self.app_config.add_ext_script(script, "scripts")

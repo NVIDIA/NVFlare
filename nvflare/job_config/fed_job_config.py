@@ -16,6 +16,7 @@ import inspect
 import json
 import os
 import shutil
+import sys
 from enum import Enum
 from tempfile import TemporaryDirectory
 from typing import Dict
@@ -154,15 +155,23 @@ class FedJobConfig:
         self._copy_ext_scripts(custom_dir, fed_app.server_app.ext_scripts)
 
     def _copy_ext_scripts(self, custom_dir, ext_scripts):
-        for script, package_path in ext_scripts:
+        for script in ext_scripts:
             if os.path.exists(script):
                 if os.path.isabs(script):
-                    relative_script = script[len(package_path) + 1 :]
+                    relative_script = self._get_relative_script(script)
                 else:
                     relative_script = script
                 dest_file = os.path.join(custom_dir, relative_script)
                 module = "".join(relative_script.rsplit(".py", 1)).replace(os.sep, ".")
                 self._copy_source_file(custom_dir, module, script, dest_file)
+
+    def _get_relative_script(self, script):
+        package_path = ""
+        for path in sys.path:
+            if script.startswith(path):
+                if len(path) > len(package_path):
+                    package_path = path
+        return script[len(package_path) + 1 :]
 
     def _get_class_path(self, obj, custom_dir):
         module = obj.__module__
