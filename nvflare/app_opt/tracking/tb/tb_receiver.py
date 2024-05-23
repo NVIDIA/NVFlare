@@ -15,7 +15,15 @@
 import os
 from typing import List, Optional
 
-from torch.utils.tensorboard import SummaryWriter
+from nvflare.fuel.utils.import_utils import optional_import
+
+torch, torch_ok = optional_import(module="torch")
+if torch_ok:
+    from torch.utils.tensorboard import SummaryWriter
+
+tf, tf_ok = optional_import(module="tensorflow")
+if tf_ok and not torch_ok:
+    from tensorflow.summary import SummaryWriter
 
 from nvflare.apis.analytix import AnalyticsData, AnalyticsDataType
 from nvflare.apis.dxo import from_shareable

@@ -40,8 +40,6 @@ if tf_ok:
     from nvflare.app_opt.tf.model_persistor import TFModelPersistor
 
 tb, tb_ok = optional_import(module="tensorboard")
-if torch_ok and tb_ok:
-    from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 
 
 class FilterType:
@@ -320,6 +318,8 @@ class ControllerApp(FedApp):
             self.app.add_component("model_selector", component)
 
         # TODO: make different tracking receivers configurable
-        if torch_ok and tb_ok:
+        if (torch_ok or tf_ok) and tb_ok:
+            from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
+
             component = TBAnalyticsReceiver(events=["fed.analytix_log_stats"])
             self.app.add_component("receiver", component)
