@@ -20,12 +20,32 @@
 #include <map>
 #include "processing/processor.h"
 
-/*! \brief A base class for all plugins that handles encryption locally */
+const int kDataSetGHPairs = 1;
+const int kDataSetAggregation = 2;
+const int kDataSetAggregationWithFeatures = 3;
+const int kDataSetAggregationResult = 4;
+const int kDataSetHistograms = 5;
+const int kDataSetHistogramResult = 6;
+
+
+class EncryptedData {
+ public:
+    const void *buffer;
+    const size_t buf_size;
+
+    EncryptedData(const void *buffer, const size_t buf_size) : buf_size(buf_size), buffer(buffer) {
+    }
+};
+
+/*! \brief A base class for all plugins that handle encryption locally */
 class LocalProcessor: public processing::Processor {
  protected:
     bool active_ = false;
     const std::map<std::string, std::string> *params_{nullptr};
     std::vector<double> *gh_pairs_{nullptr};
+    void *encrypted_gh_ {nullptr};
+    size_t encrypted_gh_size_ = 0;
+    std::vector<double> *histo_{nullptr};
     std::vector<uint32_t> cuts_;
     std::vector<int> slots_;
 
@@ -36,9 +56,14 @@ class LocalProcessor: public processing::Processor {
     }
 
     void Shutdown() override {
-        this->gh_pairs_ = nullptr;
-        this->cuts_.clear();
-        this->slots_.clear();
+        gh_pairs_ = nullptr;
+        if (encrypted_gh_) {
+            free(encrypted_gh_);
+            encrypted_gh_ = nullptr;
+        }
+        delete histo_;
+        cuts_.clear();
+        slots_.clear();
     }
 
     void FreeBuffer(void *buffer) override {
@@ -68,11 +93,11 @@ class LocalProcessor: public processing::Processor {
 
     // Method needs to be implemented by local plugins
 
-    virtual void *EncryptVector(site_t *size, const std::vector<double>& cleartext) = 0;
+    virtual EncryptedData EncryptVector(std::vector<double>& cleartext) = 0;
 
-    virtual std::vector<double> DecryptVector(const void *buffer, const size_t buf_size) = 0;
+    virtual std::vector<double> DecryptVector(std::vector<EncryptedData> ciphertext) = 0;
 
-    virtual void *SecureAggregate(const std::size_t *size, std::map<int, std::vector<int>> nodes) = 0;
+    virtual EncryptedData Aggregate(const std::size_t *size, std::vector<int> indexes) = 0;
 
-    virtual void FreeEncryptedBuffer(const void *buffer, const std::size_t size) = 0;
+    virtual void FreeEncryptedData(EncryptedData ciphertext) = 0;
 };

@@ -18,7 +18,7 @@
 #include <vector>
 #include <map>
 
-const char kSignature[] = "NVDADAM1";  // DAM (Direct Accessible Marshalling) V1
+const char kSignature[] = "NVDADAM1";      // DAM (Direct Accessible Marshalling) V1
 const char kSignatureLocal[] = "NVDADAML"; // DAM Local version
 const int kPrefixLen = 24;
 
@@ -28,19 +28,32 @@ const int kDataTypeString = 3;
 const int kDataTypeBytes = 4;
 const int kDataTypeIntArray = 257;
 const int kDataTypeFloatArray = 258;
-
 const int kDataTypeMap = 1025;
+
 
 class Entry {
  public:
     int64_t data_type;
-    uint8_t * pointer;
+    const uint8_t * pointer;
     int64_t size;
 
-    Entry(int64_t data_type, uint8_t *pointer, int64_t size) {
+    Entry(int64_t data_type, const uint8_t *pointer, int64_t size) {
         this->data_type = data_type;
         this->pointer = pointer;
         this->size = size;
+    }
+
+    std::size_t ItemSize() {
+        size_t item_size;
+        switch (data_type) {
+            case kDataTypeBytes:
+            case kDataTypeString:
+                item_size = 1;
+                break;
+            default:
+                item_size = 8;
+        }
+        return item_size;
     }
 };
 
@@ -61,12 +74,12 @@ class DamEncoder {
 
     void AddFloatArray(const std::vector<double> &value);
 
-    void AddBytes(const void *buffer, const site_t buf_size);
+    void AddBytes(const void *buffer, const size_t buf_size);
 
     std::uint8_t * Finish(size_t &size);
 
  private:
-    std::size_t calculate_size();
+    std::size_t CalculateSize();
 };
 
 class DamDecoder {
