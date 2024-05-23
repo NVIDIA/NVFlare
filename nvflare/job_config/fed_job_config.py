@@ -312,13 +312,18 @@ class FedJobConfig:
     def locate_imports(self, sf, dest_file):
         os.makedirs(os.path.dirname(dest_file), exist_ok=True)
         with open(dest_file, "w") as df:
+            trimmed = ""
             for line in sf:
                 df.write(line)
-                trimmed = line.strip()
-                if trimmed.startswith("from ") and ("import " in trimmed):
-                    yield trimmed
-                elif trimmed.startswith("import "):
-                    yield trimmed
+                trimmed += line.strip()
+                if trimmed.endswith("\\"):
+                    trimmed = trimmed[0:-1]
+                else:
+                    if trimmed.startswith("from ") and ("import " in trimmed):
+                        yield trimmed
+                    elif trimmed.startswith("import "):
+                        yield trimmed
+                    trimmed = ""
 
     def _get_deploy_map(self):
         deploy_map = {}
