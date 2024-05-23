@@ -19,11 +19,13 @@
 #include <map>
 
 const char kSignature[] = "NVDADAM1";  // DAM (Direct Accessible Marshalling) V1
+const char kSignatureLocal[] = "NVDADAML"; // DAM Local version
 const int kPrefixLen = 24;
 
 const int kDataTypeInt = 1;
 const int kDataTypeFloat = 2;
 const int kDataTypeString = 3;
+const int kDataTypeBytes = 4;
 const int kDataTypeIntArray = 257;
 const int kDataTypeFloatArray = 258;
 
@@ -45,17 +47,21 @@ class Entry {
 class DamEncoder {
  private:
     bool encoded = false;
+    bool local_version = false;
     int64_t data_set_id;
     std::vector<Entry *> *entries = new std::vector<Entry *>();
 
  public:
-    explicit DamEncoder(int64_t data_set_id) {
+    explicit DamEncoder(int64_t data_set_id, bool local_version=false) {
         this->data_set_id = data_set_id;
+        this->local_version = local_version
     }
 
     void AddIntArray(const std::vector<int64_t> &value);
 
     void AddFloatArray(const std::vector<double> &value);
+
+    void AddBytes(const void *buffer, const site_t buf_size);
 
     std::uint8_t * Finish(size_t &size);
 
@@ -65,6 +71,7 @@ class DamEncoder {
 
 class DamDecoder {
  private:
+    bool local_version = false;
     std::uint8_t *buffer = nullptr;
     std::size_t buf_size = 0;
     std::uint8_t *pos = nullptr;
@@ -73,7 +80,7 @@ class DamDecoder {
     int64_t len = 0;
 
  public:
-    explicit DamDecoder(std::uint8_t *buffer, std::size_t size);
+    explicit DamDecoder(std::uint8_t *buffer, std::size_t size, bool local_version=false);
 
     size_t Size() {
         return len;
@@ -88,6 +95,8 @@ class DamDecoder {
     std::vector<int64_t> DecodeIntArray();
 
     std::vector<double> DecodeFloatArray();
+
+    void *DecodeBytes(size_t *size);
 };
 
 void print_buffer(uint8_t *buffer, int size);

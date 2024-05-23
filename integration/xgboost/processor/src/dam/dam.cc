@@ -58,7 +58,8 @@ std::uint8_t * DamEncoder::Finish(size_t &size) {
     size = calculate_size();
     auto buf = static_cast<uint8_t *>(malloc(size));
     auto pointer = buf;
-    memcpy(pointer, kSignature, strlen(kSignature));
+    auto sig = local_version ? kSignatureLocal : kSignature;
+    memcpy(pointer, sig, strlen(sig));
     memcpy(pointer+8, &size, 8);
     memcpy(pointer+16, &data_set_id, 8);
 
@@ -97,7 +98,8 @@ std::size_t DamEncoder::calculate_size() {
 
 // DamDecoder ======
 
-DamDecoder::DamDecoder(std::uint8_t *buffer, std::size_t size) {
+DamDecoder::DamDecoder(std::uint8_t *buffer, std::size_t size, bool local_version) {
+    this->local_version = local_version;
     this->buffer = buffer;
     this->buf_size = size;
     this->pos = buffer + kPrefixLen;
@@ -111,7 +113,8 @@ DamDecoder::DamDecoder(std::uint8_t *buffer, std::size_t size) {
 }
 
 bool DamDecoder::IsValid() {
-    return buf_size >= kPrefixLen && memcmp(buffer, kSignature, strlen(kSignature)) == 0;
+    auto sig = local_version ? kSignatureLocal : kSignature;
+    return buf_size >= kPrefixLen && memcmp(buffer, sig, strlen(sig) == 0;
 }
 
 std::vector<int64_t> DamDecoder::DecodeIntArray() {
