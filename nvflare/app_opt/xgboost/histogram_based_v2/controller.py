@@ -20,6 +20,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.signal import Signal
+from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.app_opt.xgboost.histogram_based_v2.adaptors.xgb_adaptor import XGBServerAdaptor
 from nvflare.fuel.utils.validation_utils import check_number_range, check_object_type, check_positive_number, check_str
 from nvflare.security.logging import secure_format_exception
@@ -147,14 +148,15 @@ class XGBController(Controller):
         adaptor.initialize(fl_ctx)
         self.adaptor = adaptor
 
-        engine = fl_ctx.get_engine()
-        engine.register_aux_message_handler(
+        ReliableMessage.register_request_handler(
             topic=Constant.TOPIC_XGB_REQUEST,
-            message_handle_func=self._process_xgb_request,
+            handler_f=self._process_xgb_request,
+            fl_ctx=fl_ctx,
         )
-        engine.register_aux_message_handler(
+        ReliableMessage.register_request_handler(
             topic=Constant.TOPIC_CLIENT_DONE,
-            message_handle_func=self._process_client_done,
+            handler_f=self._process_client_done,
+            fl_ctx=fl_ctx,
         )
 
     def _trigger_stop(self, fl_ctx: FLContext, error=None):
@@ -328,8 +330,8 @@ class XGBController(Controller):
         send_buf = fl_ctx.get_prop(Constant.PARAM_KEY_SEND_BUF)
         assert isinstance(self.adaptor, XGBServerAdaptor)
         rcv_buf = self.adaptor.broadcast(rank, seq, root, send_buf, fl_ctx)
-        reply = Shareable()
 
+        reply = Shareable()
         fl_ctx.set_prop(key=Constant.PARAM_KEY_REPLY, value=reply, private=True, sticky=False)
         fl_ctx.set_prop(key=Constant.PARAM_KEY_RCV_BUF, value=rcv_buf, private=True, sticky=False)
         self.fire_event(Constant.EVENT_AFTER_BROADCAST, fl_ctx)

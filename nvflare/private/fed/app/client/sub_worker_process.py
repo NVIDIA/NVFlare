@@ -56,6 +56,7 @@ from nvflare.private.fed.utils.fed_utils import (
     configure_logging,
     create_stats_pool_files_for_job,
     fobs_initialize,
+    register_ext_decomposers,
     set_stats_pool_config_for_job,
 )
 from nvflare.private.privacy_manager import PrivacyService
@@ -310,11 +311,12 @@ class SubWorkerExecutor(Runner):
 def main(args):
     workspace = Workspace(args.workspace, args.client_name)
     app_custom_folder = workspace.get_client_custom_dir()
-    if os.path.isdir(app_custom_folder):
+    if os.path.isdir(app_custom_folder) and app_custom_folder not in sys.path:
         sys.path.append(app_custom_folder)
     configure_logging(workspace)
 
-    fobs_initialize()
+    fobs_initialize(workspace=workspace, job_id=args.job_id)
+    register_ext_decomposers(args.decomposer_module)
 
     SecurityContentService.initialize(content_folder=workspace.get_startup_kit_dir())
 
@@ -364,6 +366,7 @@ def parse_arguments():
     parser.add_argument("--parent_pid", type=int, help="parent process pid", required=True)
     parser.add_argument("--root_url", type=str, help="root cell url", required=True)
     parser.add_argument("--parent_url", type=str, help="parent cell url", required=True)
+    parser.add_argument("--decomposer_module", type=str, help="decomposer_module name", required=True)
     args = parser.parse_args()
     return args
 

@@ -16,9 +16,12 @@ import xgboost as xgb
 
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
 
+COL_SECURE = 2
+ROW_SECURE = 3
+
 
 class SecureDataLoader(XGBDataLoader):
-    def __init__(self, rank: int, folder: str):
+    def __init__(self, rank: int, folder: str, data_split_mode=COL_SECURE):
         """Reads CSV dataset and return XGB data matrix in vertical secure mode.
 
         Args:
@@ -27,18 +30,19 @@ class SecureDataLoader(XGBDataLoader):
         """
         self.rank = rank
         self.folder = folder
+        self.data_split_mode = data_split_mode
 
     def load_data(self, client_id: str):
 
         train_path = f"{self.folder}/site-{self.rank + 1}/train.csv"
         valid_path = f"{self.folder}/site-{self.rank + 1}/valid.csv"
 
-        if self.rank == 0:
+        if self.rank == 0 or self.data_split_mode == ROW_SECURE:
             label = "&label_column=0"
         else:
             label = ""
 
-        train_data = xgb.DMatrix(train_path + f"?format=csv{label}", data_split_mode=2)
-        valid_data = xgb.DMatrix(valid_path + f"?format=csv{label}", data_split_mode=2)
+        train_data = xgb.DMatrix(train_path + f"?format=csv{label}", data_split_mode=self.data_split_mode)
+        valid_data = xgb.DMatrix(valid_path + f"?format=csv{label}", data_split_mode=self.data_split_mode)
 
         return train_data, valid_data

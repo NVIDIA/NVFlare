@@ -26,6 +26,7 @@ from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.private.fed.utils.fed_utils import register_ext_decomposers
 
 _SSL_ROOT_CERT = "rootCA.pem"
 _SHORT_SLEEP_TIME = 0.2
@@ -43,6 +44,7 @@ class IPCAgent:
         flare_site_connection_timeout=60.0,
         flare_site_heartbeat_timeout=None,
         resend_result_interval=2.0,
+        decomposer_module=None,
     ):
         """Constructor of Flare Agent. The agent is responsible for communicating with the Flare Client Job cell (CJ)
         to get task and to submit task result.
@@ -104,12 +106,19 @@ class IPCAgent:
         self.cell.register_request_cb(channel=defs.CHANNEL, topic=defs.TOPIC_HEARTBEAT, cb=self._handle_heartbeat)
         self.cell.register_request_cb(channel=defs.CHANNEL, topic=defs.TOPIC_BYE, cb=self._handle_bye)
         self.cell.register_request_cb(channel=defs.CHANNEL, topic=defs.TOPIC_ABORT, cb=self._handle_abort_task)
-        self.cell.add_incoming_request_filter(
-            channel=defs.CHANNEL,
+        self.cell.core_cell.add_incoming_request_filter(
+            channel="*",
+            topic="*",
+            cb=self._msg_received,
+        )
+        self.cell.core_cell.add_incoming_reply_filter(
+            channel="*",
             topic="*",
             cb=self._msg_received,
         )
         numpy_decomposers.register()
+        if decomposer_module:
+            register_ext_decomposers(decomposer_module)
 
     def start(self):
         """Start the agent. This method must be called to enable CJ/Agent communication.

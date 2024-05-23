@@ -23,6 +23,7 @@ from multiprocessing.connection import Listener
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, RunnerTask, WorkspaceConstants
+from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.multi_process_executor_constants import CommunicationMetaData
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
@@ -37,7 +38,12 @@ from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorClientAppRunner
 from nvflare.private.fed.simulator.simulator_audit import SimulatorAuditor
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, get_simulator_app_root
+from nvflare.private.fed.utils.fed_utils import (
+    add_logfile_handler,
+    fobs_initialize,
+    get_simulator_app_root,
+    register_ext_decomposers,
+)
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 from nvflare.security.security import EmptyAuthorizer
 
@@ -146,9 +152,10 @@ class ClientTaskWorker(FLComponent):
 
             client = self._create_client(args, build_ctx, deploy_args)
 
-            app_root = get_simulator_app_root(args.workspace, client.client_name)
+            app_root = get_simulator_app_root(args.simulator_root, client.client_name)
             app_custom_folder = os.path.join(app_root, "custom")
-            sys.path.append(app_custom_folder)
+            if os.path.isdir(app_custom_folder) and app_custom_folder not in sys.path:
+                sys.path.append(app_custom_folder)
 
             self.create_client_engine(client, deploy_args)
 
@@ -235,15 +242,15 @@ def main(args):
     log_file = os.path.join(args.workspace, WorkspaceConstants.LOG_FILE_NAME)
     add_logfile_handler(log_file)
 
-    app_custom_folder = os.path.join(args.workspace, "custom")
-    sys.path.append(app_custom_folder)
     os.chdir(args.workspace)
     startup = os.path.join(args.workspace, WorkspaceConstants.STARTUP_FOLDER_NAME)
     os.makedirs(startup, exist_ok=True)
     local = os.path.join(args.workspace, WorkspaceConstants.SITE_FOLDER_NAME)
     os.makedirs(local, exist_ok=True)
+    workspace = Workspace(root_dir=args.workspace, site_name=args.client)
 
-    fobs_initialize()
+    fobs_initialize(workspace, job_id=SimulatorConstants.JOB_NAME)
+    register_ext_decomposers(args.decomposer_module)
     AuthorizationService.initialize(EmptyAuthorizer())
     # AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
     AuditService.the_auditor = SimulatorAuditor()
@@ -278,6 +285,7 @@ def parse_arguments():
     parser.add_argument("--root_url", "-r", type=str, help="cellnet root_url")
     parser.add_argument("--parent_url", "-p", type=str, help="cellnet parent_url")
     parser.add_argument("--task_name", type=str, help="end_run")
+    parser.add_argument("--decomposer_module", type=str, help="decomposer_module name", required=True)
     args = parser.parse_args()
     return args
 

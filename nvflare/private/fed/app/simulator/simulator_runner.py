@@ -30,11 +30,13 @@ from urllib.parse import urlparse
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import (
+    ConfigVarName,
     FLMetaKey,
     JobConstants,
     MachineStatus,
     RunnerTask,
     RunProcessKey,
+    SystemConfigs,
     WorkspaceConstants,
 )
 from nvflare.apis.job_def import ALL_SITES, JobMetaKey
@@ -47,6 +49,7 @@ from nvflare.fuel.f3.stats_pool import StatsPoolManager
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, zip_directory_to_bytes
@@ -58,7 +61,14 @@ from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorServerAppRunner
 from nvflare.private.fed.simulator.simulator_audit import SimulatorAuditor
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, get_simulator_app_root, split_gpus
+from nvflare.private.fed.utils.fed_utils import (
+    add_logfile_handler,
+    custom_fobs_initialize,
+    get_simulator_app_root,
+    nvflare_fobs_initialize,
+    register_ext_decomposers,
+    split_gpus,
+)
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 from nvflare.security.security import EmptyAuthorizer
 
@@ -156,7 +166,7 @@ class SimulatorRunner(FLComponent):
         if not os.path.exists(self.args.workspace):
             os.makedirs(self.args.workspace)
         os.chdir(self.args.workspace)
-        fobs_initialize()
+        nvflare_fobs_initialize()
         AuthorizationService.initialize(EmptyAuthorizer())
         AuditService.the_auditor = SimulatorAuditor()
 
@@ -239,6 +249,15 @@ class SimulatorRunner(FLComponent):
 
             self.logger.info("Deploy the Apps.")
             self._deploy_apps(job_name, data_bytes, meta, log_config_file_path)
+
+            server_workspace = os.path.join(self.args.workspace, "server")
+            workspace = Workspace(root_dir=server_workspace, site_name="server")
+            custom_fobs_initialize(workspace)
+
+            decomposer_module = ConfigService.get_str_var(
+                name=ConfigVarName.DECOMPOSER_MODULE, conf=SystemConfigs.RESOURCES_CONF
+            )
+            register_ext_decomposers(decomposer_module)
 
             return True
 
@@ -476,7 +495,8 @@ class SimulatorRunner(FLComponent):
 
         args.server_config = os.path.join("config", JobConstants.SERVER_JOB_CONFIG)
         app_custom_folder = os.path.join(app_server_root, "custom")
-        sys.path.append(app_custom_folder)
+        if os.path.isdir(app_custom_folder) and app_custom_folder not in sys.path:
+            sys.path.append(app_custom_folder)
 
         startup = os.path.join(args.workspace, WorkspaceConstants.STARTUP_FOLDER_NAME)
         os.makedirs(startup, exist_ok=True)
@@ -632,6 +652,10 @@ class SimulatorClientRunner(FLComponent):
         logging_config = os.path.join(
             self.args.workspace, client.client_name, "local", WorkspaceConstants.LOGGING_CONFIG
         )
+        decomposer_module = ConfigService.get_str_var(
+            name=ConfigVarName.DECOMPOSER_MODULE, conf=SystemConfigs.RESOURCES_CONF
+        )
+
         command = (
             sys.executable
             + " -m nvflare.private.fed.app.simulator.simulator_worker -o "
@@ -654,14 +678,14 @@ class SimulatorClientRunner(FLComponent):
             + str(client.cell.get_internal_listener_url())
             + " --task_name "
             + str(task_name)
+            + " --decomposer_module "
+            + str(decomposer_module)
         )
         if gpu:
             command += " --gpu " + str(gpu)
         new_env = os.environ.copy()
-        if not sys.path[0]:
-            new_env["PYTHONPATH"] = os.pathsep.join(sys.path[1:])
-        else:
-            new_env["PYTHONPATH"] = os.pathsep.join(sys.path)
+        new_env["PYTHONPATH"] = os.pathsep.join(self._get_new_sys_path())
+
         _ = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
 
         conn = self._create_connection(open_port, timeout=timeout)
@@ -695,6 +719,13 @@ class SimulatorClientRunner(FLComponent):
                 break
 
         return stop_run, next_client, end_run_client
+
+    def _get_new_sys_path(self):
+        new_sys_path = []
+        for i in range(0, len(sys.path) - 1):
+            if sys.path[i]:
+                new_sys_path.append(sys.path[i])
+        return new_sys_path
 
     def _create_connection(self, open_port, timeout=60.0):
         conn = None
