@@ -19,7 +19,7 @@ from tf_net import TFNet
 # (1) import nvflare client API
 import nvflare.client as flare
 
-PATH = "./tf_model.ckpt"
+PATH = "./tf_model.weights.h5"
 
 
 def main():
@@ -33,7 +33,10 @@ def main():
     print("Number of devices: {}".format(strategy.num_replicas_in_sync))
 
     with strategy.scope():
-        model = TFNet(input_shape=(None, 32, 32, 3))
+        model = TFNet()
+        model.compile(
+            optimizer="adam", loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=["accuracy"]
+        )
         model.summary()
 
     # (2) initializes NVFlare client API
