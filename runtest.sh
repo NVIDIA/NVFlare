@@ -267,7 +267,7 @@ do
         ;;
 
         -u |--unit*)
-            cmd_prefix="python3 -m pytest --numprocesses=auto -v "
+            cmd_prefix="python3 -m pytest --numprocesses=8 -v "
 
             echo "coverage_report=" ${coverage_report}
             if [ "${coverage_report}" == true ]; then
@@ -304,7 +304,7 @@ if [[ -z $cmd ]]; then
     cmd="check_license;
         check_style_type_import "${DIR_TO_CHECK[@]}";
         fix_style_import "${DIR_TO_CHECK[@]}";
-        python3 -m pytest --numprocesses=auto -v --cov=nvflare --cov-report html:cov_html --cov-report xml:cov.xml --junitxml=unit_test.xml --dist loadgroup tests/unit_test;
+        python3 -m pytest --numprocesses=8 -v --cov=nvflare --cov-report html:cov_html --cov-report xml:cov.xml --junitxml=unit_test.xml --dist loadgroup tests/unit_test;
         "
 else
     cmd="$cmd $target"

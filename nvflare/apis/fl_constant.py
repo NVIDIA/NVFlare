@@ -472,6 +472,9 @@ class ConfigVarName:
     # server: wait this long since job schedule time before starting to check dead/disconnected clients
     DEAD_CLIENT_CHECK_LEAD_TIME = "dead_client_check_lead_time"
 
+    # customized nvflare decomposers module name
+    DECOMPOSER_MODULE = "nvflare_decomposers"
+
 
 class SystemVarName:
     """

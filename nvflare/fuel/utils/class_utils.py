@@ -136,3 +136,28 @@ class ModuleScanner:
             The module name if found.
         """
         return self._class_table.get(class_name, None)
+
+
+def _retrieve_parameters(class__, parameters):
+    constructor = class__.__init__
+    constructor__parameters = inspect.signature(constructor).parameters
+    parameters.update(constructor__parameters)
+    if "args" in constructor__parameters.keys() and "kwargs" in constructor__parameters.keys():
+        for item in class__.__bases__:
+            parameters.update(_retrieve_parameters(item, parameters))
+    return parameters
+
+
+def get_component_init_parameters(component):
+    """To retrieve the initialize parameters of an object from the class constructor.
+
+    Args:
+        component: a class instance
+
+    Returns:
+
+    """
+    class__ = component.__class__
+    parameters = {}
+    _retrieve_parameters(class__, parameters)
+    return parameters

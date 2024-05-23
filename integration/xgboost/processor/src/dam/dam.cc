@@ -26,7 +26,7 @@ void print_buffer(uint8_t *buffer, int size) {
 }
 
 // DamEncoder ======
-void DamEncoder::AddFloatArray(std::vector<double> &value) {
+void DamEncoder::AddFloatArray(const std::vector<double> &value) {
     if (encoded) {
         std::cout << "Buffer is already encoded" << std::endl;
         return;
@@ -38,7 +38,7 @@ void DamEncoder::AddFloatArray(std::vector<double> &value) {
     entries->push_back(new Entry(kDataTypeFloatArray, buffer, value.size()));
 }
 
-void  DamEncoder::AddIntArray(std::vector<int64_t> &value) {
+void  DamEncoder::AddIntArray(const std::vector<int64_t> &value) {
     std::cout << "AddIntArray called, size:  " << value.size() << std::endl;
     if (encoded) {
         std::cout << "Buffer is already encoded" << std::endl;

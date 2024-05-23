@@ -64,13 +64,14 @@ def main(args):
     try:
         os.chdir(args.workspace)
 
-        fobs_initialize()
+        fobs_initialize(workspace)
 
         conf = FLServerStarterConfiger(
             workspace=workspace,
             args=args,
             kv_list=args.set,
         )
+
         log_level = os.environ.get("FL_LOG_LEVEL", "")
         numeric_level = getattr(logging, log_level.upper(), None)
         if isinstance(numeric_level, int):
