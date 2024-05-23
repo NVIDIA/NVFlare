@@ -58,7 +58,7 @@ class FedAvg(BaseFedAvg):
 
             aggregate_results = self.aggregate(
                 results, aggregate_fn=self.aggregate_fn
-            )  # using default aggregate_fn with `WeightedAggregationHelper`. Can overwrite self.aggregrate_fn with signature Callable[List[FLModel], FLModel]
+            )  # using default aggregate_fn with `WeightedAggregationHelper`. Can overwrite self.aggregate_fn with signature Callable[List[FLModel], FLModel]
 
             model = self.update_model(model, aggregate_results)
 
