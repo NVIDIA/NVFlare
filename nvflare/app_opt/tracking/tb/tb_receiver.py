@@ -23,6 +23,7 @@ if torch_ok:
 
 tf, tf_ok = optional_import(module="tensorflow")
 if tf_ok and not torch_ok:
+    # flake8: noqa: F811
     from tensorflow.summary import SummaryWriter
 
 from nvflare.apis.analytix import AnalyticsData, AnalyticsDataType
