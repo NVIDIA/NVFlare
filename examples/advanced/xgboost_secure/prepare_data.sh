@@ -34,3 +34,10 @@ python3 utils/prepare_data_horizontal.py \
 --data_path "${SPLIT_PATH}/train.csv" \
 --site_num 3 \
 --out_path "${OUTPUT_PATH}"
+
+echo "Split training/validation data both verically and horizontally"
+OUTPUT_PATH="${PWD}/dataset/test_col_xgb_data"
+python3 utils/prepare_data_col_tests.py \
+--data_path "${SPLIT_PATH}/train.csv" \
+--site_num 2 \
+--out_path "${OUTPUT_PATH}"

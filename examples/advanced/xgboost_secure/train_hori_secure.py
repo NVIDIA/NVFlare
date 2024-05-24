@@ -6,9 +6,19 @@ import time
 import xgboost as xgb
 import xgboost.federated
 import pandas as pd
+import shap
+import matplotlib.pyplot as plt
 
 PRINT_SAMPLE = False
 DATASET_ROOT = "./dataset/horizontal_xgb_data"
+TEST_DATA_PATH = "./dataset/test.csv"
+
+def load_test_data(data_path: str):
+    df = pd.read_csv(data_path)
+    # Split to feature and label
+    X = df.iloc[:, 1:]
+    y = df.iloc[:, 0]
+    return X, y
 
 def run_server(port: int, world_size: int) -> None:
     xgboost.federated.run_federated_server(port, world_size)
@@ -69,14 +79,47 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         # Run training, all the features in training API is available.
         bst = xgb.train(param, dtrain, num_round, evals=watchlist)
 
-        # Save the model, same model for all ranksonly ask process 0 to save the model.
-        if xgb.collective.get_rank() == 0:
-            bst.save_model("./model/model.hori.secure.json")
-            xgb.collective.communicator_print("Finished training\n")
+        # Save the model, only ask process 0 to save the model.
+        rank = xgb.collective.get_rank()
+        bst.save_model(f"./model/model.hori.secure.{rank}.json")
+        xgb.collective.communicator_print("Finished training\n")
 
+        # save feature importance score to file
+        score = bst.get_score(importance_type='gain')
+        with open(f'./explain/feat_importance.secure.base.{rank}.txt', 'w') as f:
+            for key in score:
+                f.write(f'{key}: {score[key]}\n')
+
+        # Load test data
+        X_test, y_test = load_test_data(TEST_DATA_PATH)
+        # construct xgboost DMatrix
+        dmat_test = xgb.DMatrix(X_test, label=y_test)
+
+        # Explain the model
+        explainer = shap.TreeExplainer(bst)
+        explanation = explainer(dmat_test)
+
+        # save the beeswarm plot to png file
+        shap.plots.beeswarm(explanation, show=False)
+        img = plt.gcf()
+        img.savefig(f'./explain/shap.hori.secure.{rank}.png')
+
+        # dump tree and save to text file
+        dump = bst.get_dump()
+        with open(f'./tree/tree_dump.hori.secure.{rank}.txt', 'w') as f:
+            for tree in dump:
+                f.write(tree)
+
+        # plot tree and save to png file
+        xgb.plot_tree(bst, num_trees=0)
+        plt.savefig(f'./tree/tree.hori.secure.{rank}.png')
+
+        # export tree to dataframe
+        tree_df = bst.trees_to_dataframe()
+        tree_df.to_csv(f'./tree/tree_df.hori.secure.{rank}.csv')
 
 def run_federated() -> None:
-    port = 5555
+    port = 2222
     world_size = int(sys.argv[1])
 
     server = multiprocessing.Process(target=run_server, args=(port, world_size))

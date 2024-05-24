@@ -16,6 +16,7 @@ import argparse
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 from lifelines import KaplanMeierFitter
 from sksurv.datasets import load_veterans_lung_cancer
 from lifelines.utils import survival_table_from_events
@@ -32,6 +33,11 @@ def args_parser():
 
 def prepare_data(site_num: int = 3, bin_days: int = 7):
     data_x, data_y = load_veterans_lung_cancer()
+    # combine x and y data and save to a csv file
+    data_y_df = pd.DataFrame({"Status": data_y["Status"], 'Survival_in_days': data_y["Survival_in_days"]})
+    data = pd.concat([data_x, data_y_df], axis=1)
+    data.to_csv("lung_cancer.csv")
+
     total_data_num = data_x.shape[0]
     print(f"Total data count: {total_data_num}")
     event = data_y["Status"]

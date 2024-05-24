@@ -1,10 +1,19 @@
 #!/usr/bin/python
 import xgboost as xgb
 import pandas as pd
+import shap
+import matplotlib.pyplot as plt
 
 PRINT_SAMPLE = False
 DATASET_ROOT = "./dataset/base_xgb_data"
+TEST_DATA_PATH = "./dataset/test.csv"
 
+def load_test_data(data_path: str):
+    df = pd.read_csv(data_path)
+    # Split to feature and label
+    X = df.iloc[:, 1:]
+    y = df.iloc[:, 0]
+    return X, y
 
 def run_training() -> None:
     # Specify file path, rank 0 as the label owner, others as the feature owner
@@ -49,11 +58,43 @@ def run_training() -> None:
     # Run training, all the features in training API is available.
     bst = xgb.train(param, dtrain, num_round, evals=watchlist)
 
-    # Save the model, only ask process 0 to save the model.
-    if xgb.collective.get_rank() == 0:
-        bst.save_model("./model/model.base.json")
-        xgb.collective.communicator_print("Finished training\n")
+    # Save the model
+    bst.save_model("./model/model.base.json")
+    xgb.collective.communicator_print("Finished training\n")
 
+    # save feature importance score to file
+    score = bst.get_score(importance_type='gain')
+    with open('./explain/feat_importance.base.txt', 'w') as f:
+        for key in score:
+            f.write(f'{key}: {score[key]}\n')
+
+    # Load test data
+    X_test, y_test = load_test_data(TEST_DATA_PATH)
+    # construct xgboost DMatrix
+    dmat_test = xgb.DMatrix(X_test, label=y_test)
+
+    # Explain the model
+    explainer = shap.TreeExplainer(bst)
+    explanation = explainer(dmat_test)
+
+    # save the beeswarm plot to png file
+    shap.plots.beeswarm(explanation, show=False)
+    img = plt.gcf()
+    img.savefig('./explain/shap.base.png')
+
+    # dump tree and save to text file
+    dump = bst.get_dump()
+    with open('./tree/tree_dump.base.txt', 'w') as f:
+        for tree in dump:
+            f.write(tree)
+
+    # plot tree and save to png file
+    xgb.plot_tree(bst, num_trees=0)
+    plt.savefig('./tree/tree.base.png')
+
+    # export tree to dataframe
+    tree_df = bst.trees_to_dataframe()
+    tree_df.to_csv('./tree/tree_df.base.csv')
 
 
 if __name__ == '__main__':
