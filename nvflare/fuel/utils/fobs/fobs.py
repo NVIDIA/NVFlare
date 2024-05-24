@@ -15,6 +15,7 @@ import importlib
 import inspect
 import logging
 import os
+import sys
 from enum import Enum
 from os.path import dirname, join
 from typing import Any, BinaryIO, Dict, Type, TypeVar, Union
@@ -189,12 +190,47 @@ def register_folder(folder: str, package: str):
     for module in os.listdir(folder):
         if module != "__init__.py" and module[-3:] == ".py":
             decomposers = package + "." + module[:-3]
-            imported = importlib.import_module(decomposers, __package__)
-            for _, cls_obj in inspect.getmembers(imported, inspect.isclass):
-                spec = inspect.getfullargspec(cls_obj.__init__)
-                # classes who are abstract or take extra args in __init__ can't be auto-registered
-                if issubclass(cls_obj, Decomposer) and not inspect.isabstract(cls_obj) and len(spec.args) == 1:
-                    register(cls_obj)
+            try:
+                imported = importlib.import_module(decomposers, __package__)
+                for _, cls_obj in inspect.getmembers(imported, inspect.isclass):
+                    spec = inspect.getfullargspec(cls_obj.__init__)
+                    # classes who are abstract or take extra args in __init__ can't be auto-registered
+                    if issubclass(cls_obj, Decomposer) and not inspect.isabstract(cls_obj) and len(spec.args) == 1:
+                        register(cls_obj)
+            except (ModuleNotFoundError, RuntimeError) as e:
+                log.debug(
+                    f"Try to import module {decomposers}, but failed: {secure_format_exception(e)}. "
+                    f"Can't use name in config to refer to classes in module: {decomposers}."
+                )
+                pass
+
+
+def register_custom_folder(folder: str):
+    if os.path.isdir(folder) and folder not in sys.path:
+        sys.path.append(folder)
+
+    for root, dirs, files in os.walk(folder):
+        for filename in files:
+            if filename.endswith(".py"):
+                module = filename[:-3]
+                sub_folder = os.path.relpath(root, folder).strip(".").replace(os.sep, ".")
+                if sub_folder:
+                    module = sub_folder + "." + module
+
+                try:
+                    imported = importlib.import_module(module)
+                    for _, cls_obj in inspect.getmembers(imported, inspect.isclass):
+                        if issubclass(cls_obj, Decomposer) and not inspect.isabstract(cls_obj):
+                            spec = inspect.getfullargspec(cls_obj.__init__)
+                            if len(spec.args) == 1:
+                                register(cls_obj)
+                            else:
+                                # Can't handle argument in constructor
+                                log.warning(
+                                    f"Invalid Decomposer from {module}: can't have argument in Decomposer's constructor"
+                                )
+                except (ModuleNotFoundError, RuntimeError):
+                    pass
 
 
 def _register_decomposers():
