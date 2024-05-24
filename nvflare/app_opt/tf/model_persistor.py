@@ -48,6 +48,13 @@ class TFModelPersistor(ModelPersistor):
             self.logger.info("Loading server model and weights")
             self.model.load_weights(self._model_save_path)
 
+        # build model if not built yet
+        if not self.model.built:
+            if hasattr(self.model, "_input_shape"):
+                self.model.build(input_shape=self.model._input_shape)
+            else:
+                raise AttributeError("To use delayed model build, you need to set model._input_shape")
+
         # get flat model parameters
         layer_weights_dict = {layer.name: layer.get_weights() for layer in self.model.layers}
         result = flat_layer_weights_dict(layer_weights_dict)
