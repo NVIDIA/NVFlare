@@ -31,7 +31,7 @@ if __name__ == "__main__":
     job.to(controller, "server")
 
     # Define the initial global model and send to server
-    job.to(TFNet(), "server")
+    job.to(TFNet(input_shape=(None, 32, 32, 3)), "server")
 
     # Add clients
     for i in range(n_clients):
