@@ -23,10 +23,10 @@ from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.security.logging import secure_format_exception
 
-from .wf_controller import WFController
+from .model_controller import ModelController
 
 
-class BaseFedAvg(WFController):
+class BaseFedAvg(ModelController):
     def __init__(
         self,
         *args,
@@ -36,11 +36,11 @@ class BaseFedAvg(WFController):
         persist_every_n_rounds: int = 1,
         **kwargs,
     ):
-        """The base controller for FedAvg Workflow. *Note*: This class is based on the `WFController`.
+        """The base controller for FedAvg Workflow. *Note*: This class is based on the `ModelController`.
 
         Implements [FederatedAveraging](https://arxiv.org/abs/1602.05629).
 
-        A model persistor can be configured via the `persistor_id` argument of the `WFController`.
+        A model persistor can be configured via the `persistor_id` argument of the `ModelController`.
         The model persistor is used to load the initial global model which is sent to a list of clients.
         Each client sends it's updated weights after local training which is aggregated.
         Next, the global model is updated.
