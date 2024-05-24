@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .wf_controller import WFController
+from .model_controller import ModelController
 
 
-class Cyclic(WFController):
+class Cyclic(ModelController):
     def __init__(
         self,
         *args,
@@ -24,7 +24,7 @@ class Cyclic(WFController):
         start_round: int = 0,
         **kwargs,
     ):
-        """The Cyclic Workflow controller to implement the Cyclic Weight Transfer (CWT) algorithm.
+        """The Cyclic ModelController to implement the Cyclic Weight Transfer (CWT) algorithm.
 
         Args:
             min_clients (int, optional): The minimum number of clients. Defaults to 2.

@@ -2,7 +2,7 @@
 
 This example illustrates two features:
 * How to perform Kaplan-Meier survival analysis in federated setting without and with secure features via time-binning and Homomorphic Encryption (HE).
-* How to use the Flare Workflow Controller API to contract a workflow to facilitate HE under simulator mode.  
+* How to use the Flare ModelController API to contract a workflow to facilitate HE under simulator mode.
 
 ## Secure Multi-party Kaplan-Meier Analysis
 Kaplan-Meier survival analysis is a one-shot (non-iterative) analysis performed on a list of events and their corresponding time. In this example, we use [lifelines](https://zenodo.org/records/10456828) to perform this analysis. 
@@ -37,15 +37,15 @@ Here, we show the survival curve for both daily (without binning) and weekly bin
 
 
 ## Federated Kaplan-Meier Analysis w/o and w/ HE 
-We make use of FLARE Workflow Controller API to implement the federated Kaplan-Meier analysis, both without and with HE.
+We make use of FLARE ModelController API to implement the federated Kaplan-Meier analysis, both without and with HE.
 
-The Flare Workflow Controller API (`WFController`) provides the functionality of flexible FLModel payloads for each round of federated analysis. This gives us the flexibility of transmitting various information needed by our scheme at different stages of federated learning.
+The Flare ModelController API (`ModelController`) provides the functionality of flexible FLModel payloads for each round of federated analysis. This gives us the flexibility of transmitting various information needed by our scheme at different stages of federated learning.
 
-Our [existing HE examples](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/cifar10-real-world) uses data filter mechanism for HE, provisioning the HE context information (specs and keys) for both client and server of the federated job under [CKKS](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/app_opt/he/model_encryptor.py) scheme. In this example, we would like to illustrate WFController's capability in supporting customized needs beyond the existing HE functionalities (designed mainly for encrypting deep learning models).
+Our [existing HE examples](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/cifar10-real-world) uses data filter mechanism for HE, provisioning the HE context information (specs and keys) for both client and server of the federated job under [CKKS](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/app_opt/he/model_encryptor.py) scheme. In this example, we would like to illustrate ModelController's capability in supporting customized needs beyond the existing HE functionalities (designed mainly for encrypting deep learning models).
 - different HE schemes (BFV) rather than CKKS
 - different content at different rounds of federated learning, and only specific payload needs to be encrypted
 
-With the WFController API, such "proof of concept" experiment becomes easy. In this example, the federated analysis pipeline includes 2 rounds without HE, or 3 rounds with HE. 
+With the ModelController API, such "proof of concept" experiment becomes easy. In this example, the federated analysis pipeline includes 2 rounds without HE, or 3 rounds with HE.
 
 For the federated analysis without HE, the detailed steps are as follows:
 1. Server sends the simple start message without any payload.
