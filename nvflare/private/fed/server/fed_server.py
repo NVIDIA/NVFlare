@@ -32,10 +32,12 @@ from nvflare.apis.fl_constant import (
     ServerCommandKey,
     ServerCommandNames,
     SnapshotKey,
+    SystemComponents,
     WorkspaceConstants,
 )
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import NotAuthenticated
+from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.cell import Cell
@@ -374,9 +376,22 @@ class FederatedServer(BaseServer):
                 reply = make_cellnet_reply(F3ReturnCode.OK, "", None)
                 return reply
         elif command == ServerCommandNames.HEARTBEAT:
+            if job_id not in self.engine.run_processes:
+                self.engine.abort_app_on_server(job_id)
+                self._set_job_aborted(job_id)
+                self.logger.info(
+                    f"Job: {job_id} should not be running, but still sending the heartbeat calls. Abort the job."
+                )
             return make_cellnet_reply(F3ReturnCode.OK, "", None)
         else:
             return make_cellnet_reply(F3ReturnCode.INVALID_REQUEST, "", None)
+
+    def _set_job_aborted(self, job_id):
+        job_manager = self.engine.get_component(SystemComponents.JOB_MANAGER)
+        with self.engine.new_context() as fl_ctx:
+            job = job_manager.get_job(job_id, fl_ctx)
+            if job.meta.get(JobMetaKey.STATUS) == RunStatus.RUNNING:
+                job_manager.set_status(job_id, RunStatus.FINISHED_ABORTED, fl_ctx)
 
     def _create_server_engine(self, args, snapshot_persistor):
         return ServerEngine(
@@ -687,11 +702,22 @@ class FederatedServer(BaseServer):
                 if self.engine.asked_to_stop:
                     self.engine.engine_info.status = MachineStatus.STOPPED
 
+                self._send_parent_heartbeat(job_id)
                 time.sleep(self.check_engine_frequency)
 
         finally:
             self.engine.engine_info.status = MachineStatus.STOPPED
             self.run_manager = None
+
+    def _send_parent_heartbeat(self, job_id):
+        if self.cell:
+            request = new_cell_message({CellMessageHeaderKeys.JOB_ID: job_id}, {})
+            self.cell.fire_and_forget(
+                targets=FQCN.ROOT_SERVER,
+                channel=CellChannel.SERVER_PARENT_LISTENER,
+                topic=ServerCommandNames.HEARTBEAT,
+                message=request,
+            )
 
     def create_run_manager(self, workspace, job_id):
         return RunManager(
