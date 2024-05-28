@@ -94,16 +94,43 @@ class ServerEngineSpec(EngineSpec, ABC):
     ) -> dict:
         """Send a request to specified clients via the aux channel.
 
-        Implementation: simply calls the ServerAuxRunner's send_aux_request method.
+        Implementation: simply calls the AuxRunner's send_aux_request method.
 
         Args:
-            targets: target clients. None or empty list means all clients
-            topic: topic of the request
+            targets: target clients. None or empty list means all clients.
+            topic: topic of the request.
             request: request to be sent
             timeout: number of secs to wait for replies. 0 means fire-and-forget.
             fl_ctx: FL context
             optional: whether this message is optional
             secure: send the aux request in a secure way
+
+        Returns: a dict of replies (client name => reply Shareable)
+
+        """
+        pass
+
+    @abstractmethod
+    def multicast_aux_requests(
+            self,
+            topic: str,
+            target_requests: Dict[str, Shareable],
+            timeout: float,
+            fl_ctx: FLContext,
+            optional: bool = False,
+            secure: bool = False,
+    ) -> dict:
+        """Send requests to specified clients via the aux channel.
+
+        Implementation: simply calls the AuxRunner's multicast_aux_requests method.
+
+        Args:
+            topic: topic of the request
+            target_requests: requests of the target clients. Different target can have different request.
+            timeout: amount of time to wait for responses. 0 means fire and forget.
+            fl_ctx: FL context
+            optional: whether this request is optional
+            secure: whether to send the aux request in P2P secure
 
         Returns: a dict of replies (client name => reply Shareable)
 
@@ -210,4 +237,7 @@ class ServerEngineSpec(EngineSpec, ABC):
         Returns:
             Client name
         """
+        pass
+
+    def register_app_command(self, topic: str, cmd_func, *args, **kwargs):
         pass

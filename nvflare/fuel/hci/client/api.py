@@ -19,7 +19,7 @@ import ssl
 import threading
 import time
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from nvflare.fuel.hci.client.event import EventContext, EventHandler, EventPropKey, EventType
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args
@@ -713,6 +713,10 @@ class AdminAPI(AdminAPISpec):
         if custom_props:
             conn.update_meta({MetaKey.CUSTOM_PROPS: custom_props})
 
+        cmd_props = ctx.get_command_props()
+        if cmd_props:
+            conn.update_meta({MetaKey.CMD_PROPS: cmd_props})
+
         conn.close()
 
         receiver = ctx.get_bytes_receiver()
@@ -835,7 +839,7 @@ class AdminAPI(AdminAPISpec):
         Returns: command processing info
 
         """
-        cmd_type, cmd_name, args, entries = self._get_command_detail(command)
+        cmd_type, cmd_name, _, entries = self._get_command_detail(command)
 
         if cmd_type == _CMD_TYPE_UNKNOWN:
             return CommandInfo.UNKNOWN
@@ -874,11 +878,12 @@ class AdminAPI(AdminAPISpec):
             return {ResultKey.STATUS: APIStatus.ERROR_RUNTIME, ResultKey.DETAILS: "Client did not respond"}
         return result
 
-    def do_command(self, command):
+    def do_command(self, command: str, props=None):
         """A convenient method to call commands using string.
 
         Args:
           command (str): command
+          props: additional props
 
         Returns:
             Object containing status and details (or direct response from server, which originally was just time and data)
@@ -909,9 +914,9 @@ class AdminAPI(AdminAPISpec):
                 ResultKey.DETAILS: "Session is inactive, please try later",
             }
 
-        return self.server_execute(command, cmd_entry=ent)
+        return self.server_execute(command, cmd_entry=ent, props=props)
 
-    def server_execute(self, command, reply_processor=None, cmd_entry=None, cmd_ctx=None):
+    def server_execute(self, command, reply_processor=None, cmd_entry=None, cmd_ctx=None, props=None):
         if self.in_logout:
             return {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.DETAILS: "session is logging out"}
 
@@ -921,6 +926,11 @@ class AdminAPI(AdminAPISpec):
         else:
             ctx = self._new_command_context(command, args, cmd_entry)
         ctx.set_command(command)
+
+        if props:
+            self.debug(f"server_execute: set cmd props to ctx {props}")
+            ctx.set_command_props(props)
+
         start = time.time()
         ctx.set_reply_processor(reply_processor)
         self._try_command(ctx)

@@ -229,6 +229,7 @@ class AdminCommandNames(object):
     SHELL_HEAD = "head"
     SHELL_TAIL = "tail"
     SHELL_GREP = "grep"
+    APP_COMMAND = "app_command"
 
 
 class ServerCommandNames(object):
@@ -246,6 +247,7 @@ class ServerCommandNames(object):
     UPDATE_RUN_STATUS = "update_run_status"
     HANDLE_DEAD_JOB = "handle_dead_job"
     SERVER_STATE = "server_state"
+    APP_COMMAND = "app_command"
 
 
 class ServerCommandKey(object):

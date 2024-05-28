@@ -27,7 +27,7 @@ try:
 except ImportError:
     readline = None
 
-from nvflare.fuel.hci.cmd_arg_utils import join_args, split_to_args
+from nvflare.fuel.hci.cmd_arg_utils import join_args, split_to_args, parse_command_line
 from nvflare.fuel.hci.proto import CredentialType, ProtoKey
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandRegister, CommandSpec
 from nvflare.fuel.hci.security import hash_password, verify_password
@@ -312,7 +312,7 @@ class AdminClient(cmd.Cmd, EventHandler):
         return answer.strip()
 
     def _do_default(self, line):
-        args = split_to_args(line)
+        line, args, props = parse_command_line(line)
         cmd_name = args[0]
 
         # check for file output
@@ -384,7 +384,7 @@ class AdminClient(cmd.Cmd, EventHandler):
 
         # execute the command!
         start = time.time()
-        resp = self.api.do_command(line)
+        resp = self.api.do_command(line, props=props)
         secs = time.time() - start
         usecs = int(secs * 1000000)
         done = "Done [{} usecs] {}".format(usecs, datetime.now())

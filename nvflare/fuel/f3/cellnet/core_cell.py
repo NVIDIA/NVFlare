@@ -1492,10 +1492,19 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             self.logger.debug(f"{self.get_fqcn()}: bulk item: {req.headers}")
             self._process_request(origin=origin, message=req)
 
-    def fire_multi_requests_and_forget(self, target_msgs: Dict[str, TargetMessage], optional=False) -> Dict[str, str]:
+    def fire_multi_requests_and_forget(
+            self,
+            target_msgs: Dict[str, TargetMessage],
+            optional=False,
+            secure=False) -> Dict[str, str]:
         for _, tm in target_msgs.items():
             request = tm.message
-            request.add_headers({MessageHeaderKey.REPLY_EXPECTED: False, MessageHeaderKey.OPTIONAL: optional})
+            request.add_headers(
+                {MessageHeaderKey.REPLY_EXPECTED: False,
+                 MessageHeaderKey.OPTIONAL: optional,
+                 MessageHeaderKey.SECURE: secure,
+                 }
+            )
         return self._send_target_messages(target_msgs)
 
     def send_reply(self, reply: Message, to_cell: str, for_req_ids: List[str], secure=False, optional=False) -> str:

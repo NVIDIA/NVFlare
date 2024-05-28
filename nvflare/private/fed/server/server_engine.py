@@ -69,6 +69,7 @@ from .run_info import RunInfo
 from .run_manager import RunManager
 from .server_engine_internal_spec import EngineInfo, ServerEngineInternalSpec
 from .server_status import ServerStatus
+from .server_commands import ServerCommands
 
 
 class ServerEngine(ServerEngineInternalSpec):
@@ -421,6 +422,22 @@ class ServerEngine(ServerEngineInternalSpec):
             self.logger.error(f"Failed to get_app_run_info for run: {job_id}")
         return run_info
 
+    def send_app_command(self, job_id: str, topic: str, cmd_data, timeout: float) -> Shareable:
+        cmd = Shareable()
+        cmd[ServerCommandKey.TOPIC] = topic
+        cmd[ServerCommandKey.DATA] = cmd_data
+        try:
+            result = self.send_command_to_child_runner_process(
+                job_id=job_id,
+                command_name=ServerCommandNames.APP_COMMAND,
+                command_data=cmd,
+                timeout=timeout,
+            )
+        except Exception as ex:
+            self.logger.error(f"Exception sending app command to SJ {job_id}: {secure_format_exception(ex)}")
+            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+        return result
+
     def set_run_manager(self, run_manager: RunManager):
         self.run_manager = run_manager
         for _, widget in self.widgets.items():
@@ -525,6 +542,24 @@ class ServerEngine(ServerEngineInternalSpec):
                 return {}
         except Exception as e:
             self.logger.error(f"Failed to send the aux_message: {topic} with exception: {secure_format_exception(e)}.")
+
+    def multicast_aux_requests(
+            self,
+            topic: str,
+            target_requests: Dict[str, Shareable],
+            timeout: float,
+            fl_ctx: FLContext,
+            optional: bool = False,
+            secure: bool = False,
+    ) -> dict:
+        return self.run_manager.aux_runner.multicast_aux_requests(
+            topic=topic,
+            target_requests=target_requests,
+            timeout=timeout,
+            fl_ctx=fl_ctx,
+            optional=optional,
+            secure=secure,
+        )
 
     def sync_clients_from_main_process(self):
         # repeatedly ask the parent process to get participating clients until we receive the result
@@ -810,6 +845,10 @@ class ServerEngine(ServerEngineInternalSpec):
         if requests:
             replies = self._send_admin_requests(requests, fl_ctx, timeout_secs=20)
         return replies
+
+    def register_app_command(self, topic: str, cmd_func, *args, **kwargs):
+        self.logger.debug(f"registering app command {topic}")
+        ServerCommands.register_app_command(topic, cmd_func, *args, *kwargs)
 
     def stop_all_jobs(self):
         fl_ctx = self.new_context()

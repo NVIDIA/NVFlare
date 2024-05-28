@@ -14,13 +14,13 @@
 
 import time
 from threading import Lock
-from typing import List
+from typing import List, Dict
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
-from nvflare.fuel.f3.cellnet.core_cell import Message, MessageHeaderKey
+from nvflare.fuel.f3.cellnet.core_cell import Message, MessageHeaderKey, TargetMessage
 from nvflare.fuel.f3.cellnet.core_cell import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.private.defs import CellChannel
@@ -69,6 +69,7 @@ class AuxRunner(FLComponent):
             if topic in self.topic_table:
                 raise ValueError(f"handler already registered for topic {topic}")
             self.topic_table[topic] = message_handle_func
+            self.logger.info(f"registered aux handler for topic {topic}")
 
     def _process_request(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         """Call to process the request.
@@ -140,6 +141,119 @@ class AuxRunner(FLComponent):
             if cookie_jar:
                 valid_reply.set_cookie_jar(cookie_jar)
         return valid_reply
+
+    def _wait_for_cell(self):
+        start = time.time()
+        self.logger.debug("waiting for cell...")
+        max_wait = 5.0
+        while True:
+            cell = self.engine.get_cell()
+            if cell:
+                self.logger.debug(f"Got cell in {time.time() - start} secs")
+                return cell
+            if time.time() - start > max_wait:
+                self.logger.error(f"Cannot get cell after {max_wait} seconds!")
+                return None
+            time.sleep(0.01)
+
+    def _process_cell_replies(
+            self,
+            cell_replies: dict,
+            topic: str,
+            channel: str,
+    ):
+        replies = {}
+        if cell_replies:
+            for k, v in cell_replies.items():
+                assert isinstance(v, Message)
+                rc = v.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
+                target_name = FQCN.get_root(k)
+                if rc == CellReturnCode.OK:
+                    result = v.payload
+                    if not isinstance(result, Shareable):
+                        self.logger.error(f"reply of {channel}:{topic} must be Shareable but got {type(result)}")
+                        result = make_reply(ReturnCode.ERROR)
+                    replies[target_name] = result
+                else:
+                    src = self._convert_return_code(rc)
+                    replies[target_name] = make_reply(src)
+        return replies
+
+    def multicast_aux_requests(
+            self,
+            topic: str,
+            target_requests: Dict[str, Shareable],
+            timeout: float,
+            fl_ctx: FLContext,
+            optional: bool = False,
+            secure: bool = False,
+    ) -> dict:
+        if not target_requests:
+            return {}
+
+        # validate target names
+        target_names = [n for n in target_requests.keys()]
+        _, invalid_names = self.engine.validate_targets(target_names)
+        if invalid_names:
+            raise ValueError(f"invalid target(s): {invalid_names}")
+
+        try:
+            return self._send_multi_requests(
+                topic=topic,
+                target_requests=target_requests,
+                timeout=timeout,
+                fl_ctx=fl_ctx,
+                optional=optional,
+                secure=secure,
+            )
+        except Exception:
+            if optional:
+                self.logger.debug(f"Failed to send multi requests {topic} to targets: {target_names}")
+                self.logger.debug(secure_format_traceback())
+            else:
+                self.logger.error(f"Failed to send multi requests {topic} to targets: {target_names}")
+                self.logger.error(secure_format_traceback())
+            return {}
+
+    def _send_multi_requests(
+            self,
+            topic: str,
+            target_requests: Dict[str, Shareable],
+            timeout: float,
+            fl_ctx: FLContext,
+            optional: bool = False,
+            secure: bool = False,
+    ) -> dict:
+        channel = CellChannel.AUX_COMMUNICATION
+        cell = self._wait_for_cell()
+        if not cell:
+            return {}
+
+        job_id = fl_ctx.get_job_id()
+        public_props = fl_ctx.get_all_public_props()
+        target_messages = {}
+        for target_name, req in target_requests.items():
+            if not isinstance(req, Shareable):
+                raise ValueError(f"request of {target_name} should be Shareable but got {type(req)}")
+
+            req.set_header(ReservedHeaderKey.TOPIC, topic)
+            req.set_peer_props(public_props)
+            target_fqcn = FQCN.join([target_name, job_id])
+            self.log_info(fl_ctx, f"sending multicast aux: {target_fqcn=}")
+            target_messages[target_fqcn] = TargetMessage(
+                topic=topic,
+                channel=channel,
+                target=target_fqcn,
+                message=Message(payload=req)
+            )
+        if timeout > 0:
+            cell_replies = cell.broadcast_multi_requests(target_messages, timeout, optional=optional, secure=secure)
+            return self._process_cell_replies(cell_replies, topic, channel)
+        else:
+            cell.fire_multi_requests_and_forget(
+                target_messages, optional=optional,
+            )
+            return {}
 
     def send_aux_request(
         self,
@@ -214,18 +328,9 @@ class AuxRunner(FLComponent):
         request.set_peer_props(fl_ctx.get_all_public_props())
 
         job_id = fl_ctx.get_job_id()
-        start = time.time()
-        self.logger.debug("waiting for cell...")
-        max_wait = 5.0
-        while True:
-            cell = self.engine.get_cell()
-            if cell:
-                break
-            if time.time() - start > max_wait:
-                self.logger.error(f"Cannot get cell after {max_wait} seconds!")
-                return {}
-            time.sleep(0.01)
-        self.logger.debug(f"Got cell in {time.time() - start} secs")
+        cell = self._wait_for_cell()
+        if not cell:
+            return {}
 
         target_names = []
         for t in targets:
@@ -249,23 +354,7 @@ class AuxRunner(FLComponent):
                 optional=optional,
                 secure=secure,
             )
-
-            replies = {}
-            if cell_replies:
-                for k, v in cell_replies.items():
-                    assert isinstance(v, Message)
-                    rc = v.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
-                    client_name = FQCN.get_root(k)
-                    if rc == CellReturnCode.OK:
-                        result = v.payload
-                        if not isinstance(result, Shareable):
-                            self.logger.error(f"reply of {channel}:{topic} must be dict but got {type(result)}")
-                            result = make_reply(ReturnCode.ERROR)
-                        replies[client_name] = result
-                    else:
-                        src = self._convert_return_code(rc)
-                        replies[client_name] = make_reply(src)
-            return replies
+            return self._process_cell_replies(cell_replies, topic, channel)
         else:
             if bulk_send:
                 cell.queue_message(channel=channel, topic=topic, message=cell_msg, targets=target_fqcns)
@@ -275,7 +364,8 @@ class AuxRunner(FLComponent):
                 )
             return {}
 
-    def _convert_return_code(self, rc):
+    @staticmethod
+    def _convert_return_code(rc):
         rc_table = {
             CellReturnCode.TIMEOUT: ReturnCode.COMMUNICATION_ERROR,
             CellReturnCode.COMM_ERROR: ReturnCode.COMMUNICATION_ERROR,
