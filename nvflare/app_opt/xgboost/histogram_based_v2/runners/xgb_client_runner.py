@@ -72,7 +72,7 @@ class XGBClientRunner(AppRunner, FLComponent):
             if not isinstance(self._metrics_writer, LogWriter):
                 self.system_panic("writer should be type LogWriter", fl_ctx)
 
-    def _xgb_train(self, params: XGBoostParams, train_data, val_data) -> xgb.core.Booster:
+    def _xgb_train(self, params: XGBoostParams, train_data: xgb.DMatrix, val_data) -> xgb.core.Booster:
         """XGBoost training logic.
 
         Args:
@@ -129,14 +129,13 @@ class XGBClientRunner(AppRunner, FLComponent):
 
         self.logger.info(f"server address is {self._server_addr}")
         communicator_env = {
-            "xgboost_communicator": "federated",
+            "dmlc_communicator": "federated",
             "federated_server_address": f"{self._server_addr}",
             "federated_world_size": self._world_size,
             "federated_rank": self._rank,
-            "plugin_name": "nvflare",
-            "loader_params": {
-                "LIBRARY_PATH": "/tmp",
-            },
+            "federated_plugin": {
+                "path": "/tmp/libproc_nvflare.so"
+            }
         }
         with xgb.collective.CommunicatorContext(**communicator_env):
             # Load the data. Dmatrix must be created with column split mode in CommunicatorContext for vertical FL
