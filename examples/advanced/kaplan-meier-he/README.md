@@ -4,20 +4,51 @@ This example illustrates two features:
 * How to perform Kaplan-Meier survival analysis in federated setting without and with secure features via time-binning and Homomorphic Encryption (HE).
 * How to use the Flare ModelController API to contract a workflow to facilitate HE under simulator mode.
 
+## Basics of Kaplan-Meier Analysis
+Kaplan-Meier survival analysis is a non-parametric statistic used to estimate the survival function from lifetime data. It is used to analyze the time it takes for an event of interest to occur. For example, during a clinical trial, the Kaplan-Meier estimator can be used to estimate the proportion of patients who survive a certain amount of time after treatment. 
+
+The Kaplan-Meier estimator takes into account the time of the event (e.g. "Survival Days") and whether the event was observed or censored. An event is observed if the event of interest (e.g. "death") occurred at the end of the observation process. An event is censored if the event of interest did not occur (i.e. patient is still alive) at the end of the observation process.
+
+One example dataset used here for Kaplan-Meier analysis is the `veterans_lung_cancer` dataset. This dataset contains information about the survival time of veterans with advanced lung cancer. Below we provide some samples of the dataset:
+
+| ID | Age | Celltype   | Karnofsky  | Diagtime | Prior | Treat     | Status | Survival Days |
+|----|-----|------------|------------|----------|-------|-----------|--------|---------------|
+| 1  | 64  | squamous   | 70         | 5        | yes   | standard  | TRUE   | 411           |
+| 20 | 55  | smallcell  | 40         | 3        | no    | standard  | FALSE  | 123           |
+| 45 | 61  | adeno      | 20         | 19       | yes   | standard  | TRUE   | 8             |
+| 63 | 62  | large      | 90         | 2        | no    | standard  | FALSE  | 182           |
+
+To perform the analysis, in this data, we have:
+- Time `Survival Days`: days passed from the beginning of the observation till the end
+- Event `Status`: whether event (i.e. death) happened at the end of the observation, or not
+Based on the above understanding, we can interpret the data as follows:
+- Patient #1 goes through an observation period of 411 days, and passes away at Day 411
+- Patient #20 goes through an observation period of 123 days, and is still alive when the observation stops at Day 123 
+
+The purpose of Kaplan-Meier analysis is to estimate the survival function, which is the probability that a patient survives beyond a certain time. Naturally, it will be a monotonic decreasing function, since the probability of surviving will decrease as time goes by.
+
 ## Secure Multi-party Kaplan-Meier Analysis
-Kaplan-Meier survival analysis is a one-shot (non-iterative) analysis performed on a list of events and their corresponding time. In this example, we use [lifelines](https://zenodo.org/records/10456828) to perform this analysis. 
+As described above, Kaplan-Meier survival analysis is a one-shot (non-iterative) analysis performed on a list of events (`Status`) and their corresponding time (`Survival Days`). In this example, we use [lifelines](https://zenodo.org/records/10456828) to perform this analysis. 
 
-Essentially, the estimator needs to get access to the event list, and under the setting of federated analysis, the aggregated event list from all participants.
+Essentially, the estimator needs to get access to this event list, and under the setting of federated analysis, the aggregated event list from all participants.
 
-However, this poses a data security concern - by sharing the event list, the raw data can be exposed to external parties, which break the core value of federated analysis.
+However, this poses a data security concern - the event list is equivalent to the raw data. If it gets exposed to external parties, it essentially breaks the core value of federated analysis.
 
 Therefore, we would like to design a secure mechanism to enable collaborative Kaplan-Meier analysis without the risk of exposing the raw information from a participant, the targeted protection includes:
 - Prevent clients from getting RAW data from each other;
-- Prevent the aggregation server to access ANY information from submissions.
+- Prevent the aggregation server to access ANY information from participants' submissions.
 
 This is achieved by two techniques:
-- Condense the raw event list to two histograms (one for observed events and the other for censored event) using binning at certain interval (e.g. a week), such that events happened within the same bin from different participants can be aggregated and will not be distinguishable for the final aggregated histograms. Note that coarser binning will lead to higher protection, but also lower resolution of the final Kaplan-Meier curve.
-- The local histograms will be encrypted as one single vector before sending to server, and the global aggregation operation at server side will be performed entirely within encryption space with HE. This will not cause any information loss, while the server will perform aggregation within encryption space.
+- Condense the raw event list to two histograms (one for observed events and the other for censored event) using binning at certain interval (e.g. a week)
+- Perform the aggregation of the histograms using Homomorphic Encryption (HE)
+
+With time-binning, the above event list will be converted to histograms: if using a week as interval:
+- Patient #1 will contribute 1 to the 411/7 = 58th bin of the observed event histogram
+- Patient #20 will contribute 1 to the 123/7 = 17th bin of the censored event histogram
+
+In this way, events happened within the same bin from different participants can be aggregated and will not be distinguishable for the final aggregated histograms. Note that coarser binning will lead to higher protection, but also lower resolution of the final Kaplan-Meier curve.
+
+Local histograms will then be encrypted as one single vector before sending to server, and the global aggregation operation at server side will be performed entirely within encryption space with HE. This will not cause any information loss, while the server will not be able to access any plain-text information.
 
 With these two settings, the server will have no access to any knowledge regarding local submissions, and participants will only receive global aggregated histograms that will not contain distinguishable information regarding any individual participants (client number >= 3 - if only two participants, one can infer the other party's info by subtracting its own histograms).
 
