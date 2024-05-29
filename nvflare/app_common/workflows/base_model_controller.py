@@ -360,7 +360,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         self.info(f"Sampled clients: {[client.name for client in clients]}")
 
         return clients
-    
+
     def get_component(self, component_id: str):
         return self.engine.get_component(component_id)
 
