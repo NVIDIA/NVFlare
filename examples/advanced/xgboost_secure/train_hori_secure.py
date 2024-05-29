@@ -79,7 +79,7 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         # Run training, all the features in training API is available.
         bst = xgb.train(param, dtrain, num_round, evals=watchlist)
 
-        # Save the model, only ask process 0 to save the model.
+        # Save the model
         rank = xgb.collective.get_rank()
         bst.save_model(f"./model/model.hori.secure.{rank}.json")
         xgb.collective.communicator_print("Finished training\n")
@@ -111,8 +111,10 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
                 f.write(tree)
 
         # plot tree and save to png file
-        xgb.plot_tree(bst, num_trees=0)
-        plt.savefig(f'./tree/tree.hori.secure.{rank}.png')
+        xgb.plot_tree(bst, num_trees=0, rankdir='LR')
+        fig = plt.gcf()
+        fig.set_size_inches(18, 5)
+        plt.savefig(f'./tree/tree.hori.secure.{rank}.png', dpi=100)
 
         # export tree to dataframe
         tree_df = bst.trees_to_dataframe()

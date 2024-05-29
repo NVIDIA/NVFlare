@@ -89,8 +89,10 @@ def run_training() -> None:
             f.write(tree)
 
     # plot tree and save to png file
-    xgb.plot_tree(bst, num_trees=0)
-    plt.savefig('./tree/tree.base.png')
+    xgb.plot_tree(bst, num_trees=0, rankdir='LR')
+    fig = plt.gcf()
+    fig.set_size_inches(18, 5)
+    plt.savefig('./tree/tree.base.png', dpi=100)
 
     # export tree to dataframe
     tree_df = bst.trees_to_dataframe()
