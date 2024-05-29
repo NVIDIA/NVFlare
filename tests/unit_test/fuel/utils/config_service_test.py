@@ -11,13 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
+
 import pytest
 
 from nvflare.fuel.utils.config_service import ConfigService
-
-
-class _Dummy:
-    pass
 
 
 class TestConfigService:
@@ -202,3 +200,19 @@ class TestConfigService:
         ConfigService.reset()
         with pytest.raises(ValueError):
             ConfigService.get_bool_var(var_name, conf=config)
+
+    @pytest.mark.parametrize(
+        "config, var_name, value",
+        [
+            [{}, "x", 1],
+            [{}, "x", 2],
+            [{}, "x", 100],
+        ],
+    )
+    def test_get_int_from_env(self, config, var_name, value):
+        ConfigService.reset()
+        env = os.environ
+        env_var_name = f"NVFLARE_{var_name}".upper()
+        env[env_var_name] = str(value)
+        v = ConfigService.get_int_var(var_name, conf=config)
+        assert v == value
