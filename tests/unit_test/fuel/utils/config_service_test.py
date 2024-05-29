@@ -152,3 +152,53 @@ class TestConfigService:
         with pytest.raises(ValueError):
             ConfigService.get_dict_var(var_name, conf=config)
 
+    @pytest.mark.parametrize(
+        "config, var_name, value",
+        [
+            [{"x": 1}, "x", True],
+            [{"x": -2}, "x", True],
+            [{"x": 0}, "x", False],
+            [{"x": "y"}, "x", True],
+            [{"x": "Y"}, "x", True],
+            [{"x": "yes"}, "x", True],
+            [{"x": "Yes"}, "x", True],
+            [{"x": "t"}, "x", True],
+            [{"x": "true"}, "x", True],
+            [{"x": "True"}, "x", True],
+            [{"x": "y"}, "x", True],
+            [{"x": "1"}, "x", True],
+            [{"x": "f"}, "x", False],
+            [{"x": "false"}, "x", False],
+            [{"x": "anythingelse"}, "x", False],
+        ],
+    )
+    def test_get_bool(self, config, var_name, value):
+        ConfigService.reset()
+        v = ConfigService.get_bool_var(var_name, conf=config)
+        assert v == value
+
+    @pytest.mark.parametrize(
+        "config, var_name, value",
+        [
+            [{}, "x1", True],
+            [{}, "x1", False],
+            [{}, "x1", None],
+        ],
+    )
+    def test_get_bool_default(self, config, var_name, value):
+        ConfigService.reset()
+        v = ConfigService.get_bool_var(var_name, conf=config, default=value)
+        assert v == value
+
+    @pytest.mark.parametrize(
+        "config, var_name",
+        [
+            [{"x1": 3.45}, "x1"],
+            [{"x1": []}, "x1"],
+            [{"x1": {}}, "x1"],
+        ],
+    )
+    def test_get_bool_error(self, config, var_name):
+        ConfigService.reset()
+        with pytest.raises(ValueError):
+            ConfigService.get_bool_var(var_name, conf=config)

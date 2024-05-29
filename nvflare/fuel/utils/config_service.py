@@ -302,6 +302,16 @@ class ConfigService:
 
     @classmethod
     def get_int_var(cls, name: str, conf=None, default=None):
+        """Get configured int value of the specified var
+
+        Args:
+            name: name of the var
+            conf: source config
+            default: value to return if the var is not found
+
+        Returns: configured value of the var, or the default value if var is not configured
+
+        """
         return cls._any_var(cls._to_int, name, conf, default)
 
     @classmethod
@@ -313,6 +323,16 @@ class ConfigService:
 
     @classmethod
     def get_float_var(cls, name: str, conf=None, default=None):
+        """Get configured float value of the specified var
+
+        Args:
+            name: name of the var
+            conf: source config
+            default: value to return if the var is not found
+
+        Returns: configured value of the var, or the default value if var is not configured
+
+        """
         return cls._any_var(cls._to_float, name, conf, default)
 
     @classmethod
@@ -328,6 +348,16 @@ class ConfigService:
 
     @classmethod
     def get_bool_var(cls, name: str, conf=None, default=None):
+        """Get configured bool value of the specified var
+
+        Args:
+            name: name of the var
+            conf: source config
+            default: value to return if the var is not found
+
+        Returns: configured value of the var, or the default value if var is not configured
+
+        """
         return cls._any_var(cls._to_bool, name, conf, default)
 
     @classmethod
@@ -339,6 +369,16 @@ class ConfigService:
 
     @classmethod
     def get_str_var(cls, name: str, conf=None, default=None):
+        """Get configured str value of the specified var
+
+        Args:
+            name: name of the var
+            conf: source config
+            default: value to return if the var is not found
+
+        Returns: configured value of the var, or the default value if var is not configured
+
+        """
         return cls._any_var(cls._to_str, name, conf, default)
 
     @classmethod
@@ -361,8 +401,23 @@ class ConfigService:
 
     @classmethod
     def get_dict_var(cls, name: str, conf=None, default=None):
+        """Get configured dict value of the specified var
+
+        Args:
+            name: name of the var
+            conf: source config
+            default: value to return if the var is not found
+
+        Returns: configured value of the var, or the default value if var is not configured
+
+        """
         return cls._any_var(cls._to_dict, name, conf, default)
 
     @classmethod
     def get_var_values(cls):
+        """Get cached var values.
+
+        Returns:
+
+        """
         return cls._var_values
