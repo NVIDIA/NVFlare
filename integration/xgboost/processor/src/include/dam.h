@@ -18,8 +18,8 @@
 #include <vector>
 #include <map>
 
-const char kSignature[] = "NVDADAM1";      // DAM (Direct Accessible Marshalling) V1
-const char kSignatureLocal[] = "NVDADAML"; // DAM Local version
+const char kSignature[] = "NVDADAM1";       // DAM (Direct Accessible Marshalling) V1
+const char kSignatureLocal[] = "NVDADAML";  // DAM Local version
 const int kPrefixLen = 24;
 
 const int kDataTypeInt = 1;
@@ -28,8 +28,32 @@ const int kDataTypeString = 3;
 const int kDataTypeBytes = 4;
 const int kDataTypeIntArray = 257;
 const int kDataTypeFloatArray = 258;
+const int kDataTypeBytesArray = 259;
 const int kDataTypeMap = 1025;
 
+/*! \brief A replacement for std::span */
+class Buffer {
+public:
+    void *buffer;
+    size_t buf_size;
+
+    Buffer() : buf_size(0), buffer(nullptr) {
+    }
+
+    Buffer(void *buffer, size_t buf_size) : buf_size(buf_size), buffer(buffer) {
+    }
+
+    Buffer(Buffer &that): buf_size(that->buf_size), buffer(that->buffer) {
+    }
+
+    ~Buffer() {
+        if (buffer) {
+            free(buffer);
+            buffer = nullptr;
+        }
+        buf_size = 0;
+    }
+};
 
 class Entry {
  public:
@@ -48,6 +72,7 @@ class Entry {
         switch (data_type) {
             case kDataTypeBytes:
             case kDataTypeString:
+            case kDataTypeBytesArray:
                 item_size = 1;
                 break;
             default:
@@ -67,14 +92,16 @@ class DamEncoder {
  public:
     explicit DamEncoder(int64_t data_set_id, bool local_version=false) {
         this->data_set_id = data_set_id;
-        this->local_version = local_version
+        this->local_version = local_version;
     }
+
+    void AddBytes(const void *buffer, const size_t buf_size);
 
     void AddIntArray(const std::vector<int64_t> &value);
 
     void AddFloatArray(const std::vector<double> &value);
 
-    void AddBytes(const void *buffer, const size_t buf_size);
+    void AddBytesArray(const std::vector<Buffer> &value);
 
     std::uint8_t * Finish(size_t &size);
 
@@ -105,11 +132,13 @@ class DamDecoder {
 
     bool IsValid();
 
+    void *DecodeBytes(size_t *size);
+
     std::vector<int64_t> DecodeIntArray();
 
     std::vector<double> DecodeFloatArray();
 
-    void *DecodeBytes(size_t *size);
+    std::vector<Buffer> DecodeBytesArray();
 };
 
 void print_buffer(uint8_t *buffer, int size);

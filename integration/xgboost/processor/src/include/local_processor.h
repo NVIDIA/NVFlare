@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include "dam.h"
 #include "processing/processor.h"
 
 const int kDataSetGHPairs = 1;
@@ -27,24 +28,13 @@ const int kDataSetAggregationResult = 4;
 const int kDataSetHistograms = 5;
 const int kDataSetHistogramResult = 6;
 
-
-class EncryptedData {
- public:
-    const void *buffer;
-    const size_t buf_size;
-
-    EncryptedData(const void *buffer, const size_t buf_size) : buf_size(buf_size), buffer(buffer) {
-    }
-};
-
 /*! \brief A base class for all plugins that handle encryption locally */
 class LocalProcessor: public processing::Processor {
  protected:
     bool active_ = false;
     const std::map<std::string, std::string> *params_{nullptr};
     std::vector<double> *gh_pairs_{nullptr};
-    void *encrypted_gh_ {nullptr};
-    size_t encrypted_gh_size_ = 0;
+    Buffer encrypted_gh_;
     std::vector<double> *histo_{nullptr};
     std::vector<uint32_t> cuts_;
     std::vector<int> slots_;
@@ -57,9 +47,9 @@ class LocalProcessor: public processing::Processor {
 
     void Shutdown() override {
         gh_pairs_ = nullptr;
-        if (encrypted_gh_) {
-            free(encrypted_gh_);
-            encrypted_gh_ = nullptr;
+        if (encrypted_gh_.buffer) {
+            free(encrypted_gh_.buffer);
+            encrypted_gh_.buffer = nullptr;
         }
         delete histo_;
         cuts_.clear();
@@ -91,13 +81,37 @@ class LocalProcessor: public processing::Processor {
 
     std::vector<double> HandleHistograms(void *buffer, size_t buf_size) override;
 
+    void *ProcessClearAggregation(size_t *size, std::map<int, std::vector<int>> nodes);
+
+    void *ProcessEncryptedAggregation(size_t *size, std::map<int, std::vector<int>> nodes);
+
     // Method needs to be implemented by local plugins
 
-    virtual EncryptedData EncryptVector(std::vector<double>& cleartext) = 0;
+    /*!
+     * \brief Encrypt a vector of float-pointing numbers
+     * \param cleartext A vector of numbers in cleartext
+     * \return A buffer with serialized ciphertext
+     */
+    virtual Buffer EncryptVector(const std::vector<double>& cleartext) = 0;
 
-    virtual std::vector<double> DecryptVector(std::vector<EncryptedData> ciphertext) = 0;
+    /*!
+     * \brief Decrypt a serialized ciphertext into an array of numbers
+     * \param ciphertext A serialzied buffer of ciphertext
+     * \return An array of numbers
+    */
+    virtual std::vector<double> DecryptVector(std::vector<Buffer> ciphertext) = 0;
 
-    virtual EncryptedData Aggregate(const std::size_t *size, std::vector<int> indexes) = 0;
+    /*!
+     * \brief Add the G&H pairs for a series of samples
+     * \param sample_ids A map of slot number and an array of sample IDs
+     * \return A map of the serialized encrypted sum of G and H for each slot
+     *         The input and output maps must have the same size
+     */
+    virtual std::map<int, Buffer> AddGHPairs(std::map<int, std::vector<int>> sample_ids) = 0;
 
-    virtual void FreeEncryptedData(EncryptedData ciphertext) = 0;
+    /*!
+     * \brief Free encrypted data buffer
+     * \param ciphertext The buffer for encrypted data
+     */
+    virtual void FreeEncryptedData(Buffer ciphertext) = 0;
 };

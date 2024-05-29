@@ -8,21 +8,18 @@
 #include "dam.h"
 
 void* LocalProcessor::ProcessGHPairs(std::size_t *size, const std::vector<double>& pairs) {
-
-    size_t encrypted_size;
-    auto encrypted_buffer = EncryptVector(&encrypted_size, pairs);
+    auto encrypted_data = EncryptVector(pairs);
 
     DamEncoder encoder(kDataSetGHPairs, true);
-    encoder.AddBytes(encrypted_buffer, encrypted_size);
+    encoder.AddBytes(encrypted_data.buffer, encrypted_data.buf_size);
     auto buffer = encoder.Finish(*size);
-    FreeEncryptedBuffer(encrypted_buffer, *size);
+    FreeEncryptedData(encrypted_data);
 
-    // Save pairs for future operations
+    // Save pairs for future operations. This is only called on active site
     this->gh_pairs_ = new std::vector<double>(pairs);
 
     return buffer;
 }
-
 
 void* LocalProcessor::HandleGHPairs(std::size_t *size, void *buffer, std::size_t buf_size) {
     *size = buf_size;
@@ -41,51 +38,97 @@ void* LocalProcessor::HandleGHPairs(std::size_t *size, void *buffer, std::size_t
     auto encrypted_buffer = decoder.DecodeBytes(&encrypted_size);
 
     // The caller may free buffer so a copy is needed
-    if (encrypted_gh_) {
-        free(encrypted_gh_);
+    if (encrypted_gh_.buffer) {
+        free(encrypted_gh_.buffer);
     }
-    encrypted_gh_ = malloc(encrypted_size);
-    memcpy(encrypted_gh_, encrypted_buffer, encrypted_size);
-    encrypted_gh_size_ = encrypted_size;
+    encrypted_gh_.buffer = malloc(encrypted_size);
+    memcpy(encrypted_gh_.buffer, encrypted_buffer, encrypted_size);
+    encrypted_gh_.buf_size = encrypted_size;
 
     return buffer;
 }
 
 void *LocalProcessor::ProcessAggregation(std::size_t *size, std::map<int, std::vector<int>> nodes) {
+    void *result;
 
+    if (active_) {
+        result = ProcessClearAggregation(size, nodes);
+    } else {
+        result = ProcessEncryptedAggregation(size, nodes);
+    }
+
+    return result;
+}
+
+void *LocalProcessor::ProcessClearAggregation(std::size_t *size, std::map<int, std::vector<int>> nodes) {
     int total_bin_size = cuts_.back();
     int histo_size = total_bin_size*2;
-    histo_ = new std::vector<double>(histo_size);
+    int total_size = histo_size * nodes.size();
 
-    auto encoder = DamEncoder(kDataSetAggregationResult, true);
-    if (active_) {
-        for (const auto &node : nodes) {
-            auto rows = node.second;
-            for (const auto &row_id : rows) {
-                auto num = cuts_.size() - 1;
-                for (std::size_t f = 0; f < num; f++) {
-                    int slot = slots_[f + num * row_id];
-                    if ((slot < 0) || (slot >= total_bin_size)) {
-                        continue;
-                    }
-
-                    auto g = (*gh_pairs_)[row_id * 2];
-                    auto h = (*gh_pairs_)[row_id * 2 + 1];
-                    histo_[slot * 2] += g;
-                    histo_[slot * 2 + 1] += h;
+    histo_ = new std::vector<double>(total_size);
+    int start = 0;
+    for (const auto &node : nodes) {
+        auto rows = node.second;
+        for (const auto &row_id : rows) {
+            auto num = cuts_.size() - 1;
+            for (std::size_t f = 0; f < num; f++) {
+                int slot = slots_[f + num * row_id];
+                if ((slot < 0) || (slot >= total_bin_size)) {
+                    continue;
                 }
+                auto g = (*gh_pairs_)[row_id * 2];
+                auto h = (*gh_pairs_)[row_id * 2 + 1];
+                (*histo_)[start + slot * 2] += g;
+                (*histo_)[start + slot * 2 + 1] += h;
+            }
+        }
+        start += histo_size;
+    }
+
+    // Histogram is in clear, can't send to all_gather. Just return empty DAM buffer
+    auto encoder = DamEncoder(kDataSetAggregationResult, true);
+    encoder.AddBytes(nullptr, 0);
+    return encoder.Finish(*size);
+}
+
+void *LocalProcessor::ProcessEncryptedAggregation(std::size_t *size, std::map<int, std::vector<int>> nodes) {
+    int num_slot = cuts_.back();
+    int total_size = num_slot * nodes.size();
+
+    auto encrypted_histo = new std::vector<Buffer>(total_size);
+    int start = 0;
+    for (const auto &node : nodes) {
+        auto rows = node.second;
+        auto num = cuts_.size() - 1;
+        auto row_id_map = std::map<int, std::vector<int>>();
+        for (std::size_t f = 0; f < num; f++) {
+            for (const auto &row_id : rows) {
+                int slot = slots_[f + num * row_id];
+                if ((slot < 0) || (slot >= num_slot)) {
+                    continue;
+                }
+                auto row_ids = row_id_map[slot];
+                row_ids.push_back(row_id);
             }
         }
 
-        // Histogram is in clear, don't send to other sites
-        encoder.AddBytes(nullptr, 0);
-    } else {
-        size_t encrypted_size;
-        auto encrypted_buffer = SecureAggregate(&encrypted_size, nodes);
-        encoder.AddBytes(encrypted_buffer, encrypted_size);
+        auto encrypted_sum = AddGHPairs(row_id_map);
+        for (int slot = 0; slot < num_slot; slot++) {
+            auto it = encrypted_sum.find(slot);
+            if (it != encrypted_sum.end()) {
+                encrypted_histo[start + slot] = it->second;
+            }
+        }
+
+        start += num_slot;
     }
+
+    // Histogram is in clear, can't send to all_gather. Just return empty DAM buffer
+    auto encoder = DamEncoder(kDataSetAggregationResult, true);
+    encoder.AddBytesArray(encrypted_histo);
     return encoder.Finish(*size);
 }
+
 
 std::vector<double> LocalProcessor::HandleAggregation(void *buffer, std::size_t buf_size) {
     std::vector<double> result = std::vector<double>();
