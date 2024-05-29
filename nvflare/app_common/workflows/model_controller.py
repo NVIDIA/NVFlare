@@ -124,6 +124,5 @@ class ModelController(BaseModelController, ABC):
             min_clients: number of clients to return.
 
         Returns: list of clients.
-
         """
         return super().sample_clients(num_clients)
