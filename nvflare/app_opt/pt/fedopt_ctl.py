@@ -18,16 +18,15 @@ from typing import Union
 import torch
 
 from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.security.logging import secure_format_exception
-
-from .fedavg import FedAvg
 
 
 class FedOpt(FedAvg):
     def __init__(
         self,
         *args,
-        source_model: Union[str, torch.nn.Module] = "net",
+        source_model: Union[str, torch.nn.Module],
         optimizer_args: dict = {
             "path": "torch.optim.SGD",
             "args": {"lr": 1.0, "momentum": 0.6},
@@ -39,7 +38,7 @@ class FedOpt(FedAvg):
         device=None,
         **kwargs,
     ):
-        """Implement the FedOpt algorithm.
+        """Implement the FedOpt algorithm. Based on FedAvg ModelController.
 
         The algorithm is proposed in Reddi, Sashank, et al. "Adaptive federated optimization." arXiv preprint arXiv:2003.00295 (2020).
         After each round, update the global model using the specified PyTorch optimizer and learning rate scheduler.
