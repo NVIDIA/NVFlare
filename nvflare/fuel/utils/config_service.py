@@ -129,6 +129,12 @@ class ConfigService:
 
     @classmethod
     def reset(cls):
+        """Reset the ConfigServer to its initial state. All registered sections and cached var values
+        are cleared.  This method is mainly used for test purpose.
+
+        Returns:
+
+        """
         cls._sections = {}
         cls._config_path = []
         cls._cmd_args = None
@@ -137,6 +143,14 @@ class ConfigService:
 
     @classmethod
     def get_section(cls, name: str):
+        """Get the specified section.
+
+        Args:
+            name: name of the section
+
+        Returns: the section of the specified name, or None if the section is not found.
+
+        """
         return cls._sections.get(name)
 
     @classmethod
@@ -149,7 +163,7 @@ class ConfigService:
             data: data of the section
             overwrite_existing: if section already exists, whether to overwrite
 
-        Returns:
+        Returns: None
 
         """
         if not isinstance(section_name, str):
@@ -162,6 +176,15 @@ class ConfigService:
 
     @classmethod
     def load_configuration(cls, file_basename: str) -> Optional[Config]:
+        """Load config data from the specified file basename.
+        The full name of the config file will be determined by ConfigFactory.
+
+        Args:
+            file_basename: the basename of the config file.
+
+        Returns: config data loaded, or None if the config file is not found.
+
+        """
         return ConfigFactory.load_config(file_basename, cls._config_path)
 
     @classmethod
@@ -170,6 +193,7 @@ class ConfigService:
     ) -> Optional[Dict]:
         """
         Load a specified config file ( ignore extension)
+
         Args:
             raise_exception: if True raise exception when error occurs
             file_basename: base name of the config file to be loaded.
