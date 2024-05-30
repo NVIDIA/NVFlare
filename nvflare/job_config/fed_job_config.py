@@ -308,6 +308,17 @@ class FedJobConfig:
         return r
 
     def locate_imports(self, sf, dest_file):
+        """Locate all the import statements from the python script, including the imports across multiple lines,
+        using the the line break continuing.
+
+        Args:
+            sf: source file
+            dest_file: copy to destination file
+
+        Returns:
+            yield all the imports within the source file
+
+        """
         os.makedirs(os.path.dirname(dest_file), exist_ok=True)
         with open(dest_file, "w") as df:
             trimmed = ""
@@ -316,6 +327,7 @@ class FedJobConfig:
                 trimmed += line.strip()
                 if trimmed.endswith("\\"):
                     trimmed = trimmed[0:-1]
+                    trimmed = trimmed.strip() + " "
                 else:
                     if trimmed.startswith("from ") and ("import " in trimmed):
                         yield trimmed

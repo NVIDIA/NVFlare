@@ -25,7 +25,7 @@ class TestFedJobConfig:
         expected = [
             "from typing import Any, Dict, List",
             "from nvflare.fuel.f3.drivers.base_driver import BaseDriver",
-            "from nvflare.fuel.f3.drivers.connector_info import ConnectorInfo",
+            "from nvflare.fuel.f3.drivers.connector_info import ConnectorInfo ",
             "from nvflare.fuel.f3.drivers.driver_params import DriverCap",
         ]
         with open(source_file, "r") as sf:
