@@ -15,9 +15,8 @@
  */
 #include <cstring>
 #include "nvflare_processor.h"
+#include "local_mock.h"
 #include "dam.h"
-
-const char kPluginName[] = "nvflare";
 
 using std::vector;
 using std::cout;
@@ -27,7 +26,7 @@ void* NVFlareProcessor::ProcessGHPairs(size_t *size, const std::vector<double>& 
     cout << "ProcessGHPairs called with pairs size: " << pairs.size() << endl;
     gh_pairs_ = new std::vector<double>(pairs);
 
-    DamEncoder encoder(kDataSetHGPairs);
+    DamEncoder encoder(kDataSetGHPairs);
     encoder.AddFloatArray(pairs);
     auto buffer = encoder.Finish(*size);
 
@@ -182,12 +181,14 @@ std::vector<double> NVFlareProcessor::HandleHistograms(void *buffer, size_t buf_
 extern "C" {
 
 processing::Processor *LoadProcessor(char *plugin_name) {
-    if (strcasecmp(plugin_name, kPluginName) != 0) {
+    if (strcasecmp(plugin_name, "nvflare") == 0) {
+        return new NVFlareProcessor();
+    } if (strcasecmp(plugin_name, "nvflare:mock") == 0) {
+        return new LocalMockProcessor();
+    } else {
         cout << "Unknown plugin name: " << plugin_name << endl;
         return nullptr;
     }
-
-    return new NVFlareProcessor();
 }
 
 }  // extern "C"

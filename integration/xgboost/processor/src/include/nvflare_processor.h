@@ -19,13 +19,7 @@
 #include <vector>
 #include <map>
 #include "processing/processor.h"
-
-const int kDataSetHGPairs = 1;
-const int kDataSetAggregation = 2;
-const int kDataSetAggregationWithFeatures = 3;
-const int kDataSetAggregationResult = 4;
-const int kDataSetHistograms = 5;
-const int kDataSetHistogramResult = 6;
+#include "data_set_ids.h"
 
 class NVFlareProcessor: public processing::Processor {
  private:

@@ -21,13 +21,6 @@
 #include "dam.h"
 #include "processing/processor.h"
 
-const int kDataSetGHPairs = 1;
-const int kDataSetAggregation = 2;
-const int kDataSetAggregationWithFeatures = 3;
-const int kDataSetAggregationResult = 4;
-const int kDataSetHistograms = 5;
-const int kDataSetHistogramResult = 6;
-
 /*! \brief A base class for all plugins that handle encryption locally */
 class LocalProcessor: public processing::Processor {
  protected:

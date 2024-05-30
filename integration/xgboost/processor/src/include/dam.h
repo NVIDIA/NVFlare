@@ -25,10 +25,10 @@ const int kPrefixLen = 24;
 const int kDataTypeInt = 1;
 const int kDataTypeFloat = 2;
 const int kDataTypeString = 3;
-const int kDataTypeBytes = 4;
+const int kDataTypeBuffer = 4;
 const int kDataTypeIntArray = 257;
 const int kDataTypeFloatArray = 258;
-const int kDataTypeBytesArray = 259;
+const int kDataTypeBufferArray = 259;
 const int kDataTypeMap = 1025;
 
 /*! \brief A replacement for std::span */
@@ -36,22 +36,23 @@ class Buffer {
 public:
     void *buffer;
     size_t buf_size;
+    bool allocated;
 
-    Buffer() : buf_size(0), buffer(nullptr) {
+    Buffer() : buf_size(0), buffer(nullptr), allocated(false) {
     }
 
-    Buffer(void *buffer, size_t buf_size) : buf_size(buf_size), buffer(buffer) {
+    Buffer(void *buffer, size_t buf_size, bool allocated=false) :
+        buf_size(buf_size), buffer(buffer), allocated(allocated) {
     }
 
-    Buffer(Buffer &that): buf_size(that->buf_size), buffer(that->buffer) {
+    Buffer(const Buffer &that):
+        buf_size(that.buf_size), buffer(that.buffer), allocated(false) {
     }
 
     ~Buffer() {
-        if (buffer) {
-            free(buffer);
-            buffer = nullptr;
-        }
+        buffer = nullptr;
         buf_size = 0;
+        allocated = false;
     }
 };
 
@@ -70,9 +71,9 @@ class Entry {
     std::size_t ItemSize() {
         size_t item_size;
         switch (data_type) {
-            case kDataTypeBytes:
+            case kDataTypeBuffer:
             case kDataTypeString:
-            case kDataTypeBytesArray:
+            case kDataTypeBufferArray:
                 item_size = 1;
                 break;
             default:
@@ -95,13 +96,13 @@ class DamEncoder {
         this->local_version = local_version;
     }
 
-    void AddBytes(const void *buffer, const size_t buf_size);
+    void AddBuffer(const Buffer &buffer);
 
     void AddIntArray(const std::vector<int64_t> &value);
 
     void AddFloatArray(const std::vector<double> &value);
 
-    void AddBytesArray(const std::vector<Buffer> &value);
+    void AddBufferArray(const std::vector<Buffer> &value);
 
     std::uint8_t * Finish(size_t &size);
 
@@ -132,13 +133,13 @@ class DamDecoder {
 
     bool IsValid();
 
-    void *DecodeBytes(size_t *size);
+    Buffer DecodeBuffer();
 
     std::vector<int64_t> DecodeIntArray();
 
     std::vector<double> DecodeFloatArray();
 
-    std::vector<Buffer> DecodeBytesArray();
+    std::vector<Buffer> DecodeBufferArray();
 };
 
 void print_buffer(uint8_t *buffer, int size);
