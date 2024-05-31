@@ -17,7 +17,8 @@ import argparse
 from src.tf_net import ModerateTFNet
 from src.cifar10_data_split import cifar10_split
 
-from nvflare import FedAvg, FedJob, ScriptExecutor
+from nvflare import FedJob, ScriptExecutor
+from nvflare.app_opt.tf.fedopt_ctl import FedOpt
 
 
 if __name__ == "__main__":
@@ -61,10 +62,10 @@ if __name__ == "__main__":
     train_idx_paths = cifar10_split(num_sites=args.n_clients, alpha=args.alpha, split_dir=train_split_root)
 
     # Define job
-    job = FedJob(name=f"cifar10_tf_fedavg_alpha{args.alpha}")
+    job = FedJob(name=f"cifar10_tf_fedopt_alpha{args.alpha}")
 
     # Define the controller workflow and send to server
-    controller = FedAvg(
+    controller = FedOpt(
         min_clients=args.n_clients,
         num_rounds=args.num_rounds,
     )
@@ -81,4 +82,4 @@ if __name__ == "__main__":
         job.to(executor, f"site-{i+1}", gpu=args.gpu)
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run(f"/tmp/nvflare/jobs/{job.name}_4")
+    job.simulator_run(f"/tmp/nvflare/jobs/{job.name}")
