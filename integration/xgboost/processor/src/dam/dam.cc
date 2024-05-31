@@ -17,12 +17,27 @@
 #include <cstring>
 #include "dam.h"
 
-void print_buffer(uint8_t *buffer, int size) {
-    for (int i = 0; i < size; i++) {
-        auto c = buffer[i];
-        std::cout << std::hex << (int) c << " ";
-    }
+
+void print_hex(uint8_t *buffer, int size) {
+    if (size )
+        for (int i = 0; i < size; i++) {
+            auto c = buffer[i];
+            std::cout << std::hex << (int) c << " ";
+        }
     std::cout << std::endl << std::dec;
+}
+
+void print_buffer(uint8_t *buffer, int size) {
+    if (size <= 64) {
+        std::cout << "Whole buffer: " << size << " bytes" << std::endl;
+        print_hex(buffer, size);
+        return;
+    }
+
+    std::cout << "First chunk, Total: " << size << " bytes" << std::endl;
+    print_hex(buffer, 32);
+    std::cout << "Last chunk, Offset: " << size-16 << " bytes" << std::endl;
+    print_hex(buffer+size-32, 32);
 }
 
 size_t align(const size_t length) {

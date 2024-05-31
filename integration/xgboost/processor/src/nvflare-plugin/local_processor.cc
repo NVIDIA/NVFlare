@@ -17,7 +17,7 @@ void* LocalProcessor::ProcessGHPairs(std::size_t *size, const std::vector<double
     FreeEncryptedData(encrypted_data);
 
     // Save pairs for future operations. This is only called on active site
-    this->gh_pairs_ = new std::vector<double>(pairs);
+    gh_pairs_ = new std::vector<double>(pairs);
 
     return buffer;
 }
@@ -37,7 +37,7 @@ void* LocalProcessor::HandleGHPairs(std::size_t *size, void *buffer, std::size_t
     }
 
     auto encrypted_buffer = decoder.DecodeBuffer();
-
+    std::cout << "Encrypted buffer size: " << encrypted_buffer.buf_size << std::endl;
     // The caller may free buffer so a copy is needed
     if (encrypted_gh_.buffer) {
         free(encrypted_gh_.buffer);
@@ -58,6 +58,8 @@ void *LocalProcessor::ProcessAggregation(std::size_t *size, std::map<int, std::v
     } else {
         result = ProcessEncryptedAggregation(size, nodes);
     }
+
+    // print_buffer(reinterpret_cast<uint8_t *>(result), *size);
 
     return result;
 }
@@ -115,8 +117,9 @@ void *LocalProcessor::ProcessEncryptedAggregation(std::size_t *size, std::map<in
                 if ((slot < 0) || (slot >= num_slot)) {
                     continue;
                 }
-                auto row_ids = row_id_map[slot];
+                auto &row_ids = row_id_map[slot];
                 row_ids.push_back(row_id);
+                // std::cout << "Slot " << slot << " row " << row_id << " Row Size: " << row_ids.size() << std::endl;
             }
         }
 
@@ -139,32 +142,51 @@ void *LocalProcessor::ProcessEncryptedAggregation(std::size_t *size, std::map<in
 }
 
 std::vector<double> LocalProcessor::HandleAggregation(void *buffer, std::size_t buf_size) {
-    std::cout << "HandleAggregation called with buffer size: " << buf_size << std::endl;
+    std::cout << "HandleAggregation called with buffer size: " << buf_size
+        << " Active: " << active_ << std::endl;
     auto remaining = buf_size;
-    char *pointer = reinterpret_cast<char *>(buffer);
+    uint8_t *pointer = reinterpret_cast<uint8_t *>(buffer);
 
     // The buffer is concatenated by AllGather. It may contain multiple DAM buffers
     std::vector<double> result;
+
+    if (!active_) {
+        std::cout << "Result size: " << result.size() << std::endl;
+        return result;
+    }
+
     auto first = true;
     while (remaining > kPrefixLen) {
-        DamDecoder decoder(reinterpret_cast<uint8_t *>(pointer), remaining, true);
+        DamDecoder decoder(pointer, remaining, true);
         if (!decoder.IsValid()) {
             std::cout << "Not DAM encoded buffer ignored at offset: "
-                 << static_cast<int>((pointer - reinterpret_cast<char *>(buffer))) << std::endl;
+                 << static_cast<int>((pointer - reinterpret_cast<uint8_t *>(buffer))) << std::endl;
             break;
         }
         auto size = decoder.Size();
         if (first) {
+            if (histo_ == nullptr) {
+                std::cout << "No clear histogram." << std::endl;
+                return result;
+            }
             result.insert(result.end(), histo_->begin(), histo_->end());
             first = false;
         } else {
             auto encrypted_histo = decoder.DecodeBufferArray();
             auto decrypted_histo = DecryptVector(encrypted_histo);
+            if (decrypted_histo.size() != histo_->size()) {
+                std::cout << "Histo sizes are different: " << decrypted_histo.size()
+                    << " != " <<  histo_->size()  << std::endl;
+            }
             result.insert(result.end(), decrypted_histo.begin(), decrypted_histo.end());
         }
         remaining -= size;
         pointer += size;
     }
+
+    std::cout << "Result size: " << result.size() << std::endl;
+
+    // print_buffer(reinterpret_cast<uint8_t *>(result.data()), result.size()*8);
 
     return result;
 }

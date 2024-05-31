@@ -48,12 +48,6 @@ public:
     Buffer(const Buffer &that):
         buf_size(that.buf_size), buffer(that.buffer), allocated(false) {
     }
-
-    ~Buffer() {
-        buffer = nullptr;
-        buf_size = 0;
-        allocated = false;
-    }
 };
 
 class Entry {

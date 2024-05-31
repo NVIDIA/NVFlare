@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#include <cstring>
 #include "local_mock.h"
 #include "data_set_ids.h"
 
@@ -67,6 +68,7 @@ Buffer LocalMockProcessor::EncryptVector(const std::vector<double>& cleartext) {
 }
 
 std::vector<double> LocalMockProcessor::DecryptVector(std::vector<Buffer> ciphertext) {
+    std::cout << "Decrypt buffer size: " << ciphertext.size() << std::endl;
     std::vector<double> result;
 
     for (auto const &v : ciphertext) {
@@ -87,16 +89,16 @@ std::map<int, Buffer> LocalMockProcessor::AddGHPairs(std::map<int, std::vector<i
     auto result = std::map<int, Buffer>();
     for (auto const &entry : sample_ids) {
         auto rows = entry.second;
-        double g = 0;
-        double h = 0;
+        double g = 0.0;
+        double h = 0.0;
 
         for (auto row : rows) {
             g += gh_pairs[2 * row];
             h += gh_pairs[2 * row + 1];
         }
-
         // In real plugin, the sum should be still in encrypted state. No need to do this step
         auto encrypted_sum = EncryptVector(std::vector<double>{g, h});
+        // print_buffer(reinterpret_cast<uint8_t *>(encrypted_sum.buffer), encrypted_sum.buf_size);
         result.insert({entry.first, encrypted_sum});
     }
 
