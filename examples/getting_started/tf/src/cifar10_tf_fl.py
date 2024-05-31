@@ -54,7 +54,7 @@ def main():
         # (5) evaluate aggregated/received model
         _, test_global_acc = model.evaluate(test_images, test_labels, verbose=2)
         print(
-            f"Accuracy of the received model on round {input_model.current_round} on the 10000 test images: {test_global_acc * 100} %"
+            f"Accuracy of the received model on round {input_model.current_round} on the {len(test_images)} test images: {test_global_acc * 100} %"
         )
 
         model.fit(train_images, train_labels, epochs=1, validation_data=(test_images, test_labels))
@@ -64,7 +64,7 @@ def main():
         model.save_weights(PATH)
 
         _, test_acc = model.evaluate(test_images, test_labels, verbose=2)
-        print(f"Accuracy of the model on the 10000 test images: {test_acc * 100} %")
+        print(f"Accuracy of the model on the {len(test_images)} test images: {test_acc * 100} %")
 
         # (6) construct trained FL model (A dict of {layer name: layer weights} from the keras model)
         output_model = flare.FLModel(
