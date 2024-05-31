@@ -24,10 +24,10 @@ class TestFedJob:
         component = FedAvg()
 
         job.to(component, "server")
-        job.to(component, f"site-1")
+        job.to(component, "site-1")
 
         with pytest.raises(Exception):
-            job.to(component, f"site-/1", gpu=0)
+            job.to(component, "site-/1", gpu=0)
 
     def test_non_empty_target(self):
         job = FedJob()
