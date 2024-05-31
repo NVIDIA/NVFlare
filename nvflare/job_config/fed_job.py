@@ -270,6 +270,9 @@ class FedJob:
         )
 
     def _validate_target(self, target):
+        if not target:
+            raise ValueError("Must provide a valid target name")
+
         if any(c in SPECIAL_CHARACTERS for c in target):
             raise ValueError(f"target {target} name contains invalid character")
         pass
