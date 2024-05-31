@@ -17,10 +17,13 @@ import numpy as np
 
 import tensorflow as tf
 from tensorflow.keras import datasets
-from tf_net import TFNet
+from tf_net import ModerateTFNet
 
 # (1) import nvflare client API
 import nvflare.client as flare
+
+# (optional) metrics
+from nvflare.client.tracking import SummaryWriter
 
 PATH = "./tf_model.weights.h5"
 
@@ -61,10 +64,10 @@ def main():
     # Normalize pixel values to be between 0 and 1
     train_images, test_images = train_images / 255.0, test_images / 255.0
 
-    model = TFNet()
+    model = ModerateTFNet()
     model.build(input_shape=(None, 32, 32, 3))
     model.compile(
-        optimizer="adam", loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=["accuracy"]
+        optimizer=tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.9), loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=["accuracy"]
     )
     model.summary()
     
@@ -73,8 +76,10 @@ def main():
     # (2) initializes NVFlare client API
     flare.init()
 
-    # (3) gets FLModel from NVFlare
+    summary_writer = SummaryWriter()
+    tf_summary_writer = tf.summary.create_file_writer(logdir="local_logs")
     while flare.is_running():
+        # (3) receives FLModel from NVFlare
         input_model = flare.receive()
         print(f"current_round={input_model.current_round}")
 
@@ -88,18 +93,28 @@ def main():
 
         # (5) evaluate aggregated/received model
         _, test_global_acc = model.evaluate(test_images, test_labels, verbose=2)
+        summary_writer.add_scalar(tag="global_model_accuracy", scalar=test_global_acc, global_step=input_model.current_round)
+        with tf_summary_writer.as_default():
+            tf.summary.scalar("global_model_accuracy", test_global_acc, input_model.current_round)
         print(
-            f"Accuracy of the received model on round {input_model.current_round} on the 10000 test images: {test_global_acc * 100} %"
+            f"Accuracy of the received model on round {input_model.current_round} on the {len(test_images)} test images: {test_global_acc * 100} %"
         )
 
-        model.fit(train_images, train_labels, epochs=args.epochs, validation_data=(test_images, test_labels), batch_size=args.batch_size, callbacks=[tensorboard_callback])
+        start_epoch = args.epochs*input_model.current_round
+        end_epoch = start_epoch + args.epochs
+        print(f"Train from epoch {start_epoch} to {end_epoch}")
+        model.fit(train_images, train_labels, epochs=end_epoch, validation_data=(test_images, test_labels), batch_size=args.batch_size, callbacks=[tensorboard_callback],
+                  initial_epoch=start_epoch, validation_freq=args.epochs)
 
         print("Finished Training")
 
         model.save_weights(PATH)
 
         _, test_acc = model.evaluate(test_images, test_labels, verbose=2)
-        print(f"Accuracy of the model on the 10000 test images: {test_acc * 100} %")
+        summary_writer.add_scalar(tag="local_model_accuracy", scalar=test_acc, global_step=input_model.current_round)
+        with tf_summary_writer.as_default():
+            tf.summary.scalar("local_model_accuracy", test_acc, input_model.current_round)
+        print(f"Accuracy of the model on the {len(test_images)} test images: {test_acc * 100} %")
 
         # (6) construct trained FL model (A dict of {layer name: layer weights} from the keras model)
         output_model = flare.FLModel(

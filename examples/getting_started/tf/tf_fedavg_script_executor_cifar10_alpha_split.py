@@ -13,9 +13,8 @@
 # limitations under the License.
 
 import argparse
-import os
 
-from src.tf_net import TFNet
+from src.tf_net import ModerateTFNet
 from src.cifar10_data_split import cifar10_split
 
 from nvflare import FedAvg, FedJob, ScriptExecutor
@@ -72,7 +71,7 @@ if __name__ == "__main__":
     job.to(controller, "server")
 
     # Define the initial global model and send to server
-    job.to(TFNet(input_shape=(None, 32, 32, 3)), "server")
+    job.to(ModerateTFNet(input_shape=(None, 32, 32, 3)), "server")
 
     # Add clients
     for i, train_idx_path in enumerate(train_idx_paths):
@@ -81,5 +80,5 @@ if __name__ == "__main__":
         )
         job.to(executor, f"site-{i+1}", gpu=args.gpu)
 
-    job.export_job("/tmp/nvflare/jobs/job_config")
-    #job.simulator_run(f"/tmp/nvflare/jobs/{job.job_name}")
+    # job.export_job("/tmp/nvflare/jobs/job_config")
+    job.simulator_run(f"/tmp/nvflare/jobs/{job.job_name}_3")
