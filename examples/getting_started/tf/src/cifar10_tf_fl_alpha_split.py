@@ -30,11 +30,17 @@ def main():
     parser.add_argument(
         "--batch_size",
         type=int,
-        default=32,
+        required=True
     )
     parser.add_argument(
+        "--epochs",
+        type=int,
+        required=True
+    )    
+    parser.add_argument(
         "--train_idx_path",
-        type=str
+        type=str,
+        required=True
     )
     args = parser.parse_args()
 
@@ -52,12 +58,6 @@ def main():
     print("Unique labels:", unq)
     print("Unique Counts:", unq_cnt)
 
-    print(train_images.shape)
-    print(train_labels.shape)
-    print(test_images.shape)
-    print(test_labels.shape)
-    sdafa
-
     # Normalize pixel values to be between 0 and 1
     train_images, test_images = train_images / 255.0, test_images / 255.0
 
@@ -67,6 +67,8 @@ def main():
         optimizer="adam", loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=["accuracy"]
     )
     model.summary()
+    
+    tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir="./logs", histogram_freq=1)
 
     # (2) initializes NVFlare client API
     flare.init()
@@ -90,7 +92,7 @@ def main():
             f"Accuracy of the received model on round {input_model.current_round} on the 10000 test images: {test_global_acc * 100} %"
         )
 
-        model.fit(train_images, train_labels, epochs=1, validation_data=(test_images, test_labels), batch_size=args.batch_size)
+        model.fit(train_images, train_labels, epochs=args.epochs, validation_data=(test_images, test_labels), batch_size=args.batch_size, callbacks=[tensorboard_callback])
 
         print("Finished Training")
 

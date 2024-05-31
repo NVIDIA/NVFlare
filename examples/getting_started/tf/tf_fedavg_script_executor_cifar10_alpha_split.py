@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 import os
 
 from src.tf_net import TFNet
@@ -21,22 +22,52 @@ from nvflare import FedAvg, FedJob, ScriptExecutor
 
 
 if __name__ == "__main__":
-    n_clients = 2
-    num_rounds = 2
-    alpha = 0.1
-    train_split_root = f"/tmp/cifar10_splits/clients{n_clients}_alpha{alpha}"  # avoid overwriting results
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--n_clients",
+        type=int,
+        default=8,
+    )
+    parser.add_argument(
+        "--num_rounds",
+        type=int,
+        default=50,
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=64,
+    )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=4,
+    )       
+    parser.add_argument(
+        "--alpha",
+        type=float,
+        default=1.0,
+    )
+    parser.add_argument(
+        "--gpu",
+        type=int,
+        default=0,
+    )    
+    args = parser.parse_args()
+    
     train_script = "src/cifar10_tf_fl_alpha_split.py"
+    train_split_root = f"/tmp/cifar10_splits/clients{args.n_clients}_alpha{args.alpha}"  # avoid overwriting results
 
     # Prepare data splits
-    train_idx_paths = cifar10_split(num_sites=n_clients, alpha=alpha, split_dir=train_split_root)
+    train_idx_paths = cifar10_split(num_sites=args.n_clients, alpha=args.alpha, split_dir=train_split_root)
 
     # Define job
-    job = FedJob(name=f"cifar10_tf_fedavg_alpha{alpha}")
+    job = FedJob(name=f"cifar10_tf_fedavg_alpha{args.alpha}")
 
     # Define the controller workflow and send to server
     controller = FedAvg(
-        min_clients=n_clients,
-        num_rounds=num_rounds,
+        min_clients=args.n_clients,
+        num_rounds=args.num_rounds,
     )
     job.to(controller, "server")
 
@@ -46,9 +77,9 @@ if __name__ == "__main__":
     # Add clients
     for i, train_idx_path in enumerate(train_idx_paths):
         executor = ScriptExecutor(
-            task_script_path=train_script, task_script_args=f"--batch_size 128 --train_idx_path {train_idx_path}"
+            task_script_path=train_script, task_script_args=f"--batch_size {args.batch_size} --epochs {args.epochs} --train_idx_path {train_idx_path}"
         )
-        job.to(executor, f"site-{i}", gpu=0)
+        job.to(executor, f"site-{i+1}", gpu=args.gpu)
 
-    # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir")
+    job.export_job("/tmp/nvflare/jobs/job_config")
+    #job.simulator_run(f"/tmp/nvflare/jobs/{job.job_name}")
