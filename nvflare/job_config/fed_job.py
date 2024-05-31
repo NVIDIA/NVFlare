@@ -105,11 +105,11 @@ class FedJob:
                 if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
                 Defaults to "accuracy".
         """
-        self.job_name = name
+        self.name = name
         self.key_metric = key_metric
         self.clients = []
         self.job: FedJobConfig = FedJobConfig(
-            job_name=self.job_name, min_clients=min_clients, mandatory_clients=mandatory_clients
+            job_name=self.name, min_clients=min_clients, mandatory_clients=mandatory_clients
         )
         self._deploy_map = {}
         self._deployed = False

@@ -70,14 +70,14 @@ def main():
         optimizer=tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.9), loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=["accuracy"]
     )
     model.summary()
-    
-    tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir="./logs", histogram_freq=1)
+
+    tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir="./logs", write_graph=False)
 
     # (2) initializes NVFlare client API
     flare.init()
 
     summary_writer = SummaryWriter()
-    tf_summary_writer = tf.summary.create_file_writer(logdir="local_logs")
+    tf_summary_writer = tf.summary.create_file_writer(logdir="./logs/validation")
     while flare.is_running():
         # (3) receives FLModel from NVFlare
         input_model = flare.receive()
