@@ -28,3 +28,9 @@ class TestFedJob:
 
         with pytest.raises(Exception):
             job.to(component, f"site-/1", gpu=0)
+
+    def test_non_empty_target(self):
+        job = FedJob()
+        component = FedAvg()
+        with pytest.raises(Exception):
+            job.to(component, None)
