@@ -134,7 +134,7 @@ def create_job(cmd_args):
         job_folder = cmd_args.job_folder
         prepare_job_folder(cmd_args)
         app_custom_dirs = prepare_app_dirs(job_folder, app_names)
-        prepare_app_scripts(app_custom_dirs, cmd_args)
+        prepare_app_scripts(job_folder, app_custom_dirs, cmd_args)
         config_dirs = get_config_dirs(job_folder, app_names)
 
         fmt, real_config_path = ConfigFactory.search_config_format(CONFIG_FED_CLIENT_CONF, config_dirs)
@@ -688,10 +688,22 @@ def prepare_job_folder(cmd_args):
             )
 
 
-def prepare_app_scripts(app_custom_dirs, cmd_args):
+def is_subdir(path, directory):
+    # Normalize the paths to avoid issues with different OS formats
+    path = os.path.realpath(path)
+    directory = os.path.realpath(directory)
+    # Check if the directory is a prefix of the path
+    return os.path.commonpath([path, directory]) == directory
+
+
+def prepare_app_scripts(job_folder, app_custom_dirs, cmd_args):
+    script_dir = cmd_args.script_dir
+
     for app_custom_dir in app_custom_dirs:
-        if cmd_args.script_dir and len(cmd_args.script_dir.strip()) > 0:
-            if os.path.exists(cmd_args.script_dir):
+        if script_dir and len(script_dir.strip()) > 0:
+            if os.path.exists(script_dir):
+                if script_dir == job_folder or is_subdir(job_folder, script_dir):
+                    raise ValueError("job_folder must not be the same or sub directory of script_dir")
                 copy_tree(cmd_args.script_dir, app_custom_dir)
                 remove_pycache_files(app_custom_dir)
             else:
