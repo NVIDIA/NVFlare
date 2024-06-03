@@ -51,7 +51,12 @@ if __name__ == "__main__":
         "--gpu",
         type=int,
         default=0,
-    )    
+    )
+    parser.add_argument(
+        "--fedprox_mu",
+        type=float,
+        default=1e-3,
+    )
     args = parser.parse_args()
     
     train_script = "src/cifar10_tf_fl_alpha_split.py"
@@ -61,7 +66,7 @@ if __name__ == "__main__":
     train_idx_paths = cifar10_split(num_sites=args.n_clients, alpha=args.alpha, split_dir=train_split_root)
 
     # Define job
-    job = FedJob(name=f"cifar10_tf_fedavg_alpha{args.alpha}")
+    job = FedJob(name=f"cifar10_tf_fedprox_alpha{args.alpha}")
 
     # Define the controller workflow and send to server
     controller = FedAvg(
@@ -76,7 +81,7 @@ if __name__ == "__main__":
     # Add clients
     for i, train_idx_path in enumerate(train_idx_paths):
         executor = ScriptExecutor(
-            task_script_path=train_script, task_script_args=f"--batch_size {args.batch_size} --epochs {args.epochs} --train_idx_path {train_idx_path}"
+            task_script_path=train_script, task_script_args=f"--batch_size {args.batch_size} --epochs {args.epochs} --train_idx_path {train_idx_path} --fedprox_mu {args.fedprox_mu}"
         )
         job.to(executor, f"site-{i+1}", gpu=args.gpu)
 
