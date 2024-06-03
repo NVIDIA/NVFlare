@@ -23,6 +23,9 @@ PATH = "./tf_model.weights.h5"
 
 
 def main():
+    # (2) initializes NVFlare client API
+    flare.init()
+
     (train_images, train_labels), (test_images, test_labels) = datasets.cifar10.load_data()
 
     # Normalize pixel values to be between 0 and 1
@@ -34,9 +37,6 @@ def main():
         optimizer="adam", loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=["accuracy"]
     )
     model.summary()
-
-    # (2) initializes NVFlare client API
-    flare.init()
 
     # (3) gets FLModel from NVFlare
     while flare.is_running():
