@@ -178,17 +178,3 @@ std::vector<double> NVFlareProcessor::HandleHistograms(void *buffer, size_t buf_
     return decoder.DecodeFloatArray();
 }
 
-extern "C" {
-
-processing::Processor *LoadProcessor(char *plugin_name) {
-    if (strcasecmp(plugin_name, "nvflare") == 0) {
-        return new NVFlareProcessor();
-    } if (strcasecmp(plugin_name, "nvflare:mock") == 0) {
-        return new LocalMockProcessor();
-    } else {
-        cout << "Unknown plugin name: " << plugin_name << endl;
-        return nullptr;
-    }
-}
-
-}  // extern "C"

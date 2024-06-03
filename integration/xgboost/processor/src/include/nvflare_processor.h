@@ -28,13 +28,12 @@ class NVFlareProcessor: public processing::Processor {
     std::vector<double> *gh_pairs_{nullptr};
     std::vector<uint32_t> cuts_;
     std::vector<int> slots_;
-    bool feature_sent_ = false;
     std::vector<int64_t> features_;
+    bool feature_sent_ = false;
 
  public:
     void Initialize(bool active, std::map<std::string, std::string> params) override {
         this->active_ = active;
-        this->params_ = &params;
     }
 
     void Shutdown() override {

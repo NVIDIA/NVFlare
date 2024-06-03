@@ -67,7 +67,7 @@ Buffer LocalMockProcessor::EncryptVector(const std::vector<double>& cleartext) {
     return Buffer(buf, size, true);
 }
 
-std::vector<double> LocalMockProcessor::DecryptVector(std::vector<Buffer> ciphertext) {
+std::vector<double> LocalMockProcessor::DecryptVector(const std::vector<Buffer>& ciphertext) {
     std::cout << "Decrypt buffer size: " << ciphertext.size() << std::endl;
     std::vector<double> result;
 
@@ -82,7 +82,7 @@ std::vector<double> LocalMockProcessor::DecryptVector(std::vector<Buffer> cipher
     return result;
 }
 
-std::map<int, Buffer> LocalMockProcessor::AddGHPairs(std::map<int, std::vector<int>> sample_ids) {
+std::map<int, Buffer> LocalMockProcessor::AddGHPairs(const std::map<int, std::vector<int>>& sample_ids) {
     // Can't do this in real plugin. It needs to be broken into encrypted parts
     auto gh_pairs = DecryptVector(std::vector<Buffer>{encrypted_gh_});
 
@@ -106,7 +106,7 @@ std::map<int, Buffer> LocalMockProcessor::AddGHPairs(std::map<int, std::vector<i
 }
 
 
-void LocalMockProcessor::FreeEncryptedData(Buffer ciphertext) {
+void LocalMockProcessor::FreeEncryptedData(Buffer& ciphertext) {
     if (ciphertext.allocated) {
         free(ciphertext.buffer);
     }

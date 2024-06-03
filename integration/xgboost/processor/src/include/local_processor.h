@@ -25,7 +25,6 @@
 class LocalProcessor: public processing::Processor {
  protected:
     bool active_ = false;
-    const std::map<std::string, std::string> *params_{nullptr};
     std::vector<double> *gh_pairs_{nullptr};
     Buffer encrypted_gh_;
     std::vector<double> *histo_{nullptr};
@@ -35,15 +34,11 @@ class LocalProcessor: public processing::Processor {
  public:
     void Initialize(bool active, std::map<std::string, std::string> params) override {
         this->active_ = active;
-        this->params_ = &params;
     }
 
     void Shutdown() override {
         gh_pairs_ = nullptr;
-        if (encrypted_gh_.buffer) {
-            free(encrypted_gh_.buffer);
-            encrypted_gh_.buffer = nullptr;
-        }
+        FreeEncryptedData(encrypted_gh_);
         delete histo_;
         cuts_.clear();
         slots_.clear();
@@ -74,9 +69,9 @@ class LocalProcessor: public processing::Processor {
 
     std::vector<double> HandleHistograms(void *buffer, size_t buf_size) override;
 
-    void *ProcessClearAggregation(size_t *size, std::map<int, std::vector<int>> nodes);
+    void *ProcessClearAggregation(size_t *size, std::map<int, std::vector<int>>& nodes);
 
-    void *ProcessEncryptedAggregation(size_t *size, std::map<int, std::vector<int>> nodes);
+    void *ProcessEncryptedAggregation(size_t *size, std::map<int, std::vector<int>>& nodes);
 
     // Method needs to be implemented by local plugins
 
@@ -92,7 +87,7 @@ class LocalProcessor: public processing::Processor {
      * \param ciphertext A serialzied buffer of ciphertext
      * \return An array of numbers
     */
-    virtual std::vector<double> DecryptVector(std::vector<Buffer> ciphertext) = 0;
+    virtual std::vector<double> DecryptVector(const std::vector<Buffer>& ciphertext) = 0;
 
     /*!
      * \brief Add the G&H pairs for a series of samples
@@ -100,11 +95,11 @@ class LocalProcessor: public processing::Processor {
      * \return A map of the serialized encrypted sum of G and H for each slot
      *         The input and output maps must have the same size
      */
-    virtual std::map<int, Buffer> AddGHPairs(std::map<int, std::vector<int>> sample_ids) = 0;
+    virtual std::map<int, Buffer> AddGHPairs(const std::map<int, std::vector<int>>& sample_ids) = 0;
 
     /*!
      * \brief Free encrypted data buffer
      * \param ciphertext The buffer for encrypted data
      */
-    virtual void FreeEncryptedData(Buffer ciphertext) = 0;
+    virtual void FreeEncryptedData(Buffer& ciphertext) = 0;
 };

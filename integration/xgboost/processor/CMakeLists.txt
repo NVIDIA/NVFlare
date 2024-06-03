@@ -26,7 +26,8 @@ if (APPLE)
     add_link_options("LINKER:-cache_path_lto,${CMAKE_BINARY_DIR}/LTOCache")
 endif ()
 
-target_link_libraries(proc_nvflare ${XGB_SRC}/lib/libxgboost${CMAKE_SHARED_LIBRARY_SUFFIX})
+find_package(IPCL 2.0.0 REQUIRED HINTS ${IPCL_HINT_DIR})
+target_link_libraries(proc_nvflare ${XGB_SRC}/lib/libxgboost${CMAKE_SHARED_LIBRARY_SUFFIX} IPCL::ipcl)
 
 #-- Unit Tests
 if(GOOGLE_TEST)

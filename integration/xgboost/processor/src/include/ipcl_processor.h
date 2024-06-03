@@ -19,14 +19,19 @@
 #include <vector>
 #include <map>
 #include "local_processor.h"
+#include "ipcl/ipcl.hpp"
 
-/*! \brief A base class for all plugins that handle encryption locally */
-class LocalMockProcessor: public LocalProcessor {
+/*! \brief A processor using Intel's IPCL library */
+class IpclProcessor: public LocalProcessor {
+private:
+    ipcl::KeyPair key_;
+    ipcl::PublicKey public_key_;
+    ipcl::CipherText zero_;
+    int num_threads_;
 
-    // Those 2 calls don't need to be overwritten if tenseal is used on NVFlare
-    void *ProcessHistograms(size_t *size, const std::vector<double>& histograms) override;
+public:
 
-    std::vector<double> HandleHistograms(void *buffer, size_t buf_size) override;
+    void Initialize(bool active, std::map<std::string, std::string> params) override;
 
     Buffer EncryptVector(const std::vector<double>& cleartext) override;
 

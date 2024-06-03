@@ -39,12 +39,12 @@ void* LocalProcessor::HandleGHPairs(std::size_t *size, void *buffer, std::size_t
     auto encrypted_buffer = decoder.DecodeBuffer();
     std::cout << "Encrypted buffer size: " << encrypted_buffer.buf_size << std::endl;
     // The caller may free buffer so a copy is needed
-    if (encrypted_gh_.buffer) {
-        free(encrypted_gh_.buffer);
-    }
-    encrypted_gh_.buffer = malloc(encrypted_buffer.buf_size);
-    memcpy(encrypted_gh_.buffer, encrypted_buffer.buffer, encrypted_buffer.buf_size);
-    encrypted_gh_.buf_size = encrypted_buffer.buf_size;
+    FreeEncryptedData(encrypted_gh_);
+
+    auto buf = malloc(encrypted_buffer.buf_size);
+    memcpy(buf, encrypted_buffer.buffer, encrypted_buffer.buf_size);
+    encrypted_gh_ = Buffer(buf, encrypted_buffer.buf_size, true);
+    FreeEncryptedData(encrypted_buffer);
 
     return buffer;
 }
@@ -64,13 +64,14 @@ void *LocalProcessor::ProcessAggregation(std::size_t *size, std::map<int, std::v
     return result;
 }
 
-void *LocalProcessor::ProcessClearAggregation(std::size_t *size, std::map<int, std::vector<int>> nodes) {
-    int total_bin_size = cuts_.back();
-    int histo_size = total_bin_size*2;
-    int total_size = histo_size * nodes.size();
+void *LocalProcessor::ProcessClearAggregation(std::size_t *size, std::map<int, std::vector<int>>& nodes) {
+    std::cout << "ProcessClearAggregation called with " << nodes.size() << " nodes" << std::endl;
+    auto total_bin_size = cuts_.back();
+    auto histo_size = total_bin_size*2;
+    auto total_size = histo_size * nodes.size();
 
     histo_ = new std::vector<double>(total_size);
-    int start = 0;
+    size_t start = 0;
     for (const auto &node : nodes) {
         auto rows = node.second;
         for (const auto &row_id : rows) {
@@ -95,12 +96,13 @@ void *LocalProcessor::ProcessClearAggregation(std::size_t *size, std::map<int, s
     return encoder.Finish(*size);
 }
 
-void *LocalProcessor::ProcessEncryptedAggregation(std::size_t *size, std::map<int, std::vector<int>> nodes) {
-    int num_slot = cuts_.back();
-    int total_size = num_slot * nodes.size();
+void *LocalProcessor::ProcessEncryptedAggregation(std::size_t *size, std::map<int, std::vector<int>>& nodes) {
+    std::cout << "ProcessEncryptedAggregation called with " << nodes.size() << " nodes" << std::endl;
+    auto num_slot = cuts_.back();
+    auto total_size = num_slot * nodes.size();
 
     auto encrypted_histo = std::vector<Buffer>(total_size);
-    int start = 0;
+    size_t start = 0;
     for (const auto &node : nodes) {
         auto rows = node.second;
         auto num = cuts_.size() - 1;
@@ -138,16 +140,21 @@ void *LocalProcessor::ProcessEncryptedAggregation(std::size_t *size, std::map<in
 
     auto encoder = DamEncoder(kDataSetAggregationResult, true);
     encoder.AddBufferArray(encrypted_histo);
-    return encoder.Finish(*size);
+    auto result = encoder.Finish(*size);
+
+    for (auto& item : encrypted_histo) {
+        FreeEncryptedData(item);
+    }
+
+    return result;
 }
 
 std::vector<double> LocalProcessor::HandleAggregation(void *buffer, std::size_t buf_size) {
     std::cout << "HandleAggregation called with buffer size: " << buf_size
         << " Active: " << active_ << std::endl;
     auto remaining = buf_size;
-    uint8_t *pointer = reinterpret_cast<uint8_t *>(buffer);
+    auto pointer = reinterpret_cast<uint8_t *>(buffer);
 
-    // The buffer is concatenated by AllGather. It may contain multiple DAM buffers
     std::vector<double> result;
 
     if (!active_) {
@@ -155,6 +162,7 @@ std::vector<double> LocalProcessor::HandleAggregation(void *buffer, std::size_t 
         return result;
     }
 
+    // The buffer is concatenated by AllGather. It may contain multiple DAM buffers
     auto first = true;
     while (remaining > kPrefixLen) {
         DamDecoder decoder(pointer, remaining, true);
@@ -172,8 +180,8 @@ std::vector<double> LocalProcessor::HandleAggregation(void *buffer, std::size_t 
             result.insert(result.end(), histo_->begin(), histo_->end());
             first = false;
         } else {
-            auto encrypted_histo = decoder.DecodeBufferArray();
-            auto decrypted_histo = DecryptVector(encrypted_histo);
+            auto encrypted_buf = decoder.DecodeBufferArray();
+            auto decrypted_histo = DecryptVector(encrypted_buf);
             if (decrypted_histo.size() != histo_->size()) {
                 std::cout << "Histo sizes are different: " << decrypted_histo.size()
                     << " != " <<  histo_->size()  << std::endl;
@@ -216,4 +224,3 @@ std::vector<double> LocalProcessor::HandleHistograms(void *buffer, size_t buf_si
 
     return decoder.DecodeFloatArray();
 }
-
