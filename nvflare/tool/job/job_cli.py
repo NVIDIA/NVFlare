@@ -703,7 +703,7 @@ def prepare_app_scripts(job_folder, app_custom_dirs, cmd_args):
         if script_dir and len(script_dir.strip()) > 0:
             if os.path.exists(script_dir):
                 if script_dir == job_folder or is_subdir(job_folder, script_dir):
-                    raise ValueError("job_folder must not the same or sub directory of script_dir")
+                    raise ValueError("job_folder must not be the same or sub directory of script_dir")
                 copy_tree(cmd_args.script_dir, app_custom_dir)
                 remove_pycache_files(app_custom_dir)
             else:
