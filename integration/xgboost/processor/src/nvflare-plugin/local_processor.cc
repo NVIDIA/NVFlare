@@ -4,14 +4,53 @@
 #include <iostream>
 #include <cstring>
 #include <cstdint>
+#include <chrono>
 #include "local_processor.h"
 #include "data_set_ids.h"
+#include "util.h"
+
+const char kParamDebug[] = "debug";
+const char kParamDamDebug[] = "dam_debug";
+const char kParamPrintTiming[] = "print_timing";
+
+void LocalProcessor::Initialize(bool active, std::map<std::string, std::string> params) {
+    active_ = active;
+    print_timing_ = get_bool(params, kParamPrintTiming);
+    debug_ = get_bool(params, kParamDebug);
+    dam_debug_ = get_bool(params, kParamDamDebug);
+}
+
+void LocalProcessor::Shutdown() {
+    gh_pairs_ = nullptr;
+    FreeEncryptedData(encrypted_gh_);
+    delete histo_;
+    cuts_.clear();
+    slots_.clear();
+}
+
+void LocalProcessor::FreeBuffer(void *buffer) {
+    free(buffer);
+}
 
 void* LocalProcessor::ProcessGHPairs(std::size_t *size, const std::vector<double>& pairs) {
-    std::cout << "ProcessGHPairs called with pairs size: " << pairs.size() << std::endl;
+    if (debug_) {
+        std::cout << "ProcessGHPairs called with pairs size: " << pairs.size() << std::endl;
+    }
+
+    if (print_timing_) {
+        std::cout << "Encrypting " << pairs.size()/2 << " GH Pairs" << std::endl;
+    }
+    auto start = std::chrono::system_clock::now();
+
     auto encrypted_data = EncryptVector(pairs);
 
-    DamEncoder encoder(kDataSetGHPairs, true);
+    if (print_timing_) {
+        auto end = std::chrono::system_clock::now();
+        auto secs = (double) std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() / 1000.0;
+        std::cout << "Encryption time: " << secs << std::endl;
+    }
+
+    DamEncoder encoder(kDataSetGHPairs, true, dam_debug_);
     encoder.AddBuffer(encrypted_data);
     auto buffer = encoder.Finish(*size);
     FreeEncryptedData(encrypted_data);
@@ -23,7 +62,10 @@ void* LocalProcessor::ProcessGHPairs(std::size_t *size, const std::vector<double
 }
 
 void* LocalProcessor::HandleGHPairs(std::size_t *size, void *buffer, std::size_t buf_size) {
-    std::cout << "HandleGHPairs called with buffer size: " << buf_size << " Active: " << active_ << std::endl;
+    if (debug_) {
+        std::cout << "HandleGHPairs called with buffer size: " << buf_size << " Active: " << active_ << std::endl;
+    }
+
     *size = buf_size;
 
     if (active_) {
@@ -31,16 +73,18 @@ void* LocalProcessor::HandleGHPairs(std::size_t *size, void *buffer, std::size_t
         return buffer;
     }
 
-    auto decoder = DamDecoder(reinterpret_cast<std::uint8_t *>(buffer), buf_size, true);
+    auto decoder = DamDecoder(reinterpret_cast<std::uint8_t *>(buffer), buf_size, true, dam_debug_);
     if (!decoder.IsValid()) {
         return buffer;
     }
 
     auto encrypted_buffer = decoder.DecodeBuffer();
-    std::cout << "Encrypted buffer size: " << encrypted_buffer.buf_size << std::endl;
+    if (debug_) {
+        std::cout << "Encrypted buffer size: " << encrypted_buffer.buf_size << std::endl;
+    }
+
     // The caller may free buffer so a copy is needed
     FreeEncryptedData(encrypted_gh_);
-
     auto buf = malloc(encrypted_buffer.buf_size);
     memcpy(buf, encrypted_buffer.buffer, encrypted_buffer.buf_size);
     encrypted_gh_ = Buffer(buf, encrypted_buffer.buf_size, true);
@@ -49,8 +93,20 @@ void* LocalProcessor::HandleGHPairs(std::size_t *size, void *buffer, std::size_t
     return buffer;
 }
 
+void LocalProcessor::InitAggregationContext(const std::vector<uint32_t> &cuts, const std::vector<int> &slots) {
+    if (this->slots_.empty()) {
+        this->cuts_ = std::vector<uint32_t>(cuts);
+        this->slots_ = std::vector<int>(slots);
+    } else {
+        std::cout << "Multiple calls to InitAggregationContext" << std::endl;
+    }
+}
+
 void *LocalProcessor::ProcessAggregation(std::size_t *size, std::map<int, std::vector<int>> nodes) {
-    std::cout << "ProcessAggregation called with " << nodes.size() << " nodes" << std::endl;
+    if (debug_) {
+        std::cout << "ProcessAggregation called with " << nodes.size() << " nodes" << std::endl;
+    }
+
     void *result;
 
     if (active_) {
@@ -65,7 +121,10 @@ void *LocalProcessor::ProcessAggregation(std::size_t *size, std::map<int, std::v
 }
 
 void *LocalProcessor::ProcessClearAggregation(std::size_t *size, std::map<int, std::vector<int>>& nodes) {
-    std::cout << "ProcessClearAggregation called with " << nodes.size() << " nodes" << std::endl;
+    if (debug_) {
+        std::cout << "ProcessClearAggregation called with " << nodes.size() << " nodes" << std::endl;
+    }
+
     auto total_bin_size = cuts_.back();
     auto histo_size = total_bin_size*2;
     auto total_size = histo_size * nodes.size();
@@ -91,18 +150,21 @@ void *LocalProcessor::ProcessClearAggregation(std::size_t *size, std::map<int, s
     }
 
     // Histogram is in clear, can't send to all_gather. Just return empty DAM buffer
-    auto encoder = DamEncoder(kDataSetAggregationResult, true);
+    auto encoder = DamEncoder(kDataSetAggregationResult, true, dam_debug_);
     encoder.AddBuffer(Buffer());
     return encoder.Finish(*size);
 }
 
 void *LocalProcessor::ProcessEncryptedAggregation(std::size_t *size, std::map<int, std::vector<int>>& nodes) {
-    std::cout << "ProcessEncryptedAggregation called with " << nodes.size() << " nodes" << std::endl;
+    if (debug_) {
+        std::cout << "ProcessEncryptedAggregation called with " << nodes.size() << " nodes" << std::endl;
+    }
+
     auto num_slot = cuts_.back();
     auto total_size = num_slot * nodes.size();
 
     auto encrypted_histo = std::vector<Buffer>(total_size);
-    size_t start = 0;
+    size_t offset = 0;
     for (const auto &node : nodes) {
         auto rows = node.second;
         auto num = cuts_.size() - 1;
@@ -121,24 +183,34 @@ void *LocalProcessor::ProcessEncryptedAggregation(std::size_t *size, std::map<in
                 }
                 auto &row_ids = row_id_map[slot];
                 row_ids.push_back(row_id);
-                // std::cout << "Slot " << slot << " row " << row_id << " Row Size: " << row_ids.size() << std::endl;
             }
         }
 
+        if (print_timing_) {
+            std::cout << "Aggregating " << row_id_map.size() << " slots" << std::endl;
+        }
+        auto start = std::chrono::system_clock::now();
+
         auto encrypted_sum = AddGHPairs(row_id_map);
+
+        if (print_timing_) {
+            auto end = std::chrono::system_clock::now();
+            auto secs = (double) std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() / 1000.0;
+            std::cout << "Aggregation time: " << secs << std::endl;
+        }
 
         // Convert map back to array
         for (int slot = 0; slot < num_slot; slot++) {
             auto it = encrypted_sum.find(slot);
             if (it != encrypted_sum.end()) {
-                encrypted_histo[start + slot] = it->second;
+                encrypted_histo[offset + slot] = it->second;
             }
         }
 
-        start += num_slot;
+        offset += num_slot;
     }
 
-    auto encoder = DamEncoder(kDataSetAggregationResult, true);
+    auto encoder = DamEncoder(kDataSetAggregationResult, true, dam_debug_);
     encoder.AddBufferArray(encrypted_histo);
     auto result = encoder.Finish(*size);
 
@@ -150,22 +222,27 @@ void *LocalProcessor::ProcessEncryptedAggregation(std::size_t *size, std::map<in
 }
 
 std::vector<double> LocalProcessor::HandleAggregation(void *buffer, std::size_t buf_size) {
-    std::cout << "HandleAggregation called with buffer size: " << buf_size
-        << " Active: " << active_ << std::endl;
+    if (debug_) {
+        std::cout << "HandleAggregation called with buffer size: " << buf_size
+                  << " Active: " << active_ << std::endl;
+    }
+
     auto remaining = buf_size;
     auto pointer = reinterpret_cast<uint8_t *>(buffer);
 
     std::vector<double> result;
 
     if (!active_) {
-        std::cout << "Result size: " << result.size() << std::endl;
+        if (debug_) {
+            std::cout << "Result size: " << result.size() << std::endl;
+        }
         return result;
     }
 
     // The buffer is concatenated by AllGather. It may contain multiple DAM buffers
     auto first = true;
     while (remaining > kPrefixLen) {
-        DamDecoder decoder(pointer, remaining, true);
+        DamDecoder decoder(pointer, remaining, true, dam_debug_);
         if (!decoder.IsValid()) {
             std::cout << "Not DAM encoded buffer ignored at offset: "
                  << static_cast<int>((pointer - reinterpret_cast<uint8_t *>(buffer))) << std::endl;
@@ -181,7 +258,20 @@ std::vector<double> LocalProcessor::HandleAggregation(void *buffer, std::size_t 
             first = false;
         } else {
             auto encrypted_buf = decoder.DecodeBufferArray();
+
+            if (print_timing_) {
+                std::cout << "Decrypting " << encrypted_buf.size() << " pairs" << std::endl;
+            }
+            auto start = std::chrono::system_clock::now();
+
             auto decrypted_histo = DecryptVector(encrypted_buf);
+
+            if (print_timing_) {
+                auto end = std::chrono::system_clock::now();
+                auto secs = (double) std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() / 1000.0;
+                std::cout << "Decryption time: " << secs << std::endl;
+            }
+
             if (decrypted_histo.size() != histo_->size()) {
                 std::cout << "Histo sizes are different: " << decrypted_histo.size()
                     << " != " <<  histo_->size()  << std::endl;
@@ -192,7 +282,9 @@ std::vector<double> LocalProcessor::HandleAggregation(void *buffer, std::size_t 
         pointer += size;
     }
 
-    std::cout << "Result size: " << result.size() << std::endl;
+    if (debug_) {
+        std::cout << "Decrypted result size: " << result.size() << std::endl;
+    }
 
     // print_buffer(reinterpret_cast<uint8_t *>(result.data()), result.size()*8);
 
@@ -201,17 +293,21 @@ std::vector<double> LocalProcessor::HandleAggregation(void *buffer, std::size_t 
 
 // Horizontal encryption is still handled by NVFlare so those two methods uses normal, not local signature
 void *LocalProcessor::ProcessHistograms(size_t *size, const std::vector<double>& histograms) {
-    std::cout << "Remote ProcessHistograms called with " << histograms.size() << " entries" << std::endl;
+    if (debug_) {
+        std::cout << "Remote ProcessHistograms called with " << histograms.size() << " entries" << std::endl;
+    }
 
-    DamEncoder encoder(kDataSetHistograms);
+    DamEncoder encoder(kDataSetHistograms, false, dam_debug_);
     encoder.AddFloatArray(histograms);
     return encoder.Finish(*size);
 }
 
 std::vector<double> LocalProcessor::HandleHistograms(void *buffer, size_t buf_size) {
-    std::cout << "Remote HandleHistograms called with buffer size: " << buf_size << std::endl;
+    if (debug_) {
+        std::cout << "Remote HandleHistograms called with buffer size: " << buf_size << std::endl;
+    }
 
-    DamDecoder decoder(reinterpret_cast<uint8_t *>(buffer), buf_size);
+    DamDecoder decoder(reinterpret_cast<uint8_t *>(buffer), buf_size, false, dam_debug_);
     if (!decoder.IsValid()) {
         std::cout << "Not DAM encoded buffer, ignored" << std::endl;
         return std::vector<double>();

@@ -15,55 +15,14 @@
  */
 #include <cstring>
 #include <thread>
-#include <chrono>
 #include <functional>
 #include "ipcl_processor.h"
-
-const double kScaleFactor = 1000000.0;
-const bool kVerifySerialization = true;
+#include "util.h"
 
 const int kDataSetEncryptedGHPairs = 101;
-
-std::vector<std::pair<int, int>> distribute_work(size_t num_jobs, size_t num_workers) {
-    std::vector<std::pair<int, int>> result;
-    auto num = num_jobs/num_workers;
-    auto remainder = num_jobs%num_workers;
-    int start = 0;
-    for (int i = 0; i < num_workers; i++) {
-        auto stop = (int)(start + num - 1);
-        if (i < remainder) {
-            // If jobs cannot be evenly distributed, first few workers take an extra one
-            stop += 1;
-        }
-
-        if (start <= stop) {
-            result.emplace_back(start, stop);
-        }
-        start = stop + 1;
-    }
-
-    // Verify all jobs are distributed
-    int sum = 0;
-    for (auto &item : result) {
-        sum += item.second - item.first + 1;
-    }
-
-    if (sum != num_jobs) {
-        std::cout << "Distribution error" << std::endl;
-    }
-
-    return result;
-}
-
-uint32_t to_int(double d) {
-    int32_t int_val = (int32_t)(d*kScaleFactor);
-    return (uint32_t)int_val;
-}
-
-double to_double(uint32_t i) {
-    int32_t int_val = (int32_t)i;
-    return (double)(int_val/kScaleFactor);
-}
+const char kParamKeyLength[] = "key_length";
+const char kParamVerifySerialization[] = "verify_serialization";
+const char kParamThreads[] = "threads";
 
 ipcl::PlainText encode_pair(double g, double h) {
     auto g_int = to_int(g);
@@ -96,28 +55,30 @@ ipcl::CipherText deserialize_ciphertext(const Buffer &buf, const ipcl::PublicKey
 }
 
 void IpclProcessor::Initialize(bool active, std::map<std::string, std::string> params)  {
-    active_ = active;
+    LocalProcessor::Initialize(active, params);
+
+    auto key_length = get_int(params, kParamKeyLength, 1024);
+    verify_serialization_ = get_bool(params, kParamVerifySerialization);
+    num_threads_ = get_int(params, kParamThreads, 16);
 
     ipcl::initializeContext("CPU");
     ipcl::setHybridMode(ipcl::HybridMode::OPTIMAL);
 
     if (active_) {
-        key_ = ipcl::generateKeypair(1024, true);
+        key_ = ipcl::generateKeypair(key_length, true);
         public_key_ = key_.pub_key;
         zero_ = key_.pub_key.encrypt(encode_pair(0.0, 0.0));
     }
-
-    num_threads_ = 16;
 }
 
-void encryption_task(int first, int last, ipcl::KeyPair &key, const ipcl::CipherText& zero,
+void encryption_task(int first, int last, bool verify, ipcl::KeyPair &key, const ipcl::CipherText& zero,
                      const std::vector<double> &gh, std::vector<Buffer> &result) {
     for (int i = first; i <= last; i++) {
         auto pt = encode_pair(gh[2 * i], gh[2 * i + 1]);
         auto ct = key.pub_key.encrypt(pt);
         result[i] = serialize_ciphertext(ct);
 
-        if (kVerifySerialization) {
+        if (verify) {
             auto new_ct = deserialize_ciphertext(result[i], key.pub_key);
             for (int j = 0; j < 2; j++) {
                 std::vector<uint32_t> v1 = ct.getElementVec(j);
@@ -137,13 +98,10 @@ Buffer IpclProcessor::EncryptVector(const std::vector<double>& cleartext) {
     auto num = cleartext.size()/2;
     auto pairs = std::vector<Buffer>(num);
 
-    std::cout << "Encryption starts with " << num  << " pairs" << std::endl;
-    auto start = std::chrono::system_clock::now();
-
     auto workers = distribute_work(num, num_threads_);
     std::vector<std::thread> threads;
     for (auto& worker : workers) {
-        threads.emplace_back(encryption_task, worker.first, worker.second,
+        threads.emplace_back(encryption_task, worker.first, worker.second, verify_serialization_,
                              std::ref(key_), std::ref(zero_), std::ref(cleartext), std::ref(pairs));
     }
 
@@ -152,11 +110,8 @@ Buffer IpclProcessor::EncryptVector(const std::vector<double>& cleartext) {
             t.join();
         }
     }
-    auto end = std::chrono::system_clock::now();
-    std::chrono::duration<double> duration = end - start;
-    std::cout << "Encryption time: " << duration.count() << " seconds for " << num << " GH pairs" << std::endl;
 
-    DamEncoder encoder(kDataSetEncryptedGHPairs, true);
+    DamEncoder encoder(kDataSetEncryptedGHPairs, true, dam_debug_);
 
     auto key_bits = public_key_.getBits();
     std::vector<int64_t> key_bits_array({key_bits});
@@ -203,7 +158,9 @@ void decryption_task(int first, int last, ipcl::KeyPair &key,
 }
 
 std::vector<double> IpclProcessor::DecryptVector(const std::vector<Buffer>& ciphertext) {
-    std::cout << "Decrypt buffer size: " << ciphertext.size() << std::endl;
+    if (debug_) {
+        std::cout << "Decrypt buffer size: " << ciphertext.size() << std::endl;
+    }
 
     auto num = ciphertext.size();
     auto result = std::vector<double>(2*num);
@@ -213,10 +170,7 @@ std::vector<double> IpclProcessor::DecryptVector(const std::vector<Buffer>& ciph
         return result;
     }
 
-    std::cout << "Decryption starts" << std::endl;
-    auto start = std::chrono::system_clock::now();
     auto workers = distribute_work(num, num_threads_);
-
     std::vector<std::thread> threads;
     for (auto& worker : workers) {
         threads.emplace_back(decryption_task, worker.first, worker.second, std::ref(key_),
@@ -228,10 +182,6 @@ std::vector<double> IpclProcessor::DecryptVector(const std::vector<Buffer>& ciph
             t.join();
         }
     }
-
-    auto end = std::chrono::system_clock::now();
-    std::chrono::duration<double> duration = end - start;
-    std::cout << "Decryption time: " << duration.count() << " seconds for " << num << " GH pairs" << std::endl;
 
     return result;
 }
@@ -265,15 +215,18 @@ std::map<int, Buffer> IpclProcessor::AddGHPairs(const std::map<int, std::vector<
         keys.push_back(item.first);
     }
 
-    std::cout << "AddGHPairs called with buffer size: " << encrypted_gh_.buf_size << std::endl;
+    if (debug_) {
+        std::cout << "AddGHPairs called with buffer size: " << encrypted_gh_.buf_size << std::endl;
+    }
 
-    DamDecoder decoder(reinterpret_cast<uint8_t *>(encrypted_gh_.buffer), encrypted_gh_.buf_size);
+    DamDecoder decoder(reinterpret_cast<uint8_t *>(encrypted_gh_.buffer), encrypted_gh_.buf_size, true, dam_debug_);
     auto key_bits = decoder.DecodeIntArray()[0];
     auto key_buf = decoder.DecodeBuffer();
+
     // Need public key to deserialize ciphertext
     std::vector<Ipp32u> vec(key_bits / 32, 0);
-    BigNumber bn(vec.data(), key_bits / 32);
-    ipcl::PublicKey pub_key(bn, key_bits);
+    BigNumber bn(vec.data(), (int)vec.size());
+    ipcl::PublicKey pub_key(bn, (int)key_bits);
     std::string str(reinterpret_cast<char *>(key_buf.buffer), key_buf.buf_size);
     std::istringstream is(str);
     ipcl::serializer::deserialize(is, pub_key);
@@ -283,7 +236,9 @@ std::map<int, Buffer> IpclProcessor::AddGHPairs(const std::map<int, std::vector<
     auto gh_buffers = decoder.DecodeBufferArray();
     std::vector<ipcl::CipherText> gh_ciphertext;
     gh_ciphertext.reserve(gh_buffers.size());
-    std::cout << "GH array size: " << gh_buffers.size() << std::endl;
+    if (debug_) {
+        std::cout << "GH array size: " << gh_buffers.size() << std::endl;
+    }
     for (auto &item : gh_buffers) {
         gh_ciphertext.push_back(deserialize_ciphertext(item, pub_key));
     }
@@ -293,11 +248,9 @@ std::map<int, Buffer> IpclProcessor::AddGHPairs(const std::map<int, std::vector<
         result[item.first] = Buffer();
     }
 
-    std::cout << "Addition starts" << std::endl;
-    auto start = std::chrono::system_clock::now();
     auto workers = distribute_work(sample_ids.size(), num_threads_);
-
     std::vector<std::thread> threads;
+
     for (auto& worker : workers) {
         threads.emplace_back(addition_task, worker.first, worker.second, std::ref(zero_), std::ref(gh_ciphertext),
                              std::ref(sample_ids), std::ref(keys), std::ref(result));
@@ -308,10 +261,6 @@ std::map<int, Buffer> IpclProcessor::AddGHPairs(const std::map<int, std::vector<
             t.join();
         }
     }
-
-    auto end = std::chrono::system_clock::now();
-    std::chrono::duration<double> duration = end - start;
-    std::cout << "Addition time: " << duration.count() << " seconds for " << sample_ids.size() << " slots" << std::endl;
 
     return result;
 }

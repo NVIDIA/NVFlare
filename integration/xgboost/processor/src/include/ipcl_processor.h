@@ -28,6 +28,7 @@ private:
     ipcl::PublicKey public_key_;
     ipcl::CipherText zero_;
     int num_threads_;
+    bool verify_serialization_ = false;
 
 public:
 

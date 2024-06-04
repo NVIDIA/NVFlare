@@ -30,36 +30,22 @@ class LocalProcessor: public processing::Processor {
     std::vector<double> *histo_{nullptr};
     std::vector<uint32_t> cuts_;
     std::vector<int> slots_;
+    bool print_timing_ = false;
+    bool debug_ = false;
+    bool dam_debug_ = false;
 
  public:
-    void Initialize(bool active, std::map<std::string, std::string> params) override {
-        this->active_ = active;
-    }
+    void Initialize(bool active, std::map<std::string, std::string> params) override;
 
-    void Shutdown() override {
-        gh_pairs_ = nullptr;
-        FreeEncryptedData(encrypted_gh_);
-        delete histo_;
-        cuts_.clear();
-        slots_.clear();
-    }
+    void Shutdown() override;
 
-    void FreeBuffer(void *buffer) override {
-        free(buffer);
-    }
+    void FreeBuffer(void *buffer) override;
 
     void* ProcessGHPairs(size_t *size, const std::vector<double>& pairs) override;
 
     void* HandleGHPairs(size_t *size, void *buffer, size_t buf_size) override;
 
-    void InitAggregationContext(const std::vector<uint32_t> &cuts, const std::vector<int> &slots) override {
-        if (this->slots_.empty()) {
-            this->cuts_ = std::vector<uint32_t>(cuts);
-            this->slots_ = std::vector<int>(slots);
-        } else {
-            std::cout << "Multiple calls to InitAggregationContext" << std::endl;
-        }
-    }
+    void InitAggregationContext(const std::vector<uint32_t> &cuts, const std::vector<int> &slots) override;
 
     void *ProcessAggregation(size_t *size, std::map<int, std::vector<int>> nodes) override;
 

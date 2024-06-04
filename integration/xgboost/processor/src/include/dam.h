@@ -79,15 +79,18 @@ class Entry {
 
 class DamEncoder {
  private:
-    bool encoded = false;
-    bool local_version = false;
-    int64_t data_set_id;
-    std::vector<Entry *> *entries = new std::vector<Entry *>();
+    bool encoded_ = false;
+    bool local_version_ = false;
+    bool debug_ = false;
+    int64_t data_set_id_;
+    std::vector<Entry *> *entries_ = new std::vector<Entry *>();
 
  public:
-    explicit DamEncoder(int64_t data_set_id, bool local_version=false) {
-        this->data_set_id = data_set_id;
-        this->local_version = local_version;
+    explicit DamEncoder(int64_t data_set_id, bool local_version=false, bool debug=false) {
+        data_set_id_ = data_set_id;
+        local_version_ = local_version;
+        debug_ = debug;
+
     }
 
     void AddBuffer(const Buffer &buffer);
@@ -106,23 +109,24 @@ class DamEncoder {
 
 class DamDecoder {
  private:
-    bool local_version = false;
-    std::uint8_t *buffer = nullptr;
-    std::size_t buf_size = 0;
-    std::uint8_t *pos = nullptr;
-    std::size_t remaining = 0;
-    int64_t data_set_id = 0;
-    int64_t len = 0;
+    bool local_version_ = false;
+    std::uint8_t *buffer_ = nullptr;
+    std::size_t buf_size_ = 0;
+    std::uint8_t *pos_ = nullptr;
+    std::size_t remaining_ = 0;
+    int64_t data_set_id_ = 0;
+    int64_t len_ = 0;
+    bool debug_ = false;
 
  public:
-    explicit DamDecoder(std::uint8_t *buffer, std::size_t size, bool local_version=false);
+    explicit DamDecoder(std::uint8_t *buffer, std::size_t size, bool local_version=false, bool debug=false);
 
     size_t Size() {
-        return len;
+        return len_;
     }
 
     int64_t GetDataSetId() {
-        return data_set_id;
+        return data_set_id_;
     }
 
     bool IsValid();
