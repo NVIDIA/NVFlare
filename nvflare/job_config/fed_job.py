@@ -43,6 +43,8 @@ tb, tb_ok = optional_import(module="tensorboard")
 if torch_ok and tb_ok:
     from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 
+SPECIAL_CHARACTERS = '"!@#$%^&*()+?=,<>/'
+
 
 class FilterType:
     TASK_RESULT = "_TASK_RESULT_FILTER_TYPE_"
@@ -139,6 +141,8 @@ class FedJob:
         Returns:
 
         """
+        self._validate_target(target)
+
         if isinstance(obj, Controller):
             if target not in self._deploy_map:
                 self._deploy_map[target] = ControllerApp(key_metric=self.key_metric)
@@ -264,6 +268,14 @@ class FedJob:
             threads=threads,
             gpu=",".join([self._gpus[client] for client in self._gpus.keys()]),
         )
+
+    def _validate_target(self, target):
+        if not target:
+            raise ValueError("Must provide a valid target name")
+
+        if any(c in SPECIAL_CHARACTERS for c in target):
+            raise ValueError(f"target {target} name contains invalid character")
+        pass
 
 
 class ExecutorApp(FedApp):
