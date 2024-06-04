@@ -47,7 +47,7 @@ void* LocalProcessor::ProcessGHPairs(std::size_t *size, const std::vector<double
     if (print_timing_) {
         auto end = std::chrono::system_clock::now();
         auto secs = (double) std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() / 1000.0;
-        std::cout << "Encryption time: " << secs << std::endl;
+        std::cout << "Encryption time: " << secs << " seconds" << std::endl;
     }
 
     DamEncoder encoder(kDataSetGHPairs, true, dam_debug_);
@@ -187,7 +187,11 @@ void *LocalProcessor::ProcessEncryptedAggregation(std::size_t *size, std::map<in
         }
 
         if (print_timing_) {
-            std::cout << "Aggregating " << row_id_map.size() << " slots" << std::endl;
+            int add_ops = 0;
+            for (auto &item : row_id_map) {
+                add_ops += item.second.size();
+            }
+            std::cout << "Aggregating with " << add_ops << " additions" << std::endl;
         }
         auto start = std::chrono::system_clock::now();
 
@@ -196,7 +200,7 @@ void *LocalProcessor::ProcessEncryptedAggregation(std::size_t *size, std::map<in
         if (print_timing_) {
             auto end = std::chrono::system_clock::now();
             auto secs = (double) std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() / 1000.0;
-            std::cout << "Aggregation time: " << secs << std::endl;
+            std::cout << "Aggregation time: " << secs << " seconds" << std::endl;
         }
 
         // Convert map back to array
@@ -269,7 +273,7 @@ std::vector<double> LocalProcessor::HandleAggregation(void *buffer, std::size_t 
             if (print_timing_) {
                 auto end = std::chrono::system_clock::now();
                 auto secs = (double) std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() / 1000.0;
-                std::cout << "Decryption time: " << secs << std::endl;
+                std::cout << "Decryption time: " << secs << " seconds" << std::endl;
             }
 
             if (decrypted_histo.size() != histo_->size()) {
