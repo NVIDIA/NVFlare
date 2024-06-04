@@ -73,13 +73,13 @@ class `FedAvgNewtonRaphson`, which can be found
 [here](job/newton_raphson/app/custom/newton_raphson_workflow.py). The
 `FedAvgNewtonRaphson` class inherits from the
 [`BaseFedAvg`](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/app_common/workflows/base_fedavg.py)
-class, which itself inherits from the **Workflow Controller**
-([`WFController`](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/app_common/workflows/wf_controller.py))
+class, which itself inherits from the **ModelController**
+([`ModelController`](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/app_common/workflows/model_controller.py))
 class. This is the preferrable approach to implement a custom
-workflow, since `WFController` decouples communication logic from
+workflow, since `ModelController` decouples communication logic from
 actual workflow (training & validation) logic. The mandatory
-method to override in `WFController` is the
-[`run()`](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/app_common/workflows/wf_controller.py#L37)
+method to override in `ModelController` is the
+[`run()`](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/app_common/workflows/model_controller.py#L37)
 method, where the orchestration of server-side workflow actually
 happens. The implementation of `run()` method in
 [`FedAvgNewtonRaphson`](job/newton_raphson/app/custom/newton_raphson_workflow.py)
@@ -102,7 +102,7 @@ is similar to the classic
 - During each training round, the global model will be sent to the
   list of participating clients to perform a training task. This is
   done using the
-  [`send_model_and_wait()`](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/app_common/workflows/wf_controller.py#L41)
+  [`send_model_and_wait()`](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/app_common/workflows/model_controller.py#L41)
   method. Once
   the clients finish their local training, results will be collected
   and sent back to server as
