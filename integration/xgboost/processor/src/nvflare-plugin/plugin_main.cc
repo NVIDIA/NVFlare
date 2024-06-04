@@ -16,7 +16,6 @@
 #include <cstring>
 #include "nvflare_processor.h"
 #include "local_mock.h"
-#include "ipcl_processor.h"
 
 extern "C" {
 
@@ -25,8 +24,6 @@ processing::Processor *LoadProcessor(char *plugin_name) {
         return new NVFlareProcessor();
     } if (strcasecmp(plugin_name, "nvflare:mock") == 0) {
         return new LocalMockProcessor();
-    } if (strcasecmp(plugin_name, "nvflare:ipcl") == 0) {
-        return new IpclProcessor();
     } else {
         std::cout << "Unknown plugin name: " << plugin_name << std::endl;
         return nullptr;

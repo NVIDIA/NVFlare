@@ -18,14 +18,18 @@
 #include "data_set_ids.h"
 
 void* LocalMockProcessor::ProcessHistograms(std::size_t *size, const std::vector<double>& histograms) {
-    std::cout << "ProcessHistograms called with " << histograms.size() << " entries" << std::endl;
+    if (debug_) {
+        std::cout << "ProcessHistograms called with " << histograms.size() << " entries" << std::endl;
+    }
     DamEncoder encoder(kDataSetHistogramResult, true);
     encoder.AddFloatArray(histograms);
     return encoder.Finish(*size);
 }
 
 std::vector<double> LocalMockProcessor::HandleHistograms(void *buffer, std::size_t buf_size) {
-    std::cout << "HandleHistograms called with buffer size: " << buf_size << std::endl;
+    if (debug_) {
+        std::cout << "HandleHistograms called with buffer size: " << buf_size << std::endl;
+    }
     auto remaining = buf_size;
     char *pointer = reinterpret_cast<char *>(buffer);
 
@@ -56,6 +60,10 @@ std::vector<double> LocalMockProcessor::HandleHistograms(void *buffer, std::size
 }
 
 Buffer LocalMockProcessor::EncryptVector(const std::vector<double>& cleartext) {
+    if (debug_) {
+        std::cout << "Encrypt vector size: " << cleartext.size() << std::endl;
+    }
+
     size_t size = cleartext.size() * 8;
     auto buf = malloc(size);
     char *p = reinterpret_cast<char *>(buf);
@@ -68,7 +76,10 @@ Buffer LocalMockProcessor::EncryptVector(const std::vector<double>& cleartext) {
 }
 
 std::vector<double> LocalMockProcessor::DecryptVector(const std::vector<Buffer>& ciphertext) {
-    std::cout << "Decrypt buffer size: " << ciphertext.size() << std::endl;
+    if (debug_) {
+        std::cout << "Decrypt buffer size: " << ciphertext.size() << std::endl;
+    }
+
     std::vector<double> result;
 
     for (auto const &v : ciphertext) {
@@ -83,6 +94,10 @@ std::vector<double> LocalMockProcessor::DecryptVector(const std::vector<Buffer>&
 }
 
 std::map<int, Buffer> LocalMockProcessor::AddGHPairs(const std::map<int, std::vector<int>>& sample_ids) {
+    if (debug_) {
+        std::cout << "Add GH Pairs for : " << sample_ids.size() << " slots" << std::endl;
+    }
+    
     // Can't do this in real plugin. It needs to be broken into encrypted parts
     auto gh_pairs = DecryptVector(std::vector<Buffer>{encrypted_gh_});
 
