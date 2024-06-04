@@ -15,12 +15,7 @@
 
 import logging
 import os
-
 import torch
-from nemo.collections.nlp.models.language_modeling.megatron_gpt_sft_model import MegatronGPTSFTModel
-from nemo.collections.nlp.parts.megatron_trainer_builder import MegatronLMPPTrainerBuilder
-from nemo.collections.nlp.parts.peft_config import PEFT_CONFIG_MAP
-from omegaconf import OmegaConf
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
@@ -56,6 +51,12 @@ class PEFTmodel(torch.nn.Module, FLComponent):
         FLComponent.__init__(self)
 
     def _initialize(self, fl_ctx: FLContext):
+        # importing nemo can take some time. Moving to initialize during START_RUN.
+        from nemo.collections.nlp.models.language_modeling.megatron_gpt_sft_model import MegatronGPTSFTModel
+        from nemo.collections.nlp.parts.megatron_trainer_builder import MegatronLMPPTrainerBuilder
+        from nemo.collections.nlp.parts.peft_config import PEFT_CONFIG_MAP
+        from omegaconf import OmegaConf        
+        
         # get app root
         app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)
 
