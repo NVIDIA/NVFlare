@@ -133,11 +133,9 @@ class XGBClientRunner(AppRunner, FLComponent):
             "federated_server_address": f"{self._server_addr}",
             "federated_world_size": self._world_size,
             "federated_rank": self._rank,
-            "plugin_name": "nvflare-horizontal",
-            "plugin_params": {
-             },
+            "plugin_name": "nvflare",
             "loader_params": {
-                "LIBRARY_PATH": loader_path
+                "LIBRARY_PATH": "/tmp",
             },
         }
         with xgb.collective.CommunicatorContext(**communicator_env):
