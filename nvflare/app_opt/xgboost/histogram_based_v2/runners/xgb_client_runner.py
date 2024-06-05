@@ -23,7 +23,6 @@ from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.runners.xgb_runner import AppRunner
 from nvflare.app_opt.xgboost.histogram_based_v2.tb import TensorBoardCallback
-from nvflare.app_opt.xgboost.histogram_based_v2.xgb_params import XGBoostParams
 from nvflare.app_opt.xgboost.metrics_cb import MetricsCallback
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.obj_utils import get_logger
@@ -33,18 +32,10 @@ class XGBClientRunner(AppRunner, FLComponent):
     def __init__(
         self,
         data_loader_id: str,
-        early_stopping_rounds: int,
-        xgb_params: dict,
-        verbose_eval,
-        use_gpus,
         model_file_name,
         metrics_writer_id: str = None,
     ):
         FLComponent.__init__(self)
-        self.early_stopping_rounds = early_stopping_rounds
-        self.xgb_params = xgb_params
-        self.verbose_eval = verbose_eval
-        self.use_gpus = use_gpus
         self.model_file_name = model_file_name
         self.data_loader_id = data_loader_id
         self.logger = get_logger(self)
@@ -53,6 +44,9 @@ class XGBClientRunner(AppRunner, FLComponent):
         self._rank = None
         self._world_size = None
         self._num_rounds = None
+        self._training_mode = None
+        self._xgb_params = None
+        self._xgb_options = None
         self._server_addr = None
         self._data_loader = None
         self._tb_dir = None
@@ -72,11 +66,15 @@ class XGBClientRunner(AppRunner, FLComponent):
             if not isinstance(self._metrics_writer, LogWriter):
                 self.system_panic("writer should be type LogWriter", fl_ctx)
 
-    def _xgb_train(self, params: XGBoostParams, train_data, val_data) -> xgb.core.Booster:
+    def _xgb_train(self, num_rounds, xgb_params: dict, xgb_options: dict, train_data, val_data) -> xgb.core.Booster:
         """XGBoost training logic.
 
         Args:
-            params (XGBoostParams): xgboost parameters.
+            num_rounds: Number of rounds
+            xgb_params (XGBoostParams): xgboost parameters.
+            xgb_options: Other options needed by xgboost
+            train_data: Training data
+            val_data: Validation data
 
         Returns:
             A xgboost booster.
@@ -92,14 +90,17 @@ class XGBClientRunner(AppRunner, FLComponent):
         if flag and self._tb_dir:
             callbacks.append(TensorBoardCallback(self._tb_dir, tensorboard))
 
+        early_stopping_rounds = xgb_options.get("early_stopping_rounds", 0)
+        verbose_eval = xgb_options.get("verbose_eval", False)
+
         # Run training, all the features in training API is available.
         bst = xgb.train(
-            params.xgb_params,
+            xgb_params,
             train_data,
-            params.num_rounds,
+            num_rounds,
             evals=watchlist,
-            early_stopping_rounds=params.early_stopping_rounds,
-            verbose_eval=params.verbose_eval,
+            early_stopping_rounds=early_stopping_rounds,
+            verbose_eval=verbose_eval,
             callbacks=callbacks,
         )
         return bst
@@ -109,24 +110,21 @@ class XGBClientRunner(AppRunner, FLComponent):
         self._rank = ctx.get(Constant.RUNNER_CTX_RANK)
         self._world_size = ctx.get(Constant.RUNNER_CTX_WORLD_SIZE)
         self._num_rounds = ctx.get(Constant.RUNNER_CTX_NUM_ROUNDS)
+        self._training_mode = ctx.get(Constant.RUNNER_CTX_TRAINING_MODE)
+        self._xgb_params = ctx.get(Constant.RUNNER_CTX_XGB_PARAMS)
+        self._xgb_options = ctx.get(Constant.RUNNER_CTX_XGB_OPTIONS)
         self._server_addr = ctx.get(Constant.RUNNER_CTX_SERVER_ADDR)
         # self._data_loader = ctx.get(Constant.RUNNER_CTX_DATA_LOADER)
         self._tb_dir = ctx.get(Constant.RUNNER_CTX_TB_DIR)
         self._model_dir = ctx.get(Constant.RUNNER_CTX_MODEL_DIR)
 
-        if self.use_gpus:
+        use_gpus = self._xgb_options.get("use_gpus", False)
+        if use_gpus:
             # mapping each rank to a GPU (can set to cuda:0 if simulating with only one gpu)
             self.logger.info(f"Training with GPU {self._rank}")
-            self.xgb_params["device"] = f"cuda:{self._rank}"
+            self._xgb_params["device"] = f"cuda:{self._rank}"
 
-        self.logger.info(f"Using xgb params: {self.xgb_params}")
-        params = XGBoostParams(
-            xgb_params=self.xgb_params,
-            num_rounds=self._num_rounds,
-            early_stopping_rounds=self.early_stopping_rounds,
-            verbose_eval=self.verbose_eval,
-        )
-
+        self.logger.info(f"Using xgb params: {self._xgb_params}")
         self.logger.info(f"server address is {self._server_addr}")
         communicator_env = {
             "xgboost_communicator": "federated",
@@ -140,9 +138,9 @@ class XGBClientRunner(AppRunner, FLComponent):
         }
         with xgb.collective.CommunicatorContext(**communicator_env):
             # Load the data. Dmatrix must be created with column split mode in CommunicatorContext for vertical FL
-            train_data, val_data = self._data_loader.load_data(self._client_name)
+            train_data, val_data = self._data_loader.load_data(self._client_name, self._training_mode)
 
-            bst = self._xgb_train(params, train_data, val_data)
+            bst = self._xgb_train(self._num_rounds, self._xgb_params, self._xgb_options, train_data, val_data)
 
             # Save the model.
             bst.save_model(os.path.join(self._model_dir, self.model_file_name))

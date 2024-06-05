@@ -26,6 +26,9 @@ class Constant:
     CONF_KEY_RANK = "rank"
     CONF_KEY_WORLD_SIZE = "world_size"
     CONF_KEY_NUM_ROUNDS = "num_rounds"
+    CONF_KEY_TRAINING_MODE = "training_mode"
+    CONF_KEY_XGB_PARAMS = "xgb_params"
+    CONF_KEY_XGB_OPTIONS = "xgb_options"
 
     # default component config values
     CONFIG_TASK_TIMEOUT = 10
@@ -88,6 +91,9 @@ class Constant:
     RUNNER_CTX_PORT = "port"
     RUNNER_CTX_CLIENT_NAME = "client_name"
     RUNNER_CTX_NUM_ROUNDS = "num_rounds"
+    RUNNER_CTX_TRAINING_MODE = "training_mode"
+    RUNNER_CTX_XGB_PARAMS = "xgb_params"
+    RUNNER_CTX_XGB_OPTIONS = "xgb_options"
     RUNNER_CTX_WORLD_SIZE = "world_size"
     RUNNER_CTX_RANK = "rank"
     RUNNER_CTX_DATA_LOADER = "data_loader"

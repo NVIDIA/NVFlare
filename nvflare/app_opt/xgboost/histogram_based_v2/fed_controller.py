@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import uuid
+from typing import Optional
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_opt.xgboost.histogram_based_v2.adaptors.grpc_server_adaptor import GrpcServerAdaptor
@@ -18,12 +20,16 @@ from nvflare.app_opt.xgboost.histogram_based_v2.runners.xgb_server_runner import
 
 from .controller import XGBController
 from .defs import Constant
+from .sec.server_handler import ServerSecurityHandler
 
 
 class XGBFedController(XGBController):
     def __init__(
         self,
         num_rounds: int,
+        training_mode: str,
+        xgb_params: dict,
+        xgb_options: Optional[dict] = None,
         configure_task_name=Constant.CONFIG_TASK_NAME,
         configure_task_timeout=Constant.CONFIG_TASK_TIMEOUT,
         start_task_name=Constant.START_TASK_NAME,
@@ -32,6 +38,7 @@ class XGBFedController(XGBController):
         max_client_op_interval: float = Constant.MAX_CLIENT_OP_INTERVAL,
         progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
         client_ranks=None,
+        server_handler_id=None,
         int_client_grpc_options=None,
         in_process=True,
     ):
@@ -39,6 +46,9 @@ class XGBFedController(XGBController):
             self,
             adaptor_component_id="",
             num_rounds=num_rounds,
+            training_mode=training_mode,
+            xgb_params=xgb_params,
+            xgb_options=xgb_options,
             configure_task_name=configure_task_name,
             configure_task_timeout=configure_task_timeout,
             start_task_name=start_task_name,
@@ -50,8 +60,14 @@ class XGBFedController(XGBController):
         )
         self.int_client_grpc_options = int_client_grpc_options
         self.in_process = in_process
+        self.server_handler_id = server_handler_id
 
     def get_adaptor(self, fl_ctx: FLContext):
+        if not self.server_handler_id:
+            engine = fl_ctx.get_engine()
+            handler = ServerSecurityHandler()
+            engine.server.runner_config.add_component(str(uuid.uuid4()), handler)
+
         runner = XGBServerRunner()
         runner.initialize(fl_ctx)
         adaptor = GrpcServerAdaptor(
