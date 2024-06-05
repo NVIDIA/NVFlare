@@ -13,8 +13,8 @@
 # limitations under the License.
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.tie.executor import TieExecutor
-from nvflare.app_opt.flower.connectors.grpc_client_connector import GrpcClientConnector
 from nvflare.app_opt.flower.applet import FlowerClientApplet
+from nvflare.app_opt.flower.connectors.grpc_client_connector import GrpcClientConnector
 
 from .defs import Constant
 

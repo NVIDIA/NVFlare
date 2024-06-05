@@ -15,8 +15,8 @@
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.tie.controller import TieController
 from nvflare.app_common.tie.defs import Constant as TieConstant
-from nvflare.app_opt.flower.connectors.grpc_server_connector import GrpcServerConnector
 from nvflare.app_opt.flower.applet import FlowerServerApplet
+from nvflare.app_opt.flower.connectors.grpc_server_connector import GrpcServerConnector
 from nvflare.fuel.utils.validation_utils import check_positive_number
 
 from .defs import Constant

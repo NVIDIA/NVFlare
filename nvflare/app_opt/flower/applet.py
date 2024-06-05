@@ -17,18 +17,17 @@ import subprocess
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.tie.applet import Applet
-from nvflare.app_common.tie.defs import Constant as TieConstant
 from nvflare.app_common.tie.cli_applet import CLIApplet
+from nvflare.app_common.tie.defs import Constant as TieConstant
 from nvflare.app_opt.flower.defs import Constant
-from nvflare.security.logging import secure_format_exception
 from nvflare.fuel.f3.drivers.net_utils import get_open_tcp_port
+from nvflare.security.logging import secure_format_exception
 
 
 class FlowerClientApplet(CLIApplet):
-
     def __init__(
-            self,
-            client_app: str,
+        self,
+        client_app: str,
     ):
         CLIApplet.__init__(self)
         self.client_app = client_app
@@ -47,7 +46,6 @@ class FlowerClientApplet(CLIApplet):
 
 
 class FlowerServerApplet(Applet):
-
     def __init__(self, server_app: str, database: str):
         Applet.__init__(self)
         self._app_process = None
@@ -88,9 +86,11 @@ class FlowerServerApplet(Applet):
         if self.database:
             db_arg = f"--database {self.database}"
 
-        superlink_cmd = f"flower-superlink --insecure --grpc-adapter {db_arg} "\
-                        f"--grpc-adapter-fleet-api-address {server_addr} " \
-                        f"--driver-api-address {driver_addr}"
+        superlink_cmd = (
+            f"flower-superlink --insecure --grpc-adapter {db_arg} "
+            f"--grpc-adapter-fleet-api-address {server_addr} "
+            f"--driver-api-address {driver_addr}"
+        )
 
         self._superlink_process = self._start_process("superlink", superlink_cmd)
         if not self._superlink_process:
