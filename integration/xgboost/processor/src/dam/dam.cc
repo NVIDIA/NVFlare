@@ -17,62 +17,136 @@
 #include <cstring>
 #include "dam.h"
 
-void print_buffer(uint8_t *buffer, int size) {
-    for (int i = 0; i < size; i++) {
-        auto c = buffer[i];
-        std::cout << std::hex << (int) c << " ";
-    }
+
+void print_hex(const uint8_t *buffer, int size) {
+    if (size )
+        for (int i = 0; i < size; i++) {
+            auto c = buffer[i];
+            std::cout << std::hex << (int) c << " ";
+        }
     std::cout << std::endl << std::dec;
 }
 
-// DamEncoder ======
-void DamEncoder::AddFloatArray(std::vector<double> &value) {
-    if (encoded) {
-        std::cout << "Buffer is already encoded" << std::endl;
+void print_buffer(uint8_t *buffer, int size) {
+    if (size <= 64) {
+        std::cout << "Whole buffer: " << size << " bytes" << std::endl;
+        print_hex(buffer, size);
         return;
     }
-    auto buf_size = value.size()*8;
-    uint8_t *buffer = static_cast<uint8_t *>(malloc(buf_size));
-    memcpy(buffer, value.data(), buf_size);
-    // print_buffer(reinterpret_cast<uint8_t *>(value.data()), value.size() * 8);
-    entries->push_back(new Entry(kDataTypeFloatArray, buffer, value.size()));
+
+    std::cout << "First chunk, Total: " << size << " bytes" << std::endl;
+    print_hex(buffer, 32);
+    std::cout << "Last chunk, Offset: " << size-16 << " bytes" << std::endl;
+    print_hex(buffer+size-32, 32);
 }
 
-void  DamEncoder::AddIntArray(std::vector<int64_t> &value) {
-    std::cout << "AddIntArray called, size:  " << value.size() << std::endl;
-    if (encoded) {
+size_t align(const size_t length) {
+    return ((length + 7)/8)*8;
+}
+
+// DamEncoder ======
+void  DamEncoder::AddBuffer(const Buffer &buffer) {
+    if (debug_) {
+        std::cout << "AddBuffer called, size:  " << buffer.buf_size << std::endl;
+    }
+    if (encoded_) {
         std::cout << "Buffer is already encoded" << std::endl;
         return;
     }
-    auto buf_size = value.size()*8;
-    std::cout << "Allocating " << buf_size << " bytes" << std::endl;
-    uint8_t *buffer = static_cast<uint8_t *>(malloc(buf_size));
-    memcpy(buffer, value.data(), buf_size);
     // print_buffer(buffer, buf_size);
-    entries->push_back(new Entry(kDataTypeIntArray, buffer, value.size()));
+    entries_.emplace_back(kDataTypeBuffer, reinterpret_cast<const uint8_t *>(buffer.buffer), buffer.buf_size);
 }
+
+void DamEncoder::AddFloatArray(const std::vector<double> &value) {
+    if (debug_) {
+        std::cout << "AddFloatArray called, size:  " << value.size() << std::endl;
+    }
+
+    if (encoded_) {
+        std::cout << "Buffer is already encoded" << std::endl;
+        return;
+    }
+    // print_buffer(reinterpret_cast<uint8_t *>(value.data()), value.size() * 8);
+    entries_.emplace_back(kDataTypeFloatArray, reinterpret_cast<const uint8_t *>(value.data()), value.size());
+}
+
+void  DamEncoder::AddIntArray(const std::vector<int64_t> &value) {
+    if (debug_) {
+        std::cout << "AddIntArray called, size:  " << value.size() << std::endl;
+    }
+
+    if (encoded_) {
+        std::cout << "Buffer is already encoded" << std::endl;
+        return;
+    }
+    // print_buffer(buffer, buf_size);
+    entries_.emplace_back(kDataTypeIntArray, reinterpret_cast<const uint8_t *>(value.data()), value.size());
+}
+
+void  DamEncoder::AddBufferArray(const std::vector<Buffer> &value) {
+    if (debug_) {
+        std::cout << "AddBufferArray called, size:  " << value.size() << std::endl;
+    }
+
+    if (encoded_) {
+        std::cout << "Buffer is already encoded" << std::endl;
+        return;
+    }
+    size_t size = 0;
+    for (auto &buf: value) {
+        size += buf.buf_size;
+    }
+    size += 8*value.size();
+    entries_.emplace_back(kDataTypeBufferArray, reinterpret_cast<const uint8_t *>(&value), size);
+}
+
 
 std::uint8_t * DamEncoder::Finish(size_t &size) {
-    encoded = true;
+    encoded_ = true;
 
-    size = calculate_size();
-    auto buf = static_cast<uint8_t *>(malloc(size));
+    size = CalculateSize();
+    auto buf = static_cast<uint8_t *>(calloc(size, 1));
     auto pointer = buf;
-    memcpy(pointer, kSignature, strlen(kSignature));
+    auto sig = local_version_ ? kSignatureLocal : kSignature;
+    memcpy(pointer, sig, strlen(sig));
     memcpy(pointer+8, &size, 8);
-    memcpy(pointer+16, &data_set_id, 8);
+    memcpy(pointer+16, &data_set_id_, 8);
 
     pointer += kPrefixLen;
-    for (auto entry : *entries) {
-        memcpy(pointer, &entry->data_type, 8);
-        pointer += 8;
-        memcpy(pointer, &entry->size, 8);
-        pointer += 8;
-        int len = 8*entry->size;
-        memcpy(pointer, entry->pointer, len);
-        free(entry->pointer);
-        pointer += len;
-        // print_buffer(entry->pointer, entry->size*8);
+    for (auto& entry : entries_) {
+        int len;
+        if (entry.data_type == kDataTypeBufferArray) {
+            auto buffers = reinterpret_cast<const std::vector<Buffer> *>(entry.pointer);
+            memcpy(pointer, &entry.data_type, 8);
+            pointer += 8;
+            int64_t array_size = buffers->size();
+            memcpy(pointer, &array_size, 8);
+            pointer += 8;
+            auto sizes = reinterpret_cast<int64_t *>(pointer);
+            for (auto &item : *buffers) {
+                *sizes = item.buf_size;
+                sizes++;
+            }
+            len = 8*buffers->size();
+            auto buf_ptr = pointer + len;
+            for (auto &item : *buffers) {
+                if (item.buf_size > 0) {
+                    memcpy(buf_ptr, item.buffer, item.buf_size);
+                }
+                buf_ptr += item.buf_size;
+                len += item.buf_size;
+            }
+        } else {
+            memcpy(pointer, &entry.data_type, 8);
+            pointer += 8;
+            memcpy(pointer, &entry.size, 8);
+            pointer += 8;
+            len = entry.size * entry.ItemSize();
+            if (len) {
+                memcpy(pointer, entry.pointer, len);
+            }
+        }
+        pointer += align(len);
     }
 
     if ((pointer - buf) != size) {
@@ -83,12 +157,13 @@ std::uint8_t * DamEncoder::Finish(size_t &size) {
     return buf;
 }
 
-std::size_t DamEncoder::calculate_size() {
+std::size_t DamEncoder::CalculateSize() {
     auto size = kPrefixLen;
 
-    for (auto entry : *entries) {
+    for (auto& entry : entries_) {
         size += 16;  // The Type and Len
-        size += entry->size * 8;  // All supported data types are 8 bytes
+        auto len = entry.size * entry.ItemSize();
+        size += align(len);
     }
 
     return size;
@@ -97,50 +172,103 @@ std::size_t DamEncoder::calculate_size() {
 
 // DamDecoder ======
 
-DamDecoder::DamDecoder(std::uint8_t *buffer, std::size_t size) {
-    this->buffer = buffer;
-    this->buf_size = size;
-    this->pos = buffer + kPrefixLen;
+DamDecoder::DamDecoder(std::uint8_t *buffer, std::size_t size, bool local_version, bool debug) {
+    local_version_ = local_version;
+    buffer_ = buffer;
+    buf_size_ = size;
+    pos_ = buffer + kPrefixLen;
+    debug_ = debug;
+
     if (size >= kPrefixLen) {
-        memcpy(&len, buffer + 8, 8);
-        memcpy(&data_set_id, buffer + 16, 8);
+        memcpy(&len_, buffer + 8, 8);
+        memcpy(&data_set_id_, buffer + 16, 8);
     } else {
-        len = 0;
-        data_set_id = 0;
+        len_ = 0;
+        data_set_id_ = 0;
     }
 }
 
 bool DamDecoder::IsValid() {
-    return buf_size >= kPrefixLen && memcmp(buffer, kSignature, strlen(kSignature)) == 0;
+    auto sig = local_version_ ? kSignatureLocal : kSignature;
+    return buf_size_ >= kPrefixLen && memcmp(buffer_, sig, strlen(sig)) == 0;
+}
+
+Buffer DamDecoder::DecodeBuffer() {
+    auto type = *reinterpret_cast<int64_t *>(pos_);
+    if (type != kDataTypeBuffer) {
+        std::cout << "Data type " << type << " doesn't match bytes" << std::endl;
+        return Buffer();
+    }
+    pos_ += 8;
+
+    auto size = *reinterpret_cast<int64_t *>(pos_);
+    pos_ += 8;
+
+    if (size == 0) {
+        return Buffer();
+    }
+
+    auto ptr = reinterpret_cast<void *>(pos_);
+    pos_ += align(size);
+    return Buffer(ptr, size);
 }
 
 std::vector<int64_t> DamDecoder::DecodeIntArray() {
-    auto type = *reinterpret_cast<int64_t *>(pos);
+    auto type = *reinterpret_cast<int64_t *>(pos_);
     if (type != kDataTypeIntArray) {
         std::cout << "Data type " << type << " doesn't match Int Array" << std::endl;
         return std::vector<int64_t>();
     }
-    pos += 8;
+    pos_ += 8;
 
-    auto len = *reinterpret_cast<int64_t *>(pos);
-    pos += 8;
-    auto ptr = reinterpret_cast<int64_t *>(pos);
-    pos += 8*len;
-    return std::vector<int64_t>(ptr, ptr + len);
+    auto array_size = *reinterpret_cast<int64_t *>(pos_);
+    pos_ += 8;
+    auto ptr = reinterpret_cast<int64_t *>(pos_);
+    pos_ += align(8 * array_size);
+    return std::vector<int64_t>(ptr, ptr + array_size);
 }
 
 std::vector<double> DamDecoder::DecodeFloatArray() {
-    auto type = *reinterpret_cast<int64_t *>(pos);
+    auto type = *reinterpret_cast<int64_t *>(pos_);
     if (type != kDataTypeFloatArray) {
         std::cout << "Data type " << type << " doesn't match Float Array" << std::endl;
         return std::vector<double>();
     }
-    pos += 8;
+    pos_ += 8;
 
-    auto len = *reinterpret_cast<int64_t *>(pos);
-    pos += 8;
+    auto array_size = *reinterpret_cast<int64_t *>(pos_);
+    pos_ += 8;
 
-    auto ptr = reinterpret_cast<double *>(pos);
-    pos += 8*len;
-    return std::vector<double>(ptr, ptr + len);
+    auto ptr = reinterpret_cast<double *>(pos_);
+    pos_ += align(8 * array_size);
+    return std::vector<double>(ptr, ptr + array_size);
+}
+
+std::vector<Buffer> DamDecoder::DecodeBufferArray() {
+    auto type = *reinterpret_cast<int64_t *>(pos_);
+    if (type != kDataTypeBufferArray) {
+        std::cout << "Data type " << type << " doesn't match Bytes Array" << std::endl;
+        return std::vector<Buffer>();
+    }
+    pos_ += 8;
+
+    auto num = *reinterpret_cast<int64_t *>(pos_);
+    pos_ += 8;
+
+    auto size_ptr = reinterpret_cast<int64_t *>(pos_);
+    auto buf_ptr = pos_ + 8 * num;
+    size_t total_size = 8 * num;
+    auto result = std::vector<Buffer>(num);
+    for (int i = 0; i < num; i++) {
+        auto size = size_ptr[i];
+        if (buf_size_ > 0) {
+            result[i].buf_size = size;
+            result[i].buffer = buf_ptr;
+            buf_ptr += size;
+        }
+        total_size += size;
+    }
+
+    pos_ += align(total_size);
+    return result;
 }

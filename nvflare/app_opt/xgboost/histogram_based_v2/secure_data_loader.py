@@ -15,6 +15,7 @@
 import xgboost as xgb
 
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
+from nvflare.app_opt.xgboost.histogram_based_v2.defs import TRAINING_MODE_MAPPING, SplitMode
 
 
 class SecureDataLoader(XGBDataLoader):
@@ -28,17 +29,22 @@ class SecureDataLoader(XGBDataLoader):
         self.rank = rank
         self.folder = folder
 
-    def load_data(self, client_id: str):
+    def load_data(self, client_id: str, training_mode: str):
 
         train_path = f"{self.folder}/site-{self.rank + 1}/train.csv"
         valid_path = f"{self.folder}/site-{self.rank + 1}/valid.csv"
 
-        if self.rank == 0:
+        if training_mode not in TRAINING_MODE_MAPPING:
+            raise ValueError(f"Invalid training_mode: {training_mode}")
+
+        data_split_mode = TRAINING_MODE_MAPPING[training_mode]
+
+        if self.rank == 0 or data_split_mode in {SplitMode.ROW, SplitMode.ROW_SECURE}:
             label = "&label_column=0"
         else:
             label = ""
 
-        train_data = xgb.DMatrix(train_path + f"?format=csv{label}", data_split_mode=2)
-        valid_data = xgb.DMatrix(valid_path + f"?format=csv{label}", data_split_mode=2)
+        train_data = xgb.DMatrix(train_path + f"?format=csv{label}", data_split_mode=data_split_mode)
+        valid_data = xgb.DMatrix(valid_path + f"?format=csv{label}", data_split_mode=data_split_mode)
 
         return train_data, valid_data

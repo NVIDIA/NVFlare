@@ -26,9 +26,12 @@ class Constant:
     CONF_KEY_RANK = "rank"
     CONF_KEY_WORLD_SIZE = "world_size"
     CONF_KEY_NUM_ROUNDS = "num_rounds"
+    CONF_KEY_TRAINING_MODE = "training_mode"
+    CONF_KEY_XGB_PARAMS = "xgb_params"
+    CONF_KEY_XGB_OPTIONS = "xgb_options"
 
     # default component config values
-    CONFIG_TASK_TIMEOUT = 10
+    CONFIG_TASK_TIMEOUT = 20
     START_TASK_TIMEOUT = 10
     XGB_SERVER_READY_TIMEOUT = 10.0
 
@@ -88,6 +91,9 @@ class Constant:
     RUNNER_CTX_PORT = "port"
     RUNNER_CTX_CLIENT_NAME = "client_name"
     RUNNER_CTX_NUM_ROUNDS = "num_rounds"
+    RUNNER_CTX_TRAINING_MODE = "training_mode"
+    RUNNER_CTX_XGB_PARAMS = "xgb_params"
+    RUNNER_CTX_XGB_OPTIONS = "xgb_options"
     RUNNER_CTX_WORLD_SIZE = "world_size"
     RUNNER_CTX_RANK = "rank"
     RUNNER_CTX_DATA_LOADER = "data_loader"
@@ -109,3 +115,25 @@ GRPC_DEFAULT_OPTIONS = [
     ("grpc.max_send_message_length", MAX_FRAME_SIZE),
     ("grpc.max_receive_message_length", MAX_FRAME_SIZE),
 ]
+
+
+class SplitMode:
+    ROW = 0
+    COL = 1
+    COL_SECURE = 2
+    ROW_SECURE = 3
+
+
+# Mapping of text training mode to split mode
+TRAINING_MODE_MAPPING = {
+    "h": SplitMode.ROW,
+    "horizontal": SplitMode.ROW,
+    "v": SplitMode.COL,
+    "vertical": SplitMode.COL,
+    "hs": SplitMode.ROW_SECURE,
+    "horizontal_secure": SplitMode.ROW_SECURE,
+    "vs": SplitMode.COL_SECURE,
+    "vertical_secure": SplitMode.COL_SECURE,
+}
+
+SECURE_TRAINING_MODES = {"hs", "horizontal_secure", "vs", "vertical_secure"}

@@ -24,7 +24,7 @@ from nvflare.app_opt.xgboost.histogram_based_v2.adaptors.xgb_adaptor import XGBS
 from nvflare.fuel.utils.validation_utils import check_number_range, check_object_type, check_positive_number, check_str
 from nvflare.security.logging import secure_format_exception
 
-from .defs import Constant
+from .defs import TRAINING_MODE_MAPPING, Constant
 
 
 class ClientStatus:
@@ -56,6 +56,9 @@ class XGBController(Controller):
         self,
         adaptor_component_id: str,
         num_rounds: int,
+        training_mode: str,
+        xgb_params: dict,
+        xgb_options: dict,
         configure_task_name=Constant.CONFIG_TASK_NAME,
         configure_task_timeout=Constant.CONFIG_TASK_TIMEOUT,
         start_task_name=Constant.START_TASK_NAME,
@@ -71,6 +74,9 @@ class XGBController(Controller):
         Args:
             adaptor_component_id - the component ID of server target adaptor
             num_rounds - number of rounds
+            training_mode - Split mode (horizontal, vertical, horizontal_secure, vertical_secure)
+            xgb_params -The parameter passed to XGBoost
+            xgb_options - Other options for XGBoost
             configure_task_name - name of the config task
             configure_task_timeout - time to wait for clients’ responses to the config task before timeout.
             start_task_name - name of the start task
@@ -88,6 +94,9 @@ class XGBController(Controller):
         Controller.__init__(self)
         self.adaptor_component_id = adaptor_component_id
         self.num_rounds = num_rounds
+        self.training_mode = training_mode.lower()
+        self.xgb_params = xgb_params
+        self.xgb_options = xgb_options
         self.configure_task_name = configure_task_name
         self.start_task_name = start_task_name
         self.start_task_timeout = start_task_timeout
@@ -102,6 +111,17 @@ class XGBController(Controller):
         self.status_lock = threading.Lock()
         self.client_statuses = {}  # client name => ClientStatus
         self.abort_signal = None
+
+        check_str("training_mode", training_mode)
+        valid_mode = TRAINING_MODE_MAPPING.keys()
+        if training_mode not in valid_mode:
+            raise ValueError(f"training_mode must be one of following values: {valid_mode}")
+
+        if not self.xgb_params:
+            raise ValueError("xgb_params can't be empty")
+
+        if not self.xgb_options:
+            self.xgb_options = {}
 
         check_str("adaptor_component_id", adaptor_component_id)
         check_number_range("configure_task_timeout", configure_task_timeout, min_value=1)
@@ -425,6 +445,9 @@ class XGBController(Controller):
 
         shareable[Constant.CONF_KEY_CLIENT_RANKS] = self.client_ranks
         shareable[Constant.CONF_KEY_NUM_ROUNDS] = self.num_rounds
+        shareable[Constant.CONF_KEY_TRAINING_MODE] = self.training_mode
+        shareable[Constant.CONF_KEY_XGB_PARAMS] = self.xgb_params
+        shareable[Constant.CONF_KEY_XGB_OPTIONS] = self.xgb_options
 
         task = Task(
             name=self.configure_task_name,

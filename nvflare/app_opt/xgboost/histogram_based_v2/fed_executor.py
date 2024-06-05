@@ -11,18 +11,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import uuid
+
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_opt.xgboost.histogram_based_v2.adaptors.grpc_client_adaptor import GrpcClientAdaptor
 from nvflare.app_opt.xgboost.histogram_based_v2.runners.xgb_client_runner import XGBClientRunner
 
 from .executor import XGBExecutor
+from .sec.client_handler import ClientSecurityHandler
 
 
 class FedXGBHistogramExecutor(XGBExecutor):
     def __init__(
         self,
-        early_stopping_rounds,
-        xgb_params: dict,
         data_loader_id: str,
         verbose_eval=False,
         use_gpus=False,
@@ -37,8 +38,6 @@ class FedXGBHistogramExecutor(XGBExecutor):
             adaptor_component_id="",
             req_timeout=req_timeout,
         )
-        self.early_stopping_rounds = early_stopping_rounds
-        self.xgb_params = xgb_params
         self.data_loader_id = data_loader_id
         self.verbose_eval = verbose_eval
         self.use_gpus = use_gpus
@@ -48,12 +47,13 @@ class FedXGBHistogramExecutor(XGBExecutor):
         self.in_process = in_process
 
     def get_adaptor(self, fl_ctx: FLContext):
+
+        engine = fl_ctx.get_engine()
+        handler = ClientSecurityHandler()
+        engine.add_component(str(uuid.uuid4()), handler)
+
         runner = XGBClientRunner(
             data_loader_id=self.data_loader_id,
-            early_stopping_rounds=self.early_stopping_rounds,
-            xgb_params=self.xgb_params,
-            verbose_eval=self.verbose_eval,
-            use_gpus=self.use_gpus,
             model_file_name=self.model_file_name,
             metrics_writer_id=self.metrics_writer_id,
         )

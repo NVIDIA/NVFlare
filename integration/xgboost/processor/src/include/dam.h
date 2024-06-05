@@ -18,76 +18,126 @@
 #include <vector>
 #include <map>
 
-const char kSignature[] = "NVDADAM1";  // DAM (Direct Accessible Marshalling) V1
+const char kSignature[] = "NVDADAM1";       // DAM (Direct Accessible Marshalling) V1
+const char kSignatureLocal[] = "NVDADAML";  // DAM Local version
 const int kPrefixLen = 24;
 
 const int kDataTypeInt = 1;
 const int kDataTypeFloat = 2;
 const int kDataTypeString = 3;
+const int kDataTypeBuffer = 4;
 const int kDataTypeIntArray = 257;
 const int kDataTypeFloatArray = 258;
-
+const int kDataTypeBufferArray = 259;
 const int kDataTypeMap = 1025;
+
+/*! \brief A replacement for std::span */
+class Buffer {
+public:
+    void *buffer;
+    size_t buf_size;
+    bool allocated;
+
+    Buffer() : buf_size(0), buffer(nullptr), allocated(false) {
+    }
+
+    Buffer(void *buffer, size_t buf_size, bool allocated=false) :
+        buf_size(buf_size), buffer(buffer), allocated(allocated) {
+    }
+
+    Buffer(const Buffer &that):
+        buf_size(that.buf_size), buffer(that.buffer), allocated(false) {
+    }
+};
 
 class Entry {
  public:
     int64_t data_type;
-    uint8_t * pointer;
+    const uint8_t * pointer;
     int64_t size;
 
-    Entry(int64_t data_type, uint8_t *pointer, int64_t size) {
+    Entry(int64_t data_type, const uint8_t *pointer, int64_t size) {
         this->data_type = data_type;
         this->pointer = pointer;
         this->size = size;
+    }
+
+    std::size_t ItemSize() {
+        size_t item_size;
+        switch (data_type) {
+            case kDataTypeBuffer:
+            case kDataTypeString:
+            case kDataTypeBufferArray:
+                item_size = 1;
+                break;
+            default:
+                item_size = 8;
+        }
+        return item_size;
     }
 };
 
 class DamEncoder {
  private:
-    bool encoded = false;
-    int64_t data_set_id;
-    std::vector<Entry *> *entries = new std::vector<Entry *>();
+    bool encoded_ = false;
+    bool local_version_ = false;
+    bool debug_ = false;
+    int64_t data_set_id_;
+    std::vector<Entry> entries_;
 
  public:
-    explicit DamEncoder(int64_t data_set_id) {
-        this->data_set_id = data_set_id;
+    explicit DamEncoder(int64_t data_set_id, bool local_version=false, bool debug=false) {
+        data_set_id_ = data_set_id;
+        local_version_ = local_version;
+        debug_ = debug;
+
     }
 
-    void AddIntArray(std::vector<int64_t> &value);
+    void AddBuffer(const Buffer &buffer);
 
-    void AddFloatArray(std::vector<double> &value);
+    void AddIntArray(const std::vector<int64_t> &value);
+
+    void AddFloatArray(const std::vector<double> &value);
+
+    void AddBufferArray(const std::vector<Buffer> &value);
 
     std::uint8_t * Finish(size_t &size);
 
  private:
-    std::size_t calculate_size();
+    std::size_t CalculateSize();
 };
 
 class DamDecoder {
  private:
-    std::uint8_t *buffer = nullptr;
-    std::size_t buf_size = 0;
-    std::uint8_t *pos = nullptr;
-    std::size_t remaining = 0;
-    int64_t data_set_id = 0;
-    int64_t len = 0;
+    bool local_version_ = false;
+    std::uint8_t *buffer_ = nullptr;
+    std::size_t buf_size_ = 0;
+    std::uint8_t *pos_ = nullptr;
+    std::size_t remaining_ = 0;
+    int64_t data_set_id_ = 0;
+    int64_t len_ = 0;
+    bool debug_ = false;
 
  public:
-    explicit DamDecoder(std::uint8_t *buffer, std::size_t size);
+    explicit DamDecoder(std::uint8_t *buffer, std::size_t size, bool local_version=false, bool debug=false);
 
     size_t Size() {
-        return len;
+        return len_;
     }
 
     int64_t GetDataSetId() {
-        return data_set_id;
+        return data_set_id_;
     }
 
     bool IsValid();
 
+    Buffer DecodeBuffer();
+
     std::vector<int64_t> DecodeIntArray();
 
     std::vector<double> DecodeFloatArray();
+
+    std::vector<Buffer> DecodeBufferArray();
 };
 
 void print_buffer(uint8_t *buffer, int size);
