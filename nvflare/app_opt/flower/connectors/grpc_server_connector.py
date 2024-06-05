@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import nvflare.app_opt.flower.proto.fleet_pb2 as pb2
+import nvflare.app_opt.flower.proto.grpcadapter_pb2 as pb2
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_opt.flower.connectors.flower_connector import FlowerServerConnector
@@ -36,7 +36,6 @@ class GrpcServerConnector(FlowerServerConnector):
     def _start_server(self, addr: str, port: int, fl_ctx: FLContext):
         app_ctx = {
             Constant.APP_CTX_SERVER_ADDR: addr,
-            Constant.APP_CTX_PORT: port,
             Constant.APP_CTX_NUM_ROUNDS: self.num_rounds,
         }
         self.start_applet(app_ctx, fl_ctx)

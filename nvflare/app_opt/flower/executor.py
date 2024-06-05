@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.tie.cli_applet import CLIApplet
 from nvflare.app_common.tie.executor import TieExecutor
 from nvflare.app_opt.flower.connectors.grpc_client_connector import GrpcClientConnector
+from nvflare.app_opt.flower.applet import FlowerClientApplet
 
 from .defs import Constant
 
@@ -22,6 +22,7 @@ from .defs import Constant
 class FlowerExecutor(TieExecutor):
     def __init__(
         self,
+        client_app: str = "client:app",
         start_task_name=Constant.START_TASK_NAME,
         configure_task_name=Constant.CONFIG_TASK_NAME,
         per_msg_timeout=10.0,
@@ -37,6 +38,7 @@ class FlowerExecutor(TieExecutor):
         self.per_msg_timeout = per_msg_timeout
         self.tx_timeout = tx_timeout
         self.num_rounds = None
+        self.client_app = client_app
 
     def get_connector(self, fl_ctx: FLContext):
         return GrpcClientConnector(
@@ -46,7 +48,7 @@ class FlowerExecutor(TieExecutor):
         )
 
     def get_applet(self, fl_ctx: FLContext):
-        return CLIApplet()
+        return FlowerClientApplet(self.client_app)
 
     def configure(self, config: dict, fl_ctx: FLContext):
         self.num_rounds = config.get(Constant.CONF_KEY_NUM_ROUNDS)

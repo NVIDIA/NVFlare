@@ -15,10 +15,10 @@
 """Client and server classes corresponding to protobuf-defined services."""
 import grpc
 
-import nvflare.app_opt.flower.proto.fleet_pb2 as fleet__pb2
+import nvflare.app_opt.flower.proto.grpcadapter_pb2 as grpcadapter__pb2
 
 
-class NvFlowerStub(object):
+class GrpcAdapterStub(object):
     """Missing associated documentation comment in .proto file."""
 
     def __init__(self, channel):
@@ -28,13 +28,13 @@ class NvFlowerStub(object):
             channel: A grpc.Channel.
         """
         self.SendReceive = channel.unary_unary(
-                '/nvflower.NvFlower/SendReceive',
-                request_serializer=fleet__pb2.MessageContainer.SerializeToString,
-                response_deserializer=fleet__pb2.MessageContainer.FromString,
+                '/flwr.proto.GrpcAdapter/SendReceive',
+                request_serializer=grpcadapter__pb2.MessageContainer.SerializeToString,
+                response_deserializer=grpcadapter__pb2.MessageContainer.FromString,
                 )
 
 
-class NvFlowerServicer(object):
+class GrpcAdapterServicer(object):
     """Missing associated documentation comment in .proto file."""
 
     def SendReceive(self, request, context):
@@ -44,21 +44,21 @@ class NvFlowerServicer(object):
         raise NotImplementedError('Method not implemented!')
 
 
-def add_NvFlowerServicer_to_server(servicer, server):
+def add_GrpcAdapterServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'SendReceive': grpc.unary_unary_rpc_method_handler(
                     servicer.SendReceive,
-                    request_deserializer=fleet__pb2.MessageContainer.FromString,
-                    response_serializer=fleet__pb2.MessageContainer.SerializeToString,
+                    request_deserializer=grpcadapter__pb2.MessageContainer.FromString,
+                    response_serializer=grpcadapter__pb2.MessageContainer.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'nvflower.NvFlower', rpc_method_handlers)
+            'flwr.proto.GrpcAdapter', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
 
 
  # This class is part of an EXPERIMENTAL API.
-class NvFlower(object):
+class GrpcAdapter(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
@@ -72,8 +72,8 @@ class NvFlower(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/nvflower.NvFlower/SendReceive',
-            fleet__pb2.MessageContainer.SerializeToString,
-            fleet__pb2.MessageContainer.FromString,
+        return grpc.experimental.unary_unary(request, target, '/flwr.proto.GrpcAdapter/SendReceive',
+            grpcadapter__pb2.MessageContainer.SerializeToString,
+            grpcadapter__pb2.MessageContainer.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

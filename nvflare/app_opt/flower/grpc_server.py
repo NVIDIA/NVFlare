@@ -17,7 +17,7 @@ import concurrent.futures as futures
 import grpc
 
 from nvflare.app_opt.flower.defs import GRPC_DEFAULT_OPTIONS
-from nvflare.app_opt.flower.proto.fleet_pb2_grpc import NvFlowerServicer, add_NvFlowerServicer_to_server
+from nvflare.app_opt.flower.proto.grpcadapter_pb2_grpc import GrpcAdapterServicer, add_GrpcAdapterServicer_to_server
 from nvflare.fuel.utils.obj_utils import get_logger
 from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_int
 from nvflare.security.logging import secure_format_exception
@@ -38,10 +38,10 @@ class GrpcServer:
         if not grpc_options:
             grpc_options = GRPC_DEFAULT_OPTIONS
 
-        check_object_type("servicer", servicer, NvFlowerServicer)
+        check_object_type("servicer", servicer, GrpcAdapterServicer)
         check_positive_int("max_workers", max_workers)
         self.grpc_server = grpc.server(futures.ThreadPoolExecutor(max_workers=max_workers), options=grpc_options)
-        add_NvFlowerServicer_to_server(servicer, self.grpc_server)
+        add_GrpcAdapterServicer_to_server(servicer, self.grpc_server)
         self.logger = get_logger(self)
 
         try:

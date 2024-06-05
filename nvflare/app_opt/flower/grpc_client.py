@@ -14,9 +14,9 @@
 
 import grpc
 
-import nvflare.app_opt.flower.proto.fleet_pb2 as pb2
+import nvflare.app_opt.flower.proto.grpcadapter_pb2 as pb2
 from nvflare.app_opt.flower.defs import GRPC_DEFAULT_OPTIONS
-from nvflare.app_opt.flower.proto.fleet_pb2_grpc import NvFlowerStub
+from nvflare.app_opt.flower.proto.grpcadapter_pb2_grpc import GrpcAdapterStub
 from nvflare.fuel.utils.obj_utils import get_logger
 
 
@@ -55,7 +55,7 @@ class GrpcClient:
         self.started = True
 
         self.channel = grpc.insecure_channel(self.server_addr, options=self.grpc_options)
-        self.stub = NvFlowerStub(self.channel)
+        self.stub = GrpcAdapterStub(self.channel)
 
         # wait for channel ready
         try:

@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import nvflare.app_opt.flower.proto.fleet_pb2 as pb2
-from nvflare.app_opt.flower.proto.fleet_pb2_grpc import NvFlowerServicer
+import nvflare.app_opt.flower.proto.grpcadapter_pb2 as pb2
+from nvflare.app_opt.flower.proto.grpcadapter_pb2_grpc import GrpcAdapterServicer
 from nvflare.fuel.utils.obj_utils import get_logger
 
 
-class EchoServicer(NvFlowerServicer):
+class EchoServicer(GrpcAdapterServicer):
     def __init__(self):
         self.logger = get_logger(self)
 

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import nvflare.app_opt.flower.proto.fleet_pb2 as pb2
+import nvflare.app_opt.flower.proto.grpcadapter_pb2 as pb2
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.tie.defs import Constant as TieConstant
 from nvflare.fuel.f3.drivers.net_utils import MAX_FRAME_SIZE
@@ -45,6 +45,7 @@ class Constant:
     APP_CTX_PORT = "flower_port"
     APP_CTX_CLIENT_NAME = "flower_client_name"
     APP_CTX_NUM_ROUNDS = "flower_num_rounds"
+    APP_CTX_FL_CONTEXT = "flower_fl_context"
 
 
 GRPC_DEFAULT_OPTIONS = [

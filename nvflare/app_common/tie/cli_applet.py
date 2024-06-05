@@ -63,7 +63,7 @@ class CLIApplet(Applet, ABC):
                 env=env,
             )
         except Exception as ex:
-            self.logger.error(f"exception starting applet: {secure_format_exception(ex)}")
+            self.logger.error(f"exception starting applet '{cli_cmd}': {secure_format_exception(ex)}")
             self._start_error = True
 
     def stop(self):

@@ -19,7 +19,7 @@ from nvflare.app_opt.flower.mock.applet import MockServerApplet
 
 class MockController(FlowerController):
     def __init__(self, num_rounds: int):
-        FlowerController.__init__(self, num_rounds)
+        FlowerController.__init__(self, num_rounds=num_rounds)
 
     def get_applet(self, fl_ctx: FLContext):
         return MockServerApplet()

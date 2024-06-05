@@ -204,16 +204,13 @@ class TieController(Controller, ABC):
 
         engine = fl_ctx.get_engine()
         engine.register_aux_message_handler(
-            topic=Constant.TOPIC_APP_REQUEST,
-            message_handle_func=self._handle_app_request,
-        )
-        engine.register_aux_message_handler(
             topic=Constant.TOPIC_CLIENT_DONE,
             message_handle_func=self._process_client_done,
         )
         ReliableMessage.register_request_handler(
             topic=Constant.TOPIC_APP_REQUEST,
             handler_f=self._handle_app_request,
+            fl_ctx=fl_ctx,
         )
 
     def _trigger_stop(self, fl_ctx: FLContext, error=None):

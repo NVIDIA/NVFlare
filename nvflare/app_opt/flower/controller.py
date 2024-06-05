@@ -13,10 +13,10 @@
 # limitations under the License.
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.tie.cli_applet import CLIApplet
 from nvflare.app_common.tie.controller import TieController
 from nvflare.app_common.tie.defs import Constant as TieConstant
 from nvflare.app_opt.flower.connectors.grpc_server_connector import GrpcServerConnector
+from nvflare.app_opt.flower.applet import FlowerServerApplet
 from nvflare.fuel.utils.validation_utils import check_positive_number
 
 from .defs import Constant
@@ -25,7 +25,9 @@ from .defs import Constant
 class FlowerController(TieController):
     def __init__(
         self,
-        num_rounds: int,
+        num_rounds: int = 1,
+        server_app: str = "server:app",
+        database: str = "",
         configure_task_name=TieConstant.CONFIG_TASK_NAME,
         configure_task_timeout=TieConstant.CONFIG_TASK_TIMEOUT,
         start_task_name=TieConstant.START_TASK_NAME,
@@ -48,6 +50,8 @@ class FlowerController(TieController):
 
         check_positive_number("num_rounds", num_rounds)
         self.num_rounds = num_rounds
+        self.server_app = server_app
+        self.database = database
         self.int_client_grpc_options = int_client_grpc_options
 
     def get_connector(self, fl_ctx: FLContext):
@@ -56,7 +60,7 @@ class FlowerController(TieController):
         )
 
     def get_applet(self, fl_ctx: FLContext):
-        return CLIApplet()
+        return FlowerServerApplet(self.server_app, self.database)
 
     def get_client_config_params(self, fl_ctx: FLContext) -> dict:
         return {

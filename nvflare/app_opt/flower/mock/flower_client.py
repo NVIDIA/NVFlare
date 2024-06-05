@@ -17,7 +17,7 @@ import logging
 import os
 import time
 
-import nvflare.app_opt.flower.proto.fleet_pb2 as pb2
+import nvflare.app_opt.flower.proto.grpcadapter_pb2 as pb2
 from nvflare.app_opt.flower.grpc_client import GrpcClient
 
 
