@@ -97,7 +97,7 @@ std::map<int, Buffer> LocalMockProcessor::AddGHPairs(const std::map<int, std::ve
     if (debug_) {
         std::cout << "Add GH Pairs for : " << sample_ids.size() << " slots" << std::endl;
     }
-    
+
     // Can't do this in real plugin. It needs to be broken into encrypted parts
     auto gh_pairs = DecryptVector(std::vector<Buffer>{encrypted_gh_});
 
