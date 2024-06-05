@@ -61,6 +61,7 @@ class InProcessClientAPIExecutor(Executor):
         submit_model_task_name: str = "submit_model",
     ):
         super(InProcessClientAPIExecutor, self).__init__()
+        self._abort = False
         self._client_api = None
         self._result_pull_interval = result_pull_interval
         self._log_pull_interval = log_pull_interval
@@ -93,6 +94,7 @@ class InProcessClientAPIExecutor(Executor):
         self._event_manager = EventManager(self._data_bus)
         self._data_bus.subscribe([TOPIC_LOCAL_RESULT], self.local_result_callback)
         self._data_bus.subscribe([TOPIC_LOG_DATA], self.log_result_callback)
+        self._data_bus.subscribe([TOPIC_ABORT, TOPIC_STOP], self.to_abort_callback)
         self.local_result = None
         self._fl_ctx = None
         self._task_fn_path = None
@@ -106,16 +108,18 @@ class InProcessClientAPIExecutor(Executor):
             self._init_converter(fl_ctx)
 
             self._task_fn_wrapper = TaskScriptRunner(
-                script_path=self._task_script_path, script_args=self._task_script_args
+                site_name=fl_ctx.get_identity_name(),
+                script_path=self._task_script_path,
+                script_args=self._task_script_args,
             )
 
             self._task_fn_thread = threading.Thread(target=self._task_fn_wrapper.run)
-            self._task_fn_thread.start()
-
             meta = self._prepare_task_meta(fl_ctx, None)
             self._client_api = InProcessClientAPI(task_metadata=meta, result_check_interval=self._result_pull_interval)
             self._client_api.init()
             self._data_bus.put_data(CLIENT_API_KEY, self._client_api)
+
+            self._task_fn_thread.start()
 
         elif event_type == EventType.END_RUN:
             self._event_manager.fire_event(TOPIC_STOP, "END_RUN received")
@@ -142,7 +146,7 @@ class InProcessClientAPIExecutor(Executor):
             # wait for result
             self.log_info(fl_ctx, "Waiting for result from peer")
             while True:
-                if abort_signal.triggered:
+                if abort_signal.triggered or self._abort is True:
                     # notify peer that the task is aborted
                     self._event_manager.fire_event(TOPIC_ABORT, f"{task_name}' is aborted, abort_signal_triggered")
                     return make_reply(ReturnCode.TASK_ABORTED)
@@ -231,3 +235,6 @@ class InProcessClientAPIExecutor(Executor):
         # fire_fed_event = True w/o fed_event_converter somehow did not work
         with self._engine.new_context() as fl_ctx:
             send_analytic_dxo(self, dxo=dxo, fl_ctx=fl_ctx, event_type=ANALYTIC_EVENT_TYPE, fire_fed_event=False)
+
+    def to_abort_callback(self, topic, data, databus):
+        self._abort = True

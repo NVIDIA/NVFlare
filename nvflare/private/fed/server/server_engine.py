@@ -317,8 +317,6 @@ class ServerEngine(ServerEngineInternalSpec):
         return ""
 
     def abort_app_on_server(self, job_id: str, turn_to_cold: bool = False) -> str:
-        if job_id not in self.run_processes.keys():
-            return "Server app has not started."
 
         self.logger.info("Abort the server app run.")
         command_data = Shareable()

@@ -32,13 +32,28 @@ from nvflare.app_opt.xgboost.histogram_based_v2.mock_he.util import (
     generate_keys,
     split,
 )
+from nvflare.app_opt.xgboost.histogram_based_v2.sec.dam import DamDecoder
 from nvflare.app_opt.xgboost.histogram_based_v2.sec.data_converter import FeatureAggregationResult
-from nvflare.app_opt.xgboost.histogram_based_v2.sec.processor_data_converter import ProcessorDataConverter
+from nvflare.app_opt.xgboost.histogram_based_v2.sec.processor_data_converter import (
+    DATA_SET_HISTOGRAMS,
+    ProcessorDataConverter,
+)
 from nvflare.app_opt.xgboost.histogram_based_v2.sec.sec_handler import SecurityHandler
+
+try:
+    import tenseal as ts
+    from tenseal.tensors.ckksvector import CKKSVector
+
+    from nvflare.app_opt.he import decomposers
+    from nvflare.app_opt.he.homomorphic_encrypt import load_tenseal_context_from_workspace
+
+    tenseal_imported = True
+except Exception:
+    tenseal_imported = False
 
 
 class ClientSecurityHandler(SecurityHandler):
-    def __init__(self, key_length=1024, num_workers=10):
+    def __init__(self, key_length=1024, num_workers=10, tenseal_context_file="client_context.tenseal"):
         FLComponent.__init__(self)
         self.num_workers = num_workers
         self.key_length = key_length
@@ -54,6 +69,11 @@ class ClientSecurityHandler(SecurityHandler):
         self.feature_masks = None
         self.aggregator = Aggregator()
         self.aggr_result = None  # for label client: computed aggr result based on clear-text clear_ghs
+        self.tenseal_context_file = tenseal_context_file
+        self.tenseal_context = None
+
+        if tenseal_imported:
+            decomposers.register()
 
     def _process_before_broadcast(self, fl_ctx: FLContext):
         root = fl_ctx.get_prop(Constant.PARAM_KEY_ROOT)
@@ -123,8 +143,21 @@ class ClientSecurityHandler(SecurityHandler):
         fl_ctx.set_prop(key=Constant.PARAM_KEY_RCV_BUF, value=dummy_buf, private=True, sticky=False)
 
     def _process_before_all_gather_v(self, fl_ctx: FLContext):
-        rank = fl_ctx.get_prop(Constant.PARAM_KEY_RANK)
         self.info(fl_ctx, "start")
+        buffer = fl_ctx.get_prop(Constant.PARAM_KEY_SEND_BUF)
+
+        decoder = DamDecoder(buffer)
+        if not decoder.is_valid():
+            self.info(fl_ctx, "Not secure content - ignore")
+            return
+
+        if decoder.get_data_set_id() == DATA_SET_HISTOGRAMS:
+            self._process_before_all_gather_v_horizontal(fl_ctx)
+        else:
+            self._process_before_all_gather_v_vertical(fl_ctx)
+
+    def _process_before_all_gather_v_vertical(self, fl_ctx: FLContext):
+        rank = fl_ctx.get_prop(Constant.PARAM_KEY_RANK)
         buffer = fl_ctx.get_prop(Constant.PARAM_KEY_SEND_BUF)
         aggr_ctx = self.data_converter.decode_aggregation_context(buffer, fl_ctx)
 
@@ -181,6 +214,30 @@ class ClientSecurityHandler(SecurityHandler):
         fl_ctx.set_prop(key=Constant.PARAM_KEY_SEND_BUF, value=encoded_str, private=True, sticky=False)
         fl_ctx.set_prop(key=Constant.PARAM_KEY_HEADERS, value=headers, private=True, sticky=False)
 
+    def _process_before_all_gather_v_horizontal(self, fl_ctx: FLContext):
+        if not self.tenseal_context:
+            return self._abort(
+                "Horizontal secure XGBoost not supported due to missing context or missing module", fl_ctx
+            )
+
+        buffer = fl_ctx.get_prop(Constant.PARAM_KEY_SEND_BUF)
+        histograms = self.data_converter.decode_histograms(buffer, fl_ctx)
+
+        start = time.time()
+        vector = ts.ckks_vector(self.tenseal_context, histograms)
+        self.info(
+            fl_ctx,
+            f"_process_before_all_gather_v: Histograms with {len(histograms)} entries "
+            f"encrypted in {time.time()-start} secs",
+        )
+        headers = {
+            Constant.HEADER_KEY_ENCRYPTED_DATA: True,
+            Constant.HEADER_KEY_HORIZONTAL: True,
+            Constant.HEADER_KEY_ORIGINAL_BUF_SIZE: len(buffer),
+        }
+        fl_ctx.set_prop(key=Constant.PARAM_KEY_SEND_BUF, value=vector, private=True, sticky=False)
+        fl_ctx.set_prop(key=Constant.PARAM_KEY_HEADERS, value=headers, private=True, sticky=False)
+
     def _do_aggregation(self, groups, fl_ctx: FLContext):
         # this is only for the label-client to compute aggregation in clear-text!
         if not self.feature_masks:
@@ -192,13 +249,13 @@ class ClientSecurityHandler(SecurityHandler):
             fid, masks, num_bins = fm
             if not groups:
                 gid = 0
-                GH_list = self.aggregator.aggregate(self.clear_ghs, masks, num_bins, None)
-                aggr_result.append((fid, gid, GH_list))
+                gh_list = self.aggregator.aggregate(self.clear_ghs, masks, num_bins, None)
+                aggr_result.append((fid, gid, gh_list))
             else:
                 for grp in groups:
                     gid, sample_ids = grp
-                    GH_list = self.aggregator.aggregate(self.clear_ghs, masks, num_bins, sample_ids)
-                    aggr_result.append((fid, gid, GH_list))
+                    gh_list = self.aggregator.aggregate(self.clear_ghs, masks, num_bins, sample_ids)
+                    aggr_result.append((fid, gid, gh_list))
         self.info(fl_ctx, f"aggregated clear-text in {time.time()-t} secs")
         self.aggr_result = aggr_result
 
@@ -228,7 +285,6 @@ class ClientSecurityHandler(SecurityHandler):
     def _process_after_all_gather_v(self, fl_ctx: FLContext):
         # called after AllGatherV result is received from the server
         self.info(fl_ctx, "start")
-        rank = fl_ctx.get_prop(Constant.PARAM_KEY_RANK)
         reply = fl_ctx.get_prop(Constant.PARAM_KEY_REPLY)
         assert isinstance(reply, Shareable)
         encrypted_data = reply.get_header(Constant.HEADER_KEY_ENCRYPTED_DATA)
@@ -236,9 +292,16 @@ class ClientSecurityHandler(SecurityHandler):
             self.info(fl_ctx, "no encrypted result - ignore")
             return
 
-        rcv_buf = fl_ctx.get_prop(Constant.PARAM_KEY_RCV_BUF)
+        horizontal = reply.get_header(Constant.HEADER_KEY_HORIZONTAL)
+        if horizontal:
+            self._process_after_all_gather_v_horizontal(fl_ctx)
+        else:
+            self._process_after_all_gather_v_vertical(fl_ctx)
 
+    def _process_after_all_gather_v_vertical(self, fl_ctx: FLContext):
+        rcv_buf = fl_ctx.get_prop(Constant.PARAM_KEY_RCV_BUF)
         # this rcv_buf is a list of replies from ALL clients!
+        rank = fl_ctx.get_prop(Constant.PARAM_KEY_RANK)
         if not isinstance(rcv_buf, dict):
             return self._abort(f"rank {rank}: expect a dict of aggr result but got {type(rcv_buf)}", fl_ctx)
         rank_replies = rcv_buf
@@ -269,15 +332,15 @@ class ClientSecurityHandler(SecurityHandler):
 
             for a in rr:
                 fid, gid, combined_numbers = a
-                GH_list = []
+                gh_list = []
                 for n in combined_numbers:
-                    GH_list.append(split(n))
+                    gh_list.append(split(n))
                 grp_result = combined_result.get(gid)
                 if not grp_result:
                     grp_result = {}
                     combined_result[gid] = grp_result
-                grp_result[fid] = FeatureAggregationResult(fid, GH_list)
-                self.info(fl_ctx, f"aggr from rank {r}: {fid=} {gid=} bins={len(GH_list)}")
+                grp_result[fid] = FeatureAggregationResult(fid, gh_list)
+                self.info(fl_ctx, f"aggr from rank {r}: {fid=} {gid=} bins={len(gh_list)}")
 
         final_result = {}
         for gid, far in combined_result.items():
@@ -291,11 +354,31 @@ class ClientSecurityHandler(SecurityHandler):
         result = self.data_converter.encode_aggregation_result(final_result, fl_ctx)
         fl_ctx.set_prop(key=Constant.PARAM_KEY_RCV_BUF, value=result, private=True, sticky=False)
 
+    def _process_after_all_gather_v_horizontal(self, fl_ctx: FLContext):
+        encrypted_histograms = fl_ctx.get_prop(Constant.PARAM_KEY_RCV_BUF)
+        rank = fl_ctx.get_prop(Constant.PARAM_KEY_RANK)
+        if not isinstance(encrypted_histograms, CKKSVector):
+            return self._abort(f"rank {rank}: expect a CKKSVector but got {type(encrypted_histograms)}", fl_ctx)
+
+        histograms = encrypted_histograms.decrypt(secret_key=self.tenseal_context.secret_key())
+        result = self.data_converter.encode_histograms_result(histograms, fl_ctx)
+        fl_ctx.set_prop(key=Constant.PARAM_KEY_RCV_BUF, value=result, private=True, sticky=False)
+
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
             self.public_key, self.private_key = generate_keys(self.key_length)
             self.encryptor = Encryptor(self.public_key, self.num_workers)
             self.decrypter = Decrypter(self.private_key, self.num_workers)
             self.adder = Adder(self.num_workers)
+            try:
+                if tenseal_imported:
+                    self.tenseal_context = load_tenseal_context_from_workspace(self.tenseal_context_file, fl_ctx)
+                else:
+                    self.debug(fl_ctx, "Tenseal module not loaded, horizontal secure XGBoost is not supported")
+            except Exception as ex:
+                self.debug(fl_ctx, f"Can't load tenseal context, horizontal secure XGBoost is not supported: {ex}")
+                self.tenseal_context = None
+        elif event_type == EventType.END_RUN:
+            self.tenseal_context = None
         else:
             super().handle_event(event_type, fl_ctx)
