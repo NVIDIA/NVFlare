@@ -30,6 +30,8 @@ from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.obj_utils import get_logger
 from nvflare.utils.cli_utils import get_package_root
 
+LOADER_PARAMS_LIBRARY_PATH="LIBRARY_PATH"
+
 
 class XGBClientRunner(AppRunner, FLComponent):
     def __init__(
@@ -127,19 +129,31 @@ class XGBClientRunner(AppRunner, FLComponent):
             self.logger.info(f"Training with GPU {self._rank}")
             self._xgb_params["device"] = f"cuda:{self._rank}"
 
-        self.logger.info(f"Using xgb params: {self._xgb_params}")
+        self.logger.info(f"XGB trainging_mode: {self._training_mode} "
+                         f"params: {self._xgb_params} XGB options: {self._xgb_options}")
         self.logger.info(f"server address is {self._server_addr}")
 
         xgb_plugin_name = ConfigService.get_str_var(name="xgb_plugin_name",
                                                     conf=SystemConfigs.RESOURCES_CONF,
                                                     default="nvflare")
 
+        xgb_loader_params = ConfigService.get_dict_var(name="xgb_loader_params", conf=SystemConfigs.RESOURCES_CONF)
+        if xgb_loader_params is None:
+            xgb_loader_params = {}
+
+        # Library path is frequently used, add a scalar config var and overwrite what's in the dict
         xgb_library_path = ConfigService.get_str_var(name="xgb_library_path", conf=SystemConfigs.RESOURCES_CONF)
+        if xgb_library_path:
+            xgb_loader_params[LOADER_PARAMS_LIBRARY_PATH] = xgb_library_path
+
+        lib_path = xgb_loader_params.get(LOADER_PARAMS_LIBRARY_PATH, None)
+        if not lib_path:
+            xgb_loader_params[LOADER_PARAMS_LIBRARY_PATH] = str(get_package_root() / "libs")
 
         xgb_proc_params = ConfigService.get_dict_var(name="xgb_proc_params", conf=SystemConfigs.RESOURCES_CONF)
 
-        if not xgb_library_path:
-            xgb_library_path = str(get_package_root() / "lib")
+        self.logger.info(f"XGBoost plugin_name: {xgb_plugin_name} LIBRARY_PATH: {xgb_library_path} "
+                         f"proc_params: {xgb_proc_params}" )
 
         communicator_env = {
             "xgboost_communicator": "federated",
@@ -148,9 +162,7 @@ class XGBClientRunner(AppRunner, FLComponent):
             "federated_rank": self._rank,
             "plugin_name": xgb_plugin_name,
             "proc_params": xgb_proc_params,
-            "loader_params": {
-                "LIBRARY_PATH": xgb_library_path,
-            },
+            "loader_params": xgb_loader_params,
         }
         with xgb.collective.CommunicatorContext(**communicator_env):
             # Load the data. Dmatrix must be created with column split mode in CommunicatorContext for vertical FL
