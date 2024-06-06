@@ -48,7 +48,7 @@ class FlowerClientApplet(CLIApplet):
         custom_dir = ws.get_app_custom_dir(fl_ctx.get_job_id())
         cmd = f"flower-client-app -insecure --grpc-adapter --server {addr} --dir {custom_dir} {self.client_app}"
         self.logger.info(f"starting flower client app: {cmd}")
-        return cmd
+        return cmd, None, None
 
 
 class FlowerServerApplet(Applet):
