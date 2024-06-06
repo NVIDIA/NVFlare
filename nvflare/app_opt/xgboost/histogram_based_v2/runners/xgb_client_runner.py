@@ -152,8 +152,8 @@ class XGBClientRunner(AppRunner, FLComponent):
 
         xgb_proc_params = ConfigService.get_dict_var(name="xgb_proc_params", conf=SystemConfigs.RESOURCES_CONF)
 
-        self.logger.info(f"XGBoost plugin_name: {xgb_plugin_name} LIBRARY_PATH: {xgb_library_path} "
-                         f"proc_params: {xgb_proc_params}" )
+        self.logger.info(f"XGBoost plugin_name: {xgb_plugin_name} proc_params: {xgb_proc_params} "
+                         f"loader_params: {xgb_loader_params}")
 
         communicator_env = {
             "xgboost_communicator": "federated",

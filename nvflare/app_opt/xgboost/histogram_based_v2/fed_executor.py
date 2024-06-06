@@ -55,9 +55,8 @@ class FedXGBHistogramExecutor(XGBExecutor):
         if not self.client_handler_id:
             engine = fl_ctx.get_engine()
             handler = ClientSecurityHandler()
-            # engine.add_handler(handler)
-            engine.client.runner_config.add_component("random_uid", handler);
-            engine.fire_event("test", fl_ctx)
+            engine.client.runner_config.add_component(str(uuid.uuid4()), handler);
+
 
         runner = XGBClientRunner(
             data_loader_id=self.data_loader_id,
