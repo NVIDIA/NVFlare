@@ -35,10 +35,16 @@ class FlowerClientApplet(CLIApplet):
     def get_command(self, ctx: dict) -> (str, str, dict):
         addr = ctx.get(Constant.APP_CTX_SERVER_ADDR)
         fl_ctx = ctx.get(Constant.APP_CTX_FL_CONTEXT)
-        assert isinstance(fl_ctx, FLContext)
+        if not isinstance(fl_ctx, FLContext):
+            self.logger.error(f"expect APP_CTX_FL_CONTEXT to be FLContext but got {type(fl_ctx)}")
+            raise RuntimeError("invalid FLContext")
+
         engine = fl_ctx.get_engine()
         ws = engine.get_workspace()
-        assert isinstance(ws, Workspace)
+        if not isinstance(ws, Workspace):
+            self.logger.error(f"expect workspace to be Workspace but got {type(ws)}")
+            raise RuntimeError("invalid workspace")
+
         custom_dir = ws.get_app_custom_dir(fl_ctx.get_job_id())
         cmd = f"flower-client-app -insecure --grpc-adapter --server {addr} --dir {custom_dir} {self.client_app}"
         self.logger.info(f"starting flower client app: {cmd}")
@@ -76,10 +82,16 @@ class FlowerServerApplet(Applet):
 
         server_addr = ctx.get(Constant.APP_CTX_SERVER_ADDR)
         fl_ctx = ctx.get(Constant.APP_CTX_FL_CONTEXT)
-        assert isinstance(fl_ctx, FLContext)
+        if not isinstance(fl_ctx, FLContext):
+            self.logger.error(f"expect APP_CTX_FL_CONTEXT to be FLContext but got {type(fl_ctx)}")
+            raise RuntimeError("invalid FLContext")
+
         engine = fl_ctx.get_engine()
         ws = engine.get_workspace()
-        assert isinstance(ws, Workspace)
+        if not isinstance(ws, Workspace):
+            self.logger.error(f"expect workspace to be Workspace but got {type(ws)}")
+            raise RuntimeError("invalid workspace")
+
         custom_dir = ws.get_app_custom_dir(fl_ctx.get_job_id())
 
         db_arg = ""
