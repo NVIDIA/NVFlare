@@ -21,7 +21,7 @@ from nvflare.apis.fl_constant import SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.tracking.log_writer import LogWriter
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
-from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
+from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant, SECURE_TRAINING_MODES
 from nvflare.app_opt.xgboost.histogram_based_v2.runners.xgb_runner import AppRunner
 from nvflare.app_opt.xgboost.histogram_based_v2.tb import TensorBoardCallback
 from nvflare.app_opt.xgboost.metrics_cb import MetricsCallback
@@ -134,39 +134,46 @@ class XGBClientRunner(AppRunner, FLComponent):
         )
         self.logger.info(f"server address is {self._server_addr}")
 
-        xgb_plugin_name = ConfigService.get_str_var(
-            name="xgb_plugin_name", conf=SystemConfigs.RESOURCES_CONF, default="nvflare"
-        )
-
-        xgb_loader_params = ConfigService.get_dict_var(name="xgb_loader_params", conf=SystemConfigs.RESOURCES_CONF)
-        if xgb_loader_params is None:
-            xgb_loader_params = {}
-
-        # Library path is frequently used, add a scalar config var and overwrite what's in the dict
-        xgb_library_path = ConfigService.get_str_var(name="xgb_library_path", conf=SystemConfigs.RESOURCES_CONF)
-        if xgb_library_path:
-            xgb_loader_params[LOADER_PARAMS_LIBRARY_PATH] = xgb_library_path
-
-        lib_path = xgb_loader_params.get(LOADER_PARAMS_LIBRARY_PATH, None)
-        if not lib_path:
-            xgb_loader_params[LOADER_PARAMS_LIBRARY_PATH] = str(get_package_root() / "libs")
-
-        xgb_proc_params = ConfigService.get_dict_var(name="xgb_proc_params", conf=SystemConfigs.RESOURCES_CONF)
-
-        self.logger.info(
-            f"XGBoost plugin_name: {xgb_plugin_name} proc_params: {xgb_proc_params} "
-            f"loader_params: {xgb_loader_params}"
-        )
-
         communicator_env = {
             "xgboost_communicator": "federated",
             "federated_server_address": f"{self._server_addr}",
             "federated_world_size": self._world_size,
             "federated_rank": self._rank,
-            "plugin_name": xgb_plugin_name,
-            "proc_params": xgb_proc_params,
-            "loader_params": xgb_loader_params,
         }
+
+        if self._training_mode not in SECURE_TRAINING_MODES:
+            self.logger.info("XGBoost non-secure training")
+        else:
+            xgb_plugin_name = ConfigService.get_str_var(
+                name="xgb_plugin_name", conf=SystemConfigs.RESOURCES_CONF, default="nvflare"
+            )
+
+            xgb_loader_params = ConfigService.get_dict_var(name="xgb_loader_params", conf=SystemConfigs.RESOURCES_CONF,
+                                                           default={})
+
+            # Library path is frequently used, add a scalar config var and overwrite what's in the dict
+            xgb_library_path = ConfigService.get_str_var(name="xgb_library_path", conf=SystemConfigs.RESOURCES_CONF)
+            if xgb_library_path:
+                xgb_loader_params[LOADER_PARAMS_LIBRARY_PATH] = xgb_library_path
+
+            lib_path = xgb_loader_params.get(LOADER_PARAMS_LIBRARY_PATH, None)
+            if not lib_path:
+                xgb_loader_params[LOADER_PARAMS_LIBRARY_PATH] = str(get_package_root() / "libs")
+
+            xgb_proc_params = ConfigService.get_dict_var(name="xgb_proc_params", conf=SystemConfigs.RESOURCES_CONF,
+                                                         default={})
+
+            self.logger.info(
+                f"XGBoost secure mode: {self._training_mode} plugin_name: {xgb_plugin_name} "
+                f"proc_params: {xgb_proc_params} loader_params: {xgb_loader_params}"
+            )
+
+            communicator_env.update({
+                "plugin_name": xgb_plugin_name,
+                "proc_params": xgb_proc_params,
+                "loader_params": xgb_loader_params,
+            })
+
         with xgb.collective.CommunicatorContext(**communicator_env):
             # Load the data. Dmatrix must be created with column split mode in CommunicatorContext for vertical FL
             train_data, val_data = self._data_loader.load_data(self._client_name, self._training_mode)

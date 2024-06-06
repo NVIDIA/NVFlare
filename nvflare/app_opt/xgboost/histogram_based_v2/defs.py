@@ -117,3 +117,27 @@ GRPC_DEFAULT_OPTIONS = [
     ("grpc.max_send_message_length", MAX_FRAME_SIZE),
     ("grpc.max_receive_message_length", MAX_FRAME_SIZE),
 ]
+
+
+class SplitMode:
+    ROW = 0
+    COL = 1
+    COL_SECURE = 2
+    ROW_SECURE = 3
+
+
+# Mapping of text training mode to split mode
+TRAINING_MODE_MAPPING = {
+    "h": SplitMode.ROW,
+    "horizontal": SplitMode.ROW,
+    "v": SplitMode.COL,
+    "vertical": SplitMode.COL,
+    "hs": SplitMode.ROW_SECURE,
+    "horizontal_secure": SplitMode.ROW_SECURE,
+    "vs": SplitMode.COL_SECURE,
+    "vertical_secure": SplitMode.COL_SECURE,
+}
+
+SECURE_TRAINING_MODES = {
+    "hs", "horizontal_secure", "vs", "vertical_secure"
+}

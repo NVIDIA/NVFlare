@@ -38,7 +38,6 @@ class XGBFedController(XGBController):
         max_client_op_interval: float = Constant.MAX_CLIENT_OP_INTERVAL,
         progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
         client_ranks=None,
-        server_handler_id=None,
         int_client_grpc_options=None,
         in_process=True,
     ):
@@ -60,13 +59,12 @@ class XGBFedController(XGBController):
         )
         self.int_client_grpc_options = int_client_grpc_options
         self.in_process = in_process
-        self.server_handler_id = server_handler_id
 
     def get_adaptor(self, fl_ctx: FLContext):
-        if not self.server_handler_id:
-            engine = fl_ctx.get_engine()
-            handler = ServerSecurityHandler()
-            engine.server.runner_config.add_component(str(uuid.uuid4()), handler)
+
+        engine = fl_ctx.get_engine()
+        handler = ServerSecurityHandler()
+        engine.server.runner_config.add_component(str(uuid.uuid4()), handler)
 
         runner = XGBServerRunner()
         runner.initialize(fl_ctx)

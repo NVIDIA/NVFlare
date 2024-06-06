@@ -15,11 +15,7 @@
 import xgboost as xgb
 
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
-
-ROW = 0
-COL = 1
-COL_SECURE = 2
-ROW_SECURE = 3
+from nvflare.app_opt.xgboost.histogram_based_v2.defs import TRAINING_MODE_MAPPING, SplitMode
 
 
 class SecureDataLoader(XGBDataLoader):
@@ -38,8 +34,12 @@ class SecureDataLoader(XGBDataLoader):
         train_path = f"{self.folder}/site-{self.rank + 1}/train.csv"
         valid_path = f"{self.folder}/site-{self.rank + 1}/valid.csv"
 
-        data_split_mode = self.get_split_mode(training_mode)
-        if self.rank == 0 or data_split_mode == ROW_SECURE:
+        if training_mode not in TRAINING_MODE_MAPPING:
+            raise ValueError(f"Invalid training_mode: {training_mode}")
+
+        data_split_mode = TRAINING_MODE_MAPPING[training_mode]
+
+        if self.rank == 0 or data_split_mode == SplitMode.ROW_SECURE:
             label = "&label_column=0"
         else:
             label = ""
@@ -48,21 +48,3 @@ class SecureDataLoader(XGBDataLoader):
         valid_data = xgb.DMatrix(valid_path + f"?format=csv{label}", data_split_mode=data_split_mode)
 
         return train_data, valid_data
-
-    @staticmethod
-    def get_split_mode(training_mode):
-        mapping = {
-            "h": ROW,
-            "horizontal": ROW,
-            "v": COL,
-            "vertical": COL,
-            "hs": ROW_SECURE,
-            "horizontal_secure": ROW_SECURE,
-            "vs": COL_SECURE,
-            "vertical_secure": COL_SECURE,
-        }
-
-        if training_mode not in mapping:
-            raise ValueError(f"Invalid training_mode={training_mode}")
-
-        return mapping[training_mode]

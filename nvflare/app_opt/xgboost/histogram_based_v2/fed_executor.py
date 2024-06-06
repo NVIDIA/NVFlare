@@ -25,7 +25,6 @@ class FedXGBHistogramExecutor(XGBExecutor):
     def __init__(
         self,
         data_loader_id: str,
-        client_handler_id=None,
         verbose_eval=False,
         use_gpus=False,
         int_server_grpc_options=None,
@@ -42,7 +41,6 @@ class FedXGBHistogramExecutor(XGBExecutor):
             tx_timeout=tx_timeout,
         )
         self.data_loader_id = data_loader_id
-        self.client_handler_id = client_handler_id
         self.verbose_eval = verbose_eval
         self.use_gpus = use_gpus
         self.int_server_grpc_options = int_server_grpc_options
@@ -52,10 +50,9 @@ class FedXGBHistogramExecutor(XGBExecutor):
 
     def get_adaptor(self, fl_ctx: FLContext):
 
-        if not self.client_handler_id:
-            engine = fl_ctx.get_engine()
-            handler = ClientSecurityHandler()
-            engine.client.runner_config.add_component(str(uuid.uuid4()), handler)
+        engine = fl_ctx.get_engine()
+        handler = ClientSecurityHandler()
+        engine.client.runner_config.add_component(str(uuid.uuid4()), handler)
 
         runner = XGBClientRunner(
             data_loader_id=self.data_loader_id,

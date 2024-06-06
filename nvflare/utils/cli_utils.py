@@ -29,6 +29,10 @@ def get_home_dir() -> Path:
 
 
 def get_package_root() -> Path:
+    """
+    Get the nvflare package root folder, e.g.
+        /usr/local/python/3.10/lib/python3.10/site-packages/nvflare
+    """
     return pathlib.Path(__file__).parent.parent.absolute().resolve()
 
 
