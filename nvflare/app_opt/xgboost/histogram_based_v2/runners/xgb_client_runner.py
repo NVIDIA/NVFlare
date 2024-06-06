@@ -30,7 +30,7 @@ from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.obj_utils import get_logger
 from nvflare.utils.cli_utils import get_package_root
 
-LOADER_PARAMS_LIBRARY_PATH="LIBRARY_PATH"
+LOADER_PARAMS_LIBRARY_PATH = "LIBRARY_PATH"
 
 
 class XGBClientRunner(AppRunner, FLComponent):
@@ -129,13 +129,14 @@ class XGBClientRunner(AppRunner, FLComponent):
             self.logger.info(f"Training with GPU {self._rank}")
             self._xgb_params["device"] = f"cuda:{self._rank}"
 
-        self.logger.info(f"XGB trainging_mode: {self._training_mode} "
-                         f"params: {self._xgb_params} XGB options: {self._xgb_options}")
+        self.logger.info(
+            f"XGB trainging_mode: {self._training_mode} " f"params: {self._xgb_params} XGB options: {self._xgb_options}"
+        )
         self.logger.info(f"server address is {self._server_addr}")
 
-        xgb_plugin_name = ConfigService.get_str_var(name="xgb_plugin_name",
-                                                    conf=SystemConfigs.RESOURCES_CONF,
-                                                    default="nvflare")
+        xgb_plugin_name = ConfigService.get_str_var(
+            name="xgb_plugin_name", conf=SystemConfigs.RESOURCES_CONF, default="nvflare"
+        )
 
         xgb_loader_params = ConfigService.get_dict_var(name="xgb_loader_params", conf=SystemConfigs.RESOURCES_CONF)
         if xgb_loader_params is None:
@@ -152,8 +153,10 @@ class XGBClientRunner(AppRunner, FLComponent):
 
         xgb_proc_params = ConfigService.get_dict_var(name="xgb_proc_params", conf=SystemConfigs.RESOURCES_CONF)
 
-        self.logger.info(f"XGBoost plugin_name: {xgb_plugin_name} proc_params: {xgb_proc_params} "
-                         f"loader_params: {xgb_loader_params}")
+        self.logger.info(
+            f"XGBoost plugin_name: {xgb_plugin_name} proc_params: {xgb_proc_params} "
+            f"loader_params: {xgb_loader_params}"
+        )
 
         communicator_env = {
             "xgboost_communicator": "federated",

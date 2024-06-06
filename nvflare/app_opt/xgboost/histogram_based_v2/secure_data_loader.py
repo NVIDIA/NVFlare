@@ -16,8 +16,8 @@ import xgboost as xgb
 
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
 
-ROW = 0;
-COL = 1;
+ROW = 0
+COL = 1
 COL_SECURE = 2
 ROW_SECURE = 3
 
@@ -66,5 +66,3 @@ class SecureDataLoader(XGBDataLoader):
             raise ValueError(f"Invalid training_mode={training_mode}")
 
         return mapping[training_mode]
-
-

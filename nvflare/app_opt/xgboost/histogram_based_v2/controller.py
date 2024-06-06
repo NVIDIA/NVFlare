@@ -114,8 +114,7 @@ class XGBController(Controller):
         self.abort_signal = None
 
         check_str("training_mode", training_mode)
-        valid_mode = {"vertical", "v", "horizontal", "h",
-                      "vertical_secure", "vs", "horizontal_secure", "hs"}
+        valid_mode = {"vertical", "v", "horizontal", "h", "vertical_secure", "vs", "horizontal_secure", "hs"}
         if training_mode not in valid_mode:
             raise ValueError(f"training_mode must be one of following values: {valid_mode}")
 
