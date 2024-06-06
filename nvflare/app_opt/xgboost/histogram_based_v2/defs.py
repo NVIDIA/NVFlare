@@ -138,6 +138,4 @@ TRAINING_MODE_MAPPING = {
     "vertical_secure": SplitMode.COL_SECURE,
 }
 
-SECURE_TRAINING_MODES = {
-    "hs", "horizontal_secure", "vs", "vertical_secure"
-}
+SECURE_TRAINING_MODES = {"hs", "horizontal_secure", "vs", "vertical_secure"}

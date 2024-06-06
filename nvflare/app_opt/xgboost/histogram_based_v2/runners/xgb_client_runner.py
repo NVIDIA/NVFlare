@@ -21,7 +21,7 @@ from nvflare.apis.fl_constant import SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.tracking.log_writer import LogWriter
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
-from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant, SECURE_TRAINING_MODES
+from nvflare.app_opt.xgboost.histogram_based_v2.defs import SECURE_TRAINING_MODES, Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.runners.xgb_runner import AppRunner
 from nvflare.app_opt.xgboost.histogram_based_v2.tb import TensorBoardCallback
 from nvflare.app_opt.xgboost.metrics_cb import MetricsCallback
@@ -148,8 +148,9 @@ class XGBClientRunner(AppRunner, FLComponent):
                 name="xgb_plugin_name", conf=SystemConfigs.RESOURCES_CONF, default="nvflare"
             )
 
-            xgb_loader_params = ConfigService.get_dict_var(name="xgb_loader_params", conf=SystemConfigs.RESOURCES_CONF,
-                                                           default={})
+            xgb_loader_params = ConfigService.get_dict_var(
+                name="xgb_loader_params", conf=SystemConfigs.RESOURCES_CONF, default={}
+            )
 
             # Library path is frequently used, add a scalar config var and overwrite what's in the dict
             xgb_library_path = ConfigService.get_str_var(name="xgb_library_path", conf=SystemConfigs.RESOURCES_CONF)
@@ -160,19 +161,22 @@ class XGBClientRunner(AppRunner, FLComponent):
             if not lib_path:
                 xgb_loader_params[LOADER_PARAMS_LIBRARY_PATH] = str(get_package_root() / "libs")
 
-            xgb_proc_params = ConfigService.get_dict_var(name="xgb_proc_params", conf=SystemConfigs.RESOURCES_CONF,
-                                                         default={})
+            xgb_proc_params = ConfigService.get_dict_var(
+                name="xgb_proc_params", conf=SystemConfigs.RESOURCES_CONF, default={}
+            )
 
             self.logger.info(
                 f"XGBoost secure mode: {self._training_mode} plugin_name: {xgb_plugin_name} "
                 f"proc_params: {xgb_proc_params} loader_params: {xgb_loader_params}"
             )
 
-            communicator_env.update({
-                "plugin_name": xgb_plugin_name,
-                "proc_params": xgb_proc_params,
-                "loader_params": xgb_loader_params,
-            })
+            communicator_env.update(
+                {
+                    "plugin_name": xgb_plugin_name,
+                    "proc_params": xgb_proc_params,
+                    "loader_params": xgb_loader_params,
+                }
+            )
 
         with xgb.collective.CommunicatorContext(**communicator_env):
             # Load the data. Dmatrix must be created with column split mode in CommunicatorContext for vertical FL
