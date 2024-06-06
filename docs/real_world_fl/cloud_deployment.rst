@@ -215,7 +215,7 @@ The configuration file provided is formatted as follows:
 
 .. code-block:: shell
 
-    AMI_IMAGE=ami-04bad3c587fe60d89
+    AMI_IMAGE=ami-03c983f9003cb9cd1
     EC2_TYPE=t2.small
     REGION=us-west-2
 
@@ -269,7 +269,7 @@ eg. ``--config my_config.txt``.  The configuration file is formatted as follows:
 
 .. code-block:: shell
 
-    AMI_IMAGE=ami-04bad3c587fe60d89
+    AMI_IMAGE=ami-03c983f9003cb9cd1
     EC2_TYPE=t2.small
     REGION=us-west-2
 
