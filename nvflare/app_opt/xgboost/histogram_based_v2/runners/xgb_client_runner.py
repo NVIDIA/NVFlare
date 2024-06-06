@@ -17,6 +17,7 @@ import xgboost as xgb
 from xgboost import callback
 
 from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.fl_constant import SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.tracking.log_writer import LogWriter
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
@@ -24,8 +25,10 @@ from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.runners.xgb_runner import AppRunner
 from nvflare.app_opt.xgboost.histogram_based_v2.tb import TensorBoardCallback
 from nvflare.app_opt.xgboost.metrics_cb import MetricsCallback
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.utils.cli_utils import get_package_root
 
 
 class XGBClientRunner(AppRunner, FLComponent):
@@ -126,14 +129,27 @@ class XGBClientRunner(AppRunner, FLComponent):
 
         self.logger.info(f"Using xgb params: {self._xgb_params}")
         self.logger.info(f"server address is {self._server_addr}")
+
+        xgb_plugin_name = ConfigService.get_str_var(name="xgb_plugin_name",
+                                                    conf=SystemConfigs.RESOURCES_CONF,
+                                                    default="nvflare")
+
+        xgb_library_path = ConfigService.get_str_var(name="xgb_library_path", conf=SystemConfigs.RESOURCES_CONF)
+
+        xgb_proc_params = ConfigService.get_dict_var(name="xgb_proc_params", conf=SystemConfigs.RESOURCES_CONF)
+
+        if not xgb_library_path:
+            xgb_library_path = str(get_package_root() / "lib")
+
         communicator_env = {
             "xgboost_communicator": "federated",
             "federated_server_address": f"{self._server_addr}",
             "federated_world_size": self._world_size,
             "federated_rank": self._rank,
-            "plugin_name": "nvflare",
+            "plugin_name": xgb_plugin_name,
+            "proc_params": xgb_proc_params,
             "loader_params": {
-                "LIBRARY_PATH": "/tmp",
+                "LIBRARY_PATH": xgb_library_path,
             },
         }
         with xgb.collective.CommunicatorContext(**communicator_env):
