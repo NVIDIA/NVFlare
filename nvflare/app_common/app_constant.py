@@ -180,6 +180,8 @@ class StatisticsConstants(AppConstants):
     STATS_2nd_STATISTICS = "fed_stats_2nd_statistics"
 
     GLOBAL = "Global"
+    LOCAL = "Local"
+    NAME = "Name"
 
     ordered_statistics = {
         STATS_1st_STATISTICS: [STATS_COUNT, STATS_FAILURE_COUNT, STATS_SUM, STATS_MEAN, STATS_MIN, STATS_MAX],
