@@ -25,7 +25,7 @@ from nvflare.app_opt.xgboost.histogram_based_v2.adaptors.xgb_adaptor import XGBS
 from nvflare.fuel.utils.validation_utils import check_number_range, check_object_type, check_positive_number, check_str
 from nvflare.security.logging import secure_format_exception
 
-from .defs import Constant
+from .defs import TRAINING_MODE_MAPPING, Constant
 
 
 class ClientStatus:
@@ -114,7 +114,7 @@ class XGBController(Controller):
         self.abort_signal = None
 
         check_str("training_mode", training_mode)
-        valid_mode = {"vertical", "v", "horizontal", "h", "vertical_secure", "vs", "horizontal_secure", "hs"}
+        valid_mode = TRAINING_MODE_MAPPING.keys()
         if training_mode not in valid_mode:
             raise ValueError(f"training_mode must be one of following values: {valid_mode}")
 
