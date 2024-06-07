@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import grpc
+
 import nvflare.app_opt.flower.proto.grpcadapter_pb2 as pb2
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_opt.flower.connectors.flower_connector import FlowerClientConnector
@@ -117,4 +119,4 @@ class GrpcClientConnector(FlowerClientConnector, GrpcAdapterServicer):
             return shareable_to_msg_container(reply)
         except Exception as ex:
             self._abort(reason=f"_send_flower_request exception: {secure_format_exception(ex)}")
-            return None
+            context.abort(grpc.StatusCode.CANCELLED, "service closed")
