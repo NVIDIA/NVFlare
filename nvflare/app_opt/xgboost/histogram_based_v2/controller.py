@@ -119,7 +119,7 @@ class XGBController(Controller):
             raise ValueError(f"training_mode must be one of following values: {valid_mode}")
 
         if not self.xgb_params:
-            raise ValueError(f"xgb_params can't be empty")
+            raise ValueError("xgb_params can't be empty")
 
         if not self.xgb_options:
             self.xgb_options = {}
