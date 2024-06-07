@@ -52,7 +52,7 @@ class FedXGBHistogramExecutor(XGBExecutor):
 
         engine = fl_ctx.get_engine()
         handler = ClientSecurityHandler()
-        engine.client.runner_config.add_component(str(uuid.uuid4()), handler)
+        engine.add_component(str(uuid.uuid4()), handler)
 
         runner = XGBClientRunner(
             data_loader_id=self.data_loader_id,

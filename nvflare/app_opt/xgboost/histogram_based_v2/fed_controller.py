@@ -64,7 +64,7 @@ class XGBFedController(XGBController):
 
         engine = fl_ctx.get_engine()
         handler = ServerSecurityHandler()
-        engine.server.runner_config.add_component(str(uuid.uuid4()), handler)
+        engine.add_component(str(uuid.uuid4()), handler)
 
         runner = XGBServerRunner()
         runner.initialize(fl_ctx)

@@ -194,9 +194,7 @@ class XGBClientAdaptor(AppAdaptor):
         if not self.xgb_params:
             raise RuntimeError("xgb_params is not configured")
 
-        self.xgb_options = config.get(Constant.CONF_KEY_XGB_OPTIONS)
-        if not self.xgb_options:
-            raise RuntimeError("xgb_options is not configured")
+        self.xgb_options = config.get(Constant.CONF_KEY_XGB_OPTIONS, {})
 
     def _send_request(self, op: str, req: Shareable) -> (bytes, Shareable):
         """Send XGB operation request to the FL server via FLARE message.
