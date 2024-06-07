@@ -368,7 +368,7 @@ class Connector(ABC, FLComponent):
         if not fl_ctx:
             fl_ctx = self.engine.new_context()
 
-        self.logger.info(f"sending request with RM: {request=}; {type(request['flower.headers'])}")
+        self.logger.debug(f"sending request with RM: {request=}; {type(request['flower.headers'])}")
         return ReliableMessage.send_request(
             target=target,
             topic=Constant.TOPIC_APP_REQUEST,
