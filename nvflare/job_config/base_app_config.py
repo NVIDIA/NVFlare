@@ -54,7 +54,7 @@ class BaseAppConfig(ABC):
         if not isinstance(ext_script, str):
             raise RuntimeError(f"ext_script must be type of str, but got {ext_script.__class__}")
 
-        if not os.path.exists(ext_script):
+        if not (os.path.isabs(ext_script) or os.path.exists(ext_script)):
             raise RuntimeError(f"Could not locate external script: {ext_script}")
 
         if not ext_script.endswith(".py"):
