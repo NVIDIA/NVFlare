@@ -122,8 +122,13 @@ aws_start_sh: |
 
   echo "Creating VM at region $REGION, may take a few minutes."
 
-  amidevice=$(aws ec2 describe-images --image-ids $AMI_IMAGE --query 'Images[0].BlockDeviceMappings[0].DeviceName' --output text)
-  bdmap='[{"DeviceName":"'${amidevice}'","Ebs":{"VolumeSize":16,"VolumeType":"gp2","DeleteOnTermination":true}}]'
+  ami_info=$(aws ec2 describe-images --image-ids $AMI_IMAGE --output json)
+  amidevice=$(echo $ami_info | jq -r '.Images[0].BlockDeviceMappings[0].DeviceName')
+  block_device_mappings=$(echo $ami_info | jq -r '.Images[0].BlockDeviceMappings')
+  original_size=$(echo $block_device_mappings | jq -r '.[0].Ebs.VolumeSize')
+  original_volume_type=$(echo $block_device_mappings | jq -r '.[0].Ebs.VolumeType')
+  new_size=$((original_size + 8)) # increase disk size by 8GB for nvflare, torch, etc 
+  bdmap='[{"DeviceName":"'${amidevice}'","Ebs":{"VolumeSize":'${new_size}',"VolumeType":"'${original_volume_type}'","DeleteOnTermination":true}}]'
 
   if [ $using_default_vpc == true ]
   then
