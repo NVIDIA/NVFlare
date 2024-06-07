@@ -149,6 +149,9 @@ class ClientRunManager(ClientEngineExecutorSpec):
     def dispatch(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         return self.aux_runner.dispatch(topic=topic, request=request, fl_ctx=fl_ctx)
 
+    def add_component(self, component_id: str, component):
+        self.client.runner_config.add_component(component_id, component)
+
     def get_component(self, component_id: str) -> object:
         return self.components.get(component_id)
 

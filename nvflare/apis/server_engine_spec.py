@@ -59,7 +59,29 @@ class ServerEngineSpec(EngineSpec, ABC):
         pass
 
     @abstractmethod
+    def add_component(self, component_id: str, component):
+        """Add a component into the system.
+
+        Args:
+            component_id: component ID
+            component: component object
+
+        Returns:
+
+        """
+        pass
+
+    @abstractmethod
     def get_component(self, component_id: str) -> object:
+        """Retrieve the system component from the engine.
+
+        Args:
+            component_id: component ID
+
+        Returns:
+            component object
+
+        """
         pass
 
     @abstractmethod
