@@ -96,6 +96,17 @@ class ClientEngine(ClientEngineInternalSpec):
     def new_context(self) -> FLContext:
         return self.fl_ctx_mgr.new_context()
 
+    def add_component(self, component_id: str, component):
+        if not isinstance(component_id, str):
+            raise TypeError(f"component id must be str but got {type(component_id)}")
+
+        if component_id in self.client.components:
+            raise ValueError(f"duplicate component id {component_id}")
+
+        self.client.components[component_id] = component
+        if isinstance(component, FLComponent):
+            self.fl_components.append(component)
+
     def get_component(self, component_id: str) -> object:
         return self.client.components.get(component_id)
 
