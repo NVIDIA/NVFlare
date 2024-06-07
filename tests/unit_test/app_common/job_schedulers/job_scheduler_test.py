@@ -100,6 +100,9 @@ class MockServerEngine(ServerEngineSpec):
     def get_workspace(self):
         pass
 
+    def add_component(self, component_id: str, component):
+        pass
+
     def get_component(self, component_id: str) -> object:
         pass
 
