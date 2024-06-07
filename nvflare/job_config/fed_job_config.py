@@ -16,6 +16,7 @@ import inspect
 import json
 import os
 import shutil
+import sys
 from enum import Enum
 from tempfile import TemporaryDirectory
 from typing import Dict
@@ -155,9 +156,22 @@ class FedJobConfig:
 
     def _copy_ext_scripts(self, custom_dir, ext_scripts):
         for script in ext_scripts:
-            dest_file = os.path.join(custom_dir, script)
-            module = "".join(script.rsplit(".py", 1)).replace(os.sep, ".")
-            self._copy_source_file(custom_dir, module, script, dest_file)
+            if os.path.exists(script):
+                if os.path.isabs(script):
+                    relative_script = self._get_relative_script(script)
+                else:
+                    relative_script = script
+                dest_file = os.path.join(custom_dir, relative_script)
+                module = "".join(relative_script.rsplit(".py", 1)).replace(os.sep, ".")
+                self._copy_source_file(custom_dir, module, script, dest_file)
+
+    def _get_relative_script(self, script):
+        package_path = ""
+        for path in sys.path:
+            if script.startswith(path):
+                if len(path) > len(package_path):
+                    package_path = path
+        return script[len(package_path) + 1 :]
 
     def _get_class_path(self, obj, custom_dir):
         module = obj.__module__
@@ -294,15 +308,32 @@ class FedJobConfig:
         return r
 
     def locate_imports(self, sf, dest_file):
+        """Locate all the import statements from the python script, including the imports across multiple lines,
+        using the the line break continuing.
+
+        Args:
+            sf: source file
+            dest_file: copy to destination file
+
+        Returns:
+            yield all the imports within the source file
+
+        """
         os.makedirs(os.path.dirname(dest_file), exist_ok=True)
         with open(dest_file, "w") as df:
+            trimmed = ""
             for line in sf:
                 df.write(line)
-                trimmed = line.strip()
-                if trimmed.startswith("from ") and ("import " in trimmed):
-                    yield trimmed
-                elif trimmed.startswith("import "):
-                    yield trimmed
+                trimmed += line.strip()
+                if trimmed.endswith("\\"):
+                    trimmed = trimmed[0:-1]
+                    trimmed = trimmed.strip() + " "
+                else:
+                    if trimmed.startswith("from ") and ("import " in trimmed):
+                        yield trimmed
+                    elif trimmed.startswith("import "):
+                        yield trimmed
+                    trimmed = ""
 
     def _get_deploy_map(self):
         deploy_map = {}
