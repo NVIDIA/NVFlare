@@ -93,6 +93,7 @@ class _RequestReceiver:
         self.source = None
         self.tx_id = None
         self.reply_time = None
+        self.replying = False
 
     def process(self, request: Shareable, fl_ctx: FLContext) -> Shareable:
         self.tx_id = request.get_header(HEADER_TX_ID)
