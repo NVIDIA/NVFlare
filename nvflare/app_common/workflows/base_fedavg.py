@@ -84,6 +84,9 @@ class BaseFedAvg(ModelController):
 
     @staticmethod
     def aggregate_fn(results: List[FLModel]) -> FLModel:
+        if not results:
+            raise ValueError("received empty results for aggregation.")
+
         aggregation_helper = WeightedAggregationHelper()
         for _result in results:
             aggregation_helper.add(

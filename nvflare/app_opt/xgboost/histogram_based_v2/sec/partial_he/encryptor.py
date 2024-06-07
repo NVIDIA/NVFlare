@@ -15,41 +15,31 @@
 import concurrent.futures
 
 
-class Decrypter:
-    def __init__(self, private_key, max_workers=10):
+class Encryptor:
+    def __init__(self, pubkey, max_workers=10):
         self.max_workers = max_workers
-        self.private_key = private_key
+        self.pubkey = pubkey
         self.exe = concurrent.futures.ProcessPoolExecutor(max_workers=max_workers)
 
-    def decrypt(self, encrypted_number_groups):
+    def encrypt(self, numbers):
         """
         Encrypt a list of clear text numbers
-
         Args:
-            encrypted_number_groups: list of lists of encrypted numbers to be decrypted
-
-        Returns: list of lists of decrypted numbers
-
+            numbers: clear text numbers to be encrypted
+        Returns: list of encrypted numbers
         """
-        # print(f"decrypting {len(encrypted_number_groups)} number groups")
-        items = []
+        items = [(self.pubkey, numbers[i]) for i in range(len(numbers))]
+        chunk_size = int(len(items) / self.max_workers)
+        if chunk_size == 0:
+            chunk_size = 1
 
-        for g in encrypted_number_groups:
-            items.append(
-                (
-                    self.private_key,
-                    g,
-                )
-            )
-
-        results = self.exe.map(_do_decrypt, items)
+        results = self.exe.map(_do_enc, items, chunksize=chunk_size)
         rl = []
         for r in results:
             rl.append(r)
         return rl
 
 
-def _do_decrypt(item):
-    # t = time.time()
-    private_key, numbers = item
-    return numbers
+def _do_enc(item):
+    pubkey, num = item
+    return pubkey.encrypt(num)
