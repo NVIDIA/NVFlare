@@ -122,6 +122,15 @@ def validate_path_string(path: str) -> str:
 
 
 def get_file_extension(file: str) -> str:
+    """Get extension part of the specified file name.
+    If the file's name is ended with number, then the extension is before it.
+
+    Args:
+        file: the file name
+
+    Returns: extension part of the file name
+
+    """
     parts = file.split(".")
     last_part = parts[-1]
     if last_part.isnumeric():
