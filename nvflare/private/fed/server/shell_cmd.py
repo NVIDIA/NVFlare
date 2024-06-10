@@ -186,6 +186,14 @@ class _FileCmdExecutor(_CommandExecutor):
                         return ".. in path name is not allowed"
 
                 if self.text_file_only:
+                    # check whether the file name is ended with numbers. If so, the actual file extension is before it.
+                    # this is the case that when the log file (log.txt) is rotated, the previous file becomes log.txt.1.
+                    parts = f.split(".")
+                    last_part = parts[-1]
+                    if last_part.isnumeric():
+                        parts.pop(-1)
+                        f = ".".join(parts)
+
                     basename, file_extension = os.path.splitext(f)
                     if file_extension not in [".txt", ".log", ".json", ".csv", ".sh", ".config", ".py"]:
                         return (
