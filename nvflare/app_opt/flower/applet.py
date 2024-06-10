@@ -46,7 +46,7 @@ class FlowerClientApplet(CLIApplet):
             raise RuntimeError("invalid workspace")
 
         custom_dir = ws.get_app_custom_dir(fl_ctx.get_job_id())
-        cmd = f"flower-client-app --insecure --grpc-adapter --server {addr} --dir {custom_dir} {self.client_app}"
+        cmd = f"flower-client-app --insecure --grpc-adapter --superlink {addr} --dir {custom_dir} {self.client_app}"
         self.logger.info(f"starting flower client app: {cmd}")
         return cmd, None, None
 
