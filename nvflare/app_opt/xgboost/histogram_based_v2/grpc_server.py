@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@ import concurrent.futures as futures
 
 import grpc
 
-from nvflare.app_opt.xgboost.histogram_based_v2.grpc.defs import GRPC_DEFAULT_OPTIONS
+from nvflare.app_opt.xgboost.histogram_based_v2.defs import GRPC_DEFAULT_OPTIONS
 from nvflare.app_opt.xgboost.histogram_based_v2.proto.federated_pb2_grpc import (
     FederatedServicer,
     add_FederatedServicer_to_server,
@@ -29,21 +29,14 @@ from nvflare.security.logging import secure_format_exception
 class GrpcServer:
     """This class implements a gRPC XGB Server that is capable of processing XGB operations."""
 
-    def __init__(
-        self,
-        addr,
-        max_workers: int,
-        servicer,
-        grpc_options=None,
-    ):
+    def __init__(self, addr, max_workers: int, grpc_options, servicer):
         """Constructor
 
         Args:
             addr: the listening address of the server
             max_workers: max number of workers
+            grpc_options: gRPC options
             servicer: the servicer that is capable of processing XGB requests
-            grpc_options: An optional list of key-value pairs (`channel_arguments`
-                in gRPC Core runtime) to configure the gRPC channel.
         """
         if not grpc_options:
             grpc_options = GRPC_DEFAULT_OPTIONS
@@ -55,6 +48,7 @@ class GrpcServer:
         self.logger = get_logger(self)
 
         try:
+            # TBD: will be enhanced to support secure port
             self.grpc_server.add_insecure_port(addr)
             self.logger.info(f"XGBServer: added insecure port at {addr}")
         except Exception as ex:

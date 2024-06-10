@@ -55,6 +55,22 @@ class AllgatherReply(_message.Message):
     receive_buffer: bytes
     def __init__(self, receive_buffer: _Optional[bytes] = ...) -> None: ...
 
+class AllgatherVRequest(_message.Message):
+    __slots__ = ("sequence_number", "rank", "send_buffer")
+    SEQUENCE_NUMBER_FIELD_NUMBER: _ClassVar[int]
+    RANK_FIELD_NUMBER: _ClassVar[int]
+    SEND_BUFFER_FIELD_NUMBER: _ClassVar[int]
+    sequence_number: int
+    rank: int
+    send_buffer: bytes
+    def __init__(self, sequence_number: _Optional[int] = ..., rank: _Optional[int] = ..., send_buffer: _Optional[bytes] = ...) -> None: ...
+
+class AllgatherVReply(_message.Message):
+    __slots__ = ("receive_buffer",)
+    RECEIVE_BUFFER_FIELD_NUMBER: _ClassVar[int]
+    receive_buffer: bytes
+    def __init__(self, receive_buffer: _Optional[bytes] = ...) -> None: ...
+
 class AllreduceRequest(_message.Message):
     __slots__ = ("sequence_number", "rank", "send_buffer", "data_type", "reduce_operation")
     SEQUENCE_NUMBER_FIELD_NUMBER: _ClassVar[int]

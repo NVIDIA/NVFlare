@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,12 +11,3 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-from nvflare.fuel.f3.drivers.net_utils import MAX_FRAME_SIZE
-
-GRPC_DEFAULT_OPTIONS = [
-    ("grpc.max_send_message_length", MAX_FRAME_SIZE),
-    ("grpc.max_receive_message_length", MAX_FRAME_SIZE),
-    ("grpc.ssl_target_name_override", "localhost"),
-    ("grpc.default_authority", "localhost"),
-]

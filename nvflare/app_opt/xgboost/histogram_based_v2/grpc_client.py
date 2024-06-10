@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,8 +14,8 @@
 
 import grpc
 
-from nvflare.app_opt.xgboost.histogram_based_v2.grpc.defs import GRPC_DEFAULT_OPTIONS
-from nvflare.app_opt.xgboost.histogram_based_v2.proto import federated_pb2 as pb2
+import nvflare.app_opt.xgboost.histogram_based_v2.proto.federated_pb2 as pb2
+from nvflare.app_opt.xgboost.histogram_based_v2.defs import GRPC_DEFAULT_OPTIONS
 from nvflare.app_opt.xgboost.histogram_based_v2.proto.federated_pb2_grpc import FederatedStub
 from nvflare.fuel.utils.obj_utils import get_logger
 
@@ -23,17 +23,12 @@ from nvflare.fuel.utils.obj_utils import get_logger
 class GrpcClient:
     """This class implements a gRPC XGB Client that is capable of sending XGB operations to a gRPC XGB Server."""
 
-    def __init__(
-        self,
-        server_addr,
-        grpc_options=None,
-    ):
+    def __init__(self, server_addr, grpc_options=None):
         """Constructor
 
         Args:
             server_addr: address of the gRPC server to connect to
-            grpc_options: An optional list of key-value pairs (`channel_arguments`
-                in gRPC Core runtime) to configure the gRPC channel.
+            grpc_options: gRPC options for the gRPC client
         """
         if not grpc_options:
             grpc_options = GRPC_DEFAULT_OPTIONS
@@ -85,9 +80,34 @@ class GrpcClient:
             send_buffer=data,
         )
 
+        self.logger.info(f"Allgather is sending {len(data)} bytes Rank: {rank} Seq: {seq_num}")
         result = self.stub.Allgather(req)
+
         if not isinstance(result, pb2.AllgatherReply):
             self.logger.error(f"expect reply to be pb2.AllgatherReply but got {type(result)}")
+            return None
+        return result
+
+    def send_allgatherv(self, seq_num, rank, data: bytes):
+        """Send AllgatherV request to gRPC server
+
+        Args:
+            seq_num: sequence number
+            rank: rank of the client
+            data: the send_buf data
+
+        Returns: an AllgatherVReply object; or None if processing error is encountered
+
+        """
+        req = pb2.AllgatherVRequest(
+            sequence_number=seq_num,
+            rank=rank,
+            send_buffer=data,
+        )
+
+        result = self.stub.AllgatherV(req)
+        if not isinstance(result, pb2.AllgatherVReply):
+            self.logger.error(f"expect reply to be pb2.AllgatherVReply but got {type(result)}")
             return None
         return result
 
@@ -151,7 +171,6 @@ class GrpcClient:
         """
         ch = self.channel
         self.channel = None  # set to None in case another thread also tries to close.
-        self.started = False
         if ch:
             try:
                 ch.close()

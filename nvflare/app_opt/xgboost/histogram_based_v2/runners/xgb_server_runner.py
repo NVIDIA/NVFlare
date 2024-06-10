@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,35 +12,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Tuple
+import xgboost.federated as xgb_federated
 
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
-from nvflare.app_opt.xgboost.histogram_based_v2.runner import XGBRunner
-from nvflare.fuel.utils.import_utils import optional_import
+from nvflare.app_opt.xgboost.histogram_based_v2.runners.xgb_runner import AppRunner
 
 
-class XGBServerRunner(XGBRunner):
+class XGBServerRunner(AppRunner):
     def __init__(self):
-        self._stopped = True
+        self._port = None
+        self._world_size = None
+        self._stopped = False
 
     def run(self, ctx: dict):
-        xgb_federated, flag = optional_import(module="xgboost.federated")
-        if not flag:
-            raise RuntimeError("Can't import xgboost.federated")
+        self._port = ctx.get(Constant.RUNNER_CTX_PORT)
+        self._world_size = ctx.get(Constant.RUNNER_CTX_WORLD_SIZE)
 
-        _port = ctx.get(Constant.RUNNER_CTX_PORT, None)
-        _world_size = ctx.get(Constant.RUNNER_CTX_WORLD_SIZE, None)
-
-        self._stopped = False
         xgb_federated.run_federated_server(
-            port=_port,
-            world_size=_world_size,
+            port=self._port,
+            world_size=self._world_size,
         )
         self._stopped = True
 
     def stop(self):
-        # currently no way to stop the runner
+        # no way to start currently
         pass
 
-    def is_stopped(self) -> Tuple[bool, int]:
+    def is_stopped(self) -> (bool, int):
         return self._stopped, 0

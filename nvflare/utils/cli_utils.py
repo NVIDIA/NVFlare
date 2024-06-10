@@ -28,6 +28,14 @@ def get_home_dir() -> Path:
     return Path.home()
 
 
+def get_package_root() -> Path:
+    """
+    Get the nvflare package root folder, e.g.
+        /usr/local/python/3.10/lib/python3.10/site-packages/nvflare
+    """
+    return pathlib.Path(__file__).parent.parent.absolute().resolve()
+
+
 def get_hidden_nvflare_config_path(hidden_nvflare_dir: str) -> str:
     """
     Get the path for the hidden nvflare configuration file.
@@ -92,7 +100,7 @@ def create_startup_kit_config(nvflare_config: ConfigTree, startup_kit_dir: Optio
         startup_kit_dir = get_startup_kit_dir(startup_kit_dir)
         conf_str = f"""
             startup_kit {{
-                path = {startup_kit_dir}
+                path = "{startup_kit_dir}"
             }}
         """
         conf: ConfigTree = CF.parse_string(conf_str)

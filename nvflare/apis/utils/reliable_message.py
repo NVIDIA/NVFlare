@@ -51,6 +51,8 @@ TOPIC_RELIABLE_REQUEST = "RM.RELIABLE_REQUEST"
 TOPIC_RELIABLE_REPLY = "RM.RELIABLE_REPLY"
 
 PROP_KEY_TX_ID = "RM.TX_ID"
+PROP_KEY_TOPIC = "RM.TOPIC"
+PROP_KEY_OP = "RM.OP"
 
 
 def _extract_result(reply: dict, target: str):
@@ -215,19 +217,27 @@ class ReliableMessage:
     _logger = logging.getLogger("ReliableMessage")
 
     @classmethod
-    def register_request_handler(cls, topic: str, handler_f):
+    def register_request_handler(cls, topic: str, handler_f, fl_ctx: FLContext):
         """Register a handler for the reliable message with this topic
 
         Args:
             topic: The topic of the reliable message
             handler_f: The callback function to handle the request in the form of
                 handler_f(topic, request, fl_ctx)
+            fl_ctx: FL Context
         """
         if not cls._enabled:
             raise RuntimeError("ReliableMessage is not enabled. Please call ReliableMessage.enable() to enable it")
         if not callable(handler_f):
             raise TypeError(f"handler_f must be callable but {type(handler_f)}")
         cls._topic_to_handle[topic] = handler_f
+
+        # ReliableMessage also sends aux message directly if tx_timeout is too small
+        engine = fl_ctx.get_engine()
+        engine.register_aux_message_handler(
+            topic=topic,
+            message_handle_func=handler_f,
+        )
 
     @classmethod
     def _get_or_create_receiver(cls, topic: str, request: Shareable, handler_f) -> _RequestReceiver:
@@ -250,33 +260,38 @@ class ReliableMessage:
     @classmethod
     def _receive_request(cls, topic: str, request: Shareable, fl_ctx: FLContext):
         tx_id = request.get_header(HEADER_TX_ID)
-        fl_ctx.set_prop(key=PROP_KEY_TX_ID, value=tx_id, sticky=False, private=True)
         op = request.get_header(HEADER_OP)
-        topic = request.get_header(HEADER_TOPIC)
+        rm_topic = request.get_header(HEADER_TOPIC)
+        fl_ctx.set_prop(key=PROP_KEY_TX_ID, value=tx_id, sticky=False, private=True)
+        fl_ctx.set_prop(key=PROP_KEY_OP, value=op, sticky=False, private=True)
+        fl_ctx.set_prop(key=PROP_KEY_TOPIC, value=rm_topic, sticky=False, private=True)
+        cls.debug(fl_ctx, f"received aux msg ({topic=}) for RM request")
+
         if op == OP_REQUEST:
-            handler_f = cls._topic_to_handle.get(topic)
+            handler_f = cls._topic_to_handle.get(rm_topic)
             if not handler_f:
                 # no handler registered for this topic!
-                cls.error(fl_ctx, f"no handler registered for request {topic=}")
+                cls.error(fl_ctx, f"no handler registered for request {rm_topic=}")
                 return make_reply(ReturnCode.TOPIC_UNKNOWN)
-            receiver = cls._get_or_create_receiver(topic, request, handler_f)
-            cls.info(fl_ctx, f"received request {topic=}")
+            receiver = cls._get_or_create_receiver(rm_topic, request, handler_f)
+            cls.info(fl_ctx, f"received request {rm_topic=}")
             return receiver.process(request, fl_ctx)
         elif op == OP_QUERY:
             receiver = cls._req_receivers.get(tx_id)
             if not receiver:
-                cls.error(fl_ctx, f"received query but the request ({topic=}) is not received!")
+                cls.error(fl_ctx, f"received query but the request ({rm_topic=}) is not received!")
                 return _status_reply(STATUS_NOT_RECEIVED)  # meaning the request wasn't received
             else:
                 return receiver.process(request, fl_ctx)
         else:
-            cls.error(fl_ctx, f"received invalid op {op} for the request ({topic=})")
+            cls.error(fl_ctx, f"received invalid op {op} for the request ({rm_topic=})")
             return make_reply(rc=ReturnCode.BAD_REQUEST_DATA)
 
     @classmethod
     def _receive_reply(cls, topic: str, request: Shareable, fl_ctx: FLContext):
         tx_id = request.get_header(HEADER_TX_ID)
         fl_ctx.set_prop(key=PROP_KEY_TX_ID, value=tx_id, private=True, sticky=False)
+        cls.debug(fl_ctx, f"received aux msg ({topic=}) for RM reply")
         receiver = cls._reply_receivers.get(tx_id)
         if not receiver:
             cls.error(fl_ctx, "received reply but we are no longer waiting for it")
@@ -356,9 +371,25 @@ class ReliableMessage:
 
     @classmethod
     def _log_msg(cls, fl_ctx: FLContext, msg: str):
+        props = []
         tx_id = fl_ctx.get_prop(PROP_KEY_TX_ID)
         if tx_id:
-            msg = f"[RM: {tx_id=}] {msg}"
+            props.append(f"rm_tx={tx_id}")
+
+        op = fl_ctx.get_prop(PROP_KEY_OP)
+        if op:
+            props.append(f"rm_op={op}")
+
+        topic = fl_ctx.get_prop(PROP_KEY_TOPIC)
+        if topic:
+            props.append(f"rm_topic={topic}")
+
+        rm_ctx = ""
+        if props:
+            rm_ctx = " ".join(props)
+
+        if rm_ctx:
+            msg = f"[{rm_ctx}] {msg}"
         return generate_log_message(fl_ctx, msg)
 
     @classmethod
@@ -396,6 +427,8 @@ class ReliableMessage:
             fl_ctx: the FL context
 
         Returns: reply from the peer.
+
+        If tx_timeout is not specified or <= per_msg_timeout, the request will be sent only once without retrying.
 
         """
         check_positive_number("per_msg_timeout", per_msg_timeout)

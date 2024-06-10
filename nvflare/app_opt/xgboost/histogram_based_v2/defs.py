@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,28 +12,32 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from nvflare.fuel.f3.drivers.net_utils import MAX_FRAME_SIZE
+
 
 class Constant:
 
     # task name defaults
     CONFIG_TASK_NAME = "config"
     START_TASK_NAME = "start"
-    TRAIN_TASK_NAME = "train"
 
     # keys of adaptor config parameters
     CONF_KEY_CLIENT_RANKS = "client_ranks"
     CONF_KEY_RANK = "rank"
     CONF_KEY_WORLD_SIZE = "world_size"
     CONF_KEY_NUM_ROUNDS = "num_rounds"
+    CONF_KEY_TRAINING_MODE = "training_mode"
+    CONF_KEY_XGB_PARAMS = "xgb_params"
+    CONF_KEY_XGB_OPTIONS = "xgb_options"
 
     # default component config values
     CONFIG_TASK_TIMEOUT = 10
     START_TASK_TIMEOUT = 10
-    XGB_SERVER_READY_TIMEOUT = 5.0
+    XGB_SERVER_READY_TIMEOUT = 10.0
 
     TASK_CHECK_INTERVAL = 0.5
     JOB_STATUS_CHECK_INTERVAL = 2.0
-    MAX_CLIENT_OP_INTERVAL = 900.0
+    MAX_CLIENT_OP_INTERVAL = 600.0
     WORKFLOW_PROGRESS_TIMEOUT = 3600.0
 
     # message topics
@@ -68,6 +72,8 @@ class Constant:
     ERR_NO_CLIENT_FOR_RANK = -3
     ERR_TARGET_ERROR = -4
 
+    EXIT_CODE_CANT_START = 101
+
     # XGB operation parameter keys
     PARAM_KEY_RANK = "xgb.rank"
     PARAM_KEY_SEQ = "xgb.seq"
@@ -76,13 +82,60 @@ class Constant:
     PARAM_KEY_REDUCE_OP = "xgb.reduce_op"
     PARAM_KEY_ROOT = "xgb.root"
     PARAM_KEY_RCV_BUF = "xgb.rcv_buf"
+    PARAM_KEY_HEADERS = "xgb.headers"
+    PARAM_KEY_REPLY = "xgb.reply"
+    PARAM_KEY_REQUEST = "xgb.request"
+    PARAM_KEY_EVENT = "xgb.event"
 
     RUNNER_CTX_SERVER_ADDR = "server_addr"
     RUNNER_CTX_PORT = "port"
     RUNNER_CTX_CLIENT_NAME = "client_name"
     RUNNER_CTX_NUM_ROUNDS = "num_rounds"
+    RUNNER_CTX_TRAINING_MODE = "training_mode"
+    RUNNER_CTX_XGB_PARAMS = "xgb_params"
+    RUNNER_CTX_XGB_OPTIONS = "xgb_options"
     RUNNER_CTX_WORLD_SIZE = "world_size"
     RUNNER_CTX_RANK = "rank"
+    RUNNER_CTX_DATA_LOADER = "data_loader"
+    RUNNER_CTX_TB_DIR = "tb_dir"
     RUNNER_CTX_MODEL_DIR = "model_dir"
 
-    EXIT_CODE_CANT_START_XGB = 101
+    EVENT_BEFORE_BROADCAST = "xgb.before_broadcast"
+    EVENT_AFTER_BROADCAST = "xgb.after_broadcast"
+    EVENT_BEFORE_ALL_GATHER_V = "xgb.before_all_gather_v"
+    EVENT_AFTER_ALL_GATHER_V = "xgb.after_all_gather_v"
+
+    HEADER_KEY_ENCRYPTED_DATA = "xgb.encrypted_data"
+    HEADER_KEY_HORIZONTAL = "xgb.horizontal"
+    HEADER_KEY_ORIGINAL_BUF_SIZE = "xgb.original_buf_size"
+    HEADER_KEY_IN_AGGR = "xgb.in_aggr"
+
+    DUMMY_BUFFER_SIZE = 4
+
+
+GRPC_DEFAULT_OPTIONS = [
+    ("grpc.max_send_message_length", MAX_FRAME_SIZE),
+    ("grpc.max_receive_message_length", MAX_FRAME_SIZE),
+]
+
+
+class SplitMode:
+    ROW = 0
+    COL = 1
+    COL_SECURE = 2
+    ROW_SECURE = 3
+
+
+# Mapping of text training mode to split mode
+TRAINING_MODE_MAPPING = {
+    "h": SplitMode.ROW,
+    "horizontal": SplitMode.ROW,
+    "v": SplitMode.COL,
+    "vertical": SplitMode.COL,
+    "hs": SplitMode.ROW_SECURE,
+    "horizontal_secure": SplitMode.ROW_SECURE,
+    "vs": SplitMode.COL_SECURE,
+    "vertical_secure": SplitMode.COL_SECURE,
+}
+
+SECURE_TRAINING_MODES = {"hs", "horizontal_secure", "vs", "vertical_secure"}

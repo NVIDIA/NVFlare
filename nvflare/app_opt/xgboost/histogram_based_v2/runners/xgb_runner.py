@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,56 +11,53 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 from abc import ABC, abstractmethod
-from typing import Tuple
 
 from nvflare.apis.fl_context import FLContext
 
 
-class XGBRunner(ABC):
+class AppRunner(ABC):
 
-    """An XGBRunner implements XGB (server or client) processing logic."""
+    """An AppRunner implements App (server or client) processing logic."""
 
     def initialize(self, fl_ctx: FLContext):
-        """Initializes the runner.
+        """Called by Controller/Executor to initialize the runner.
         This happens when the job is about to start.
 
         Args:
             fl_ctx: FL context
 
-        Returns:
-            None
+        Returns: None
+
         """
         pass
 
     @abstractmethod
     def run(self, ctx: dict):
-        """Runs XGB processing logic.
+        """Called to start the execution of app processing logic.
 
         Args:
             ctx: the contextual info to help the runner execution
 
-        Returns:
-            None
+        Returns: None
+
         """
         pass
 
     @abstractmethod
     def stop(self):
-        """Stops the runner.
+        """Called to stop the runner.
 
         Returns:
-            None
+
         """
         pass
 
     @abstractmethod
-    def is_stopped(self) -> Tuple[bool, int]:
-        """Checks whether the runner is already stopped.
+    def is_stopped(self) -> (bool, int):
+        """Called to check whether the runner is already stopped.
 
-        Returns:
-            A tuple of (whether the runner is stopped, exit code)
+        Returns: whether the runner is stopped. If stopped, the exit code.
 
         """
         pass

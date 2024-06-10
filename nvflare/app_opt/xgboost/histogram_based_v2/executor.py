@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,102 +12,155 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from nvflare.apis.event_type import EventType
+from nvflare.apis.executor import Executor
+from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_opt.xgboost.histogram_based_v2.adaptor_executor import XGBExecutor
-from nvflare.app_opt.xgboost.histogram_based_v2.adaptors.grpc_client_adaptor import GrpcClientAdaptor
-from nvflare.app_opt.xgboost.histogram_based_v2.runners.client_runner import XGBClientRunner
-from nvflare.fuel.utils.validation_utils import (
-    check_non_negative_int,
-    check_object_type,
-    check_positive_number,
-    check_str,
-)
+from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.apis.signal import Signal
+from nvflare.app_opt.xgboost.histogram_based_v2.adaptors.xgb_adaptor import XGBClientAdaptor
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.security.logging import secure_format_exception
+
+from .defs import Constant
 
 
-class FedXGBHistogramExecutor(XGBExecutor):
+class XGBExecutor(Executor):
     def __init__(
         self,
-        early_stopping_rounds,
-        xgb_params: dict,
-        data_loader_id: str,
-        verbose_eval=False,
-        use_gpus=False,
+        adaptor_component_id: str,
+        configure_task_name=Constant.CONFIG_TASK_NAME,
+        start_task_name=Constant.START_TASK_NAME,
         per_msg_timeout=10.0,
         tx_timeout=100.0,
-        model_file_name="model.json",
-        metrics_writer_id: str = None,
-        in_process: bool = True,
     ):
-        """
+        """Constructor
 
         Args:
-            early_stopping_rounds: early stopping rounds
-            xgb_params: This dict is passed to `xgboost.train()` as the first argument `params`.
-                It contains all the Booster parameters.
-                Please refer to XGBoost documentation for details:
-                https://xgboost.readthedocs.io/en/stable/parameter.html
-            data_loader_id: the ID points to XGBDataLoader.
-            verbose_eval: verbose_eval in xgboost.train
-            use_gpus (bool): A convenient flag to enable gpu training, if gpu device is specified in
-                the `xgb_params` then this flag can be ignored.
-            metrics_writer_id: the ID points to a LogWriter, if provided, a MetricsCallback will be added.
-                Users can then use the receivers from nvflare.app_opt.tracking.
-            model_file_name (str): where to save the model.
-            in_process (bool): Specifies whether to start the `XGBRunner` in the same process or not.
+            adaptor_component_id: the component ID of client target adaptor
+            configure_task_name: name of the config task
+            start_task_name: name of the start task
             per_msg_timeout: timeout for sending one message
             tx_timeout: transaction timeout
         """
-        XGBExecutor.__init__(
-            self,
-            adaptor_component_id="",
-        )
-
-        if early_stopping_rounds is not None:
-            check_non_negative_int("early_stopping_rounds", early_stopping_rounds)
-
-        if xgb_params is not None:
-            check_object_type("xgb_params", xgb_params, dict)
-
-        check_str("data_loader_id", data_loader_id)
-        check_positive_number("per_msg_timeout", per_msg_timeout)
-        if tx_timeout:
-            check_positive_number("tx_timeout", tx_timeout)
-
-        check_str("model_file_name", model_file_name)
-
-        if metrics_writer_id:
-            check_str("metrics_writer_id", metrics_writer_id)
-
-        self.early_stopping_rounds = early_stopping_rounds
-        self.xgb_params = xgb_params
-        self.data_loader_id = data_loader_id
-        self.verbose_eval = verbose_eval
-        self.use_gpus = use_gpus
+        Executor.__init__(self)
+        self.adaptor_component_id = adaptor_component_id
         self.per_msg_timeout = per_msg_timeout
         self.tx_timeout = tx_timeout
-        self.model_file_name = model_file_name
-        self.in_process = in_process
-        self.metrics_writer_id = metrics_writer_id
+        self.configure_task_name = configure_task_name
+        self.start_task_name = start_task_name
+        self.adaptor = None
 
-        # do not let user specify int_server_grpc_options in this version - always use default
-        self.int_server_grpc_options = None
+        # create the abort signal to be used for signaling the adaptor
+        self.abort_signal = Signal()
 
     def get_adaptor(self, fl_ctx: FLContext):
-        runner = XGBClientRunner(
-            data_loader_id=self.data_loader_id,
-            early_stopping_rounds=self.early_stopping_rounds,
-            xgb_params=self.xgb_params,
-            verbose_eval=self.verbose_eval,
-            use_gpus=self.use_gpus,
-            model_file_name=self.model_file_name,
-            metrics_writer_id=self.metrics_writer_id,
+        """Get adaptor to be used by this executor.
+        This is the default implementation that gets the adaptor based on configured adaptor_component_id.
+        A subclass of XGBExecutor may get adaptor in a different way.
+
+        Args:
+            fl_ctx: the FL context
+
+        Returns: a XGBClientAdaptor object
+
+        """
+        engine = fl_ctx.get_engine()
+        return engine.get_component(self.adaptor_component_id)
+
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        if event_type == EventType.START_RUN:
+            adaptor = self.get_adaptor(fl_ctx)
+            if not adaptor:
+                self.system_panic(f"cannot get component for {self.adaptor_component_id}", fl_ctx)
+                return
+
+            if not isinstance(adaptor, XGBClientAdaptor):
+                self.system_panic(
+                    f"invalid component '{self.adaptor_component_id}': expect XGBClientAdaptor but got {type(adaptor)}",
+                    fl_ctx,
+                )
+                return
+
+            adaptor.set_abort_signal(self.abort_signal)
+            adaptor.initialize(fl_ctx)
+            self.adaptor = adaptor
+        elif event_type == EventType.END_RUN:
+            self.abort_signal.trigger(True)
+
+    def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+        if task_name == self.configure_task_name:
+            # there are two important config params for the client:
+            #   the rank assigned to the client;
+            #   number of rounds for training.
+            ranks = shareable.get(Constant.CONF_KEY_CLIENT_RANKS)
+            if not ranks:
+                self.log_error(fl_ctx, f"missing {Constant.CONF_KEY_CLIENT_RANKS} from config")
+                return make_reply(ReturnCode.BAD_TASK_DATA)
+
+            if not isinstance(ranks, dict):
+                self.log_error(fl_ctx, f"expect config data to be dict but got {ranks}")
+                return make_reply(ReturnCode.BAD_TASK_DATA)
+
+            me = fl_ctx.get_identity_name()
+            my_rank = ranks.get(me)
+            if my_rank is None:
+                self.log_error(fl_ctx, f"missing rank for me ({me}) in config data")
+                return make_reply(ReturnCode.BAD_TASK_DATA)
+
+            self.log_info(fl_ctx, f"got my rank: {my_rank}")
+
+            num_rounds = shareable.get(Constant.CONF_KEY_NUM_ROUNDS)
+            if not num_rounds:
+                self.log_error(fl_ctx, f"missing {Constant.CONF_KEY_NUM_ROUNDS} from config")
+                return make_reply(ReturnCode.BAD_TASK_DATA)
+
+            # configure the XGB client target via the adaptor
+            self.adaptor.configure(
+                shareable,
+                fl_ctx,
+            )
+            return make_reply(ReturnCode.OK)
+        elif task_name == self.start_task_name:
+            # start adaptor
+            try:
+                self.adaptor.start(fl_ctx)
+            except Exception as ex:
+                self.log_exception(fl_ctx, f"failed to start adaptor: {secure_format_exception(ex)}")
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+
+            # start to monitor the XGB target via the adaptor
+            self.adaptor.monitor_target(fl_ctx, self._notify_client_done)
+            return make_reply(ReturnCode.OK)
+        else:
+            self.log_error(fl_ctx, f"ignored unsupported {task_name}")
+            return make_reply(ReturnCode.TASK_UNSUPPORTED)
+
+    def _notify_client_done(self, rc, fl_ctx: FLContext):
+        """This is called when the XGB client target is done.
+        We send a message to the FL server telling it that this client is done.
+
+        Args:
+            rc: the return code from the XGB client target
+            fl_ctx: FL context
+
+        Returns: None
+
+        """
+        if rc != 0:
+            self.log_error(fl_ctx, f"XGB Client stopped with RC {rc}")
+        else:
+            self.log_info(fl_ctx, "XGB Client Stopped")
+
+        # tell server that this client is done
+        engine = fl_ctx.get_engine()
+        req = Shareable()
+        req[Constant.MSG_KEY_EXIT_CODE] = rc
+        engine.send_aux_request(
+            targets=[FQCN.ROOT_SERVER],
+            topic=Constant.TOPIC_CLIENT_DONE,
+            request=req,
+            timeout=0,  # fire and forget
+            fl_ctx=fl_ctx,
+            optional=True,
         )
-        runner.initialize(fl_ctx)
-        adaptor = GrpcClientAdaptor(
-            int_server_grpc_options=self.int_server_grpc_options,
-            in_process=self.in_process,
-            per_msg_timeout=self.per_msg_timeout,
-            tx_timeout=self.tx_timeout,
-        )
-        adaptor.set_runner(runner)
-        return adaptor
