@@ -121,10 +121,20 @@ def validate_path_string(path: str) -> str:
     return path
 
 
+def get_file_extension(file: str) -> str:
+    parts = file.split(".")
+    last_part = parts[-1]
+    if last_part.isnumeric():
+        parts.pop(-1)
+        file = ".".join(parts)
+    _, ex = os.path.splitext(file)
+    return ex
+
+
 def validate_file_string(file: str) -> str:
     """Returns the file string if it is valid."""
     validate_path_string(file)
-    basename, file_extension = os.path.splitext(file)
+    file_extension = get_file_extension(file)
     if file_extension not in [".txt", ".log", ".json", ".csv", ".sh", ".config", ".py"]:
         raise SyntaxError(
             "this command cannot be applied to file {}. Only files with the following extensions are "
