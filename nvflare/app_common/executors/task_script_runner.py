@@ -78,6 +78,11 @@ class TaskScriptRunner:
         return [self.script_full_path] + args_list
 
     def get_script_full_path(self, custom_dir, script_path) -> str:
+        if not custom_dir:
+            raise ValueError("custom_dir must be not empty")
+        if not script_path:
+            raise ValueError("script_path must be not empty")
+
         target_file = None
         script_filename = os.path.basename(script_path)
         script_dirs = os.path.dirname(script_path)

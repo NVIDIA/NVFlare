@@ -251,3 +251,14 @@ class TestTaskScriptRunner(unittest.TestCase):
             wrapper.run()
         finally:
             sys.path = old_sys_path
+
+    def test_empty_custom_dir(self):
+        with pytest.raises(Exception):
+            script_path = "cli.py"
+            script_args = "--batch_size 4"
+            wrapper = TaskScriptRunner(custom_dir="", script_path=script_path, script_args=script_args)
+
+    def test_empty_script_path(self):
+        with pytest.raises(Exception):
+            script_args = "--batch_size 4"
+            wrapper = TaskScriptRunner(custom_dir=self.nvflare_root, script_path="", script_args=script_args)
