@@ -100,7 +100,7 @@ def create_startup_kit_config(nvflare_config: ConfigTree, startup_kit_dir: Optio
         startup_kit_dir = get_startup_kit_dir(startup_kit_dir)
         conf_str = f"""
             startup_kit {{
-                path = "{startup_kit_dir}"
+                path = {startup_kit_dir}
             }}
         """
         conf: ConfigTree = CF.parse_string(conf_str)
