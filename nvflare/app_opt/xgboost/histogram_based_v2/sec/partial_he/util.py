@@ -16,8 +16,12 @@ import json
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from binascii import hexlify, unhexlify
 
-import ipcl_python
-from ipcl_python import PaillierEncryptedNumber as EncryptedNumber
+try:
+    import ipcl_python
+    from ipcl_python import PaillierEncryptedNumber as EncryptedNumber
+    ipcl_imported = True
+except Exception:
+    ipcl_imported = False
 
 SCALE_FACTOR = 10000000000000
 ENABLE_DJN = True
