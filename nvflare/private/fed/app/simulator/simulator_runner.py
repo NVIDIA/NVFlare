@@ -52,7 +52,7 @@ from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, zip_directory_to_bytes
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeployer
-from nvflare.private.fed.app.utils import kill_child_processes
+from nvflare.private.fed.app.utils import init_security_content_service, kill_child_processes
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorServerAppRunner
@@ -170,6 +170,8 @@ class SimulatorRunner(FLComponent):
         os.makedirs(self.simulator_root)
         log_file = os.path.join(self.simulator_root, WorkspaceConstants.LOG_FILE_NAME)
         add_logfile_handler(log_file)
+
+        init_security_content_service(self.args.workspace)
 
         try:
             data_bytes, job_name, meta = self.validate_job_data()
@@ -307,10 +309,14 @@ class SimulatorRunner(FLComponent):
                     if p == "server":
                         app = os.path.join(temp_job_folder, app_name)
                         shutil.copytree(app, app_server_root)
+                        startup = os.path.join(app_server_root, "startup")
+                        shutil.copytree(os.path.join(self.workspace, "startup"), startup)
                     elif p in self.client_names:
                         app_client_root = os.path.join(self.simulator_root, "app_" + p)
                         app = os.path.join(temp_job_folder, app_name)
                         shutil.copytree(app, app_client_root)
+                        startup = os.path.join(app_client_root, "startup")
+                        shutil.copytree(os.path.join(self.workspace, "startup"), startup)
 
             job_meta_file = os.path.join(self.simulator_root, WorkspaceConstants.JOB_META_FILE)
             with open(job_meta_file, "w") as f:
