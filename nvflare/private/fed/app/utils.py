@@ -20,7 +20,9 @@ import time
 
 import psutil
 
+from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.fuel.hci.security import hash_password
+from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.private.defs import SSLConstants
 from nvflare.private.fed.runner import Runner
 from nvflare.private.fed.server.admin import FedAdminServer
@@ -91,6 +93,12 @@ def create_admin_server(fl_server: FederatedServer, server_conf=None, args=None,
         download_job_url=server_conf.get("download_job_url", "http://"),
     )
     return admin_server
+
+
+def init_security_content_service(workspace_dir):
+    content_folder_path = os.path.join(workspace_dir, WorkspaceConstants.STARTUP_FOLDER_NAME)
+    os.makedirs(content_folder_path, exist_ok=True)
+    SecurityContentService.initialize(content_folder=content_folder_path)
 
 
 def version_check():
