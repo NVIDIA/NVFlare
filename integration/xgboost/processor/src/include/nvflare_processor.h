@@ -19,13 +19,7 @@
 #include <vector>
 #include <map>
 #include "processing/processor.h"
-
-const int kDataSetHGPairs = 1;
-const int kDataSetAggregation = 2;
-const int kDataSetAggregationWithFeatures = 3;
-const int kDataSetAggregationResult = 4;
-const int kDataSetHistograms = 5;
-const int kDataSetHistogramResult = 6;
+#include "data_set_ids.h"
 
 class NVFlareProcessor: public processing::Processor {
  private:
@@ -34,13 +28,12 @@ class NVFlareProcessor: public processing::Processor {
     std::vector<double> *gh_pairs_{nullptr};
     std::vector<uint32_t> cuts_;
     std::vector<int> slots_;
-    bool feature_sent_ = false;
     std::vector<int64_t> features_;
+    bool feature_sent_ = false;
 
  public:
     void Initialize(bool active, std::map<std::string, std::string> params) override {
         this->active_ = active;
-        this->params_ = &params;
     }
 
     void Shutdown() override {

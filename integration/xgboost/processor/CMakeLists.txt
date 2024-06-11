@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.19)
 project(proc_nvflare LANGUAGES CXX C VERSION 1.0)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_BUILD_TYPE Debug)
+add_compile_options(-gdwarf-4)
 
 option(GOOGLE_TEST "Build google tests" OFF)
 
@@ -24,8 +25,6 @@ if (APPLE)
     add_link_options("LINKER:-object_path_lto,$<TARGET_PROPERTY:NAME>_lto.o")
     add_link_options("LINKER:-cache_path_lto,${CMAKE_BINARY_DIR}/LTOCache")
 endif ()
-
-target_link_libraries(proc_nvflare ${XGB_SRC}/lib/libxgboost${CMAKE_SHARED_LIBRARY_SUFFIX})
 
 #-- Unit Tests
 if(GOOGLE_TEST)

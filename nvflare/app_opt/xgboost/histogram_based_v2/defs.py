@@ -31,7 +31,7 @@ class Constant:
     CONF_KEY_XGB_OPTIONS = "xgb_options"
 
     # default component config values
-    CONFIG_TASK_TIMEOUT = 10
+    CONFIG_TASK_TIMEOUT = 20
     START_TASK_TIMEOUT = 10
     XGB_SERVER_READY_TIMEOUT = 10.0
 
