@@ -39,7 +39,7 @@ class SecureDataLoader(XGBDataLoader):
 
         data_split_mode = TRAINING_MODE_MAPPING[training_mode]
 
-        if self.rank == 0 or data_split_mode == SplitMode.ROW_SECURE:
+        if self.rank == 0 or data_split_mode in {SplitMode.ROW, SplitMode.ROW_SECURE}:
             label = "&label_column=0"
         else:
             label = ""

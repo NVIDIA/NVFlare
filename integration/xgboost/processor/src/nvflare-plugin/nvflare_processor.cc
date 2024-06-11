@@ -15,9 +15,8 @@
  */
 #include <cstring>
 #include "nvflare_processor.h"
+#include "local_mock.h"
 #include "dam.h"
-
-const char kPluginName[] = "nvflare";
 
 using std::vector;
 using std::cout;
@@ -27,7 +26,7 @@ void* NVFlareProcessor::ProcessGHPairs(size_t *size, const std::vector<double>& 
     cout << "ProcessGHPairs called with pairs size: " << pairs.size() << endl;
     gh_pairs_ = new std::vector<double>(pairs);
 
-    DamEncoder encoder(kDataSetHGPairs);
+    DamEncoder encoder(kDataSetGHPairs);
     encoder.AddFloatArray(pairs);
     auto buffer = encoder.Finish(*size);
 
@@ -64,6 +63,7 @@ void *NVFlareProcessor::ProcessAggregation(size_t *size, std::map<int, std::vect
     auto num_samples = slots_.size() / num_features;
     cout << "Samples: " << num_samples << " Features: " << num_features << endl;
 
+    vector<int64_t> bins;
     if (data_set_id == kDataSetAggregationWithFeatures) {
         if (features_.empty()) {
             for (std::size_t f = 0; f < num_features; f++) {
@@ -76,7 +76,6 @@ void *NVFlareProcessor::ProcessAggregation(size_t *size, std::map<int, std::vect
         cout << "Including feature size: " << features_.size() << endl;
         encoder.AddIntArray(features_);
 
-        vector<int64_t> bins;
         for (int i = 0; i < num_samples; i++) {
             for (auto f : features_) {
                 auto index = f + i * num_features;
@@ -98,13 +97,16 @@ void *NVFlareProcessor::ProcessAggregation(size_t *size, std::map<int, std::vect
     }
     encoder.AddIntArray(node_vec);
 
-    // For each node, get the row_id/slot pair
+    // For each node, get the rows
+    auto row_ids = vector<vector<int64_t>>(nodes.size());
+    int count = 0;
     for (const auto &kv : nodes) {
-        vector<int64_t> rows;
+        auto& rows = row_ids[count];
         for (auto row : kv.second) {
             rows.push_back(row);
         }
         encoder.AddIntArray(rows);
+	count++;
     }
 
     auto buffer = encoder.Finish(*size);
@@ -179,15 +181,3 @@ std::vector<double> NVFlareProcessor::HandleHistograms(void *buffer, size_t buf_
     return decoder.DecodeFloatArray();
 }
 
-extern "C" {
-
-processing::Processor *LoadProcessor(char *plugin_name) {
-    if (strcasecmp(plugin_name, kPluginName) != 0) {
-        cout << "Unknown plugin name: " << plugin_name << endl;
-        return nullptr;
-    }
-
-    return new NVFlareProcessor();
-}
-
-}  // extern "C"
