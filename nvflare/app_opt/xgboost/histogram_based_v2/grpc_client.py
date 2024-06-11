@@ -132,6 +132,7 @@ class GrpcClient:
             reduce_operation=reduce_op,
         )
 
+
         result = self.stub.Allreduce(req)
         if not isinstance(result, pb2.AllreduceReply):
             self.logger.error(f"expect reply to be pb2.AllreduceReply but got {type(result)}")
