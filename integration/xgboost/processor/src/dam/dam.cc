@@ -54,7 +54,7 @@ void  DamEncoder::AddBuffer(const Buffer &buffer) {
         return;
     }
     // print_buffer(buffer, buf_size);
-    entries_->push_back(new Entry(kDataTypeBuffer, reinterpret_cast<const uint8_t *>(buffer.buffer), buffer.buf_size));
+    entries_.emplace_back(kDataTypeBuffer, reinterpret_cast<const uint8_t *>(buffer.buffer), buffer.buf_size);
 }
 
 void DamEncoder::AddFloatArray(const std::vector<double> &value) {
@@ -67,7 +67,7 @@ void DamEncoder::AddFloatArray(const std::vector<double> &value) {
         return;
     }
     // print_buffer(reinterpret_cast<uint8_t *>(value.data()), value.size() * 8);
-    entries_->push_back(new Entry(kDataTypeFloatArray, reinterpret_cast<const uint8_t *>(value.data()), value.size()));
+    entries_.emplace_back(kDataTypeFloatArray, reinterpret_cast<const uint8_t *>(value.data()), value.size());
 }
 
 void  DamEncoder::AddIntArray(const std::vector<int64_t> &value) {
@@ -80,7 +80,7 @@ void  DamEncoder::AddIntArray(const std::vector<int64_t> &value) {
         return;
     }
     // print_buffer(buffer, buf_size);
-    entries_->push_back(new Entry(kDataTypeIntArray, reinterpret_cast<const uint8_t *>(value.data()), value.size()));
+    entries_.emplace_back(kDataTypeIntArray, reinterpret_cast<const uint8_t *>(value.data()), value.size());
 }
 
 void  DamEncoder::AddBufferArray(const std::vector<Buffer> &value) {
@@ -97,7 +97,7 @@ void  DamEncoder::AddBufferArray(const std::vector<Buffer> &value) {
         size += buf.buf_size;
     }
     size += 8*value.size();
-    entries_->push_back(new Entry(kDataTypeBufferArray, reinterpret_cast<const uint8_t *>(&value), size));
+    entries_.emplace_back(kDataTypeBufferArray, reinterpret_cast<const uint8_t *>(&value), size);
 }
 
 
@@ -113,11 +113,11 @@ std::uint8_t * DamEncoder::Finish(size_t &size) {
     memcpy(pointer+16, &data_set_id_, 8);
 
     pointer += kPrefixLen;
-    for (auto entry : *entries_) {
+    for (auto& entry : entries_) {
         int len;
-        if (entry->data_type == kDataTypeBufferArray) {
-            auto buffers = reinterpret_cast<const std::vector<Buffer> *>(entry->pointer);
-            memcpy(pointer, &entry->data_type, 8);
+        if (entry.data_type == kDataTypeBufferArray) {
+            auto buffers = reinterpret_cast<const std::vector<Buffer> *>(entry.pointer);
+            memcpy(pointer, &entry.data_type, 8);
             pointer += 8;
             int64_t array_size = buffers->size();
             memcpy(pointer, &array_size, 8);
@@ -137,13 +137,13 @@ std::uint8_t * DamEncoder::Finish(size_t &size) {
                 len += item.buf_size;
             }
         } else {
-            memcpy(pointer, &entry->data_type, 8);
+            memcpy(pointer, &entry.data_type, 8);
             pointer += 8;
-            memcpy(pointer, &entry->size, 8);
+            memcpy(pointer, &entry.size, 8);
             pointer += 8;
-            len = entry->size * entry->ItemSize();
+            len = entry.size * entry.ItemSize();
             if (len) {
-                memcpy(pointer, entry->pointer, len);
+                memcpy(pointer, entry.pointer, len);
             }
         }
         pointer += align(len);
@@ -160,9 +160,9 @@ std::uint8_t * DamEncoder::Finish(size_t &size) {
 std::size_t DamEncoder::CalculateSize() {
     auto size = kPrefixLen;
 
-    for (auto entry : *entries_) {
+    for (auto& entry : entries_) {
         size += 16;  // The Type and Len
-        auto len = entry->size * entry->ItemSize();
+        auto len = entry.size * entry.ItemSize();
         size += align(len);
     }
 
