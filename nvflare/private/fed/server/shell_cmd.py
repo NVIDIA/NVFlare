@@ -16,7 +16,7 @@ import re
 import subprocess
 from typing import List
 
-from nvflare.fuel.hci.cmd_arg_utils import get_file_extension, join_args
+from nvflare.fuel.hci.cmd_arg_utils import join_args, validate_text_file_name
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
@@ -185,14 +185,9 @@ class _FileCmdExecutor(_CommandExecutor):
                         return ".. in path name is not allowed"
 
                 if self.text_file_only:
-                    # check whether the file name is ended with numbers. If so, the actual file extension is before it.
-                    # this is the case that when the log file (log.txt) is rotated, the previous file becomes log.txt.1.
-                    file_extension = get_file_extension(f)
-                    if file_extension not in [".txt", ".log", ".json", ".csv", ".sh", ".config", ".py"]:
-                        return (
-                            "this command cannot be applied to file {}. Only files with the following extensions "
-                            "are permitted: .txt, .log, .json, .csv, .sh, .config, .py".format(f)
-                        )
+                    err = validate_text_file_name(f)
+                    if err:
+                        return err
 
         return ""
 
