@@ -3,7 +3,9 @@ name: example_project
 description: NVIDIA FLARE sample project yaml file
 
 participants:
-  # change example.com to the FQDN of the server
+  # Change the name of the server (server1) to the Fully Qualified Domain Name
+  # (FQDN) of the server, for example: server1.example.com.
+  # Ensure that the FQDN is correctly mapped in the /etc/hosts file.
   - name: server1
     type: server
     org: nvidia
