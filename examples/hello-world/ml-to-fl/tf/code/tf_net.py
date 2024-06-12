@@ -12,28 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from tensorflow.keras import Model, layers, losses
+from tensorflow.keras import layers, models
 
 
-class TFNet(Model):
-    def __init__(self, input_shape):
+class TFNet(models.Sequential):
+    def __init__(self):
         super().__init__()
-        self.conv1 = layers.Conv2D(6, 5, activation="relu")
-        self.pool = layers.MaxPooling2D((2, 2), 2)
-        self.conv2 = layers.Conv2D(16, 5, activation="relu")
-        self.flatten = layers.Flatten()
-        self.fc1 = layers.Dense(120, activation="relu")
-        self.fc2 = layers.Dense(84, activation="relu")
-        self.fc3 = layers.Dense(10)
-        loss_fn = losses.SparseCategoricalCrossentropy(from_logits=True)
-        self.compile(optimizer="sgd", loss=loss_fn, metrics=["accuracy"])
-        self.build(input_shape)
-
-    def call(self, x):
-        x = self.pool(self.conv1(x))
-        x = self.pool(self.conv2(x))
-        x = self.flatten(x)
-        x = self.fc1(x)
-        x = self.fc2(x)
-        x = self.fc3(x)
-        return x
+        self.add(layers.Input(shape=(32, 32, 3)))
+        self.add(layers.Conv2D(32, (3, 3), activation="relu"))
+        self.add(layers.MaxPooling2D((2, 2)))
+        self.add(layers.Conv2D(64, (3, 3), activation="relu"))
+        self.add(layers.MaxPooling2D((2, 2)))
+        self.add(layers.Conv2D(64, (3, 3), activation="relu"))
+        self.add(layers.Flatten())
+        self.add(layers.Dense(64, activation="relu"))
+        self.add(layers.Dense(10))

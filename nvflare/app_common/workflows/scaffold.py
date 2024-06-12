@@ -26,7 +26,7 @@ from .base_fedavg import BaseFedAvg
 
 
 class Scaffold(BaseFedAvg):
-    """Controller for Scaffold Workflow. *Note*: This class is based on `WFController`.
+    """Controller for Scaffold Workflow. *Note*: This class is based on `ModelController`.
     Implements [SCAFFOLD](https://proceedings.mlr.press/v119/karimireddy20a.html).
 
     Provides the implementations for the `run` routine, controlling the main workflow:

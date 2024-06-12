@@ -16,13 +16,15 @@ import inspect
 import json
 import os
 import shutil
+import sys
 from enum import Enum
 from tempfile import TemporaryDirectory
 from typing import Dict
 
-from nvflare import SimulatorRunner
+from nvflare.fuel.utils.class_utils import get_component_init_parameters
 from nvflare.job_config.fed_app_config import FedAppConfig
 from nvflare.private.fed.app.fl_conf import FL_PACKAGES
+from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
 
 CONFIG = "config"
 CUSTOM = "custom"
@@ -154,16 +156,31 @@ class FedJobConfig:
 
     def _copy_ext_scripts(self, custom_dir, ext_scripts):
         for script in ext_scripts:
-            dest_file = os.path.join(custom_dir, script)
-            module = "".join(script.rsplit(".py", 1)).replace(os.sep, ".")
-            self._copy_source_file(custom_dir, module, script, dest_file)
+            if os.path.exists(script):
+                if os.path.isabs(script):
+                    relative_script = self._get_relative_script(script)
+                else:
+                    relative_script = script
+                dest_file = os.path.join(custom_dir, relative_script)
+                module = "".join(relative_script.rsplit(".py", 1)).replace(os.sep, ".")
+                self._copy_source_file(custom_dir, module, script, dest_file)
+
+    def _get_relative_script(self, script):
+        package_path = ""
+        for path in sys.path:
+            if script.startswith(path):
+                if len(path) > len(package_path):
+                    package_path = path
+        return script[len(package_path) + 1 :]
 
     def _get_class_path(self, obj, custom_dir):
         module = obj.__module__
         source_file = inspect.getsourcefile(obj.__class__)
+        if module == "__main__":
+            module = os.path.basename(source_file).strip(".py")
         self._get_custom_file(custom_dir, module, source_file)
 
-        return obj.__module__ + "." + obj.__class__.__name__
+        return module + "." + obj.__class__.__name__
 
     def _get_custom_file(self, custom_dir, module, source_file):
         package = module.split(".")[0]
@@ -260,43 +277,29 @@ class FedJobConfig:
             )
 
     def _get_args(self, component, custom_dir):
-        parameters = self._get_init_parameters(component)
-        attrs = component.__dict__
         args = {}
+        if hasattr(component, "__dict__"):
+            parameters = get_component_init_parameters(component)
+            attrs = component.__dict__
 
-        for param in parameters:
-            attr_key = param if param in attrs.keys() else "_" + param
+            for param in parameters:
+                attr_key = param if param in attrs.keys() else "_" + param
 
-            if attr_key in ["args", "kwargs"]:
-                continue
+                if attr_key in ["args", "kwargs"]:
+                    continue
 
-            if attr_key in attrs.keys() and parameters[param].default != attrs[attr_key]:
-                if type(attrs[attr_key]).__name__ in dir(builtins):
-                    args[param] = attrs[attr_key]
-                elif issubclass(attrs[attr_key].__class__, Enum):
-                    args[param] = attrs[attr_key].value
-                else:
-                    args[param] = {
-                        "path": self._get_class_path(attrs[attr_key], custom_dir),
-                        "args": self._get_args(attrs[attr_key], custom_dir),
-                    }
+                if attr_key in attrs.keys() and parameters[param].default != attrs[attr_key]:
+                    if type(attrs[attr_key]).__name__ in dir(builtins):
+                        args[param] = attrs[attr_key]
+                    elif issubclass(attrs[attr_key].__class__, Enum):
+                        args[param] = attrs[attr_key].value
+                    else:
+                        args[param] = {
+                            "path": self._get_class_path(attrs[attr_key], custom_dir),
+                            "args": self._get_args(attrs[attr_key], custom_dir),
+                        }
 
         return args
-
-    def _get_init_parameters(self, component):
-        class__ = component.__class__
-        parameters = {}
-        self._retrieve_parameters(class__, parameters)
-        return parameters
-
-    def _retrieve_parameters(self, class__, parameters):
-        constructor = class__.__init__
-        constructor__parameters = inspect.signature(constructor).parameters
-        parameters.update(constructor__parameters)
-        if "args" in constructor__parameters.keys() and "kwargs" in constructor__parameters.keys():
-            for item in class__.__bases__:
-                parameters.update(self._retrieve_parameters(item, parameters))
-        return parameters
 
     def _get_filters(self, filters, custom_dir):
         r = []
@@ -305,15 +308,32 @@ class FedJobConfig:
         return r
 
     def locate_imports(self, sf, dest_file):
+        """Locate all the import statements from the python script, including the imports across multiple lines,
+        using the the line break continuing.
+
+        Args:
+            sf: source file
+            dest_file: copy to destination file
+
+        Returns:
+            yield all the imports within the source file
+
+        """
         os.makedirs(os.path.dirname(dest_file), exist_ok=True)
         with open(dest_file, "w") as df:
+            trimmed = ""
             for line in sf:
                 df.write(line)
-                trimmed = line.strip()
-                if trimmed.startswith("from ") and ("import " in trimmed):
-                    yield trimmed
-                elif trimmed.startswith("import "):
-                    yield trimmed
+                trimmed += line.strip()
+                if trimmed.endswith("\\"):
+                    trimmed = trimmed[0:-1]
+                    trimmed = trimmed.strip() + " "
+                else:
+                    if trimmed.startswith("from ") and ("import " in trimmed):
+                        yield trimmed
+                    elif trimmed.startswith("import "):
+                        yield trimmed
+                    trimmed = ""
 
     def _get_deploy_map(self):
         deploy_map = {}

@@ -149,6 +149,9 @@ class ClientRunManager(ClientEngineExecutorSpec):
     def dispatch(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         return self.aux_runner.dispatch(topic=topic, request=request, fl_ctx=fl_ctx)
 
+    def add_component(self, component_id: str, component):
+        self.client.runner_config.add_component(component_id, component)
+
     def get_component(self, component_id: str) -> object:
         return self.components.get(component_id)
 
@@ -174,6 +177,12 @@ class ClientRunManager(ClientEngineExecutorSpec):
             if client_name == c.name:
                 return c
         return None
+
+    def get_clients(self):
+        return list(self.all_clients.values())
+
+    def persist_components(self, fl_ctx: FLContext, completed: bool):
+        self.logger.warning(f"will not persist components, not supported by {self.__class__.__name__}")
 
     def get_widget(self, widget_id: str) -> Widget:
         return self.widgets.get(widget_id)

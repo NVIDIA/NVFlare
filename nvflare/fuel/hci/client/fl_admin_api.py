@@ -25,6 +25,7 @@ from nvflare.fuel.hci.client.api import AdminAPI
 from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
 from nvflare.fuel.hci.client.fl_admin_api_spec import APISyntaxError, FLAdminAPIResponse, FLAdminAPISpec, TargetType
+from nvflare.fuel.hci.cmd_arg_utils import get_file_extension
 from nvflare.security.logging import secure_format_exception
 
 from .overseer_service_finder import ServiceFinderByOverseer
@@ -209,7 +210,8 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         for p in paths:
             if p == "..":
                 raise APISyntaxError(".. in file path is not allowed")
-        basename, file_extension = os.path.splitext(file)
+
+        file_extension = get_file_extension(file)
         if file_extension not in [".txt", ".log", ".json", ".csv", ".sh", ".config", ".py"]:
             raise APISyntaxError(
                 "this command cannot be applied to file {}. Only files with the following extensions are "
