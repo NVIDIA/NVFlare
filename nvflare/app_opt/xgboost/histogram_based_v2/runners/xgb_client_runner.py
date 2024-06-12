@@ -129,7 +129,7 @@ class XGBClientRunner(AppRunner, FLComponent):
 
         self.logger.info(f"server address is {self._server_addr}")
         communicator_env = {
-            "xgboost_communicator": "federated",
+            "dmlc_communicator": "federated",
             "federated_server_address": f"{self._server_addr}",
             "federated_world_size": self._world_size,
             "federated_rank": self._rank,
