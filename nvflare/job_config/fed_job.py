@@ -163,7 +163,10 @@ class FedJob:
             self._deploy_map[target].add_executor(obj, tasks=tasks)
         elif isinstance(obj, str):  # treat the str type object as external script
             if target not in self._deploy_map:
-                self._deploy_map[target] = ExecutorApp()
+                raise ValueError(
+                    f"{target} doesn't have a `Controller` or `Executor`. Deploy one first before adding external script!"
+                )
+
             self._deploy_map[target].add_external_scripts([obj])
         else:  # handle objects that are not Controller or Executor type
             if target not in self._deploy_map:
