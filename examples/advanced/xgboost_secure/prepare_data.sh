@@ -1,4 +1,3 @@
-#!/usr/bin/env bash
 DATASET_PATH="${PWD}/dataset/creditcard.csv"
 SPLIT_PATH="${PWD}/dataset"
 

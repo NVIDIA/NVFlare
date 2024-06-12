@@ -1,4 +1,17 @@
-#!/usr/bin/python
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import multiprocessing
 import sys
 import time
@@ -55,8 +68,8 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         else:
             label = ""
         # for Vertical XGBoost, read from csv with label_column and set data_split_mode to 1 for column mode
-        dtrain = xgb.DMatrix(train_path + f"?format=csv{label}", data_split_mode=2)
-        dvalid = xgb.DMatrix(valid_path + f"?format=csv{label}", data_split_mode=2)
+        dtrain = xgb.DMatrix(train_path + f"?format=csv{label}", data_split_mode=1)
+        dvalid = xgb.DMatrix(valid_path + f"?format=csv{label}", data_split_mode=1)
 
         if PRINT_SAMPLE:
             # print number of rows and columns for each worker
@@ -72,7 +85,7 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
             "objective": "binary:logistic",
             "eval_metric": "auc",
             "tree_method": "hist",
-            "nthread": 3,
+            "nthread": 1,
         }
 
         # Specify validations set to watch performance
@@ -82,14 +95,14 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         # Run training, all the features in training API is available.
         bst = xgb.train(param, dtrain, num_round, evals=watchlist)
 
-        # Save the model, every rank's model is different.
+        # Save the model
         rank = xgb.collective.get_rank()
-        bst.save_model(f"./model/model.vert.secure.{rank}.json")
+        bst.save_model(f"./model/model.vert.base.{rank}.json")
         xgb.collective.communicator_print("Finished training\n")
 
         # save feature importance score to file
         score = bst.get_score(importance_type='gain')
-        with open(f'./explain/feat_importance.vert.secure.{rank}.txt', 'w') as f:
+        with open(f'./explain/feat_importance.vert.base.{rank}.txt', 'w') as f:
             for key in score:
                 f.write(f'{key}: {score[key]}\n')
 
@@ -105,11 +118,11 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         # save the beeswarm plot to png file
         shap.plots.beeswarm(explanation, show=False)
         img = plt.gcf()
-        img.savefig(f'./explain/shap.vert.secure.{rank}.png')
+        img.savefig(f'./explain/shap.vert.base.{rank}.png')
 
         # dump tree and save to text file
         dump = bst.get_dump()
-        with open(f'./tree/tree_dump.vert.secure.{rank}.txt', 'w') as f:
+        with open(f'./tree/tree_dump.vert.base.{rank}.txt', 'w') as f:
             for tree in dump:
                 f.write(tree)
 
@@ -117,14 +130,14 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         xgb.plot_tree(bst, num_trees=0, rankdir='LR')
         fig = plt.gcf()
         fig.set_size_inches(18, 5)
-        plt.savefig(f'./tree/tree.vert.secure.{rank}.png', dpi=100)
+        plt.savefig(f'./tree/tree.vert.base.{rank}.png', dpi=100)
 
         # export tree to dataframe
         tree_df = bst.trees_to_dataframe()
-        tree_df.to_csv(f'./tree/tree_df.vert.secure.{rank}.csv')
+        tree_df.to_csv(f'./tree/tree_df.vert.base.{rank}.csv')
 
 def run_federated() -> None:
-    port = 4444
+    port = 3333
     world_size = int(sys.argv[1])
 
     server = multiprocessing.Process(target=run_server, args=(port, world_size))

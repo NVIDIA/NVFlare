@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-DATASET_PATH="/media/ziyuexu/Data/HIGGS/HIGGS.csv"
-OUTPUT_PATH="${PWD}/vertical_xgb_data"
+DATASET_PATH="$HOME/dataset/HIGGS.csv"
+OUTPUT_PATH="/tmp/nvflare/vertical_xgb_data"
 OUTPUT_FILE="higgs.data.csv"
 
 if [ ! -f "${DATASET_PATH}" ]
