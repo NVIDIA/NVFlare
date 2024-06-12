@@ -267,9 +267,6 @@ class FedXGBHistogramExecutor(Executor):
             "federated_server_address": f"{self._server_address}:{xgb_fl_server_port}",
             "federated_world_size": self.world_size,
             "federated_rank": self.rank,
-            "federated_plugin": {
-                "path": "/tmp/libproc_nvflare.so"
-            }
         }
         if secure_comm:
             if not self._get_certificates(fl_ctx):
