@@ -19,6 +19,7 @@ from binascii import hexlify, unhexlify
 try:
     import ipcl_python
     from ipcl_python import PaillierEncryptedNumber as EncryptedNumber
+
     ipcl_imported = True
 except Exception:
     ipcl_imported = False
