@@ -53,9 +53,7 @@ def main():
 
     rows_total, cols_total = df.shape[0], df.shape[1]
 
-    print(
-        f"rows_total: {rows_total}, cols_total: {cols_total}"
-    )
+    print(f"rows_total: {rows_total}, cols_total: {cols_total}")
 
     if os.path.exists(args.out_path):
         shutil.rmtree(args.out_path)
@@ -63,9 +61,9 @@ def main():
     os.makedirs(args.out_path, exist_ok=True)
 
     # assign first 80% rows to train
-    df_train = df.iloc[:int(0.8 * df.shape[0]), :]
+    df_train = df.iloc[: int(0.8 * df.shape[0]), :]
     # assign last 20% rows to valid
-    df_valid = df.iloc[int(0.8 * df.shape[0]):, :]
+    df_valid = df.iloc[int(0.8 * df.shape[0]) :, :]
     # save train and valid data
     df_train.to_csv(path_or_buf=os.path.join(args.out_path, "train.csv"), index=False, header=False)
     df_valid.to_csv(path_or_buf=os.path.join(args.out_path, "valid.csv"), index=False, header=False)

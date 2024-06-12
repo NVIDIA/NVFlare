@@ -55,13 +55,11 @@ def main():
     rows_total, cols_total = df.shape[0], df.shape[1]
 
     print(f"site_num: {args.site_num}")
-    print(
-        f"rows_total: {rows_total}, cols_total: {cols_total}"
-    )
+    print(f"rows_total: {rows_total}, cols_total: {cols_total}")
 
     # split col
     cols_labelowner = int(cols_total * 0.4)
-    site_col_size = split_num_proportion(cols_total-cols_labelowner, args.site_num-1)
+    site_col_size = split_num_proportion(cols_total - cols_labelowner, args.site_num - 1)
     site_col_size.insert(0, cols_labelowner)
     print(f"site_col_size: {site_col_size}")
 
@@ -80,9 +78,9 @@ def main():
             os.makedirs(data_path, exist_ok=True)
 
         # assign first 80% rows to train
-        df_train = df_split.iloc[:int(0.8 * df_split.shape[0]), :]
+        df_train = df_split.iloc[: int(0.8 * df_split.shape[0]), :]
         # assign last 20% rows to valid
-        df_valid = df_split.iloc[int(0.8 * df_split.shape[0]):, :]
+        df_valid = df_split.iloc[int(0.8 * df_split.shape[0]) :, :]
 
         print(f"rows_training: {int(0.8 * df_split.shape[0])}")
 

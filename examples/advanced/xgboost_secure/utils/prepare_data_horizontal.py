@@ -55,9 +55,7 @@ def main():
     rows_total, cols_total = df.shape[0], df.shape[1]
 
     print(f"site_num: {args.site_num}")
-    print(
-        f"rows_total: {rows_total}, cols_total: {cols_total}"
-    )
+    print(f"rows_total: {rows_total}, cols_total: {cols_total}")
 
     # split row
     site_row_size = split_num_proportion(int(0.8 * rows_total), args.site_num)
@@ -67,13 +65,13 @@ def main():
         shutil.rmtree(args.out_path)
 
     # assign first 80% rows to train
-    df_train = df.iloc[:int(0.8 * rows_total), :]
+    df_train = df.iloc[: int(0.8 * rows_total), :]
     # assign last 20% rows to valid
-    df_valid = df.iloc[int(0.8 * rows_total):, :]
+    df_valid = df.iloc[int(0.8 * rows_total) :, :]
 
     for site in range(args.site_num):
         # sort df_train by feature 2
-        #df_train = df_train.sort_values(by=2)
+        # df_train = df_train.sort_values(by=2)
 
         row_start = sum(site_row_size[:site])
         row_end = sum(site_row_size[: site + 1])

@@ -55,12 +55,10 @@ def main():
     rows_total, cols_total = df.shape[0], df.shape[1]
 
     print(f"site_num: {args.site_num}")
-    print(
-        f"rows_total: {rows_total}, cols_total: {cols_total}"
-    )
+    print(f"rows_total: {rows_total}, cols_total: {cols_total}")
 
     # split row
-    site_col_size = split_num_proportion(cols_total-1, args.site_num)
+    site_col_size = split_num_proportion(cols_total - 1, args.site_num)
     print(f"site_col_size: {site_col_size}")
 
     if os.path.exists(args.out_path):
