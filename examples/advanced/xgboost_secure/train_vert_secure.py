@@ -72,7 +72,7 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
             "objective": "binary:logistic",
             "eval_metric": "auc",
             "tree_method": "hist",
-            "nthread": 1,
+            "nthread": 3,
         }
 
         # Specify validations set to watch performance
