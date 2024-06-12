@@ -83,7 +83,7 @@ class DamEncoder {
     bool local_version_ = false;
     bool debug_ = false;
     int64_t data_set_id_;
-    std::vector<Entry *> *entries_ = new std::vector<Entry *>();
+    std::vector<Entry> entries_;
 
  public:
     explicit DamEncoder(int64_t data_set_id, bool local_version=false, bool debug=false) {

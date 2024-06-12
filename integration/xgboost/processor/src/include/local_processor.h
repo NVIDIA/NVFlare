@@ -25,9 +25,9 @@
 class LocalProcessor: public processing::Processor {
  protected:
     bool active_ = false;
-    std::vector<double> *gh_pairs_{nullptr};
+    std::vector<double> gh_pairs_;
     Buffer encrypted_gh_;
-    std::vector<double> *histo_{nullptr};
+    std::vector<double> histo_;
     std::vector<uint32_t> cuts_;
     std::vector<int> slots_;
     bool print_timing_ = false;

@@ -21,9 +21,9 @@ void LocalProcessor::Initialize(bool active, std::map<std::string, std::string> 
 }
 
 void LocalProcessor::Shutdown() {
-    gh_pairs_ = nullptr;
+    gh_pairs_.clear();
     FreeEncryptedData(encrypted_gh_);
-    delete histo_;
+    histo_.clear();
     cuts_.clear();
     slots_.clear();
 }
@@ -56,7 +56,7 @@ void* LocalProcessor::ProcessGHPairs(std::size_t *size, const std::vector<double
     FreeEncryptedData(encrypted_data);
 
     // Save pairs for future operations. This is only called on active site
-    gh_pairs_ = new std::vector<double>(pairs);
+    gh_pairs_ = std::vector<double>(pairs);
 
     return buffer;
 }
@@ -129,7 +129,8 @@ void *LocalProcessor::ProcessClearAggregation(std::size_t *size, std::map<int, s
     auto histo_size = total_bin_size*2;
     auto total_size = histo_size * nodes.size();
 
-    histo_ = new std::vector<double>(total_size);
+    histo_.clear();
+    histo_.reserve(total_size);
     size_t start = 0;
     for (const auto &node : nodes) {
         auto rows = node.second;
@@ -140,10 +141,10 @@ void *LocalProcessor::ProcessClearAggregation(std::size_t *size, std::map<int, s
                 if ((slot < 0) || (slot >= total_bin_size)) {
                     continue;
                 }
-                auto g = (*gh_pairs_)[row_id * 2];
-                auto h = (*gh_pairs_)[row_id * 2 + 1];
-                (*histo_)[start + slot * 2] += g;
-                (*histo_)[start + slot * 2 + 1] += h;
+                auto g = (gh_pairs_)[row_id * 2];
+                auto h = (gh_pairs_)[row_id * 2 + 1];
+                (histo_)[start + slot * 2] += g;
+                (histo_)[start + slot * 2 + 1] += h;
             }
         }
         start += histo_size;
@@ -254,11 +255,11 @@ std::vector<double> LocalProcessor::HandleAggregation(void *buffer, std::size_t 
         }
         auto size = decoder.Size();
         if (first) {
-            if (histo_ == nullptr) {
+            if (histo_.empty()) {
                 std::cout << "No clear histogram." << std::endl;
                 return result;
             }
-            result.insert(result.end(), histo_->begin(), histo_->end());
+            result.insert(result.end(), histo_.begin(), histo_.end());
             first = false;
         } else {
             auto encrypted_buf = decoder.DecodeBufferArray();
@@ -276,9 +277,9 @@ std::vector<double> LocalProcessor::HandleAggregation(void *buffer, std::size_t 
                 std::cout << "Decryption time: " << secs << " seconds" << std::endl;
             }
 
-            if (decrypted_histo.size() != histo_->size()) {
+            if (decrypted_histo.size() != histo_.size()) {
                 std::cout << "Histo sizes are different: " << decrypted_histo.size()
-                    << " != " <<  histo_->size()  << std::endl;
+                    << " != " <<  histo_.size()  << std::endl;
             }
             result.insert(result.end(), decrypted_histo.begin(), decrypted_histo.end());
         }

@@ -8,6 +8,7 @@ cd build
 cmake .. -DPLUGIN_FEDERATED=ON
 make
 
+
 cd NVFlare/integration/xgboost/processor
 mkdir build
 cd build
