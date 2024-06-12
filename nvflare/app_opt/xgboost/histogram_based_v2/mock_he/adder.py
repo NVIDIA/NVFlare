@@ -22,7 +22,6 @@ from .util import encode_encrypted_numbers_to_str
 class Adder:
     def __init__(self, max_workers=10):
         self.exe = concurrent.futures.ProcessPoolExecutor(max_workers=max_workers)
-        self.num_workers = max_workers
 
     def add(self, encrypted_numbers, features, sample_groups=None, encode_sum=True):
         """
@@ -51,9 +50,7 @@ class Adder:
                     gid, sample_id_list = g
                     items.append((encode_sum, fid, encrypted_numbers, mask, num_bins, gid, sample_id_list))
 
-        chunk_size = int((len(items) - 1) / self.num_workers) + 1
-
-        results = self.exe.map(_do_add, items, chunksize=chunk_size)
+        results = self.exe.map(_do_add, items)
         rl = []
         for r in results:
             rl.append(r)
