@@ -119,7 +119,7 @@ class ModuleScanner:
                                             scan_result = _ModuleScanResult(class_name=name, module_name=module_name)
                                             scan_result_table[name] = scan_result
                                             self._class_table[name] = module_name
-                            except (ModuleNotFoundError, RuntimeError) as e:
+                            except Exception as e:
                                 self._logger.debug(
                                     f"Try to import module {module_name}, but failed: {secure_format_exception(e)}. "
                                     f"Can't use name in config to refer to classes in module: {module_name}."
