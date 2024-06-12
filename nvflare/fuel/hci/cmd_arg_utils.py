@@ -151,8 +151,10 @@ def validate_text_file_name(file_name: str) -> str:
     """
     file_extension = get_file_extension(file_name)
     if file_extension not in [".txt", ".log", ".json", ".csv", ".sh", ".config", ".py"]:
-        return f"this command cannot be applied to file {file_name}. Only files with the following extensions are "\
-               "permitted: .txt, .log, .json, .csv, .sh, .config, .py"
+        return (
+            f"this command cannot be applied to file {file_name}. Only files with the following extensions are "
+            "permitted: .txt, .log, .json, .csv, .sh, .config, .py"
+        )
     else:
         return ""
 
