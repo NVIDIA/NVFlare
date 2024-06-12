@@ -16,8 +16,14 @@ import json
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from binascii import hexlify, unhexlify
 
-import ipcl_python
-from ipcl_python import PaillierEncryptedNumber as EncryptedNumber
+try:
+    import ipcl_python
+    from ipcl_python import PaillierEncryptedNumber as EncryptedNumber
+    from ipcl_python.ipcl_python import BNUtils, ipclCipherText
+
+    ipcl_imported = True
+except Exception:
+    ipcl_improted = False
 
 SCALE_FACTOR = 10000000000000
 ENABLE_DJN = True
@@ -37,11 +43,11 @@ def create_pub_key(key, n_length=1024):
 
 def ciphertext_to_int(d):
     cifer = d.ciphertextBN()
-    return ipcl_python.BNUtils.BN2int(cifer[0])
+    return BNUtils.BN2int(cifer[0])
 
 
 def int_to_ciphertext(d, pubkey):
-    return ipcl_python.ipclCipherText(pubkey.pubkey, ipcl_python.BNUtils.int2BN(d))
+    return ipclCipherText(pubkey.pubkey, BNUtils.int2BN(d))
 
 
 def get_exponent(d):
