@@ -275,9 +275,6 @@ class FedXGBHistogramExecutor(Executor):
             communicator_env["federated_server_cert"] = self._ca_cert_path
             communicator_env["federated_client_key"] = self._client_key_path
             communicator_env["federated_client_cert"] = self._client_cert_path
-            communicator_env["federated_plugin"] = {
-                "path": "/home/jiamingy/workspace/xgboost_dev/related-projects/NVFlare/integration/xgboost/processor/build/libproc_nvflare.so"
-            }
 
         try:
             with xgb.collective.CommunicatorContext(**communicator_env):
