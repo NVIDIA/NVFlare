@@ -264,8 +264,8 @@ NVF_C char const *FederatedPluginErrorMsg() {
 
 FederatedPluginHandle NVF_C FederatedPluginCreate(int argc, char const **argv) {
   using namespace nvflare;
-  CHandleT pptr = new std::shared_ptr<TensealPlugin>;
   try {
+    CHandleT pptr = new std::shared_ptr<TensealPlugin>;
     std::vector<std::pair<std::string_view, std::string_view>> args;
     std::transform(
         argv, argv + argc, std::back_inserter(args), [](char const *carg) {
