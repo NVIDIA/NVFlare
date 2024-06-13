@@ -16,6 +16,7 @@ import json
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from binascii import hexlify, unhexlify
 
+# ipcl_python is not a required dependency. The import error causes unit test failure so make it optional
 try:
     import ipcl_python
     from ipcl_python import PaillierEncryptedNumber as EncryptedNumber
@@ -23,7 +24,7 @@ try:
 
     ipcl_imported = True
 except Exception:
-    ipcl_improted = False
+    ipcl_imported = False
 
 SCALE_FACTOR = 10000000000000
 ENABLE_DJN = True
