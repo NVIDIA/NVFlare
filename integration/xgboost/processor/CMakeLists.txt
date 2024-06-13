@@ -11,7 +11,8 @@ file(GLOB_RECURSE LIB_SRC
         )
 
 add_library(proc_nvflare SHARED ${LIB_SRC})
-set(XGB_SRC ${proc_nvflare_SOURCE_DIR}/../../../../xgboost)
+# set(XGB_SRC ${proc_nvflare_SOURCE_DIR}/../../../../xgboost)
+set(XGB_SRC /opt/xgboost)
 target_include_directories(proc_nvflare PRIVATE ${proc_nvflare_SOURCE_DIR}/src/include
         ${XGB_SRC}/src
         ${XGB_SRC}/rabit/include
