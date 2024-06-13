@@ -18,8 +18,9 @@ import shap
 import xgboost as xgb
 
 PRINT_SAMPLE = False
-DATASET_ROOT = "./dataset/base_xgb_data"
-TEST_DATA_PATH = "./dataset/test.csv"
+DATASET_ROOT = "/tmp/nvflare/xgb_dataset/base_xgb_data"
+TEST_DATA_PATH = "/tmp/nvflare/xgb_dataset/test.csv"
+OUTPUT_ROOT = "/tmp/nvflare/xgb_exp"
 
 
 def load_test_data(data_path: str):
@@ -74,12 +75,12 @@ def run_training() -> None:
     bst = xgb.train(param, dtrain, num_round, evals=watchlist)
 
     # Save the model
-    bst.save_model("./model/model.base.json")
+    bst.save_model(f"{OUTPUT_ROOT}/model.base.json")
     xgb.collective.communicator_print("Finished training\n")
 
     # save feature importance score to file
     score = bst.get_score(importance_type="gain")
-    with open("./explain/feat_importance.base.txt", "w") as f:
+    with open(f"{OUTPUT_ROOT}/feat_importance.base.txt", "w") as f:
         for key in score:
             f.write(f"{key}: {score[key]}\n")
 
@@ -95,11 +96,11 @@ def run_training() -> None:
     # save the beeswarm plot to png file
     shap.plots.beeswarm(explanation, show=False)
     img = plt.gcf()
-    img.savefig("./explain/shap.base.png")
+    img.savefig(f"{OUTPUT_ROOT}/shap.base.png")
 
     # dump tree and save to text file
     dump = bst.get_dump()
-    with open("./tree/tree_dump.base.txt", "w") as f:
+    with open(f"{OUTPUT_ROOT}/tree_dump.base.txt", "w") as f:
         for tree in dump:
             f.write(tree)
 
@@ -107,11 +108,11 @@ def run_training() -> None:
     xgb.plot_tree(bst, num_trees=0, rankdir="LR")
     fig = plt.gcf()
     fig.set_size_inches(18, 5)
-    plt.savefig("./tree/tree.base.png", dpi=100)
+    plt.savefig(f"{OUTPUT_ROOT}/tree.base.png", dpi=100)
 
     # export tree to dataframe
     tree_df = bst.trees_to_dataframe()
-    tree_df.to_csv("./tree/tree_df.base.csv")
+    tree_df.to_csv(f"{OUTPUT_ROOT}/tree_df.base.csv")
 
 
 if __name__ == "__main__":

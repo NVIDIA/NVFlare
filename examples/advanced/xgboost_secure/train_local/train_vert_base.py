@@ -23,8 +23,9 @@ import xgboost as xgb
 import xgboost.federated
 
 PRINT_SAMPLE = False
-DATASET_ROOT = "./dataset/vertical_xgb_data"
-TEST_DATA_PATH = "./dataset/test.csv"
+DATASET_ROOT = "/tmp/nvflare/xgb_dataset/vertical_xgb_data"
+TEST_DATA_PATH = "/tmp/nvflare/xgb_dataset/test.csv"
+OUTPUT_ROOT = "/tmp/nvflare/xgb_exp"
 
 
 def load_test_data(data_path: str):
@@ -99,12 +100,12 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
 
         # Save the model
         rank = xgb.collective.get_rank()
-        bst.save_model(f"./model/model.vert.base.{rank}.json")
+        bst.save_model(f"{OUTPUT_ROOT}/model.vert.base.{rank}.json")
         xgb.collective.communicator_print("Finished training\n")
 
         # save feature importance score to file
         score = bst.get_score(importance_type="gain")
-        with open(f"./explain/feat_importance.vert.base.{rank}.txt", "w") as f:
+        with open(f"{OUTPUT_ROOT}/feat_importance.vert.base.{rank}.txt", "w") as f:
             for key in score:
                 f.write(f"{key}: {score[key]}\n")
 
@@ -120,11 +121,11 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         # save the beeswarm plot to png file
         shap.plots.beeswarm(explanation, show=False)
         img = plt.gcf()
-        img.savefig(f"./explain/shap.vert.base.{rank}.png")
+        img.savefig(f"{OUTPUT_ROOT}/shap.vert.base.{rank}.png")
 
         # dump tree and save to text file
         dump = bst.get_dump()
-        with open(f"./tree/tree_dump.vert.base.{rank}.txt", "w") as f:
+        with open(f"{OUTPUT_ROOT}/tree_dump.vert.base.{rank}.txt", "w") as f:
             for tree in dump:
                 f.write(tree)
 
@@ -132,11 +133,11 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         xgb.plot_tree(bst, num_trees=0, rankdir="LR")
         fig = plt.gcf()
         fig.set_size_inches(18, 5)
-        plt.savefig(f"./tree/tree.vert.base.{rank}.png", dpi=100)
+        plt.savefig(f"{OUTPUT_ROOT}/tree.vert.base.{rank}.png", dpi=100)
 
         # export tree to dataframe
         tree_df = bst.trees_to_dataframe()
-        tree_df.to_csv(f"./tree/tree_df.vert.base.{rank}.csv")
+        tree_df.to_csv(f"{OUTPUT_ROOT}/tree_df.vert.base.{rank}.csv")
 
 
 def run_federated() -> None:

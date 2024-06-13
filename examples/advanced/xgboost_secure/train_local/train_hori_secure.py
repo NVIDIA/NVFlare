@@ -23,8 +23,9 @@ import xgboost as xgb
 import xgboost.federated
 
 PRINT_SAMPLE = False
-DATASET_ROOT = "./dataset/horizontal_xgb_data"
-TEST_DATA_PATH = "./dataset/test.csv"
+DATASET_ROOT = "/tmp/nvflare/xgb_dataset/horizontal_xgb_data"
+TEST_DATA_PATH = "/tmp/nvflare/xgb_dataset/test.csv"
+OUTPUT_ROOT = "/tmp/nvflare/xgb_exp"
 
 
 def load_test_data(data_path: str):
@@ -96,12 +97,12 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
 
         # Save the model
         rank = xgb.collective.get_rank()
-        bst.save_model(f"./model/model.hori.secure.{rank}.json")
+        bst.save_model(f"{OUTPUT_ROOT}/model.hori.secure.{rank}.json")
         xgb.collective.communicator_print("Finished training\n")
 
         # save feature importance score to file
         score = bst.get_score(importance_type="gain")
-        with open(f"./explain/feat_importance.secure.base.{rank}.txt", "w") as f:
+        with open(f"{OUTPUT_ROOT}/feat_importance.secure.base.{rank}.txt", "w") as f:
             for key in score:
                 f.write(f"{key}: {score[key]}\n")
 
@@ -117,11 +118,11 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         # save the beeswarm plot to png file
         shap.plots.beeswarm(explanation, show=False)
         img = plt.gcf()
-        img.savefig(f"./explain/shap.hori.secure.{rank}.png")
+        img.savefig(f"{OUTPUT_ROOT}/shap.hori.secure.{rank}.png")
 
         # dump tree and save to text file
         dump = bst.get_dump()
-        with open(f"./tree/tree_dump.hori.secure.{rank}.txt", "w") as f:
+        with open(f"{OUTPUT_ROOT}/tree_dump.hori.secure.{rank}.txt", "w") as f:
             for tree in dump:
                 f.write(tree)
 
@@ -129,11 +130,11 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         xgb.plot_tree(bst, num_trees=0, rankdir="LR")
         fig = plt.gcf()
         fig.set_size_inches(18, 5)
-        plt.savefig(f"./tree/tree.hori.secure.{rank}.png", dpi=100)
+        plt.savefig(f"{OUTPUT_ROOT}/tree.hori.secure.{rank}.png", dpi=100)
 
         # export tree to dataframe
         tree_df = bst.trees_to_dataframe()
-        tree_df.to_csv(f"./tree/tree_df.hori.secure.{rank}.csv")
+        tree_df.to_csv(f"{OUTPUT_ROOT}/tree_df.hori.secure.{rank}.csv")
 
 
 def run_federated() -> None:
