@@ -115,13 +115,13 @@ class MockServerEngine(ServerEngineSpec):
         pass
 
     def multicast_aux_requests(
-            self,
-            topic: str,
-            target_requests,
-            timeout: float,
-            fl_ctx: FLContext,
-            optional: bool = False,
-            secure: bool = False,
+        self,
+        topic: str,
+        target_requests,
+        timeout: float,
+        fl_ctx: FLContext,
+        optional: bool = False,
+        secure: bool = False,
     ) -> dict:
         pass
 
