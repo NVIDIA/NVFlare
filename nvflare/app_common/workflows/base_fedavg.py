@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import random
 from typing import List
 
 from nvflare.apis.fl_constant import FLMetaKey
@@ -24,10 +23,10 @@ from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.security.logging import secure_format_exception
 
-from .wf_controller import WFController
+from .model_controller import ModelController
 
 
-class BaseFedAvg(WFController):
+class BaseFedAvg(ModelController):
     def __init__(
         self,
         *args,
@@ -37,18 +36,17 @@ class BaseFedAvg(WFController):
         persist_every_n_rounds: int = 1,
         **kwargs,
     ):
-        """The base controller for FedAvg Workflow. *Note*: This class is based on the `WFController`.
+        """The base controller for FedAvg Workflow. *Note*: This class is based on the `ModelController`.
 
         Implements [FederatedAveraging](https://arxiv.org/abs/1602.05629).
 
-        A model persistor can be configured via the `persistor_id` argument of the `WFController`.
+        A model persistor can be configured via the `persistor_id` argument of the `ModelController`.
         The model persistor is used to load the initial global model which is sent to a list of clients.
         Each client sends it's updated weights after local training which is aggregated.
         Next, the global model is updated.
         The model_persistor will also save the model after training.
 
         Provides the default implementations for the follow routines:
-            - def sample_clients(self, min_clients)
             - def aggregate(self, results: List[FLModel], aggregate_fn=None) -> FLModel
             - def update_model(self, aggr_result)
 
@@ -74,28 +72,6 @@ class BaseFedAvg(WFController):
 
         self.current_round = None
 
-    def sample_clients(self, num_clients):
-        """Called by the `run` routine to get a list of available clients.
-
-        Args:
-            min_clients: number of clients to return.
-
-        Returns: list of clients.
-
-        """
-
-        clients = self.engine.get_clients()
-
-        if num_clients <= len(clients):
-            random.shuffle(clients)
-            clients = clients[0:num_clients]
-        else:
-            self.info(
-                f"num_clients ({num_clients}) is greater than the number of available clients. Returning all clients."
-            )
-
-        return clients
-
     @staticmethod
     def _check_results(results: List[FLModel]):
         empty_clients = []
@@ -108,6 +84,9 @@ class BaseFedAvg(WFController):
 
     @staticmethod
     def aggregate_fn(results: List[FLModel]) -> FLModel:
+        if not results:
+            raise ValueError("received empty results for aggregation.")
+
         aggregation_helper = WeightedAggregationHelper()
         for _result in results:
             aggregation_helper.add(

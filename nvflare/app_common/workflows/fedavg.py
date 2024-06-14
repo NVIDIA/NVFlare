@@ -16,7 +16,7 @@ from .base_fedavg import BaseFedAvg
 
 
 class FedAvg(BaseFedAvg):
-    """Controller for FedAvg Workflow. *Note*: This class is based on the `WFController`.
+    """Controller for FedAvg Workflow. *Note*: This class is based on the `ModelController`.
     Implements [FederatedAveraging](https://arxiv.org/abs/1602.05629).
 
     Provides the implementations for the `run` routine, controlling the main workflow:
@@ -58,7 +58,7 @@ class FedAvg(BaseFedAvg):
 
             aggregate_results = self.aggregate(
                 results, aggregate_fn=self.aggregate_fn
-            )  # using default aggregate_fn with `WeightedAggregationHelper`. Can overwrite self.aggregrate_fn with signature Callable[List[FLModel], FLModel]
+            )  # using default aggregate_fn with `WeightedAggregationHelper`. Can overwrite self.aggregate_fn with signature Callable[List[FLModel], FLModel]
 
             model = self.update_model(model, aggregate_results)
 

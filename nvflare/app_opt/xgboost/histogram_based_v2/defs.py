@@ -34,7 +34,7 @@ class Constant:
 
     TASK_CHECK_INTERVAL = 0.5
     JOB_STATUS_CHECK_INTERVAL = 2.0
-    MAX_CLIENT_OP_INTERVAL = 90.0
+    MAX_CLIENT_OP_INTERVAL = 600.0
     WORKFLOW_PROGRESS_TIMEOUT = 3600.0
 
     # message topics
@@ -100,7 +100,9 @@ class Constant:
     EVENT_AFTER_ALL_GATHER_V = "xgb.after_all_gather_v"
 
     HEADER_KEY_ENCRYPTED_DATA = "xgb.encrypted_data"
+    HEADER_KEY_HORIZONTAL = "xgb.horizontal"
     HEADER_KEY_ORIGINAL_BUF_SIZE = "xgb.original_buf_size"
+    HEADER_KEY_IN_AGGR = "xgb.in_aggr"
 
     DUMMY_BUFFER_SIZE = 4
 

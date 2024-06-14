@@ -318,8 +318,6 @@ class ServerEngine(ServerEngineInternalSpec):
         return ""
 
     def abort_app_on_server(self, job_id: str, turn_to_cold: bool = False) -> str:
-        if job_id not in self.run_processes.keys():
-            return "Server app has not started."
 
         self.logger.info("Abort the server app run.")
         command_data = Shareable()
@@ -463,6 +461,9 @@ class ServerEngine(ServerEngineInternalSpec):
             return FLContextManager(
                 engine=self, identity_name=self.server.project_name, job_id="", public_stickers={}, private_stickers={}
             ).new_context()
+
+    def add_component(self, component_id: str, component):
+        self.server.runner_config.add_component(component_id, component)
 
     def get_component(self, component_id: str) -> object:
         return self.run_manager.get_component(component_id)

@@ -95,6 +95,7 @@ class _RequestReceiver:
         self.source = None
         self.tx_id = None
         self.reply_time = None
+        self.replying = False
 
     def process(self, request: Shareable, fl_ctx: FLContext) -> Shareable:
         self.tx_id = request.get_header(HEADER_TX_ID)
@@ -216,19 +217,27 @@ class ReliableMessage:
     _logger = logging.getLogger("ReliableMessage")
 
     @classmethod
-    def register_request_handler(cls, topic: str, handler_f):
+    def register_request_handler(cls, topic: str, handler_f, fl_ctx: FLContext):
         """Register a handler for the reliable message with this topic
 
         Args:
             topic: The topic of the reliable message
             handler_f: The callback function to handle the request in the form of
                 handler_f(topic, request, fl_ctx)
+            fl_ctx: FL Context
         """
         if not cls._enabled:
             raise RuntimeError("ReliableMessage is not enabled. Please call ReliableMessage.enable() to enable it")
         if not callable(handler_f):
             raise TypeError(f"handler_f must be callable but {type(handler_f)}")
         cls._topic_to_handle[topic] = handler_f
+
+        # ReliableMessage also sends aux message directly if tx_timeout is too small
+        engine = fl_ctx.get_engine()
+        engine.register_aux_message_handler(
+            topic=topic,
+            message_handle_func=handler_f,
+        )
 
     @classmethod
     def _get_or_create_receiver(cls, topic: str, request: Shareable, handler_f) -> _RequestReceiver:

@@ -97,14 +97,14 @@ To build the docs, please run.
 
 .. code:: bash
 
-   ./build_docs --html
+   ./build_doc.sh --html
 
 Once built, you can view the docs in ``docs/_build folder``. To clean
 the docs, please run
 
 .. code:: bash
 
-   ./build_docs --clean
+   ./build_doc.sh --clean
 
 Signing your work
 ^^^^^^^^^^^^^^^^^

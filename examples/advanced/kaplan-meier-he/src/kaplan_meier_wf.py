@@ -16,11 +16,11 @@ import logging
 from typing import Dict
 
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
-from nvflare.app_common.workflows.wf_controller import WFController
+from nvflare.app_common.workflows.model_controller import ModelController
 
 
 # Controller Workflow
-class KM(WFController):
+class KM(ModelController):
     def __init__(self, min_clients: int):
         super(KM, self).__init__()
         self.logger = logging.getLogger(self.__class__.__name__)

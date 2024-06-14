@@ -29,22 +29,22 @@ class FederatedStub(object):
             channel: A grpc.Channel.
         """
         self.Allgather = channel.unary_unary(
-                '/xgboost.federated.Federated/Allgather',
+                '/xgboost.collective.federated.Federated/Allgather',
                 request_serializer=federated__pb2.AllgatherRequest.SerializeToString,
                 response_deserializer=federated__pb2.AllgatherReply.FromString,
                 )
         self.AllgatherV = channel.unary_unary(
-                '/xgboost.federated.Federated/AllgatherV',
+                '/xgboost.collective.federated.Federated/AllgatherV',
                 request_serializer=federated__pb2.AllgatherVRequest.SerializeToString,
                 response_deserializer=federated__pb2.AllgatherVReply.FromString,
                 )
         self.Allreduce = channel.unary_unary(
-                '/xgboost.federated.Federated/Allreduce',
+                '/xgboost.collective.federated.Federated/Allreduce',
                 request_serializer=federated__pb2.AllreduceRequest.SerializeToString,
                 response_deserializer=federated__pb2.AllreduceReply.FromString,
                 )
         self.Broadcast = channel.unary_unary(
-                '/xgboost.federated.Federated/Broadcast',
+                '/xgboost.collective.federated.Federated/Broadcast',
                 request_serializer=federated__pb2.BroadcastRequest.SerializeToString,
                 response_deserializer=federated__pb2.BroadcastReply.FromString,
                 )
@@ -102,7 +102,7 @@ def add_FederatedServicer_to_server(servicer, server):
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'xgboost.federated.Federated', rpc_method_handlers)
+            'xgboost.collective.federated.Federated', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
 
 
@@ -121,7 +121,7 @@ class Federated(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/xgboost.federated.Federated/Allgather',
+        return grpc.experimental.unary_unary(request, target, '/xgboost.collective.federated.Federated/Allgather',
             federated__pb2.AllgatherRequest.SerializeToString,
             federated__pb2.AllgatherReply.FromString,
             options, channel_credentials,
@@ -138,7 +138,7 @@ class Federated(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/xgboost.federated.Federated/AllgatherV',
+        return grpc.experimental.unary_unary(request, target, '/xgboost.collective.federated.Federated/AllgatherV',
             federated__pb2.AllgatherVRequest.SerializeToString,
             federated__pb2.AllgatherVReply.FromString,
             options, channel_credentials,
@@ -155,7 +155,7 @@ class Federated(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/xgboost.federated.Federated/Allreduce',
+        return grpc.experimental.unary_unary(request, target, '/xgboost.collective.federated.Federated/Allreduce',
             federated__pb2.AllreduceRequest.SerializeToString,
             federated__pb2.AllreduceReply.FromString,
             options, channel_credentials,
@@ -172,7 +172,7 @@ class Federated(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/xgboost.federated.Federated/Broadcast',
+        return grpc.experimental.unary_unary(request, target, '/xgboost.collective.federated.Federated/Broadcast',
             federated__pb2.BroadcastRequest.SerializeToString,
             federated__pb2.BroadcastReply.FromString,
             options, channel_credentials,
