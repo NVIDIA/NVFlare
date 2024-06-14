@@ -19,7 +19,7 @@ import ssl
 import threading
 import time
 from datetime import datetime
-from typing import List, Optional, Union
+from typing import List, Optional
 
 from nvflare.fuel.hci.client.event import EventContext, EventHandler, EventPropKey, EventType
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args

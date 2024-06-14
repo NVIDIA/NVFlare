@@ -27,7 +27,7 @@ try:
 except ImportError:
     readline = None
 
-from nvflare.fuel.hci.cmd_arg_utils import join_args, parse_command_line, split_to_args
+from nvflare.fuel.hci.cmd_arg_utils import join_args, parse_command_line
 from nvflare.fuel.hci.proto import CredentialType, ProtoKey
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandRegister, CommandSpec
 from nvflare.fuel.hci.security import hash_password, verify_password
