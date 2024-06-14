@@ -6,20 +6,16 @@ add_compile_options(-gdwarf-4)
 
 option(GOOGLE_TEST "Build google tests" OFF)
 
-file(GLOB_RECURSE LIB_SRC
-        "src/*.h"
-        "src/*.cc"
-        )
+file(GLOB_RECURSE LIB_SRC "src/*.cc")
 
 add_library(proc_nvflare SHARED ${LIB_SRC})
-set(XGB_SRC ${proc_nvflare_SOURCE_DIR}/../../../../xgboost)
-target_include_directories(proc_nvflare PRIVATE ${proc_nvflare_SOURCE_DIR}/src/include
-        ${XGB_SRC}/src
-        ${XGB_SRC}/rabit/include
-        ${XGB_SRC}/include
-        ${XGB_SRC}/dmlc-core/include)
-
-link_directories(${XGB_SRC}/lib/)
+set_target_properties(proc_nvflare PROPERTIES
+  CXX_STANDARD 17
+  CXX_STANDARD_REQUIRED ON
+  POSITION_INDEPENDENT_CODE ON
+  ENABLE_EXPORTS ON
+)
+target_include_directories(proc_nvflare PRIVATE ${proc_nvflare_SOURCE_DIR}/src/include)
 
 if (APPLE)
     add_link_options("LINKER:-object_path_lto,$<TARGET_PROPERTY:NAME>_lto.o")
