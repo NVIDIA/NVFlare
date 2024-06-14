@@ -32,7 +32,7 @@ aws_start_sh: |
     EC2_TYPE=t2.xlarge
     REGION=us-west-2
   else
-    AMI_IMAGE=ami-04bad3c587fe60d89
+    AMI_IMAGE=ami-03c983f9003cb9cd1  # 22.04  20.04:ami-04bad3c587fe60d89 24.04:ami-0406d1fdd021121cd
     EC2_TYPE=t2.small
     REGION=us-west-2
   fi
@@ -52,8 +52,8 @@ aws_start_sh: |
     while true
     do
       prompt AMI_IMAGE "Cloud AMI image, press ENTER to accept default ${AMI_IMAGE}: "
-      prompt EC2_TYPE "Cloud EC2 type, press ENTER to accept default ${EC2_TYPE}: "
-      prompt REGIION "Cloud EC2 region, press ENTER to accept default ${REGION}: "
+      prompt EC2_TYPE "Cloud EC2 type, use g4dn.xlarge for GPU or press ENTER to accept default ${EC2_TYPE}: "
+      prompt REGION "Cloud EC2 region, press ENTER to accept default ${REGION}: "
       prompt ans "region = ${REGION}, ami image = ${AMI_IMAGE}, EC2 type = ${EC2_TYPE}, OK? (Y/n) "
       if [[ $ans = "" ]] || [[ $ans =~ ^(y|Y)$ ]]
       then
@@ -122,11 +122,19 @@ aws_start_sh: |
 
   echo "Creating VM at region $REGION, may take a few minutes."
 
+  ami_info=$(aws ec2 describe-images --image-ids $AMI_IMAGE --output json)
+  amidevice=$(echo $ami_info | jq -r '.Images[0].BlockDeviceMappings[0].DeviceName')
+  block_device_mappings=$(echo $ami_info | jq -r '.Images[0].BlockDeviceMappings')
+  original_size=$(echo $block_device_mappings | jq -r '.[0].Ebs.VolumeSize')
+  original_volume_type=$(echo $block_device_mappings | jq -r '.[0].Ebs.VolumeType')
+  new_size=$((original_size + 8)) # increase disk size by 8GB for nvflare, torch, etc 
+  bdmap='[{"DeviceName":"'${amidevice}'","Ebs":{"VolumeSize":'${new_size}',"VolumeType":"'${original_volume_type}'","DeleteOnTermination":true}}]'
+
   if [ $using_default_vpc == true ]
   then
-    aws ec2 run-instances --region $REGION --image-id $AMI_IMAGE --count 1 --instance-type $EC2_TYPE --key-name $KEY_PAIR --security-group-ids $sg_id > vm_create.json
+    aws ec2 run-instances --region $REGION --image-id $AMI_IMAGE --count 1 --instance-type $EC2_TYPE --key-name $KEY_PAIR --block-device-mappings $bdmap --security-group-ids $sg_id > vm_create.json
   else
-    aws ec2 run-instances --region $REGION --image-id $AMI_IMAGE --count 1 --instance-type $EC2_TYPE --key-name $KEY_PAIR --security-group-ids $sg_id --subnet-id $subnet_id > vm_create.json
+    aws ec2 run-instances --region $REGION --image-id $AMI_IMAGE --count 1 --instance-type $EC2_TYPE --key-name $KEY_PAIR --block-device-mappings $bdmap --security-group-ids $sg_id --subnet-id $subnet_id  > vm_create.json
   fi
   report_status "$?" "creating VM"
   instance_id=$(jq -r .Instances[0].InstanceId vm_create.json)
@@ -156,12 +164,19 @@ aws_start_sh: |
   else
     echo "Installing packages in $VM_NAME, may take a few minutes."
     ssh -f -i $KEY_FILE -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
-    "pwd && wget -q https://bootstrap.pypa.io/get-pip.py && \
-    python3 get-pip.py && python3 -m pip install nvflare && \
+    " sudo apt update && \
+    if lspci | grep -i nvidia; then sudo DEBIAN_FRONTEND=noninteractive apt install -y nvidia-driver-535-server; fi && \
+    if lspci | grep -i nvidia; then sudo modprobe nvidia; fi && \
+    echo 'export PATH=~/.local/bin:\$PATH' >> ~/.bashrc && \
+    export PATH=/home/ubuntu/.local/bin:\$PATH && \
+    pwd && wget -q https://bootstrap.pypa.io/get-pip.py && \
+    python3 get-pip.py --break-system-packages && python3 -m pip install --break-system-packages nvflare && \
     touch ${DEST_FOLDER}/startup/requirements.txt && \
     python3 -m pip install -r ${DEST_FOLDER}/startup/requirements.txt && \
+    python3 -m pip install --break-system-packages --no-cache-dir -r ${DEST_FOLDER}/startup/requirements.txt && \
+    (crontab -l 2>/dev/null; echo '@reboot  /var/tmp/cloud/startup/start.sh >> /var/tmp/nvflare-start.log 2>&1') | crontab && \
     nohup ${DEST_FOLDER}/startup/start.sh && sleep 20 && \
-    exit" > /tmp/nvflare.log 2>&1 
+    exit" > /tmp/nvflare.log 2>&1
     report_status "$?" "installing packages"
   fi
 
