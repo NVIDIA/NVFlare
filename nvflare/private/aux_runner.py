@@ -16,14 +16,16 @@ import time
 from threading import Lock
 from typing import Dict, List
 
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.fl_constant import ConfigVarName, ReturnCode, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.fuel.f3.cellnet.core_cell import Message, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.core_cell import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.core_cell import TargetMessage
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.defs import CellChannel
 from nvflare.private.fed.utils.fed_utils import get_target_names
 from nvflare.security.logging import secure_format_traceback
@@ -36,6 +38,7 @@ class AuxRunner(FLComponent):
         self.engine = engine
         self.topic_table = {}  # topic => handler
         self.reg_lock = Lock()
+        self.cell_wait_timeout = None
 
     def register_aux_message_handler(self, topic: str, message_handle_func):
         """Register aux message handling function with specified topics.
@@ -144,18 +147,22 @@ class AuxRunner(FLComponent):
         return valid_reply
 
     def _wait_for_cell(self):
+        if self.cell_wait_timeout is None:
+            self.cell_wait_timeout = ConfigService.get_float_var(
+                name=ConfigVarName.CELL_WAIT_TIMEOUT, conf=SystemConfigs.APPLICATION_CONF, default=5.0
+            )
+
         start = time.time()
-        self.logger.debug("waiting for cell...")
-        max_wait = 5.0
+        self.logger.info(f"waiting for cell for {self.cell_wait_timeout} seconds")
         while True:
             cell = self.engine.get_cell()
             if cell:
                 self.logger.debug(f"Got cell in {time.time() - start} secs")
                 return cell
-            if time.time() - start > max_wait:
-                self.logger.error(f"Cannot get cell after {max_wait} seconds!")
+            if time.time() - start > self.cell_wait_timeout:
+                self.logger.error(f"Cannot get cell after {self.cell_wait_timeout} seconds!")
                 return None
-            time.sleep(0.01)
+            time.sleep(0.1)
 
     def _process_cell_replies(
         self,

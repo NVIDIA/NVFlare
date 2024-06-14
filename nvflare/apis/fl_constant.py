@@ -477,6 +477,9 @@ class ConfigVarName:
     # customized nvflare decomposers module name
     DECOMPOSER_MODULE = "nvflare_decomposers"
 
+    # client and server: max amount of time to wait for communication cell to be created
+    CELL_WAIT_TIMEOUT = "cell_wait_timeout"
+
 
 class SystemVarName:
     """
