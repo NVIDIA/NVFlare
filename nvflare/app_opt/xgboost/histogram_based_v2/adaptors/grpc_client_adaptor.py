@@ -217,10 +217,10 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         with self._lock:
             event = self._pending_req.get((rank, seq), None)
         if event:
-            # self.logger.info(f"Duplicate seq {op=} {rank=} {seq=}, wait till original req is done")
+            self.logger.info(f"Duplicate seq {op=} {rank=} {seq=}, wait till original req is done")
             event.wait(DUPLICATE_REQ_MAX_HOLD_TIME)
             time.sleep(1)  # To ensure the first request is returned first
-            # self.logger.info(f"Duplicate seq {op=} {rank=} {seq=} returned with empty buffer")
+            self.logger.info(f"Duplicate seq {op=} {rank=} {seq=} returned with empty buffer")
             return True
 
         with self._lock:
@@ -231,7 +231,7 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         with self._lock:
             event = self._pending_req.get((rank, seq), None)
             if not event:
-                # self.logger.error(f"No pending req {op=} {rank=} {seq=}")
+                self.logger.error(f"No pending req {op=} {rank=} {seq=}")
                 return
 
             event.set()

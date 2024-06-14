@@ -133,9 +133,10 @@ class XGBClientRunner(AppRunner, FLComponent):
             "federated_server_address": f"{self._server_addr}",
             "federated_world_size": self._world_size,
             "federated_rank": self._rank,
-            "federated_plugin": {
-                "path": "/tmp/libproc_nvflare.so"
-            }
+            # FIXME: It should be possible to customize this or find a better location
+            # to distribut the shared object, preferably along side the nvflare Python
+            # package.
+            "federated_plugin": {"path": "/tmp/libproc_nvflare.so"},
         }
         with xgb.collective.CommunicatorContext(**communicator_env):
             # Load the data. Dmatrix must be created with column split mode in CommunicatorContext for vertical FL

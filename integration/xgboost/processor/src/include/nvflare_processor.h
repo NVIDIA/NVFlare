@@ -69,6 +69,6 @@ public:
                               std::int32_t const *nidx, std::size_t len,
                               std::uint8_t **out_hist, std::size_t *out_len);
   void SyncEncryptedHistVert(std::uint8_t *hist_buffer, std::size_t len,
-                             double **out, size_t *out_len);
+                             double **out, std::size_t *out_len);
 };
 } // namespace nvflare

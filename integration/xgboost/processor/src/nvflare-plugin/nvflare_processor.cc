@@ -169,7 +169,7 @@ void TensealPlugin::BuildEncryptedHistVert(std::size_t const **ridx,
 
 void TensealPlugin::SyncEncryptedHistVert(std::uint8_t *buffer,
                                           std::size_t buf_size, double **out,
-                                          size_t *out_len) {
+                                          std::size_t *out_len) {
   auto remaining = buf_size;
   char *pointer = reinterpret_cast<char *>(buffer);
 
@@ -326,10 +326,10 @@ int NVF_C FederatedPluginSyncEncryptedGPairs(FederatedPluginHandle handle,
 }
 
 int NVF_C FederatedPluginResetHistContextVert(FederatedPluginHandle handle,
-                                              std::uint32_t const *cutptrs,
-                                              std::size_t cutptr_len,
-                                              std::int32_t const *bin_idx,
-                                              std::size_t n_idx) {
+                                              uint32_t const *cutptrs,
+                                              size_t cutptr_len,
+                                              int32_t const *bin_idx,
+                                              size_t n_idx) {
   using namespace nvflare;
   return CApiGuard(handle, [&](HandleT plugin) {
     plugin->ResetHistContext(cutptrs, cutptr_len, bin_idx, n_idx);
@@ -346,32 +346,32 @@ int NVF_C FederatedPluginBuildEncryptedHistVert(
 }
 
 int NVF_C FederatedPluginSyncEnrcyptedHistVert(FederatedPluginHandle handle,
-                                               uint8_t *buf, size_t len,
-                                               double **out, size_t *out_len) {
+                                               uint8_t *in_hist, size_t len,
+                                               double **out_hist,
+                                               size_t *out_len) {
   using namespace nvflare;
   return CApiGuard(handle, [&](HandleT plugin) {
-    plugin->SyncEncryptedHistVert(buf, len, out, out_len);
+    plugin->SyncEncryptedHistVert(in_hist, len, out_hist, out_len);
   });
 }
 
 int NVF_C FederatedPluginBuildEncryptedHistHori(FederatedPluginHandle handle,
-                                                double const *in_histogram,
+                                                double const *in_hist,
                                                 size_t len, uint8_t **out_hist,
                                                 size_t *out_len) {
   using namespace nvflare;
   return CApiGuard(handle, [&](HandleT plugin) {
-    plugin->BuildEncryptedHistHori(in_histogram, len, out_hist, out_len);
+    plugin->BuildEncryptedHistHori(in_hist, len, out_hist, out_len);
   });
 }
 
 int NVF_C FederatedPluginSyncEnrcyptedHistHori(FederatedPluginHandle handle,
-                                               std::uint8_t const *buffer,
-                                               std::size_t len,
-                                               double **out_hist,
-                                               std::size_t *out_len) {
+                                               uint8_t const *in_hist,
+                                               size_t len, double **out_hist,
+                                               size_t *out_len) {
   using namespace nvflare;
   return CApiGuard(handle, [&](HandleT plugin) {
-    plugin->SyncEncryptedHistHori(buffer, len, out_hist, out_len);
+    plugin->SyncEncryptedHistHori(in_hist, len, out_hist, out_len);
     return 0;
   });
 }
