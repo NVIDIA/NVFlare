@@ -134,13 +134,13 @@ class ServerEngineSpec(EngineSpec, ABC):
 
     @abstractmethod
     def multicast_aux_requests(
-            self,
-            topic: str,
-            target_requests: Dict[str, Shareable],
-            timeout: float,
-            fl_ctx: FLContext,
-            optional: bool = False,
-            secure: bool = False,
+        self,
+        topic: str,
+        target_requests: Dict[str, Shareable],
+        timeout: float,
+        fl_ctx: FLContext,
+        optional: bool = False,
+        secure: bool = False,
     ) -> dict:
         """Send requests to specified clients via the aux channel.
 

@@ -230,13 +230,13 @@ class ClientRunManager(ClientEngineExecutorSpec):
             return {}
 
     def multicast_aux_requests(
-            self,
-            topic: str,
-            target_requests: Dict[str, Shareable],
-            timeout: float,
-            fl_ctx: FLContext,
-            optional: bool = False,
-            secure: bool = False,
+        self,
+        topic: str,
+        target_requests: Dict[str, Shareable],
+        timeout: float,
+        fl_ctx: FLContext,
+        optional: bool = False,
+        secure: bool = False,
     ) -> dict:
         return self.aux_runner.multicast_aux_requests(
             topic, target_requests, timeout, fl_ctx, optional=optional, secure=secure

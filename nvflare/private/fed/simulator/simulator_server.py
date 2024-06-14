@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Optional, Dict
+from typing import Dict, List, Optional
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic, ServerCommandKey
@@ -56,17 +56,16 @@ class SimulatorServerEngine(ServerEngine):
             return {}
 
     def multicast_aux_requests(
-            self,
-            topic: str,
-            target_requests: Dict[str, Shareable],
-            timeout: float,
-            fl_ctx: FLContext,
-            optional: bool = False,
-            secure: bool = False,
+        self,
+        topic: str,
+        target_requests: Dict[str, Shareable],
+        timeout: float,
+        fl_ctx: FLContext,
+        optional: bool = False,
+        secure: bool = False,
     ) -> dict:
         if topic != ReservedTopic.END_RUN:
-            return super().multicast_aux_requests(
-                topic, target_requests, timeout, fl_ctx, optional, secure=secure)
+            return super().multicast_aux_requests(topic, target_requests, timeout, fl_ctx, optional, secure=secure)
         else:
             return {}
 

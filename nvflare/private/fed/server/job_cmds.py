@@ -660,10 +660,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         # cmd job_id topic
         if len(args) != 3:
             cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY)
-            conn.append_string(
-                f"Usage: {cmd_entry.usage}",
-                meta=make_meta(MetaStatusValue.SYNTAX_ERROR, "")
-            )
+            conn.append_string(f"Usage: {cmd_entry.usage}", meta=make_meta(MetaStatusValue.SYNTAX_ERROR, ""))
             return
 
         engine = conn.app_ctx
@@ -686,15 +683,14 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         result = engine.send_app_command(job_id, topic, cmd_data, timeout)
         if result is None:
             conn.append_error(
-                "command execution error: no result",
-                meta=make_meta(MetaStatusValue.NO_REPLY, "no result")
+                "command execution error: no result", meta=make_meta(MetaStatusValue.NO_REPLY, "no result")
             )
             return
 
         if not isinstance(result, Shareable):
             conn.append_error(
                 f"command execution internal error: invalid result type {type(result)}",
-                meta=make_meta(MetaStatusValue.INTERNAL_ERROR, f"invalid result type {type(result)}")
+                meta=make_meta(MetaStatusValue.INTERNAL_ERROR, f"invalid result type {type(result)}"),
             )
             return
 
@@ -702,8 +698,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         if rc != ReturnCode.OK:
             reason = result.get_header(ServerCommandKey.REASON)
             conn.append_error(
-                f"command execution error: {rc=} {reason=}",
-                meta=make_meta(MetaStatusValue.ERROR, f"{rc=} {reason=}")
+                f"command execution error: {rc=} {reason=}", meta=make_meta(MetaStatusValue.ERROR, f"{rc=} {reason=}")
             )
             return
 

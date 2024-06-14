@@ -14,14 +14,15 @@
 
 import time
 from threading import Lock
-from typing import List, Dict
+from typing import Dict, List
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
-from nvflare.fuel.f3.cellnet.core_cell import Message, MessageHeaderKey, TargetMessage
+from nvflare.fuel.f3.cellnet.core_cell import Message, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.core_cell import ReturnCode as CellReturnCode
+from nvflare.fuel.f3.cellnet.core_cell import TargetMessage
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.private.defs import CellChannel
 from nvflare.private.fed.utils.fed_utils import get_target_names
@@ -157,10 +158,10 @@ class AuxRunner(FLComponent):
             time.sleep(0.01)
 
     def _process_cell_replies(
-            self,
-            cell_replies: dict,
-            topic: str,
-            channel: str,
+        self,
+        cell_replies: dict,
+        topic: str,
+        channel: str,
     ):
         replies = {}
         if cell_replies:
@@ -180,13 +181,13 @@ class AuxRunner(FLComponent):
         return replies
 
     def multicast_aux_requests(
-            self,
-            topic: str,
-            target_requests: Dict[str, Shareable],
-            timeout: float,
-            fl_ctx: FLContext,
-            optional: bool = False,
-            secure: bool = False,
+        self,
+        topic: str,
+        target_requests: Dict[str, Shareable],
+        timeout: float,
+        fl_ctx: FLContext,
+        optional: bool = False,
+        secure: bool = False,
     ) -> dict:
         if not target_requests:
             return {}
@@ -216,13 +217,13 @@ class AuxRunner(FLComponent):
             return {}
 
     def _send_multi_requests(
-            self,
-            topic: str,
-            target_requests: Dict[str, Shareable],
-            timeout: float,
-            fl_ctx: FLContext,
-            optional: bool = False,
-            secure: bool = False,
+        self,
+        topic: str,
+        target_requests: Dict[str, Shareable],
+        timeout: float,
+        fl_ctx: FLContext,
+        optional: bool = False,
+        secure: bool = False,
     ) -> dict:
         channel = CellChannel.AUX_COMMUNICATION
         cell = self._wait_for_cell()
@@ -241,17 +242,15 @@ class AuxRunner(FLComponent):
             target_fqcn = FQCN.join([target_name, job_id])
             self.log_info(fl_ctx, f"sending multicast aux: {target_fqcn=}")
             target_messages[target_fqcn] = TargetMessage(
-                topic=topic,
-                channel=channel,
-                target=target_fqcn,
-                message=Message(payload=req)
+                topic=topic, channel=channel, target=target_fqcn, message=Message(payload=req)
             )
         if timeout > 0:
             cell_replies = cell.broadcast_multi_requests(target_messages, timeout, optional=optional, secure=secure)
             return self._process_cell_replies(cell_replies, topic, channel)
         else:
             cell.fire_multi_requests_and_forget(
-                target_messages, optional=optional,
+                target_messages,
+                optional=optional,
             )
             return {}
 

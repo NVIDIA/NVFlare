@@ -31,8 +31,8 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.private.defs import SpecialTaskName, TaskConstant
-from nvflare.widgets.widget import WidgetID
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
+from nvflare.widgets.widget import WidgetID
 
 NO_OP_REPLY = "__no_op_reply"
 
@@ -424,7 +424,6 @@ class ServerStateCommand(CommandProcessor):
 
 
 class AppCommandProcessor(CommandProcessor):
-
     def get_command_name(self) -> str:
         """To get the command name.
 
@@ -436,17 +435,13 @@ class AppCommandProcessor(CommandProcessor):
     def process(self, data: Shareable, fl_ctx: FLContext):
         topic = data.get(ServerCommandKey.TOPIC)
         if not topic:
-            return make_reply(
-                ReturnCode.BAD_REQUEST_DATA,
-                headers={ServerCommandKey.REASON: "no topic"}
-            )
+            return make_reply(ReturnCode.BAD_REQUEST_DATA, headers={ServerCommandKey.REASON: "no topic"})
 
         reg = ServerCommands.get_app_command(topic)
         if reg is None:
             self.logger.error(f"no app command func for topic {topic}")
             return make_reply(
-                ReturnCode.BAD_REQUEST_DATA,
-                headers={ServerCommandKey.REASON: f"no app command func for topic {topic}"}
+                ReturnCode.BAD_REQUEST_DATA, headers={ServerCommandKey.REASON: f"no app command func for topic {topic}"}
             )
 
         cmd_func, cmd_args, cmd_kwargs = reg
@@ -456,15 +451,13 @@ class AppCommandProcessor(CommandProcessor):
         except Exception as ex:
             self.logger.error(f"exception processing app command '{topic}': {secure_format_traceback()}")
             return make_reply(
-                ReturnCode.EXECUTION_EXCEPTION,
-                headers={ServerCommandKey.REASON: {secure_format_exception(ex)}}
+                ReturnCode.EXECUTION_EXCEPTION, headers={ServerCommandKey.REASON: {secure_format_exception(ex)}}
             )
 
         if not isinstance(result, dict):
             self.logger.error(f"bad result from app command '{topic}': expect dict but got {type(result)}")
             return make_reply(
-                ReturnCode.EXECUTION_EXCEPTION,
-                headers={ServerCommandKey.REASON: f"bad result type {type(result)}"}
+                ReturnCode.EXECUTION_EXCEPTION, headers={ServerCommandKey.REASON: f"bad result type {type(result)}"}
             )
 
         reply = Shareable()

@@ -67,9 +67,9 @@ from .job_runner import JobRunner
 from .message_send import ClientReply
 from .run_info import RunInfo
 from .run_manager import RunManager
+from .server_commands import ServerCommands
 from .server_engine_internal_spec import EngineInfo, ServerEngineInternalSpec
 from .server_status import ServerStatus
-from .server_commands import ServerCommands
 
 
 class ServerEngine(ServerEngineInternalSpec):
@@ -545,13 +545,13 @@ class ServerEngine(ServerEngineInternalSpec):
             self.logger.error(f"Failed to send the aux_message: {topic} with exception: {secure_format_exception(e)}.")
 
     def multicast_aux_requests(
-            self,
-            topic: str,
-            target_requests: Dict[str, Shareable],
-            timeout: float,
-            fl_ctx: FLContext,
-            optional: bool = False,
-            secure: bool = False,
+        self,
+        topic: str,
+        target_requests: Dict[str, Shareable],
+        timeout: float,
+        fl_ctx: FLContext,
+        optional: bool = False,
+        secure: bool = False,
     ) -> dict:
         return self.run_manager.aux_runner.multicast_aux_requests(
             topic=topic,
