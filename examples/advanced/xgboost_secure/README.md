@@ -36,23 +36,26 @@ See [vertical xgboost](https://github.com/NVIDIA/NVFlare/tree/main/examples/adva
 > **_NOTE:_** The generated data files will be stored in the folder `/tmp/nvflare/xgb_dataset/`,
 > and will be used by jobs by specifying the path within `config_fed_client.json` 
 
-## Run Baseline and Standalone Experiments
-First, we run the baseline centralized training and standalone federated XGBoost training for comparison.
-In this case, we utilized the `mock` plugin to simulate the homomorphic encryption process. 
-For more details regarding federated XGBoost and the interface-plugin design, please refer to our [documentation]().
-
-To run all experiments, we provide a script for all settings.
+## Run Baseline Training
+First, we run the baseline centralized training with:
 ```
 bash run_training_local.sh
 ```
-This will cover baseline centralized training, local FL with and without secure feature.
 
-From the results, we can have three observations:
+## Run Federated Experiments with NVFlare
+Next, we run the federated XGBoost training without and with homomorphic encryption using NVFlare. This time, instead of using the `mock` plugin, we use the real encryption plugins to perform homomorphic encryption.
+We run the NVFlare jobs with: 
+```
+bash run_training_fl.sh
+```
+The running time of each job depends mainly on the encryption workload. 
+
+Comparing the results with centralized baseline, we can have three observations:
 1. The performance of the model trained with homomorphic encryption is identical to its counterpart without encryption.
 2. Vertical federated learnings have identical performance as the centralized baseline.
 3. Horizontal federated learnings have performance slightly different from the centralized baseline. This is because under horizontal FL, the local histogram quantiles are based on the local data distribution, which may not be the same as the global distribution.
 
-Upon closer inspection over the tree models (under `/tmp/nvflare/xgb_exp`), we can observe that the tree structures are identical between the baseline and the vertical FL models, while different for horizontal models. Further, the secure vertical FL produces different tree records at different parties - because each party holds different feature subsets:
+Upon closer inspection over the tree models, we can observe that the tree structures are identical between the baseline and the vertical FL models, while different for horizontal models. Further, the secure vertical FL produces different tree records at different parties - because each party holds different feature subsets:
 
 |     ![Tree Structures](./figs/tree.base.png)      |
 |:-------------------------------------------------:|
@@ -67,15 +70,6 @@ Upon closer inspection over the tree models (under `/tmp/nvflare/xgb_exp`), we c
 In this case we can notice that Party 0 holds Feature 7 and 10, Party 1 holds Feature 14, 17, and 12, and Party 2 holds none of the effective features for this tree - parties who do not hold the feature will and should not know the split value if it.
 
 By combining the feature splits at all parties, the tree structures will be identical to the centralized baseline model.
-
-## Run Federated Experiments with NVFlare
-Next, we run the federated XGBoost training without and with homomorphic encryption using NVFlare. This time, instead of using the `mock` plugin, we use the real encryption plugins to perform homomorphic encryption.
-We run the NVFlare jobs with: 
-```
-bash run_training_fl.sh
-```
-The running time of each job depends mainly on the encryption workload. 
-
 
 
 
