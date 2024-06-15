@@ -37,6 +37,8 @@ aws_start_sh: |
   AMI_NAME="ubuntu-*-22.04-amd64-pro-server"
   ARCH=x86_64
   EC2_TYPE_ARM=t4g.small
+  TMPDIR="${TMPDIR:-/tmp}"
+  LOGFILE=$(mktemp "${TMPDIR}/nvflare-aws-XXX")
 
   echo "This script requires aws (AWS CLI), sshpass, dig and jq.  Now checking if they are installed."
 
@@ -174,10 +176,10 @@ aws_start_sh: |
   my_public_ip=$(dig +short myip.opendns.com @resolver1.opendns.com)
   if [ "$?" -eq 0 ] && [[ "$my_public_ip" =~ ^(([1-9]?[0-9]|1[0-9][0-9]|2([0-4][0-9]|5[0-5]))\.){3}([1-9]?[0-9]|1[0-9][0-9]|2([0-4][0-9]|5[0-5]))$ ]]
   then
-    aws ec2 authorize-security-group-ingress --region ${REGION} --group-id $sg_id --protocol tcp --port 22 --cidr ${my_public_ip}/32 > /tmp/sec_grp.log
+    aws ec2 authorize-security-group-ingress --region ${REGION} --group-id $sg_id --protocol tcp --port 22 --cidr ${my_public_ip}/32 > ${LOGFILE}.sec_grp.log
   else
     echo "getting my public IP failed, please manually configure the inbound rule to limit SSH access"
-    aws ec2 authorize-security-group-ingress --region ${REGION} --group-id $sg_id --protocol tcp --port 22 --cidr 0.0.0.0/0 > /tmp/sec_grp.log
+    aws ec2 authorize-security-group-ingress --region ${REGION} --group-id $sg_id --protocol tcp --port 22 --cidr 0.0.0.0/0 > ${LOGFILE}.sec_grp.log
   fi
   {~~inbound_rule~~}
   report_status "$?" "creating security group rules"
@@ -203,6 +205,11 @@ aws_start_sh: |
   report_status "$?" "creating VM"
   instance_id=$(jq -r .Instances[0].InstanceId vm_create.json)
 
+  longkeyfile="$(pwd)/${KEY_PAIR}_${instance_id}.pem"
+  cp -f ${KEY_FILE} "${longkeyfile}"
+  chmod 400 "${longkeyfile}"
+  KEY_FILE="${longkeyfile}"
+  
   aws ec2 wait instance-status-ok --region ${REGION} --instance-ids $instance_id
   aws ec2 describe-instances --region ${REGION} --instance-ids $instance_id > vm_result.json
 
@@ -214,20 +221,21 @@ aws_start_sh: |
   DEST_SITE=ubuntu@${IP_ADDRESS}
   DEST=${DEST_SITE}:${DEST_FOLDER}
   echo "Destination folder is ${DEST}"
-  scp -q -i $KEY_FILE -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $PWD $DEST
+  scp -q -i "${KEY_FILE}" -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $PWD $DEST
   report_status "$?" "copying startup kits to VM"
 
+  rm -f ${LOGFILE}.log
   if [ $container == true ]
   then
     echo "Launching container with docker option ${DOCKER_OPTION}."
-    ssh -f -i $KEY_FILE -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
+    ssh -f -i "${KEY_FILE}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
     "docker run -d -v ${DEST_FOLDER}:${DEST_FOLDER} --network host ${DOCKER_OPTION} ${image_name} \
     /bin/bash -c \"python -u -m nvflare.private.fed.app.{~~type~~}.{~~type~~}_train -m ${DEST_FOLDER} \
     -s fed_{~~type~~}.json --set {~~cln_uid~~} secure_train=true config_folder=config org={~~ORG~~} \" " > /tmp/nvflare.log 2>&1 
     report_status "$?" "launching container"
   else
     echo "Installing os packages as root in $VM_NAME, may take a few minutes ... "
-    ssh -f -i ${KEY_FILE} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
+    ssh -f -i "${KEY_FILE}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
     ' NVIDIA_OS_PKG="nvidia-driver-550-server" && sudo apt update && \
     sudo DEBIAN_FRONTEND=noninteractive apt install -y python3-dev gcc && \
     . /etc/os-release && if [ "${VERSION_ID}" \< "22.04" ]; then NVIDIA_OS_PKG="nvidia-driver-535-server"; fi && \
@@ -237,7 +245,7 @@ aws_start_sh: |
     report_status "$?" "installing os packages"
     sleep 10
     echo "Installing user space packages in $VM_NAME, may take a few minutes ... "
-    ssh -f -i ${KEY_FILE} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
+    ssh -f -i "${KEY_FILE}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
     ' echo "export PATH=~/.local/bin:$PATH" >> ~/.bashrc && \
     export PATH=/home/ubuntu/.local/bin:$PATH && \
     pwd && wget -q https://bootstrap.pypa.io/get-pip.py && \
@@ -258,7 +266,7 @@ aws_start_sh: |
 
   echo "System was provisioned"
   echo "To terminate the EC2 instance, run the following command."
-  echo "aws ec2 terminate-instances --instance-ids ${instance_id}"
+  echo "aws ec2 terminate-instances --region {REGION} --instance-ids ${instance_id}"
   echo "Other resources provisioned"
   echo "security group: ${SECURITY_GROUP}"
   echo "key pair: ${KEY_PAIR}"
