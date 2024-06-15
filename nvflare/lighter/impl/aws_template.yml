@@ -36,6 +36,8 @@ aws_start_sh: |
   AMI_IMAGE_OWNER="099720109477" # Owner account id=Amazon
   AMI_NAME="ubuntu-*-22.04-amd64-pro-server"
   ARCH=x86_64
+  AMI_IMAGE=ami-03c983f9003cb9cd1  # 22.04  20.04:ami-04bad3c587fe60d89 24.04:ami-0406d1fdd021121cd
+  EC2_TYPE=t2.small
   EC2_TYPE_ARM=t4g.small
   TMPDIR="${TMPDIR:-/tmp}"
   LOGFILE=$(mktemp "${TMPDIR}/nvflare-aws-XXX")
@@ -52,6 +54,9 @@ aws_start_sh: |
   : "${AWS_DEFAULT_REGION:=$REGION}"
   : "${AWS_REGION:=$AWS_DEFAULT_REGION}"
   REGION=${AWS_REGION}
+
+  echo "Note: run this command first for a different AWS profile:"
+  echo "  export AWS_PROFILE=your-profile-name."
 
   echo -e "\nChecking AWS identity ... \n"
   aws_identity=$(aws sts get-caller-identity)
@@ -78,11 +83,6 @@ aws_start_sh: |
   then
     AMI_IMAGE=ami-06b8d5099f3a8d79d
     EC2_TYPE=t2.xlarge
-    REGION=us-west-2
-  else
-    AMI_IMAGE=ami-03c983f9003cb9cd1  # 22.04  20.04:ami-04bad3c587fe60d89 24.04:ami-0406d1fdd021121cd
-    EC2_TYPE=t2.small
-    REGION=us-west-2
   fi
 
   if [ -z ${config_file+x} ]
@@ -130,7 +130,8 @@ aws_start_sh: |
 
   if [ $container == false ]
   then
-    echo "If the {~~type~~} requires additional dependencies, please copy the requirements.txt to ${DIR}."
+    echo "If the {~~type~~} requires additional Python packages, please add them to: "
+    echo "    ${DIR}/requirements.txt"
     prompt ans "Press ENTER when it's done or no additional dependencies. "
   fi
 
@@ -264,12 +265,16 @@ aws_start_sh: |
     sleep 10
   fi
 
-  echo "System was provisioned"
-  echo "To terminate the EC2 instance, run the following command."
-  echo "aws ec2 terminate-instances --region {REGION} --instance-ids ${instance_id}"
+  echo "System was provisioned, packages may continue to install in the background."
+  echo "To terminate the EC2 instance, run the following command:"
+  echo "  aws ec2 terminate-instances --region ${REGION} --instance-ids ${instance_id}"
   echo "Other resources provisioned"
   echo "security group: ${SECURITY_GROUP}"
   echo "key pair: ${KEY_PAIR}"
+  echo "review install progress:"
+  echo "  tail -f ${LOGFILE}.log"
+  echo "login to instance:"
+  echo "  ssh -i \"${KEY_FILE}\" ubuntu@${IP_ADDRESS}"
 
 aws_start_dsb_sh: |
   VM_NAME=nvflare_dashboard
