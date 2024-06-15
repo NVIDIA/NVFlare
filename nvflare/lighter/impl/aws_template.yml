@@ -213,22 +213,34 @@ aws_start_sh: |
     -s fed_{~~type~~}.json --set {~~cln_uid~~} secure_train=true config_folder=config org={~~ORG~~} \" " > /tmp/nvflare.log 2>&1 
     report_status "$?" "launching container"
   else
-    echo "Installing packages in $VM_NAME, may take a few minutes."
-    ssh -f -i $KEY_FILE -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
-    " sudo apt update && \
-    if lspci | grep -i nvidia; then sudo DEBIAN_FRONTEND=noninteractive apt install -y nvidia-driver-535-server; fi && \
-    if lspci | grep -i nvidia; then sudo modprobe nvidia; fi && \
-    echo 'export PATH=~/.local/bin:\$PATH' >> ~/.bashrc && \
-    export PATH=/home/ubuntu/.local/bin:\$PATH && \
+    echo "Installing os packages as root in $VM_NAME, may take a few minutes ... "
+    ssh -f -i ${KEY_FILE} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
+    ' NVIDIA_OS_PKG="nvidia-driver-550-server" && sudo apt update && \
+    sudo DEBIAN_FRONTEND=noninteractive apt install -y python3-dev gcc && \
+    . /etc/os-release && if [ "${VERSION_ID}" \< "22.04" ]; then NVIDIA_OS_PKG="nvidia-driver-535-server"; fi && \
+    if lspci | grep -i nvidia; then sudo DEBIAN_FRONTEND=noninteractive apt install -y ${NVIDIA_OS_PKG}; fi && \
+    if lspci | grep -i nvidia; then sudo modprobe nvidia; fi && sleep 10 && \
+    exit' >> ${LOGFILE}.log 2>&1
+    report_status "$?" "installing os packages"
+    sleep 10
+    echo "Installing user space packages in $VM_NAME, may take a few minutes ... "
+    ssh -f -i ${KEY_FILE} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
+    ' echo "export PATH=~/.local/bin:$PATH" >> ~/.bashrc && \
+    export PATH=/home/ubuntu/.local/bin:$PATH && \
     pwd && wget -q https://bootstrap.pypa.io/get-pip.py && \
+    timeout 300 sh -c """until [ -f /usr/bin/gcc ]; do sleep 3; done""" && \
     python3 get-pip.py --break-system-packages && python3 -m pip install --break-system-packages nvflare && \
-    touch ${DEST_FOLDER}/startup/requirements.txt && \
-    python3 -m pip install -r ${DEST_FOLDER}/startup/requirements.txt && \
-    python3 -m pip install --break-system-packages --no-cache-dir -r ${DEST_FOLDER}/startup/requirements.txt && \
-    (crontab -l 2>/dev/null; echo '@reboot  /var/tmp/cloud/startup/start.sh >> /var/tmp/nvflare-start.log 2>&1') | crontab && \
-    nohup ${DEST_FOLDER}/startup/start.sh && sleep 20 && \
-    exit" > /tmp/nvflare.log 2>&1
-    report_status "$?" "installing packages"
+    touch /var/tmp/cloud/startup/requirements.txt && \
+    printf "installing from requirements.txt: " && \
+    cat /var/tmp/cloud/startup/requirements.txt | tr "\n" " " && \
+    python3 -m pip install --break-system-packages --no-cache-dir -r /var/tmp/cloud/startup/requirements.txt && \
+    (crontab -l 2>/dev/null; echo "@reboot  /var/tmp/cloud/startup/start.sh >> /var/tmp/nvflare-start.log 2>&1") | crontab && \
+    NVIDIAMOD="nvidia.ko.zst" && . /etc/os-release && if [ "${VERSION_ID}" \< "24.04" -a "${VERSION_ID}" \> "16.04" ]; then NVIDIAMOD="nvidia.ko"; fi && \
+    if lspci | grep -i nvidia; then timeout 900 sh -c """until [ -f /lib/modules/$(uname -r)/updates/dkms/${NVIDIAMOD} ]; do sleep 3; done"""; fi && \
+    sleep 60 && nohup /var/tmp/cloud/startup/start.sh && sleep 20 && \
+    exit' >> ${LOGFILE}.log 2>&1
+    report_status "$?" "installing user space packages"
+    sleep 10
   fi
 
   echo "System was provisioned"
