@@ -19,6 +19,7 @@ from typing import Callable, List, Union
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, OperatorMethod, Task, TaskOperatorKey
+from nvflare.apis.dxo import DXO, from_file
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
@@ -77,8 +78,10 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         self.fl_ctx = fl_ctx
         self.info("Initializing BaseModelController workflow.")
 
+        self.engine = self.fl_ctx.get_engine()
+
         if self._persistor_id:
-            self.persistor = self._engine.get_component(self._persistor_id)
+            self.persistor = self.engine.get_component(self._persistor_id)
             if not isinstance(self.persistor, LearnablePersistor):
                 self.warning(
                     f"Model Persistor {self._persistor_id} must be a LearnablePersistor type object, "
@@ -86,7 +89,6 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
                 )
                 self.persistor = None
 
-        self.engine = self.fl_ctx.get_engine()
         FLComponentWrapper.initialize(self)
 
     def _build_shareable(self, data: FLModel = None) -> Shareable:
