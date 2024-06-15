@@ -19,6 +19,7 @@ from typing import Callable, List, Union
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, OperatorMethod, Task, TaskOperatorKey
+from nvflare.apis.dxo import DXO, from_file
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
@@ -77,8 +78,10 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         self.fl_ctx = fl_ctx
         self.info("Initializing BaseModelController workflow.")
 
+        self.engine = self.fl_ctx.get_engine()
+
         if self._persistor_id:
-            self.persistor = self._engine.get_component(self._persistor_id)
+            self.persistor = self.engine.get_component(self._persistor_id)
             if not isinstance(self.persistor, LearnablePersistor):
                 self.warning(
                     f"Model Persistor {self._persistor_id} must be a LearnablePersistor type object, "
@@ -86,7 +89,6 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
                 )
                 self.persistor = None
 
-        self.engine = self.fl_ctx.get_engine()
         FLComponentWrapper.initialize(self)
 
     def _build_shareable(self, data: FLModel = None) -> Shareable:
@@ -343,6 +345,46 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             self.info("End persist model on server.")
         else:
             self.error("persistor not configured, model will not be saved")
+
+    def get_run_dir(self):
+        """Get current run directory."""
+        return self.engine.get_workspace().get_run_dir(self.fl_ctx.get_job_id())
+
+    def get_app_dir(self):
+        """Get current app directory."""
+        return self.engine.get_workspace().get_app_dir(self.fl_ctx.get_job_id())
+
+    def save_flmodel(self, model: FLModel, filepath: str):
+        """Saves FLModel to filepath.
+        Args:
+            model (FLModel): FLModel object
+            filepath (str): filepath to save model to
+        Returns:
+            str: path to the file saved.
+        """
+        dxo = FLModelUtils.to_dxo(model)
+
+        try:
+            dxo.to_file(filepath)
+        except Exception as e:
+            raise ValueError(f"Unable to save FLModel to {filepath}: {secure_format_exception(e)}")
+
+    def load_flmodel(self, filepath: str) -> FLModel:
+        """Loads FLModel from filepath.
+        Args:
+            filepath (str): filepath to load model from
+
+        Returns:
+            FLModel: loaded FLModel.
+        """
+        try:
+            dxo: DXO = from_file(filepath)
+        except Exception as e:
+            raise ValueError(f"Unable to load FLModel from {filepath}: {secure_format_exception(e)}")
+
+        model = FLModelUtils.from_dxo(dxo)
+
+        return model
 
     def sample_clients(self, num_clients):
         clients = self.engine.get_clients()

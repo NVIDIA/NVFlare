@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from typing import Callable, Dict, Optional
 
 from nvflare.app_common.abstract.fl_model import FLModel
@@ -35,12 +36,11 @@ class FedAvgEarlyStopping(BaseFedAvg):
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-
-        self.best_model: Optional[FLModel] = None
         if stop_cond:
             self.stop_condition = parse_compare_criteria(stop_cond)
         else:
             self.stop_condition = None
+        self.best_model: Optional[FLModel] = None
 
     def run(self) -> None:
         self.info("Start FedAvg.")
@@ -73,7 +73,8 @@ class FedAvgEarlyStopping(BaseFedAvg):
                 )
                 break
 
-        self.save_model(self.best_model)
+        save_path = os.path.join(self.get_app_dir(), "FL_global_model.pt")
+        self.save_flmodel(self.best_model, save_path)
 
         self.info("Finished FedAvg.")
 
