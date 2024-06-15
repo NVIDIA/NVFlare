@@ -1,4 +1,33 @@
 aws_start_sh: |
+  function find_ec2_gpu_instance_type() {
+    local gpucnt=0
+    local gpumem=0
+    if rfile=$(get_resources_file)
+      then
+      # Parse the number of GPUs and memory per GPU from the resource_manager component in local/resources.json
+      gpucnt=$(jq -r '.components[] | select(.id == "resource_manager") | .args.num_of_gpus' "${rfile}")
+      if [ ${gpucnt} -gt 0 ]
+        then
+        gpumem=$(jq -r '.components[] | select(.id == "resource_manager") | .args.mem_per_gpu_in_GiB' "${rfile}")
+        if [ ${gpumem} -gt 0 ]
+          then
+          gpumem=$(( ${gpumem}*1024 ))
+          printf "    finding smallest instance type with ${gpucnt} GPUs and ${gpumem} MiB VRAM ... "
+          gpu_types=$(aws ec2 describe-instance-types --region ${REGION} --query 'InstanceTypes[?GpuInfo.Gpus[?Manufacturer==`NVIDIA`]].{InstanceType: InstanceType, GPU: GpuInfo.Gpus[*].{Name: Name, GpuMemoryMiB: MemoryInfo.SizeInMiB, GpuCount: Count}, Architecture: ProcessorInfo.SupportedArchitectures, VCpuCount: VCpuInfo.DefaultVCpus, MemoryMiB: MemoryInfo.SizeInMiB}' --output json)
+          filtered_gpu_types=$(echo ${gpu_types} | jq "[.[] | select(.GPU | any(.GpuCount == ${gpucnt} and .GpuMemoryMiB >= ${gpumem})) | select(.Architecture | index(\"${ARCH}\"))]")
+          smallest_gpu_type=$(echo ${filtered_gpu_types} | jq -r 'min_by(.VCpuCount).InstanceType')
+          if [ ${smallest_gpu_type} = null ]
+            then
+            echo "failed finding a GPU instance, EC2_TYPE unchanged."
+          else
+            echo "${smallest_gpu_type} found"
+            EC2_TYPE=${smallest_gpu_type}
+          fi
+        fi
+      fi
+    fi
+  }
+
   VM_NAME=nvflare_{~~type~~}
   SECURITY_GROUP=nvflare_{~~type~~}_sg_$RANDOM
   DEST_FOLDER=/var/tmp/cloud
