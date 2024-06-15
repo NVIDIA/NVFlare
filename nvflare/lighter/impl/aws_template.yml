@@ -51,6 +51,13 @@ aws_start_sh: |
   : "${AWS_REGION:=$AWS_DEFAULT_REGION}"
   REGION=${AWS_REGION}
 
+  echo -e "\nChecking AWS identity ... \n"
+  aws_identity=$(aws sts get-caller-identity)
+  if [[ $? -ne 0 ]]; then
+    echo ""
+    exit 1
+  fi
+
   if [ -z ${vpc_id+x} ]
   then
       using_default_vpc=true
