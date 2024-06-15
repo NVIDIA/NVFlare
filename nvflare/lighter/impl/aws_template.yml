@@ -33,6 +33,10 @@ aws_start_sh: |
   DEST_FOLDER=/var/tmp/cloud
   KEY_PAIR=NVFlare{~~type~~}KeyPair
   KEY_FILE=${KEY_PAIR}.pem
+  AMI_IMAGE_OWNER="099720109477" # Owner account id=Amazon
+  AMI_NAME="ubuntu-*-22.04-amd64-pro-server"
+  ARCH=x86_64
+  EC2_TYPE_ARM=t4g.small
 
   echo "This script requires aws (AWS CLI), sshpass, dig and jq.  Now checking if they are installed."
 
@@ -75,14 +79,32 @@ aws_start_sh: |
       report_status "$?" "Loading config file"
   fi
 
-
   if [ $useDefault == true ]
   then
     while true
     do
-      prompt AMI_IMAGE "Cloud AMI image, press ENTER to accept default ${AMI_IMAGE}: "
-      prompt EC2_TYPE "Cloud EC2 type, use g4dn.xlarge for GPU or press ENTER to accept default ${EC2_TYPE}: "
       prompt REGION "Cloud EC2 region, press ENTER to accept default ${REGION}: "
+      if [ ${container} = false ]
+        then
+        read -e -i ${AMI_NAME} -p "Cloud AMI image name, press ENTER to accept default (use amd64 or arm64): " AMI_NAME
+        printf "    retrieving AMI ID for ${AMI_NAME} ... "
+        IMAGES=$(aws ec2 describe-images --region ${REGION} --owners ${AMI_IMAGE_OWNER} --filters "Name=name,Values=*${AMI_NAME}*" --output json)
+        if [ "${#IMAGES}" -lt 30 ]
+          then
+          echo -e "\nNo images found, starting over\n"
+          continue
+        fi
+        AMI_IMAGE=$(echo $IMAGES | jq -r '.Images | sort_by(.CreationDate) | last(.[]).ImageId')
+        echo "${AMI_IMAGE} found"
+        if [[ "$AMI_NAME" == *"arm64"* ]]
+          then
+          ARCH="arm64"
+          EC2_TYPE=${EC2_TYPE_ARM}
+        fi
+        find_ec2_gpu_instance_type
+      fi
+      prompt AMI_IMAGE "Cloud AMI image, press ENTER to accept default ${AMI_IMAGE}: "
+      prompt EC2_TYPE "Cloud EC2 type, press ENTER to accept default ${EC2_TYPE}: "
       prompt ans "region = ${REGION}, ami image = ${AMI_IMAGE}, EC2 type = ${EC2_TYPE}, OK? (Y/n) "
       if [[ $ans = "" ]] || [[ $ans =~ ^(y|Y)$ ]]
       then
