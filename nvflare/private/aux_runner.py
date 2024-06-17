@@ -16,7 +16,6 @@ import time
 from threading import Lock
 from typing import Dict, List
 
-from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import ConfigVarName, ReturnCode, SystemConfigs
 from nvflare.apis.fl_context import FLContext
