@@ -130,7 +130,7 @@ void *LocalProcessor::ProcessClearAggregation(std::size_t *size, std::map<int, s
     auto total_size = histo_size * nodes.size();
 
     histo_.clear();
-    histo_.reserve(total_size);
+    histo_.resize(total_size, 0.0);
     size_t start = 0;
     for (const auto &node : nodes) {
         auto rows = node.second;
