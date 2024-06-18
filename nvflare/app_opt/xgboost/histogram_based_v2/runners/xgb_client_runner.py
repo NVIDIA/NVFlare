@@ -130,7 +130,7 @@ class XGBClientRunner(AppRunner, FLComponent):
             self._xgb_params["device"] = f"cuda:{self._rank}"
 
         self.logger.info(
-            f"XGB trainging_mode: {self._training_mode} " f"params: {self._xgb_params} XGB options: {self._xgb_options}"
+            f"XGB training_mode: {self._training_mode} " f"params: {self._xgb_params} XGB options: {self._xgb_options}"
         )
         self.logger.info(f"server address is {self._server_addr}")
 
