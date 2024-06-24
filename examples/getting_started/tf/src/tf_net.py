@@ -36,24 +36,30 @@ class ModerateTFNet(models.Sequential):
     def __init__(self, input_shape=(None, 32, 32, 3)):
         super().__init__()
         self._input_shape = input_shape
+
         # Do not specify input as we will use delayed built only during runtime of the model
         # self.add(layers.Input(shape=(32, 32, 3)))
+
         # Conv Layer block 1
         self.add(layers.Conv2D(32, (3, 3), activation="relu", padding="same"))
         self.add(layers.Conv2D(64, (3, 3), activation="relu", padding="same"))
         self.add(layers.MaxPooling2D((2, 2)))
+
         # Conv Layer block 2
         self.add(layers.Conv2D(128, (3, 3), activation="relu", padding="same"))
         self.add(layers.Conv2D(128, (3, 3), activation="relu", padding="same"))
         self.add(layers.MaxPooling2D((2, 2)))
-        #self.add(layers.Dropout(rate=0.05))
+        self.add(layers.Dropout(rate=0.05))
+
         # Conv Layer block 3
         self.add(layers.Conv2D(256, (3, 3), activation="relu", padding="same"))
         self.add(layers.Conv2D(256, (3, 3), activation="relu", padding="same"))
         self.add(layers.MaxPooling2D((2, 2)))
         self.add(layers.Flatten())
-        #self.add(layers.Dropout(rate=0.1))
+
+        # FC Layer
+        self.add(layers.Dropout(rate=0.1))
         self.add(layers.Dense(512, activation="relu"))
         self.add(layers.Dense(512, activation="relu"))
-        #self.add(layers.Dropout(rate=0.1))
+        self.add(layers.Dropout(rate=0.1))
         self.add(layers.Dense(10))
