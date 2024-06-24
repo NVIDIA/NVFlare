@@ -12,13 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
 import argparse
+
+import multiprocessing
 
 from src.tf_net import ModerateTFNet
 from src.cifar10_data_split import cifar10_split
 
 from nvflare import FedJob, ScriptExecutor
 from nvflare.app_opt.tf.fedopt_ctl import FedOpt
+
+import tensorflow as tf
+gpu_devices = tf.config.experimental.list_physical_devices("GPU")
+for device in gpu_devices:
+    tf.config.experimental.set_memory_growth(device, True)
 
 
 if __name__ == "__main__":
@@ -42,7 +50,7 @@ if __name__ == "__main__":
         "--epochs",
         type=int,
         default=4,
-    )       
+    )
     parser.add_argument(
         "--alpha",
         type=float,
@@ -52,14 +60,21 @@ if __name__ == "__main__":
         "--gpu",
         type=int,
         default=0,
-    )    
+    )
     args = parser.parse_args()
-    
+    multiprocessing.set_start_method('spawn')
+
     train_script = "src/cifar10_tf_fl_alpha_split.py"
     train_split_root = f"/tmp/cifar10_splits/clients{args.n_clients}_alpha{args.alpha}"  # avoid overwriting results
 
     # Prepare data splits
-    train_idx_paths = cifar10_split(num_sites=args.n_clients, alpha=args.alpha, split_dir=train_split_root)
+    if args.alpha > 0.0:
+
+        # Do alpha splitting if alpha value > 0.0
+        train_idx_paths = cifar10_split(num_sites=args.n_clients, alpha=args.alpha, split_dir=train_split_root)
+
+    else:
+        train_idx_paths = [None for __ in range(args.n_clients)]
 
     # Define job
     job = FedJob(name=f"cifar10_tf_fedopt_alpha{args.alpha}")
