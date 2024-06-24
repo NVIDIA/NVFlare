@@ -67,6 +67,7 @@ class MetaKey(object):
     DURATION = "duration"
     CMD_TIMEOUT = "cmd_timeout"
     CUSTOM_PROPS = "custom_props"
+    CMD_PROPS = "cmd_props"
     FILES = "files"
     CMD_NAME = "cmd_name"
     TX_ID = "tx_id"

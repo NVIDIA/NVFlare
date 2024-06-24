@@ -371,10 +371,11 @@ class Cell(StreamCell):
 
         if not callable(cb):
             raise ValueError(f"specified request_cb {type(cb)} is not callable")
+
+        # always register with core_cell since some requests (e.g. broadcast_multi_requests) will directly go
+        # through the core_cell, even if the channel may be a stream channel (e.g. aux channel).
+        self.core_cell.register_request_cb(channel, topic, cb, *args, **kwargs)
         if _is_stream_channel(channel):
             self.logger.info(f"Register blob CB for {channel=}, {topic=}")
             adapter = Adapter(cb, self.core_cell.my_info, self)
             self.register_blob_cb(channel, topic, adapter.call, *args, **kwargs)
-        else:
-            self.logger.info(f"Register regular CB for {channel=}, {topic=}")
-            self.core_cell.register_request_cb(channel, topic, cb, *args, **kwargs)

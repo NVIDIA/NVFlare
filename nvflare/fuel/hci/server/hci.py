@@ -85,6 +85,10 @@ class _MsgHandler(socketserver.BaseRequestHandler):
                             if custom_props:
                                 conn.set_prop(ConnProps.CUSTOM_PROPS, custom_props)
 
+                            cmd_props = meta.get(MetaKey.CMD_PROPS)
+                            if cmd_props:
+                                conn.set_prop(ConnProps.CMD_PROPS, cmd_props)
+
                         data = req_json[ProtoKey.DATA]
                         for item in data:
                             it = item[ProtoKey.TYPE]

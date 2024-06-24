@@ -22,9 +22,10 @@ from typing import Dict, List
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, RunProcessKey
+from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, ReturnCode, RunProcessKey, ServerCommandKey
 from nvflare.apis.job_def import Job, JobMetaKey, is_valid_job_id
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
+from nvflare.apis.shareable import Shareable
 from nvflare.apis.storage import DATA, JOB_ZIP, META, META_JSON, WORKSPACE, WORKSPACE_ZIP
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, make_meta
@@ -163,6 +164,13 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     client_cmd=ftd.PULL_BINARY_FQN,
                     visible=False,
                 ),
+                CommandSpec(
+                    name=AdminCommandNames.APP_COMMAND,
+                    description="execute an app-defined command",
+                    usage=f"{AdminCommandNames.APP_COMMAND} job_id topic # cmd_data",
+                    handler_func=self.do_app_command,
+                    authz_func=self.authorize_job_id,
+                ),
             ],
         )
 
@@ -176,9 +184,9 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             return PreAuthzReturnCode.ERROR
         job_id = args[2]
         args_for_authz = [args[0], job_id]
-        return self.authorize_job(conn, args_for_authz)
+        return self.authorize_job_id(conn, args_for_authz)
 
-    def authorize_job(self, conn: Connection, args: List[str]):
+    def authorize_job_id(self, conn: Connection, args: List[str]):
         if len(args) < 2:
             conn.append_error(
                 "syntax error: missing job_id", meta=make_meta(MetaStatusValue.SYNTAX_ERROR, "missing job_id")
@@ -204,10 +212,15 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             return PreAuthzReturnCode.ERROR
 
         conn.set_prop(self.JOB, job)
-
         conn.set_prop(ConnProps.SUBMITTER_NAME, job.meta.get(JobMetaKey.SUBMITTER_NAME, ""))
         conn.set_prop(ConnProps.SUBMITTER_ORG, job.meta.get(JobMetaKey.SUBMITTER_ORG, ""))
         conn.set_prop(ConnProps.SUBMITTER_ROLE, job.meta.get(JobMetaKey.SUBMITTER_ROLE, ""))
+        return PreAuthzReturnCode.REQUIRE_AUTHZ
+
+    def authorize_job(self, conn: Connection, args: List[str]):
+        rc = self.authorize_job_id(conn, args)
+        if rc == PreAuthzReturnCode.ERROR:
+            return rc
 
         if len(args) > 2:
             err = self.validate_command_targets(conn, args[2:])
@@ -642,3 +655,52 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 self.logger.error(f"exception downloading job {job_id}: {secure_format_exception(e)}")
                 self._clean_up_download(conn, tx_id)
                 conn.append_error("internal error", meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
+
+    def do_app_command(self, conn: Connection, args: List[str]):
+        # cmd job_id topic
+        if len(args) != 3:
+            cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY)
+            conn.append_string(f"Usage: {cmd_entry.usage}", meta=make_meta(MetaStatusValue.SYNTAX_ERROR, ""))
+            return
+
+        engine = conn.app_ctx
+        if not isinstance(engine, ServerEngineInternalSpec):
+            raise TypeError(f"engine must be ServerEngineInternalSpec but got {type(engine)}")
+
+        job_id = conn.get_prop(self.JOB_ID)
+        topic = args[2]
+        cmd_data = conn.get_prop(ConnProps.CMD_PROPS)
+
+        if job_id not in engine.run_processes:
+            conn.append_error(
+                f"Job_id: {job_id} is not running.", meta=make_meta(MetaStatusValue.JOB_NOT_RUNNING, job_id)
+            )
+            return
+
+        timeout = conn.get_prop(ConnProps.CMD_TIMEOUT)
+        if not timeout:
+            timeout = 5.0
+        result = engine.send_app_command(job_id, topic, cmd_data, timeout)
+        if result is None:
+            conn.append_error(
+                "command execution error: no result", meta=make_meta(MetaStatusValue.NO_REPLY, "no result")
+            )
+            return
+
+        if not isinstance(result, Shareable):
+            conn.append_error(
+                f"command execution internal error: invalid result type {type(result)}",
+                meta=make_meta(MetaStatusValue.INTERNAL_ERROR, f"invalid result type {type(result)}"),
+            )
+            return
+
+        rc = result.get_return_code()
+        if rc != ReturnCode.OK:
+            reason = result.get_header(ServerCommandKey.REASON)
+            conn.append_error(
+                f"command execution error: {rc=} {reason=}", meta=make_meta(MetaStatusValue.ERROR, f"{rc=} {reason=}")
+            )
+            return
+
+        reply = result.get(ServerCommandKey.DATA)
+        conn.append_dict(reply)
