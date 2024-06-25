@@ -67,6 +67,8 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         Returns: None
 
         """
+        simulate_mode = fl_ctx.get_prop(FLContextKey.SIMULATE_MODE, False)
+        model_dir = self._app_dir if simulate_mode else self._run_dir
         runner_ctx = {
             Constant.RUNNER_CTX_WORLD_SIZE: self.world_size,
             Constant.RUNNER_CTX_CLIENT_NAME: self._client_name,
@@ -76,7 +78,7 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
             Constant.RUNNER_CTX_TRAINING_MODE: self.training_mode,
             Constant.RUNNER_CTX_XGB_PARAMS: self.xgb_params,
             Constant.RUNNER_CTX_XGB_OPTIONS: self.xgb_options,
-            Constant.RUNNER_CTX_MODEL_DIR: self._run_dir,
+            Constant.RUNNER_CTX_MODEL_DIR: model_dir,
             Constant.RUNNER_CTX_TB_DIR: self._app_dir,
         }
         self.start_runner(runner_ctx, fl_ctx)
