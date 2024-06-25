@@ -1,18 +1,56 @@
 #!/usr/bin/env bash
 
-export TF_FORCE_GPU_ALLOW_GROWTH=true 
+export TF_FORCE_GPU_ALLOW_GROWTH=true
 export TF_GPU_ALLOCATOR=cuda_malloc_asyncp
 
-#python tf_fedavg_script_executor_cifar10_alpha_split.py --n_clients 8 --alpha 1.0 --gpu 0
-#python tf_fedavg_script_executor_cifar10_alpha_split.py --n_clients 8 --alpha 0.5 --gpu 1
-#python tf_fedavg_script_executor_cifar10_alpha_split.py --n_clients 8 --alpha 0.3 --gpu 2
-#python tf_fedavg_script_executor_cifar10_alpha_split.py --n_clients 8 --alpha 0.1 --gpu 4
+
+# You can change GPU index if multiple GPUs are available
+GPU_INDX=0
 
 
-python tf_fedopt_script_executor_cifar10_alpha_split.py --n_clients 8 --alpha 1.0 --gpu 0
+# Run centralized training job
+python ./tf_fl_script_executor_cifar10.py \
+       --algo centralized \
+       --n_clients 1 \
+       --num_rounds 1 \
+       --batch_size 64 \
+       --epochs 25 \
+       --alpha 0.0 \
+       --gpu $GPU_INDX
 
-#export CUDA_VISIBLE_DEVICES=0; 
-#nvflare simulator -w ./workdir/cifar10_tf_fedavg_alpha1.0 -n 8 -t 8 /tmp/nvflare/jobs/job_config/cifar10_tf_fedavg_alpha1.0 &
-#export CUDA_VISIBLE_DEVICES=1; nvflare simulator -w ./workdir/cifar10_tf_fedavg_alpha0.5 -n 8 -t 8 /tmp/nvflare/jobs/job_config/cifar10_tf_fedavg_alpha0.5 &
-#export CUDA_VISIBLE_DEVICES=2; nvflare simulator -w ./workdir/cifar10_tf_fedavg_alpha0.3 -n 8 -t 8 /tmp/nvflare/jobs/job_config/cifar10_tf_fedavg_alpha0.3 &
-#export CUDA_VISIBLE_DEVICES=3; nvflare simulator -w ./workdir/cifar10_tf_fedavg_alpha0.1 -n 8 -t 8 /tmp/nvflare/jobs/job_config/cifar10_tf_fedavg_alpha0.1
+# Run FedAvg with different alpha values
+for alpha in 1.0 0.5 0.3 0.1; do
+
+    python ./tf_fl_script_executor_cifar10.py \
+       --algo fedavg \
+       --n_clients 8 \
+       --num_rounds 50 \
+       --batch_size 64 \
+       --epochs 4 \
+       --alpha $alpha \
+       --gpu $GPU_INDX
+
+done
+
+
+# Run FedProx job.
+python ./tf_fl_script_executor_cifar10.py \
+       --algo fedprox \
+       --n_clients 8 \
+       --num_rounds 50 \
+       --batch_size 64 \
+       --epochs 4 \
+       --fedprox_mu 1e-5 \
+       --alpha 0.1 \
+       --gpu $GPU_INDX
+
+
+# Run FedOpt job
+python ./tf_fl_script_executor_cifar10.py \
+       --algo fedopt \
+       --n_clients 8 \
+       --num_rounds 50 \
+       --batch_size 64 \
+       --epochs 4 \
+       --alpha 0.1 \
+       --gpu $GPU_INDX
