@@ -31,6 +31,10 @@ PATH = "./tf_model.weights.h5"
 
 
 class SparseCategoricalCrossentropyWithFedProx(losses.SparseCategoricalCrossentropy):
+    """
+    Override SparseCategoricalCrossentropy loss for FedProx,
+    adding regularization term.
+    """
     def __init__(
             self,
             *args,
@@ -60,6 +64,9 @@ class SparseCategoricalCrossentropyWithFedProx(losses.SparseCategoricalCrossentr
 
 
 class SetFedProxValues(callbacks.Callback):
+    """
+    Set up current model and target model for FedProx loss computation.
+    """
     def __init__(self, fedprox_loss):
         super().__init__()
         self.fedprox_loss = fedprox_loss
@@ -111,51 +118,26 @@ def preprocess_dataset(dataset, is_training, batch_size=1):
 
     if is_training:
 
-
         # Padding each dimension by 4 pixels each side
         dataset = dataset.map(
             lambda image, label: (
-                tf.stack(
-                    [
-                        tf.pad(tf.squeeze(t, [2]), [[4, 4], [4, 4]], mode='REFLECT')
-                        for t in tf.split(image, num_or_size_splits=3, axis=2)
-                    ],
-                    axis=2
-                ),
-                label
-            )
+                tf.stack([tf.pad(tf.squeeze(t, [2]), [[4, 4], [4, 4]], mode='REFLECT')
+                          for t in tf.split(image, num_or_size_splits=3, axis=2)], axis=2), label)
         )
-
         # Random crop of 32 x 32 x 3
         dataset = dataset.map(
-            lambda image, label: (
-                tf.image.random_crop(
-                    image,
-                    size=(32, 32, 3)
-                ),
-                label
-            )
+            lambda image, label: (tf.image.random_crop(image, size=(32, 32, 3)), label)
         )
-
         # Random horizontal flip
         dataset = dataset.map(
-            lambda image, label: (
-                tf.image.random_flip_left_right(image),
-                label
-            )
+            lambda image, label: (tf.image.random_flip_left_right(image), label)
         )
-
         # Normalize by dividing by given mean & std
         dataset = dataset.map(
-            lambda image, label: (
-                (tf.cast(image, tf.float32) - mean_cifar10) / std_cifar10,
-                label
-            )
+            lambda image, label: ((tf.cast(image, tf.float32) - mean_cifar10) / std_cifar10, label)
         )
-
         # Random shuffle
         dataset = dataset.shuffle(len(dataset), reshuffle_each_iteration=True)
-
         # Convert to batches.
         return dataset.batch(batch_size)
 
@@ -163,10 +145,7 @@ def preprocess_dataset(dataset, is_training, batch_size=1):
 
         # For validation / test only do normalization.
         return dataset.map(
-            lambda image, label: (
-                (tf.cast(image, tf.float32) - mean_cifar10) / std_cifar10,
-                label
-            )
+            lambda image, label: ((tf.cast(image, tf.float32) - mean_cifar10) / std_cifar10, label)
         ).batch(batch_size)
 
 
@@ -199,21 +178,21 @@ def main():
 
     (train_images, train_labels), (test_images, test_labels) = datasets.cifar10.load_data()
 
-    # Doing alpha splitting to simulate data heteogeniety,
+    # Use alpha-split per-site data to simulate data heteogeniety,
     # only if if train_idx_path is not None.
     #
     if args.train_idx_path != "None":
 
         print(f"Loading train indices from {args.train_idx_path}")
         train_idx = np.load(args.train_idx_path)
-        print(f"Loaded {len(train_idx)} training indices with label distribution:")
-
         train_images = train_images[train_idx]
         train_labels = train_labels[train_idx]
 
-    unq, unq_cnt = np.unique(train_labels, return_counts=True)
-    print("Unique labels:", unq)
-    print("Unique Counts:", unq_cnt)
+        unq, unq_cnt = np.unique(train_labels, return_counts=True)
+        print(
+            (f"Loaded {len(train_idx)} training indices from {args.train_idx_path} "
+             "with label distribution:\nUnique labels: {unq}\nUnique Counts: {unq_cnt}")
+        )
 
     # Convert training & testing data to datasets
     train_ds = tf.data.Dataset.from_tensor_slices((train_images, train_labels))
@@ -228,6 +207,7 @@ def main():
 
     callbacks = [tf.keras.callbacks.TensorBoard(log_dir="./logs_keras", write_graph=False)]
 
+    # Control whether FedProx is used.
     if args.fedprox_mu > 0:
         loss = SparseCategoricalCrossentropyWithFedProx(from_logits=True)
         callbacks.append(SetFedProxValues(loss))
@@ -258,7 +238,7 @@ def main():
             model.get_layer(k).set_weights(v)
 
         # (5) evaluate aggregated/received model
-        _, test_global_acc = model.evaluate(test_images, test_labels, verbose=2)
+        _, test_global_acc = model.evaluate(x=test_ds, verbose=2)
         summary_writer.add_scalar(tag="global_model_accuracy", scalar=test_global_acc, global_step=input_model.current_round)
 
         with tf_summary_writer.as_default():
@@ -284,7 +264,6 @@ def main():
 
         model.save_weights(PATH)
 
-        # _, test_acc = model.evaluate(test_images, test_labels, verbose=2)
         _, test_acc = model.evaluate(x=test_ds, verbose=2)
 
         summary_writer.add_scalar(tag="local_model_accuracy", scalar=test_acc, global_step=input_model.current_round)
