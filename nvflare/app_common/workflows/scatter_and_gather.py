@@ -48,7 +48,7 @@ class ScatterAndGather(Controller):
         start_round: int = 0,
         wait_time_after_min_received: int = 10,
         aggregator_id=AppConstants.DEFAULT_AGGREGATOR_ID,
-        persistor_id=AppConstants.DEFAULT_PERSISTOR_ID,
+        persistor_id="",
         shareable_generator_id=AppConstants.DEFAULT_SHAREABLE_GENERATOR_ID,
         train_task_name=AppConstants.TASK_TRAIN,
         train_timeout: int = 0,
@@ -75,7 +75,7 @@ class ScatterAndGather(Controller):
             wait_time_after_min_received (int, optional): Time to wait before beginning aggregation after
                 minimum number of clients responses has been received. Defaults to 10.
             aggregator_id (str, optional): ID of the aggregator component. Defaults to "aggregator".
-            persistor_id (str, optional): ID of the persistor component. Defaults to "persistor".
+            persistor_id (str, optional): ID of the persistor component. Defaults to "".
             shareable_generator_id (str, optional): ID of the shareable generator. Defaults to "shareable_generator".
             train_task_name (str, optional): Name of the train task. Defaults to "train".
             train_timeout (int, optional): Time to wait for clients to do local training.
