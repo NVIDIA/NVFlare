@@ -129,7 +129,7 @@ if __name__ == "__main__":
 
     elif args.algo == FEDPROX_ALGO:
         from nvflare import FedAvg
-        controller = FedOpt(
+        controller = FedAvg(
             min_clients=args.n_clients,
             num_rounds=args.num_rounds,
         )
@@ -142,9 +142,9 @@ if __name__ == "__main__":
 
     # Add clients
     for i, train_idx_path in enumerate(train_idx_paths):
-        task_script_args += f" --train_idx_path {train_idx_path}"
+        curr_task_script_args = task_script_args + f" --train_idx_path {train_idx_path}"
         executor = ScriptExecutor(
-            task_script_path=train_script, task_script_args=task_script_args
+            task_script_path=train_script, task_script_args=curr_task_script_args
         )
         job.to(executor, f"site-{i+1}", gpu=args.gpu)
 
