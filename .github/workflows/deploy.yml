@@ -4,9 +4,12 @@ on:
   # Trigger the workflow every time you push to the `main` branch
   # Using a different branch name? Replace `main` with your branch’s name
   push:
-    branches: [ web ]
+    branches: [ main ]
   # Allows you to run this workflow manually from the Actions tab on GitHub.
   workflow_dispatch:
+
+env:
+  site_path: ./web
 
 # Allow this job to clone the repo and create a page deployment
 permissions:
@@ -20,12 +23,28 @@ jobs:
     steps:
       - name: Checkout your repository using git
         uses: actions/checkout@v4
-      - name: Install, build, and upload your site
-        uses: withastro/action@v2
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          path: ./web # The root location of your Astro project inside the repository. (optional)
-          # node-version: 20 # The specific version of Node that should be used to build your site. Defaults to 20. (optional)
-          # package-manager: pnpm@latest # The Node package manager that should be used to install dependencies and build your site. Automatically detected based on your lockfile. (optional)
+          node-version: 20
+          cache: npm
+          cache-dependency-path: "${{ env.site_path }}/package-lock.json"
+
+      - name: Install
+        shell: "bash"
+        working-directory: ${{ env.site_path }}
+        run: npm install
+
+      - name: Build
+        shell: "bash"
+        working-directory: ${{ env.site_path }}
+        run: npm run build
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "${{ env.site_path }}/dist/"
 
   deploy:
     needs: build
