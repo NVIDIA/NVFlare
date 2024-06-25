@@ -168,11 +168,14 @@ Client API communication patterns
 We offer various implementations of Client APIs tailored to different scenarios, each linked with distinct communication patterns.
 
 Broadly, we present in-process and sub-process executors. The in-process executor, slated for release in NVFlare 2.5.0,
-entails both training scripts and client executor operating within the same process. Communication between them occurs
+entails both training scripts and client executor operating within the same process. The training scripts will be launched once
+at the event of START_RUN. The training scripts keep on running till the END_RUN event. Communication between them occurs
 through an in-memory databus.
 
 On the other hand, the LauncherExecutor employs a sub-process to execute training scripts, leading to the client executor
-and training scripts residing in separate processes. Communication between them is facilitated by either CellPipe
+and training scripts residing in separate processes. The "launch_once" option is provided to the SubprocessLauncher to control
+whether to launch the external script everytime when getting the task from server, or just launch the script once at the event
+of START_RUN and keeps running till the END_RUN event. Communication between them is facilitated by either CellPipe
 (default) or FilePipe.
 
 When the training process involves either a single GPU or no GPUs, and the training script doesn't integrate third-party
