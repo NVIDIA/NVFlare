@@ -147,4 +147,4 @@ This can be observed in the resulting performance of the FedAvg algorithms.
 | cifar10_fedavg |	0.1 |	0.7903 |
 
 ![Impact of client data
-heterogeneity](./figs/fedavg-vs-centralized.png)
+heterogeneity](./figs/fedavg-diff-alphas.png)
