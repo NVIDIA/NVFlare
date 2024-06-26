@@ -283,21 +283,21 @@ class Connector(ABC, FLComponent):
             )
             self.process.start()
 
-    def stop_applet(self):
+    def stop_applet(self, timeout=0.0):
         """Stop the running of the applet
 
         Returns: None
 
         """
         if self.applet_env == Constant.APPLET_ENV_SELF:
-            self.applet.stop()
+            self.applet.stop(timeout)
             return
 
         if self.in_process:
             applet = self.applet
             self.applet = None
             if applet:
-                applet.stop()
+                applet.stop(timeout)
         else:
             p = self.process
             self.process = None

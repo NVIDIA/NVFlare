@@ -27,6 +27,7 @@ class FlowerExecutor(TieExecutor):
         configure_task_name=Constant.CONFIG_TASK_NAME,
         per_msg_timeout=10.0,
         tx_timeout=100.0,
+        client_shutdown_timeout=5.0,
     ):
         TieExecutor.__init__(
             self,
@@ -37,6 +38,7 @@ class FlowerExecutor(TieExecutor):
         self.int_server_grpc_options = None
         self.per_msg_timeout = per_msg_timeout
         self.tx_timeout = tx_timeout
+        self.client_shutdown_timeout = client_shutdown_timeout
         self.num_rounds = None
         self.client_app = client_app
 

@@ -11,9 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import grpc
-
+import time
 import nvflare.app_opt.flower.proto.grpcadapter_pb2 as pb2
+from nvflare.apis.shareable import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_opt.flower.connectors.flower_connector import FlowerClientConnector
 from nvflare.app_opt.flower.defs import Constant, msg_container_to_shareable, shareable_to_msg_container
@@ -29,8 +29,10 @@ class GrpcClientConnector(FlowerClientConnector, GrpcAdapterServicer):
         int_server_grpc_options=None,
         per_msg_timeout=2.0,
         tx_timeout=10.0,
+        client_shutdown_timeout=5.0,
     ):
         FlowerClientConnector.__init__(self, per_msg_timeout, tx_timeout)
+        self.client_shutdown_timeout = client_shutdown_timeout
         self.int_server_grpc_options = int_server_grpc_options
         self.internal_grpc_server = None
         self.stopped = False
@@ -53,7 +55,7 @@ class GrpcClientConnector(FlowerClientConnector, GrpcAdapterServicer):
 
     def _stop_client(self):
         self._training_stopped = True
-        self.stop_applet()
+        self.stop_applet(self.client_shutdown_timeout)
 
     def _is_stopped(self) -> (bool, int):
         applet_stopped, ec = self.is_applet_stopped()
@@ -116,7 +118,13 @@ class GrpcClientConnector(FlowerClientConnector, GrpcAdapterServicer):
         """
         try:
             reply = self._send_flower_request(msg_container_to_shareable(request))
-            return shareable_to_msg_container(reply)
+            rc = reply.get_return_code()
+            if rc == ReturnCode.OK:
+                return shareable_to_msg_container(reply)
+            else:
+                # server side already ended
+                self.logger.warn(f"Flower server has stopped with RC {rc}")
+                return pb2.MessageContainer(metadata={"should-exit": "true"})
         except Exception as ex:
             self._abort(reason=f"_send_flower_request exception: {secure_format_exception(ex)}")
-            context.abort(grpc.StatusCode.CANCELLED, "service closed")
+

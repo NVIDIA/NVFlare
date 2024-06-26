@@ -33,12 +33,14 @@ def main():
         raise RuntimeError("missing server address '--addr/-a' in command")
 
     print(f"starting server: {args.addr=} {args.max_workers=} {args.num_rounds=}")
+    servicer = EchoServicer(args.num_rounds)
     server = GrpcServer(
         args.addr,
         max_workers=args.max_workers,
         grpc_options=None,
-        servicer=EchoServicer(),
+        servicer=servicer,
     )
+    servicer.set_server(server)
     server.start()
 
 

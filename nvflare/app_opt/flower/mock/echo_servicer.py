@@ -18,14 +18,29 @@ from nvflare.fuel.utils.obj_utils import get_logger
 
 
 class EchoServicer(GrpcAdapterServicer):
-    def __init__(self):
+    def __init__(self, num_rounds):
         self.logger = get_logger(self)
+        self.num_rounds = num_rounds
+        self.server = None
+        self.stopped = False
+
+    def set_server(self, s):
+        self.server = s
 
     def SendReceive(self, request: pb2.MessageContainer, context):
         msg_name = request.grpc_message_name
         headers = request.metadata
         content = request.grpc_message_content
         self.logger.info(f"got {msg_name=}: {headers=} {content=}")
+
+        round_num = int(headers.get("round"))
+        if round_num >= self.num_rounds:
+            # stop the server
+            self.logger.info(f"got round number {round_num}: ask to shutdown server")
+            self.server.shutdown()
+            self.stopped = True
+
+        headers["round"] = str(round_num + 1)
         return pb2.MessageContainer(
             metadata=headers,
             grpc_message_name=msg_name,

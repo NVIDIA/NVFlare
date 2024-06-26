@@ -98,6 +98,9 @@ class _RequestReceiver:
         self.replying = False
 
     def process(self, request: Shareable, fl_ctx: FLContext) -> Shareable:
+        if not ReliableMessage.is_available():
+            return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
+
         self.tx_id = request.get_header(HEADER_TX_ID)
         op = request.get_header(HEADER_OP)
         peer_ctx = fl_ctx.get_peer_context()
@@ -112,8 +115,13 @@ class _RequestReceiver:
 
                 # start processing
                 ReliableMessage.info(fl_ctx, f"started processing request of topic {self.topic}")
-                self.executor.submit(self._do_request, request, fl_ctx)
-                return _status_reply(STATUS_IN_PROCESS)  # ack
+                try:
+                    self.executor.submit(self._do_request, request, fl_ctx)
+                    return _status_reply(STATUS_IN_PROCESS)  # ack
+                except Exception as ex:
+                    # it is possible that the RM is already closed (self.executor is shut down)
+                    ReliableMessage.error(fl_ctx, f"failed to submit request: {secure_format_exception(ex)}")
+                    return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
             elif self.result:
                 # we already finished processing - send the result back
                 ReliableMessage.info(fl_ctx, "resend result back to requester")
@@ -399,6 +407,21 @@ class ReliableMessage:
     @classmethod
     def error(cls, fl_ctx: FLContext, msg: str):
         cls._logger.error(cls._log_msg(fl_ctx, msg))
+
+    @classmethod
+    def is_available(cls):
+        """Return whether the ReliableMessage service is available
+
+        Returns:
+
+        """
+        if cls._shutdown_asked:
+            return False
+
+        if not cls._enabled:
+            return False
+
+        return True
 
     @classmethod
     def debug(cls, fl_ctx: FLContext, msg: str):

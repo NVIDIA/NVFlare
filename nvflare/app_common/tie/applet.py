@@ -49,8 +49,11 @@ class Applet(ABC, FLComponent):
         pass
 
     @abstractmethod
-    def stop(self):
+    def stop(self, timeout=0.0):
         """Called to stop the applet.
+
+        Args:
+            timeout: the max amount of time (seconds) to stop the applet
 
         Returns:
 

@@ -125,7 +125,7 @@ class FlowerServerApplet(Applet):
             except:
                 pass
 
-    def stop(self):
+    def stop(self, timeout=0.0):
         self._stop_process(self._app_process)
         self._app_process = None
 

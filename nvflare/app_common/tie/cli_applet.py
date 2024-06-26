@@ -14,6 +14,7 @@
 import os
 import shlex
 import subprocess
+import time
 from abc import ABC, abstractmethod
 
 from nvflare.security.logging import secure_format_exception
@@ -66,11 +67,27 @@ class CLIApplet(Applet, ABC):
             self.logger.error(f"exception starting applet '{cli_cmd}': {secure_format_exception(ex)}")
             self._start_error = True
 
-    def stop(self):
+    def stop(self, timeout=0.0):
         p = self._process
         self._process = None
-        if p:
-            p.kill()
+
+        if not p:
+            return
+
+        # wait for the applet to stop by itself
+        start = time.time()
+        while time.time()-start < timeout:
+            rc = p.poll()
+            if rc is not None:
+                # already stopped
+                self.logger.info(f"applet stopped ({rc=}) gracefully after {time.time()-start} seconds")
+                return
+
+            time.sleep(0.1)
+
+        # have to kill the process after timeout
+        self.logger.warn(f"killed the applet process after waiting {timeout} seconds")
+        p.kill()
 
     def is_stopped(self) -> (bool, int):
         if self._start_error:

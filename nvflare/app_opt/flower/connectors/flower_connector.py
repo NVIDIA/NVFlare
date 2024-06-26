@@ -138,8 +138,4 @@ class FlowerClientConnector(Connector):
         )
         if not isinstance(reply, Shareable):
             raise RuntimeError(f"invalid reply for op {op}: expect Shareable but got {type(reply)}")
-
-        rc = reply.get_return_code()
-        if rc != ReturnCode.OK:
-            raise RuntimeError(f"error reply for op {op}: {rc=}")
         return reply

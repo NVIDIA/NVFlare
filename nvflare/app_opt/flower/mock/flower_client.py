@@ -46,13 +46,14 @@ def main():
 
     total_time = 0
     total_reqs = 0
-    for i in range(args.num_rounds):
-        print(f"Test round {i}")
+    next_round = 0
+    while True:
+        print(f"Test round {next_round}")
         data = os.urandom(10)
 
         headers = {
             "target": "server",
-            "round": str(i),
+            "round": str(next_round),
             "origin": args.client_name,
         }
         req = pb2.MessageContainer(
@@ -67,14 +68,20 @@ def main():
         total_time += time.time() - start
         if not isinstance(result, pb2.MessageContainer):
             print(f"expect reply to be pb2.MessageContainer but got {type(result)}")
-        elif result.metadata != req.metadata:
-            print("ERROR: metadata does not match request")
         elif result.grpc_message_name != req.grpc_message_name:
             print("ERROR: msg_name does not match request")
         elif result.grpc_message_content != data:
             print("ERROR: result does not match request")
         else:
             print("OK: result matches request!")
+
+        result_headers = result.metadata
+        should_exit = result_headers.get("should-exit")
+        if should_exit:
+            print("got should-exit!")
+            break
+
+        next_round = result_headers.get('round')
         time.sleep(1.0)
 
     time_per_req = total_time / total_reqs
