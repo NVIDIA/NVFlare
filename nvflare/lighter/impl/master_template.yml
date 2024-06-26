@@ -806,6 +806,20 @@ cloud_script_header: |
     fi
   }
 
+  function get_resources_file() {
+    local rfile="${DIR}/../local/resources.json"
+    if [ -f "${rfile}" ]
+      then
+      echo "${rfile}"
+    elif [ -f "${rfile}.default" ]
+      then
+      echo "${rfile}.default"
+    else
+      echo ""
+      exit 1
+    fi
+  }
+
   # parse arguments
   while [[ $# -gt 0 ]]
   do
