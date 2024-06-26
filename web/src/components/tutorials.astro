@@ -8,14 +8,14 @@ const highlights = [
   },
   {
     title: "Survival Analysis with Federated Kaplan-Meier",
-    tags: ["intermediate", "algorithm", "healthcare", "client-api", "model-controller-api", "homomorphic-encryption", "analytics"],
+    tags: ["intermediate", "algorithm", "healthcare", "client-api", "model-controller", "he", "analytics"],
     description:
       "Kaplan-Meier survival analysis in federated setting without and with secure features via time-binning and Homomorphic Encryption (HE).",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/kaplan-meier-he",
   },
   {
     title: "Real-world Federated Learning with CIFAR-10",
-    tags: ["intermediate", "algorithm", "poc", "pytorch", "learner", "deep-learning", "homomorphic-encryption"],
+    tags: ["intermediate", "algorithm", "poc", "pytorch", "learner", "deep-learning", "he"],
     description: "Provisioning secure workspace and running FedAvg with streaming of TensorBoard metrics to the server during training and homomorphic encryption.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/cifar10-real-world/README.md"
   },
@@ -207,26 +207,26 @@ const tutorials = [
   },
   {
     title: "Simulated Federated Learning with CIFAR-10",
-    tags: ["intermediate", "algorithm", "simulator", "pytorch", "learner", "model-controller-api", "deep-learning"],
+    tags: ["intermediate", "algorithm", "simulator", "pytorch", "learner", "model-controller", "deep-learning"],
     description: "Running FedAvg, FedProx, FedOpt, and SCAFFOLD algorithms using the FL simulator.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/cifar10-sim/README.md"
   },
   {
     title: "Real-world Federated Learning with CIFAR-10",
-    tags: ["intermediate", "algorithm", "poc", "pytorch", "learner", "deep-learning", "homomorphic-encryption"],
+    tags: ["intermediate", "algorithm", "poc", "pytorch", "learner", "deep-learning", "he"],
     description: "Provisioning secure workspace and running FedAvg with streaming of TensorBoard metrics to the server during training and homomorphic encryption.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/cifar10-real-world/README.md"
   },
   {
     title: "Logistic Regression with Newton-Raphton",
-    tags: ["intermediate", "algorithm", "client-api", "model-controller-api", "machine-learning"],
+    tags: ["intermediate", "algorithm", "client-api", "model-controller", "machine-learning"],
     description:
       "Federated binary classification via logistic regression with second-order Newton-Raphson optimization.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/lr-newton-raphson",
   },
   {
     title: "Survival Analysis with Federated Kaplan-Meier",
-    tags: ["intermediate", "algorithm", "healthcare", "client-api", "model-controller-api", "homomorphic-encryption", "analytics"],
+    tags: ["intermediate", "algorithm", "healthcare", "client-api", "model-controller", "he", "analytics"],
     description:
       "Kaplan-Meier survival analysis in federated setting without and with secure features via time-binning and Homomorphic Encryption (HE).",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/kaplan-meier-he",
@@ -288,7 +288,7 @@ const tutorials = [
   },
   {
     title: "Federated Learning with Differential Privacy for BraTS18 segmentation",
-    tags: ["advanced", "algorithm", "healthcare", "differential-privacy", "monai", "deep-learning"],
+    tags: ["advanced", "algorithm", "healthcare", "dp", "monai", "deep-learning"],
     description: "Illustrates the use of differential privacy for training brain tumor segmentation models using federated learning.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/brats18/README.md"
   },
@@ -374,11 +374,11 @@ const tutorials = [
 
 const level = ["beginner", "intermediate", "advanced"];
 const tutorial_category = ["algorithm", "tools", "deployment"]
-const flare_api = ["client-api", "model-controller-api", "learner", "executor", "controller"];
+const flare_api = ["client-api", "model-controller", "learner", "executor", "controller"];
 const framework = ["pytorch", "tensorflow", "lightning", "xgboost", "sklearn", "numpy", "nemo", "monai", "huggingface"];
 const application_type = ["machine-learning", "deep-learning", "llm", "analytics"];
 const industry_domain = ["healthcare", "finance"];
-const privacy_algorithm = ["homomorphic-encryption", "differential-privacy"];
+const privacy_algorithm = ["he", "dp"];
 
 const tag_list = [
   {
@@ -496,7 +496,10 @@ const tag_list = [
           <div data-accordion="open" data-active-classes="dark:bg-gray-500 text-gray-500 dark:text-white" data-inactive-classes="text-gray-500 dark:text-gray-400">
             <h2 class="">
               <button type="button" class="flex items-center justify-between mr-4 py-2 font-medium rtl:text-right text-gray-900 border-gray-200 dark:border-gray-700 dark:text-gray-400 gap-3" data-accordion-target="#highlights-glide" aria-expanded="true" aria-controls="highlights-glide">
-                <span class="ms-4">Highlights</span>
+                <span class="ms-4 mt-1">Highlights</span>
+                <svg class="w-6 h-6 text-gray-800 dark:text-white stroke-nvidia" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+                  <path stroke-width="2" d="M11.083 5.104c.35-.8 1.485-.8 1.834 0l1.752 4.022a1 1 0 0 0 .84.597l4.463.342c.9.069 1.255 1.2.556 1.771l-3.33 2.723a1 1 0 0 0-.337 1.016l1.03 4.119c.214.858-.71 1.552-1.474 1.106l-3.913-2.281a1 1 0 0 0-1.008 0L7.583 20.8c-.764.446-1.688-.248-1.474-1.106l1.03-4.119A1 1 0 0 0 6.8 14.56l-3.33-2.723c-.698-.571-.342-1.702.557-1.771l4.462-.342a1 1 0 0 0 .84-.597l1.753-4.022Z"/>
+                </svg>
                 <svg data-accordion-icon class="w-3 h-3 rotate-180 shrink-0" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 10 6">
                   <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5 5 1 1 5"/>
                 </svg>
