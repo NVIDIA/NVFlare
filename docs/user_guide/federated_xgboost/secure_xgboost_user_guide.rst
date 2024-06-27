@@ -55,9 +55,7 @@ This package is only available for Python 3.8 on PyPI. For other versions of pyt
 
 .. code-block:: bash
 
-    git clone https://github.com/intel/pailliercryptolib_python.git
-    cd pailliercryptolib_python
-    pip install .
+    pip install git+https://github.com/intel/pailliercryptolib_python.git@development
 
 System Environments
 -------------------
@@ -130,10 +128,6 @@ Two plugins are initially shipped with NVFlare,
 - **nvflare**: The default plugin. This plugin forwards data locally to NVFlare process for encryption.
 - **cuda_paillier**: This plugin uses GPU for cryptographic operations.
 
-.. note::
-
-    **cuda_paillier** plugin requires NVIDIA GPUs that support compute capability 7.0 or higher. Please refer to https://developer.nvidia.com/cuda-gpus for more information.
-
 Vertical (Non-secure)
 ---------------------
 The default nvflare plugin is used for vertical training. No configuration change is needed.
@@ -161,6 +155,10 @@ or by setting this environment variable,
 .. code-block:: bash
 
     export NVFLARE_XGB_PLUGIN_NAME=cuda_paillier
+
+.. note::
+
+    **cuda_paillier** plugin requires NVIDIA GPUs that support compute capability 7.0 or higher. Please refer to https://developer.nvidia.com/cuda-gpus for more information.
 
 
 Horizontal Secure

@@ -33,7 +33,7 @@ This abstraction is important, as it enables users to flexibly redirect your log
 The use of MLflow, TensorBoard, or Weights & Biases syntax will all work to stream the collected metrics to any supported experiment tracking system.
 Choosing to use TBWriter, MLflowWriter, or WandBWriter is user preference based on your existing code and requirements.
 
-- ``MlflowWriter`` uses the Mlflow API operation syntax ``log_metric()``
+- ``MLflowWriter`` uses the Mlflow API operation syntax ``log_metric()``
 - ``TBWriter`` uses the TensorBoard SummaryWriter operation ``add_scalar()``
 - ``WandBWriter`` uses the Weights & Biases API operation ``log()``
 
@@ -77,6 +77,40 @@ Add this component to config_fed_client.json:
     "name": "ConvertToFedEvent",
     "args": {"events_to_convert": ["analytix_log_stats"], "fed_event_prefix": "fed."}
   }
+
+If using the subprocess Client API with the ClientAPILauncherExecutor (rather than the in-process Client API with the InProcessClientAPIExecutor),
+we need to add the ``MetricRelay`` to fire fed events, a ``CellPipe`` for metrics, and an ``ExternalConfiguator`` for client api initialization.
+
+.. code-block:: yaml
+    {
+      id = "metric_relay"
+      path = "nvflare.app_common.widgets.metric_relay.MetricRelay"
+      args {
+        pipe_id = "metrics_pipe"
+        event_type = "fed.analytix_log_stats"
+        read_interval = 0.1
+      }
+    },
+    {
+      id = "metrics_pipe"
+      path = "nvflare.fuel.utils.pipe.cell_pipe.CellPipe"
+      args {
+        mode = "PASSIVE"
+        site_name = "{SITE_NAME}"
+        token = "{JOB_ID}"
+        root_url = "{ROOT_URL}"
+        secure_mode = "{SECURE_MODE}"
+        workspace_dir = "{WORKSPACE}"
+      }
+    },
+    {
+      id = "config_preparer"
+      path = "nvflare.app_common.widgets.external_configurator.ExternalConfigurator"
+      args {
+        component_ids = ["metric_relay"]
+      }
+    }
+
 
 On the server, configure the experiment tracking system in ``config_fed_server.conf`` using one of the following receivers.
 Note that any of the receivers can be used regardless of the which writer is used.
@@ -156,7 +190,9 @@ For example, in the TensorBoard configuration, add this component to ``config_fe
   }
 
 Note that the ``events`` argument is ``analytix_log_stats``, not ``fed.analytix_log_stats``, indicating that this is a local event.
-Similarly, you must modify the ``MetricRelay`` component event_type value from ``fed.analytix_log_stats`` to ``analytix_log_stats``.
+
+If using the ``MetricRelay`` component, we can similarly component event_type value from ``fed.analytix_log_stats`` to ``analytix_log_stats`` for convention.
+We then must set the ``MetricRelay`` argument ``fed_event`` to ``false`` to fire local events rather than the default fed events.
 
 .. code-block:: yaml
 
@@ -168,6 +204,7 @@ Similarly, you must modify the ``MetricRelay`` component event_type value from `
       event_type = "analytix_log_stats"
       # how fast should it read from the peer
       read_interval = 0.1
+      fed_event = false
     }
   },
 

@@ -8,7 +8,7 @@ Experiment Tracking Log Writer
 
     This page covers experiment tracking using :class:`LogWriters <nvflare.app_common.tracking.log_writer.LogWriter>`,
     which are configured and used with :ref:`executor` or :ref:`model_learner` on the FLARE-side code.
-    If using the Client API, please refer to :ref:`experiment_tracking_apis` for adding experiment tracking to your custom training code.
+    If using the Client API, please refer to :ref:`experiment_tracking_apis` and :ref:`client_api` for adding experiment tracking to your custom training code.
 
 ***********************
 Overview and Approaches
@@ -25,13 +25,13 @@ we can interact with ML experiment tracking tools in two different ways:
     - Aggregated experiment tracking: Clients will send the log metrics/parameters to FL server, and the FL server will
       send the metrics to ML experiment tracking server or local file system
 
-Each approach will have its use cases and unique challenges. In NVFLARE, we developed a server-side approach (in the
-provided examples, the Receiver is on the FL server, but it could also be on the FL client):
+This is enabled by Receivers, which can be configured on the FL server, FL client, or on both. Each approach will have its use cases and unique challenges.
+Here we provide examples and describe the server-side approach:
 
     - Clients don't need to have access to the tracking server, avoiding the additional
       authentication for every client. In many cases, the clients may be from different organizations
-      and different from the host organization of the experiment tracking server. 
-    - Since we reduced connections to the tracking server from N clients to just one server, the traffic to the tracking server 
+      and different from the host organization of the experiment tracking server.
+    - Since we reduced connections to the tracking server from N FL clients to just one FL server, the traffic to the tracking server
       can be highly reduced. In some cases, such as in MLFLow, the events can be buffered in the server and sent to the tracking
       server in batches, further reducing the traffic to the tracking server. The buffer may add additional latency, so you can
       disable the buffering if you can set the buffer flush time to 0 assuming the tracking server can take the traffic.
