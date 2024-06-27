@@ -64,11 +64,10 @@ Comparing the AUC results with centralized baseline, we have three observations:
 3. Horizontal federated learning (both secure and non-secure) have performance slightly different from the centralized baseline. This is because under horizontal FL, the local histogram quantiles are based on the local data distribution, which may not be the same as the global distribution.
 
 The AUC of vertical learning is all the same:
+
 [0]	eval-auc:0.90515	train-auc:0.92747
 [1]	eval-auc:0.90516	train-auc:0.92748
 [2]	eval-auc:0.90518	train-auc:0.92749
-
-The AUC comparison of horizontal learning is as below:
 
 
 Comparing the tree models with centralized baseline, we have the following observations:
@@ -105,10 +104,10 @@ export NVFLARE_XGB_PLUGIN_NAME=cuda_paillier
 
 Then we can just run the xgb_vert_secure job as before.
 
-Please refer to the documentation for more information.
+Please refer to the [documentation]() for more information.
 
 
 
 To add:
 - link to the documentation
-- FL job results and time comparison, specify the computation environment
+- FL job results for horizontal, specify the computation environment
