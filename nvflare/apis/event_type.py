@@ -34,7 +34,6 @@ class EventType(object):
     JOB_COMPLETED = "_job_completed"
     JOB_ABORTED = "_job_aborted"
     JOB_CANCELLED = "_job_cancelled"
-    JOB_CONFIGURED = "_job_configured"
 
     BEFORE_PULL_TASK = "_before_pull_task"
     AFTER_PULL_TASK = "_after_pull_task"

@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import logging
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
@@ -23,6 +24,8 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.security.logging import secure_format_exception
 
 from .defs import Constant
+
+log = logging.getLogger(__name__)
 
 
 class XGBExecutor(Executor):
@@ -121,7 +124,7 @@ class XGBExecutor(Executor):
                 shareable,
                 fl_ctx,
             )
-            engine.fire_event(EventType.JOB_CONFIGURED, fl_ctx)
+            engine.fire_event(Constant.EVENT_XGB_JOB_CONFIGURED, fl_ctx)
             return make_reply(ReturnCode.OK)
         elif task_name == self.start_task_name:
             # start adaptor
@@ -132,13 +135,14 @@ class XGBExecutor(Executor):
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
             # start to monitor the XGB target via the adaptor
-            self.adaptor.monitor_target(fl_ctx, self._notify_client_done)
+            self.adaptor.monitor_target(fl_ctx, self.notify_client_done)
             return make_reply(ReturnCode.OK)
         else:
             self.log_error(fl_ctx, f"ignored unsupported {task_name}")
             return make_reply(ReturnCode.TASK_UNSUPPORTED)
 
-    def _notify_client_done(self, rc, fl_ctx: FLContext):
+    @staticmethod
+    def notify_client_done(rc, fl_ctx: FLContext):
         """This is called when the XGB client target is done.
         We send a message to the FL server telling it that this client is done.
 
@@ -150,9 +154,9 @@ class XGBExecutor(Executor):
 
         """
         if rc != 0:
-            self.log_error(fl_ctx, f"XGB Client stopped with RC {rc}")
+            log.error(f"XGB Client stopped with RC {rc}")
         else:
-            self.log_info(fl_ctx, "XGB Client Stopped")
+            log.info("XGB Client Stopped")
 
         # tell server that this client is done
         engine = fl_ctx.get_engine()

@@ -14,6 +14,7 @@
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
+from nvflare.app_opt.xgboost.histogram_based_v2.executor import XGBExecutor
 
 
 class SecurityHandler(FLComponent):
@@ -51,6 +52,7 @@ class SecurityHandler(FLComponent):
     def _abort(self, error: str, fl_ctx: FLContext):
         self.error(fl_ctx, error)
         self.system_panic(reason=error, fl_ctx=fl_ctx)
+        XGBExecutor.notify_client_done(Constant.EXIT_CODE_JOB_ABORT, fl_ctx)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         fl_ctx.set_prop(key=Constant.PARAM_KEY_EVENT, value=event_type, private=True, sticky=False)
