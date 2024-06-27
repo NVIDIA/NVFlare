@@ -13,12 +13,14 @@
 # limitations under the License.
 
 import gc
+import os
 import random
 from abc import ABC, abstractmethod
 from typing import Callable, List, Union
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, OperatorMethod, Task, TaskOperatorKey
+from nvflare.apis.dxo import DXO, from_file
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
@@ -77,8 +79,10 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         self.fl_ctx = fl_ctx
         self.info("Initializing BaseModelController workflow.")
 
+        self.engine = self.fl_ctx.get_engine()
+
         if self._persistor_id:
-            self.persistor = self._engine.get_component(self._persistor_id)
+            self.persistor = self.engine.get_component(self._persistor_id)
             if not isinstance(self.persistor, LearnablePersistor):
                 self.warning(
                     f"Model Persistor {self._persistor_id} must be a LearnablePersistor type object, "
@@ -86,7 +90,6 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
                 )
                 self.persistor = None
 
-        self.engine = self.fl_ctx.get_engine()
         FLComponentWrapper.initialize(self)
 
     def _build_shareable(self, data: FLModel = None) -> Shareable:
@@ -196,7 +199,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             name=task_name,
             data=data_shareable,
             operator=operator,
-            props={AppConstants.TASK_PROP_CALLBACK: callback},
+            props={AppConstants.TASK_PROP_CALLBACK: callback, AppConstants.META_DATA: data.meta},
             timeout=timeout,
             before_task_sent_cb=self._prepare_task_data,
             result_received_cb=self._process_result,
@@ -215,6 +218,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
 
         # Turn result into FLModel
         result_model = FLModelUtils.from_shareable(result)
+        result_model.meta["props"] = client_task.task.props[AppConstants.META_DATA]
         result_model.meta["client_name"] = client_name
 
         if result_model.current_round is not None:
@@ -229,7 +233,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             try:
                 callback(result_model)
             except Exception as e:
-                self.error(f"Unsuccessful callback {callback} for task {client_task.task.name}")
+                self.error(f"Unsuccessful callback {callback} for task {client_task.task.name}: {e}")
         else:
             self._results.append(result_model)
 
@@ -343,6 +347,58 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             self.info("End persist model on server.")
         else:
             self.error("persistor not configured, model will not be saved")
+
+    def get_run_dir(self):
+        """Get current run directory."""
+        return self.engine.get_workspace().get_run_dir(self.fl_ctx.get_job_id())
+
+    def get_app_dir(self):
+        """Get current app directory."""
+        return self.engine.get_workspace().get_app_dir(self.fl_ctx.get_job_id())
+
+    def save_flmodel(self, name: str, save_dir: str, model: FLModel) -> str:
+        """Saves FLModel to given directory within the app_dir.
+        Args:
+            name (str): filename of model
+            save_dir (str): relative path to directory in which to save
+            model (FLModel): FLModel object
+        Returns:
+            str: path to the file saved.
+        """
+        dxo = FLModelUtils.to_dxo(model)
+
+        # Save the model with name as the filename to shareable directory
+        data_filename = os.path.join(save_dir, name)
+
+        try:
+            dxo.to_file(data_filename)
+        except Exception as e:
+            raise ValueError(f"Unable to save DXO to {data_filename}: {secure_format_exception(e)}")
+
+        return data_filename
+
+    def load_flmodel(self, name: str, load_dir: str) -> FLModel:
+        """Loads FLModel from given directory within the app_dir.
+        Args:
+            name (str): filename of model
+            load_dir (str): relative path to directory in which to load
+            model (FLModel): FLModel object
+        Returns:
+            FLModel: loaded FLModel.
+        """
+        # Load shareable from disk
+        shareable_filename = os.path.join(load_dir, name)
+
+        # load shareable
+        try:
+            dxo: DXO = from_file(shareable_filename)
+            self.debug(f"Loading shareable content with name: {name}.")
+        except Exception as e:
+            raise ValueError(f"Exception in loading shareable content for {name}: {secure_format_exception(e)}")
+
+        model = FLModelUtils.from_dxo(dxo)
+
+        return model
 
     def sample_clients(self, num_clients):
         clients = self.engine.get_clients()
