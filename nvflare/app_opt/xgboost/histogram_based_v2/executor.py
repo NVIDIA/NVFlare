@@ -149,6 +149,7 @@ class XGBExecutor(Executor):
         """
         if rc != 0:
             self.log_error(fl_ctx, f"XGB Client stopped with RC {rc}")
+            self.system_panic(f"XGB Client stopped with non zero RC {rc}", fl_ctx)
         else:
             self.log_info(fl_ctx, "XGB Client Stopped")
 
