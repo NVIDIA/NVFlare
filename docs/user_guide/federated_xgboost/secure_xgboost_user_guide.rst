@@ -20,10 +20,7 @@ It supports federated training in the following 4 modes:
 
 When running with NVFlare, all the GRPC connections are local and the messages are forwarded to other clients through CellNet. The local GRPC ports are selected automatically by NVFlare.
 
-The encryption is handled in XGBoost by processor plugins, which are external components that can be installed at runtime. The following plugins are bundled with NVFlare:
-
-- **nvflare**: This plugin forwards data locally to NVFlare for encryption.
-- **cuda_paillier**: This plugin uses GPU for cryptographic operations.
+The encryption is handled in XGBoost by processor plugins, which are external components that can be installed at runtime. The plugins are bundled with NVFlare.
 
 Prerequisites
 =============
@@ -127,16 +124,31 @@ For vertical training, the datasets on all clients contain different columns, bu
 
 XGBoost Plugin Configuration
 ============================
-XGBoost requires a plugin to handle secure training. By default, the **nvflare** plugin is used to perform encryption in CPUs using the IPCL library.
+XGBoost requires a plugin to handle secure training. 
+Two plugins are initially shipped with NVFlare,
 
-**cuda_paillier** plugin can be used to perform homomorphic encryption operations on GPUs.
+- **nvflare**: The default plugin. This plugin forwards data locally to NVFlare process for encryption.
+- **cuda_paillier**: This plugin uses GPU for cryptographic operations.
 
 .. note::
 
-    NVIDIA GPUs that support compute capability 7.0 or higher are required. Please refer to https://developer.nvidia.com/cuda-gpus for more information.
-    GPUs are only used for vertical secure training. Horizontal secure always uses CKKS on CPUs.
+    **cuda_paillier** plugin requires NVIDIA GPUs that support compute capability 7.0 or higher. Please refer to https://developer.nvidia.com/cuda-gpus for more information.
 
-To switch plugin, either specify it in the ``local/resources.json`` file on clients,
+Vertical (Non-secure)
+---------------------
+The default nvflare plugin is used for vertical training. No configuration change is needed.
+
+Horizontal (Non-secure)
+-----------------------
+The default nvflare plugin is used for horizontal training. No configuration change is needed.
+
+Vertical Secure
+---------------
+Both plugins can be used for vertical secure training.
+
+The default nvflare plugin uses CPU for homomorphic encryption. It requires the ipcl-python package.
+
+To use GPUs, the cuda_paillier plugin must be configured either by specifying it in the ``local/resources.json`` file on clients:
 
 .. code-block:: json
 
@@ -144,37 +156,20 @@ To switch plugin, either specify it in the ``local/resources.json`` file on clie
         "xgb_plugin_name": "cuda_paillier"
     }
 
-Or set this environment variable,
+or by setting this environment variable,
 
 .. code-block:: bash
 
     export NVFLARE_XGB_PLUGIN_NAME=cuda_paillier
 
 
-The ``local/resources.json`` file can contain other parameters for the plugins. For example,
+Horizontal Secure
+-----------------
+The default nvflare plugin is used for this mode, no configuration change is needed.
 
-.. code-block:: json
+This mode requires the tenseal package and the provisioning of NVFlare systems must include tenseal context.
+See :ref:`provisioning` for details.
 
-    {
-        "xgb_plugin_name": "nvflare",
-        "xgb_library_path": "/opt/xgboost/plugins",
-        "xgb_proc_params": {
-            "print_timing": true
-        }
-    }
-
-- **xgb_plugin_name**: The name of the XGBoost plugin
-- **xgb_library_path**: The folder to find the library file for the plugin. This is only needed if the library file (.so) is not in the default location (nvflare/libs).
-- **xgb_proc_params**: This dictionary is passed to the plugin and the parameters are plugin-specific.
-
-
-Those parameters can also be configured as environment variables, e.g.
-
-.. code-block:: bash
-
-    export NVFLARE_XGB_PLUGIN_NAME=cuda_paillier
-    export NVFLARE_XGB_LIBRARY_PATH=/tmp
-    export NVFLARE_PROC_PARAMS='{"print_timing":true,"debug":false}'
 
 Job Configuration
 =================
