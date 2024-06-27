@@ -86,6 +86,7 @@ class Constant:
     PARAM_KEY_REPLY = "xgb.reply"
     PARAM_KEY_REQUEST = "xgb.request"
     PARAM_KEY_EVENT = "xgb.event"
+    PARAM_KEY_TRAINING_MODE = "xgb.training_mode"
 
     RUNNER_CTX_SERVER_ADDR = "server_addr"
     RUNNER_CTX_PORT = "port"

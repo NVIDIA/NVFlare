@@ -32,6 +32,7 @@ from nvflare.app_opt.xgboost.histogram_based_v2.sec.partial_he.util import (
     encode_encrypted_data,
     encode_feature_aggregations,
     generate_keys,
+    ipcl_imported,
     split,
 )
 from nvflare.app_opt.xgboost.histogram_based_v2.sec.processor_data_converter import (
@@ -90,6 +91,9 @@ class ClientSecurityHandler(SecurityHandler):
             # the buffer does not contain (g, h) pairs
             self.info(fl_ctx, "no clear gh pairs - ignore")
             return
+
+        if not ipcl_imported:
+            return self._abort("Required package ipcl-python is missing", fl_ctx)
 
         self.info(fl_ctx, f"got gh {len(clear_ghs)} pairs; original buf len: {len(buffer)}")
         self.original_gh_buffer = buffer
@@ -365,11 +369,15 @@ class ClientSecurityHandler(SecurityHandler):
         fl_ctx.set_prop(key=Constant.PARAM_KEY_RCV_BUF, value=result, private=True, sticky=False)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
-        if event_type == EventType.START_RUN:
-            self.public_key, self.private_key = generate_keys(self.key_length)
-            self.encryptor = Encryptor(self.public_key, self.num_workers)
-            self.decrypter = Decrypter(self.private_key, self.num_workers)
-            self.adder = Adder(self.num_workers)
+        if event_type == EventType.JOB_CONFIGURED:
+            training_mode = fl_ctx.get_prop(Constant.PARAM_KEY_TRAINING_MODE)
+            if training_mode in {"vertical_secure", "vs"}:
+                if ipcl_imported:
+                    self.public_key, self.private_key = generate_keys(self.key_length)
+                    self.encryptor = Encryptor(self.public_key, self.num_workers)
+                    self.decrypter = Decrypter(self.private_key, self.num_workers)
+                    self.adder = Adder(self.num_workers)
+
             try:
                 if tenseal_imported:
                     self.tenseal_context = load_tenseal_context_from_workspace(self.tenseal_context_file, fl_ctx)
