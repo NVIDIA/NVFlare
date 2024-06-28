@@ -1,4 +1,5 @@
 aws_start_sh: |
+
   function find_ec2_gpu_instance_type() {
     local gpucnt=0
     local gpumem=0
@@ -98,10 +99,10 @@ aws_start_sh: |
   then
     while true
     do
-      read -e -i ${REGION} -p "* Cloud EC2 region, press ENTER to accept default: " REGION
+      prompt REGION "* Cloud EC2 region, press ENTER to accept default" "${REGION}"
       if [ ${container} = false ]
         then
-        read -e -i ${AMI_NAME} -p "* Cloud AMI image name, press ENTER to accept default (use amd64 or arm64): " AMI_NAME
+        prompt AMI_NAME "* Cloud AMI image name (use amd64 or arm64), press ENTER to accept default" "${AMI_NAME}"
         printf "    retrieving AMI ID for ${AMI_NAME} ... "
         IMAGES=$(aws ec2 describe-images --region ${REGION} --owners ${AMI_IMAGE_OWNER} --filters "Name=name,Values=*${AMI_NAME}*" --output json)
         if [ "${#IMAGES}" -lt 30 ]
@@ -118,9 +119,9 @@ aws_start_sh: |
         fi
         find_ec2_gpu_instance_type
       fi
-      prompt AMI_IMAGE "* Cloud AMI image, press ENTER to accept default ${AMI_IMAGE}: "
-      read -e -i ${EC2_TYPE} -p "* Cloud EC2 type, press ENTER to accept default: " EC2_TYPE
-      prompt ans "region = ${REGION}, ami image = ${AMI_IMAGE}, EC2 type = ${EC2_TYPE}, OK? (Y/n) "
+      prompt AMI_IMAGE "* Cloud AMI image, press ENTER to accept default"
+      prompt EC2_TYPE  "* Cloud EC2 type, press ENTER to accept default" "${EC2_TYPE}"
+      prompt ans "region = ${REGION}, ami image = ${AMI_IMAGE}, EC2 type = ${EC2_TYPE}, OK? (Y/n)"
       if [[ $ans = "" ]] || [[ $ans =~ ^(y|Y)$ ]]
       then
         break
