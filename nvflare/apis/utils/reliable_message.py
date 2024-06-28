@@ -282,7 +282,7 @@ class ReliableMessage:
         elif op == OP_QUERY:
             receiver = cls._req_receivers.get(tx_id)
             if not receiver:
-                cls.error(fl_ctx, f"received query but the request ({rm_topic=}) is not received or already done!")
+                cls.warning(fl_ctx, f"received query but the request ({rm_topic=} {tx_id=}) is not received or already done!")
                 return _status_reply(STATUS_NOT_RECEIVED)  # meaning the request wasn't received
             else:
                 return receiver.process(request, fl_ctx)
@@ -414,6 +414,10 @@ class ReliableMessage:
     @classmethod
     def info(cls, fl_ctx: FLContext, msg: str):
         cls._logger.info(cls._log_msg(fl_ctx, msg))
+
+    @classmethod
+    def warning(cls, fl_ctx: FLContext, msg: str):
+        cls._logger.warning(cls._log_msg(fl_ctx, msg))
 
     @classmethod
     def error(cls, fl_ctx: FLContext, msg: str):
@@ -607,6 +611,11 @@ class ReliableMessage:
                 timeout=per_msg_timeout,
                 fl_ctx=fl_ctx,
             )
+
+            # Ignore query result if result is already received
+            if receiver.result_ready.is_set():
+                return receiver.result
+
             last_query_time = time.time()
             ack, rc = _extract_result(ack, target)
             if ack and rc not in [ReturnCode.COMMUNICATION_ERROR]:
