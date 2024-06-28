@@ -86,9 +86,6 @@ class XGBExecutor(Executor):
             adaptor.initialize(fl_ctx)
             self.adaptor = adaptor
         elif event_type == Constant.EVENT_XGB_ABORTED:
-            error = fl_ctx.get_prop(FLContextKey.FATAL_SYSTEM_ERROR)
-            self.log_error(fl_ctx, error)
-            self.system_panic(reason=error, fl_ctx=fl_ctx)
             self._notify_client_done(Constant.EXIT_CODE_JOB_ABORT, fl_ctx)
         elif event_type == EventType.END_RUN:
             self.abort_signal.trigger(True)
@@ -156,6 +153,9 @@ class XGBExecutor(Executor):
         """
         if rc != 0:
             self.log_error(fl_ctx, f"XGB Client stopped with RC {rc}")
+            error = fl_ctx.get_prop(FLContextKey.FATAL_SYSTEM_ERROR)
+            error_msg = f", error: {error}" if error else ""
+            self.system_panic(f"XGB Client stopped with non zero RC {rc}{error_msg}", fl_ctx)
         else:
             self.log_info(fl_ctx, "XGB Client Stopped")
 
