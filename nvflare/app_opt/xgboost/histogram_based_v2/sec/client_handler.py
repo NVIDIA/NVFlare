@@ -110,7 +110,7 @@ class ClientSecurityHandler(SecurityHandler):
 
         # Remember the original buffer size, so we could send a dummy buffer of this size to other clients
         # This is important since all XGB clients already prepared a buffer of this size and expect the data
-        # to be this size.
+        # to be the same size.
         headers = {Constant.HEADER_KEY_ENCRYPTED_DATA: True, Constant.HEADER_KEY_ORIGINAL_BUF_SIZE: len(buffer)}
         fl_ctx.set_prop(key=Constant.PARAM_KEY_SEND_BUF, value=encoded, private=True, sticky=False)
         fl_ctx.set_prop(key=Constant.PARAM_KEY_HEADERS, value=headers, private=True, sticky=False)
