@@ -58,8 +58,8 @@ if __name__ == "__main__":
         job.to(aggregator, f"site-{i}", id="aggregator")
 
         # In swarm learning, each client uses a model persistor and shareable_generator
-        job.to(PTFileModelPersistor(model=Net()), f"site-{i}", id='persistor')
-        job.to(SimpleModelShareableGenerator(), f"site-{i}", id='shareable_generator')
+        job.to(PTFileModelPersistor(model=Net()), f"site-{i}", id="persistor")
+        job.to(SimpleModelShareableGenerator(), f"site-{i}", id="shareable_generator")
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir")
