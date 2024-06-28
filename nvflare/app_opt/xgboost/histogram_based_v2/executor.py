@@ -11,11 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import logging
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
-from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.fl_constant import ReturnCode, FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
@@ -24,8 +23,6 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.security.logging import secure_format_exception
 
 from .defs import Constant
-
-log = logging.getLogger(__name__)
 
 
 class XGBExecutor(Executor):
@@ -88,6 +85,11 @@ class XGBExecutor(Executor):
             adaptor.set_abort_signal(self.abort_signal)
             adaptor.initialize(fl_ctx)
             self.adaptor = adaptor
+        elif event_type == Constant.EVENT_XGB_ABORTED:
+            error = fl_ctx.get_prop(FLContextKey.FATAL_SYSTEM_ERROR)
+            self.log_error(fl_ctx, error)
+            self.system_panic(reason=error, fl_ctx=fl_ctx)
+            self._notify_client_done(Constant.EXIT_CODE_JOB_ABORT, fl_ctx)
         elif event_type == EventType.END_RUN:
             self.abort_signal.trigger(True)
 
@@ -135,14 +137,13 @@ class XGBExecutor(Executor):
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
             # start to monitor the XGB target via the adaptor
-            self.adaptor.monitor_target(fl_ctx, self.notify_client_done)
+            self.adaptor.monitor_target(fl_ctx, self._notify_client_done)
             return make_reply(ReturnCode.OK)
         else:
             self.log_error(fl_ctx, f"ignored unsupported {task_name}")
             return make_reply(ReturnCode.TASK_UNSUPPORTED)
 
-    @staticmethod
-    def notify_client_done(rc, fl_ctx: FLContext):
+    def _notify_client_done(self, rc, fl_ctx: FLContext):
         """This is called when the XGB client target is done.
         We send a message to the FL server telling it that this client is done.
 
@@ -154,9 +155,9 @@ class XGBExecutor(Executor):
 
         """
         if rc != 0:
-            log.error(f"XGB Client stopped with RC {rc}")
+            self.log_error(fl_ctx, f"XGB Client stopped with RC {rc}")
         else:
-            log.info("XGB Client Stopped")
+            self.log_info(fl_ctx, "XGB Client Stopped")
 
         # tell server that this client is done
         engine = fl_ctx.get_engine()

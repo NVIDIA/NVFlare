@@ -107,6 +107,7 @@ class Constant:
     EVENT_BEFORE_ALL_GATHER_V = "xgb.before_all_gather_v"
     EVENT_AFTER_ALL_GATHER_V = "xgb.after_all_gather_v"
     EVENT_XGB_JOB_CONFIGURED = "xgb.job_configured"
+    EVENT_XGB_ABORTED = "xgb.aborted"
 
     HEADER_KEY_ENCRYPTED_DATA = "xgb.encrypted_data"
     HEADER_KEY_HORIZONTAL = "xgb.horizontal"
