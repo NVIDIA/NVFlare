@@ -5,13 +5,8 @@ Secure Federated XGBoost Design
 Collaboration Modes and Secure Patterns
 =======================================
 
-For vertical XGBoost, the active party holds the label, which cannot be accessed by passive parties and can be considered the most valuable asset for the whole process.
-Therefore, the active party in this case is the "major contributor" from model training perspective, and it will have a concern of leaking this information to passive clients.
-In this case, the security protection is mainly against passive clients over the label information.
-
-To protect label information for vertical collaboration, at every round of XGBoost after the active party computes the gradients for each sample at the active party, the gradients will be encrypted before sending to passive parties.
-Upon receiving the encrypted gradients (ciphertext), they will be accumulated according to the specific feature distribution at each passive party.
-The resulting cumulative histograms will be returned to the active party, decrypted, and further be used for tree building at the active party.
+Horizontal Secure
+-----------------
 
 For horizontal XGBoost, each party holds "equal status" - whole feature and label for partial population, while the federated server performs aggregation, without owning any data.
 Hence in this case, the federated server is the "minor contributor" from model training perspective, and clients have a concern of leaking any information to the server.
@@ -20,6 +15,16 @@ Under this setting, the protection is mainly against the federated server over l
 To protect the local histograms for horizontal collaboration, the local histograms will be encrypted before sending to the federated server for aggregation.
 The aggregation will then be performed over ciphertexts and the encrypted global histograms will be returned to clients, where they will be decrypted and used for tree building.
 
+Vertical Secure
+---------------
+
+For vertical XGBoost, the active party holds the label, which cannot be accessed by passive parties and can be considered the most valuable asset for the whole process.
+Therefore, the active party in this case is the "major contributor" from model training perspective, and it will have a concern of leaking this information to passive clients.
+In this case, the security protection is mainly against passive clients over the label information.
+
+To protect label information for vertical collaboration, at every round of XGBoost after the active party computes the gradients for each sample at the active party, the gradients will be encrypted before sending to passive parties.
+Upon receiving the encrypted gradients (ciphertext), they will be accumulated according to the specific feature distribution at each passive party.
+The resulting cumulative histograms will be returned to the active party, decrypted, and further be used for tree building at the active party.
 
 Decoupled Encryption with Processor Interface
 =============================================
@@ -31,7 +36,7 @@ This gives us flexibilities in performing message operations both within XGBoost
 .. figure:: ../../resources/xgb_communicator.jpg
     :height: 500px
 
-With NVFlare, within-XGBoost will be implemented in C++, while within-FL in Python. A processor interface is designed and developed to properly connect the two by taking plugins implemented towards a specific HE method and collaboration mode:
+With NVFlare, the XGBoost plugin will be implemented in C++, while the FL system communicator will be implemented in Python. A processor interface is designed and developed to properly connect the two by taking plugins implemented towards a specific HE method and collaboration mode:
 
 .. figure:: ../../resources/processor_interface_design.png
     :height: 500px

@@ -18,9 +18,9 @@ It supports federated training in the following 4 modes:
 3. **horizontal_secure(hs)**: Row split with HE (Requires at least 3 clients. With 2 clients, the other client's histogram can be deduced.)
 4. **vertical_secure(vs)**: Column split with HE
 
-When running with NVFlare, all the GRPC connections are local and the messages are forwarded to other clients through CellNet. The local GRPC ports are selected automatically by NVFlare.
+When running with NVFlare, all the GRPC connections in XGBoost are local and the messages are forwarded to other clients through NVFlare's CellNet communication. The local GRPC ports are selected automatically by NVFlare.
 
-The encryption is handled in XGBoost by processor plugins, which are external components that can be installed at runtime. The plugins are bundled with NVFlare.
+The encryption, decryption, and secure aggregation in XGBoost are handled by processor plugins, which are external components that can be installed at runtime. The plugins are bundled with NVFlare.
 
 Prerequisites
 =============
@@ -73,7 +73,7 @@ Most Linux distributions are supported, as long as they have a recent glibc. The
 
 NVFlare Provisioning
 --------------------
-For horizontal secure training, NVFlare system must be provisioned with TenSEAL context. The HEBuilder in ``project.yml`` is used to achieve this.
+For horizontal secure training, the NVFlare system must be provisioned with homomorphic encryption context. The HEBuilder in ``project.yml`` is used to achieve this.
 An example configuration can be found at :github_nvflare_link:`secure_project.yml <examples/advanced/cifar10/cifar10-real-world/workspaces/secure_project.yml#L64>`.
 
 This is a snippet of the ``secure_project.yml`` file with the HEBuilder:
