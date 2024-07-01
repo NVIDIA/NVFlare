@@ -102,8 +102,9 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         task_name: str = AppConstants.TASK_TRAIN,
         data: FLModel = None,
         targets: Union[List[Client], List[str], None] = None,
+        min_responses: int = None,
         timeout: int = 0,
-        wait_time_after_min_received: int = 10,
+        wait_time_after_min_received: int = 0,
         blocking: bool = True,
         callback: Callable[[FLModel], None] = None,
     ) -> List:
@@ -113,9 +114,11 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             task_name (str, optional): name of the task. Defaults to "train".
             data (FLModel, optional): FLModel to be sent to clients. If no data is given, send empty FLModel.
             targets (List[str], optional): the list of target client names or None (all clients). Defaults to None.
+            min_responses (int, optional): the minimum number of responses expected. If None, must receive responses from
+              all clients that the task has been sent to. Defaults to None.
             timeout (int, optional): time to wait for clients to perform task. Defaults to 0, i.e., never time out.
             wait_time_after_min_received (int, optional): time to wait after
-                minimum number of clients responses has been received. Defaults to 10.
+                minimum number of clients responses has been received. Defaults to 0.
             blocking (bool, optional): whether to block to wait for task result. Defaults to True.
             callback (Callable[[FLModel], None], optional): callback when a result is received, only called when blocking=False. Defaults to None.
 
@@ -127,6 +130,9 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             raise TypeError("task_name must be a string but got {}".format(type(task_name)))
         if data and not isinstance(data, FLModel):
             raise TypeError("data must be a FLModel or None but got {}".format(type(data)))
+        if min_responses is None:
+            min_responses = 0  # this is internally used by controller's broadcast to represent all targets
+        check_non_negative_int("min_responses", min_responses)
         check_non_negative_int("timeout", timeout)
         check_non_negative_int("wait_time_after_min_received", wait_time_after_min_received)
         if not blocking and not isinstance(callback, Callable):
@@ -140,10 +146,8 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
 
         if targets:
             targets = [client.name if isinstance(client, Client) else client for client in targets]
-            min_responses = len(targets)
             self.info(f"Sending task {task_name} to {targets}")
         else:
-            min_responses = len(self.engine.get_clients())
             self.info(f"Sending task {task_name} to all clients")
 
         if blocking:
