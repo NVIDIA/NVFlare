@@ -131,7 +131,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         if data and not isinstance(data, FLModel):
             raise TypeError("data must be a FLModel or None but got {}".format(type(data)))
         if min_responses is None:
-            min_responses = 0
+            min_responses = 0  # this is internally used by controller's broadcast to represent all targets
         check_non_negative_int("min_responses", min_responses)
         check_non_negative_int("timeout", timeout)
         check_non_negative_int("wait_time_after_min_received", wait_time_after_min_received)
