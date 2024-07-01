@@ -102,7 +102,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         task_name: str = AppConstants.TASK_TRAIN,
         data: FLModel = None,
         targets: Union[List[Client], List[str], None] = None,
-        min_responses: int = 0,
+        min_responses: int = None,
         timeout: int = 0,
         wait_time_after_min_received: int = 0,
         blocking: bool = True,
@@ -114,8 +114,8 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             task_name (str, optional): name of the task. Defaults to "train".
             data (FLModel, optional): FLModel to be sent to clients. If no data is given, send empty FLModel.
             targets (List[str], optional): the list of target client names or None (all clients). Defaults to None.
-            min_responses (int, optional): the minimum number of responses expected. If == 0, must receive responses from
-              all clients that the task has been sent to. Defaults to 0.
+            min_responses (int, optional): the minimum number of responses expected. If None, must receive responses from
+              all clients that the task has been sent to. Defaults to None.
             timeout (int, optional): time to wait for clients to perform task. Defaults to 0, i.e., never time out.
             wait_time_after_min_received (int, optional): time to wait after
                 minimum number of clients responses has been received. Defaults to 0.
@@ -130,6 +130,8 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             raise TypeError("task_name must be a string but got {}".format(type(task_name)))
         if data and not isinstance(data, FLModel):
             raise TypeError("data must be a FLModel or None but got {}".format(type(data)))
+        if min_responses is None:
+            min_responses = 0
         check_non_negative_int("min_responses", min_responses)
         check_non_negative_int("timeout", timeout)
         check_non_negative_int("wait_time_after_min_received", wait_time_after_min_received)
