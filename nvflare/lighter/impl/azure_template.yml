@@ -66,14 +66,14 @@ azure_start_svr_header_sh: |
   then
     while true
     do
-      prompt VM_IMAGE "Cloud VM image, press ENTER to accept default ${VM_IMAGE}: "
-      prompt VM_SIZE "Cloud VM size, press ENTER to accept default ${VM_SIZE}: "
+      prompt VM_IMAGE "Cloud VM image, press ENTER to accept default" "${VM_IMAGE}"
+      prompt VM_SIZE "Cloud VM size, press ENTER to accept default" "${VM_SIZE}"
       if [ $self_dns == true ]
       then
-        prompt LOCATION "Cloud location, press ENTER to accept default ${LOCATION}: "        
-        prompt ans "VM image = ${VM_IMAGE}, VM size = ${VM_SIZE}, location = ${LOCATION}, OK? (Y/n) "
+        prompt LOCATION "Cloud location, press ENTER to accept default" "${LOCATION}"
+        prompt ans "VM image = ${VM_IMAGE}, VM size = ${VM_SIZE}, location = ${LOCATION}, OK? (Y/n)"
       else
-        prompt ans "VM image = ${VM_IMAGE}, VM size = ${VM_SIZE}, OK? (Y/n) "
+        prompt ans "VM image = ${VM_IMAGE}, VM size = ${VM_SIZE}, OK? (Y/n)"
       fi
       if [[ $ans = "" ]] || [[ $ans =~ ^(y|Y)$ ]]; then break; fi
     done
@@ -82,7 +82,7 @@ azure_start_svr_header_sh: |
   if [ $container == false ]
   then
     echo "If the client requires additional dependencies, please copy the requirements.txt to ${DIR}."
-    prompt ans "Press ENTER when it's done or no additional dependencies. "
+    prompt ans "Press ENTER when it's done or no additional dependencies."
   fi
 
   az login --use-device-code -o none
@@ -221,9 +221,9 @@ azure_start_cln_header_sh: |
   then
     while true
     do
-      prompt LOCATION "Cloud location, press ENTER to accept default ${LOCATION}: "
-      prompt VM_IMAGE "Cloud VM image, press ENTER to accept default ${VM_IMAGE}: "
-      prompt VM_SIZE "Cloud VM size, press ENTER to accept default ${VM_SIZE}: "
+      prompt LOCATION "Cloud location, press ENTER to accept default" "${LOCATION}"
+      prompt VM_IMAGE "Cloud VM image, press ENTER to accept default" "${VM_IMAGE}"
+      prompt VM_SIZE "Cloud VM size, press ENTER to accept default" "${VM_SIZE}"
       prompt ans "location = ${LOCATION}, VM image = ${VM_IMAGE}, VM size = ${VM_SIZE}, OK? (Y/n) "
       if [[ $ans = "" ]] || [[ $ans =~ ^(y|Y)$ ]]; then break; fi
     done
@@ -232,7 +232,7 @@ azure_start_cln_header_sh: |
   if [ $container == false ]
   then
     echo "If the client requires additional dependencies, please copy the requirements.txt to ${DIR}."
-    prompt ans "Press ENTER when it's done or no additional dependencies. "
+    prompt ans "Press ENTER when it's done or no additional dependencies."
   fi
 
   az login --use-device-code -o none

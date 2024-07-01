@@ -15,6 +15,7 @@
 from src.tf_net import TFNet
 
 from nvflare import FedAvg, FedJob, ScriptExecutor
+from nvflare.client.config import ExchangeFormat
 
 if __name__ == "__main__":
     n_clients = 2
@@ -36,7 +37,9 @@ if __name__ == "__main__":
     # Add clients
     for i in range(n_clients):
         executor = ScriptExecutor(
-            task_script_path=train_script, task_script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
+            task_script_path=train_script,
+            task_script_args="",  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
+            params_exchange_format=ExchangeFormat.NUMPY,
         )
         job.to(executor, f"site-{i}", gpu=0)
 
