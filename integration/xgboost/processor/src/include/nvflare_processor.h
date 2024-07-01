@@ -14,11 +14,10 @@
  * limitations under the License.
  */
 #pragma once
-#include <iostream>
-#include <string>
-#include <vector>
-#include <map>
-#include "processing/processor.h"
+#include <cstdint>     // for uint8_t, uint32_t, int32_t, int64_t
+#include <string_view> // for string_view
+#include <utility>     // for pair
+#include <vector>      // for vector
 
 const int kDataSetHGPairs = 1;
 const int kDataSetAggregation = 2;
@@ -27,50 +26,49 @@ const int kDataSetAggregationResult = 4;
 const int kDataSetHistograms = 5;
 const int kDataSetHistogramResult = 6;
 
-class NVFlareProcessor: public processing::Processor {
- private:
-    bool active_ = false;
-    const std::map<std::string, std::string> *params_;
-    std::vector<double> *gh_pairs_{nullptr};
-    std::vector<uint32_t> cuts_;
-    std::vector<int> slots_;
-    bool feature_sent_ = false;
-    std::vector<int64_t> features_;
+// Opaque pointer type for the C API.
+typedef void *FederatedPluginHandle; // NOLINT
 
- public:
-    void Initialize(bool active, std::map<std::string, std::string> params) override {
-        this->active_ = active;
-        this->params_ = &params;
-    }
+namespace nvflare {
+// Plugin that uses Python tenseal and GRPC.
+class TensealPlugin {
+  // Buffer for storing encrypted gradient pairs.
+  std::vector<std::uint8_t> encrypted_gpairs_;
+  // Buffer for histogram cut pointers (indptr of a CSC).
+  std::vector<std::uint32_t> cut_ptrs_;
+  // Buffer for histogram index.
+  std::vector<std::int32_t> bin_idx_;
 
-    void Shutdown() override {
-        this->gh_pairs_ = nullptr;
-        this->cuts_.clear();
-        this->slots_.clear();
-    }
+  bool feature_sent_{false};
+  // The feature index.
+  std::vector<std::int64_t> features_;
+  // Buffer for output histogram.
+  std::vector<std::uint8_t> encrypted_hist_;
+  std::vector<double> hist_;
 
-    void FreeBuffer(void *buffer) override {
-        free(buffer);
-    }
+public:
+  TensealPlugin(
+      std::vector<std::pair<std::string_view, std::string_view>> const &args);
+  // Gradient pairs
+  void EncryptGPairs(float const *in_gpair, std::size_t n_in,
+                     std::uint8_t **out_gpair, std::size_t *n_out);
+  void SyncEncryptedGPairs(std::uint8_t const *in_gpair, std::size_t n_bytes,
+                           std::uint8_t const **out_gpair,
+                           std::size_t *out_n_bytes);
 
-    void* ProcessGHPairs(size_t *size, const std::vector<double>& pairs) override;
+  // Histogram
+  void ResetHistContext(std::uint32_t const *cutptrs, std::size_t cutptr_len,
+                        std::int32_t const *bin_idx, std::size_t n_idx);
+  void BuildEncryptedHistHori(double const *in_histogram, std::size_t len,
+                              std::uint8_t **out_hist, std::size_t *out_len);
+  void SyncEncryptedHistHori(std::uint8_t const *buffer, std::size_t len,
+                             double **out_hist, std::size_t *out_len);
 
-    void* HandleGHPairs(size_t *size, void *buffer, size_t buf_size) override;
-
-    void InitAggregationContext(const std::vector<uint32_t> &cuts, const std::vector<int> &slots) override {
-        if (this->slots_.empty()) {
-            this->cuts_ = std::vector<uint32_t>(cuts);
-            this->slots_ = std::vector<int>(slots);
-        } else {
-            std::cout << "Multiple calls to InitAggregationContext" << std::endl;
-        }
-    }
-
-    void *ProcessAggregation(size_t *size, std::map<int, std::vector<int>> nodes) override;
-
-    std::vector<double> HandleAggregation(void *buffer, size_t buf_size) override;
-
-    void *ProcessHistograms(size_t *size, const std::vector<double>& histograms) override;
-
-    std::vector<double> HandleHistograms(void *buffer, size_t buf_size) override;
+  void BuildEncryptedHistVert(std::size_t const **ridx,
+                              std::size_t const *sizes,
+                              std::int32_t const *nidx, std::size_t len,
+                              std::uint8_t **out_hist, std::size_t *out_len);
+  void SyncEncryptedHistVert(std::uint8_t *hist_buffer, std::size_t len,
+                             double **out, std::size_t *out_len);
 };
+} // namespace nvflare

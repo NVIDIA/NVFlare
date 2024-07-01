@@ -42,7 +42,7 @@ Like with FLAdminAPI previously, :class:`AdminAPI<nvflare.fuel.hci.client.api.Ad
 
 There is no more ``logout()``, instead, use ``close()`` to end the session. One common pattern of usage may be to have the code using the session
 to execute commands inside a try block and then close
-the session in a finally clause::
+the session in a finally clause:
 
 .. code-block:: python
 
@@ -64,7 +64,7 @@ the session in a finally clause::
 Additional and Complex Commands
 -------------------------------
 With a ``job_id`` for example after submit_job in the code block above, here are some examples of other commands that
-can be run::
+can be run:
 
 .. code-block:: python
 
