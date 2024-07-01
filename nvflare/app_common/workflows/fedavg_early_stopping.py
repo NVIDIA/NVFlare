@@ -17,22 +17,38 @@ from typing import Callable, Dict, Optional
 
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.utils.math_utils import parse_compare_criteria
+from nvflare.fuel.utils.import_utils import optional_import
 
 from .base_fedavg import BaseFedAvg
 
+torch, torch_ok = optional_import(module="torch")
+if torch_ok:
+    from nvflare.app_opt.pt.decomposers import TensorDecomposer
+    from nvflare.fuel.utils import fobs
 
-class FedAvgEarlyStopping(BaseFedAvg):
+# tf, tf_ok = optional_import(module="tensorflow")
+# if tf_ok:
+#     from nvflare.app_opt.tf.utils import flat_layer_weights_dict, unflat_layer_weights_dict
+
+
+class PTFedAvgEarlyStopping(BaseFedAvg):
     """Controller for FedAvg Workflow with Early Stopping and Model Selection.
 
     Args:
+        num_clients (int, optional): The number of clients. Defaults to 3.
+        num_rounds (int, optional): The total number of training rounds. Defaults to 5.
         stop_cond (str, optional): early stopping condition based on metric.
-        string literal in the format of "<key> <op> <value>" (e.g. "accuracy >= 80")
+            string literal in the format of "<key> <op> <value>" (e.g. "accuracy >= 80")
+        save_filename (str, optional): filename for saving model
+        initial_model (nn.Module, optional): initial PyTorch model
     """
 
     def __init__(
         self,
         *args,
-        stop_cond: str = None,
+        stop_cond: str = "accuracy >= 30",
+        save_filename: str = "FL_global_model.pt",
+        initial_model = None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -40,12 +56,28 @@ class FedAvgEarlyStopping(BaseFedAvg):
             self.stop_condition = parse_compare_criteria(stop_cond)
         else:
             self.stop_condition = None
+        self.save_filename = save_filename
+        self.initial_model = initial_model
         self.best_model: Optional[FLModel] = None
+
+        # Use FOBS for serializing/deserializing PyTorch tensors
+        fobs.register(TensorDecomposer)
 
     def run(self) -> None:
         self.info("Start FedAvg.")
 
-        model = self.load_model()
+        if self.initial_model:
+            # PyTorch weights
+            initial_weights = self.initial_model.state_dict()
+
+            # TensorFlow weights
+            # self.initial_model.build(input_shape=self.initial_model._input_shape)
+            # initial_weights = flat_layer_weights_dict({layer.name: layer.get_weights() for layer in self.initial_model.layers})
+        else:
+            initial_weights = {}
+
+        model = FLModel(params=initial_weights)
+
         model.start_round = self.start_round
         model.total_rounds = self.num_rounds
 
@@ -53,7 +85,7 @@ class FedAvgEarlyStopping(BaseFedAvg):
             self.info(f"Round {self.current_round} started.")
             model.current_round = self.current_round
 
-            clients = self.sample_clients(self.min_clients)
+            clients = self.sample_clients(self.num_clients)
 
             results = self.send_model_and_wait(targets=clients, data=model)
 
@@ -67,14 +99,13 @@ class FedAvgEarlyStopping(BaseFedAvg):
 
             self.select_best_model(model)
 
+            self.save_model(self.best_model, os.path.join(os.getcwd(), self.save_filename))
+
             if self.should_stop(model.metrics, self.stop_condition):
                 self.info(
                     f"Stopping at round={self.current_round} out of total_rounds={self.num_rounds}. Early stop condition satisfied: {self.stop_condition}"
                 )
                 break
-
-        save_path = os.path.join(self.get_app_dir(), "FL_global_model.pt")
-        self.save_flmodel(self.best_model, save_path)
 
         self.info("Finished FedAvg.")
 
@@ -114,3 +145,28 @@ class FedAvgEarlyStopping(BaseFedAvg):
 
         best_metrics = best_model.metrics
         return op_fn(curr_metrics.get(target_metric), best_metrics.get(target_metric))
+
+    def save_model(self, model, filepath=""):
+        # PyTorch save
+        torch.save(model.params, filepath)
+
+        # TensorFlow save
+        # result = unflat_layer_weights_dict(model.params)
+        # for k in result:
+        #     layer = self.initial_model.get_layer(name=k)
+        #     layer.set_weights(result[k])
+        # self.initial_model.save_weights(filepath)
+
+        super().save_model(model, filepath + ".metadata", exclude_params=True)
+
+    def load_model(self, filepath=""):
+        # PyTorch load
+        params = torch.load(filepath)
+
+        # TensorFlow load
+        # self.initial_model.load_weights(filepath)
+        # params = {layer.name: layer.get_weights() for layer in self.initial_model.layers}
+
+        model = super().load_model(filepath + ".metadata")
+        model.params = params
+        return model

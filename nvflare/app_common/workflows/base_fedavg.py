@@ -33,7 +33,6 @@ class BaseFedAvg(ModelController):
         num_clients: int = 3,
         num_rounds: int = 5,
         start_round: int = 0,
-        persist_every_n_rounds: int = 1,
         **kwargs,
     ):
         """The base controller for FedAvg Workflow. *Note*: This class is based on the `ModelController`.
@@ -58,15 +57,12 @@ class BaseFedAvg(ModelController):
             num_clients (int, optional): The number of clients. Defaults to 3.
             num_rounds (int, optional): The total number of training rounds. Defaults to 5.
             start_round (int, optional): The starting round number.
-            persist_every_n_rounds (int, optional): persist the global model every n rounds. Defaults to 1.
-                If n is 0 then no persist.
         """
         super().__init__(*args, **kwargs)
 
         self.num_clients = num_clients
         self.num_rounds = num_rounds
         self.start_round = start_round
-        self.persist_every_n_rounds = persist_every_n_rounds
 
         self.current_round = None
 
@@ -166,9 +162,3 @@ class BaseFedAvg(ModelController):
         self.event(AppEventType.AFTER_SHAREABLE_TO_LEARNABLE)
 
         return model
-
-    def save_model(self, model: FLModel):
-        if (
-            self.persist_every_n_rounds != 0 and (self.current_round + 1) % self.persist_every_n_rounds == 0
-        ) or self.current_round == self.num_rounds - 1:
-            super().save_model(model)
