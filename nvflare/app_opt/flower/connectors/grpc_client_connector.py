@@ -12,9 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import time
+
 import nvflare.app_opt.flower.proto.grpcadapter_pb2 as pb2
-from nvflare.apis.shareable import ReturnCode
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import ReturnCode
 from nvflare.app_opt.flower.connectors.flower_connector import FlowerClientConnector
 from nvflare.app_opt.flower.defs import Constant, msg_container_to_shareable, shareable_to_msg_container
 from nvflare.app_opt.flower.grpc_server import GrpcServer
@@ -127,4 +128,3 @@ class GrpcClientConnector(FlowerClientConnector, GrpcAdapterServicer):
                 return pb2.MessageContainer(metadata={"should-exit": "true"})
         except Exception as ex:
             self._abort(reason=f"_send_flower_request exception: {secure_format_exception(ex)}")
-

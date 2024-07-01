@@ -76,7 +76,7 @@ class CLIApplet(Applet, ABC):
 
         # wait for the applet to stop by itself
         start = time.time()
-        while time.time()-start < timeout:
+        while time.time() - start < timeout:
             rc = p.poll()
             if rc is not None:
                 # already stopped

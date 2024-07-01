@@ -634,6 +634,11 @@ class ReliableMessage:
                 timeout=per_msg_timeout,
                 fl_ctx=fl_ctx,
             )
+
+            # Ignore query result if reply result is already received
+            if receiver.result_ready.is_set():
+                return receiver.result
+
             last_query_time = time.time()
             ack, rc = _extract_result(ack, target)
             if ack and rc not in [ReturnCode.COMMUNICATION_ERROR]:

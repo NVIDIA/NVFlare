@@ -81,7 +81,7 @@ def main():
             print("got should-exit!")
             break
 
-        next_round = result_headers.get('round')
+        next_round = result_headers.get("round")
         time.sleep(1.0)
 
     time_per_req = total_time / total_reqs
