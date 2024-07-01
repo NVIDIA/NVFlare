@@ -145,7 +145,7 @@ class XGBClientRunner(AppRunner, FLComponent):
             self.logger.info("XGBoost non-secure training")
         else:
             xgb_plugin_name = ConfigService.get_str_var(
-                name="xgb_plugin_name", conf=SystemConfigs.RESOURCES_CONF, default="nvflare"
+                name="xgb_plugin_name", conf=SystemConfigs.RESOURCES_CONF, default="cuda_paillier"
             )
 
             xgb_loader_params = ConfigService.get_dict_var(
