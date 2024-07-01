@@ -282,7 +282,9 @@ class ReliableMessage:
         elif op == OP_QUERY:
             receiver = cls._req_receivers.get(tx_id)
             if not receiver:
-                cls.warning(fl_ctx, f"received query but the request ({rm_topic=} {tx_id=}) is not received or already done!")
+                cls.warning(
+                    fl_ctx, f"received query but the request ({rm_topic=} {tx_id=}) is not received or already done!"
+                )
                 return _status_reply(STATUS_NOT_RECEIVED)  # meaning the request wasn't received
             else:
                 return receiver.process(request, fl_ctx)
