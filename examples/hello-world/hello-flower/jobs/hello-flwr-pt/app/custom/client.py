@@ -12,17 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from flwr.client import ClientApp, NumPyClient
-
-from task import (
-    Net,
-    DEVICE,
-    load_data,
-    get_weights,
-    set_weights,
-    train,
-    test,
-)
-
+from task import DEVICE, Net, get_weights, load_data, set_weights, test, train
 
 # Load model and data (simple CNN, CIFAR-10)
 net = Net().to(DEVICE)
