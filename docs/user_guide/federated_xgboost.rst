@@ -22,5 +22,7 @@ We introduce federated XGBoost with NVFlare for a more reliable federated setup.
 .. toctree::
    :maxdepth: 1
 
-   federated_xgboost/implementation
-   federated_xgboost/timeout
+   federated_xgboost/reliable_xgboost_design
+   federated_xgboost/reliable_xgboost_timeout
+   federated_xgboost/secure_xgboost_design
+   federated_xgboost/secure_xgboost_user_guide
