@@ -43,8 +43,8 @@ class ModelController(BaseModelController, ABC):
         task_name: str = "train",
         data: FLModel = None,
         targets: Union[List[str], None] = None,
+        min_responses: int = None,
         timeout: int = 0,
-        wait_time_after_min_received: int = 10,
     ) -> List[FLModel]:
         """Send a task with data to targets and wait for results.
 
@@ -52,8 +52,9 @@ class ModelController(BaseModelController, ABC):
             task_name (str, optional): name of the task. Defaults to "train".
             data (FLModel, optional): FLModel to be sent to clients. Defaults to None.
             targets (List[str], optional): the list of target client names or None (all clients). Defaults to None.
+            min_responses (int, optional): the minimum number of responses expected. If None, must receive responses from
+              all clients that the task has been sent to. Defaults to None.
             timeout (int, optional): time to wait for clients to perform task. Defaults to 0 (never time out).
-            wait_time_after_min_received (int, optional): time to wait after minimum number of client responses have been received. Defaults to 10.
 
         Returns:
             List[FLModel]
@@ -62,8 +63,8 @@ class ModelController(BaseModelController, ABC):
             task_name=task_name,
             data=data,
             targets=targets,
+            min_responses=min_responses,
             timeout=timeout,
-            wait_time_after_min_received=wait_time_after_min_received,
         )
 
     def send_model(
@@ -71,8 +72,8 @@ class ModelController(BaseModelController, ABC):
         task_name: str = "train",
         data: FLModel = None,
         targets: Union[List[str], None] = None,
+        min_responses: int = None,
         timeout: int = 0,
-        wait_time_after_min_received: int = 10,
         callback: Callable[[FLModel], None] = None,
     ) -> None:
         """Send a task with data to targets (non-blocking). Callback is called when a result is received.
@@ -81,8 +82,9 @@ class ModelController(BaseModelController, ABC):
             task_name (str, optional): name of the task. Defaults to "train".
             data (FLModel, optional): FLModel to be sent to clients. Defaults to None.
             targets (List[str], optional): the list of target client names or None (all clients). Defaults to None.
+            min_responses (int, optional): the minimum number of responses expected. If None, must receive responses from
+              all clients that the task has been sent to. Defaults to None.
             timeout (int, optional): time to wait for clients to perform task. Defaults to 0 (never time out).
-            wait_time_after_min_received (int, optional): time to wait after minimum number of client responses have been received. Defaults to 10.
             callback (Callable[[FLModel], None], optional): callback when a result is received. Defaults to None.
 
         Returns:
@@ -92,8 +94,8 @@ class ModelController(BaseModelController, ABC):
             task_name=task_name,
             data=data,
             targets=targets,
+            min_responses=min_responses,
             timeout=timeout,
-            wait_time_after_min_received=wait_time_after_min_received,
             blocking=False,
             callback=callback,
         )

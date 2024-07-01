@@ -42,24 +42,26 @@ jobs:
       args: ${{ env.args }}
 
     # This job only runs for pull request comments
-    if: contains('\
-      chesterxgchen,\
-      pxLi,\
-      IsaacYangSLA,\
-      YanxuanLiu,\
-      yhwen,\
-      YuanTingHsieh,\
-      holgerroth,\
-      yhwen,\
-      nvkevlu,\
-      nvidianz,\
-      yanchengnv,\
-      ZiyueXu77,\
-      Can-Zhao,\
-      guopengf,\
-      SYangster,\
-      yinqingh,\
-      ', format('{0},', github.actor)) && github.event.comment.body == '/build'
+    if: |
+      github.event.comment.body == '/build' &&
+      (
+        github.actor == 'chesterxgchen' ||
+        github.actor == 'pxLi' ||
+        github.actor == 'IsaacYangSLA' ||
+        github.actor == 'YanxuanLiu' ||
+        github.actor == 'yhwen' ||
+        github.actor == 'YuanTingHsieh' ||
+        github.actor == 'holgerroth' ||
+        github.actor == 'yhwen' ||
+        github.actor == 'nvkevlu' ||
+        github.actor == 'nvidianz' ||
+        github.actor == 'yanchengnv' ||
+        github.actor == 'ZiyueXu77' ||
+        github.actor == 'Can-Zhao' ||
+        github.actor == 'guopengf' ||
+        github.actor == 'SYangster' ||
+        github.actor == 'yinqingh'
+      )
     steps:
       - name: Check if comment is issued by authorized person
         run: blossom-ci
