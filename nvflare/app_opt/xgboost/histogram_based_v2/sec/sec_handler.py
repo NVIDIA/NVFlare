@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 
@@ -49,8 +50,8 @@ class SecurityHandler(FLComponent):
         self.log_error(fl_ctx, self._format_msg(fl_ctx, msg), fire_event=False)
 
     def _abort(self, error: str, fl_ctx: FLContext):
-        self.error(fl_ctx, error)
-        self.system_panic(reason=error, fl_ctx=fl_ctx)
+        fl_ctx.set_prop(FLContextKey.FATAL_SYSTEM_ERROR, error, private=True)
+        self.fire_event(Constant.EVENT_XGB_ABORTED, fl_ctx)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         fl_ctx.set_prop(key=Constant.PARAM_KEY_EVENT, value=event_type, private=True, sticky=False)

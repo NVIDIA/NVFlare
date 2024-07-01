@@ -73,6 +73,7 @@ class Constant:
     ERR_TARGET_ERROR = -4
 
     EXIT_CODE_CANT_START = 101
+    EXIT_CODE_JOB_ABORT = 102
 
     # XGB operation parameter keys
     PARAM_KEY_RANK = "xgb.rank"
@@ -86,6 +87,7 @@ class Constant:
     PARAM_KEY_REPLY = "xgb.reply"
     PARAM_KEY_REQUEST = "xgb.request"
     PARAM_KEY_EVENT = "xgb.event"
+    PARAM_KEY_TRAINING_MODE = "xgb.training_mode"
 
     RUNNER_CTX_SERVER_ADDR = "server_addr"
     RUNNER_CTX_PORT = "port"
@@ -104,6 +106,8 @@ class Constant:
     EVENT_AFTER_BROADCAST = "xgb.after_broadcast"
     EVENT_BEFORE_ALL_GATHER_V = "xgb.before_all_gather_v"
     EVENT_AFTER_ALL_GATHER_V = "xgb.after_all_gather_v"
+    EVENT_XGB_JOB_CONFIGURED = "xgb.job_configured"
+    EVENT_XGB_ABORTED = "xgb.aborted"
 
     HEADER_KEY_ENCRYPTED_DATA = "xgb.encrypted_data"
     HEADER_KEY_HORIZONTAL = "xgb.horizontal"
