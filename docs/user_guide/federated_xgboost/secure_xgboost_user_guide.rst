@@ -125,47 +125,56 @@ XGBoost Plugin Configuration
 XGBoost requires a plugin to handle secure training. 
 Two plugins are initially shipped with NVFlare,
 
-- **nvflare**: The default plugin. This plugin forwards data locally to NVFlare process for encryption.
-- **cuda_paillier**: This plugin uses GPU for cryptographic operations.
+- **cuda_paillier**: The default plugin. This plugin uses GPU for cryptographic operations.
+- **nvflare**: This plugin forwards data locally to NVFlare process for encryption.
 
 Vertical (Non-secure)
 ---------------------
-The default nvflare plugin is used for vertical training. No configuration change is needed.
+Any plugin can be used for vertical training. No configuration change is needed.
 
 Horizontal (Non-secure)
 -----------------------
-The default nvflare plugin is used for horizontal training. No configuration change is needed.
+Any plugin can be used for horizontal training. No configuration change is needed.
 
 Vertical Secure
 ---------------
 Both plugins can be used for vertical secure training.
 
-The default nvflare plugin uses CPU for homomorphic encryption. It requires the ipcl-python package.
+The default cuda_paillier plugin is preferred because it uses GPU for faster cryptographic operations.
 
-To use GPUs, the cuda_paillier plugin must be configured either by specifying it in the ``local/resources.json`` file on clients:
+.. note::
+
+    **cuda_paillier** plugin requires NVIDIA GPUs that support compute capability 7.0 or higher. Please refer to https://developer.nvidia.com/cuda-gpus for more information.
+
+If you see the following errors in the log, it means either no GPU is available or the GPU does not meet the requirements:
+
+::
+
+    CUDA runtime API error no kernel image is available for execution on the device at line 241 in file /my_home/nvflare-internal/processor/src/cuda-plugin/paillier.h
+    2024-07-01 12:19:15,683 - SimulatorClientRunner - ERROR - run_client_thread error: EOFError:
+
+
+In this case, the nvflare plugin can be used to perform encryption on CPUs, which requires the ipcl-python package.
+The plugin can be configured in the ``local/resources.json`` file on clients:
 
 .. code-block:: json
 
     {
-        "xgb_plugin_name": "cuda_paillier"
+        "xgb_plugin_name": "nvflare"
     }
 
 or by setting this environment variable,
 
 .. code-block:: bash
 
-    export NVFLARE_XGB_PLUGIN_NAME=cuda_paillier
-
-.. note::
-
-    **cuda_paillier** plugin requires NVIDIA GPUs that support compute capability 7.0 or higher. Please refer to https://developer.nvidia.com/cuda-gpus for more information.
-
+    export NVFLARE_XGB_PLUGIN_NAME=nvflare
 
 Horizontal Secure
 -----------------
-The default nvflare plugin is used for this mode, no configuration change is needed.
+The plugin setup is the same as vertical secure.
 
-This mode requires the tenseal package and the provisioning of NVFlare systems must include tenseal context.
+This mode requires the tenseal package for all plugins.
+The provisioning of NVFlare systems must include tenseal context.
 See :ref:`provisioning` for details.
 
 
