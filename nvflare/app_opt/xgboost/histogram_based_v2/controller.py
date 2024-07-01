@@ -16,6 +16,7 @@ import time
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
@@ -190,6 +191,13 @@ class XGBController(Controller):
         if error:
             self.system_panic(reason=error, fl_ctx=fl_ctx)
 
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        if event_type == Constant.EVENT_XGB_ABORTED:
+            error = fl_ctx.get_prop(FLContextKey.FATAL_SYSTEM_ERROR)
+            self.system_panic(f"XGB server stopped with error: {error}", fl_ctx)
+        else:
+            super().handle_event(event_type, fl_ctx)
+
     def _is_stopped(self):
         # check whether the abort signal is triggered
         return self.abort_signal and self.abort_signal.triggered
@@ -245,6 +253,9 @@ class XGBController(Controller):
         elif exit_code == Constant.EXIT_CODE_CANT_START:
             self.log_error(fl_ctx, f"XGB client failed to start (exit code {exit_code})")
             self.system_panic("XGB client failed to start", fl_ctx)
+        elif exit_code == Constant.EXIT_CODE_JOB_ABORT:
+            self.log_error(fl_ctx, f"XGB client aborted (exit code {exit_code})")
+            self.system_panic("XGB client aborted", fl_ctx)
         else:
             # Should we stop here?
             # Problem is that even if the exit_code is not 0, we can't say the job failed.
