@@ -1,0 +1,2 @@
+nvflare~=2.5.0rc
+tensorflow[and-cuda]

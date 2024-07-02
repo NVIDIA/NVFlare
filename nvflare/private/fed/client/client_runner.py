@@ -591,15 +591,15 @@ class ClientRunner(TBI):
             var_name=ConfigVarName.RUNNER_SYNC_TIMEOUT,
             default=2.0,
         )
-        max_sync_tries = self.get_positive_int_var(
-            var_name=ConfigVarName.MAX_RUNNER_SYNC_TRIES,
-            default=30,
+        max_sync_timeout = self.get_positive_float_var(
+            var_name=ConfigVarName.MAX_RUNNER_SYNC_TIMEOUT,
+            default=60.0,
         )
         target = "server"
         synced = False
         sync_start = time.time()
         with self.engine.new_context() as fl_ctx:
-            for i in range(max_sync_tries):
+            while True:
                 # sync with server runner before starting
                 time.sleep(0.5)
                 resp = self.engine.send_aux_request(
@@ -611,6 +611,8 @@ class ClientRunner(TBI):
                     optional=True,
                     secure=False,
                 )
+                if time.time() - sync_start > max_sync_timeout:
+                    break
 
                 if not resp:
                     continue
@@ -626,7 +628,7 @@ class ClientRunner(TBI):
                     break
 
             if not synced:
-                raise RuntimeError(f"cannot sync with Server Runner after {max_sync_tries} tries")
+                raise RuntimeError(f"cannot sync with Server Runner after {max_sync_timeout} seconds")
 
             self.log_info(fl_ctx, f"synced to Server Runner in {time.time()-sync_start} seconds")
             ReliableMessage.enable(fl_ctx)

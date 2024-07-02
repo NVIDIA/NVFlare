@@ -439,7 +439,7 @@ class FilterKey:
 class ConfigVarName:
     # These variables can be set in job config files (config_fed_server or config_fed_client)
     RUNNER_SYNC_TIMEOUT = "runner_sync_timeout"  # client: runner sync message timeout
-    MAX_RUNNER_SYNC_TRIES = "max_runner_sync_tries"  # client: max number of runner sync attempts
+    MAX_RUNNER_SYNC_TIMEOUT = "max_runner_sync_timeout"  # client: max timeout of runner sync attempts
     TASK_CHECK_TIMEOUT = "task_check_timeout"  # client: timeout for task_check message (before submitting task)
 
     # client: how long to wait before sending task_check again (if previous task_check fails)

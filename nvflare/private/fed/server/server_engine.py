@@ -317,8 +317,6 @@ class ServerEngine(ServerEngineInternalSpec):
         return ""
 
     def abort_app_on_server(self, job_id: str, turn_to_cold: bool = False) -> str:
-        if job_id not in self.run_processes.keys():
-            return "Server app has not started."
 
         self.logger.info("Abort the server app run.")
         command_data = Shareable()
@@ -447,6 +445,9 @@ class ServerEngine(ServerEngineInternalSpec):
                 engine=self, identity_name=self.server.project_name, job_id="", public_stickers={}, private_stickers={}
             ).new_context()
 
+    def add_component(self, component_id: str, component):
+        self.server.runner_config.add_component(component_id, component)
+
     def get_component(self, component_id: str) -> object:
         return self.run_manager.get_component(component_id)
 
@@ -507,24 +508,27 @@ class ServerEngine(ServerEngineInternalSpec):
         secure=False,
     ) -> dict:
         try:
-            if not targets:
-                targets = []
-                for t in self.get_clients():
-                    targets.append(t.name)
-            if targets:
-                return self.run_manager.aux_runner.send_aux_request(
-                    targets=targets,
-                    topic=topic,
-                    request=request,
-                    timeout=timeout,
-                    fl_ctx=fl_ctx,
-                    optional=optional,
-                    secure=secure,
-                )
-            else:
-                return {}
+            return self.send_aux_to_targets(targets, topic, request, timeout, fl_ctx, optional, secure)
         except Exception as e:
             self.logger.error(f"Failed to send the aux_message: {topic} with exception: {secure_format_exception(e)}.")
+
+    def send_aux_to_targets(self, targets, topic, request, timeout, fl_ctx, optional, secure):
+        if not targets:
+            targets = []
+            for t in self.get_clients():
+                targets.append(t.name)
+        if targets:
+            return self.run_manager.aux_runner.send_aux_request(
+                targets=targets,
+                topic=topic,
+                request=request,
+                timeout=timeout,
+                fl_ctx=fl_ctx,
+                optional=optional,
+                secure=secure,
+            )
+        else:
+            return {}
 
     def sync_clients_from_main_process(self):
         # repeatedly ask the parent process to get participating clients until we receive the result
