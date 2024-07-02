@@ -36,7 +36,7 @@ if __name__ == "__main__":
     job = FedJob(name="cifar10_fedavg")
 
     ctrl1 = FedAvg(
-        min_clients=n_clients,
+        num_clients=n_clients,
         num_rounds=num_rounds,
     )
     ctrl2 = CrossSiteModelEval()

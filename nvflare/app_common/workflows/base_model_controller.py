@@ -31,7 +31,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fl_component_wrapper import FLComponentWrapper
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
-from nvflare.fuel.utils.validation_utils import check_non_negative_int, check_str
+from nvflare.fuel.utils.validation_utils import check_non_negative_int, check_positive_int, check_str
 from nvflare.security.logging import secure_format_exception
 
 
@@ -348,19 +348,22 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         else:
             self.error("persistor not configured, model will not be saved")
 
-    def sample_clients(self, num_clients):
+    def sample_clients(self, num_clients=None):
         clients = self.engine.get_clients()
 
-        if num_clients < len(clients):
-            random.shuffle(clients)
-            clients = clients[0:num_clients]
-            self.info(
-                f"num_clients ({num_clients}) is less than the number of available clients. Returning a random subset of {num_clients} clients."
-            )
-        elif num_clients > len(clients):
-            self.info(
-                f"num_clients ({num_clients}) is greater than the number of available clients. Returning all clients."
-            )
+        if num_clients:
+            check_positive_int("num_clients", num_clients)
+            if num_clients < len(clients):
+                random.shuffle(clients)
+                clients = clients[0:num_clients]
+                self.info(
+                    f"num_clients ({num_clients}) is less than the number of available clients. Returning a random subset of ({num_clients}) clients."
+                )
+            elif num_clients > len(clients):
+                self.error(
+                    f"num_clients ({num_clients}) is greater than the number of available clients. Returning all ({len(clients)}) available clients."
+                )
+
         self.info(f"Sampled clients: {[client.name for client in clients]}")
 
         return clients

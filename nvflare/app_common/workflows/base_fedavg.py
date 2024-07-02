@@ -30,7 +30,7 @@ class BaseFedAvg(ModelController):
     def __init__(
         self,
         *args,
-        min_clients: int = 1000,
+        num_clients: int = 3,
         num_rounds: int = 5,
         start_round: int = 0,
         persist_every_n_rounds: int = 1,
@@ -55,9 +55,7 @@ class BaseFedAvg(ModelController):
             - def run(self)
 
         Args:
-            min_clients (int, optional): The minimum number of clients responses before
-                Workflow starts to wait for `wait_time_after_min_received`. Note that the workflow will move forward
-                when all available clients have responded regardless of this value. Defaults to 1000.
+            num_clients (int, optional): The number of clients. Defaults to 3.
             num_rounds (int, optional): The total number of training rounds. Defaults to 5.
             start_round (int, optional): The starting round number.
             persist_every_n_rounds (int, optional): persist the global model every n rounds. Defaults to 1.
@@ -65,7 +63,7 @@ class BaseFedAvg(ModelController):
         """
         super().__init__(*args, **kwargs)
 
-        self.min_clients = min_clients
+        self.num_clients = num_clients
         self.num_rounds = num_rounds
         self.start_round = start_round
         self.persist_every_n_rounds = persist_every_n_rounds
