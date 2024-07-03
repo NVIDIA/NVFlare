@@ -45,6 +45,7 @@ class DockerBuilder(Builder):
         info_dict = copy.deepcopy(self.services["__flserver__"])
         info_dict["volumes"][0] = f"./{server.name}:" + "${WORKSPACE}"
         info_dict["ports"] = [f"{fed_learn_port}:{fed_learn_port}", f"{admin_port}:{admin_port}"]
+        info_dict["build"] = "nvflare_compose"
         for i in range(len(info_dict["command"])):
             if info_dict["command"][i] == "flserver":
                 info_dict["command"][i] = server.name
@@ -56,6 +57,7 @@ class DockerBuilder(Builder):
     def _build_client(self, client, ctx):
         info_dict = copy.deepcopy(self.services["__flclient__"])
         info_dict["volumes"] = [f"./{client.name}:" + "${WORKSPACE}"]
+        info_dict["build"] = "nvflare_compose"
         for i in range(len(info_dict["command"])):
             if info_dict["command"][i] == "flclient":
                 info_dict["command"][i] = client.name
