@@ -187,7 +187,7 @@ class FedAvg(BaseFedAvg):
             self.info(f"Round {self.current_round} started.")
             model.current_round = self.current_round
 
-            clients = self.sample_clients(self.min_clients)
+            clients = self.sample_clients(self.num_clients)
 
             results = self.send_model_and_wait(targets=clients, data=model)
 
@@ -213,7 +213,7 @@ if __name__ == "__main__":
 
     # Define the controller workflow and send to server
     controller = FedAvg(
-        min_clients=n_clients,
+        num_clients=n_clients,
         num_rounds=num_rounds,
     )
     job.to(controller, "server")
@@ -405,7 +405,7 @@ class FedAvg(BaseFedAvg):
             self.info(f"Round {self.current_round} started.")
             model.current_round = self.current_round
 
-            clients = self.sample_clients(self.min_clients)
+            clients = self.sample_clients(self.num_clients)
 
             results = self.send_model_and_wait(targets=clients, data=model)
 
@@ -432,7 +432,7 @@ if __name__ == "__main__":
 
     # Define the controller workflow and send to server
     controller = FedAvg(
-        min_clients=n_clients,
+        num_clients=n_clients,
         num_rounds=num_rounds,
     )
     job.to(controller, "server")
@@ -567,7 +567,7 @@ class FedAvg(BaseFedAvg):
             self.info(f"Round {self.current_round} started.")
             model.current_round = self.current_round
 
-            clients = self.sample_clients(self.min_clients)
+            clients = self.sample_clients(self.num_clients)
 
             results = self.send_model_and_wait(targets=clients, data=model)
 
@@ -594,7 +594,7 @@ if __name__ == "__main__":
 
     # Define the controller workflow and send to server
     controller = FedAvg(
-        min_clients=n_clients,
+        num_clients=n_clients,
         num_rounds=num_rounds,
     )
     job.to(controller, "server")
