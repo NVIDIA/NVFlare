@@ -25,9 +25,7 @@ class FedAvg(BaseFedAvg):
     The parent classes provide the default implementations for other routines.
 
     Args:
-        min_clients (int, optional): The minimum number of clients responses before
-            Workflow starts to wait for `wait_time_after_min_received`. Note that the workflow will move forward
-            when all available clients have responded regardless of this value. Defaults to 1000.
+        num_clients (int, optional): The number of clients. Defaults to 3.
         num_rounds (int, optional): The total number of training rounds. Defaults to 5.
         start_round (int, optional): The starting round number.
         persistor_id (str, optional): ID of the persistor component. Defaults to "persistor".
@@ -52,7 +50,7 @@ class FedAvg(BaseFedAvg):
             self.info(f"Round {self.current_round} started.")
             model.current_round = self.current_round
 
-            clients = self.sample_clients(self.min_clients)
+            clients = self.sample_clients(self.num_clients)
 
             results = self.send_model_and_wait(targets=clients, data=model)
 
