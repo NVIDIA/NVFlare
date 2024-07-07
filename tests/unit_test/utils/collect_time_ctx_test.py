@@ -17,12 +17,14 @@
 import time
 import traceback
 
+import pytest
+
 from nvflare.utils.collect_time_ctx import CollectTimeContext
 
 
 def example_function(param):
     print(f"Inside example_function with param: {param}")
-    if param == 'error':
+    if param == "error":
         raise ValueError("Example error occurred.")
     time.sleep(0.5)
 
@@ -33,39 +35,35 @@ def extract_command_name(param):
 
 
 class TestDecorators:
-
     def test_collection_fn(self):
         # Example usage of CollectTimeContext with dynamic command_name_extractor
-        values = ["error", "cmd1", "cmd2", "cmd3", "cmd3"]
+        values = ["cmd1", "cmd2", "cmd3", "cmd3"]
         for param_value in values:
-            try:
-                with CollectTimeContext() as context:
-                    example_function(param_value)
-            except Exception as e:
-                print(f"Exception occurred: {e}")
-                print(traceback.format_exc())
-            finally:
-                print("Metrics:", context.metrics)
-        assert 1 == 0
-        # metrics = CollectTimeContext.get_metrics()
-        # assert metrics['count'] == 4
-        # assert metrics['error_count'] == 1
-        # assert metrics['time_taken'] > 2
-        #
-        # assert metrics['example_function_param_error']['count'] == 0
-        # assert metrics['example_function_param_error']['error_count'] == 1
-        # assert metrics['example_function_param_error']['time_taken'] == 0
-        #
-        # assert metrics['example_function_param_cmd1']['count'] == 1
-        # assert metrics['example_function_param_cmd1']['error_count'] == 0
-        # assert metrics['example_function_param_cmd1']['time_taken'] >= 0.5
-        #
-        # assert metrics['example_function_param_cmd2']['count'] == 1
-        # assert metrics['example_function_param_cmd2']['error_count'] == 0
-        # assert metrics['example_function_param_cmd2']['time_taken'] >= 0.5
-        #
-        # assert metrics['example_function_param_cmd3']['count'] == 2
-        # assert metrics['example_function_param_cmd3']['error_count'] == 0
-        # assert metrics['example_function_param_cmd3']['time_taken'] >= 1
+            with CollectTimeContext() as context:
+                example_function(param_value)
+                metrics = context.metrics
+                assert len(metrics.keys()) > 0
 
+        with pytest.raises(Exception):
+            with CollectTimeContext() as context:
+                example_function("error")
 
+                # assert metrics['count'] == 4
+                # assert metrics['error_count'] == 1
+                # assert metrics['time_taken'] > 2
+                #
+                # assert metrics['example_function_param_error']['count'] == 0
+                # assert metrics['example_function_param_error']['error_count'] == 1
+                # assert metrics['example_function_param_error']['time_taken'] == 0
+                #
+                # assert metrics['example_function_param_cmd1']['count'] == 1
+                # assert metrics['example_function_param_cmd1']['error_count'] == 0
+                # assert metrics['example_function_param_cmd1']['time_taken'] >= 0.5
+                #
+                # assert metrics['example_function_param_cmd2']['count'] == 1
+                # assert metrics['example_function_param_cmd2']['error_count'] == 0
+                # assert metrics['example_function_param_cmd2']['time_taken'] >= 0.5
+                #
+                # assert metrics['example_function_param_cmd3']['count'] == 2
+                # assert metrics['example_function_param_cmd3']['error_count'] == 0
+                # assert metrics['example_function_param_cmd3']['time_taken'] >= 1
