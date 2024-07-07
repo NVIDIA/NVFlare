@@ -29,7 +29,7 @@
     },
     {
       "id": "prometheus",
-      "path": "nvflare.app_opt.prometheus.metrics_collector.MetricsCollector"
+      "path": "nvflare.fuel_opt.prometheus.metrics_collector.MetricsCollector"
     }
   ],
   "workflows": [

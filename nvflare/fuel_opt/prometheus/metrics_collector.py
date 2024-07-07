@@ -15,7 +15,6 @@ class MetricsCollector:
         self.metrics_server_url = metrics_server_url
 
     def process_metrics(self, topic, metrics, data_bus):
-        print(f"process_metrics, {topic=}, {metrics=}")
         try:
             if topic == ReservedTopic.APP_METRICS:
                 # Send metrics data via HTTP POST
