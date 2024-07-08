@@ -76,3 +76,28 @@ class DataConverter:
 
         """
         pass
+
+    def decode_histograms(self, buffer: bytes, fl_ctx: FLContext) -> List[float]:
+        """Decode the buffer to extract flattened histograms
+
+        Args:
+            buffer: buffer to be decoded
+            fl_ctx: FLContext info
+
+        Returns: if the buffer contains histograms, return the flattened histograms
+            otherwise, return None
+
+        """
+        pass
+
+    def encode_histograms_result(self, histograms: List[float], fl_ctx: FLContext) -> bytes:
+        """Encode flattened histograms to be sent back to XGBoost
+
+        Args:
+            histograms: The flattened histograms for all features
+            fl_ctx: FLContext info
+
+        Returns: a buffer of bytes
+
+        """
+        pass

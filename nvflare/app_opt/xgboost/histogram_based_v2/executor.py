@@ -23,7 +23,6 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.security.logging import secure_format_exception
 
 from .defs import Constant
-from .sender import Sender
 
 
 class XGBExecutor(Executor):
@@ -32,7 +31,8 @@ class XGBExecutor(Executor):
         adaptor_component_id: str,
         configure_task_name=Constant.CONFIG_TASK_NAME,
         start_task_name=Constant.START_TASK_NAME,
-        req_timeout=60.0,
+        per_msg_timeout=10.0,
+        tx_timeout=100.0,
     ):
         """Constructor
 
@@ -40,10 +40,13 @@ class XGBExecutor(Executor):
             adaptor_component_id: the component ID of client target adaptor
             configure_task_name: name of the config task
             start_task_name: name of the start task
+            per_msg_timeout: timeout for sending one message
+            tx_timeout: transaction timeout
         """
         Executor.__init__(self)
         self.adaptor_component_id = adaptor_component_id
-        self.req_timeout = req_timeout
+        self.per_msg_timeout = per_msg_timeout
+        self.tx_timeout = tx_timeout
         self.configure_task_name = configure_task_name
         self.start_task_name = start_task_name
         self.adaptor = None
@@ -80,8 +83,6 @@ class XGBExecutor(Executor):
                 return
 
             adaptor.set_abort_signal(self.abort_signal)
-            engine = fl_ctx.get_engine()
-            adaptor.set_sender(Sender(engine, self.req_timeout))
             adaptor.initialize(fl_ctx)
             self.adaptor = adaptor
         elif event_type == EventType.END_RUN:

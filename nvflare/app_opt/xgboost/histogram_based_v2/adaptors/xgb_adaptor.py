@@ -13,10 +13,12 @@
 # limitations under the License.
 from abc import abstractmethod
 
+from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
-from nvflare.app_opt.xgboost.histogram_based_v2.sender import Sender
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.validation_utils import check_non_negative_int, check_positive_int
 
 from .adaptor import AppAdaptor
@@ -129,11 +131,10 @@ class XGBClientAdaptor(AppAdaptor):
     XGBClientAdaptor specifies commonly required methods for client adaptor implementations.
     """
 
-    def __init__(self, in_process):
+    def __init__(self, in_process, per_msg_timeout: float, tx_timeout: float):
         """Constructor of XGBClientAdaptor"""
         AppAdaptor.__init__(self, XGB_APP_NAME, in_process)
         self.engine = None
-        self.sender = None
         self.stopped = False
         self.rank = None
         self.num_rounds = None
@@ -141,19 +142,17 @@ class XGBClientAdaptor(AppAdaptor):
         self.xgb_params = None
         self.xgb_options = None
         self.world_size = None
+        self.per_msg_timeout = per_msg_timeout
+        self.tx_timeout = tx_timeout
 
-    def set_sender(self, sender: Sender):
-        """Set the sender to be used to send XGB operation requests to the server.
+    def start(self, fl_ctx: FLContext):
+        pass
 
-        Args:
-            sender: the sender to be set
+    def stop(self, fl_ctx: FLContext):
+        pass
 
-        Returns: None
-
-        """
-        if not isinstance(sender, Sender):
-            raise TypeError(f"sender must be Sender but got {type(sender)}")
-        self.sender = sender
+    def _is_stopped(self) -> (bool, int):
+        pass
 
     def configure(self, config: dict, fl_ctx: FLContext):
         """Called by XGB Executor to configure the target.
@@ -207,8 +206,28 @@ class XGBClientAdaptor(AppAdaptor):
         Returns: operation result
 
         """
-        reply = self.sender.send_to_server(op, req, self.abort_signal)
+        req.set_header(Constant.MSG_KEY_XGB_OP, op)
+
+        with self.engine.new_context() as fl_ctx:
+            reply = ReliableMessage.send_request(
+                target=FQCN.ROOT_SERVER,
+                topic=Constant.TOPIC_XGB_REQUEST,
+                request=req,
+                per_msg_timeout=self.per_msg_timeout,
+                tx_timeout=self.tx_timeout,
+                abort_signal=self.abort_signal,
+                fl_ctx=fl_ctx,
+            )
+
         if isinstance(reply, Shareable):
+            rc = reply.get_return_code()
+            if rc != ReturnCode.OK:
+                raise RuntimeError(f"received error return code: {rc}")
+
+            reply_op = reply.get_header(Constant.MSG_KEY_XGB_OP)
+            if reply_op != op:
+                raise RuntimeError(f"received op {reply_op} != expected op {op}")
+
             rcv_buf = reply.get(Constant.PARAM_KEY_RCV_BUF)
             return rcv_buf, reply
         else:
