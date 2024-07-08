@@ -13,7 +13,7 @@
 # limitations under the License.
 import nvflare.app_opt.flower.proto.grpcadapter_pb2 as pb2
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
+from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.app_opt.flower.connectors.flower_connector import FlowerServerConnector
 from nvflare.app_opt.flower.defs import Constant, msg_container_to_shareable, shareable_to_msg_container
 from nvflare.app_opt.flower.grpc_client import GrpcClient
@@ -95,6 +95,11 @@ class GrpcServerConnector(FlowerServerConnector):
         Returns: response from Flower server converted to Shareable
 
         """
+        stopped, _ = self.is_applet_stopped()
+        if stopped:
+            self.log_warning(fl_ctx, "dropped app request since applet is already stopped")
+            return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
+
         result = self.internal_grpc_client.send_request(shareable_to_msg_container(request))
 
         if isinstance(result, pb2.MessageContainer):

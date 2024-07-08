@@ -304,7 +304,7 @@ class TieController(Controller, ABC):
         self.log_debug(fl_ctx, f"_handle_app_request {topic}")
         op = request.get_header(Constant.MSG_KEY_OP)
         if self._is_stopped():
-            self.log_error(fl_ctx, f"dropped app request ({op=}) since server is already stopped")
+            self.log_warning(fl_ctx, f"dropped app request ({op=}) since server is already stopped")
             return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
 
         # since XGB protocol is very strict, we'll stop the control flow when any error occurs
