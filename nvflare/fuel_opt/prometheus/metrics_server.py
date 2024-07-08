@@ -16,6 +16,7 @@
 import argparse
 import json
 import logging
+import os.path
 import time
 from http.server import HTTPServer
 
@@ -74,7 +75,7 @@ def run_http_server(port):
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Start/Stop Prometheus metrics collection server.")
-    parser.add_argument("--config", type=str, required=True, help="Path to the JSON configuration file")
+    parser.add_argument("--config", type=str, help="Path to the JSON configuration file")
     parser.add_argument("--start", action="store_true", help="Start the Prometheus HTTP server")
     parser.add_argument("--port", type=int, default=9090, help="Port number for the Prometheus HTTP server")
 
@@ -86,7 +87,12 @@ if __name__ == "__main__":
     p = parse_arguments()
     args = p.parse_args()
     if args.start:
-        metrics_store = load_metrics_config(args.config)
+        current_dir = os.path.dirname(__file__)
+        app_metrics_config_path = os.path.join(current_dir, "app_metrics_config.json")
+        metrics_store = load_metrics_config(app_metrics_config_path)
+        if args.config:
+            metrics_store = load_metrics_config(args.config)
+
         run_http_server(args.port)
         # Keep the main thread alive to prevent the server from shutting down
         try:
