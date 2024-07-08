@@ -2,7 +2,6 @@ cmake_minimum_required(VERSION 3.19)
 project(proc_nvflare LANGUAGES CXX C VERSION 1.0)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_BUILD_TYPE Debug)
-add_compile_options(-gdwarf-4)
 
 option(GOOGLE_TEST "Build google tests" OFF)
 
