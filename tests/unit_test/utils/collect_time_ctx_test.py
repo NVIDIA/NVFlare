@@ -15,7 +15,6 @@
 
 # Example function that can raise an exception
 import time
-import traceback
 
 import pytest
 
@@ -41,29 +40,15 @@ class TestDecorators:
         for param_value in values:
             with CollectTimeContext() as context:
                 example_function(param_value)
-                metrics = context.metrics
-                assert len(metrics.keys()) > 0
-
+            metrics = context.metrics
+            assert metrics["count"] == 1
+            assert metrics["error_count"] == 0
+            assert metrics["time_taken"] > 0.5
         with pytest.raises(Exception):
             with CollectTimeContext() as context:
                 example_function("error")
 
-                # assert metrics['count'] == 4
-                # assert metrics['error_count'] == 1
-                # assert metrics['time_taken'] > 2
-                #
-                # assert metrics['example_function_param_error']['count'] == 0
-                # assert metrics['example_function_param_error']['error_count'] == 1
-                # assert metrics['example_function_param_error']['time_taken'] == 0
-                #
-                # assert metrics['example_function_param_cmd1']['count'] == 1
-                # assert metrics['example_function_param_cmd1']['error_count'] == 0
-                # assert metrics['example_function_param_cmd1']['time_taken'] >= 0.5
-                #
-                # assert metrics['example_function_param_cmd2']['count'] == 1
-                # assert metrics['example_function_param_cmd2']['error_count'] == 0
-                # assert metrics['example_function_param_cmd2']['time_taken'] >= 0.5
-                #
-                # assert metrics['example_function_param_cmd3']['count'] == 2
-                # assert metrics['example_function_param_cmd3']['error_count'] == 0
-                # assert metrics['example_function_param_cmd3']['time_taken'] >= 1
+            metrics = context.metrics
+            assert metrics["count"] == 0
+            assert metrics["error_count"] == 1
+            assert metrics["time_taken"] == 0
