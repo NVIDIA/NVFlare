@@ -2,33 +2,33 @@
 {
   "metrics": [
     {
-      "name": "execute_command_get_task_count",
+      "name": "get_task_count",
       "description": "count for execute_command: get_task",
       "metrics_type": "gauge"
     },
     {
-      "name": "execute_command_get_task_error_count",
+      "name": "get_task_error_count",
       "description": "error_count for execute_command: get_task",
       "metrics_type": "gauge"
     },
     {
-      "name": "execute_command_get_task_time_taken",
+      "name": "get_task_time_taken",
       "description": "time_taken for execute_command: get_task",
       "metrics_type": "gauge"
     },
 
     {
-      "name": "execute_command_submit_update_count",
+      "name": "submit_update_count",
       "description": "count for execute_command: submit_update",
       "metrics_type": "gauge"
     },
     {
-      "name": "execute_command_submit_update_error_count",
+      "name": "submit_update_error_count",
       "description": "error_count for execute_command: submit_update",
       "metrics_type": "gauge"
     },
     {
-      "name": "execute_command_submit_update_time_taken",
+      "name": "submit_update_time_taken",
       "description": "time_taken for execute_command: submit_update",
       "metrics_type": "gauge"
     }
