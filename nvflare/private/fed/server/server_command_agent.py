@@ -55,11 +55,11 @@ class ServerCommandAgent(object):
         self.logger.info(f"ServerCommandAgent cell register_request_cb: {self.cell.get_fqcn()}")
 
     def execute_command(self, request: CellMessage) -> CellMessage:
-        metrics_group = "execute_command"
+        metrics_group = ""
         try:
             with CollectTimeContext() as context:
                 command_name = self.get_command_name(request)
-                metrics_group = f"execute_command_{command_name}"
+                metrics_group = command_name
 
                 # data = fobs.loads(request.payload)
                 data = request.payload

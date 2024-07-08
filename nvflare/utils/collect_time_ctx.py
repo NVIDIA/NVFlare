@@ -35,6 +35,5 @@ class CollectTimeContext:
             # No exception occurred
             self.metrics["count"] += 1
             self.metrics["time_taken"] += elapsed_time
-
         # Return False to propagate the exception if there was one
         return False
