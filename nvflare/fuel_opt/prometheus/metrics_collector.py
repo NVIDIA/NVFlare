@@ -11,8 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-
+import logging
 import traceback
 
 import requests
@@ -27,17 +26,17 @@ class MetricsCollector:
         self.data_bus = DataBus()
         self.data_bus.subscribe([ReservedTopic.APP_METRICS], self.process_metrics)
         self.metrics_server_url = metrics_server_url
+        self.logger = logging.getLogger(self.__class__.__name__)
 
     def process_metrics(self, topic, metrics, data_bus):
         try:
             if topic == ReservedTopic.APP_METRICS:
-                # Send metrics data via HTTP POST
                 try:
-                    print(f"post metrics = {metrics} to {self.metrics_server_url}")
+                    self.logger.info(f"post metrics = {metrics} to {self.metrics_server_url}")
                     response = requests.post(self.metrics_server_url, json=metrics)
                     response.raise_for_status()
                 except requests.exceptions.RequestException as e:
-                    print(f"Failed to send metrics: {e}")
+                    self.logger.warning(f"Failed to send metrics: {e}")
 
         except Exception as e:
-            print(traceback.format_exc())
+            self.logger.warning(f"Failed to process_metrics metrics: {traceback.format_exc()}")

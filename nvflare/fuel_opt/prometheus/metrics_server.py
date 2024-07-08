@@ -15,6 +15,7 @@
 # metrics_server.py
 import argparse
 import json
+import logging
 import time
 from http.server import HTTPServer
 
@@ -24,6 +25,7 @@ from prometheus_client.exposition import MetricsHandler
 
 # Load the metrics configuration
 metrics_store = {}
+logger = logging.getLogger("CustomMetricsHandler")
 
 
 class CustomMetricsHandler(MetricsHandler):
@@ -67,7 +69,7 @@ def run_http_server(port):
     thread = Thread(target=server.serve_forever)
     thread.daemon = True
     thread.start()
-    print(f"started prometheus metrics server on port {port}")
+    logger.info(f"started prometheus metrics server on port {port}")
 
 
 def parse_arguments():
@@ -91,6 +93,6 @@ if __name__ == "__main__":
             while True:
                 time.sleep(1)
         except KeyboardInterrupt:
-            print("Shutting down the server...")
+            logger.info("Shutting down the server...")
     else:
         p.print_help()
