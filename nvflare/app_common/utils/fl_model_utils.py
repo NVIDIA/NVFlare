@@ -149,14 +149,13 @@ class FLModelUtils:
         return result
 
     @staticmethod
-    def to_dxo(fl_model: FLModel, exclude_params=False) -> DXO:
+    def to_dxo(fl_model: FLModel) -> DXO:
         """Converts FLModel to a DXO."""
         attr_dict = {}
         for attr in MODEL_ATTRS:
-            if not (exclude_params and attr == FLModelConst.PARAMS):
-                value = getattr(fl_model, attr, None)
-                if value is not None:
-                    attr_dict[attr] = value
+            value = getattr(fl_model, attr, None)
+            if value is not None:
+                attr_dict[attr] = value
         result = DXO(data_kind=DataKind.FL_MODEL, data=attr_dict)
         return result
 
@@ -169,7 +168,7 @@ class FLModelUtils:
         if not isinstance(dxo.data, dict):
             raise ValueError(f"Invalid dxo with data of type: {type(dxo.data)}")
 
-        params = dxo.data.get(FLModelConst.PARAMS, {})
+        params = dxo.data.get(FLModelConst.PARAMS, None)
         params_type = dxo.data.get(FLModelConst.PARAMS_TYPE, None)
         metrics = dxo.data.get(FLModelConst.METRICS, None)
         optimizer_params = dxo.data.get(FLModelConst.OPTIMIZER_PARAMS, None)

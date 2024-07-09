@@ -19,7 +19,6 @@ from typing import Callable, List, Union
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, OperatorMethod, Task, TaskOperatorKey
-from nvflare.apis.dxo import DXO, from_file
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
@@ -297,57 +296,49 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             self.exception(error_msg)
             self.panic(error_msg)
 
-    def load_model(self, filepath=""):
+    def load_model(self):
+        # initialize global model
+        model = None
         if self.persistor:
-            # initialize global model
-            model = None
-            if self.persistor:
-                self.info("loading initial model from persistor")
-                global_weights = self.persistor.load(self.fl_ctx)
+            self.info("loading initial model from persistor")
+            global_weights = self.persistor.load(self.fl_ctx)
 
-                if not isinstance(global_weights, ModelLearnable):
-                    self.panic(
-                        f"Expected global weights to be of type `ModelLearnable` but received {type(global_weights)}"
-                    )
-                    return
+            if not isinstance(global_weights, ModelLearnable):
+                self.panic(
+                    f"Expected global weights to be of type `ModelLearnable` but received {type(global_weights)}"
+                )
+                return
 
-                if global_weights.is_empty():
-                    if not self._allow_empty_global_weights:
-                        # if empty not allowed, further check whether it is available from fl_ctx
-                        global_weights = self.fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
+            if global_weights.is_empty():
+                if not self._allow_empty_global_weights:
+                    # if empty not allowed, further check whether it is available from fl_ctx
+                    global_weights = self.fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
 
-                if not global_weights.is_empty():
-                    model = FLModel(
-                        params_type=ParamsType.FULL,
-                        params=global_weights[ModelLearnableKey.WEIGHTS],
-                        meta=global_weights[ModelLearnableKey.META],
-                    )
-                elif self._allow_empty_global_weights:
-                    model = FLModel(params_type=ParamsType.FULL, params={})
-                else:
-                    self.panic(
-                        f"Neither `persistor` {self._persistor_id} or `fl_ctx` returned a global model! If this was intended, set `self._allow_empty_global_weights` to `True`."
-                    )
-                    return
-            else:
-                self.info("persistor not configured, creating empty initial FLModel")
+            if not global_weights.is_empty():
+                model = FLModel(
+                    params_type=ParamsType.FULL,
+                    params=global_weights[ModelLearnableKey.WEIGHTS],
+                    meta=global_weights[ModelLearnableKey.META],
+                )
+            elif self._allow_empty_global_weights:
                 model = FLModel(params_type=ParamsType.FULL, params={})
-
-            # persistor uses Learnable format to save model
-            ml = make_model_learnable(weights=model.params, meta_props=model.meta)
-            self.fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, ml, private=True, sticky=True)
-            self.event(AppEventType.INITIAL_MODEL_LOADED)
-            return model
+            else:
+                self.panic(
+                    f"Neither `persistor` {self._persistor_id} or `fl_ctx` returned a global model! If this was intended, set `self._allow_empty_global_weights` to `True`."
+                )
+                return
         else:
-            try:
-                dxo: DXO = from_file(filepath)
-            except Exception as e:
-                raise ValueError(f"Unable to load FLModel from {filepath}: {secure_format_exception(e)}")
+            self.info("persistor not configured, creating empty initial FLModel")
+            model = FLModel(params_type=ParamsType.FULL, params={})
 
-            model = FLModelUtils.from_dxo(dxo)
-            return model
+        # persistor uses Learnable format to save model
+        ml = make_model_learnable(weights=model.params, meta_props=model.meta)
+        self.fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, ml, private=True, sticky=True)
+        self.event(AppEventType.INITIAL_MODEL_LOADED)
 
-    def save_model(self, model, filepath="", exclude_params=False):
+        return model
+
+    def save_model(self, model):
         if self.persistor:
             self.info("Start persist model on server.")
             self.event(AppEventType.BEFORE_LEARNABLE_PERSIST)
@@ -357,11 +348,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             self.event(AppEventType.AFTER_LEARNABLE_PERSIST)
             self.info("End persist model on server.")
         else:
-            dxo = FLModelUtils.to_dxo(model, exclude_params=exclude_params)
-            try:
-                dxo.to_file(filepath)
-            except Exception as e:
-                raise ValueError(f"Unable to save FLModel to {filepath}: {secure_format_exception(e)}")
+            self.error("persistor not configured, model will not be saved")
 
     def sample_clients(self, num_clients=None):
         clients = self.engine.get_clients()

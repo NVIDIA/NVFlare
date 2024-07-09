@@ -103,15 +103,15 @@ class ModelController(BaseModelController, ABC):
             callback=callback,
         )
 
-    def load_model(self, filepath=""):
+    def load_model(self):
         """Load initial model from persistor. If persistor is not configured, returns empty FLModel.
 
         Returns:
             FLModel
         """
-        return super().load_model(filepath)
+        return super().load_model()
 
-    def save_model(self, model: FLModel, filepath: str = "", exclude_params=False):
+    def save_model(self, model: FLModel):
         """Saves model with persistor. If persistor is not configured, does not save.
 
         Args:
@@ -120,7 +120,7 @@ class ModelController(BaseModelController, ABC):
         Returns:
             None
         """
-        super().save_model(model, filepath, exclude_params)
+        super().save_model(model)
 
     def sample_clients(self, num_clients=None):
         """Returns a list of `num_clients` clients.

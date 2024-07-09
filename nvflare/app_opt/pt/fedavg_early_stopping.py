@@ -15,20 +15,13 @@
 import os
 from typing import Callable, Dict, Optional
 
+import torch
+
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.utils.math_utils import parse_compare_criteria
-from nvflare.fuel.utils.import_utils import optional_import
-
-from .base_fedavg import BaseFedAvg
-
-torch, torch_ok = optional_import(module="torch")
-if torch_ok:
-    from nvflare.app_opt.pt.decomposers import TensorDecomposer
-    from nvflare.fuel.utils import fobs
-
-# tf, tf_ok = optional_import(module="tensorflow")
-# if tf_ok:
-#     from nvflare.app_opt.tf.utils import flat_layer_weights_dict, unflat_layer_weights_dict
+from nvflare.app_common.workflows.base_fedavg import BaseFedAvg
+from nvflare.app_opt.pt.decomposers import TensorDecomposer
+from nvflare.fuel.utils import fobs
 
 
 class PTFedAvgEarlyStopping(BaseFedAvg):
@@ -46,12 +39,14 @@ class PTFedAvgEarlyStopping(BaseFedAvg):
     def __init__(
         self,
         *args,
-        stop_cond: str = "accuracy >= 30",
+        stop_cond: str = None,
         save_filename: str = "FL_global_model.pt",
-        initial_model = None,
+        initial_model=None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
+
+        self.stop_cond = stop_cond
         if stop_cond:
             self.stop_condition = parse_compare_criteria(stop_cond)
         else:
@@ -60,19 +55,14 @@ class PTFedAvgEarlyStopping(BaseFedAvg):
         self.initial_model = initial_model
         self.best_model: Optional[FLModel] = None
 
-        # Use FOBS for serializing/deserializing PyTorch tensors
-        fobs.register(TensorDecomposer)
-
     def run(self) -> None:
         self.info("Start FedAvg.")
 
         if self.initial_model:
+            # Use FOBS for serializing/deserializing PyTorch tensors (self.initial_model)
+            fobs.register(TensorDecomposer)
             # PyTorch weights
             initial_weights = self.initial_model.state_dict()
-
-            # TensorFlow weights
-            # self.initial_model.build(input_shape=self.initial_model._input_shape)
-            # initial_weights = flat_layer_weights_dict({layer.name: layer.get_weights() for layer in self.initial_model.layers})
         else:
             initial_weights = {}
 
@@ -147,26 +137,20 @@ class PTFedAvgEarlyStopping(BaseFedAvg):
         return op_fn(curr_metrics.get(target_metric), best_metrics.get(target_metric))
 
     def save_model(self, model, filepath=""):
+        params = model.params
         # PyTorch save
-        torch.save(model.params, filepath)
+        torch.save(params, filepath)
 
-        # TensorFlow save
-        # result = unflat_layer_weights_dict(model.params)
-        # for k in result:
-        #     layer = self.initial_model.get_layer(name=k)
-        #     layer.set_weights(result[k])
-        # self.initial_model.save_weights(filepath)
-
-        super().save_model(model, filepath + ".metadata", exclude_params=True)
+        # save FLModel metadata
+        model.params = {}
+        fobs.dumpf(model, filepath + ".metadata")
+        model.params = params
 
     def load_model(self, filepath=""):
         # PyTorch load
         params = torch.load(filepath)
 
-        # TensorFlow load
-        # self.initial_model.load_weights(filepath)
-        # params = {layer.name: layer.get_weights() for layer in self.initial_model.layers}
-
-        model = super().load_model(filepath + ".metadata")
+        # load FLModel metadata
+        model = fobs.loadf(filepath + ".metadata")
         model.params = params
         return model
