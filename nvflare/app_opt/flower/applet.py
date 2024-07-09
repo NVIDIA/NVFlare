@@ -99,8 +99,8 @@ class FlowerServerApplet(Applet):
             db_arg = f"--database {self.database}"
 
         superlink_cmd = (
-            f"flower-superlink --insecure --grpc-adapter {db_arg} "
-            f"--grpc-adapter-fleet-api-address {server_addr} "
+            f"flower-superlink --insecure {db_arg} "
+            f"--fleet-api-address {server_addr} --fleet-api-type grpc-adapter "
             f"--driver-api-address {driver_addr}"
         )
 
@@ -109,7 +109,7 @@ class FlowerServerApplet(Applet):
             raise RuntimeError("cannot start superlink process")
 
         # start the server app
-        app_cmd = f"flower-server-app --insecure --server {driver_addr} --dir {custom_dir} {self.server_app}"
+        app_cmd = f"flower-server-app --insecure --superlink {driver_addr} --dir {custom_dir} {self.server_app}"
         self._app_process = self._start_process("server-app", app_cmd)
         if not self._app_process:
             # stop the superlink
