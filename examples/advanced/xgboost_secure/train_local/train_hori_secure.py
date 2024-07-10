@@ -49,9 +49,7 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         "federated_server_address": f"localhost:{port}",
         "federated_world_size": world_size,
         "federated_rank": rank,
-        "plugin_name": "mock",
-        "loader_params": {"LIBRARY_PATH": "/tmp"},
-        "proc_params": {"": ""},
+        'federated_plugin': {'name': 'mock'},
     }
 
     # Always call this before using distributed module

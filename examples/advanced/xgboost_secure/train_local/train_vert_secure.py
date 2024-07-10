@@ -27,7 +27,7 @@ PRINT_SAMPLE = False
 DATASET_ROOT = "/tmp/nvflare/xgb_dataset/vertical_xgb_data"
 TEST_DATA_PATH = "/tmp/nvflare/xgb_dataset/test.csv"
 
-OUTPUT_ROOT = "/tmp/nvflare/xgb_exp/vert_base"
+OUTPUT_ROOT = "/tmp/nvflare/xgb_exp/vert_secure"
 if not os.path.exists(OUTPUT_ROOT):
     os.makedirs(OUTPUT_ROOT)
 
@@ -49,9 +49,7 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         "federated_server_address": f"localhost:{port}",
         "federated_world_size": world_size,
         "federated_rank": rank,
-        "plugin_name": "mock",
-        "loader_params": {"LIBRARY_PATH": "/tmp"},
-        "proc_params": {"": ""},
+        'federated_plugin': {'name': 'mock'},
     }
 
     # Always call this before using distributed module
