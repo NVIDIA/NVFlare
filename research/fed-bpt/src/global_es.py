@@ -32,9 +32,7 @@ class GlobalES(FedAvg):
     The parent classes provide the default implementations for other routines.
 
     Args:
-        min_clients (int, optional): The minimum number of clients responses before
-            Workflow starts to wait for `wait_time_after_min_received`. Note that the workflow will move forward
-            when all available clients have responded regardless of this value. Defaults to 1000.
+        num_clients (int, optional): The number of clients. Defaults to 3.
         num_rounds (int, optional): The total number of training rounds. Defaults to 5.
         persistor_id (str, optional): ID of the persistor component. Defaults to "persistor".
         ignore_result_error (bool, optional): whether this controller can proceed if client result has errors.
@@ -65,7 +63,7 @@ class GlobalES(FedAvg):
     def run(self) -> None:
         local_cma_mu = 0.0
 
-        m = max(int(self.frac * self.min_clients), 1)
+        m = max(int(self.frac * self.num_clients), 1)
 
         self.info("Start FedBPT.")
         cma_opts = {
@@ -83,7 +81,7 @@ class GlobalES(FedAvg):
         local_sigma_current = global_es.sigma
 
         client_prompt_dict = {}
-        for c in range(self.min_clients):
+        for c in range(self.num_clients):
             client_prompt_dict[c] = [copy.deepcopy(global_es.mean)]
         server_prompts = [copy.deepcopy(global_es.mean)]
 
@@ -95,7 +93,7 @@ class GlobalES(FedAvg):
 
             self.info(f"Round {self.current_round} started.")
 
-            clients = self.sample_clients(self.min_clients)
+            clients = self.sample_clients(self.num_clients)
 
             global_model = FLModel(params={"global_es": global_es})
             results = self.send_model_and_wait(targets=clients, data=global_model)

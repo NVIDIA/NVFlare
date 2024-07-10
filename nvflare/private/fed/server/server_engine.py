@@ -508,24 +508,27 @@ class ServerEngine(ServerEngineInternalSpec):
         secure=False,
     ) -> dict:
         try:
-            if not targets:
-                targets = []
-                for t in self.get_clients():
-                    targets.append(t.name)
-            if targets:
-                return self.run_manager.aux_runner.send_aux_request(
-                    targets=targets,
-                    topic=topic,
-                    request=request,
-                    timeout=timeout,
-                    fl_ctx=fl_ctx,
-                    optional=optional,
-                    secure=secure,
-                )
-            else:
-                return {}
+            return self.send_aux_to_targets(targets, topic, request, timeout, fl_ctx, optional, secure)
         except Exception as e:
             self.logger.error(f"Failed to send the aux_message: {topic} with exception: {secure_format_exception(e)}.")
+
+    def send_aux_to_targets(self, targets, topic, request, timeout, fl_ctx, optional, secure):
+        if not targets:
+            targets = []
+            for t in self.get_clients():
+                targets.append(t.name)
+        if targets:
+            return self.run_manager.aux_runner.send_aux_request(
+                targets=targets,
+                topic=topic,
+                request=request,
+                timeout=timeout,
+                fl_ctx=fl_ctx,
+                optional=optional,
+                secure=secure,
+            )
+        else:
+            return {}
 
     def sync_clients_from_main_process(self):
         # repeatedly ask the parent process to get participating clients until we receive the result

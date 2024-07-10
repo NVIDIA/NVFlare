@@ -187,7 +187,7 @@ class FedAvg(BaseFedAvg):
             self.info(f"Round {self.current_round} started.")
             model.current_round = self.current_round
 
-            clients = self.sample_clients(self.min_clients)
+            clients = self.sample_clients(self.num_clients)
 
             results = self.send_model_and_wait(targets=clients, data=model)
 
@@ -213,7 +213,7 @@ if __name__ == "__main__":
 
     # Define the controller workflow and send to server
     controller = FedAvg(
-        min_clients=n_clients,
+        num_clients=n_clients,
         num_rounds=num_rounds,
     )
     job.to(controller, "server")
@@ -405,7 +405,7 @@ class FedAvg(BaseFedAvg):
             self.info(f"Round {self.current_round} started.")
             model.current_round = self.current_round
 
-            clients = self.sample_clients(self.min_clients)
+            clients = self.sample_clients(self.num_clients)
 
             results = self.send_model_and_wait(targets=clients, data=model)
 
@@ -432,7 +432,7 @@ if __name__ == "__main__":
 
     # Define the controller workflow and send to server
     controller = FedAvg(
-        min_clients=n_clients,
+        num_clients=n_clients,
         num_rounds=num_rounds,
     )
     job.to(controller, "server")
@@ -567,7 +567,7 @@ class FedAvg(BaseFedAvg):
             self.info(f"Round {self.current_round} started.")
             model.current_round = self.current_round
 
-            clients = self.sample_clients(self.min_clients)
+            clients = self.sample_clients(self.num_clients)
 
             results = self.send_model_and_wait(targets=clients, data=model)
 
@@ -594,7 +594,7 @@ if __name__ == "__main__":
 
     # Define the controller workflow and send to server
     controller = FedAvg(
-        min_clients=n_clients,
+        num_clients=n_clients,
         num_rounds=num_rounds,
     )
     job.to(controller, "server")
@@ -639,7 +639,7 @@ const frameworks = [
         framework: "pytorch",
         title: "Client Code (cifar10_pt_fl.py)",
         description:
-          "We use the Client API to convert the centralized training PyTorch code into federated learning code with only a few lines of changes highlighted below. Essentially the client will receive a model from FLARE, perform local training and validation, and then send the model back to FLARE.",
+          "We use the Client API to convert the centralized training PyTorch code into federated learning code with only a few lines of changes highlighted below. Essentially the client will receive a model from NVIDIA FLARE, perform local training and validation, and then send the model back.",
         code: clientCode_pt,
         highlighted_lines: "29,58,61,63,139-143,145",
       },
@@ -659,7 +659,7 @@ const frameworks = [
         framework: "pytorch",
         title: "Job Code (fedavg_cifar10_pt_job.py)",
         description:
-          "Lastly we construct our FLARE job with our 'cifar10_pt_fl.py' client script and 'FedAvg' server controller. We then run the job with the FL simulator.",
+          "Lastly we construct the job with our 'cifar10_pt_fl.py' client script and 'FedAvg' server controller. We then run the job with the FL simulator.",
         code: jobCode_pt,
       },
       {
@@ -693,7 +693,7 @@ const frameworks = [
         framework: "lightning",
         title: "Client Code (cifar10_lightning_fl.py)",
         description:
-          "We use the Client API to convert the centralized training PyTorch Lightning code into federated learning code with only a few lines of changes highlighted below. Essentially the client will receive a model from FLARE, perform local training and validation, and then send the model back to FLARE.",
+          "We use the Client API to convert the centralized training PyTorch Lightning code into federated learning code with only a few lines of changes highlighted below. Essentially the client will receive a model from NVIDIA FLARE, perform local training and validation, and then send the model back.",
         code: clientCode_lt,
         highlighted_lines: "97,116,118,123",
       },
@@ -713,7 +713,7 @@ const frameworks = [
         framework: "lightning",
         title: "Job Code (fedavg_cifar10_lightning_job.py)",
         description:
-          "Lastly we construct our FLARE job with our 'cifar10_lightning_fl.py' client script and 'FedAvg' server controller. We then run the job with the FL simulator.",
+          "Lastly we construct the job with our 'cifar10_lightning_fl.py' client script and 'FedAvg' server controller. We then run the job with the FL simulator.",
         code: jobCode_lt,
       },
       {
@@ -747,7 +747,7 @@ const frameworks = [
         framework: "tensorflow",
         title: "Client Code (cifar10_tf_fl.py)",
         description:
-          "We use the Client API to convert the centralized training TensorFlow code into federated learning code with only a few lines of changes highlighted below. Essentially the client will receive a model from FLARE, perform local training and validation, and then send the model back to FLARE.",
+          "We use the Client API to convert the centralized training TensorFlow code into federated learning code with only a few lines of changes highlighted below. Essentially the client will receive a model from NVIDIA FLARE, perform local training and validation, and then send the model back.",
         code: clientCode_tf,
         highlighted_lines: "31,46,49,50,78-81,83",
       },
@@ -767,7 +767,7 @@ const frameworks = [
         framework: "tensorflow",
         title: "Job Code (fedavg_cifar10_tf_job.py)",
         description:
-          "Lastly we construct our FLARE job with our 'cifar10_tf_fl.py' client script and 'FedAvg' server controller. We then run the job with the FL simulator.",
+          "Lastly we construct the job with our 'cifar10_tf_fl.py' client script and 'FedAvg' server controller. We then run the job with the FL simulator.",
         code: jobCode_tf,
       },
       {
@@ -795,7 +795,7 @@ const frameworks = [
       </h2>
       <p class="text-lg mt-4 text-slate-600 w-3/4 m-auto">
         Try out these example code blocks below, where we showcase how simple it is to adapt
-        a popular machine learning framework to a federated learning scenario with FLARE.
+        a popular machine learning framework to a federated learning scenario with NVIDIA FLARE.
         For more details, refer to the getting started walkthrough guide above.
       </p>
     </div>
@@ -907,7 +907,7 @@ const frameworks = [
     <!-- Tutorial Catalog Button -->
     <div class="mt-32 text-center">
       <p class="text-lg mt-4 mb-8 text-slate-600 w-3/4 m-auto">
-        To dive deeper into what FLARE has to offer, explore our catalog of various tutorials and examples showcasing everything from the core features of FLARE to advanced applications.
+        To dive deeper into what NVIDIA FLARE has to offer, explore our catalog of various tutorials and examples showcasing everything from the core features to advanced applications.
       </p>
       <a
         href="/NVFlare/catalog"

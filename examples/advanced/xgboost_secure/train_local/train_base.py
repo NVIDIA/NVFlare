@@ -22,7 +22,6 @@ import xgboost as xgb
 PRINT_SAMPLE = False
 DATASET_ROOT = "/tmp/nvflare/xgb_dataset/base_xgb_data"
 TEST_DATA_PATH = "/tmp/nvflare/xgb_dataset/test.csv"
-
 OUTPUT_ROOT = "/tmp/nvflare/xgb_exp/base"
 if not os.path.exists(OUTPUT_ROOT):
     os.makedirs(OUTPUT_ROOT)
