@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+
 import matplotlib.pyplot as plt
 import pandas as pd
 import shap
@@ -20,8 +22,10 @@ import xgboost as xgb
 PRINT_SAMPLE = False
 DATASET_ROOT = "/tmp/nvflare/xgb_dataset/base_xgb_data"
 TEST_DATA_PATH = "/tmp/nvflare/xgb_dataset/test.csv"
-OUTPUT_ROOT = "/tmp/nvflare/xgb_exp"
 
+OUTPUT_ROOT = "/tmp/nvflare/xgb_exp/base"
+if not os.path.exists(OUTPUT_ROOT):
+    os.makedirs(OUTPUT_ROOT)
 
 def load_test_data(data_path: str):
     df = pd.read_csv(data_path)

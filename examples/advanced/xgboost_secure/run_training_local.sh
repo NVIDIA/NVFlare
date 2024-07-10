@@ -2,7 +2,7 @@
 mkdir /tmp/nvflare/xgb_exp
 
 echo "Training baseline"
-python3 ./train_local/train_base.py 3
+python3 ./train_local/train_base.py
 echo "Training horizontal"
 python3 ./train_local/train_hori_base.py 3
 echo "Training secure horizontal"

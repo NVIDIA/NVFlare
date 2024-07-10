@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import multiprocessing
+import os
 import sys
 import time
 
@@ -25,8 +26,10 @@ import xgboost.federated
 PRINT_SAMPLE = False
 DATASET_ROOT = "/tmp/nvflare/xgb_dataset/vertical_xgb_data"
 TEST_DATA_PATH = "/tmp/nvflare/xgb_dataset/test.csv"
-OUTPUT_ROOT = "/tmp/nvflare/xgb_exp"
 
+OUTPUT_ROOT = "/tmp/nvflare/xgb_exp/vert_base"
+if not os.path.exists(OUTPUT_ROOT):
+    os.makedirs(OUTPUT_ROOT)
 
 def load_test_data(data_path: str):
     df = pd.read_csv(data_path)
@@ -42,7 +45,7 @@ def run_server(port: int, world_size: int) -> None:
 
 def run_worker(port: int, world_size: int, rank: int) -> None:
     communicator_env = {
-        "xgboost_communicator": "federated",
+        "dmlc_communicator": "federated",
         "federated_server_address": f"localhost:{port}",
         "federated_world_size": world_size,
         "federated_rank": rank,
@@ -71,8 +74,8 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         else:
             label = ""
         # for Vertical XGBoost, read from csv with label_column and set data_split_mode to 1 for column mode
-        dtrain = xgb.DMatrix(train_path + f"?format=csv{label}", data_split_mode=2)
-        dvalid = xgb.DMatrix(valid_path + f"?format=csv{label}", data_split_mode=2)
+        dtrain = xgb.DMatrix(train_path + f"?format=csv{label}", data_split_mode=1)
+        dvalid = xgb.DMatrix(valid_path + f"?format=csv{label}", data_split_mode=1)
 
         if PRINT_SAMPLE:
             # print number of rows and columns for each worker
@@ -144,7 +147,7 @@ def run_federated() -> None:
     port = 4444
     world_size = int(sys.argv[1])
 
-    server = multiprocessing.Process(target=run_server, args=(port, world_size))
+    server = multiprocessing.Process(target=run_server, args=(world_size, port))
     server.start()
     time.sleep(1)
     if not server.is_alive():
