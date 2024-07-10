@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic, ServerCommandKey
@@ -55,6 +55,20 @@ class SimulatorServerEngine(ServerEngine):
         except Exception as e:
             if topic != ReservedTopic.END_RUN:
                 self.logger.error(f"Failed to send the aux_message: {topic} with exception: {e}.")
+
+    def multicast_aux_requests(
+        self,
+        topic: str,
+        target_requests: Dict[str, Shareable],
+        timeout: float,
+        fl_ctx: FLContext,
+        optional: bool = False,
+        secure: bool = False,
+    ) -> dict:
+        if topic != ReservedTopic.END_RUN:
+            return super().multicast_aux_requests(topic, target_requests, timeout, fl_ctx, optional, secure=secure)
+        else:
+            return {}
 
 
 class SimulatorRunManager(RunManager):
