@@ -44,7 +44,7 @@ class Template:
             tmp,
             {
                 "type": "server",
-                "inbound_rule": "aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 8002-8003 --cidr 0.0.0.0/0 >> /tmp/sec_grp.log",
+                "inbound_rule": "aws ec2 authorize-security-group-ingress --region ${REGION} --group-id $sg_id --protocol tcp --port 8002-8003 --cidr 0.0.0.0/0 >> ${LOGFILE}.sec_grp.log",
                 "cln_uid": "",
                 "server_name": entity.name,
                 "ORG": "",

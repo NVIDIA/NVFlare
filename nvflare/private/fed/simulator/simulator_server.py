@@ -50,10 +50,11 @@ class SimulatorServerEngine(ServerEngine):
         optional=False,
         secure=False,
     ) -> dict:
-        if topic != ReservedTopic.END_RUN:
-            return super().send_aux_request(targets, topic, request, timeout, fl_ctx, optional, secure=secure)
-        else:
-            return {}
+        try:
+            return super().send_aux_to_targets(targets, topic, request, timeout, fl_ctx, optional, secure)
+        except Exception as e:
+            if topic != ReservedTopic.END_RUN:
+                self.logger.error(f"Failed to send the aux_message: {topic} with exception: {e}.")
 
     def multicast_aux_requests(
         self,

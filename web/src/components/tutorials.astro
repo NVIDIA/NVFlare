@@ -2,32 +2,32 @@
 const highlights = [
   {
     title: "LLM Tuning via HuggingFace SFT Trainer",
-    tags: ["advanced", "algorithm", "huggingface", "llm"],
-    description: "Example for using FLARE with a HuggingFace trainer for LLM tuning tasks.",
+    tags: ["adv.", "algorithm", "huggingface", "llm"],
+    description: "Example for using NVIDIA FLARE with a HuggingFace trainer for LLM tuning tasks.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/llm_hf"
   },
   {
     title: "Survival Analysis with Federated Kaplan-Meier",
-    tags: ["intermediate", "algorithm", "healthcare", "client-api", "model-controller-api", "homomorphic-encryption", "analytics"],
+    tags: ["int.", "algorithm", "healthcare", "client-api", "model-controller", "he", "analytics"],
     description:
       "Kaplan-Meier survival analysis in federated setting without and with secure features via time-binning and Homomorphic Encryption (HE).",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/kaplan-meier-he",
   },
   {
     title: "Real-world Federated Learning with CIFAR-10",
-    tags: ["intermediate", "algorithm", "poc", "pytorch", "learner", "deep-learning", "homomorphic-encryption"],
+    tags: ["int.", "algorithm", "poc", "pytorch", "learner", "dl", "he"],
     description: "Provisioning secure workspace and running FedAvg with streaming of TensorBoard metrics to the server during training and homomorphic encryption.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/cifar10-real-world/README.md"
   },
   {
     title: "Financial Application with Federated XGBoost Methods",
-    tags: ["advanced", "algorithm", "xgboost", "finance"],
+    tags: ["adv.", "algorithm", "xgboost", "finance"],
     description: "Example using XGBoost in vertical and horizontal approaches to train a federated model to perform fraud detection with a finance dataset.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/finance"
   },
   {
     title: "Swarm Learning",
-    tags: ["intermediate", "algorithm", "pytorch", "learner", "deep-learning"],
+    tags: ["int.", "algorithm", "pytorch", "learner", "dl"],
     description:
       "Example using Swarm Learning and Client-Controlled Cross-site Evaluation workflows.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/swarm_learning",
@@ -37,348 +37,348 @@ const highlights = [
 const tutorials = [
   {
     title: "Intro to the FL Simulator",
-    tags: ["beginner", "tools"],
-    description: "Use the FLARE Simulator to run a local simulation with multi-process settings within a single computer, offering quick response and debugging.",
+    tags: ["beg.", "tools"],
+    description: "Use the NVIDIA FLARE Simulator to run a local simulation with multi-process settings within a single computer, offering quick response and debugging.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/flare_simulator.ipynb"
   },
   {
-    title: "NVFLARE in POC Mode",
-    tags: ["beginner", "tools"],
+    title: "POC Mode",
+    tags: ["beg.", "tools"],
     description: "Proof-of-concept mode to simulate real-world deployment on a local host with different processes represent server, clients, and an admin console.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/setup_poc.ipynb"
   },
   {
-    title: "Running FLARE in Docker",
-    tags: ["beginner", "deployment"],
+    title: "Containerized Deployment with Docker",
+    tags: ["beg.", "deployment"],
     description:
-      "Launch FLARE server and cleints with docker compose using the DockerBuilder.",
-    link: "https://nvflare.readthedocs.io/en/main/user_guide/docker_compose.html",
+      "Run NVIDIA FLARE in a Docker container.",
+    link: "https://nvflare.readthedocs.io/en/main/getting_started.html#containerized-deployment-with-docker",
   },
   {
     title: "FLARE API",
-    tags: ["beginner", "tools"],
+    tags: ["beg.", "tools"],
     description: "Manage system and jobs programmatically with the python FLARE API.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/flare_api.ipynb"
   },
   {
     title: "Job CLI",
-    tags: ["beginner", "tools"],
+    tags: ["beg.", "tools"],
     description: "Job CLI for options to create and submit jobs from a command line interface in POC or production environments.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/job_cli.ipynb"
   },
   {
-    title: "Operating FLARE: Admin Client, Commands, FLARE API",
-    tags: ["intermediate", "tools"],
+    title: "Operating NVIDIA FLARE: Admin Client, Commands, FLARE API",
+    tags: ["int.", "tools"],
     description:
-      "Operate FLARE with the commands and functionalities of the admin client, which allow you to manage your FLARE system.",
+      "Operate NVIDIA FLARE with the commands and functionalities of the admin client, which allow you to manage your system.",
     link: "https://nvflare.readthedocs.io/en/main/real_world_fl/operation.html",
   },
   {
     title: "FL Experiment Tracking with TensorBoard Streaming",
-    tags: ["intermediate", "tools", "pytorch"],
-    description: "Example integrating FLARE with TensorBoard streaming capability from clients to the server.",
+    tags: ["int.", "tools", "pytorch"],
+    description: "Example integrating NVIDIA FLARE with TensorBoard streaming capability from clients to the server.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/experiment-tracking/tensorboard/README.md"
   },
   {
     title: "FL Experiment Tracking with MLflow",
-    tags: ["intermediate", "tools", "pytorch"],
-    description: "Example integrating FLARE with MLflow streaming capability from clients to the server.",
+    tags: ["int.", "tools", "pytorch"],
+    description: "Example integrating NVIDIA FLARE with MLflow streaming capability from clients to the server.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/experiment-tracking/mlflow/README.md"
   },
   {
     title: "FL Experiment Tracking with Weights and Biases",
-    tags: ["intermediate", "tools", "pytorch"],
-    description: "Example integrating FLARE with Weights and Biases streaming capability from clients to the server.",
+    tags: ["int.", "tools", "pytorch"],
+    description: "Example integrating NVIDIA FLARE with Weights and Biases streaming capability from clients to the server.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/experiment-tracking/wandb/README.md"
   },
   {
     title: "Cloud Deployment",
-    tags: ["advanced", "deployment"],
+    tags: ["adv.", "deployment"],
     description:
-      "Deploy the FLARE dashboard, server, and clients in the cloud. Learn to use the provided scripts for AWS and Azure.",
+      "Deploy the NVIDIA FLARE dashboard, server, and clients in the cloud. Learn to use the provided scripts for AWS and Azure.",
     link: "https://nvflare.readthedocs.io/en/main/real_world_fl/cloud_deployment.html",
   },
   {
     title: "Deployment to Kubernetes",
-    tags: ["advanced", "deployment"],
+    tags: ["adv.", "deployment"],
     description:
-      "Run FLARE inside Amazon Elastic Kubernetes Service (EKS).",
+      "Run NVIDIA FLARE inside Amazon Elastic Kubernetes Service (EKS).",
     link: "https://nvflare.readthedocs.io/en/main/real_world_fl/kubernetes.html",
   },
   {
     title: "Helm Chart Deployment",
-    tags: ["advanced", "deployment"],
+    tags: ["adv.", "deployment"],
     description:
-      "Use the provisioning tool's HelmChartBuilder to generate a reference Helm Chart to deploy FLARE to a local microk8s Kubernetes instance.",
+      "Use the provisioning tool's HelmChartBuilder to generate a reference Helm Chart to deploy NVIDIA FLARE to a local microk8s Kubernetes instance.",
     link: "https://nvflare.readthedocs.io/en/main/user_guide/helm_chart.html",
   },
   {
     title: "Secure Provisioning",
-    tags: ["advanced", "deployment"],
+    tags: ["adv.", "deployment"],
     description:
       "Utilize the secure provisioning tool for streamlining the process to provision, start, and operate federated learning with a trusted setup.",
     link: "https://nvflare.readthedocs.io/en/main/real_world_fl/overview.html",
   },
   {
     title: "Preflight Check",
-    tags: ["advanced", "deployment"],
+    tags: ["adv.", "deployment"],
     description:
       "Perform preliminary checks before starting up an NVFlare subsystem to catch errors early.",
     link: "https://nvflare.readthedocs.io/en/main/user_guide/nvflare_cli/preflight_check.html",
   },
   {
-    title: "FLARE Dashboard",
-    tags: ["advanced", "deployment"],
+    title: "NVIDIA FLARE Dashboard",
+    tags: ["adv.", "deployment"],
     description:
       "Provides a CLI or UI to collect information of clients and users from different organizations, and generates startup kits with keys and certificates for users to download.",
     link: "https://nvflare.readthedocs.io/en/main/user_guide/dashboard_api.html",
   },
   {
     title: "Federated Policies",
-    tags: ["advanced", "deployment"],
+    tags: ["adv.", "deployment"],
     description: "Example to demonstrate the federated site policies for authorization, resource and data privacy management.",
     link: "https://github.com/NVIDIA/NVFlare/blob/main/examples/advanced/federated-policies/README.rst"
   },
   {
     title: "Custom Authentication",
-    tags: ["advanced", "deployment"],
+    tags: ["adv.", "deployment"],
     description: "Example to demonstrate the custom authentication policy and secure mode.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/custom_authentication/README.rst"
   },
   {
     title: "Job-Level Authorization",
-    tags: ["advanced", "deployment"],
+    tags: ["adv.", "deployment"],
     description: "Example to demonstrate the job-level authorization policy and secure mode.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/job-level-authorization/README.md"
   },
   {
     title: "Federated Learning Hub",
-    tags: ["advanced", "deployment"],
-    description: "Allow hierarchical interaction between several levels of FLARE FL systems, e.g. Tier-1 (hub) and Tier-2 (sub-systems).",
+    tags: ["adv.", "deployment"],
+    description: "Allow hierarchical interaction between several levels of NVIDIA FLARE FL systems, e.g. Tier-1 (hub) and Tier-2 (sub-systems).",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/fl_hub/README.md"
   },
   {
     title: "Step-by-Step CIFAR10 Examples",
-    tags: ["beginner", "algorithm", "pytorch", "deep-learning"],
-    description: "Step-by-step examples series with CIFAR-10 (image data) to showcase different FLARE features, workflows, and APIs.",
+    tags: ["beg.", "algorithm", "pytorch", "dl"],
+    description: "Step-by-step examples series with CIFAR-10 (image data) to showcase different NVIDIA FLARE features, workflows, and APIs.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/step-by-step/cifar10"
   },
   {
     title: "Step-by-Step HIGGS Examples",
-    tags: ["beginner", "algorithm", "pandas", "sklearn", "xgboost"],
-    description: "Step-by-step examples series with HIGGS (tabular data) to showcase different FLARE features, workflows, and APIs.",
+    tags: ["beg.", "algorithm", "pandas", "sklearn", "xgboost"],
+    description: "Step-by-step examples series with HIGGS (tabular data) to showcase different NVIDIA FLARE features, workflows, and APIs.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/step-by-step/higgs"
   },
   {
     title: "ML/DL to FL",
-    tags: ["beginner", "algorithm", "client-api", "numpy", "pytorch", "lightning", "tensorflow"],
+    tags: ["beg.", "algorithm", "client-api", "numpy", "pytorch", "lightning", "tensorflow"],
     description: "Example for converting Deep Learning (DL) code to Federated Learning (FL) using the Client API. Configurations for numpy, pytorch, lighting, and tensorflow.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/ml-to-fl"
   },
   {
     title: "Hello Scatter and Gather",
-    tags: ["beginner", "algorithm", "numpy", "controller", "executor"],
+    tags: ["beg.", "algorithm", "numpy", "controller", "executor"],
     description: "Example using the ScatterAndGather workflow to implement Federated Averaging.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-numpy-sag/README.md"
   },
   {
     title: "Hello Cross-Site Validation",
-    tags: ["beginner", "algorithm", "numpy", "controller", "executor", "deep-learning"],
+    tags: ["beg.", "algorithm", "numpy", "controller", "executor", "dl"],
     description: "Example using the CrossSiteModelEval workflow for cross site evaluation. Demonstrate option to use previous results without training workflow.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-numpy-cross-val/README.md"
   },
   {
     title: "Hello Cyclic Weight Transfer",
-    tags: ["beginner", "algorithm", "tensorflow", "controller", "executor", "deep-learning"],
+    tags: ["beg.", "algorithm", "tensorflow", "controller", "executor", "dl"],
     description: "Example using the CyclicController workflow to implement Cyclic Weight Transfer.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-cyclic/README.md"
   },
   {
     title: "Hello PyTorch",
-    tags: ["beginner", "algorithm", "pytorch", "controller", "executor", "deep-learning"],
+    tags: ["beg.", "algorithm", "pytorch", "controller", "executor", "dl"],
     description: "Example of an image classifier with FedAvg using PyTorch as the deep learning training framework.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-pt/README.md"
   },
   {
     title: "Hello TensorFlow",
-    tags: ["beginner", "algorithm", "tensorflow", "controller", "executor", "deep-learning"],
+    tags: ["beg.", "algorithm", "tensorflow", "controller", "executor", "dl"],
     description: "Example of an image classifier with FedAvg using TensorFlow as the deep learning training framework.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-tf2/README.md"
   },
   {
     title: "Simulated Federated Learning with CIFAR-10",
-    tags: ["intermediate", "algorithm", "simulator", "pytorch", "learner", "model-controller-api", "deep-learning"],
+    tags: ["int.", "algorithm", "simulator", "pytorch", "learner", "model-controller", "dl"],
     description: "Running FedAvg, FedProx, FedOpt, and SCAFFOLD algorithms using the FL simulator.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/cifar10-sim/README.md"
   },
   {
     title: "Real-world Federated Learning with CIFAR-10",
-    tags: ["intermediate", "algorithm", "poc", "pytorch", "learner", "deep-learning", "homomorphic-encryption"],
+    tags: ["int.", "algorithm", "poc", "pytorch", "learner", "dl", "he"],
     description: "Provisioning secure workspace and running FedAvg with streaming of TensorBoard metrics to the server during training and homomorphic encryption.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/cifar10-real-world/README.md"
   },
   {
     title: "Logistic Regression with Newton-Raphton",
-    tags: ["intermediate", "algorithm", "client-api", "model-controller-api", "machine-learning"],
+    tags: ["int.", "algorithm", "client-api", "model-controller", "ml"],
     description:
       "Federated binary classification via logistic regression with second-order Newton-Raphson optimization.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/lr-newton-raphson",
   },
   {
     title: "Survival Analysis with Federated Kaplan-Meier",
-    tags: ["intermediate", "algorithm", "healthcare", "client-api", "model-controller-api", "homomorphic-encryption", "analytics"],
+    tags: ["int.", "algorithm", "healthcare", "client-api", "model-controller", "he", "analytics"],
     description:
       "Kaplan-Meier survival analysis in federated setting without and with secure features via time-binning and Homomorphic Encryption (HE).",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/kaplan-meier-he",
   },
   {
     title: "Swarm Learning",
-    tags: ["intermediate", "algorithm", "pytorch", "learner", "deep-learning"],
+    tags: ["int.", "algorithm", "pytorch", "learner", "dl"],
     description:
       "Example using Swarm Learning and Client-Controlled Cross-site Evaluation workflows.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/swarm_learning",
   },
   {
     title: "Federated Linear Model with Scikit-learn",
-    tags: ["intermediate", "algorithm", "sklearn", "machine-learning"],
+    tags: ["int.", "algorithm", "sklearn", "ml"],
     description: "Using scikit-learn for federated linear model learning on tabular data.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/sklearn-linear/README.md"
   },
   {
     title: "Federated K-Means Clustering with Scikit-learn",
-    tags: ["intermediate", "algorithm", "sklearn", "machine-learning"],
+    tags: ["int.", "algorithm", "sklearn", "ml"],
     description: "Using scikit-learn and k-Means for federated clustering on tabular data.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/sklearn-kmeans/README.md"
   },
   {
     title: "Federated SVM with Scikit-learn",
-    tags: ["intermediate", "algorithm", "sklearn", "machine-learning"],
+    tags: ["int.", "algorithm", "sklearn", "ml"],
     description: "Using scikit-learn and SVM for federated model learning on tabular data.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/sklearn-svm/README.md"
   },
   {
     title: "Histogram-based FL for XGBoost",
-    tags: ["advanced", "algorithm", "xgboost", "machine-learning"],
+    tags: ["adv.", "algorithm", "xgboost", "ml"],
     description: "Histogram-based algorithm for XGBoost.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/xgboost/histogram-based/README.md"
   },
   {
     title: "Tree-based Federated Learning for XGBoost",
-    tags: ["advanced", "algorithm", "xgboost", "machine-learning"],
+    tags: ["adv.", "algorithm", "xgboost", "ml"],
     description: "Tree-based algorithms including bagging and cyclic approaches for XGBoost.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/xgboost/tree-based/README.md"
   },
   {
     title: "Federated Learning for Random Forest based on XGBoost",
-    tags: ["advanced", "algorithm", "xgboost", "machine-learning"],
-    description: "Example of using FLARE with scikit-learn and Random Forest.",
+    tags: ["adv.", "algorithm", "xgboost", "ml"],
+    description: "Example of using NVIDIA FLARE with scikit-learn and Random Forest.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/random_forest/README.md"
   },
   {
     title: "Federated Vertical XGBoost",
-    tags: ["advanced", "algorithm", "xgboost", "machine-learning"],
+    tags: ["adv.", "algorithm", "xgboost", "ml"],
     description: "Example using Private Set Intersection and XGBoost on vertically split HIGGS data.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/vertical_xgboost/README.md"
   },
   {
     title: "NVFlare + MONAI integration",
-    tags: ["advanced", "algorithm", "healthcare", "monai", "deep-learning"],
-    description: "Using FLARE to train a 3D medical image analysis model using federated averaging (FedAvg) and MONAI Bundle.",
+    tags: ["adv.", "algorithm", "healthcare", "monai", "dl"],
+    description: "Using NVIDIA FLARE to train a 3D medical image analysis model using federated averaging (FedAvg) and MONAI Bundle.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/integration/monai/README.md"
   },
   {
     title: "Federated Learning with Differential Privacy for BraTS18 segmentation",
-    tags: ["advanced", "algorithm", "healthcare", "differential-privacy", "monai", "deep-learning"],
+    tags: ["adv.", "algorithm", "healthcare", "dp", "monai", "dl"],
     description: "Illustrates the use of differential privacy for training brain tumor segmentation models using federated learning.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/brats18/README.md"
   },
   {
     title: "Federated Learning for Prostate Segmentation from Multi-source Data",
-    tags: ["advanced", "algorithm", "healthcare", "monai", "deep-learning"],
+    tags: ["adv.", "algorithm", "healthcare", "monai", "dl"],
     description: "Example of training a multi-institutional prostate segmentation model using FedAvg, FedProx, and Ditto.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/prostate/README.md"
   },
   {
     title: "Federated Statistics for Images",
-    tags: ["advanced", "algorithm", "pandas", "analytics"],
+    tags: ["adv.", "algorithm", "pandas", "analytics"],
     description: "Example of gathering local image histogram to compute the global dataset histograms.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/federated-statistics/image_stats/README.md"
   },
   {
     title: "Federated Statistics for DataFrame",
-    tags: ["advanced", "algorithm", "pandas", "analytics"],
+    tags: ["adv.", "algorithm", "pandas", "analytics"],
     description: "Example of gathering local statistics summary from Pandas DataFrame to compute the global dataset statistics.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/federated-statistics/df_stats/README.md"
   },
   {
-    title: "MONAI FLARE Integration Experiment Tracking",
-    tags: ["advanced", "algorithm", "experiment-tracking", "monai"],
-    description: "Example using FLARE and MONAI integration with experiment tracking streaming from clients to server.",
+    title: "MONAI & NVIDIA FLARE Integration with Experiment Tracking",
+    tags: ["adv.", "algorithm", "experiment-tracking", "monai"],
+    description: "Example using NVIDIA FLARE and MONAI integration with experiment tracking streaming from clients to server.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/integration/monai/examples/spleen_ct_segmentation_local/README.md#51-experiment-tracking-with-mlflow"
   },
   {
     title: "KeyCloak Site Authentication Integration",
-    tags: ["advanced", "algorithm", "security"],
+    tags: ["adv.", "algorithm", "security"],
     description: "Demonstrate KeyCloak integration for supporting site-specific authentication.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/keycloak-site-authentication/README.md"
   },
   {
     title: "NLP-NER",
-    tags: ["advanced", "algorithm", "huggingface", "deep-learning"],
+    tags: ["adv.", "algorithm", "huggingface", "dl"],
     description: "Illustrates both BERT and GPT-2 models from Hugging Face on a Named Entity Recognition (NER) task using the NCBI disease dataset.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/nlp-ner/README.md"
   },
   {
     title: "Parameter Efficient Fine Turning",
-    tags: ["advanced", "algorithm", "nemo", "llm"],
+    tags: ["adv.", "algorithm", "nemo", "llm"],
     description: "Example utilizing NeMo's PEFT methods to adapt a LLM to a downstream task.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/integration/nemo/examples/peft"
   },
   {
     title: "Prompt-Tuning Example",
-    tags: ["advanced", "algorithm", "nemo", "llm"],
-    description: "Example for using FLARE with NeMo for LLM prompt learning.",
+    tags: ["adv.", "algorithm", "nemo", "llm"],
+    description: "Example for using NVIDIA FLARE with NeMo for LLM prompt learning.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/integration/nemo/examples/prompt_learning"
   },
   {
     title: "Supervised Fine Tuning (SFT)",
-    tags: ["advanced", "algorithm", "nemo", "llm"],
+    tags: ["adv.", "algorithm", "nemo", "llm"],
     description: "Example to fine-tune all parameters of a LLM on supervised data.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/integration/nemo/examples/supervised_fine_tuning"
   },
   {
     title: "LLM Tuning via HuggingFace SFT Trainer",
-    tags: ["advanced", "algorithm", "huggingface", "llm"],
-    description: "Example for using FLARE with a HuggingFace trainer for LLM tuning tasks.",
+    tags: ["adv.", "algorithm", "huggingface", "llm"],
+    description: "Example for using NVIDIA FLARE with a HuggingFace trainer for LLM tuning tasks.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/llm_hf"
   },
   {
     title: "Federated GNN: Protein Classification",
-    tags: ["advanced", "algorithm", "healthcare", "pytorch", "deep-learning"],
+    tags: ["adv.", "algorithm", "healthcare", "pytorch", "dl"],
     description: "Example using GNNs for Protein Classification using PPI dataset using GraphSAGE.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning"
   },
   {
     title: "Federated GNN: Financial Transaction Classification",
-    tags: ["advanced", "algorithm", "finance", "pytorch", "deep-learning"],
+    tags: ["adv.", "algorithm", "finance", "pytorch", "dl"],
     description: "Example using GNNs for Financial Transaction Classification with Elliptic++ dataset using GraphSAGE.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning"
   },
   {
     title: "Financial Application with Federated XGBoost Methods",
-    tags: ["advanced", "algorithm", "xgboost", "finance"],
+    tags: ["adv.", "algorithm", "xgboost", "finance"],
     description: "Example using XGBoost in vertical and horizontal approaches to train a federated model to perform fraud detection with a finance dataset.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/finance"
   },
 ]
 
-const level = ["beginner", "intermediate", "advanced"];
+const level = ["beg.", "int.", "adv."];
 const tutorial_category = ["algorithm", "tools", "deployment"]
-const flare_api = ["client-api", "model-controller-api", "learner", "executor", "controller"];
+const flare_api = ["client-api", "model-controller", "learner", "executor", "controller"];
 const framework = ["pytorch", "tensorflow", "lightning", "xgboost", "sklearn", "numpy", "nemo", "monai", "huggingface"];
-const application_type = ["machine-learning", "deep-learning", "llm", "analytics"];
+const application_type = ["ml", "dl", "llm", "analytics"];
 const industry_domain = ["healthcare", "finance"];
-const privacy_algorithm = ["homomorphic-encryption", "differential-privacy"];
+const privacy_algorithm = ["he", "dp"];
 
 const tag_list = [
   {
@@ -434,7 +434,7 @@ const tag_list = [
         Tutorial Catalog
       </h2>
       <p class="text-lg mt-4 text-slate-600 w-3/4 m-auto">
-        Explore our extensive catalog of tutorials of FLARE features and examples for various applications.
+        Explore our extensive catalog of tutorials of NVIDIA FLARE features and examples for various applications.
         Use the tags to filter by categories such as level, applications, frameworks, etc.
         or search for keywords.
 
@@ -496,7 +496,10 @@ const tag_list = [
           <div data-accordion="open" data-active-classes="dark:bg-gray-500 text-gray-500 dark:text-white" data-inactive-classes="text-gray-500 dark:text-gray-400">
             <h2 class="">
               <button type="button" class="flex items-center justify-between mr-4 py-2 font-medium rtl:text-right text-gray-900 border-gray-200 dark:border-gray-700 dark:text-gray-400 gap-3" data-accordion-target="#highlights-glide" aria-expanded="true" aria-controls="highlights-glide">
-                <span class="ms-4">Highlights</span>
+                <span class="ms-4 mt-1">Highlights</span>
+                <svg class="w-6 h-6 text-gray-800 dark:text-white stroke-nvidia" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+                  <path stroke-width="2" d="M11.083 5.104c.35-.8 1.485-.8 1.834 0l1.752 4.022a1 1 0 0 0 .84.597l4.463.342c.9.069 1.255 1.2.556 1.771l-3.33 2.723a1 1 0 0 0-.337 1.016l1.03 4.119c.214.858-.71 1.552-1.474 1.106l-3.913-2.281a1 1 0 0 0-1.008 0L7.583 20.8c-.764.446-1.688-.248-1.474-1.106l1.03-4.119A1 1 0 0 0 6.8 14.56l-3.33-2.723c-.698-.571-.342-1.702.557-1.771l4.462-.342a1 1 0 0 0 .84-.597l1.753-4.022Z"/>
+                </svg>
                 <svg data-accordion-icon class="w-3 h-3 rotate-180 shrink-0" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 10 6">
                   <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5 5 1 1 5"/>
                 </svg>

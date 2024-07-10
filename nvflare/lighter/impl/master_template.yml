@@ -798,11 +798,42 @@ cloud_script_header: |
   }
 
   function prompt() {
-    local __default="$1"
-    read -p "$2" ans
-    if [[ ! -z "$ans" ]]
-    then
-      eval $__default="'$ans'"
+    # usage:  prompt NEW_VAR "Prompt message" ["${PROMPT_VALUE}"]
+    local __resultvar=$1
+    local __prompt=$2
+    local __default=${3:-}
+    local __result
+    if [[ ${BASH_VERSINFO[0]} -ge 4 && -n "$__default" ]]
+      then
+      read -e -i "$__default" -p "$__prompt: " __result
+    else
+      __default=${3:-${!__resultvar:-}}
+      if [[ -n $__default ]]
+        then
+        printf "%s [%s]: " "$__prompt" "$__default"
+      else
+        printf "%s: " "$__prompt"
+      fi
+      IFS= read -r __result
+      if [[ -z "$__result" && -n "$__default" ]]
+        then
+        __result="$__default"
+      fi
+    fi
+    eval $__resultvar="'$__result'"
+  }
+
+  function get_resources_file() {
+    local rfile="${DIR}/../local/resources.json"
+    if [ -f "${rfile}" ]
+      then
+      echo "${rfile}"
+    elif [ -f "${rfile}.default" ]
+      then
+      echo "${rfile}.default"
+    else
+      echo ""
+      exit 1
     fi
   }
 

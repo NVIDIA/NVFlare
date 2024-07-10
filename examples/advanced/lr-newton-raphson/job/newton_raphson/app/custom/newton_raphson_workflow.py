@@ -64,7 +64,7 @@ class FedAvgNewtonRaphson(BaseFedAvg):
             self.info(f"Round {self.current_round} started.")
 
             # Get the list of clients.
-            clients = self.sample_clients(self.min_clients)
+            clients = self.sample_clients(self.num_clients)
 
             model.current_round = self.current_round
 
