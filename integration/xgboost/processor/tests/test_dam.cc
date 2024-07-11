@@ -29,7 +29,7 @@ TEST(DamTest, TestEncodeDecode) {
     auto buf = encoder.Finish(size);
     std::cout << "Encoded size is " << size << std::endl;
 
-    DamDecoder decoder(buf, size);
+    DamDecoder decoder(buf.data(), size);
     EXPECT_EQ(decoder.IsValid(), true);
     EXPECT_EQ(decoder.GetDataSetId(), 123);
 

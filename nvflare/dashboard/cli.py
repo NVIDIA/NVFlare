@@ -146,6 +146,11 @@ def cloud(args):
     dest = os.path.join(cwd, f"{csp}_start_dsb.sh")
     dsb_start = template[f"{csp}_start_dsb_sh"]
     version = nvflare.__version__
+    if "+" in version:
+        print(
+            f"Unable to launching dashboard on cloud with {version}.  Please install official NVFlare release from PyPi."
+        )
+        exit(0)
     replacement_dict = {"NVFLARE": f"nvflare=={version}", "START_OPT": f"-i {args.image}" if args.image else ""}
     utils._write(
         dest,

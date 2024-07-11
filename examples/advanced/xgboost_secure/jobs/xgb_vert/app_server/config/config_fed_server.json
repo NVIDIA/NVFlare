@@ -1,0 +1,35 @@
+{
+    "format_version": 2,
+    "num_rounds": 3,
+    "task_data_filters": [],
+    "task_result_filters": [],
+    "components": [
+    ],
+    "workflows": [
+        {
+            "id": "xgb_controller",
+            "path": "nvflare.app_opt.xgboost.histogram_based_v2.fed_controller.XGBFedController",
+            "args": {
+                "num_rounds": "{num_rounds}",
+                "training_mode": "vertical",
+                "xgb_options": {
+                    "early_stopping_rounds": 3
+                },
+                "xgb_params": {
+                    "max_depth": 3,
+                    "eta": 0.1,
+                    "objective": "binary:logistic",
+                    "eval_metric": "auc",
+                    "tree_method": "hist",
+                    "nthread": 1
+                },
+                "client_ranks": {
+                     "site-1": 0,
+                     "site-2": 1,
+                     "site-3": 2
+                },
+                "in_process": true 
+            }
+        }
+    ]
+}
