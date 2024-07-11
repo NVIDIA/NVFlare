@@ -17,7 +17,7 @@ from nvflare.app_common.tie.controller import TieController
 from nvflare.app_common.tie.defs import Constant as TieConstant
 from nvflare.app_opt.flower.applet import FlowerServerApplet
 from nvflare.app_opt.flower.connectors.grpc_server_connector import GrpcServerConnector
-from nvflare.fuel.utils.validation_utils import check_positive_number
+from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number
 
 from .defs import Constant
 
@@ -28,6 +28,7 @@ class FlowerController(TieController):
         num_rounds: int = 1,
         server_app: str = "server:app",
         database: str = "",
+        superlink_ready_timeout: float = 10.0,
         configure_task_name=TieConstant.CONFIG_TASK_NAME,
         configure_task_timeout=TieConstant.CONFIG_TASK_TIMEOUT,
         start_task_name=TieConstant.START_TASK_NAME,
@@ -48,10 +49,12 @@ class FlowerController(TieController):
             progress_timeout=progress_timeout,
         )
 
-        check_positive_number("num_rounds", num_rounds)
+        check_positive_int("num_rounds", num_rounds)
+        check_positive_number("superlink_ready_timeout", superlink_ready_timeout)
         self.num_rounds = num_rounds
         self.server_app = server_app
         self.database = database
+        self.superlink_ready_timeout = superlink_ready_timeout
         self.int_client_grpc_options = int_client_grpc_options
 
     def get_connector(self, fl_ctx: FLContext):
@@ -60,7 +63,7 @@ class FlowerController(TieController):
         )
 
     def get_applet(self, fl_ctx: FLContext):
-        return FlowerServerApplet(self.server_app, self.database)
+        return FlowerServerApplet(self.server_app, self.database, self.superlink_ready_timeout)
 
     def get_client_config_params(self, fl_ctx: FLContext) -> dict:
         return {

@@ -16,6 +16,7 @@ import grpc
 
 import nvflare.app_opt.flower.proto.grpcadapter_pb2 as pb2
 from nvflare.app_opt.flower.defs import GRPC_DEFAULT_OPTIONS
+from nvflare.app_opt.flower.grpc_util import create_channel
 from nvflare.app_opt.flower.proto.grpcadapter_pb2_grpc import GrpcAdapterStub
 from nvflare.fuel.utils.obj_utils import get_logger
 
@@ -54,14 +55,13 @@ class GrpcClient:
 
         self.started = True
 
-        self.channel = grpc.insecure_channel(self.server_addr, options=self.grpc_options)
+        self.channel = create_channel(
+            server_addr=self.server_addr,
+            grpc_options=self.grpc_options,
+            ready_timeout=ready_timeout,
+            test_only=False,
+        )
         self.stub = GrpcAdapterStub(self.channel)
-
-        # wait for channel ready
-        try:
-            grpc.channel_ready_future(self.channel).result(timeout=ready_timeout)
-        except grpc.FutureTimeoutError:
-            raise RuntimeError(f"cannot connect to server after {ready_timeout} seconds")
 
     def send_request(self, request: pb2.MessageContainer):
         """Send Flower request to gRPC server

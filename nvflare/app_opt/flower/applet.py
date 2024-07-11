@@ -20,6 +20,7 @@ from nvflare.app_common.tie.applet import Applet
 from nvflare.app_common.tie.cli_applet import CLIApplet
 from nvflare.app_common.tie.defs import Constant as TieConstant
 from nvflare.app_opt.flower.defs import Constant
+from nvflare.app_opt.flower.grpc_util import create_channel
 from nvflare.fuel.f3.drivers.net_utils import get_open_tcp_port
 from nvflare.security.logging import secure_format_exception
 
@@ -52,12 +53,13 @@ class FlowerClientApplet(CLIApplet):
 
 
 class FlowerServerApplet(Applet):
-    def __init__(self, server_app: str, database: str):
+    def __init__(self, server_app: str, database: str, superlink_ready_timeout: float):
         Applet.__init__(self)
         self._app_process = None
         self._superlink_process = None
         self.server_app = server_app
         self.database = database
+        self.superlink_ready_timeout = superlink_ready_timeout
         self._start_error = False
 
     def _start_process(self, name: str, cmd: str):
@@ -107,6 +109,15 @@ class FlowerServerApplet(Applet):
         self._superlink_process = self._start_process("superlink", superlink_cmd)
         if not self._superlink_process:
             raise RuntimeError("cannot start superlink process")
+
+        # wait until superlink's port is ready before starting server app
+        # note: the server app will connect to driver_addr, not server_addr
+        create_channel(
+            server_addr=driver_addr,
+            grpc_options=None,
+            ready_timeout=self.superlink_ready_timeout,
+            test_only=True,
+        )
 
         # start the server app
         app_cmd = f"flower-server-app --insecure --superlink {driver_addr} --dir {custom_dir} {self.server_app}"
