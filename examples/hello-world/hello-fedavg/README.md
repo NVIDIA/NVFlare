@@ -1,25 +1,11 @@
 # Hello FedAvg
 
-Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) to train an image classifier
-using federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629))
-and [PyTorch](https://pytorch.org/) as the deep learning training framework.
-In this example we highlight the flexibility of the ModelController API, and show how to write a Federated Averaging workflow with early stopping, model selection, and saving and loading.
+In this example we highlight the flexibility of the ModelController API, and show how to write a Federated Averaging workflow with early stopping, model selection, and saving and loading. Follow along in the [hello-fedavg.ipynb](hello-fedavg.ipynb) notebook for more details.
 
 ### 1. Setup
 
-Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions to install NVFlare.
-
-Install additional requirements:
-
 ```
-pip3 install -r requirements.txt
-```
-
-
-Prepare the [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset:
-
-```
-bash ./prepare_data.sh
+pip install nvflare~=2.5.0rc torch torchvision tensorboard
 ```
 
 ### 2. PTFedAvgEarlyStopping using ModelController API
