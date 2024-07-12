@@ -28,11 +28,11 @@ print_fn = builtins.print
 class TaskScriptRunner:
     logger = logging.getLogger(__name__)
 
-    def __init__(self, site_name: str, script_path: str, script_args: str = None, redirect_print_to_log=True):
+    def __init__(self, custom_dir: str, script_path: str, script_args: str = None, redirect_print_to_log=True):
         """Wrapper for function given function path and args
 
         Args:
-            site_name (str): site name
+            custom_dir (str): site name
             script_path (str): script file name, such as train.py
             script_args (str, Optional): script arguments to pass in.
         """
@@ -40,10 +40,10 @@ class TaskScriptRunner:
         self.redirect_print_to_log = redirect_print_to_log
         self.event_manager = EventManager(DataBus())
         self.script_args = script_args
-        self.site_name = site_name
+        self.custom_dir = custom_dir
         self.logger = logging.getLogger(self.__class__.__name__)
         self.script_path = script_path
-        self.script_full_path = self.get_script_full_path(self.site_name, self.script_path)
+        self.script_full_path = self.get_script_full_path(self.custom_dir, self.script_path)
 
     def run(self):
         """Call the task_fn with any required arguments."""
@@ -77,7 +77,12 @@ class TaskScriptRunner:
         args_list = [] if not self.script_args else self.script_args.split()
         return [self.script_full_path] + args_list
 
-    def get_script_full_path(self, site_name, script_path) -> str:
+    def get_script_full_path(self, custom_dir, script_path) -> str:
+        if not custom_dir:
+            raise ValueError("custom_dir must be not empty")
+        if not script_path:
+            raise ValueError("script_path must be not empty")
+
         target_file = None
         script_filename = os.path.basename(script_path)
         script_dirs = os.path.dirname(script_path)
@@ -87,18 +92,14 @@ class TaskScriptRunner:
                 raise ValueError(f"script_path='{script_path}' not found")
             return script_path
 
-        for r, dirs, files in os.walk(os.getcwd()):
+        for r, dirs, files in os.walk(custom_dir):
             for f in files:
                 absolute_path = os.path.join(r, f)
-                if absolute_path.endswith(script_path):
-                    parent_dir = absolute_path[: absolute_path.find(script_path)].rstrip(os.sep)
-                    if os.path.isdir(parent_dir):
-                        path_components = parent_dir.split(os.path.sep)
-                        if site_name in path_components:
-                            target_file = absolute_path
-                            break
+                if absolute_path.endswith(os.sep + script_path):
+                    target_file = absolute_path
+                    break
 
-                if not site_name and not script_dirs and f == script_filename:
+                if not custom_dir and not script_dirs and f == script_filename:
                     target_file = absolute_path
                     break
 
