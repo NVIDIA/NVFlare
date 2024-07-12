@@ -30,10 +30,9 @@ class BaseFedAvg(ModelController):
     def __init__(
         self,
         *args,
-        min_clients: int = 1000,
+        num_clients: int = 3,
         num_rounds: int = 5,
         start_round: int = 0,
-        persist_every_n_rounds: int = 1,
         **kwargs,
     ):
         """The base controller for FedAvg Workflow. *Note*: This class is based on the `ModelController`.
@@ -55,20 +54,15 @@ class BaseFedAvg(ModelController):
             - def run(self)
 
         Args:
-            min_clients (int, optional): The minimum number of clients responses before
-                Workflow starts to wait for `wait_time_after_min_received`. Note that the workflow will move forward
-                when all available clients have responded regardless of this value. Defaults to 1000.
+            num_clients (int, optional): The number of clients. Defaults to 3.
             num_rounds (int, optional): The total number of training rounds. Defaults to 5.
             start_round (int, optional): The starting round number.
-            persist_every_n_rounds (int, optional): persist the global model every n rounds. Defaults to 1.
-                If n is 0 then no persist.
         """
         super().__init__(*args, **kwargs)
 
-        self.min_clients = min_clients
+        self.num_clients = num_clients
         self.num_rounds = num_rounds
         self.start_round = start_round
-        self.persist_every_n_rounds = persist_every_n_rounds
 
         self.current_round = None
 
@@ -87,20 +81,29 @@ class BaseFedAvg(ModelController):
         if not results:
             raise ValueError("received empty results for aggregation.")
 
-        aggregation_helper = WeightedAggregationHelper()
+        aggr_helper = WeightedAggregationHelper()
+        aggr_metrics_helper = WeightedAggregationHelper()
         for _result in results:
-            aggregation_helper.add(
+            aggr_helper.add(
                 data=_result.params,
                 weight=_result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0),
                 contributor_name=_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN),
                 contribution_round=_result.current_round,
             )
+            aggr_metrics_helper.add(
+                data=_result.metrics,
+                weight=_result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0),
+                contributor_name=_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN),
+                contribution_round=_result.current_round,
+            )
 
-        aggregated_dict = aggregation_helper.get_result()
+        aggr_params = aggr_helper.get_result()
+        aggr_metrics = aggr_metrics_helper.get_result()
 
         aggr_result = FLModel(
-            params=aggregated_dict,
+            params=aggr_params,
             params_type=results[0].params_type,
+            metrics=aggr_metrics,
             meta={"nr_aggregated": len(results), "current_round": results[0].current_round},
         )
         return aggr_result
@@ -159,9 +162,3 @@ class BaseFedAvg(ModelController):
         self.event(AppEventType.AFTER_SHAREABLE_TO_LEARNABLE)
 
         return model
-
-    def save_model(self, model: FLModel):
-        if (
-            self.persist_every_n_rounds != 0 and (self.current_round + 1) % self.persist_every_n_rounds == 0
-        ) or self.current_round == self.num_rounds - 1:
-            super().save_model(model)

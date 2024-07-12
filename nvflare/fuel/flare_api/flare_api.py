@@ -50,6 +50,7 @@ from .api_spec import (
     MonitorReturnCode,
     NoClientsAvailable,
     NoConnection,
+    NoReply,
     ServerInfo,
     SessionClosed,
     SessionSpec,
@@ -150,11 +151,11 @@ class Session(SessionSpec):
                 raise NoConnection(f"cannot connect to FLARE in {timeout} seconds")
             time.sleep(0.5)
 
-    def _do_command(self, command: str, enforce_meta=True):
+    def _do_command(self, command: str, enforce_meta=True, props=None):
         if self.api.closed:
             raise SessionClosed("session closed")
 
-        result = self.api.do_command(command)
+        result = self.api.do_command(command, props=props)
         if not isinstance(result, dict):
             raise InternalError(f"result from server must be dict but got {type(result)}")
 
@@ -190,6 +191,8 @@ class Session(SessionSpec):
                 raise InternalError(f"server internal error: {info}")
             elif cmd_status == MetaStatusValue.INVALID_TARGET:
                 raise InvalidTarget(info)
+            elif cmd_status == MetaStatusValue.NO_REPLY:
+                raise NoReply(info)
             elif cmd_status != MetaStatusValue.OK:
                 raise InternalError(f"{cmd_status}: {info}")
 
@@ -797,6 +800,11 @@ class Session(SessionSpec):
 
         command = " ".join(parts)
         reply = self._do_command(command, enforce_meta=False)
+        return self._get_dict_data(reply)
+
+    def do_app_command(self, job_id: str, topic: str, cmd_data):
+        command = f"{AdminCommandNames.APP_COMMAND} {job_id} {topic}"
+        reply = self._do_command(command, enforce_meta=False, props=cmd_data)
         return self._get_dict_data(reply)
 
     def get_connected_client_list(self) -> List[ClientInfo]:

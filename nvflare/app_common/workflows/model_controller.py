@@ -48,6 +48,9 @@ class ModelController(BaseModelController, ABC):
     ) -> List[FLModel]:
         """Send a task with data to targets and wait for results.
 
+        Returns list of FLModel results from clients once task is completed (min_responses received or timed out).
+        Results received from any clients after task is completed will be discarded.
+
         Args:
             task_name (str, optional): name of the task. Defaults to "train".
             data (FLModel, optional): FLModel to be sent to clients. Defaults to None.
@@ -119,11 +122,11 @@ class ModelController(BaseModelController, ABC):
         """
         super().save_model(model)
 
-    def sample_clients(self, num_clients):
-        """Returns a list of available clients.
+    def sample_clients(self, num_clients=None):
+        """Returns a list of `num_clients` clients.
 
         Args:
-            min_clients: number of clients to return.
+            num_clients: number of clients to return. If None or > number available clients, returns all available clients. Defaults to None.
 
         Returns: list of clients.
         """
