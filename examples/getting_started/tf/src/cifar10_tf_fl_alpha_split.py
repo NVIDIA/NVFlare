@@ -196,6 +196,10 @@ def main():
             global_model_weights= copy.deepcopy(model.trainable_variables)
             model.loss = TFFedProxLoss(local_model_weights, global_model_weights, 
                                  args.fedprox_mu, loss)
+        elif args.fedprox_mu < 0.0:
+            
+            raise ValueError("mu should be no less than 0.0")
+
             
    
         # (5) evaluate aggregated/received model
