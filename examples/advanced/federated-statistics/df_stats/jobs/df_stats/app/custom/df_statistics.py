@@ -46,6 +46,10 @@ class DFStatistics(Statistics):
             "Country",
             "Target",
         ]
+
+        # the original dataset has no header,
+        # we will use the adult.train dataset for site-1, the adult.test dataset for site-2
+        # the adult.test dataset has incorrect formatted row at 1st line, we will skip it.
         self.skip_rows = {
             "site-1": [],
             "site-2": [0],
@@ -83,7 +87,6 @@ class DFStatistics(Statistics):
             for feature_name in df:
                 data_type = dtype_to_data_type(df[feature_name].dtype)
                 results[ds_name].append(Feature(feature_name, data_type))
-
         return results
 
     def count(self, dataset_name: str, feature_name: str) -> int:

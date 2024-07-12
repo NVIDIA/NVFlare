@@ -309,6 +309,7 @@ class StatisticsController(Controller):
 
         result = client_task.result
         rc = result.get_return_code()
+        ds_features = None
         if rc == ReturnCode.OK:
             self.log_info(fl_ctx, f"Received result entries from client:{client_name}, " f"for task {task_name}")
             dxo = from_shareable(result)
