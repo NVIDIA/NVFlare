@@ -43,9 +43,6 @@ class Scaffold(BaseFedAvg):
         allow_empty_global_weights (bool, optional): whether to allow empty global weights. Some pipelines can have
             empty global weights at first round, such that clients start training from scratch without any global info.
             Defaults to False.
-        task_check_period (float, optional): interval for checking status of tasks. Defaults to 0.5.
-        persist_every_n_rounds (int, optional): persist the global model every n rounds. Defaults to 1.
-            If n is 0 then no persist.
     """
 
     def initialize(self, fl_ctx):
