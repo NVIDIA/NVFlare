@@ -134,7 +134,7 @@ def main():
 
     # Use alpha-split per-site data to simulate data heteogeniety,
     # only if if train_idx_path is not None.
-    #
+  
     if args.train_idx_path != "None":
 
         print(f"Loading train indices from {args.train_idx_path}")
@@ -190,13 +190,14 @@ def main():
         for k, v in input_model.params.items():
             model.get_layer(k).set_weights(v)
         
-        local_model_weights= model.trainable_variables
-        # We deep copy the global model weights to avoid changing during training
-        global_model_weights= copy.deepcopy(model.trainable_variables)
         if args.fedprox_mu > 0:
-            loss = TFFedProxLoss(local_model_weights, global_model_weights, 
+
+            local_model_weights= model.trainable_variables
+            global_model_weights= copy.deepcopy(model.trainable_variables)
+            model.loss = TFFedProxLoss(local_model_weights, global_model_weights, 
                                  args.fedprox_mu, loss)
-         
+            
+   
         # (5) evaluate aggregated/received model
         _, test_global_acc = model.evaluate(x=test_ds, verbose=2)
         summary_writer.add_scalar(tag="global_model_accuracy", scalar=test_global_acc, global_step=input_model.current_round)
