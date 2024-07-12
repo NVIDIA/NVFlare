@@ -93,6 +93,15 @@ class FedApp:
         self._used_ids.append(id)
         return id
 
+    def add_external_scripts(self, external_scripts: List):
+        """Register external scripts to include them in custom directory.
+
+        Args:
+            external_scripts: List of external scripts that need to be deployed to the client/server.
+        """
+        for _script in external_scripts:
+            self.app.add_ext_script(_script)
+
 
 class FedJob:
     def __init__(self, name="fed_job", min_clients=1, mandatory_clients=None, key_metric="accuracy") -> None:
@@ -302,15 +311,6 @@ class ExecutorApp(FedApp):
 
         component = ConvertToFedEvent(events_to_convert=["analytix_log_stats"], fed_event_prefix="fed.")
         self.app.add_component("event_to_fed", component)
-
-    def add_external_scripts(self, external_scripts: List):
-        """Register external scripts to the client app to include them in custom directory.
-
-        Args:
-            external_scripts: List of external scripts that need to be deployed to the client. Defaults to None.
-        """
-        for _script in external_scripts:
-            self.app.add_ext_script(_script)
 
 
 class ControllerApp(FedApp):

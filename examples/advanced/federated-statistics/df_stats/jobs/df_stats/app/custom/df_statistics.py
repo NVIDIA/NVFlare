@@ -46,6 +46,10 @@ class DFStatistics(Statistics):
             "Country",
             "Target",
         ]
+
+        # the original dataset has no header,
+        # we will use the adult.train dataset for site-1, the adult.test dataset for site-2
+        # the adult.test dataset has incorrect formatted row at 1st line, we will skip it.
         self.skip_rows = {
             "site-1": [],
             "site-2": [0],
