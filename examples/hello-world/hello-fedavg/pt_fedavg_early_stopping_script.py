@@ -12,32 +12,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from src.lit_net import LitNet
+from src.net import Net
 
-from nvflare import FedAvg, FedJob, ScriptExecutor
+from nvflare import FedJob, ScriptExecutor
+from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvgEarlyStopping
 
 if __name__ == "__main__":
     n_clients = 2
-    num_rounds = 2
-    train_script = "src/cifar10_lightning_fl.py"
+    num_rounds = 5
+    train_script = "src/cifar10_fl.py"
 
-    job = FedJob(name="cifar10_fedavg_lightning")
+    job = FedJob(name="cifar10_fedavg_early_stopping", key_metric=None)
 
     # Define the controller workflow and send to server
-    controller = FedAvg(
+    controller = PTFedAvgEarlyStopping(
         num_clients=n_clients,
         num_rounds=num_rounds,
+        stop_cond="accuracy >= 40",
+        initial_model=Net(),
     )
     job.to(controller, "server")
 
-    # Define the initial global model and send to server
-    job.to(LitNet(), "server")
-
     # Add clients
     for i in range(n_clients):
-        executor = ScriptExecutor(
-            task_script_path=train_script, task_script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
-        )
+        executor = ScriptExecutor(task_script_path=train_script, task_script_args="")
         job.to(executor, f"site-{i}", gpu=0)
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
