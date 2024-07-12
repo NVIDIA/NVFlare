@@ -14,10 +14,11 @@
 
 
 import argparse
+import copy
 import numpy as np
 
 import tensorflow as tf
-from tensorflow.keras import datasets, callbacks, losses, ops
+from tensorflow.keras import datasets, losses
 from tf_net import ModerateTFNet
 
 # (1) import nvflare client API
@@ -25,57 +26,10 @@ import nvflare.client as flare
 
 # (optional) metrics
 from nvflare.client.tracking import SummaryWriter
-
+from nvflare.app_opt.tf.fedprox_loss import TFFedProxLoss
 
 PATH = "./tf_model.weights.h5"
 
-
-class SparseCategoricalCrossentropyWithFedProx(losses.SparseCategoricalCrossentropy):
-    """
-    Override SparseCategoricalCrossentropy loss for FedProx,
-    adding regularization term.
-    """
-    def __init__(
-            self,
-            *args,
-            mu: float = 1e-3,
-            **kwargs,
-    ):
-        super().__init__(*args, **kwargs)
-        if mu < 0.0:
-            raise ValueError("mu should be no less than 0.0")
-        self.mu = mu
-
-        self.current_model = None
-        self.target_model = None
-
-    def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
-        loss = super().call(y_true, y_pred)
-        if self.current_model and self.target_model:
-            fedprox_loss = 0
-            for key in self.target_model:
-                tar_layer = self.target_model[key]
-                cur_layer = self.current_model[key]
-                for t_w, c_w in zip(tar_layer, cur_layer):
-                    fedprox_loss += ops.sum((t_w - c_w) ** 2)
-            return loss + (self.mu/2) * fedprox_loss
-        else:
-            return loss
-
-
-class SetFedProxValues(callbacks.Callback):
-    """
-    Set up current model and target model for FedProx loss computation.
-    """
-    def __init__(self, fedprox_loss):
-        super().__init__()
-        self.fedprox_loss = fedprox_loss
-
-    def on_train_begin(self, logs=None):
-        self.fedprox_loss.target_model = {layer.name: layer.get_weights() for layer in self.model.layers}
-
-    def on_train_batch_begin(self, batch, logs=None):
-        self.fedprox_loss.current_model = {layer.name: layer.get_weights() for layer in self.model.layers}
 
 
 def preprocess_dataset(dataset, is_training, batch_size=1):
@@ -208,14 +162,13 @@ def main():
     callbacks = [tf.keras.callbacks.TensorBoard(log_dir="./logs_keras", write_graph=False)]
 
     # Control whether FedProx is used.
-    if args.fedprox_mu > 0:
-        loss = SparseCategoricalCrossentropyWithFedProx(from_logits=True)
-        callbacks.append(SetFedProxValues(loss))
-    else:
-        loss = losses.SparseCategoricalCrossentropy(from_logits=True)
+    
+ 
+    loss = losses.SparseCategoricalCrossentropy(from_logits=True)
 
     model.compile(
-        optimizer=tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.9), loss=loss, metrics=["accuracy"]
+        optimizer=tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.9),
+                                           loss=loss, metrics=["accuracy"]
     )
     model.summary()
 
@@ -236,7 +189,14 @@ def main():
         # (4) loads model from NVFlare
         for k, v in input_model.params.items():
             model.get_layer(k).set_weights(v)
-
+        
+        local_model_weights= model.trainable_variables
+        # We deep copy the global model weights to avoid changing during training
+        global_model_weights= copy.deepcopy(model.trainable_variables)
+        if args.fedprox_mu > 0:
+            loss = TFFedProxLoss(local_model_weights, global_model_weights, 
+                                 args.fedprox_mu, loss)
+         
         # (5) evaluate aggregated/received model
         _, test_global_acc = model.evaluate(x=test_ds, verbose=2)
         summary_writer.add_scalar(tag="global_model_accuracy", scalar=test_global_acc, global_step=input_model.current_round)
