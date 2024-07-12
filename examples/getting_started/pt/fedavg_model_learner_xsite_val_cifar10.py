@@ -15,7 +15,7 @@
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.getcwd(), "..", "..", "..", "advanced", "cifar10"))
+sys.path.insert(0, os.path.join(os.getcwd(), "..", "..", "advanced", "cifar10"))
 
 from pt.learners.cifar10_model_learner import CIFAR10ModelLearner
 from pt.networks.cifar10_nets import ModerateCNN
