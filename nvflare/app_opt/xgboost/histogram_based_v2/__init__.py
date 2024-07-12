@@ -12,5 +12,3 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.app_opt.xgboost.histogram_based_v2.fed_controller import XGBFedController
-from nvflare.app_opt.xgboost.histogram_based_v2.fed_executor import FedXGBHistogramExecutor
