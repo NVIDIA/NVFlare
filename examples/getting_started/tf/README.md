@@ -131,7 +131,7 @@ no difference in data distributions among different clients.
 
 | Config	| Alpha	| 	Val score	|
 | ----------- | ----------- |  ----------- |
-| cifar10_central | 1.0	| 	0.8758	|
+| cifar10_central | n.a.	| 	0.8758	|
 | cifar10_fedavg  | 1.0	| 	0.8839	|
 
 ![Central vs. FedAvg](./figs/fedavg-vs-centralized.png)
