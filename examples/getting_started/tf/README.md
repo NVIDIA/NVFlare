@@ -49,15 +49,15 @@ different sites.
 ### 2.1 Centralized training
 
 To simulate a centralized training baseline, we run FedAvg algorithm
-with 1 client for 25 local epochs, for one single round.
+with 1 client for 25 rounds, where each round consists of one single epoch.
 
 ```
 python ./tf_fl_script_executor_cifar10.py \
        --algo centralized \
        --n_clients 1 \
-       --num_rounds 1 \
+       --num_rounds 25 \
        --batch_size 64 \
-       --epochs 25 \
+       --epochs 1 \
        --alpha 0.0
 ```
 Note, here `--alpha 0.0` means that no heterogeneous data splits are being generated.
@@ -122,15 +122,17 @@ use `Tensorboard` to visualize the training and validation process as
 the experiment is running.
 
 
-### 3.1 Central vs. FedAvg
-With a data split using `alpha=1.0`, i.e. a non-heterogeneous split,
-we achieve the following final validation scores.
-One can see that FedAvg can achieve similar performance to central training.
+### 3.1 Centralized training vs. FedAvg for homogeneous split
+Let's first compare FedAvg with homogeneous data split
+(i.e. `alpha=1.0`) and centralized training. As can be seen from the
+figure and table below, FedAvg can achieve similar performance to
+centralized training under homogeneous data split, i.e., when there is
+no difference in data distributions among different clients.
 
 | Config	| Alpha	| 	Val score	|
 | ----------- | ----------- |  ----------- |
-| cifar10_central | 1.0	| 	0.8756	|
-| cifar10_fedavg  | 1.0	| 	0.8525	|
+| cifar10_central | 1.0	| 	0.8758	|
+| cifar10_fedavg  | 1.0	| 	0.8839	|
 
 ![Central vs. FedAvg](./figs/fedavg-vs-centralized.png)
 
