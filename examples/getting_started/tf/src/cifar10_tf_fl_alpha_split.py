@@ -173,9 +173,6 @@ def main():
     )
     args = parser.parse_args()
 
-    # (2) initializes NVFlare client API
-    flare.init()
-
     (train_images, train_labels), (test_images, test_labels) = datasets.cifar10.load_data()
 
     # Use alpha-split per-site data to simulate data heteogeniety,
