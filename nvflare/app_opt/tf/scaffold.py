@@ -1,6 +1,7 @@
 import tensorflow as tf
 import numpy as np
 import copy
+from .utils import flat_layer_weights_dict
 
 
 def get_lr_values(optimizer):
@@ -18,6 +19,7 @@ class TFScaffoldHelper(object):
         self.c_global = None
         self.c_local = None
         self.c_delta_para = None
+        self.global_keys = None
 
     def init(self, model):
         self.c_global = tf.keras.models.clone_model(model)
@@ -32,6 +34,14 @@ class TFScaffoldHelper(object):
         self.c_local.set_weights(
             [c_init_para[k] for k in c_init_para]
         )
+
+        #Generate a list of the flattened layers
+        layer_weights_dict = {layer.name: layer.get_weights() for layer in self.c_global.layers}
+        flattened_layer_weights_dict= flat_layer_weights_dict(layer_weights_dict)
+        self.global_keys  = [key for key, _ in flattened_layer_weights_dict.items()]
+        print("Gloabl")
+        print(self.global_keys)
+
 
     def get_params(self):
         self.cnt = 0
@@ -93,22 +103,43 @@ class TFScaffoldHelper(object):
         c_delta_para_value = tf.nest.map_structure(
             lambda a, b: a - b, c_new_para, c_local_para
         )
+
+
+        c_delta_para_value_new = tf.nest.map_structure(
+        lambda a, b, c, d, e: (a - b) + tf.multiply(scaler, c - d) - e,
+        c_new_para, c_global_para, global_model_para, net_para, c_local_para
+        )
+
         
         self.c_delta_para = {
             var.name: c_delta_para_value[i].numpy()
             for i, var in enumerate(net_para)
         }
         
+        
         self.c_local.set_weights(c_new_para)
 
     def load_global_controls(self, weights):
         weights_values = [v for _, v in weights.items()]
-
         self.c_global.set_weights(weights_values)
-
     def get_delta_controls(self):
         if self.c_delta_para is None:
             raise ValueError("c_delta_para hasn't been computed yet!")
+        
+        print(type(self.c_delta_para))
+
+        #print(self.c_delta_para)
+
+        c_delta_para_new = {
+            self.global_keys[i]: value
+            for i, (key, value) in enumerate(self.c_delta_para.items())
+        }
+        print(len(c_delta_para_new))
+        print(len(self.c_delta_para))
+        #print(c_delta_para_new)
+
+        self.c_delta_para = c_delta_para_new
+
         return self.c_delta_para
 
 
