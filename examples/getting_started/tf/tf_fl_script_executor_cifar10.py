@@ -137,7 +137,7 @@ if __name__ == "__main__":
 
     elif args.algo == SCAFFOLD_ALGO:
         train_script = "src/cifar10_tf_fl_alpha_split_scaffold.py"
-        from nvflare.app_opt.tf.scaffold_workflow import Scaffold
+        from nvflare.app_common.workflows.scaffold import Scaffold
         controller = Scaffold(
             min_clients=args.n_clients,
             num_rounds=args.num_rounds,
