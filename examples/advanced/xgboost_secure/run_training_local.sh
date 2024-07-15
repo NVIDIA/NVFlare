@@ -11,3 +11,8 @@ echo "Training vertical"
 python3 ./train_local/train_vert_base.py 3
 echo "Training secure vertical"
 python3 ./train_local/train_vert_secure.py 3
+
+echo "Training baseline GPU"
+python3 ./train_local/train_base_gpu.py
+echo "Training horizontal GPU"
+python3 ./train_local/train_hori_base_gpu.py 3
