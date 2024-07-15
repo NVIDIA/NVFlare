@@ -84,7 +84,7 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
             "objective": "binary:logistic",
             "eval_metric": "auc",
             "tree_method": "hist",
-            "device": "cuda:0",
+            "device": f"cuda:{rank}",
             "nthread": 1,
         }
 

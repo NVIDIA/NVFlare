@@ -70,8 +70,10 @@ def main():
     df_valid = df.iloc[int(0.8 * rows_total) :, :]
 
     for site in range(args.site_num):
-        # sort df_train by feature 2
-        # df_train = df_train.sort_values(by=2)
+        # sort df_train by feature 1,
+        # creating distribution shift between sites
+        # to illustrate the horizontal split quantile difference
+        df_train = df_train.sort_values(by=1)
 
         row_start = sum(site_row_size[:site])
         row_end = sum(site_row_size[: site + 1])

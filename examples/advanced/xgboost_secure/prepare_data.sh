@@ -24,12 +24,12 @@ echo "Split training/validation data vertically"
 OUTPUT_PATH="${SPLIT_PATH}/vertical_xgb_data"
 python3 utils/prepare_data_vertical.py \
 --data_path "${SPLIT_PATH}/train.csv" \
---site_num 3 \
+--site_num 2 \
 --out_path "${OUTPUT_PATH}"
 
 echo "Split training/validation data horizontally"
 OUTPUT_PATH="${SPLIT_PATH}/horizontal_xgb_data"
 python3 utils/prepare_data_horizontal.py \
 --data_path "${SPLIT_PATH}/train.csv" \
---site_num 3 \
+--site_num 2 \
 --out_path "${OUTPUT_PATH}"
