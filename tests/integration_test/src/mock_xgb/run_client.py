@@ -17,7 +17,7 @@ import os
 import time
 
 import nvflare.app_opt.xgboost.histogram_based_v2.proto.federated_pb2 as pb2
-from nvflare.app_opt.xgboost.histogram_based_v2.grpc.grpc_client import GrpcClient
+from nvflare.app_opt.xgboost.histogram_based_v2.grpc_client import GrpcClient
 
 
 def main():

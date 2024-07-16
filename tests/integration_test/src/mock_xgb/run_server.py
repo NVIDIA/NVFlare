@@ -17,7 +17,7 @@ import logging
 
 from aggr_servicer import AggrServicer
 
-from nvflare.app_opt.xgboost.histogram_based_v2.grpc.grpc_server import GrpcServer
+from nvflare.app_opt.xgboost.histogram_based_v2.grpc_server import GrpcServer
 
 
 def main():
