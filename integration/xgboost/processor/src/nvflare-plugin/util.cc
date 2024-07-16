@@ -13,20 +13,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include "util.h"
 #include <iostream>
 #include <set>
 #include <algorithm>
+#include "util.h"
 
-const double kScaleFactor = 1000000.0;
 
-std::vector<std::pair<int, int>> distribute_work(size_t num_jobs, size_t num_workers) {
+constexpr double kScaleFactor = 1000000.0;
+
+std::vector<std::pair<int, int>> distribute_work(size_t num_jobs, size_t const num_workers) {
     std::vector<std::pair<int, int>> result;
     auto num = num_jobs/num_workers;
     auto remainder = num_jobs%num_workers;
     int start = 0;
     for (int i = 0; i < num_workers; i++) {
-        auto stop = (int)(start + num - 1);
+        auto stop = static_cast<int>((start + num - 1));
         if (i < remainder) {
             // If jobs cannot be evenly distributed, first few workers take an extra one
             stop += 1;
@@ -52,39 +53,45 @@ std::vector<std::pair<int, int>> distribute_work(size_t num_jobs, size_t num_wor
 }
 
 uint32_t to_int(double d) {
-    auto int_val = (int32_t)(d*kScaleFactor);
-    return (uint32_t)int_val;
+    auto int_val = static_cast<int32_t>(d*kScaleFactor);
+    return static_cast<uint32_t>(int_val);
 }
 
 double to_double(uint32_t i) {
-    auto int_val = (int32_t)i;
-    return (double)(int_val/kScaleFactor);
+    auto int_val = static_cast<int32_t>(i);
+    return static_cast<double>(int_val/kScaleFactor);
 }
 
-std::string get_string(const std::map<std::string, std::string>& params, const std::string key,
-                       std::string default_value) {
-    auto it = params.find(key);
-    if (it == params.end()) {
-        return default_value;
-    }
+std::string get_string(std::vector<std::pair<std::string_view, std::string_view>> const &args,
+  std::string_view const &key,std::string_view const default_value) {
 
-    return it->second;
+  auto it = find_if(
+    args.begin(), args.end(),
+    [key](const auto& p) { return p.first == key; });
+
+  if (it != args.end()) {
+    return std::string{it->second};
+  }
+
+  return std::string{default_value};
 }
 
-bool get_bool(const std::map<std::string, std::string>& params, const std::string key, bool default_value) {
-    auto value = get_string(params, key, "");
+bool get_bool(std::vector<std::pair<std::string_view, std::string_view>> const &args,
+    const std::string &key, bool default_value) {
+    std::string value = get_string(args, key, "");
     if (value.empty()) {
         return default_value;
     }
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c){ return std::tolower(c);});
-    auto true_values = std::set<std::string>{"true", "yes", "y", "on", "1"};
+    auto true_values = std::set<std::string_view>{"true", "yes", "y", "on", "1"};
     return true_values.count(value) > 0;
 }
 
-int get_int(const std::map<std::string, std::string>& params, const std::string key, int default_value) {
+int get_int(std::vector<std::pair<std::string_view, std::string_view>> const &args,
+    const std::string &key, int default_value) {
 
-    auto value = get_string(params, key, "");
-    if (value == "") {
+    auto value = get_string(args, key, "");
+    if (value.empty()) {
         return default_value;
     }
 

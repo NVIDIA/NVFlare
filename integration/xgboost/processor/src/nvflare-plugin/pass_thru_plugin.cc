@@ -13,21 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include <cstring>
-#include "nvflare_processor.h"
-#include "local_mock.h"
+#include "pass_thru_plugin.h"
 
-extern "C" {
+namespace nvflare {
 
-processing::Processor *LoadProcessor(char *plugin_name) {
-    if (strcasecmp(plugin_name, "nvflare") == 0) {
-        return new NVFlareProcessor();
-    } if (strcasecmp(plugin_name, "nvflare:mock") == 0) {
-        return new LocalMockProcessor();
-    } else {
-        std::cout << "Unknown plugin name: " << plugin_name << std::endl;
-        return nullptr;
-    }
+void PassThruPlugin::EncryptGPairs(const float* in_gpair, std::size_t n_in,
+  std::uint8_t** out_gpair, std::size_t* n_out) {
+
 }
-
-}  // extern "C"
+} // namespace nvflare
