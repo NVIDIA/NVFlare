@@ -140,7 +140,7 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
 
 
 def run_federated() -> None:
-    port = 2222
+    port = 22222
     world_size = int(sys.argv[1])
 
     server = multiprocessing.Process(target=run_server, args=(world_size, port))

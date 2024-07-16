@@ -12,8 +12,8 @@ echo "Training baseline"
 python3 ./train_standalone/train_base.py
 echo "Training horizontal"
 python3 ./train_standalone/train_hori_base.py 3
-echo "Training secure horizontal"
-python3 ./train_standalone/train_hori_secure.py 3
+#echo "Training secure horizontal"
+#python3 ./train_standalone/train_hori_secure.py 3
 echo "Training vertical"
 python3 ./train_standalone/train_vert_base.py 3
 echo "Training secure vertical"
