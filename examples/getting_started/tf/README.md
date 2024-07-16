@@ -50,6 +50,13 @@ directory, which defaults to `/tmp` and can be configured by setting
 `--workspace` argument of the `tf_fl_script_executor_cifar10.py`
 script.
 
+> [!WARNING]
+> If you are using GPU, make sure to set the following
+> environment variables before running a training job, to prevent
+> `Tensoflow` from allocating full GPU memory all at once:
+> `export TF_FORCE_GPU_ALLOW_GROWTH=true && export
+> TF_GPU_ALLOCATOR=cuda_malloc_asyncp`
+
 The set-up of all experiments in this example are kept the same as
 [the example using `Pytorch`
 backend](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/cifar10-sim). Refer
