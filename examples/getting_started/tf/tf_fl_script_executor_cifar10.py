@@ -73,6 +73,11 @@ if __name__ == "__main__":
         default=1.0,
     )
     parser.add_argument(
+        "--workspace",
+        type=str,
+        default="/tmp",
+    )
+    parser.add_argument(
         "--gpu",
         type=int,
         default=0,
@@ -93,7 +98,7 @@ if __name__ == "__main__":
         raise ValueError(f"--algo should be one of: {supported_algos}, got: {args.algo}")
 
     train_script = "src/cifar10_tf_fl_alpha_split.py"
-    train_split_root = f"/tmp/cifar10_splits/clients{args.n_clients}_alpha{args.alpha}" # avoid overwriting results
+    train_split_root = f"{args.workspace}/cifar10_splits/clients{args.n_clients}_alpha{args.alpha}" # avoid overwriting results
 
     # Prepare data splits
     if args.alpha > 0.0:
@@ -116,21 +121,21 @@ if __name__ == "__main__":
     if args.algo == FEDAVG_ALGO or args.algo == CENTRALIZED_ALGO:
         from nvflare import FedAvg
         controller = FedAvg(
-            min_clients=args.n_clients,
+            num_clients=args.n_clients,
             num_rounds=args.num_rounds,
         )
 
     elif args.algo == FEDOPT_ALGO:
         from nvflare.app_opt.tf.fedopt_ctl import FedOpt
         controller = FedOpt(
-            min_clients=args.n_clients,
+            num_clients=args.n_clients,
             num_rounds=args.num_rounds,
         )
 
     elif args.algo == FEDPROX_ALGO:
         from nvflare import FedAvg
         controller = FedAvg(
-            min_clients=args.n_clients,
+            num_clients=args.n_clients,
             num_rounds=args.num_rounds,
         )
         task_script_args += f" --fedprox_mu {args.fedprox_mu}"
@@ -148,5 +153,8 @@ if __name__ == "__main__":
         )
         job.to(executor, f"site-{i+1}", gpu=args.gpu)
 
-    # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run(f"/tmp/nvflare/jobs/{job.name}")
+    # Can export current job to folder.
+    # job.export_job(f"{args.workspace}/nvflare/jobs/job_config")
+
+    # Here we launch the job using simulator.
+    job.simulator_run(f"{args.workspace}/nvflare/jobs/{job.name}")
