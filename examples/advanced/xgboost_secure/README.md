@@ -75,9 +75,9 @@ The AUC of vertical learning (both secure and non-secure):
 ```
 The AUC of horizontal learning (both secure and non-secure):
 ```
-[0]	eval-auc:0.89792	train-auc:0.92749
-[1]	eval-auc:0.89794	train-auc:0.92750
-[2]	eval-auc:0.89794	train-auc:0.92750
+[0]	eval-auc:0.89789	train-auc:0.92747
+[1]	eval-auc:0.89789	train-auc:0.92747
+[2]	eval-auc:0.89792	train-auc:0.92748
 ```
 
 Comparing the tree models with centralized baseline, we have the following observations:

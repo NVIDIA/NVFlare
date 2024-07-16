@@ -79,13 +79,18 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
             print(f"DMatrix: rank={rank}, one sample row of the data: \n {data_sample}")
 
         # Specify parameters via map, definition are same as c++ version
+        if rank == 0 or rank == 2:
+            gpu_id = 0
+        else:
+            gpu_id = 1
+
         param = {
             "max_depth": 3,
             "eta": 0.1,
             "objective": "binary:logistic",
             "eval_metric": "auc",
             "tree_method": "hist",
-            "device": f"cuda:{rank}",
+            "device": f"cuda:{gpu_id}",
             "nthread": 1,
         }
 
