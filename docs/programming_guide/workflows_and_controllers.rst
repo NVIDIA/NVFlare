@@ -7,7 +7,10 @@ A workflow has one or more controllers, each implementing a specific coordinatio
 CrossSiteValidation controller implements a strategy to let every client site evaluate every other site's model. You can put together
 a workflow that uses any number of controllers.
 
-We have implemented several server controlled federated learning workflows (fed-average, cyclic controller, cross-site evaluation) with the server-side :ref:`controllers <controllers>`.
+We provide the FLModel-based :ref:`model_controller` which provides a straightforward way for users to write controllers.
+We also have the original :ref:`Controller API <controllers>` with more FLARE-specific functionalities, which many of our existing workflows are based upon.
+
+We have implemented several server controlled federated learning workflows (fed-average, cyclic controller, cross-site evaluation) with the server-side controllers.
 In these workflows, FL clients get tasks assigned by the controller, execute the tasks, and submit results back to the server.
 
 In certain cases, if the server cannot be trusted, it should not be involved in communication with sensitive information.
@@ -18,5 +21,6 @@ Please refer to the following sections for more details.
 .. toctree::
    :maxdepth: 3
 
+   controllers/model_controller
    controllers/controllers
    controllers/client_controlled_workflows

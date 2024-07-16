@@ -360,7 +360,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             self.error("persistor not configured, model will not be saved")
 
     def sample_clients(self, num_clients=None):
-        clients = self.engine.get_clients()
+        clients = [client.name for client in self.engine.get_clients()]
 
         if num_clients:
             check_positive_int("num_clients", num_clients)
@@ -375,7 +375,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
                     f"num_clients ({num_clients}) is greater than the number of available clients. Returning all ({len(clients)}) available clients."
                 )
 
-        self.info(f"Sampled clients: {[client.name for client in clients]}")
+        self.info(f"Sampled clients: {clients}")
 
         return clients
 
