@@ -77,8 +77,10 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         self.fl_ctx = fl_ctx
         self.info("Initializing BaseModelController workflow.")
 
+        self.engine = self.fl_ctx.get_engine()
+
         if self._persistor_id:
-            self.persistor = self._engine.get_component(self._persistor_id)
+            self.persistor = self.engine.get_component(self._persistor_id)
             if not isinstance(self.persistor, LearnablePersistor):
                 self.warning(
                     f"Model Persistor {self._persistor_id} must be a LearnablePersistor type object, "
@@ -86,7 +88,6 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
                 )
                 self.persistor = None
 
-        self.engine = self.fl_ctx.get_engine()
         FLComponentWrapper.initialize(self)
 
     def _build_shareable(self, data: FLModel = None) -> Shareable:
@@ -162,9 +163,10 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             )
 
             if targets is not None:
-                if len(self._results) != min_responses:
+                expected_responses = min_responses if min_responses != 0 else len(targets)
+                if len(self._results) != expected_responses:
                     self.warning(
-                        f"Number of results ({len(self._results)}) is different from number of targets ({min_responses})."
+                        f"Number of results ({len(self._results)}) is different from number of expected responses ({expected_responses})."
                     )
 
             # de-reference the internal results before returning
