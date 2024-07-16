@@ -44,9 +44,5 @@ class Constant:
     APPLET_ENV_PROCESS = "process"
     APPLET_ENV_SELF = "self"
 
-    APP_CTX_KEY_CLI_CMD = "cli_command"
-    APP_CTX_KEY_CLI_CWD = "cli_cwd"
-    APP_CTX_KEY_CLI_ENV = "cli_env"
-
 
 VALID_APPLET_ENV = [Constant.APPLET_ENV_PROCESS, Constant.APPLET_ENV_THREAD, Constant.APPLET_ENV_SELF]

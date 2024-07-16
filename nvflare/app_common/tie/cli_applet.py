@@ -12,25 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
-import shlex
-import subprocess
 import time
 from abc import ABC, abstractmethod
+from typing import Any
 
 from nvflare.security.logging import secure_format_exception
 
 from .applet import Applet
 from .defs import Constant
+from .process_mgr import start_process
 
 
 class CLIApplet(Applet, ABC):
     def __init__(self):
         Applet.__init__(self)
-        self._process = None
+        self._proc_mgr = None
         self._start_error = False
 
     @abstractmethod
-    def get_command(self, ctx: dict) -> (str, str, dict):
+    def get_command(self, ctx: dict) -> (str, str, dict, Any):
         """Subclass must implement this method to return the CLI command to be executed.
 
         Args:
@@ -40,12 +40,13 @@ class CLIApplet(Applet, ABC):
             command (str) - the CLI command to be executed
             current work dir - the current work dir for the command execution
             env - additional env vars to be added to system's env for the command execution
+            log_file: the file for log messages
 
         """
         pass
 
     def start(self, ctx: dict):
-        cli_cmd, cli_cwd, cli_env = self.get_command(ctx)
+        cli_cmd, cli_cwd, cli_env, log_file = self.get_command(ctx)
         if not cli_cmd:
             raise RuntimeError("failed to get cli command from app context")
 
@@ -55,46 +56,45 @@ class CLIApplet(Applet, ABC):
                 raise RuntimeError(f"expect cli env to be dict but got {type(cli_env)}")
             env.update(cli_env)
 
-        command_seq = shlex.split(cli_cmd)
         try:
-            self._process = subprocess.Popen(
-                command_seq,
-                stderr=subprocess.STDOUT,
+            self._proc_mgr = start_process(
+                command=cli_cmd,
                 cwd=cli_cwd,
                 env=env,
+                log_file=log_file,
             )
         except Exception as ex:
             self.logger.error(f"exception starting applet '{cli_cmd}': {secure_format_exception(ex)}")
             self._start_error = True
 
     def stop(self, timeout=0.0):
-        p = self._process
-        self._process = None
+        mgr = self._proc_mgr
+        self._proc_mgr = None
 
-        if not p:
+        if not mgr:
             return
 
         # wait for the applet to stop by itself
         start = time.time()
         while time.time() - start < timeout:
-            rc = p.poll()
+            rc = mgr.poll()
             if rc is not None:
                 # already stopped
                 self.logger.info(f"applet stopped ({rc=}) gracefully after {time.time()-start} seconds")
-                return
-
+                break
             time.sleep(0.1)
 
         # have to kill the process after timeout
-        self.logger.warn(f"killed the applet process after waiting {timeout} seconds")
-        p.kill()
+        rc = mgr.stop()
+        if rc is None:
+            self.logger.warn(f"killed the applet process after waiting {timeout} seconds")
 
     def is_stopped(self) -> (bool, int):
         if self._start_error:
             return True, Constant.EXIT_CODE_CANT_START
 
-        if self._process:
-            return_code = self._process.poll()
+        if self._proc_mgr:
+            return_code = self._proc_mgr.poll()
             if return_code is None:
                 return False, 0
             else:

@@ -11,7 +11,28 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os.path
+
 import grpc
+
+from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.workspace import Workspace
+
+from .defs import Constant
+
+
+def get_applet_log_file_path(base_name: str, run_ctx: dict):
+    fl_ctx = run_ctx.get(Constant.APP_CTX_FL_CONTEXT)
+    if not isinstance(fl_ctx, FLContext):
+        raise RuntimeError(f"{Constant.APP_CTX_FL_CONTEXT} should be FLContext but got {type(fl_ctx)}")
+
+    ws = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+    if not isinstance(ws, Workspace):
+        raise RuntimeError(f"{FLContextKey.WORKSPACE_OBJECT} should be Workspace but got {type(ws)}")
+
+    run_dir = ws.get_run_dir(fl_ctx.get_job_id())
+    return os.path.join(run_dir, base_name)
 
 
 def create_channel(server_addr, grpc_options, ready_timeout: float, test_only: bool):
