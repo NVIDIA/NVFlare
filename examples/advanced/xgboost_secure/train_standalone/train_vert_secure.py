@@ -26,9 +26,10 @@ import xgboost.federated
 PRINT_SAMPLE = False
 DATASET_ROOT = "/tmp/nvflare/xgb_dataset/vertical_xgb_data"
 TEST_DATA_PATH = "/tmp/nvflare/xgb_dataset/test.csv"
-OUTPUT_ROOT = "/tmp/nvflare/xgb_exp/vert_base"
+OUTPUT_ROOT = "/tmp/nvflare/xgb_exp/vert_secure"
 if not os.path.exists(OUTPUT_ROOT):
     os.makedirs(OUTPUT_ROOT)
+
 
 def load_test_data(data_path: str):
     df = pd.read_csv(data_path)
@@ -48,6 +49,7 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         "federated_server_address": f"localhost:{port}",
         "federated_world_size": world_size,
         "federated_rank": rank,
+        "federated_plugin": {"name": "mock"},
     }
 
     # Always call this before using distributed module
@@ -97,14 +99,14 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         # Run training, all the features in training API is available.
         bst = xgb.train(param, dtrain, num_round, evals=watchlist)
 
-        # Save the model
+        # Save the model, every rank's model is different.
         rank = xgb.collective.get_rank()
-        bst.save_model(f"{OUTPUT_ROOT}/model.vert.base.{rank}.json")
+        bst.save_model(f"{OUTPUT_ROOT}/model.vert.secure.{rank}.json")
         xgb.collective.communicator_print("Finished training\n")
 
         # save feature importance score to file
         score = bst.get_score(importance_type="gain")
-        with open(f"{OUTPUT_ROOT}/feat_importance.vert.base.{rank}.txt", "w") as f:
+        with open(f"{OUTPUT_ROOT}/feat_importance.vert.secure.{rank}.txt", "w") as f:
             for key in score:
                 f.write(f"{key}: {score[key]}\n")
 
@@ -120,11 +122,11 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         # save the beeswarm plot to png file
         shap.plots.beeswarm(explanation, show=False)
         img = plt.gcf()
-        img.savefig(f"{OUTPUT_ROOT}/shap.vert.base.{rank}.png")
+        img.savefig(f"{OUTPUT_ROOT}/shap.vert.secure.{rank}.png")
 
         # dump tree and save to text file
         dump = bst.get_dump()
-        with open(f"{OUTPUT_ROOT}/tree_dump.vert.base.{rank}.txt", "w") as f:
+        with open(f"{OUTPUT_ROOT}/tree_dump.vert.secure.{rank}.txt", "w") as f:
             for tree in dump:
                 f.write(tree)
 
@@ -132,15 +134,15 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         xgb.plot_tree(bst, num_trees=0, rankdir="LR")
         fig = plt.gcf()
         fig.set_size_inches(18, 5)
-        plt.savefig(f"{OUTPUT_ROOT}/tree.vert.base.{rank}.png", dpi=100)
+        plt.savefig(f"{OUTPUT_ROOT}/tree.vert.secure.{rank}.png", dpi=100)
 
         # export tree to dataframe
         tree_df = bst.trees_to_dataframe()
-        tree_df.to_csv(f"{OUTPUT_ROOT}/tree_df.vert.base.{rank}.csv")
+        tree_df.to_csv(f"{OUTPUT_ROOT}/tree_df.vert.secure.{rank}.csv")
 
 
 def run_federated() -> None:
-    port = 3333
+    port = 4444
     world_size = int(sys.argv[1])
 
     server = multiprocessing.Process(target=run_server, args=(world_size, port))

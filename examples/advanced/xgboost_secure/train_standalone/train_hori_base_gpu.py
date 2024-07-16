@@ -26,9 +26,10 @@ import xgboost.federated
 PRINT_SAMPLE = False
 DATASET_ROOT = "/tmp/nvflare/xgb_dataset/horizontal_xgb_data"
 TEST_DATA_PATH = "/tmp/nvflare/xgb_dataset/test.csv"
-OUTPUT_ROOT = "/tmp/nvflare/xgb_exp/hori_secure"
+OUTPUT_ROOT = "/tmp/nvflare/xgb_exp/hori_base_gpu"
 if not os.path.exists(OUTPUT_ROOT):
     os.makedirs(OUTPUT_ROOT)
+
 
 def load_test_data(data_path: str):
     df = pd.read_csv(data_path)
@@ -48,7 +49,6 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         "federated_server_address": f"localhost:{port}",
         "federated_world_size": world_size,
         "federated_rank": rank,
-        'federated_plugin': {'name': 'mock'},
     }
 
     # Always call this before using distributed module
@@ -85,6 +85,7 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
             "objective": "binary:logistic",
             "eval_metric": "auc",
             "tree_method": "hist",
+            "device": f"cuda:{rank}",
             "nthread": 1,
         }
 
@@ -97,12 +98,12 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
 
         # Save the model
         rank = xgb.collective.get_rank()
-        bst.save_model(f"{OUTPUT_ROOT}/model.hori.secure.{rank}.json")
+        bst.save_model(f"{OUTPUT_ROOT}/model.hori.base.{rank}.json")
         xgb.collective.communicator_print("Finished training\n")
 
         # save feature importance score to file
         score = bst.get_score(importance_type="gain")
-        with open(f"{OUTPUT_ROOT}/feat_importance.secure.base.{rank}.txt", "w") as f:
+        with open(f"{OUTPUT_ROOT}/feat_importance.hori.base.{rank}.txt", "w") as f:
             for key in score:
                 f.write(f"{key}: {score[key]}\n")
 
@@ -118,11 +119,11 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         # save the beeswarm plot to png file
         shap.plots.beeswarm(explanation, show=False)
         img = plt.gcf()
-        img.savefig(f"{OUTPUT_ROOT}/shap.hori.secure.{rank}.png")
+        img.savefig(f"{OUTPUT_ROOT}/shap.hori.base.{rank}.png")
 
         # dump tree and save to text file
         dump = bst.get_dump()
-        with open(f"{OUTPUT_ROOT}/tree_dump.hori.secure.{rank}.txt", "w") as f:
+        with open(f"{OUTPUT_ROOT}/tree_dump.hori.base.{rank}.txt", "w") as f:
             for tree in dump:
                 f.write(tree)
 
@@ -130,15 +131,15 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         xgb.plot_tree(bst, num_trees=0, rankdir="LR")
         fig = plt.gcf()
         fig.set_size_inches(18, 5)
-        plt.savefig(f"{OUTPUT_ROOT}/tree.hori.secure.{rank}.png", dpi=100)
+        plt.savefig(f"{OUTPUT_ROOT}/tree.hori.base.{rank}.png", dpi=100)
 
         # export tree to dataframe
         tree_df = bst.trees_to_dataframe()
-        tree_df.to_csv(f"{OUTPUT_ROOT}/tree_df.hori.secure.{rank}.csv")
+        tree_df.to_csv(f"{OUTPUT_ROOT}/tree_df.hori.base.{rank}.csv")
 
 
 def run_federated() -> None:
-    port = 2222
+    port = 1111
     world_size = int(sys.argv[1])
 
     server = multiprocessing.Process(target=run_server, args=(world_size, port))

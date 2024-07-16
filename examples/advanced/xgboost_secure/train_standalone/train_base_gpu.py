@@ -26,6 +26,7 @@ OUTPUT_ROOT = "/tmp/nvflare/xgb_exp/base_gpu"
 if not os.path.exists(OUTPUT_ROOT):
     os.makedirs(OUTPUT_ROOT)
 
+
 def load_test_data(data_path: str):
     df = pd.read_csv(data_path)
     # Split to feature and label
