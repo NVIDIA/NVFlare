@@ -19,6 +19,7 @@ from typing import Any, List, Union
 from nvflare.apis.executor import Executor
 from nvflare.apis.filter import Filter
 from nvflare.apis.impl.controller import Controller
+from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
 from nvflare.app_common.executors.script_executor import ScriptExecutor
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
@@ -44,6 +45,13 @@ if torch_ok and tb_ok:
     from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 
 SPECIAL_CHARACTERS = '"!@#$%^&*()+?=,<>/'
+
+
+def _check_positive_int(name, value):
+    if not isinstance(value, int):
+        raise TypeError("{} must be an instance of int, but got {}.".format(name, type(name)))
+    if value < 0:
+        raise ValueError("{} must >= 0.".format(name))
 
 
 class FilterType:
@@ -101,6 +109,56 @@ class FedApp:
         """
         for _script in external_scripts:
             self.app.add_ext_script(_script)
+
+
+class ExecutorApp(FedApp):
+    def __init__(self):
+        """Wrapper around `ClientAppConfig`."""
+        super().__init__()
+        self._create_client_app()
+
+    def add_executor(self, executor, tasks=None):
+        if tasks is None:
+            tasks = ["*"]  # Add executor for any task by default
+        self.app.add_executor(tasks, executor)
+
+    def _create_client_app(self):
+        self.app = ClientAppConfig()
+
+        component = ConvertToFedEvent(events_to_convert=["analytix_log_stats"], fed_event_prefix="fed.")
+        self.app.add_component("event_to_fed", component)
+
+
+class ControllerApp(FedApp):
+    """Wrapper around `ServerAppConfig`.
+
+    Args:
+    """
+
+    def __init__(self, key_metric="accuracy"):
+        super().__init__()
+        self.key_metric = key_metric
+        self._create_server_app()
+
+    def add_controller(self, controller, id=None):
+        if id is None:
+            id = "controller"
+        self.app.add_workflow(self._gen_tracked_id(id), controller)
+
+    def _create_server_app(self):
+        self.app: ServerAppConfig = ServerAppConfig()
+
+        component = ValidationJsonGenerator()
+        self.app.add_component("json_generator", component)
+
+        if self.key_metric:
+            component = IntimeModelSelector(key_metric=self.key_metric)
+            self.app.add_component("model_selector", component)
+
+        # TODO: make different tracking receivers configurable
+        if torch_ok and tb_ok:
+            component = TBAnalyticsReceiver(events=["fed.analytix_log_stats"])
+            self.app.add_component("receiver", component)
 
 
 class FedJob:
@@ -218,6 +276,16 @@ class FedJob:
         if self._components:
             self._add_referenced_components(obj, target)
 
+    def to_all(
+        self,
+        obj: Any,
+        tasks: List[str] = None,
+        gpu: Union[int, List[int]] = None,
+        filter_type: FilterType = None,
+        id=None,
+    ):
+        self.to(obj=obj, target=ALL_SITES, tasks=tasks, gpu=gpu, filter_type=filter_type, id=id)
+
     def as_id(self, obj: Any):
         id = str(uuid.uuid4())
         self._components[id] = obj
@@ -260,10 +328,28 @@ class FedJob:
         self.job.add_fed_app(app_name, app_config)
         self.job.set_site_app(target, app_name)
 
+    def _set_all_app(self, client_app: ExecutorApp, server_app: ControllerApp):
+        if not isinstance(client_app, ExecutorApp):
+            raise ValueError(f"`client_app` needs to be of type `ExecutorApp` but was type {type(client_app)}")
+        if not isinstance(server_app, ControllerApp):
+            raise ValueError(f"`server_app` needs to be of type `ControllerApp` but was type {type(server_app)}")
+
+        client_config = client_app.get_app_config()
+        server_config = server_app.get_app_config()
+
+        app_config = FedAppConfig(server_app=server_config, client_app=client_config)
+        app_name = "app"
+
+        self.job.add_fed_app(app_name, app_config)
+        self.job.set_site_app(ALL_SITES, app_name)
+
     def _set_all_apps(self):
         if not self._deployed:
-            for target in self._deploy_map:
-                self._set_site_app(self._deploy_map[target], target)
+            if ALL_SITES in self._deploy_map:
+                self._set_all_app(client_app=self._deploy_map[ALL_SITES], server_app=self._deploy_map[SERVER_SITE_NAME])
+            else:
+                for target in self._deploy_map:
+                    self._set_site_app(self._deploy_map[target], target)
 
             self._deployed = True
 
@@ -271,10 +357,17 @@ class FedJob:
         self._set_all_apps()
         self.job.generate_job_config(job_root)
 
-    def simulator_run(self, workspace, threads: int = None):
+    def simulator_run(self, workspace, n_clients: int = None, threads: int = None):
         self._set_all_apps()
 
+        if not self.clients and not n_clients:
+            raise ValueError("Clients were not specified using to(). Please provide the number of clients to simulate.")
+        elif n_clients:
+            _check_positive_int("n_clients", n_clients)
+            self.clients = [f"site-{i}" for i in range(1, n_clients + 1)]
+
         n_clients = len(self.clients)
+
         if threads is None:
             threads = n_clients
 
@@ -290,56 +383,6 @@ class FedJob:
         if not target:
             raise ValueError("Must provide a valid target name")
 
-        if any(c in SPECIAL_CHARACTERS for c in target):
+        if any(c in SPECIAL_CHARACTERS for c in target) and target != ALL_SITES:
             raise ValueError(f"target {target} name contains invalid character")
         pass
-
-
-class ExecutorApp(FedApp):
-    def __init__(self):
-        """Wrapper around `ClientAppConfig`."""
-        super().__init__()
-        self._create_client_app()
-
-    def add_executor(self, executor, tasks=None):
-        if tasks is None:
-            tasks = ["*"]  # Add executor for any task by default
-        self.app.add_executor(tasks, executor)
-
-    def _create_client_app(self):
-        self.app = ClientAppConfig()
-
-        component = ConvertToFedEvent(events_to_convert=["analytix_log_stats"], fed_event_prefix="fed.")
-        self.app.add_component("event_to_fed", component)
-
-
-class ControllerApp(FedApp):
-    """Wrapper around `ServerAppConfig`.
-
-    Args:
-    """
-
-    def __init__(self, key_metric="accuracy"):
-        super().__init__()
-        self.key_metric = key_metric
-        self._create_server_app()
-
-    def add_controller(self, controller, id=None):
-        if id is None:
-            id = "controller"
-        self.app.add_workflow(self._gen_tracked_id(id), controller)
-
-    def _create_server_app(self):
-        self.app: ServerAppConfig = ServerAppConfig()
-
-        component = ValidationJsonGenerator()
-        self.app.add_component("json_generator", component)
-
-        if self.key_metric:
-            component = IntimeModelSelector(key_metric=self.key_metric)
-            self.app.add_component("model_selector", component)
-
-        # TODO: make different tracking receivers configurable
-        if torch_ok and tb_ok:
-            component = TBAnalyticsReceiver(events=["fed.analytix_log_stats"])
-            self.app.add_component("receiver", component)
