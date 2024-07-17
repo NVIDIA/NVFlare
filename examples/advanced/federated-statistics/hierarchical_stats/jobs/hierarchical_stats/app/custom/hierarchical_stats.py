@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
+import os
+from pathlib import Path
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -23,61 +26,36 @@ from nvflare.app_common.abstract.statistics_spec import BinRange, Feature, Histo
 from nvflare.app_common.statistics.numpy_utils import dtype_to_data_type, get_std_histogram_buckets
 
 
-class DFStatistics(Statistics):
-    def __init__(self, data_path):
+class HierarchicalStats(Statistics):
+    def __init__(self):
         super().__init__()
-        self.data_root_dir = "/tmp/nvflare/df_stats/data"
-        self.data_path = data_path
+        self.data_root_dir = "/tmp/nvflare/data/hierarchical_stats/"
         self.data: Optional[Dict[str, pd.DataFrame]] = None
         self.data_features = [
-            "Age",
-            "Workclass",
-            "fnlwgt",
-            "Education",
-            "Education-Num",
-            "Marital Status",
-            "Occupation",
-            "Relationship",
-            "Race",
-            "Sex",
-            "Capital Gain",
-            "Capital Loss",
-            "Hours per week",
-            "Country",
-            "Target",
+            "Pass",
+            "Fail",
+            "Percentage",
         ]
-
-        # the original dataset has no header,
-        # we will use the adult.train dataset for site-1, the adult.test dataset for site-2
-        # the adult.test dataset has incorrect formatted row at 1st line, we will skip it.
-        self.skip_rows = {
-            "site-1": [],
-            "site-2": [0],
-        }
+        self.skip_rows = {}
 
     def load_data(self, fl_ctx: FLContext) -> Dict[str, pd.DataFrame]:
         client_name = fl_ctx.get_identity_name()
-        self.log_info(fl_ctx, f"load data for client {client_name}")
+        self.log_info(fl_ctx, f"Load data for client {client_name}")
         try:
-            skip_rows = self.skip_rows[client_name]
-            data_path = f"{self.data_root_dir}/{fl_ctx.get_identity_name()}/{self.data_path}"
-            # example of load data from CSV
-            df: pd.DataFrame = pd.read_csv(
-                data_path, names=self.data_features, sep=r"\s*,\s*", skiprows=skip_rows, engine="python", na_values="?"
-            )
-            train = df.sample(frac=0.8, random_state=200)  # random state is a seed value
-            test = df.drop(train.index).sample(frac=1.0)
-
-            self.log_info(fl_ctx, f"load data done for client {client_name}")
-            return {"train": train, "test": test}
-
+            skip_rows = self.skip_rows
+            path = Path(self.data_root_dir)
+            csv_file_name = client_name + ".csv"
+            csv_file = os.path.join(path, client_name, csv_file_name)
+            dfs = []
+            df = pd.read_csv(csv_file, sep=r"\s*,\s*", skiprows=skip_rows, engine="python", na_values="?")
+            return {"default_set": df}
         except Exception as e:
             raise Exception(f"Load data for client {client_name} failed! {e}")
 
     def initialize(self, fl_ctx: FLContext):
         self.data = self.load_data(fl_ctx)
         if self.data is None:
-            raise ValueError("data is not loaded. make sure the data is loaded")
+            raise ValueError("Data is not loaded. make sure the data is loaded")
 
     def features(self) -> Dict[str, List[Feature]]:
         results: Dict[str, List[Feature]] = {}
@@ -92,29 +70,32 @@ class DFStatistics(Statistics):
 
     def count(self, dataset_name: str, feature_name: str) -> int:
         df: pd.DataFrame = self.data[dataset_name]
+        if feature_name == self.data_features[0] or feature_name == self.data_features[1]:
+            # The features `Pass` and `Fail` will only have values `0` and `1` so we only
+            # return the count with values `1`.
+            return df[feature_name].sum()
+
         return df[feature_name].count()
 
     def sum(self, dataset_name: str, feature_name: str) -> float:
         df: pd.DataFrame = self.data[dataset_name]
-        return df[feature_name].sum().item()
+        return df[feature_name].sum()
 
     def mean(self, dataset_name: str, feature_name: str) -> float:
-
-        count: int = self.count(dataset_name, feature_name)
-        sum_value: float = self.sum(dataset_name, feature_name)
-        return sum_value / count
+        df: pd.DataFrame = self.data[dataset_name]
+        return df[feature_name].mean()
 
     def stddev(self, dataset_name: str, feature_name: str) -> float:
-        df = self.data[dataset_name]
+        df: pd.DataFrame = self.data[dataset_name]
         return df[feature_name].std().item()
 
-    def variance_with_mean(
-        self, dataset_name: str, feature_name: str, global_mean: float, global_count: float
-    ) -> float:
-        df = self.data[dataset_name]
-        tmp = (df[feature_name] - global_mean) * (df[feature_name] - global_mean)
-        variance = tmp.sum() / (global_count - 1)
-        return variance.item()
+    def min_value(self, dataset_name: str, feature_name: str) -> float:
+        df: pd.DataFrame = self.data[dataset_name]
+        return df[feature_name].min()
+
+    def max_value(self, dataset_name: str, feature_name: str) -> float:
+        df: pd.DataFrame = self.data[dataset_name]
+        return df[feature_name].max()
 
     def histogram(
         self, dataset_name: str, feature_name: str, num_of_bins: int, global_min_value: float, global_max_value: float
@@ -129,14 +110,10 @@ class DFStatistics(Statistics):
         buckets = get_std_histogram_buckets(flattened, num_of_bins, BinRange(global_min_value, global_max_value))
         return Histogram(HistogramType.STANDARD, buckets)
 
-    def max_value(self, dataset_name: str, feature_name: str) -> float:
-        """this is needed for histogram calculation, not used for reporting"""
-
+    def variance_with_mean(
+        self, dataset_name: str, feature_name: str, global_mean: float, global_count: float
+    ) -> float:
         df = self.data[dataset_name]
-        return df[feature_name].max()
-
-    def min_value(self, dataset_name: str, feature_name: str) -> float:
-        """this is needed for histogram calculation, not used for reporting"""
-
-        df = self.data[dataset_name]
-        return df[feature_name].min()
+        tmp = (df[feature_name] - global_mean) * (df[feature_name] - global_mean)
+        variance = tmp.sum() / (global_count - 1)
+        return variance.item()
