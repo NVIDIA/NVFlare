@@ -276,7 +276,7 @@ class FedJob:
         if self._components:
             self._add_referenced_components(obj, target)
 
-    def to_all(
+    def to_server(
         self,
         obj: Any,
         tasks: List[str] = None,
@@ -284,6 +284,22 @@ class FedJob:
         filter_type: FilterType = None,
         id=None,
     ):
+        if isinstance(obj, Executor):
+            raise ValueError("Use `job.to(executor, <client_name>)` or `job.to_clients(executor)` for Executors.")
+
+        self.to(obj=obj, target=SERVER_SITE_NAME, tasks=tasks, gpu=gpu, filter_type=filter_type, id=id)
+
+    def to_clients(
+        self,
+        obj: Any,
+        tasks: List[str] = None,
+        gpu: Union[int, List[int]] = None,
+        filter_type: FilterType = None,
+        id=None,
+    ):
+        if isinstance(obj, Controller):
+            raise ValueError('Use `job.to(controller, "server")` or `job.to_server(controller)` for Controllers.')
+
         self.to(obj=obj, target=ALL_SITES, tasks=tasks, gpu=gpu, filter_type=filter_type, id=id)
 
     def as_id(self, obj: Any):

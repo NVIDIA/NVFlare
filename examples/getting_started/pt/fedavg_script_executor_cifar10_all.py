@@ -28,16 +28,16 @@ if __name__ == "__main__":
         num_clients=n_clients,
         num_rounds=num_rounds,
     )
-    job.to(controller, "server")
+    job.to_server(controller)
 
     # Define the initial global model and send to server
-    job.to(Net(), "server")
+    job.to_server(Net())
 
     # Send executor to all clients
     executor = ScriptExecutor(
         task_script_path=train_script, task_script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
     )
-    job.to_all(executor)
+    job.to_clients(executor)
 
     job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir", n_clients=n_clients)
