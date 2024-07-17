@@ -376,11 +376,13 @@ class FedJob:
     def simulator_run(self, workspace, n_clients: int = None, threads: int = None):
         self._set_all_apps()
 
-        if not self.clients and not n_clients:
+        if ALL_SITES in self.clients and not n_clients:
             raise ValueError("Clients were not specified using to(). Please provide the number of clients to simulate.")
-        elif n_clients:
+        elif ALL_SITES in self.clients and n_clients:
             _check_positive_int("n_clients", n_clients)
             self.clients = [f"site-{i}" for i in range(1, n_clients + 1)]
+        elif self.clients and n_clients:
+            raise ValueError("You already specified clients using `to()`. Don't use `n_clients` here.")
 
         n_clients = len(self.clients)
 
