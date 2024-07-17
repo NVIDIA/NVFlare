@@ -362,6 +362,8 @@ class FedJob:
     def _set_all_apps(self):
         if not self._deployed:
             if ALL_SITES in self._deploy_map:
+                if SERVER_SITE_NAME not in self._deploy_map:
+                    raise ValueError('Missing server components! Deploy using `to(obj, "server") or `to_server(obj)`')
                 self._set_all_app(client_app=self._deploy_map[ALL_SITES], server_app=self._deploy_map[SERVER_SITE_NAME])
             else:
                 for target in self._deploy_map:
