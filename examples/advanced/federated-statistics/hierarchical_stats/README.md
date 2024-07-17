@@ -4,7 +4,7 @@ In this example, we will show how to generate hierarchical statistics for data t
 
 This example uses synthetic anonymous students scores datasets generated for student belonging to 7 different universities named `university-1` to `university-7` respectively. Each entry in the datasets has three columns - `Pass`, `Fail` and `Percentage`. `Pass`/`Fail` represents whether the particular student passed or failed the exam and `Percentage` represents the overall percentage marks scored by the student. Additionally each university is mapped to different states as per the hierarchy config shown below.
 
-<img src="./demo/example_hierarchy.png" alt="Description" width="400" height="200">
+<img src="./demo/example_hierarchy.png" alt="Description" width="800">
 
 This example will demonstrate how to generate and visualize hierarchical statistics including global statistics, state level global statistics and local statistics for the given datasets.
 
@@ -79,38 +79,38 @@ You should be able to get the visualization similar to the followings
 
 Expandable global and level wise stats, clicking on each will shows statistics for that particular level.
 
-<img src="demo/expandable_stats.png" alt="Expandable Hierarchical stats" width="400">
+<img src="demo/expandable_stats.png" alt="Expandable Hierarchical stats" width="800">
 
 Expanding `Global` will show visualization of global statistics similar to the following
 
-<img src="demo/global_stats.png" alt="Global stats" width="400">
+<img src="demo/global_stats.png" alt="Global stats" width="800">
 
 Following visualization shows example state level global statistics for `State 2`
 
-<img src="demo/states_hierarchy.png" alt="States" width="400">
+<img src="demo/states_hierarchy.png" alt="States" width="800">
 
 and
 
-<img src="demo/state_level_global_stats.png" alt="State 2 stats" width="400">
+<img src="demo/state_level_global_stats.png" alt="State 2 stats" width="800">
 
 And the visualization of local stats at last hierarchical level should looks similar to the following
 
-<img src="demo/local_hierarchical_stats.png" alt="Local stats" width="400">
+<img src="demo/local_hierarchical_stats.png" alt="Local stats" width="800">
 
 
 For histograms section of `visualization.ipynb`, you should be able to get the visualization similar to the followings
 
 Global Histogram for `Percentage`
 
-<img src="demo/global_histogram.png" alt="Global Histogram" width="400">
+<img src="demo/global_histogram.png" alt="Global Histogram" width="800">
 
 State level histogram for `Percentage`
 
-<img src="demo/state_level_histogram.png" alt="State level histogram" width="400">
+<img src="demo/state_level_histogram.png" alt="State level histogram" width="800">
 
 And local histogram for `Percentage`
 
-<img src="demo/local_histogram.png" alt="Local histogram" width="400">
+<img src="demo/local_histogram.png" alt="Local histogram" width="800">
 
 ## 5. Configuration and Code
 
