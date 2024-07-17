@@ -40,7 +40,8 @@ class CLIApplet(Applet, ABC):
             command (str) - the CLI command to be executed
             current work dir - the current work dir for the command execution
             env - additional env vars to be added to system's env for the command execution
-            log_file: the file for log messages
+            log_file: the file for log messages. It can be a file object, full path to the file, or None.
+                If none, no log file
 
         """
         pass

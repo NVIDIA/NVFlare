@@ -105,7 +105,7 @@ class FlowerServerApplet(Applet):
         )
 
         self._superlink_process_mgr = self._start_process("superlink", superlink_cmd, ctx)
-        if not self._superlink_process:
+        if not self._superlink_process_mgr:
             raise RuntimeError("cannot start superlink process")
 
         # wait until superlink's port is ready before starting server app
