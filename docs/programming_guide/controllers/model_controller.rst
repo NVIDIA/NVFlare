@@ -112,6 +112,16 @@ Below is a comprehensive table overview of the :class:`ModelController<nvflare.a
 Communication
 =============
 
+The ModelController uses a task based communication where tasks are sent to targets, and targets execute the tasks and return results.
+The :ref:`fl_model` is standadized data structure object that can be sent along with each task, and :ref:`fl_model` responses are received for the results.
+
+.. note::
+
+    The :ref:`fl_model` object can be any type of data.
+    For example, in the "train" and "validate" tasks we send the model parameters along with the task so the target clients can train and validate the model.
+    However in many other tasks that do not involve sending the model (e.g. "submit_model"), the :ref:`fl_model` can contain any type of data (e.g. metadata, metrics etc.) or may be not be needed at all.
+
+
 send_model_and_wait
 -------------------
 :func:`send_model_and_wait<nvflare.app_common.workflows.model_controller.ModelController.send_model_and_wait>` is the core communication function which enables users to send tasks to targets, and wait for responses.
@@ -215,7 +225,8 @@ For the JobAPI, define the controller and send it to the server.
   )
   job.to(controller, "server")
 
-The controller can also be configured in ``config_fed_server.json`` in the workflows section.
+The above JobAPI code will automatically generate the server configuration for the controller.
+The controller can also be configured manually in ``config_fed_server.json`` in the workflows section.
 
 Examples
 ========
