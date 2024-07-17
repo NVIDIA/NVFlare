@@ -26,29 +26,45 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.tracking.log_writer import LogWriter
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
 from nvflare.app_opt.xgboost.histogram_based.constants import XGB_TRAIN_TASK, XGBShareableHeader
-from nvflare.app_opt.xgboost.metrics_cb import MetricsCallback
+from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 
 class XGBoostParams:
-    def __init__(
-        self, xgb_params: dict, num_rounds: int = 10, early_stopping_rounds: int = 2, verbose_eval: bool = False
-    ):
+    def __init__(self, xgb_params: dict, num_rounds=10, early_stopping_rounds=2, verbose_eval=False):
         """Container for all XGBoost parameters.
 
         Args:
             xgb_params: This dict is passed to `xgboost.train()` as the first argument `params`.
                 It contains all the Booster parameters.
                 Please refer to XGBoost documentation for details:
-                https://xgboost.readthedocs.io/en/stable/parameter.html
+                https://xgboost.readthedocs.io/en/stable/python/python_api.html#module-xgboost.training
         """
         self.num_rounds = num_rounds
         self.early_stopping_rounds = early_stopping_rounds
         self.verbose_eval = verbose_eval
         self.xgb_params: dict = xgb_params if xgb_params else {}
+
+
+class TensorBoardCallback(xgb.callback.TrainingCallback):
+    def __init__(self, app_dir: str, tensorboard):
+        self.train_writer = tensorboard.SummaryWriter(log_dir=os.path.join(app_dir, "train-auc/"))
+        self.val_writer = tensorboard.SummaryWriter(log_dir=os.path.join(app_dir, "val-auc/"))
+
+    def after_iteration(self, model, epoch: int, evals_log: xgb.callback.TrainingCallback.EvalsLog):
+        if not evals_log:
+            return False
+
+        for data, metric in evals_log.items():
+            for metric_name, log in metric.items():
+                score = log[-1][0] if isinstance(log[-1], tuple) else log[-1]
+                if data == "train":
+                    self.train_writer.add_scalar(metric_name, score, epoch)
+                else:
+                    self.val_writer.add_scalar(metric_name, score, epoch)
+        return False
 
 
 class FedXGBHistogramExecutor(Executor):
@@ -65,8 +81,6 @@ class FedXGBHistogramExecutor(Executor):
         data_loader_id: str,
         verbose_eval=False,
         use_gpus=False,
-        metrics_writer_id: str = None,
-        model_file_name="test.model.json",
     ):
         """Federated XGBoost Executor for histogram-base collaboration.
 
@@ -79,22 +93,18 @@ class FedXGBHistogramExecutor(Executor):
             xgb_params: This dict is passed to `xgboost.train()` as the first argument `params`.
                 It contains all the Booster parameters.
                 Please refer to XGBoost documentation for details:
-                https://xgboost.readthedocs.io/en/stable/parameter.html
+                https://xgboost.readthedocs.io/en/stable/python/python_api.html#module-xgboost.training
             data_loader_id: the ID points to XGBDataLoader.
             verbose_eval: verbose_eval in xgboost.train
-            use_gpus (bool): A convenient flag to enable gpu training, if gpu device is specified in
-                the `xgb_params` then this flag can be ignored.
-            metrics_writer_id: the ID points to a LogWriter, if provided, a MetricsCallback will be added.
-                Users can then use the receivers from nvflare.app_opt.tracking.
-            model_file_name (str): where to save the model.
+            use_gpus: flag to enable gpu training
         """
         super().__init__()
+        self.app_dir = None
 
         self.num_rounds = num_rounds
         self.early_stopping_rounds = early_stopping_rounds
         self.xgb_params = xgb_params
         self.data_loader_id = data_loader_id
-        self.data_loader = None
         self.verbose_eval = verbose_eval
         self.use_gpus = use_gpus
 
@@ -107,10 +117,6 @@ class FedXGBHistogramExecutor(Executor):
         self._server_address = "localhost"
         self.train_data = None
         self.val_data = None
-        self.model_file_name = model_file_name
-
-        self._metrics_writer_id = metrics_writer_id
-        self._metrics_writer = None
 
     def initialize(self, fl_ctx):
         self.client_id = fl_ctx.get_identity_name()
@@ -118,15 +124,12 @@ class FedXGBHistogramExecutor(Executor):
         self.log_info(fl_ctx, f"server address is {self._server_address}")
 
         engine = fl_ctx.get_engine()
+        ws = engine.get_workspace()
+        self.app_dir = ws.get_app_dir(fl_ctx.get_job_id())
 
         self.data_loader = engine.get_component(self.data_loader_id)
         if not isinstance(self.data_loader, XGBDataLoader):
             self.system_panic("data_loader should be type XGBDataLoader", fl_ctx)
-
-        if self._metrics_writer_id:
-            self._metrics_writer = engine.get_component(self._metrics_writer_id)
-            if not isinstance(self._metrics_writer, LogWriter):
-                self.system_panic("writer should be type LogWriter", fl_ctx)
 
     def xgb_train(self, params: XGBoostParams) -> xgb.core.Booster:
         """XGBoost training logic.
@@ -145,9 +148,9 @@ class FedXGBHistogramExecutor(Executor):
         watchlist = [(dval, "eval"), (dtrain, "train")]
 
         callbacks = [callback.EvaluationMonitor(rank=self.rank)]
-
-        if self._metrics_writer:
-            callbacks.append(MetricsCallback(self._metrics_writer))
+        tensorboard, flag = optional_import(module="torch.utils.tensorboard")
+        if flag and self.app_dir:
+            callbacks.append(TensorBoardCallback(self.app_dir, tensorboard))
 
         # Run training, all the features in training API is available.
         bst = xgb.train(
@@ -285,7 +288,7 @@ class FedXGBHistogramExecutor(Executor):
                 workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
                 run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
                 run_dir = workspace.get_run_dir(run_number)
-                bst.save_model(os.path.join(run_dir, self.model_file_name))
+                bst.save_model(os.path.join(run_dir, "test.model.json"))
                 xgb.collective.communicator_print("Finished training\n")
         except Exception as e:
             secure_log_traceback()
