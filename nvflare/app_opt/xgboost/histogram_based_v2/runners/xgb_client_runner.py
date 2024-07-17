@@ -21,7 +21,7 @@ from nvflare.apis.fl_constant import SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.tracking.log_writer import LogWriter
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
-from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant, SECURE_TRAINING_MODES
+from nvflare.app_opt.xgboost.histogram_based_v2.defs import SECURE_TRAINING_MODES, Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.runners.xgb_runner import AppRunner
 from nvflare.app_opt.xgboost.histogram_based_v2.tb import TensorBoardCallback
 from nvflare.app_opt.xgboost.metrics_cb import MetricsCallback
