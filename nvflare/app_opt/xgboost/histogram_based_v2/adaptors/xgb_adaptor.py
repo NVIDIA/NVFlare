@@ -138,6 +138,9 @@ class XGBClientAdaptor(AppAdaptor):
         self.stopped = False
         self.rank = None
         self.num_rounds = None
+        self.training_mode = None
+        self.xgb_params = None
+        self.xgb_options = None
         self.world_size = None
         self.per_msg_timeout = per_msg_timeout
         self.tx_timeout = tx_timeout
@@ -163,17 +166,16 @@ class XGBClientAdaptor(AppAdaptor):
         Returns: None
 
         """
-        ws = config.get(Constant.CONF_KEY_WORLD_SIZE)
+        ranks = config.get(Constant.CONF_KEY_CLIENT_RANKS)
+        ws = len(ranks)
         if not ws:
             raise RuntimeError("world_size is not configured")
-
-        check_positive_int(Constant.CONF_KEY_WORLD_SIZE, ws)
         self.world_size = ws
 
-        rank = config.get(Constant.CONF_KEY_RANK)
+        me = fl_ctx.get_identity_name()
+        rank = ranks.get(me)
         if rank is None:
             raise RuntimeError("rank is not configured")
-
         check_non_negative_int(Constant.CONF_KEY_RANK, rank)
         self.rank = rank
 
@@ -183,6 +185,16 @@ class XGBClientAdaptor(AppAdaptor):
 
         check_positive_int(Constant.CONF_KEY_NUM_ROUNDS, num_rounds)
         self.num_rounds = num_rounds
+
+        self.training_mode = config.get(Constant.CONF_KEY_TRAINING_MODE)
+        if self.training_mode is None:
+            raise RuntimeError("training_mode is not configured")
+
+        self.xgb_params = config.get(Constant.CONF_KEY_XGB_PARAMS)
+        if not self.xgb_params:
+            raise RuntimeError("xgb_params is not configured")
+
+        self.xgb_options = config.get(Constant.CONF_KEY_XGB_OPTIONS, {})
 
     def _send_request(self, op: str, req: Shareable) -> (bytes, Shareable):
         """Send XGB operation request to the FL server via FLARE message.
