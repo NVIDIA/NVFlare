@@ -57,6 +57,7 @@ def main():
     dist.init_process_group("nccl")
     rank = dist.get_rank()
     device = f"cuda:{rank}"
+    torch.cuda.set_device(rank)
     print(f"Start running basic DDP example on rank {rank}.")
 
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
@@ -96,13 +97,15 @@ def main():
             # All processes should see same parameters as they all start from same
             # random parameters and gradients are synchronized in backward passes.
             # Therefore, saving it in one process is sufficient.
+            print(f"Saving DDP model on rank {rank}.")
             torch.save(ddp_model.state_dict(), PATH)
 
         # Use a barrier() to make sure that process 1 loads the model after process
         # 0 saves it.
         dist.barrier()
         # configure map_location properly
-        map_location = {"cuda:%d" % 0: "cuda:%d" % rank}
+        map_location = f"cuda:{rank}"
+        print(f"Loading DDP model on rank {rank}.")
         ddp_model.load_state_dict(torch.load(PATH, map_location=map_location))
 
         # (optional) calculate total steps
