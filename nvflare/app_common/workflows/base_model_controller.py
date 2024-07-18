@@ -31,7 +31,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fl_component_wrapper import FLComponentWrapper
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
-from nvflare.fuel.utils.validation_utils import check_non_negative_int, check_str
+from nvflare.fuel.utils.validation_utils import check_non_negative_int, check_positive_int, check_str
 from nvflare.security.logging import secure_format_exception
 
 
@@ -77,8 +77,10 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         self.fl_ctx = fl_ctx
         self.info("Initializing BaseModelController workflow.")
 
+        self.engine = self.fl_ctx.get_engine()
+
         if self._persistor_id:
-            self.persistor = self._engine.get_component(self._persistor_id)
+            self.persistor = self.engine.get_component(self._persistor_id)
             if not isinstance(self.persistor, LearnablePersistor):
                 self.warning(
                     f"Model Persistor {self._persistor_id} must be a LearnablePersistor type object, "
@@ -86,7 +88,6 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
                 )
                 self.persistor = None
 
-        self.engine = self.fl_ctx.get_engine()
         FLComponentWrapper.initialize(self)
 
     def _build_shareable(self, data: FLModel = None) -> Shareable:
@@ -102,8 +103,9 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         task_name: str = AppConstants.TASK_TRAIN,
         data: FLModel = None,
         targets: Union[List[Client], List[str], None] = None,
+        min_responses: int = None,
         timeout: int = 0,
-        wait_time_after_min_received: int = 10,
+        wait_time_after_min_received: int = 0,
         blocking: bool = True,
         callback: Callable[[FLModel], None] = None,
     ) -> List:
@@ -113,9 +115,11 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             task_name (str, optional): name of the task. Defaults to "train".
             data (FLModel, optional): FLModel to be sent to clients. If no data is given, send empty FLModel.
             targets (List[str], optional): the list of target client names or None (all clients). Defaults to None.
+            min_responses (int, optional): the minimum number of responses expected. If None, must receive responses from
+              all clients that the task has been sent to. Defaults to None.
             timeout (int, optional): time to wait for clients to perform task. Defaults to 0, i.e., never time out.
             wait_time_after_min_received (int, optional): time to wait after
-                minimum number of clients responses has been received. Defaults to 10.
+                minimum number of clients responses has been received. Defaults to 0.
             blocking (bool, optional): whether to block to wait for task result. Defaults to True.
             callback (Callable[[FLModel], None], optional): callback when a result is received, only called when blocking=False. Defaults to None.
 
@@ -127,6 +131,9 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             raise TypeError("task_name must be a string but got {}".format(type(task_name)))
         if data and not isinstance(data, FLModel):
             raise TypeError("data must be a FLModel or None but got {}".format(type(data)))
+        if min_responses is None:
+            min_responses = 0  # this is internally used by controller's broadcast to represent all targets
+        check_non_negative_int("min_responses", min_responses)
         check_non_negative_int("timeout", timeout)
         check_non_negative_int("wait_time_after_min_received", wait_time_after_min_received)
         if not blocking and not isinstance(callback, Callable):
@@ -140,10 +147,8 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
 
         if targets:
             targets = [client.name if isinstance(client, Client) else client for client in targets]
-            min_responses = len(targets)
             self.info(f"Sending task {task_name} to {targets}")
         else:
-            min_responses = len(self.engine.get_clients())
             self.info(f"Sending task {task_name} to all clients")
 
         if blocking:
@@ -158,9 +163,10 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             )
 
             if targets is not None:
-                if len(self._results) != min_responses:
+                expected_responses = min_responses if min_responses != 0 else len(targets)
+                if len(self._results) != expected_responses:
                     self.warning(
-                        f"Number of results ({len(self._results)}) is different from number of targets ({min_responses})."
+                        f"Number of results ({len(self._results)}) is different from number of expected responses ({expected_responses})."
                     )
 
             # de-reference the internal results before returning
@@ -344,19 +350,22 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         else:
             self.error("persistor not configured, model will not be saved")
 
-    def sample_clients(self, num_clients):
+    def sample_clients(self, num_clients=None):
         clients = self.engine.get_clients()
 
-        if num_clients < len(clients):
-            random.shuffle(clients)
-            clients = clients[0:num_clients]
-            self.info(
-                f"num_clients ({num_clients}) is less than the number of available clients. Returning a random subset of {num_clients} clients."
-            )
-        elif num_clients > len(clients):
-            self.info(
-                f"num_clients ({num_clients}) is greater than the number of available clients. Returning all clients."
-            )
+        if num_clients:
+            check_positive_int("num_clients", num_clients)
+            if num_clients < len(clients):
+                random.shuffle(clients)
+                clients = clients[0:num_clients]
+                self.info(
+                    f"num_clients ({num_clients}) is less than the number of available clients. Returning a random subset of ({num_clients}) clients."
+                )
+            elif num_clients > len(clients):
+                self.error(
+                    f"num_clients ({num_clients}) is greater than the number of available clients. Returning all ({len(clients)}) available clients."
+                )
+
         self.info(f"Sampled clients: {[client.name for client in clients]}")
 
         return clients

@@ -77,6 +77,10 @@ class InvalidTarget(Exception):
     pass
 
 
+class NoReply(Exception):
+    pass
+
+
 class TargetType:
     ALL = "all"
     SERVER = "server"

@@ -1,0 +1,9 @@
+# Note: Hierarchical statistics feature is not a part of public release yet so
+# please get the latest NVFLARE source, built and install it to try out this
+# example.
+ipywidgets
+numpy
+pandas
+matplotlib
+jupyterlab
+jupyter

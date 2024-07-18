@@ -1,0 +1,10 @@
+{
+  "name": "hierarchical_stats",
+  "resource_spec": {},
+  "min_clients" : 7,
+  "deploy_map": {
+    "app": [
+      "@ALL"
+    ]
+  }
+}

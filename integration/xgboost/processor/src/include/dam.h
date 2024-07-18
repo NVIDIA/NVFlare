@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 #pragma once
-#include <string>
 #include <vector>
-#include <map>
+#include <cstdint>  // for int64_t
+#include <cstddef>  // for size_t
 
 const char kSignature[] = "NVDADAM1";  // DAM (Direct Accessible Marshalling) V1
 const int kPrefixLen = 24;
@@ -57,23 +57,23 @@ class DamEncoder {
 
     void AddFloatArray(const std::vector<double> &value);
 
-    std::uint8_t * Finish(size_t &size);
+    std::vector<std::uint8_t> Finish(size_t &size);
 
- private:
+  private:
     std::size_t calculate_size();
 };
 
 class DamDecoder {
  private:
-    std::uint8_t *buffer = nullptr;
+    std::uint8_t const *buffer = nullptr;
     std::size_t buf_size = 0;
-    std::uint8_t *pos = nullptr;
+    std::uint8_t const *pos = nullptr;
     std::size_t remaining = 0;
     int64_t data_set_id = 0;
     int64_t len = 0;
 
- public:
-    explicit DamDecoder(std::uint8_t *buffer, std::size_t size);
+  public:
+    explicit DamDecoder(std::uint8_t const *buffer, std::size_t size);
 
     size_t Size() {
         return len;

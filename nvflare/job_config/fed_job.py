@@ -93,6 +93,15 @@ class FedApp:
         self._used_ids.append(id)
         return id
 
+    def add_external_scripts(self, external_scripts: List):
+        """Register external scripts to include them in custom directory.
+
+        Args:
+            external_scripts: List of external scripts that need to be deployed to the client/server.
+        """
+        for _script in external_scripts:
+            self.app.add_ext_script(_script)
+
 
 class FedJob:
     def __init__(self, name="fed_job", min_clients=1, mandatory_clients=None, key_metric="accuracy") -> None:
@@ -161,6 +170,13 @@ class FedJob:
                 else:
                     print(f"{target} already set to use GPU {self._gpus[target]}. Ignoring gpu={gpu}.")
             self._deploy_map[target].add_executor(obj, tasks=tasks)
+        elif isinstance(obj, str):  # treat the str type object as external script
+            if target not in self._deploy_map:
+                raise ValueError(
+                    f"{target} doesn't have a `Controller` or `Executor`. Deploy one first before adding external script!"
+                )
+
+            self._deploy_map[target].add_external_scripts([obj])
         else:  # handle objects that are not Controller or Executor type
             if target not in self._deploy_map:
                 raise ValueError(
@@ -214,8 +230,9 @@ class FedJob:
             parameters = get_component_init_parameters(base_component)
             attrs = base_component.__dict__
             for param in parameters:
-                if param in attrs:
-                    base_id = attrs[param]
+                attr_key = param if param in attrs.keys() else "_" + param
+                if attr_key in attrs.keys():
+                    base_id = attrs[attr_key]
                     if isinstance(base_id, str):  # could be id
                         if base_id in self._components:
                             self._deploy_map[target].add_component(self._components[base_id], base_id)
@@ -294,15 +311,6 @@ class ExecutorApp(FedApp):
 
         component = ConvertToFedEvent(events_to_convert=["analytix_log_stats"], fed_event_prefix="fed.")
         self.app.add_component("event_to_fed", component)
-
-    def add_external_scripts(self, external_scripts: List):
-        """Register external scripts to the client app to include them in custom directory.
-
-        Args:
-            external_scripts: List of external scripts that need to be deployed to the client. Defaults to None.
-        """
-        for _script in external_scripts:
-            self.app.add_ext_script(_script)
 
 
 class ControllerApp(FedApp):
