@@ -159,10 +159,10 @@ def main():
     model = ModerateTFNet()
     model.build(input_shape=(None, 32, 32, 3))
 
-    #callbacks = [tf.keras.callbacks.TensorBoard(log_dir="./logs_keras", write_graph=False)]    
+    callbacks = [tf.keras.callbacks.TensorBoard(log_dir="./logs_keras", write_graph=False)]    
  
     loss = losses.SparseCategoricalCrossentropy(from_logits=True)
-    optimizer=tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.9, clipnorm=1.5)
+    optimizer=tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.9, clipnorm=1.55)
 
 
     model.compile(
@@ -226,7 +226,7 @@ def main():
             x=train_ds,
             epochs=end_epoch,
             validation_data=test_ds,
-            callbacks=[ScaffoldCallback(scaffold_helper)],
+            callbacks=[callbacks, ScaffoldCallback(scaffold_helper)],
             initial_epoch=start_epoch,
             validation_freq=1 #args.epochs
         )
