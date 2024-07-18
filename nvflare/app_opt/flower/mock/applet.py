@@ -28,7 +28,14 @@ class MockClientApplet(CLIApplet):
         num_rounds = ctx.get(Constant.APP_CTX_NUM_ROUNDS)
         client_name = ctx.get(Constant.APP_CTX_CLIENT_NAME)
         log_file = get_applet_log_file_path("flower_client_log.txt", ctx)
-        return f"python -m {main_module} -a {addr} -n {num_rounds} -c {client_name}", None, None, log_file
+        return (
+            f"python -m {main_module} -a {addr} -n {num_rounds} -c {client_name}",
+            None,
+            None,
+            log_file,
+            True,
+            "FLWR-CA",
+        )
 
 
 class MockServerApplet(CLIApplet):
@@ -40,4 +47,4 @@ class MockServerApplet(CLIApplet):
         addr = ctx.get(Constant.APP_CTX_SERVER_ADDR)
         num_rounds = ctx.get(Constant.APP_CTX_NUM_ROUNDS)
         log_file = get_applet_log_file_path("flower_server_log.txt", ctx)
-        return f"python -m {main_module} -a {addr} -n {num_rounds}", None, None, log_file
+        return f"python -m {main_module} -a {addr} -n {num_rounds}", None, None, log_file, True, "FLWR-SA"

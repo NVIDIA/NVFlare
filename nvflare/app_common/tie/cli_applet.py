@@ -25,12 +25,13 @@ from .process_mgr import start_process
 
 class CLIApplet(Applet, ABC):
     def __init__(self):
+        """Constructor of CLIApplet, which runs the applet as a subprocess started with CLI command."""
         Applet.__init__(self)
         self._proc_mgr = None
         self._start_error = False
 
     @abstractmethod
-    def get_command(self, ctx: dict) -> (str, str, dict, Any):
+    def get_command(self, ctx: dict) -> (str, str, dict, Any, bool, str):
         """Subclass must implement this method to return the CLI command to be executed.
 
         Args:
@@ -42,12 +43,22 @@ class CLIApplet(Applet, ABC):
             env - additional env vars to be added to system's env for the command execution
             log_file: the file for log messages. It can be a file object, full path to the file, or None.
                 If none, no log file
+            write to stdout - bool
+            log message prefix - str
 
         """
         pass
 
     def start(self, ctx: dict):
-        cli_cmd, cli_cwd, cli_env, log_file = self.get_command(ctx)
+        """Start the execution of the applet.
+
+        Args:
+            ctx:
+
+        Returns:
+
+        """
+        cli_cmd, cli_cwd, cli_env, log_file, log_stdout, log_prefix = self.get_command(ctx)
         if not cli_cmd:
             raise RuntimeError("failed to get cli command from app context")
 
@@ -63,12 +74,23 @@ class CLIApplet(Applet, ABC):
                 cwd=cli_cwd,
                 env=env,
                 log_file=log_file,
+                log_prefix=log_prefix,
+                log_stdout=log_stdout,
             )
         except Exception as ex:
             self.logger.error(f"exception starting applet '{cli_cmd}': {secure_format_exception(ex)}")
             self._start_error = True
 
     def stop(self, timeout=0.0):
+        """Stop the applet
+
+        Args:
+            timeout: amount of time to wait for the applet to stop by itself. If the applet does not stop on
+                its own within this time, we'll forcefully stop it by kill.
+
+        Returns: None
+
+        """
         mgr = self._proc_mgr
         self._proc_mgr = None
 

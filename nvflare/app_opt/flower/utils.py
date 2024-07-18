@@ -23,6 +23,17 @@ from .defs import Constant
 
 
 def get_applet_log_file_path(base_name: str, run_ctx: dict):
+    """Determine the full path of the log file to be used by an applet process.
+
+    Args:
+        base_name: the base name of the log file
+        run_ctx: the run context of the applet
+
+    Returns: full path of the log file for the applet.
+
+    The log file will be placed in the job's run dir.
+
+    """
     fl_ctx = run_ctx.get(Constant.APP_CTX_FL_CONTEXT)
     if not isinstance(fl_ctx, FLContext):
         raise RuntimeError(f"{Constant.APP_CTX_FL_CONTEXT} should be FLContext but got {type(fl_ctx)}")
@@ -36,6 +47,19 @@ def get_applet_log_file_path(base_name: str, run_ctx: dict):
 
 
 def create_channel(server_addr, grpc_options, ready_timeout: float, test_only: bool):
+    """Create gRPC channel and waits for the server to be ready
+
+    Args:
+        server_addr: the server address to connect to
+        grpc_options: gRPC client connection options
+        ready_timeout: how long to wait for the server to be ready
+        test_only: whether for testing the server readiness only
+
+    Returns: the gRPC channel created. Bit if test_only, the channel is closed and returns None.
+
+    If the server does not become ready within ready_timeout, the RuntimeError exception will raise.
+
+    """
     channel = grpc.insecure_channel(server_addr, options=grpc_options)
 
     # wait for channel ready

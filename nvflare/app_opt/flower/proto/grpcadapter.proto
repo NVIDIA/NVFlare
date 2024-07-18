@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package flwr.proto;
+package flower.proto;
 
 service GrpcAdapter {
   rpc SendReceive(MessageContainer) returns (MessageContainer) {}

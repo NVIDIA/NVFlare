@@ -15,10 +15,17 @@
 import argparse
 import logging
 import os
+import sys
 import time
 
 import nvflare.app_opt.flower.proto.grpcadapter_pb2 as pb2
 from nvflare.app_opt.flower.grpc_client import GrpcClient
+from nvflare.fuel.utils.time_utils import time_to_string
+
+
+def log(msg: str):
+    print(f"{time_to_string(time.time())}: {msg}")
+    sys.stdout.flush()
 
 
 def main():
@@ -40,7 +47,7 @@ def main():
     if args.num_rounds <= 0:
         raise RuntimeError("bad num rounds '--num_rounds/-n' in command: must be > 0")
 
-    print(f"starting client {args.client_name} to connect to server at {args.addr}")
+    log(f"starting client {args.client_name} to connect to server at {args.addr}")
     client = GrpcClient(server_addr=args.addr)
     client.start()
 
@@ -48,7 +55,7 @@ def main():
     total_reqs = 0
     next_round = 0
     while True:
-        print(f"Test round {next_round}")
+        log(f"Test round {next_round}")
         data = os.urandom(10)
 
         headers = {
@@ -67,25 +74,25 @@ def main():
         total_reqs += 1
         total_time += time.time() - start
         if not isinstance(result, pb2.MessageContainer):
-            print(f"expect reply to be pb2.MessageContainer but got {type(result)}")
+            log(f"expect reply to be pb2.MessageContainer but got {type(result)}")
         elif result.grpc_message_name != req.grpc_message_name:
-            print("ERROR: msg_name does not match request")
+            log("ERROR: msg_name does not match request")
         elif result.grpc_message_content != data:
-            print("ERROR: result does not match request")
+            log("ERROR: result does not match request")
         else:
-            print("OK: result matches request!")
+            log("OK: result matches request!")
 
         result_headers = result.metadata
         should_exit = result_headers.get("should-exit")
         if should_exit:
-            print("got should-exit!")
+            log("got should-exit!")
             break
 
         next_round = result_headers.get("round")
         time.sleep(1.0)
 
     time_per_req = total_time / total_reqs
-    print(f"DONE: {total_reqs=} {total_time=} {time_per_req=}")
+    log(f"DONE: {total_reqs=} {total_time=} {time_per_req=}")
 
 
 if __name__ == "__main__":

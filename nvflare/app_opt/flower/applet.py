@@ -31,10 +31,25 @@ class FlowerClientApplet(CLIApplet):
         self,
         client_app: str,
     ):
+        """Constructor of FlowerClientApplet, which extends CLIApplet.
+
+        Args:
+            client_app: the client app specification of the Flower app
+        """
         CLIApplet.__init__(self)
         self.client_app = client_app
 
     def get_command(self, ctx: dict) -> (str, str, dict, Any):
+        """Implementation of the get_command method required by the super class CLIApplet.
+        It returns the CLI command for starting Flower's client app, as well as the full path of the log file
+        for the client app.
+
+        Args:
+            ctx: the applet run context
+
+        Returns: CLI command for starting client app and name of log file.
+
+        """
         addr = ctx.get(Constant.APP_CTX_SERVER_ADDR)
         fl_ctx = ctx.get(Constant.APP_CTX_FL_CONTEXT)
         if not isinstance(fl_ctx, FLContext):
@@ -51,11 +66,18 @@ class FlowerClientApplet(CLIApplet):
         cmd = f"flower-client-app --insecure --grpc-adapter --superlink {addr} --dir {custom_dir} {self.client_app}"
         self.logger.info(f"starting flower client app: {cmd}")
         log_file = get_applet_log_file_path("client_app_log.txt", ctx)
-        return cmd, None, None, log_file
+        return cmd, None, None, log_file, True, "FLWR-CA"
 
 
 class FlowerServerApplet(Applet):
     def __init__(self, server_app: str, database: str, superlink_ready_timeout: float):
+        """Constructor of FlowerServerApplet.
+
+        Args:
+            server_app: Flower's server app specification
+            database: database spec to be used by the server app
+            superlink_ready_timeout: how long to wait for the superlink process to become ready
+        """
         Applet.__init__(self)
         self._app_process_mgr = None
         self._superlink_process_mgr = None
@@ -64,16 +86,32 @@ class FlowerServerApplet(Applet):
         self.superlink_ready_timeout = superlink_ready_timeout
         self._start_error = False
 
-    def _start_process(self, name: str, cmd: str, ctx: dict) -> ProcessManager:
+    def _start_process(self, name: str, cmd: str, log_prefix: str, ctx: dict) -> ProcessManager:
         self.logger.info(f"starting {name}: {cmd}")
         log_file = get_applet_log_file_path(f"{name}_log.txt", ctx)
         try:
-            return start_process(command=cmd, log_file=log_file)
+            return start_process(command=cmd, log_file=log_file, log_prefix=log_prefix)
         except Exception as ex:
             self.logger.error(f"exception starting applet: {secure_format_exception(ex)}")
             self._start_error = True
 
     def start(self, ctx: dict):
+        """Start the applet.
+
+        Flower requires two processes for server application:
+            superlink: this process is responsible for client communication
+            server_app: this process performs server side of training.
+
+        We start the superlink first, and wait for it to become ready, then start the server app.
+        Each process will have its own log file in the job's run dir. The superlink's log file is named
+        "superlink_log.txt". The server app's log file is named "server_app_log.txt".
+
+        Args:
+            ctx: the run context of the applet.
+
+        Returns:
+
+        """
         # try to start superlink first
         driver_port = get_open_tcp_port(resources={})
         if not driver_port:
@@ -104,7 +142,9 @@ class FlowerServerApplet(Applet):
             f"--driver-api-address {driver_addr}"
         )
 
-        self._superlink_process_mgr = self._start_process("superlink", superlink_cmd, ctx)
+        self._superlink_process_mgr = self._start_process(
+            name="superlink", cmd=superlink_cmd, log_prefix="FLWR-SL", ctx=ctx
+        )
         if not self._superlink_process_mgr:
             raise RuntimeError("cannot start superlink process")
 
@@ -121,7 +161,7 @@ class FlowerServerApplet(Applet):
 
         # start the server app
         app_cmd = f"flower-server-app --insecure --superlink {driver_addr} --dir {custom_dir} {self.server_app}"
-        self._app_process_mgr = self._start_process("server_app", app_cmd, ctx)
+        self._app_process_mgr = self._start_process(name="server_app", cmd=app_cmd, log_prefix="FLWR-SA", ctx=ctx)
         if not self._app_process_mgr:
             # stop the superlink
             self._superlink_process_mgr.stop()
@@ -137,6 +177,16 @@ class FlowerServerApplet(Applet):
                 pass
 
     def stop(self, timeout=0.0):
+        """Stop the server applet's superlink and server app processes.
+
+        Args:
+            timeout: how long to wait before forcefully stopping (kill) the process.
+
+        Note: we always stop the process immediately - do not wait for the process to stop itself.
+
+        Returns:
+
+        """
         self._stop_process(self._app_process_mgr)
         self._app_process_mgr = None
 
@@ -155,6 +205,13 @@ class FlowerServerApplet(Applet):
             return True, 0
 
     def is_stopped(self) -> (bool, int):
+        """Check whether the server applet is already stopped
+
+        Returns: a tuple of: whether the applet is stopped, exit code if stopped.
+
+        Note: if either superlink or server app is stopped, we treat the applet as stopped.
+
+        """
         if self._start_error:
             return True, TieConstant.EXIT_CODE_CANT_START
 
