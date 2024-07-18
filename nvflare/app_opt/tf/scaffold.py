@@ -3,6 +3,13 @@ import numpy as np
 import copy
 from .utils import flat_layer_weights_dict
 
+gpu_devices = tf.config.experimental.list_physical_devices("GPU")
+for device in gpu_devices:
+    tf.config.experimental.set_memory_growth(device, True)
+
+tf.debugging.enable_check_numerics()
+
+
 
 def get_lr_values(optimizer):
     """
@@ -84,38 +91,25 @@ class TFScaffoldHelper(object):
         global_model_para = model_global.variables
         net_para = model.variables
         scaler = 1 / (self.cnt * curr_lr)
-        c_new_para_c_global = tf.nest.map_structure(
-            lambda a, b: a - b, c_new_para, c_global_para
-        )
-
-        global_model_para_net_para = tf.nest.map_structure(
-            lambda a, b: tf.multiply(scaler, a - b),
-            global_model_para,
-            net_para,
-        )
 
         c_new_para = tf.nest.map_structure(
-            lambda a, b: a + b,
-            c_new_para_c_global,
-            global_model_para_net_para,
+            lambda a, b, c, d:(a - b) + tf.multiply(scaler, c - d),
+            c_new_para,
+            c_global_para,
+            global_model_para,
+            net_para
         )
-
-        c_delta_para_value = tf.nest.map_structure(
-            lambda a, b: a - b, c_new_para, c_local_para
-        )
-
 
         c_delta_para_value_new = tf.nest.map_structure(
-        lambda a, b, c, d, e: (a - b) + tf.multiply(scaler, c - d) - e,
-        c_new_para, c_global_para, global_model_para, net_para, c_local_para
+        lambda a, b: (a - b),
+        c_new_para, c_local_para
         )
 
         
         self.c_delta_para = {
-            var.name: c_delta_para_value[i].numpy()
+            var.name: c_delta_para_value_new[i].numpy()
             for i, var in enumerate(net_para)
         }
-        
         
         self.c_local.set_weights(c_new_para)
 
@@ -134,9 +128,6 @@ class TFScaffoldHelper(object):
             self.global_keys[i]: value
             for i, (key, value) in enumerate(self.c_delta_para.items())
         }
-        print(len(c_delta_para_new))
-        print(len(self.c_delta_para))
-        #print(c_delta_para_new)
 
         self.c_delta_para = c_delta_para_new
 
