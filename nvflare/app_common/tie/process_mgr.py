@@ -88,6 +88,7 @@ class ProcessManager:
                 break
 
             self.log_file.write(line)
+            self.log_file.flush()
             if self.log_prefix:
                 line = f"[{self.log_prefix}] {line}"
             sys.stdout.write(line)
@@ -122,6 +123,7 @@ class ProcessManager:
 
         # close the log file if any
         if self.log_file:
+            print("closed subprocess log file!")
             self.log_file.close()
             self.log_file = None
         return rc
