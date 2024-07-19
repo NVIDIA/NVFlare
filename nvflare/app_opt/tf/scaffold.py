@@ -27,7 +27,7 @@ class TFScaffoldHelper(object):
         self.c_local = None
         self.c_delta_para = None
         self.global_keys = None
-        self.clip_norm = 1.0
+       # self.clip_norm = 1.0
 
     def init(self, model):
         self.c_global = tf.keras.models.clone_model(model)
@@ -101,11 +101,11 @@ class TFScaffoldHelper(object):
             net_para
         )
         
-        if tf.less(tf.constant(0, tf.float32), self.clip_norm):
-            flatten_weights_delta = tf.nest.flatten(c_new_para)
-            clipped_flatten_weights_delta, _ = tf.clip_by_global_norm(
-                  flatten_weights_delta, self.clip_norm)
-            c_new_para = tf.nest.pack_sequence_as(c_new_para,
+        #if tf.less(tf.constant(0, tf.float32), self.clip_norm):
+        #    flatten_weights_delta = tf.nest.flatten(c_new_para)
+         #   clipped_flatten_weights_delta, _ = tf.clip_by_global_norm(
+         #         flatten_weights_delta, self.clip_norm)
+          #  c_new_para = tf.nest.pack_sequence_as(c_new_para,
                                                        clipped_flatten_weights_delta)
 
         c_delta_para_value_new = tf.nest.map_structure(
