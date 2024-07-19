@@ -12,14 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.apis.analytix import AnalyticsData, AnalyticsDataType
+from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE, AnalyticsData, AnalyticsDataType, LogWriterName
 from nvflare.apis.dxo import DXO
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-
-# TODO: api should not depend on app_common
-from nvflare.app_common.tracking.tracker_types import ANALYTIC_EVENT_TYPE, LogWriterName
 
 
 def send_analytic_dxo(
