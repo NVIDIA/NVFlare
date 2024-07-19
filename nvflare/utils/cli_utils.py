@@ -40,7 +40,7 @@ def get_hidden_nvflare_config_path(hidden_nvflare_dir: str) -> str:
     return str(hidden_nvflare_config_file)
 
 
-def create_hidden_nvflare_dir():
+def get_or_create_hidden_nvflare_dir():
     hidden_nvflare_dir = get_hidden_nvflare_dir()
     if not hidden_nvflare_dir.exists():
         try:
@@ -70,7 +70,7 @@ def find_startup_kit_location() -> str:
 
 
 def load_hidden_config() -> ConfigTree:
-    hidden_dir = create_hidden_nvflare_dir()
+    hidden_dir = get_or_create_hidden_nvflare_dir()
     hidden_nvflare_config_file = get_hidden_nvflare_config_path(str(hidden_dir))
     nvflare_config = load_config(hidden_nvflare_config_file)
     return nvflare_config
@@ -139,6 +139,7 @@ def create_job_template_config(nvflare_config: ConfigTree, job_templates_dir: Op
         return nvflare_config
 
     job_templates_dir = os.path.abspath(job_templates_dir)
+    check_dir(job_templates_dir)
     conf_str = f"""
         job_template {{
             path = {job_templates_dir}
@@ -243,7 +244,7 @@ def save_configs(app_configs: Dict[str, Tuple], keep_origin_format: bool = True)
         save_config(dst_config, dst_path, keep_origin_format)
 
 
-def save_config(dst_config, dst_path, keep_origin_format: bool = True):
+def save_config(dst_config: ConfigTree, dst_path, keep_origin_format: bool = True):
     if dst_path is None or dst_path.rindex(".") == -1:
         raise ValueError(f"configuration file path '{dst_path}' can't be None or has no extension")
 
@@ -274,11 +275,18 @@ def save_config(dst_config, dst_path, keep_origin_format: bool = True):
             os.remove(dst_path)
 
 
-def get_hidden_config():
-    hidden_nvflare_config_file = get_hidden_nvflare_config_path(str(create_hidden_nvflare_dir()))
+def get_hidden_config() -> (str, ConfigTree):
+    hidden_nvflare_config_file = get_hidden_nvflare_config_path(str(get_or_create_hidden_nvflare_dir()))
     conf = load_hidden_config()
     nvflare_config = CF.parse_string("{}") if not conf else conf
     return hidden_nvflare_config_file, nvflare_config
+
+
+def print_hidden_config(dst_path: str, dst_config: ConfigTree):
+    original_ext = os.path.basename(dst_path).split(".")[1]
+    fmt = ConfigFormat.config_ext_formats().get(f".{original_ext}", None)
+    config_str = hocon_to_string(fmt, dst_config)
+    print(config_str)
 
 
 def find_in_list(arr: List, item) -> bool:
