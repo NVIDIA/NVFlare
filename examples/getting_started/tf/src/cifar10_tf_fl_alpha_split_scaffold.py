@@ -125,6 +125,13 @@ def main():
         type=str,
         required=True
     )
+    parser.add_argument(
+    "--clip_norm",
+    type=float,
+    default=1.55,  
+    required=False
+)
+
     args = parser.parse_args()
 
     # (2) initializes NVFlare client API
@@ -162,7 +169,7 @@ def main():
     callbacks = [tf.keras.callbacks.TensorBoard(log_dir="./logs_keras", write_graph=False)]    
  
     loss = losses.SparseCategoricalCrossentropy(from_logits=True)
-    optimizer=tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.9, clipnorm=1.55)
+    optimizer=tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.9, clipnorm=args.clip_norm)
 
 
     model.compile(
