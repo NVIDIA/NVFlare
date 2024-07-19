@@ -72,12 +72,15 @@ class XGBController(Controller):
         """
         Constructor
 
+        For the meaning of XGBoost parameters, please refer to the documentation for train API,
+        https://xgboost.readthedocs.io/en/stable/python/python_api.html#xgboost.train
+
         Args:
             adaptor_component_id - the component ID of server target adaptor
             num_rounds - number of rounds
             training_mode - Split mode (horizontal, vertical, horizontal_secure, vertical_secure)
-            xgb_params -The parameter passed to XGBoost
-            xgb_options - Other options for XGBoost
+            xgb_params - The params argument for train method
+            xgb_options - All other arguments for train method are passed through this dictionary
             configure_task_name - name of the config task
             configure_task_timeout - time to wait for clients’ responses to the config task before timeout.
             start_task_name - name of the start task

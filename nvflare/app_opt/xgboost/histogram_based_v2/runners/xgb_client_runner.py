@@ -76,8 +76,8 @@ class XGBClientRunner(AppRunner, FLComponent):
 
         Args:
             num_rounds: Number of rounds
-            xgb_params (XGBoostParams): xgboost parameters.
-            xgb_options: Other options needed by xgboost
+            xgb_params: The Boost parameters for XGBoost train method
+            xgb_options: Other arguments needed by XGBoost
             train_data: Training data
             val_data: Validation data
 

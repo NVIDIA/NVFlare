@@ -99,15 +99,6 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         if self.rank is None:
             raise RuntimeError("cannot start - my rank is not set")
 
-        if not self.num_rounds:
-            raise RuntimeError("cannot start - num_rounds is not set")
-
-        if not self.training_mode:
-            raise RuntimeError("cannot start - training_mode is not set")
-
-        if not self.xgb_params:
-            raise RuntimeError("cannot start - xgb_params is not set")
-
         # dynamically determine address on localhost
         port = get_open_tcp_port(resources={})
         if not port:

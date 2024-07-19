@@ -180,8 +180,8 @@ class XGBClientAdaptor(AppAdaptor):
         self.rank = rank
 
         num_rounds = config.get(Constant.CONF_KEY_NUM_ROUNDS)
-        if num_rounds is None:
-            raise RuntimeError("num_rounds is not configured")
+        if num_rounds is None or num_rounds <= 0:
+            raise RuntimeError("num_rounds is not configured or invalid value")
 
         check_positive_int(Constant.CONF_KEY_NUM_ROUNDS, num_rounds)
         self.num_rounds = num_rounds
