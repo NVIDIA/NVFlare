@@ -91,7 +91,7 @@ class TFScaffoldHelper(object):
         if tf.less(tf.constant(0, tf.float32), self.clip_norm):
             flatten_weights_delta = tf.nest.flatten(c_new_para)
             clipped_flatten_weights_delta, _ = tf.clip_by_global_norm(
-                  flatten_weights_delta, clip_norm)
+                  flatten_weights_delta, self.clip_norm)
             c_new_para = tf.nest.pack_sequence_as(c_new_para,
                                                        clipped_flatten_weights_delta)
         c_delta_para_value = [tf.subtract(a, b) for a, b in zip(c_new_para, c_local_para)]
