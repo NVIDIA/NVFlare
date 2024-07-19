@@ -2,7 +2,6 @@ import tensorflow as tf
 import numpy as np
 import copy
 from .utils import flat_layer_weights_dict
-tf.compat.v1.enable_eager_execution()
 
 
 def get_lr_values(optimizer):
@@ -43,7 +42,7 @@ class TFScaffoldHelper(object):
         c_local_para = self.c_local.variables
         return c_global_para, c_local_para
         
-    @tf.function
+ 
     def model_update(self, model, curr_lr, c_global_para, c_local_para):
         net_para = model.variables  # Access only trainable variables
         trainable_var_names = [var.name for var in model.trainable_variables]
