@@ -43,6 +43,8 @@ tb, tb_ok = optional_import(module="tensorboard")
 if torch_ok and tb_ok:
     from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 
+SPECIAL_CHARACTERS = '"!@#$%^&*()+?=,<>/'
+
 
 class FilterType:
     TASK_RESULT = "_TASK_RESULT_FILTER_TYPE_"
@@ -90,6 +92,15 @@ class FedApp:
         id = self._generate_id(id)
         self._used_ids.append(id)
         return id
+
+    def add_external_scripts(self, external_scripts: List):
+        """Register external scripts to include them in custom directory.
+
+        Args:
+            external_scripts: List of external scripts that need to be deployed to the client/server.
+        """
+        for _script in external_scripts:
+            self.app.add_ext_script(_script)
 
 
 class FedJob:
@@ -139,6 +150,8 @@ class FedJob:
         Returns:
 
         """
+        self._validate_target(target)
+
         if isinstance(obj, Controller):
             if target not in self._deploy_map:
                 self._deploy_map[target] = ControllerApp(key_metric=self.key_metric)
@@ -157,6 +170,13 @@ class FedJob:
                 else:
                     print(f"{target} already set to use GPU {self._gpus[target]}. Ignoring gpu={gpu}.")
             self._deploy_map[target].add_executor(obj, tasks=tasks)
+        elif isinstance(obj, str):  # treat the str type object as external script
+            if target not in self._deploy_map:
+                raise ValueError(
+                    f"{target} doesn't have a `Controller` or `Executor`. Deploy one first before adding external script!"
+                )
+
+            self._deploy_map[target].add_external_scripts([obj])
         else:  # handle objects that are not Controller or Executor type
             if target not in self._deploy_map:
                 raise ValueError(
@@ -210,8 +230,9 @@ class FedJob:
             parameters = get_component_init_parameters(base_component)
             attrs = base_component.__dict__
             for param in parameters:
-                if param in attrs:
-                    base_id = attrs[param]
+                attr_key = param if param in attrs.keys() else "_" + param
+                if attr_key in attrs.keys():
+                    base_id = attrs[attr_key]
                     if isinstance(base_id, str):  # could be id
                         if base_id in self._components:
                             self._deploy_map[target].add_component(self._components[base_id], base_id)
@@ -265,6 +286,14 @@ class FedJob:
             gpu=",".join([self._gpus[client] for client in self._gpus.keys()]),
         )
 
+    def _validate_target(self, target):
+        if not target:
+            raise ValueError("Must provide a valid target name")
+
+        if any(c in SPECIAL_CHARACTERS for c in target):
+            raise ValueError(f"target {target} name contains invalid character")
+        pass
+
 
 class ExecutorApp(FedApp):
     def __init__(self):
@@ -282,15 +311,6 @@ class ExecutorApp(FedApp):
 
         component = ConvertToFedEvent(events_to_convert=["analytix_log_stats"], fed_event_prefix="fed.")
         self.app.add_component("event_to_fed", component)
-
-    def add_external_scripts(self, external_scripts: List):
-        """Register external scripts to the client app to include them in custom directory.
-
-        Args:
-            external_scripts: List of external scripts that need to be deployed to the client. Defaults to None.
-        """
-        for _script in external_scripts:
-            self.app.add_ext_script(_script)
 
 
 class ControllerApp(FedApp):

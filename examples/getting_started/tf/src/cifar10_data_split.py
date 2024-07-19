@@ -37,10 +37,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import os
-import numpy as np
 import json
+import os
 
+import numpy as np
 from tensorflow.keras import datasets
 
 
@@ -92,7 +92,7 @@ def _get_site_class_summary(train_label, site_idx):
 def _partition_data(num_sites, alpha):
     # only training label is needed for doing split
     (train_images, train_labels), (test_images, test_labels) = datasets.cifar10.load_data()
-    
+
     min_size = 0
     K = 10
     N = train_labels.shape[0]
@@ -107,9 +107,7 @@ def _partition_data(num_sites, alpha):
             np.random.shuffle(idx_k)
             proportions = np.random.dirichlet(np.repeat(alpha, num_sites))
             # Balance
-            proportions = np.array(
-                [p * (len(idx_j) < N / num_sites) for p, idx_j in zip(proportions, idx_batch)]
-            )
+            proportions = np.array([p * (len(idx_j) < N / num_sites) for p, idx_j in zip(proportions, idx_batch)])
             proportions = proportions / proportions.sum()
             proportions = (np.cumsum(proportions) * len(idx_k)).astype(int)[:-1]
             idx_batch = [idx_j + idx.tolist() for idx_j, idx in zip(idx_batch, np.split(idx_k, proportions))]

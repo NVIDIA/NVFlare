@@ -83,13 +83,13 @@ python3 -m pip install nvflare[dev]
 To build the docs, please run. 
 
 ```bash
-./build_docs.sh --html
+./build_doc.sh --html
 ```
 
 Once built, you can view the docs in `docs/_build folder`. To clean the docs, please run
 
 ```bash
-./build_docs.sh --clean
+./build_doc.sh --clean
 ```
 
 #### Signing your work

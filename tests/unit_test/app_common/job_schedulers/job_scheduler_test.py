@@ -100,6 +100,9 @@ class MockServerEngine(ServerEngineSpec):
     def get_workspace(self):
         pass
 
+    def add_component(self, component_id: str, component):
+        pass
+
     def get_component(self, component_id: str) -> object:
         pass
 
@@ -107,7 +110,18 @@ class MockServerEngine(ServerEngineSpec):
         pass
 
     def send_aux_request(
-        self, targets: [], topic: str, request, timeout: float, fl_ctx: FLContext, optional=False
+        self, targets: [], topic: str, request, timeout: float, fl_ctx: FLContext, optional=False, secure=False
+    ) -> dict:
+        pass
+
+    def multicast_aux_requests(
+        self,
+        topic: str,
+        target_requests,
+        timeout: float,
+        fl_ctx: FLContext,
+        optional: bool = False,
+        secure: bool = False,
     ) -> dict:
         pass
 

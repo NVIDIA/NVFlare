@@ -149,6 +149,9 @@ class ClientRunManager(ClientEngineExecutorSpec):
     def dispatch(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         return self.aux_runner.dispatch(topic=topic, request=request, fl_ctx=fl_ctx)
 
+    def add_component(self, component_id: str, component):
+        self.client.runner_config.add_component(component_id, component)
+
     def get_component(self, component_id: str) -> object:
         return self.components.get(component_id)
 
@@ -225,6 +228,19 @@ class ClientRunManager(ClientEngineExecutorSpec):
             )
         else:
             return {}
+
+    def multicast_aux_requests(
+        self,
+        topic: str,
+        target_requests: Dict[str, Shareable],
+        timeout: float,
+        fl_ctx: FLContext,
+        optional: bool = False,
+        secure: bool = False,
+    ) -> dict:
+        return self.aux_runner.multicast_aux_requests(
+            topic, target_requests, timeout, fl_ctx, optional=optional, secure=secure
+        )
 
     def get_all_clients_from_server(self, fl_ctx, retry=0):
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)

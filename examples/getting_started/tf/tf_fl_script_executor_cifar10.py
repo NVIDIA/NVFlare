@@ -14,15 +14,14 @@
 
 
 import argparse
-
 import multiprocessing
 
-from src.tf_net import ModerateTFNet
+import tensorflow as tf
 from src.cifar10_data_split import cifar10_split
+from src.tf_net import ModerateTFNet
 
 from nvflare import FedJob, ScriptExecutor
 
-import tensorflow as tf
 gpu_devices = tf.config.experimental.list_physical_devices("GPU")
 for device in gpu_devices:
     tf.config.experimental.set_memory_growth(device, True)
@@ -86,21 +85,25 @@ if __name__ == "__main__":
         FEDAVG_ALGO,
         FEDOPT_ALGO,
         FEDPROX_ALGO,
-        SCAFFOLD_ALGO
+        SCAFFOLD_ALGO,
     )
 
-    if not args.algo in supported_algos:
+    if args.algo not in supported_algos:
         raise ValueError(f"--algo should be one of: {supported_algos}, got: {args.algo}")
 
     train_script = "src/cifar10_tf_fl_alpha_split.py"
-    train_split_root = f"/tmp/cifar10_splits/clients{args.n_clients}_alpha{args.alpha}" # avoid overwriting results
+    train_split_root = f"/tmp/cifar10_splits/clients{args.n_clients}_alpha{args.alpha}"  # avoid overwriting results
 
     # Prepare data splits
     if args.alpha > 0.0:
 
         # Do alpha splitting if alpha value > 0.0
         print(f"preparing CIFAR10 and doing alpha split with alpha = {args.alpha}")
-        train_idx_paths = cifar10_split(num_sites=args.n_clients, alpha=args.alpha, split_dir=train_split_root)
+        train_idx_paths = cifar10_split(
+            num_sites=args.n_clients,
+            alpha=args.alpha,
+            split_dir=train_split_root,
+        )
 
         print(train_idx_paths)
     else:
@@ -115,6 +118,7 @@ if __name__ == "__main__":
 
     if args.algo == FEDAVG_ALGO or args.algo == CENTRALIZED_ALGO:
         from nvflare import FedAvg
+
         controller = FedAvg(
             min_clients=args.n_clients,
             num_rounds=args.num_rounds,
@@ -122,6 +126,7 @@ if __name__ == "__main__":
 
     elif args.algo == FEDOPT_ALGO:
         from nvflare.app_opt.tf.fedopt_ctl import FedOpt
+
         controller = FedOpt(
             min_clients=args.n_clients,
             num_rounds=args.num_rounds,
@@ -129,6 +134,7 @@ if __name__ == "__main__":
 
     elif args.algo == FEDPROX_ALGO:
         from nvflare import FedAvg
+
         controller = FedAvg(
             min_clients=args.n_clients,
             num_rounds=args.num_rounds,
@@ -138,6 +144,7 @@ if __name__ == "__main__":
     elif args.algo == SCAFFOLD_ALGO:
         train_script = "src/cifar10_tf_fl_alpha_split_scaffold.py"
         from nvflare.app_common.workflows.scaffold import Scaffold
+
         controller = Scaffold(
             min_clients=args.n_clients,
             num_rounds=args.num_rounds,
@@ -152,7 +159,8 @@ if __name__ == "__main__":
     for i, train_idx_path in enumerate(train_idx_paths):
         curr_task_script_args = task_script_args + f" --train_idx_path {train_idx_path}"
         executor = ScriptExecutor(
-            task_script_path=train_script, task_script_args=curr_task_script_args
+            task_script_path=train_script,
+            task_script_args=curr_task_script_args,
         )
         job.to(executor, f"site-{i+1}", gpu=args.gpu)
 

@@ -14,27 +14,19 @@
 
 
 import argparse
-import copy
-import numpy as np
 
+import numpy as np
 import tensorflow as tf
 from tensorflow.keras import datasets, losses
 from tf_net import ModerateTFNet
 
 # (1) import nvflare client API
 import nvflare.client as flare
-from nvflare.app_opt.tf.scaffold import (
-    TFScaffoldHelper,
-    get_lr_values,
-    ScaffoldCallback,
-)
 from nvflare.app_common.app_constant import AlgorithmConstants
+from nvflare.app_opt.tf.scaffold import ScaffoldCallback, TFScaffoldHelper, get_lr_values
 from nvflare.client.tracking import SummaryWriter
 
-
-
 PATH = "./tf_model.weights.h5"
-
 
 
 def preprocess_dataset(dataset, is_training, batch_size=1):
@@ -80,20 +72,40 @@ def preprocess_dataset(dataset, is_training, batch_size=1):
         # Padding each dimension by 4 pixels each side
         dataset = dataset.map(
             lambda image, label: (
-                tf.stack([tf.pad(tf.squeeze(t, [2]), [[4, 4], [4, 4]], mode='REFLECT')
-                          for t in tf.split(image, num_or_size_splits=3, axis=2)], axis=2), label)
+                tf.stack(
+                    [
+                        tf.pad(
+                            tf.squeeze(t, [2]),
+                            [[4, 4], [4, 4]],
+                            mode="REFLECT",
+                        )
+                        for t in tf.split(image, num_or_size_splits=3, axis=2)
+                    ],
+                    axis=2,
+                ),
+                label,
+            )
         )
         # Random crop of 32 x 32 x 3
         dataset = dataset.map(
-            lambda image, label: (tf.image.random_crop(image, size=(32, 32, 3)), label)
+            lambda image, label: (
+                tf.image.random_crop(image, size=(32, 32, 3)),
+                label,
+            )
         )
         # Random horizontal flip
         dataset = dataset.map(
-            lambda image, label: (tf.image.random_flip_left_right(image), label)
+            lambda image, label: (
+                tf.image.random_flip_left_right(image),
+                label,
+            )
         )
         # Normalize by dividing by given mean & std
         dataset = dataset.map(
-            lambda image, label: ((tf.cast(image, tf.float32) - mean_cifar10) / std_cifar10, label)
+            lambda image, label: (
+                (tf.cast(image, tf.float32) - mean_cifar10) / std_cifar10,
+                label,
+            )
         )
         # Random shuffle
         dataset = dataset.shuffle(len(dataset), reshuffle_each_iteration=True)
@@ -104,33 +116,19 @@ def preprocess_dataset(dataset, is_training, batch_size=1):
 
         # For validation / test only do normalization.
         return dataset.map(
-            lambda image, label: ((tf.cast(image, tf.float32) - mean_cifar10) / std_cifar10, label)
+            lambda image, label: (
+                (tf.cast(image, tf.float32) - mean_cifar10) / std_cifar10,
+                label,
+            )
         ).batch(batch_size)
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--batch_size",
-        type=int,
-        required=True
-    )
-    parser.add_argument(
-        "--epochs",
-        type=int,
-        required=True
-    )
-    parser.add_argument(
-        "--train_idx_path",
-        type=str,
-        required=True
-    )
-    parser.add_argument(
-    "--clip_norm",
-    type=float,
-    default=1.55,  
-    required=False
-)
+    parser.add_argument("--batch_size", type=int, required=True)
+    parser.add_argument("--epochs", type=int, required=True)
+    parser.add_argument("--train_idx_path", type=str, required=True)
+    parser.add_argument("--clip_norm", type=float, default=1.55, required=False)
 
     args = parser.parse_args()
 
@@ -141,7 +139,7 @@ def main():
 
     # Use alpha-split per-site data to simulate data heteogeniety,
     # only if if train_idx_path is not None.
-  
+
     if args.train_idx_path != "None":
 
         print(f"Loading train indices from {args.train_idx_path}")
@@ -151,8 +149,10 @@ def main():
 
         unq, unq_cnt = np.unique(train_labels, return_counts=True)
         print(
-            (f"Loaded {len(train_idx)} training indices from {args.train_idx_path} "
-             "with label distribution:\nUnique labels: {unq}\nUnique Counts: {unq_cnt}")
+            (
+                f"Loaded {len(train_idx)} training indices from {args.train_idx_path} "
+                "with label distribution:\nUnique labels: {unq}\nUnique Counts: {unq_cnt}"
+            )
         )
 
     # Convert training & testing data to datasets
@@ -166,16 +166,12 @@ def main():
     model = ModerateTFNet()
     model.build(input_shape=(None, 32, 32, 3))
 
-    callbacks = [tf.keras.callbacks.TensorBoard(log_dir="./logs_keras", write_graph=False)]    
- 
+    callbacks = [tf.keras.callbacks.TensorBoard(log_dir="./logs_keras", write_graph=False)]
+
     loss = losses.SparseCategoricalCrossentropy(from_logits=True)
-    optimizer=tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.9, clipnorm=args.clip_norm)
+    optimizer = tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.9, clipnorm=args.clip_norm)
 
-
-    model.compile(
-        optimizer=optimizer,
-                                           loss=loss, metrics=["accuracy"]
-    )
+    model.compile(optimizer=optimizer, loss=loss, metrics=["accuracy"])
     model.summary()
 
     scaffold_helper = TFScaffoldHelper()
@@ -200,32 +196,34 @@ def main():
             model.get_layer(k).set_weights(v)
 
         # (step 4) load regularization parameters from scaffold
-        global_ctrl_weights = input_model.meta.get(
-            AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL
-        )
+        global_ctrl_weights = input_model.meta.get(AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL)
 
-        scaffold_helper.load_global_controls(
-            weights=global_ctrl_weights
-        )
+        scaffold_helper.load_global_controls(weights=global_ctrl_weights)
 
         c_global_para, c_local_para = scaffold_helper.get_params()
-            
+
         model_global = tf.keras.models.clone_model(model)
         model_global.set_weights(model.get_weights())
-   
-
 
         # (5) evaluate aggregated/received model
         _, test_global_acc = model.evaluate(x=test_ds, verbose=2)
-        summary_writer.add_scalar(tag="global_model_accuracy", scalar=test_global_acc, global_step=input_model.current_round)
+        summary_writer.add_scalar(
+            tag="global_model_accuracy",
+            scalar=test_global_acc,
+            global_step=input_model.current_round,
+        )
 
         with tf_summary_writer.as_default():
-            tf.summary.scalar("global_model_accuracy", test_global_acc, input_model.current_round)
+            tf.summary.scalar(
+                "global_model_accuracy",
+                test_global_acc,
+                input_model.current_round,
+            )
         print(
             f"Accuracy of the received model on round {input_model.current_round} on the {len(test_images)} test images: {test_global_acc * 100} %"
         )
 
-        start_epoch = args.epochs*input_model.current_round
+        start_epoch = args.epochs * input_model.current_round
         end_epoch = start_epoch + args.epochs
 
         print(f"Train from epoch {start_epoch} to {end_epoch}")
@@ -235,7 +233,7 @@ def main():
             validation_data=test_ds,
             callbacks=[callbacks, ScaffoldCallback(scaffold_helper)],
             initial_epoch=start_epoch,
-            validation_freq=1 #args.epochs
+            validation_freq=1,  # args.epochs
         )
 
         curr_lr = get_lr_values(optimizer=optimizer)
@@ -254,15 +252,24 @@ def main():
 
         _, test_acc = model.evaluate(x=test_ds, verbose=2)
 
-        summary_writer.add_scalar(tag="local_model_accuracy", scalar=test_acc, global_step=input_model.current_round)
+        summary_writer.add_scalar(
+            tag="local_model_accuracy",
+            scalar=test_acc,
+            global_step=input_model.current_round,
+        )
 
         with tf_summary_writer.as_default():
-            tf.summary.scalar("local_model_accuracy", test_acc, input_model.current_round)
+            tf.summary.scalar(
+                "local_model_accuracy",
+                test_acc,
+                input_model.current_round,
+            )
         print(f"Accuracy of the model on the {len(test_images)} test images: {test_acc * 100} %")
 
         # (6) construct trained FL model (A dict of {layer name: layer weights} from the keras model)
         output_model = flare.FLModel(
-            params={layer.name: layer.get_weights() for layer in model.layers}, metrics={"accuracy": test_global_acc},
+            params={layer.name: layer.get_weights() for layer in model.layers},
+            metrics={"accuracy": test_global_acc},
             meta={
                 AlgorithmConstants.SCAFFOLD_CTRL_DIFF: scaffold_helper.get_delta_controls(),
             },

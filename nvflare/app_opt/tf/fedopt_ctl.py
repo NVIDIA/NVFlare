@@ -14,7 +14,7 @@
 
 
 import time
-from typing import Union, Dict
+from typing import Dict
 
 import tensorflow as tf
 
@@ -33,11 +33,7 @@ class FedOpt(FedAvg):
         },
         lr_scheduler_args: dict = {
             "path": "tensorflow.keras.optimizers.schedules.CosineDecay",
-            "args": {
-                "initial_learning_rate": 1.0,
-                "decay_steps": None,
-                "alpha": 0.9
-            },
+            "args": {"initial_learning_rate": 1.0, "decay_steps": None, "alpha": 0.9},
         },
         **kwargs,
     ):
@@ -67,7 +63,6 @@ class FedOpt(FedAvg):
         self.optimizer = None
         self.lr_scheduler = None
 
-
     def run(self):
         """
         Override run method to add set-up for FedOpt specific optimizer
@@ -77,7 +72,7 @@ class FedOpt(FedAvg):
         try:
             if "args" not in self.optimizer_args:
                 self.optimizer_args["args"] = {}
-            #self.optimizer_args["args"]["params"] = self.keras_model.parameters()
+            # self.optimizer_args["args"]["params"] = self.keras_model.parameters()
             self.optimizer = self.build_component(self.optimizer_args)
         except Exception as e:
             error_msg = f"Exception while constructing optimizer: {secure_format_exception(e)}"
@@ -99,7 +94,6 @@ class FedOpt(FedAvg):
 
         super().run()
 
-
     def _to_tf_params_list(self, params: Dict, negate: bool = False):
         """
         Convert FLModel params to a list of tf.Variables.
@@ -112,7 +106,6 @@ class FedOpt(FedAvg):
                 v = -1 * v
             tf_params_list.append(tf.Variable(v))
         return tf_params_list
-
 
     def update_model(self, global_model: FLModel, aggr_result: FLModel):
         """
@@ -132,9 +125,7 @@ class FedOpt(FedAvg):
 
         # Compute model diff: need to use model diffs as
         # gradients to be applied by the optimizer.
-        model_diff_params = {
-            k: aggr_result.params[k] - global_model.params[k] for k in global_model.params
-        }
+        model_diff_params = {k: aggr_result.params[k] - global_model.params[k] for k in global_model.params}
         model_diff = self._to_tf_params_list(model_diff_params, negate=True)
 
         # Apply model diffs as gradients, using the optimizer.

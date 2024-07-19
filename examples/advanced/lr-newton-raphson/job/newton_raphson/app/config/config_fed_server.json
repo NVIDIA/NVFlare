@@ -24,7 +24,7 @@
       "id": "fedavg_newton_raphson",
       "path": "newton_raphson_workflow.FedAvgNewtonRaphson",
       "args": {
-        "min_clients": 4,
+        "num_clients": 4,
         "num_rounds": 5,
         "damping_factor": 0.8,
         "persistor_id": "newton_raphson_persistor"
