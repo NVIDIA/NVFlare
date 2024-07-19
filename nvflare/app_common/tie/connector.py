@@ -249,6 +249,8 @@ class Connector(ABC, FLComponent):
         if not self.applet:
             raise RuntimeError("applet has not been set!")
 
+        app_ctx[Constant.APP_CTX_FL_CONTEXT] = fl_ctx
+
         engine = fl_ctx.get_engine()
         workspace = engine.get_workspace()
         job_id = fl_ctx.get_job_id()

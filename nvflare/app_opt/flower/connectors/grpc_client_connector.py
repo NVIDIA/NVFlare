@@ -48,7 +48,6 @@ class GrpcClientConnector(FlowerClientConnector, GrpcAdapterServicer):
             Constant.APP_CTX_CLIENT_NAME: self._client_name,
             Constant.APP_CTX_SERVER_ADDR: server_addr,
             Constant.APP_CTX_NUM_ROUNDS: self.num_rounds,
-            Constant.APP_CTX_FL_CONTEXT: fl_ctx,
         }
         self.start_applet(app_ctx, fl_ctx)
 

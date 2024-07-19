@@ -12,16 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import time
-from typing import Any
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.tie.applet import Applet
 from nvflare.app_common.tie.cli_applet import CLIApplet
 from nvflare.app_common.tie.defs import Constant as TieConstant
-from nvflare.app_common.tie.process_mgr import ProcessManager, start_process
+from nvflare.app_common.tie.process_mgr import CommandDescriptor, ProcessManager, start_process
 from nvflare.app_opt.flower.defs import Constant
-from nvflare.app_opt.flower.utils import create_channel, get_applet_log_file_path
+from nvflare.app_opt.flower.utils import create_channel
 from nvflare.fuel.f3.drivers.net_utils import get_open_tcp_port
 from nvflare.security.logging import secure_format_exception
 
@@ -39,7 +38,7 @@ class FlowerClientApplet(CLIApplet):
         CLIApplet.__init__(self)
         self.client_app = client_app
 
-    def get_command(self, ctx: dict) -> (str, str, dict, Any):
+    def get_command(self, ctx: dict) -> CommandDescriptor:
         """Implementation of the get_command method required by the super class CLIApplet.
         It returns the CLI command for starting Flower's client app, as well as the full path of the log file
         for the client app.
@@ -65,8 +64,7 @@ class FlowerClientApplet(CLIApplet):
         custom_dir = ws.get_app_custom_dir(fl_ctx.get_job_id())
         cmd = f"flower-client-app --insecure --grpc-adapter --superlink {addr} --dir {custom_dir} {self.client_app}"
         self.logger.info(f"starting flower client app: {cmd}")
-        log_file = get_applet_log_file_path("client_app_log.txt", ctx)
-        return cmd, None, None, log_file, True, "FLWR-CA"
+        return CommandDescriptor(cmd=cmd, log_file_name="client_app_log.txt", stdout_msg_prefix="FLWR-CA")
 
 
 class FlowerServerApplet(Applet):
@@ -86,11 +84,10 @@ class FlowerServerApplet(Applet):
         self.superlink_ready_timeout = superlink_ready_timeout
         self._start_error = False
 
-    def _start_process(self, name: str, cmd: str, log_prefix: str, ctx: dict) -> ProcessManager:
-        self.logger.info(f"starting {name}: {cmd}")
-        log_file = get_applet_log_file_path(f"{name}_log.txt", ctx)
+    def _start_process(self, name: str, cmd_desc: CommandDescriptor, fl_ctx: FLContext) -> ProcessManager:
+        self.logger.info(f"starting {name}: {cmd_desc.cmd}")
         try:
-            return start_process(command=cmd, log_file=log_file, log_prefix=log_prefix)
+            return start_process(cmd_desc, fl_ctx)
         except Exception as ex:
             self.logger.error(f"exception starting applet: {secure_format_exception(ex)}")
             self._start_error = True
@@ -142,9 +139,9 @@ class FlowerServerApplet(Applet):
             f"--driver-api-address {driver_addr}"
         )
 
-        self._superlink_process_mgr = self._start_process(
-            name="superlink", cmd=superlink_cmd, log_prefix="FLWR-SL", ctx=ctx
-        )
+        cmd_desc = CommandDescriptor(cmd=superlink_cmd, log_file_name="superlink_log.txt", stdout_msg_prefix="FLWR-SL")
+
+        self._superlink_process_mgr = self._start_process(name="superlink", cmd_desc=cmd_desc, fl_ctx=fl_ctx)
         if not self._superlink_process_mgr:
             raise RuntimeError("cannot start superlink process")
 
@@ -161,7 +158,13 @@ class FlowerServerApplet(Applet):
 
         # start the server app
         app_cmd = f"flower-server-app --insecure --superlink {driver_addr} --dir {custom_dir} {self.server_app}"
-        self._app_process_mgr = self._start_process(name="server_app", cmd=app_cmd, log_prefix="FLWR-SA", ctx=ctx)
+        cmd_desc = CommandDescriptor(
+            cmd=app_cmd,
+            log_file_name="server_app_log.txt",
+            stdout_msg_prefix="FLWR-SA",
+        )
+
+        self._app_process_mgr = self._start_process(name="server_app", cmd_desc=cmd_desc, fl_ctx=fl_ctx)
         if not self._app_process_mgr:
             # stop the superlink
             self._superlink_process_mgr.stop()

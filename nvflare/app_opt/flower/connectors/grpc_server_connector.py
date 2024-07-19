@@ -33,11 +33,10 @@ class GrpcServerConnector(FlowerServerConnector):
         self._server_stopped = False
         self._exit_code = 0
 
-    def _start_server(self, addr: str, port: int, fl_ctx: FLContext):
+    def _start_server(self, addr: str, fl_ctx: FLContext):
         app_ctx = {
             Constant.APP_CTX_SERVER_ADDR: addr,
             Constant.APP_CTX_NUM_ROUNDS: self.num_rounds,
-            Constant.APP_CTX_FL_CONTEXT: fl_ctx,
         }
         self.start_applet(app_ctx, fl_ctx)
 
@@ -64,8 +63,8 @@ class GrpcServerConnector(FlowerServerConnector):
             raise RuntimeError("failed to get a port for Flower grpc server")
 
         server_addr = f"127.0.0.1:{port}"
-        self.log_info(fl_ctx, f"starting grpc connector: {server_addr=} {port=}")
-        self._start_server(server_addr, port, fl_ctx)
+        self.log_info(fl_ctx, f"starting grpc connector: {server_addr=}")
+        self._start_server(server_addr, fl_ctx)
 
         # start internal grpc client
         self.internal_grpc_client = GrpcClient(server_addr, self.int_client_grpc_options)

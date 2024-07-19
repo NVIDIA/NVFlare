@@ -11,16 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import os
 import time
 from abc import ABC, abstractmethod
-from typing import Any
 
 from nvflare.security.logging import secure_format_exception
 
 from .applet import Applet
 from .defs import Constant
-from .process_mgr import start_process
+from .process_mgr import CommandDescriptor, start_process
 
 
 class CLIApplet(Applet, ABC):
@@ -31,20 +29,13 @@ class CLIApplet(Applet, ABC):
         self._start_error = False
 
     @abstractmethod
-    def get_command(self, ctx: dict) -> (str, str, dict, Any, bool, str):
+    def get_command(self, ctx: dict) -> CommandDescriptor:
         """Subclass must implement this method to return the CLI command to be executed.
 
         Args:
             ctx: the applet context that contains execution env info
 
-        Returns: a tuple of:
-            command (str) - the CLI command to be executed
-            current work dir - the current work dir for the command execution
-            env - additional env vars to be added to system's env for the command execution
-            log_file: the file for log messages. It can be a file object, full path to the file, or None.
-                If none, no log file
-            write to stdout - bool
-            log message prefix - str
+        Returns: a CommandDescriptor to be executed
 
         """
         pass
@@ -58,27 +49,15 @@ class CLIApplet(Applet, ABC):
         Returns:
 
         """
-        cli_cmd, cli_cwd, cli_env, log_file, log_stdout, log_prefix = self.get_command(ctx)
-        if not cli_cmd:
+        cmd_desc = self.get_command(ctx)
+        if not cmd_desc:
             raise RuntimeError("failed to get cli command from app context")
 
-        env = os.environ.copy()
-        if cli_env:
-            if not isinstance(cli_env, dict):
-                raise RuntimeError(f"expect cli env to be dict but got {type(cli_env)}")
-            env.update(cli_env)
-
+        fl_ctx = ctx.get(Constant.APP_CTX_FL_CONTEXT)
         try:
-            self._proc_mgr = start_process(
-                command=cli_cmd,
-                cwd=cli_cwd,
-                env=env,
-                log_file=log_file,
-                log_prefix=log_prefix,
-                log_stdout=log_stdout,
-            )
+            self._proc_mgr = start_process(cmd_desc, fl_ctx)
         except Exception as ex:
-            self.logger.error(f"exception starting applet '{cli_cmd}': {secure_format_exception(ex)}")
+            self.logger.error(f"exception starting applet '{cmd_desc.cmd}': {secure_format_exception(ex)}")
             self._start_error = True
 
     def stop(self, timeout=0.0):

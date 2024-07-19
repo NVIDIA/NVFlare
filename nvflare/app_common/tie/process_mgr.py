@@ -11,14 +11,63 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
 import shlex
 import subprocess
 import sys
 import threading
 
+from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.workspace import Workspace
+from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.validation_utils import check_object_type, check_str
+
+
+class CommandDescriptor:
+    def __init__(
+        self,
+        cmd: str,
+        cwd=None,
+        env=None,
+        log_file_name: str = "",
+        log_stdout: bool = True,
+        stdout_msg_prefix: str = None,
+    ):
+        """
+
+        Args:
+            cmd: the command to be executed
+            cwd: current work dir for the process to be started
+            env: system env for the process
+            log_file_name: base name of the log file.
+            log_stdout: whether to output log messages to stdout.
+            stdout_msg_prefix: prefix to be prepended to log message when writing to stdout
+        """
+        check_str("cmd", cmd)
+
+        if cwd:
+            check_str("cwd", cwd)
+
+        if env:
+            check_object_type("env", env, dict)
+
+        if log_file_name:
+            check_str("log_file_name", log_file_name)
+
+        if stdout_msg_prefix:
+            check_str("stdout_msg_prefix", stdout_msg_prefix)
+
+        self.cmd = cmd
+        self.cwd = cwd
+        self.env = env
+        self.log_file_name = log_file_name
+        self.log_stdout = log_stdout
+        self.stdout_msg_prefix = stdout_msg_prefix
+
 
 class ProcessManager:
-    def __init__(self):
+    def __init__(self, cmd_desc: CommandDescriptor):
         """Constructor of ProcessManager.
         ProcessManager provides methods for managing the lifecycle of a subprocess (start, stop, poll), as well
         as the handling of log file to be used by the subprocess.
@@ -26,54 +75,64 @@ class ProcessManager:
         NOTE: the methods of ProcessManager are not thread safe.
 
         """
+        check_object_type("cmd_desc", cmd_desc, CommandDescriptor)
         self.process = None
+        self.cmd_desc = cmd_desc
         self.log_file = None
-        self.log_prefix = None
+        self.msg_prefix = None
+        self.logger = get_logger(self)
 
     def start(
         self,
-        command: str,
-        log_prefix: str = None,
-        cwd=None,
-        env=None,
-        log_file=None,
-        log_stdout=True,
+        fl_ctx: FLContext,
     ):
         """Start the subprocess.
 
         Args:
-            command: the command to be executed
-            log_prefix: prefix to be prepended to log message when writing to stdout
-            cwd: current work dir for the process to be started
-            env: system env for the process
-            log_file: log file for the process. It can be: a file object, a path to the file, or None.
-                If None, no log file will be used.
-            log_stdout: whether to output log messages to stdout.
+            fl_ctx: FLContext object.
 
         Returns: None
 
         """
-        self.log_prefix = log_prefix
+        job_id = fl_ctx.get_job_id()
 
-        lf = log_file
-        if log_file and isinstance(log_file, str):
-            lf = open(log_file, "a")
+        if self.cmd_desc.stdout_msg_prefix:
+            site_name = fl_ctx.get_identity_name()
+            self.msg_prefix = f"[{self.cmd_desc.stdout_msg_prefix}@{site_name}]"
+
+        lf = None
+        if self.cmd_desc.log_file_name:
+            ws = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+            if not isinstance(ws, Workspace):
+                self.logger.error(
+                    f"FL context prop {FLContextKey.WORKSPACE_OBJECT} should be Workspace but got {type(ws)}"
+                )
+                raise RuntimeError("bad FLContext object")
+
+            run_dir = ws.get_run_dir(job_id)
+            log_file_path = os.path.join(run_dir, self.cmd_desc.log_file_name)
+
+            lf = open(log_file_path, "a")
             self.log_file = lf
 
-        if lf and log_stdout:
+        if lf and self.cmd_desc.log_stdout:
             stdout = subprocess.PIPE
-        elif lf and not log_stdout:
+        elif lf and not self.cmd_desc.log_stdout:
             stdout = lf
         else:
             stdout = None
 
-        command_seq = shlex.split(command)
+        env = os.environ.copy()
+        if self.cmd_desc.env:
+            env.update(self.cmd_desc.env)
+
+        command_seq = shlex.split(self.cmd_desc.cmd)
         self.process = subprocess.Popen(
             command_seq,
             universal_newlines=True,
             stderr=subprocess.STDOUT,
-            cwd=cwd,
-            env=env,
+            cwd=self.cmd_desc.cwd,
+            env=self.cmd_desc.env,
             stdout=stdout,
         )
 
@@ -89,8 +148,8 @@ class ProcessManager:
 
             self.log_file.write(line)
             self.log_file.flush()
-            if self.log_prefix:
-                line = f"[{self.log_prefix}] {line}"
+            if self.msg_prefix:
+                line = f"{self.msg_prefix} {line}"
             sys.stdout.write(line)
             sys.stdout.flush()
 
@@ -123,26 +182,22 @@ class ProcessManager:
 
         # close the log file if any
         if self.log_file:
-            print("closed subprocess log file!")
+            self.logger.debug("closed subprocess log file!")
             self.log_file.close()
             self.log_file = None
         return rc
 
 
-def start_process(command: str, log_prefix=None, cwd=None, env=None, log_file=None, log_stdout=True) -> ProcessManager:
+def start_process(cmd_desc: CommandDescriptor, fl_ctx: FLContext) -> ProcessManager:
     """Convenience function for starting a subprocess.
 
     Args:
-        command: the command to be executed
-        log_prefix: log message prefix
-        cwd: current work dir of the process
-        env: system env for the process
-        log_file: log file to be used for the process
-        log_stdout: whether to write log messages to stdout
+        cmd_desc: the command to be executed
+        fl_ctx: FLContext object
 
     Returns: a ProcessManager object.
 
     """
-    mgr = ProcessManager()
-    mgr.start(command, log_prefix, cwd, env, log_file, log_stdout)
+    mgr = ProcessManager(cmd_desc)
+    mgr.start(fl_ctx)
     return mgr

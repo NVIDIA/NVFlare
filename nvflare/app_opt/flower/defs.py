@@ -45,7 +45,7 @@ class Constant:
     APP_CTX_PORT = "flower_port"
     APP_CTX_CLIENT_NAME = "flower_client_name"
     APP_CTX_NUM_ROUNDS = "flower_num_rounds"
-    APP_CTX_FL_CONTEXT = "flower_fl_context"
+    APP_CTX_FL_CONTEXT = TieConstant.APP_CTX_FL_CONTEXT
 
 
 GRPC_DEFAULT_OPTIONS = [
