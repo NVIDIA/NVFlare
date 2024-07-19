@@ -14,13 +14,17 @@
 
 import logging
 
-from nvflare.apis.fl_constant import FLContextKey, ReservedTopic, ServerCommandKey
+from nvflare.apis.fl_constant import FLContextKey, ServerCommandKey
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import MessageHeaderKey, ReturnCode, make_reply
 from nvflare.fuel.f3.message import Message as CellMessage
+<<<<<<< HEAD
 from nvflare.fuel.utils.log_utils import get_obj_logger
+=======
+from nvflare.metrics.metrics_publisher import publish_app_metrics
+>>>>>>> 43d8656a (update the PR, allow specify labels  and timestamp)
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
 from nvflare.utils.collect_time_ctx import CollectTimeContext
 
@@ -29,10 +33,11 @@ from .server_commands import ServerCommands
 
 class ServerCommandAgent(object):
     def __init__(self, engine, cell: Cell) -> None:
-        """To init the CommandAgent.
-
+        """
+        To init the CommandAgent.
         Args:
-            listen_port: port to listen the command
+            engine:
+            cell:
         """
         self.logger = get_obj_logger(self)
         self.asked_to_stop = False
@@ -55,11 +60,11 @@ class ServerCommandAgent(object):
         self.logger.info(f"ServerCommandAgent cell register_request_cb: {self.cell.get_fqcn()}")
 
     def execute_command(self, request: CellMessage) -> CellMessage:
-        metrics_group = ""
+        metrics_name = ""
         try:
             with CollectTimeContext() as context:
                 command_name = self.get_command_name(request)
-                metrics_group = command_name
+                metrics_name = command_name
 
                 # data = fobs.loads(request.payload)
                 data = request.payload
@@ -99,7 +104,7 @@ class ServerCommandAgent(object):
                 else:
                     return make_reply(ReturnCode.INVALID_REQUEST, "No server command found", None)
         finally:
-            self.publish_app_metrics(context.metrics, metrics_group)
+            publish_app_metrics(context.metrics, metrics_name, {}, self.data_bus)
 
     def get_command_name(self, request):
         if not isinstance(request, CellMessage):
@@ -140,15 +145,6 @@ class ServerCommandAgent(object):
             else:
                 return_message = new_cell_message({}, None)
             return return_message
-
-    def publish_app_metrics(self, metrics: dict, metric_group: str):
-        metrics_data = {}
-        for metric_name in metrics:
-            label = f"{metric_group}_{metric_name}"
-            metrics_value = metrics.get(metric_name)
-            metrics_data.update({label: metrics_value})
-
-        self.data_bus.publish([ReservedTopic.APP_METRICS], metrics_data)
 
     def shutdown(self):
         self.asked_to_stop = True

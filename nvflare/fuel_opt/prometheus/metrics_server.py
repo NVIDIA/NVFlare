@@ -16,17 +16,30 @@
 import argparse
 import json
 import logging
-import os.path
 import time
 from http.server import HTTPServer
 
-from load_metrics import load_metrics_config
-from prometheus_client import Counter, Gauge
+from prometheus_client import REGISTRY
 from prometheus_client.exposition import MetricsHandler
 
 # Load the metrics configuration
+from prometheus_client.metrics_core import GaugeMetricFamily
+from prometheus_client.registry import Collector
+
+from nvflare.metrics.metrics_keys import MetricKeys
+
 metrics_store = {}
 logger = logging.getLogger("CustomMetricsHandler")
+
+
+# Use a custom collector to yield the stored metrics
+class CustomCollector(Collector):
+    def collect(self):
+        for metric in metrics_store.values():
+            yield metric
+
+
+REGISTRY.register(CustomCollector())
 
 
 class CustomMetricsHandler(MetricsHandler):
@@ -38,20 +51,29 @@ class CustomMetricsHandler(MetricsHandler):
         if self.path == "/update_metrics":
             content_length = int(self.headers["Content-Length"])
             post_data = self.rfile.read(content_length)
-            metrics_data = json.loads(post_data)
+            content = json.loads(post_data)
 
-            # Update the metrics store
-            for metric_name, value in metrics_data.items():
-                if metric_name in metrics_store:
-                    p1 = metrics_store[metric_name]
-                    if isinstance(p1, Gauge):
-                        p1.set(value)
-                    elif isinstance(p, Counter):
-                        p1.inc(value)
-                else:
-                    p1 = Gauge(metric_name, metric_name)
-                    metrics_store[metric_name] = p1
-                    p1.set(value)
+            if content:
+                for metric_data in content:
+                    metric_name = metric_data.get(MetricKeys.metric_name)
+                    value = metric_data.get(MetricKeys.value)
+                    labels = metric_data.get(MetricKeys.labels, {})
+                    timestamp = metric_data.get(MetricKeys.timestamp, int(time.time()))
+
+                    # Create a unique key based on metric name and labels
+                    metric_key = (metric_name, tuple(sorted(labels.items())))
+
+                    if metric_key not in metrics_store:
+                        # Register/update GaugeMetricFamily with timestamp
+                        gauge = GaugeMetricFamily(
+                            metric_name, f"Description of {metric_name}", labels=list(labels.keys())
+                        )
+                        metrics_store[metric_key] = gauge
+                    else:
+                        # Update the existing gauge
+                        gauge = metrics_store[metric_key]
+
+                    gauge.add_metric(list(labels.values()), value, timestamp=timestamp)
 
             self.send_response(200)
             self.end_headers()
@@ -69,36 +91,30 @@ def run_http_server(port):
 
     thread = Thread(target=server.serve_forever)
     thread.daemon = True
+
     thread.start()
-    logger.info(f"started prometheus metrics server on port {port}")
+    print(f"started prometheus metrics server on port {port}")
 
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Start/Stop Prometheus metrics collection server.")
     parser.add_argument("--config", type=str, help="Path to the JSON configuration file")
     parser.add_argument("--start", action="store_true", help="Start the Prometheus HTTP server")
-    parser.add_argument("--port", type=int, default=9090, help="Port number for the Prometheus HTTP server")
+    parser.add_argument("--port", type=int, default=8000, help="Port number for the Prometheus HTTP server")
 
     return parser
 
 
 if __name__ == "__main__":
-
     p = parse_arguments()
     args = p.parse_args()
     if args.start:
-        current_dir = os.path.dirname(__file__)
-        app_metrics_config_path = os.path.join(current_dir, "app_metrics_config.json")
-        metrics_store = load_metrics_config(app_metrics_config_path)
-        if args.config:
-            metrics_store = load_metrics_config(args.config)
-
         run_http_server(args.port)
         # Keep the main thread alive to prevent the server from shutting down
         try:
             while True:
                 time.sleep(1)
         except KeyboardInterrupt:
-            logger.info("Shutting down the server...")
+            print("Shutting down the server...")
     else:
         p.print_help()

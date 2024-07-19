@@ -26,10 +26,6 @@
           "site-2": 1.0
         }
       }
-    },
-    {
-      "id": "prometheus",
-      "path": "nvflare.fuel_opt.prometheus.metrics_collector.MetricsCollector"
     }
   ],
   "workflows": [
