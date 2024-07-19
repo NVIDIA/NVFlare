@@ -100,6 +100,7 @@ class ClientAlgoExecutor(Executor):
                     ExtraItems.CLIENT_NAME: fl_ctx.get_identity_name(),
                     ExtraItems.APP_ROOT: fl_ctx.get_prop(FLContextKey.APP_ROOT),
                     ExtraItems.STATS_SENDER: stats_sender,
+                    ExtraItems.LOGGING_FILE: False,
                 }
             )
         except Exception as e:
