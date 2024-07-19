@@ -161,12 +161,17 @@ achieves that by adding a correction term when updating the client
 models, while FedOpt utilizes SGD with momentum to update the global
 model on the server. Both achieve better performance with the same
 number of training steps as FedAvg/FedProx.
+If the distribution of the data is too uneven, problems can also arise with the SCAFFOLD implementation using TensorFlow. 
+However, these only become noticeable after too many training rounds and epochs. At a certain point, it no longer converges, and the model weights explode, causing weights and losses to become NaN. This problem only occurred with a distribution of alpha = 0.1 and is a well known [issue](https://discuss.ai.google.dev/t/failing-to-implement-scaffold-in-tensorfow/31665). 
+To counteract this problem, a so called [clip norm](https://www.tensorflow.org/api_docs/python/tf/keras/optimizers/Adam) was added. 
+This ensures that the gradient of each weight is clipped individually so that its norm does not exceed the specified value. Since this is a hyperparameter, clipnorm=1.5 was tested as the best value in our case. The specific use of the clip norm is based on this [code](https://github.com/google-research/public-data-in-dpfl/blob/7655a6b7165dc2cbdfe3d2e1080721223aa2c79b/scaffold_v2.py#L192C5-L192C14).
+This allows the accuracy to converge until the end of the training and achieves an as good accuracy as FedOpt.
 
 | Config |	Alpha |	Val score |
 | ----------- | ----------- |  ----------- |
-| cifar10_fedavg |	0.1 |	0.7903 |
-| cifar10_fedprox |	0.1 |	0.7897 |
-| cifar10_fedopt |	0.1 |	0.8145 |
-| cifar10_scaffold |	TODO |	TODO |
+| cifar10_fedavg |	0.1 |	0.7858 |
+| cifar10_fedprox |	0.1 |	0.7843 |
+| cifar10_fedopt |	0.1 |	0.8066 |
+| cifar10_scaffold |	0.1 |	0.8138 |
 
-![Impact of different FL algorithms](./figs/fedavg-diff-algos.png)
+![Impact of different FL algorithms](./figs/fedavg-diff-algos-new.png)
