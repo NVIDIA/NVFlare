@@ -202,7 +202,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             name=task_name,
             data=data_shareable,
             operator=operator,
-            props={AppConstants.TASK_PROP_CALLBACK: callback},
+            props={AppConstants.TASK_PROP_CALLBACK: callback, AppConstants.META_DATA: data.meta},
             timeout=timeout,
             before_task_sent_cb=self._prepare_task_data,
             result_received_cb=self._process_result,
@@ -221,6 +221,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
 
         # Turn result into FLModel
         result_model = FLModelUtils.from_shareable(result)
+        result_model.meta["props"] = client_task.task.props[AppConstants.META_DATA]
         result_model.meta["client_name"] = client_name
 
         if result_model.current_round is not None:
@@ -235,7 +236,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             try:
                 callback(result_model)
             except Exception as e:
-                self.error(f"Unsuccessful callback {callback} for task {client_task.task.name}")
+                self.error(f"Unsuccessful callback {callback} for task {client_task.task.name}: {e}")
         else:
             self._results.append(result_model)
 
@@ -337,6 +338,14 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         self.event(AppEventType.INITIAL_MODEL_LOADED)
 
         return model
+
+    def get_run_dir(self):
+        """Get current run directory."""
+        return self.engine.get_workspace().get_run_dir(self.fl_ctx.get_job_id())
+
+    def get_app_dir(self):
+        """Get current app directory."""
+        return self.engine.get_workspace().get_app_dir(self.fl_ctx.get_job_id())
 
     def save_model(self, model):
         if self.persistor:
