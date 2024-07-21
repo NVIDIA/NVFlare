@@ -169,9 +169,9 @@ This allows the accuracy to converge until the end of the training and achieves 
 
 | Config |	Alpha |	Val score |
 | ----------- | ----------- |  ----------- |
-| cifar10_fedavg |	0.1 |	0.7858 |
+| cifar10_fedavg |	0.1 |	0.7959 |
 | cifar10_fedprox |	0.1 |	0.7843 |
-| cifar10_fedopt |	0.1 |	0.8066 |
-| cifar10_scaffold |	0.1 |	0.8138 |
+| cifar10_fedopt |	0.1 |	0.8059 |
+| cifar10_scaffold |	0.1 |	0.8164 |
 
 ![Impact of different FL algorithms](./figs/fedavg-diff-algos-new.png)
