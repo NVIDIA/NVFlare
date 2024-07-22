@@ -96,24 +96,23 @@ class TFScaffoldHelper(object):
         net_para = model.variables
         scaler = 1 / (self.cnt * curr_lr)
 
-        c_new_para = tf.nest.map_structure(
-            lambda a, b, c, d: (a - b) + tf.multiply(scaler, c - d),
-            c_new_para,
-            c_global_para,
+        c_new_para_c_global = tf.nest.map_structure(lambda a, b: a - b, c_new_para, c_global_para)
+
+        global_model_para_net_para = tf.nest.map_structure(
+            lambda a, b: tf.multiply(scaler, a - b),
             global_model_para,
             net_para,
         )
 
-        # if tf.less(tf.constant(0, tf.float32), self.clip_norm):
-        #    flatten_weights_delta = tf.nest.flatten(c_new_para)
-        #   clipped_flatten_weights_delta, _ = tf.clip_by_global_norm(
-        #         flatten_weights_delta, self.clip_norm)
-        #  c_new_para = tf.nest.pack_sequence_as(c_new_para,
-        #          clipped_flatten_weights_delta)
+        c_new_para = tf.nest.map_structure(
+            lambda a, b: a + b,
+            c_new_para_c_global,
+            global_model_para_net_para,
+        )
 
-        c_delta_para_value_new = tf.nest.map_structure(lambda a, b: (a - b), c_new_para, c_local_para)
+        c_delta_para_value = tf.nest.map_structure(lambda a, b: a - b, c_new_para, c_local_para)
 
-        self.c_delta_para = {var.name: c_delta_para_value_new[i].numpy() for i, var in enumerate(net_para)}
+        self.c_delta_para = {var.name: c_delta_para_value[i].numpy() for i, var in enumerate(net_para)}
 
         self.c_local.set_weights(c_new_para)
 
