@@ -73,6 +73,9 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
             Constant.RUNNER_CTX_SERVER_ADDR: server_addr,
             Constant.RUNNER_CTX_RANK: self.rank,
             Constant.RUNNER_CTX_NUM_ROUNDS: self.num_rounds,
+            Constant.RUNNER_CTX_TRAINING_MODE: self.training_mode,
+            Constant.RUNNER_CTX_XGB_PARAMS: self.xgb_params,
+            Constant.RUNNER_CTX_XGB_OPTIONS: self.xgb_options,
             Constant.RUNNER_CTX_MODEL_DIR: self._run_dir,
             Constant.RUNNER_CTX_TB_DIR: self._app_dir,
         }
@@ -95,9 +98,6 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
     def start(self, fl_ctx: FLContext):
         if self.rank is None:
             raise RuntimeError("cannot start - my rank is not set")
-
-        if not self.num_rounds:
-            raise RuntimeError("cannot start - num_rounds is not set")
 
         # dynamically determine address on localhost
         port = get_open_tcp_port(resources={})

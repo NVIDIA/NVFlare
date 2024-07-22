@@ -30,7 +30,7 @@ class XGBServerRunner(AppRunner):
 
         xgb_federated.run_federated_server(
             port=self._port,
-            n_workers=self._world_size,
+            world_size=self._world_size,
         )
         self._stopped = True
 
