@@ -120,7 +120,7 @@ if __name__ == "__main__":
         from nvflare import FedAvg
 
         controller = FedAvg(
-            min_clients=args.n_clients,
+            num_clients=args.n_clients,
             num_rounds=args.num_rounds,
         )
 
@@ -128,7 +128,7 @@ if __name__ == "__main__":
         from nvflare.app_opt.tf.fedopt_ctl import FedOpt
 
         controller = FedOpt(
-            min_clients=args.n_clients,
+            num_clients=args.n_clients,
             num_rounds=args.num_rounds,
         )
 
@@ -136,7 +136,7 @@ if __name__ == "__main__":
         from nvflare import FedAvg
 
         controller = FedAvg(
-            min_clients=args.n_clients,
+            num_clients=args.n_clients,
             num_rounds=args.num_rounds,
         )
         task_script_args += f" --fedprox_mu {args.fedprox_mu}"
@@ -146,7 +146,7 @@ if __name__ == "__main__":
         from nvflare.app_common.workflows.scaffold import Scaffold
 
         controller = Scaffold(
-            min_clients=args.n_clients,
+            num_clients=args.n_clients,
             num_rounds=args.num_rounds,
         )
 
