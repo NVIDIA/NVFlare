@@ -35,7 +35,7 @@ The :ref:`client_api` provides the most straightforward way to write FL code,
 and can easily be used to convert centralized code with minimal code changes.
 The Client API uses the :class:`FLModel<nvflare.app_common.abstract.fl_model.FLModel>`
 object for data transfer and supports common tasks such as train, validate, and submit_model.
-Additionally, options for using decorators or PyTorch Lightning are also available.
+Options for in-process and sub-process client api executors are available for different use cases.
 
 We recommend users start with the Client API, and to consider the other types
 for more specific cases as required.
