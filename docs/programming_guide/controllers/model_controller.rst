@@ -113,11 +113,11 @@ Communication
 =============
 
 The ModelController uses a task based communication where tasks are sent to targets, and targets execute the tasks and return results.
-The :ref:`fl_model` is standadized data structure object that can be sent along with each task, and :ref:`fl_model` responses are received for the results.
+The :ref:`fl_model` is standardized data structure object that is sent along with each task, and :ref:`fl_model` responses are received for the results.
 
 .. note::
 
-    The :ref:`fl_model` object can be any type of data.
+    The :ref:`fl_model` object can be any type of data depending on the specific task.
     For example, in the "train" and "validate" tasks we send the model parameters along with the task so the target clients can train and validate the model.
     However in many other tasks that do not involve sending the model (e.g. "submit_model"), the :ref:`fl_model` can contain any type of data (e.g. metadata, metrics etc.) or may be not be needed at all.
 
@@ -149,21 +149,13 @@ Saving & Loading
 persistor
 ---------
 The :func:`save_model<nvflare.app_common.workflows.model_controller.ModelController.save_model>` and :func:`load_model<nvflare.app_common.workflows.model_controller.ModelController.load_model>`
-functions utilize the configured persistor set in the ModelController ``persistor_id: str = "persistor"`` argument.
-
-For the JobAPI, the persistor with ``id = "persistor"`` will automatically be configured based on the type of the model sent to the server.
-
-.. code-block:: python
-
-  job.to(Net(), "server")
-
-The persistor can also be configured in ``config_fed_server.json`` in the components section.
+functions utilize the configured :class:`ModelPersistor<nvflare.app_common.abstract.model_persistor.ModelPersistor>` set in the ModelController ``persistor_id: str = "persistor"`` init argument.
 
 custom save & load
 ------------------
-Users can also choose to instead create their own save and load functions rather than use a persistor.
+Users can also choose to instead create their own custom save and load functions rather than use a persistor.
 
-For example we can use PyTorch's save and load functions for the model parameters, and save the FLModel metadata with :mod:`FOBS<nvflare.fuel.utils.fobs>` separately:
+For example we can use PyTorch's save and load functions for the model parameters, and save the FLModel metadata with :mod:`FOBS<nvflare.fuel.utils.fobs>` separately to different filepaths.
 
 .. code-block:: python
 
@@ -211,22 +203,6 @@ Functions such as ``get_component()`` and ``build_component()`` can be used to l
 Furthermore, the underlying :mod:`Controller<nvflare.apis.impl.controller>` class offers additional communication functions and task related utilities.
 Many of our pre-existing workflows are based on this lower-level Controller API.
 For more details refer to the :ref:`controllers` section.
-
-Configuration
-=============
-
-For the JobAPI, define the controller and send it to the server.
-
-.. code-block:: python
-
-  controller = FedAvg(
-      num_clients=n_clients,
-      num_rounds=num_rounds,
-  )
-  job.to(controller, "server")
-
-The above JobAPI code will automatically generate the server configuration for the controller.
-The controller can also be configured manually in ``config_fed_server.json`` in the workflows section.
 
 Examples
 ========

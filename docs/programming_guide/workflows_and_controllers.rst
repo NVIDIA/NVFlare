@@ -16,7 +16,36 @@ In these workflows, FL clients get tasks assigned by the controller, execute the
 In certain cases, if the server cannot be trusted, it should not be involved in communication with sensitive information.
 To address this concern, NVFlare introduces Client Controlled Workflows (CCWF) to facilitate peer-to-peer communication among clients.
 
-Please refer to the following sections for more details.
+
+Controllers can be configured in ``config_fed_server.json`` in the workflows section:
+
+.. code-block:: json
+
+  workflows = [
+      {
+          id = "fedavg_ctl",
+          name = "FedAvg",
+          args {
+              min_clients = 2,
+              num_rounds = 3,
+              persistor_id = "persistor"
+          }
+      }
+  ]
+
+To configure controllers using the JobAPI, define the controller and send it to the server.
+This code will automatically generate the server configuration for the controller:
+
+.. code-block:: python
+
+  controller = FedAvg(
+      num_clients=2,
+      num_rounds=3,
+      persistor_id = "persistor"
+  )
+  job.to(controller, "server")
+
+Please refer to the following sections for more details about the different types of controllers.
 
 .. toctree::
    :maxdepth: 3
