@@ -19,7 +19,7 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.tie.connector import Connector
 from nvflare.app_common.tie.connector import Constant as TieConstant
 from nvflare.app_opt.flower.defs import Constant
-from nvflare.fuel.utils.validation_utils import check_positive_int
+from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number
 
 
 class FlowerServerConnector(Connector):
@@ -85,16 +85,19 @@ class FlowerServerConnector(Connector):
 
 class FlowerClientConnector(Connector):
     """
-    FlowerClientConnector specifies commonly required methods for client connector implementations.
+    FlowerClientConnector defines commonly required methods for client connector implementations.
     """
 
-    def __init__(self, per_msg_timeout, tx_timeout):
+    def __init__(self, per_msg_timeout: float, tx_timeout: float):
         """Constructor of FlowerClientConnector
 
         Args:
             per_msg_timeout: per-msg timeout to be used when sending request to server via ReliableMessage
             tx_timeout: tx timeout to be used when sending request to server via ReliableMessage
         """
+        check_positive_number("per_msg_timeout", per_msg_timeout)
+        check_positive_number("tx_timeout", tx_timeout)
+
         Connector.__init__(self, TieConstant.APPLET_ENV_SELF)
         self.per_msg_timeout = per_msg_timeout
         self.tx_timeout = tx_timeout

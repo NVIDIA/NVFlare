@@ -35,7 +35,7 @@ class CLIApplet(Applet, ABC):
         Args:
             ctx: the applet context that contains execution env info
 
-        Returns: a CommandDescriptor to be executed
+        Returns: a CommandDescriptor that describes the CLI command
 
         """
         pass
@@ -44,7 +44,7 @@ class CLIApplet(Applet, ABC):
         """Start the execution of the applet.
 
         Args:
-            ctx:
+            ctx: the applet run context
 
         Returns:
 
@@ -76,17 +76,17 @@ class CLIApplet(Applet, ABC):
         if not mgr:
             return
 
-        # wait for the applet to stop by itself
-        start = time.time()
-        while time.time() - start < timeout:
-            rc = mgr.poll()
-            if rc is not None:
-                # already stopped
-                self.logger.info(f"applet stopped ({rc=}) gracefully after {time.time()-start} seconds")
-                break
-            time.sleep(0.1)
+        if timeout > 0:
+            # wait for the applet to stop by itself
+            start = time.time()
+            while time.time() - start < timeout:
+                rc = mgr.poll()
+                if rc is not None:
+                    # already stopped
+                    self.logger.info(f"applet stopped ({rc=}) gracefully after {time.time()-start} seconds")
+                    break
+                time.sleep(0.1)
 
-        # have to kill the process after timeout
         rc = mgr.stop()
         if rc is None:
             self.logger.warn(f"killed the applet process after waiting {timeout} seconds")

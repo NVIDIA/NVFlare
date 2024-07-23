@@ -30,6 +30,15 @@ class GrpcClientConnector(FlowerClientConnector, GrpcAdapterServicer):
         tx_timeout=10.0,
         client_shutdown_timeout=5.0,
     ):
+        """Constructor of GrpcClientConnector.
+        GrpcClientConnector is used to connect Flare Client with the Flower Client App.
+
+        Args:
+            int_server_grpc_options: internal grpc server options
+            per_msg_timeout: per-message timeout for using ReliableMessage
+            tx_timeout: transaction timeout for using ReliableMessage
+            client_shutdown_timeout: max time for shutting down Flare client
+        """
         FlowerClientConnector.__init__(self, per_msg_timeout, tx_timeout)
         self.client_shutdown_timeout = client_shutdown_timeout
         self.int_server_grpc_options = int_server_grpc_options

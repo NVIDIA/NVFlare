@@ -34,12 +34,13 @@ class CommandDescriptor:
         log_stdout: bool = True,
         stdout_msg_prefix: str = None,
     ):
-        """
+        """Constructor of CommandDescriptor.
+        A CommandDescriptor describes the requirements of the new process to be started.
 
         Args:
-            cmd: the command to be executed
-            cwd: current work dir for the process to be started
-            env: system env for the process
+            cmd: the command to be executed to start the new process
+            cwd: current work dir for the new process
+            env: system env for the new process
             log_file_name: base name of the log file.
             log_stdout: whether to output log messages to stdout.
             stdout_msg_prefix: prefix to be prepended to log message when writing to stdout
@@ -72,6 +73,9 @@ class ProcessManager:
         ProcessManager provides methods for managing the lifecycle of a subprocess (start, stop, poll), as well
         as the handling of log file to be used by the subprocess.
 
+        Args:
+            cmd_desc: the CommandDescriptor that describes the command of the new process to be started
+
         NOTE: the methods of ProcessManager are not thread safe.
 
         """
@@ -86,7 +90,7 @@ class ProcessManager:
         self,
         fl_ctx: FLContext,
     ):
-        """Start the subprocess.
+        """Start the new process.
 
         Args:
             fl_ctx: FLContext object.
@@ -137,10 +141,15 @@ class ProcessManager:
         )
 
         if stdout == subprocess.PIPE:
+            # both log file and stdout output are needed.
+            # we need a separate thread to monitor the process's stdout pipe and write messages to
+            # the log file and the sys.stdout!
             log_writer = threading.Thread(target=self._write_log, daemon=True)
             log_writer.start()
 
     def _write_log(self):
+        # write messages from the process's stdout pipe to log file and sys.stdout.
+        # note that depending on how the process flushes out its output, the messages may be buffered/delayed.
         while True:
             line = self.process.stdout.readline()
             if not line:
@@ -192,7 +201,7 @@ def start_process(cmd_desc: CommandDescriptor, fl_ctx: FLContext) -> ProcessMana
     """Convenience function for starting a subprocess.
 
     Args:
-        cmd_desc: the command to be executed
+        cmd_desc: the CommandDescriptor the describes the command to be executed
         fl_ctx: FLContext object
 
     Returns: a ProcessManager object.

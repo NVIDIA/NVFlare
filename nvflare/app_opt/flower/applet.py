@@ -61,10 +61,16 @@ class FlowerClientApplet(CLIApplet):
             self.logger.error(f"expect workspace to be Workspace but got {type(ws)}")
             raise RuntimeError("invalid workspace")
 
-        custom_dir = ws.get_app_custom_dir(fl_ctx.get_job_id())
+        job_id = fl_ctx.get_job_id()
+        custom_dir = ws.get_app_custom_dir(job_id)
+        app_dir = ws.get_app_dir(job_id)
         cmd = f"flower-client-app --insecure --grpc-adapter --superlink {addr} --dir {custom_dir} {self.client_app}"
+
+        # use app_dir as the cwd for flower's client app.
+        # this is necessary for client_api to be used with the flower client app for metrics logging
+        # client_api expects config info from the "config" folder in the cwd!
         self.logger.info(f"starting flower client app: {cmd}")
-        return CommandDescriptor(cmd=cmd, log_file_name="client_app_log.txt", stdout_msg_prefix="FLWR-CA")
+        return CommandDescriptor(cmd=cmd, cwd=app_dir, log_file_name="client_app_log.txt", stdout_msg_prefix="FLWR-CA")
 
 
 class FlowerServerApplet(Applet):
