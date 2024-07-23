@@ -37,8 +37,8 @@ class XGBoostParams:
         """Container for all XGBoost parameters.
 
         Args:
-            xgb_params: This dict is passed to `xgboost.train()` as the first argument `params`.
-                It contains all the Booster parameters.
+            xgb_params: The Booster parameters. This dict is passed to `xgboost.train()`
+                as the argument `params`. It contains all the Booster parameters.
                 Please refer to XGBoost documentation for details:
                 https://xgboost.readthedocs.io/en/stable/python/python_api.html#module-xgboost.training
         """

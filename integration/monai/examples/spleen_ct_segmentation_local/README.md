@@ -68,12 +68,6 @@ The final folder structure under `JOB_NAME` will be:
 ```
 
 
-The logging.conf inside the bundle will overwrite the logger behavior, so let's remove it:
-
-```
-rm ./${JOB_NAME}/app/config/spleen_ct_segmentation/configs/logging.conf
-```
-
 ## 2. Download the data
 
 Download the spleen CT data from the [MSD challenge](http://medicaldecathlon.com/) and update data path.
