@@ -19,6 +19,7 @@ from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.fl_model import FLModel, FLModelConst, MetaKey, ParamsType
+from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.fuel.utils.validation_utils import check_object_type
 
@@ -186,6 +187,18 @@ class FLModelUtils:
             current_round=current_round,
             total_rounds=total_rounds,
             meta=meta,
+        )
+
+    @staticmethod
+    def to_model_learnable(fl_model: FLModel) -> ModelLearnable:
+        return make_model_learnable(weights=fl_model.params, meta_props=fl_model.meta)
+
+    @staticmethod
+    def from_model_learnable(model_learnable: ModelLearnable) -> FLModel:
+        return FLModel(
+            params_type=ParamsType.FULL,
+            params=model_learnable[ModelLearnableKey.WEIGHTS],
+            meta=model_learnable[ModelLearnableKey.META],
         )
 
     @staticmethod
