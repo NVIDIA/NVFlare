@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 import os
 
 import matplotlib.pyplot as plt
@@ -20,12 +21,31 @@ import shap
 import xgboost as xgb
 
 PRINT_SAMPLE = False
-DATASET_ROOT = "/tmp/nvflare/xgb_dataset/base_xgb_data"
-TEST_DATA_PATH = "/tmp/nvflare/xgb_dataset/test.csv"
-OUTPUT_ROOT = "/tmp/nvflare/xgb_exp/base"
-if not os.path.exists(OUTPUT_ROOT):
-    os.makedirs(OUTPUT_ROOT)
 
+def train_base_args_parser():
+    parser = argparse.ArgumentParser(description="Train baseline XGBoost model")
+    parser.add_argument(
+        "--gpu",
+        type=int,
+        default=0,
+        help="Whether to use gpu for training, 0 for cpu, 1 for gpu")
+    parser.add_argument(
+        "--data_train_root",
+        type=str,
+        default="/tmp/nvflare/xgb_dataset/base_xgb_data",
+        help="Path to training data folder")
+    parser.add_argument(
+        "--data_test_file",
+        type=str,
+        default="/tmp/nvflare/xgb_dataset/test.csv",
+        help="Path to testing data file")
+    parser.add_argument(
+        "--out_path",
+        type=str,
+        default="/tmp/nvflare/xgb_exp/base",
+        help="Output path for the data split file",
+    )
+    return parser
 
 def load_test_data(data_path: str):
     df = pd.read_csv(data_path)
@@ -34,11 +54,16 @@ def load_test_data(data_path: str):
     y = df.iloc[:, 0]
     return X, y
 
+def main():
+    parser = train_base_args_parser()
+    args = parser.parse_args()
 
-def run_training() -> None:
+    if not os.path.exists(args.out_path):
+        os.makedirs(args.out_path)
+
     # Specify file path, rank 0 as the label owner, others as the feature owner
-    train_path = f"{DATASET_ROOT}/train.csv"
-    valid_path = f"{DATASET_ROOT}/valid.csv"
+    train_path = f"{args.data_train_root}/train.csv"
+    valid_path = f"{args.data_train_root}/valid.csv"
 
     # Load file directly to tell the match from loading with DMatrix
     df_train = pd.read_csv(train_path, header=None)
@@ -62,12 +87,17 @@ def run_training() -> None:
         print(f"DMatrix: one sample row of the data: \n {data_sample}")
 
     # Specify parameters via map, definition are same as c++ version
+    if args.gpu:
+        device = "cuda:0"
+    else:
+        device = "cpu"
     param = {
         "max_depth": 3,
         "eta": 0.1,
         "objective": "binary:logistic",
         "eval_metric": "auc",
         "tree_method": "hist",
+        "device": device,
         "nthread": 1,
     }
 
@@ -79,17 +109,17 @@ def run_training() -> None:
     bst = xgb.train(param, dtrain, num_round, evals=watchlist)
 
     # Save the model
-    bst.save_model(f"{OUTPUT_ROOT}/model.base.json")
+    bst.save_model(f"{args.out_path}/model.base.json")
     xgb.collective.communicator_print("Finished training\n")
 
     # save feature importance score to file
     score = bst.get_score(importance_type="gain")
-    with open(f"{OUTPUT_ROOT}/feat_importance.base.txt", "w") as f:
+    with open(f"{args.out_path}/feat_importance.base.txt", "w") as f:
         for key in score:
             f.write(f"{key}: {score[key]}\n")
 
     # Load test data
-    X_test, y_test = load_test_data(TEST_DATA_PATH)
+    X_test, y_test = load_test_data(args.data_test_file)
     # construct xgboost DMatrix
     dmat_test = xgb.DMatrix(X_test, label=y_test)
 
@@ -100,11 +130,11 @@ def run_training() -> None:
     # save the beeswarm plot to png file
     shap.plots.beeswarm(explanation, show=False)
     img = plt.gcf()
-    img.savefig(f"{OUTPUT_ROOT}/shap.base.png")
+    img.savefig(f"{args.out_path}/shap.base.png")
 
     # dump tree and save to text file
     dump = bst.get_dump()
-    with open(f"{OUTPUT_ROOT}/tree_dump.base.txt", "w") as f:
+    with open(f"{args.out_path}/tree_dump.base.txt", "w") as f:
         for tree in dump:
             f.write(tree)
 
@@ -112,12 +142,12 @@ def run_training() -> None:
     xgb.plot_tree(bst, num_trees=0, rankdir="LR")
     fig = plt.gcf()
     fig.set_size_inches(18, 5)
-    plt.savefig(f"{OUTPUT_ROOT}/tree.base.png", dpi=100)
+    plt.savefig(f"{args.out_path}/tree.base.png", dpi=100)
 
     # export tree to dataframe
     tree_df = bst.trees_to_dataframe()
-    tree_df.to_csv(f"{OUTPUT_ROOT}/tree_df.base.csv")
+    tree_df.to_csv(f"{args.out_path}/tree_df.base.csv")
 
 
 if __name__ == "__main__":
-    run_training()
+    main()

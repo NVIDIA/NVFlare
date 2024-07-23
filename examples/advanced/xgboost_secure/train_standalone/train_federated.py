@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import multiprocessing
+import argparse
 import os
 import sys
 import time
@@ -24,12 +25,46 @@ import xgboost as xgb
 import xgboost.federated
 
 PRINT_SAMPLE = False
-DATASET_ROOT = "/tmp/nvflare/xgb_dataset/horizontal_xgb_data"
-TEST_DATA_PATH = "/tmp/nvflare/xgb_dataset/test.csv"
-OUTPUT_ROOT = "/tmp/nvflare/xgb_exp/hori_base"
-if not os.path.exists(OUTPUT_ROOT):
-    os.makedirs(OUTPUT_ROOT)
 
+def train_federated_args_parser():
+    parser = argparse.ArgumentParser(description="Train federated XGBoost model")
+    parser.add_argument(
+        "--world_size",
+        type=int,
+        default=3,
+        help="Total number of clients")
+    parser.add_argument(
+        "--gpu",
+        type=int,
+        default=0,
+        help="Whether to use gpu for training, 0 for cpu, 1 for gpu")
+    parser.add_argument(
+        "--vert",
+        type=int,
+        default=0,
+        help="Horizontal or vertical training, 0 for horizontal, 1 for vertical")
+    parser.add_argument(
+        "--enc",
+        type=int,
+        default=0,
+        help="Whether to use encryption plugin, 0 for non-encrypted, 1 for encrypted")
+    parser.add_argument(
+        "--data_train_root",
+        type=str,
+        default="/tmp/nvflare/xgb_dataset/base_xgb_data",
+        help="Path to training data folder")
+    parser.add_argument(
+        "--data_test_file",
+        type=str,
+        default="/tmp/nvflare/xgb_dataset/test.csv",
+        help="Path to testing data file")
+    parser.add_argument(
+        "--out_path",
+        type=str,
+        default="/tmp/nvflare/xgb_exp/base",
+        help="Output path for the data split file",
+    )
+    return parser
 
 def load_test_data(data_path: str):
     df = pd.read_csv(data_path)
@@ -38,24 +73,28 @@ def load_test_data(data_path: str):
     y = df.iloc[:, 0]
     return X, y
 
-
 def run_server(port: int, world_size: int) -> None:
     xgboost.federated.run_federated_server(port, world_size)
 
 
-def run_worker(port: int, world_size: int, rank: int) -> None:
+def run_worker(port: int, world_size: int, rank: int, args) -> None:
+    if args.enc:
+        plugin = {"name": "mock"}
+    else:
+        plugin = {}
     communicator_env = {
         "dmlc_communicator": "federated",
         "federated_server_address": f"localhost:{port}",
         "federated_world_size": world_size,
         "federated_rank": rank,
+        "federated_plugin": plugin,
     }
 
     # Always call this before using distributed module
     with xgb.collective.CommunicatorContext(**communicator_env):
         # Specify file path, rank 0 as the label owner, others as the feature owner
-        train_path = f"{DATASET_ROOT}/site-{rank + 1}/train.csv"
-        valid_path = f"{DATASET_ROOT}/site-{rank + 1}/valid.csv"
+        train_path = f"{args.data_train_root}/site-{rank + 1}/train.csv"
+        valid_path = f"{args.data_train_root}/site-{rank + 1}/valid.csv"
 
         # Load file directly to tell the match from loading with DMatrix
         df_train = pd.read_csv(train_path, header=None)
@@ -66,10 +105,17 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
             print(f"Direct load: rank={rank}, one sample row of the data: \n {df_train.iloc[0]}")
 
         # Load file, file will not be sharded in federated mode.
-        label = "&label_column=0"
-        # for Vertical XGBoost, read from csv with label_column and set data_split_mode to 1 for column mode
-        dtrain = xgb.DMatrix(train_path + f"?format=csv{label}", data_split_mode=0)
-        dvalid = xgb.DMatrix(valid_path + f"?format=csv{label}", data_split_mode=0)
+        if args.vert:
+            split_mode = 1
+            if rank == 0:
+                label = "&label_column=0"
+            else:
+                label = ""
+        else:
+            split_mode = 0
+            label = "&label_column=0"
+        dtrain = xgb.DMatrix(train_path + f"?format=csv{label}", data_split_mode=split_mode)
+        dvalid = xgb.DMatrix(valid_path + f"?format=csv{label}", data_split_mode=split_mode)
 
         if PRINT_SAMPLE:
             # print number of rows and columns for each worker
@@ -79,12 +125,17 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
             print(f"DMatrix: rank={rank}, one sample row of the data: \n {data_sample}")
 
         # Specify parameters via map, definition are same as c++ version
+        if args.gpu:
+            device = "cuda:0"
+        else:
+            device = "cpu"
         param = {
             "max_depth": 3,
             "eta": 0.1,
             "objective": "binary:logistic",
             "eval_metric": "auc",
             "tree_method": "hist",
+            "device": device,
             "nthread": 1,
         }
 
@@ -97,17 +148,17 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
 
         # Save the model
         rank = xgb.collective.get_rank()
-        bst.save_model(f"{OUTPUT_ROOT}/model.hori.base.{rank}.json")
+        bst.save_model(f"{args.out_path}/model.{rank}.json")
         xgb.collective.communicator_print("Finished training\n")
 
         # save feature importance score to file
         score = bst.get_score(importance_type="gain")
-        with open(f"{OUTPUT_ROOT}/feat_importance.hori.base.{rank}.txt", "w") as f:
+        with open(f"{args.out_path}/feat_importance.{rank}.txt", "w") as f:
             for key in score:
                 f.write(f"{key}: {score[key]}\n")
 
         # Load test data
-        X_test, y_test = load_test_data(TEST_DATA_PATH)
+        X_test, y_test = load_test_data(args.data_test_file)
         # construct xgboost DMatrix
         dmat_test = xgb.DMatrix(X_test, label=y_test)
 
@@ -118,11 +169,11 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         # save the beeswarm plot to png file
         shap.plots.beeswarm(explanation, show=False)
         img = plt.gcf()
-        img.savefig(f"{OUTPUT_ROOT}/shap.hori.base.{rank}.png")
+        img.savefig(f"{args.out_path}/shap.{rank}.png")
 
         # dump tree and save to text file
         dump = bst.get_dump()
-        with open(f"{OUTPUT_ROOT}/tree_dump.hori.base.{rank}.txt", "w") as f:
+        with open(f"{args.out_path}/tree_dump.{rank}.txt", "w") as f:
             for tree in dump:
                 f.write(tree)
 
@@ -130,16 +181,21 @@ def run_worker(port: int, world_size: int, rank: int) -> None:
         xgb.plot_tree(bst, num_trees=0, rankdir="LR")
         fig = plt.gcf()
         fig.set_size_inches(18, 5)
-        plt.savefig(f"{OUTPUT_ROOT}/tree.hori.base.{rank}.png", dpi=100)
+        plt.savefig(f"{args.out_path}/tree.{rank}.png", dpi=100)
 
         # export tree to dataframe
         tree_df = bst.trees_to_dataframe()
-        tree_df.to_csv(f"{OUTPUT_ROOT}/tree_df.hori.base.{rank}.csv")
+        tree_df.to_csv(f"{args.out_path}/tree_df.{rank}.csv")
 
 
-def run_federated() -> None:
+def main():
+    parser = train_federated_args_parser()
+    args = parser.parse_args()
+    if not os.path.exists(args.out_path):
+        os.makedirs(args.out_path)
+
     port = 1111
-    world_size = int(sys.argv[1])
+    world_size = args.world_size
 
     server = multiprocessing.Process(target=run_server, args=(world_size, port))
     server.start()
@@ -149,7 +205,7 @@ def run_federated() -> None:
 
     workers = []
     for rank in range(world_size):
-        worker = multiprocessing.Process(target=run_worker, args=(port, world_size, rank))
+        worker = multiprocessing.Process(target=run_worker, args=(port, world_size, rank, args))
         workers.append(worker)
         worker.start()
     for worker in workers:
@@ -158,4 +214,4 @@ def run_federated() -> None:
 
 
 if __name__ == "__main__":
-    run_federated()
+    main()
