@@ -89,9 +89,75 @@ via the MONAI FLARE integration.
 load and cache the externally calculated statistics. The server side controller will pass the target metrics to pre_run method 
 so it can be used to load the statistics. 
 
+### Hierarchical Stats example
+
+Hierarchical statistics involves the analysis of data that is structured in a hierarchical (multi-level) format, such as data grouped by different categories.
+
+This approach allows for more accurate and meaningful analysis by accounting for the nested structure of the data. Hierarchical statistics are essential because they enable us to understand the variability at each level of the hierarchy, improve model accuracy, and make more precise inferences about the relationships within and between groups.
+
+#### Hierarchical Statistics Example: Medical Device Data
+
+Levels of Hierarchy:
+- Manufacturer Level: Different manufacturers produce medical devices.
+- Hospital Level: Hospitals use devices from various manufacturers.
+- Device Level: Each hospital uses multiple devices.
+
+Why We Need It:
+- Understanding Variability: Analyze performance differences between manufacturers, hospitals, and individual devices.
+- Improving Accuracy: Account for nested data structure to get precise performance estimates.
+- Better Inferences: Identify top-performing manufacturers, hospitals needing support, and underperforming devices for recalibration or replacement.
+
+Hierarchical statistics in this context help improve the reliability and effectiveness of medical devices by providing insights at multiple organizational levels.
+
+#### Hierarchical Statistics Example: School/University Data
+
+Levels of Hierarchy:
+- State Level: Different states contain multiple universities.
+- University Level: Each state has several universities.
+- School Level: Each university consists of various schools or departments.
+
+Why We Need It:
+- Understanding Variability: Analyze performance differences between states, universities, and individual schools.
+- Improving Accuracy: Account for the nested structure to achieve precise performance metrics.
+- Better Inferences: Identify top-performing states, universities that need additional resources, and schools that require targeted interventions.
+
+Hierarchical statistics in this context help optimize educational policies and resource allocation by providing detailed insights across different organizational levels.
+
+This example shows how to generate hierarchical statistics for data that can be represented as Pandas Data Frame.
+
+[Hierarchical Data frame statistics](hierarchical_stats)
+
+Here is an example of the generated hierarchical statistics for the students data from different universities.
+
+Expandable global and level wise stats
+
+<img src="hierarchical_stats/demo/expandable_stats.png" alt="Expandable Hierarchical stats" width="800">
+
+Expanding `Global` will show visualization of global statistics similar to the following
+
+<img src="hierarchical_stats/demo/global_stats.png" alt="Global stats" width="800">
+
+Following visualization shows example hierarchy level global statistics
+
+<img src="hierarchical_stats/demo/states_hierarchy.png" alt="States" width="800">
+
+and
+
+<img src="hierarchical_stats/demo/state_level_global_stats.png" alt="State 2 stats" width="800">
+
+And the visualization of local stats at last hierarchical level should looks similar to the following
+
+<img src="hierarchical_stats/demo/local_hierarchical_stats.png" alt="Local stats" width="800">
+
+The main steps are
+* provide server side configuration to specify target statistics and their configurations and output location
+* implement the local statistics generator (statistics_spec)
+* provide client side configuration to specify data input location
+* provide hierarchy specification file providing details about all the clients and their hierarchy.
+
 ## Privacy Policy and Privacy Filters
 
-NVFLARE provide data privacy protection through privacy filters [privacy-management](https://nvflare.readthedocs.io/en/latest/user_guide/site_policy_management.html#privacy-management)
+NVFLARE provide data privacy protection through privacy filters [privacy-management](https://nvflare.readthedocs.io/en/main/user_guide/security/site_policy_management.html#privacy-management)
 Each site can have its own privacy policy. 
 
 ### Local privacy policy
