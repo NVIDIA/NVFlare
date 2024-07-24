@@ -52,7 +52,7 @@ class TFScaffoldHelper(object):
         self.c_local.set_weights(c_init_para)
 
         # Generate a list of the flattened layers
-        layer_weights_dict = {layer.name: layer.get_weights() for layer in self.c_global.layers}
+        layer_weights_dict = {layer.name: layer.get_weights() for layer in self.c_global.layers if layer.trainable}
         flattened_layer_weights_dict = flat_layer_weights_dict(layer_weights_dict)
         self.global_keys = [key for key, _ in flattened_layer_weights_dict.items()]
 
