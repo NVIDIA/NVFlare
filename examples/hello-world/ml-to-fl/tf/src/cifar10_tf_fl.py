@@ -29,6 +29,7 @@ def main():
     train_images, test_images = train_images / 255.0, test_images / 255.0
 
     model = TFNet()
+    model.build(input_shape=(None, 32, 32, 3))
     model.compile(
         optimizer="adam", loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=["accuracy"]
     )

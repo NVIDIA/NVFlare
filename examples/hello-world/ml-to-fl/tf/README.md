@@ -14,13 +14,6 @@ Please install the requirements first, it is suggested to install inside a virtu
 pip install -r requirements.txt
 ```
 
-Please also configure the job templates folder:
-
-```bash
-nvflare config -jt ../../../../job_templates/
-nvflare job list_templates
-```
-
 ## Minimum Hardware Requirements
 
 | Example name | minimum requirements |
@@ -50,12 +43,12 @@ This can be achieved using the `-gpu` argument during simulation, e.g., `nvflare
 
 ## Transform CIFAR10 TensorFlow training code to FL with NVFLARE Client API
 
-Given a TensorFlow CIFAR10 example: [./code/cifar10_tf_original.py](./code/cifar10_tf_original.py).
+Given a TensorFlow CIFAR10 example: [./src/cifar10_tf_original.py](./src/cifar10_tf_original.py).
 
 You can run it using
 
 ```bash
-python3 ./code/cifar10_tf_original.py
+python3 ./src/cifar10_tf_original.py
 ```
 
 To transform the existing code to FL training code, we made the following changes:
@@ -70,57 +63,40 @@ To transform the existing code to FL training code, we made the following change
 
 Notice that we need to get / load the model weights as a ``dict`` of arrays because we want to reuse existing NVFlare components.
 
-The modified code can be found here: [./code/cifar10_tf_fl.py](./code/cifar10_tf_fl.py), [./code/tf_net.py](./code/tf_net.py).
+The modified code can be found here: [./src/cifar10_tf_fl.py](./src/cifar10_tf_fl.py), [./src/tf_net.py](./src/tf_net.py).
 
-After we modify our training script, we need to put it into a [job structure](https://nvflare.readthedocs.io/en/latest/real_world_fl/job.html) so that NVFlare system knows how to deploy and run the job.
-
-Please refer to [JOB CLI tutorial](../../../tutorials/job_cli.ipynb) on how to generate a job easily from our existing job templates.
-
-
-We choose the [tensorflow job template](../../../../job_templates/sag_tf/) and run the following command to create the job:
-
-```bash
-nvflare job create -force -j ./jobs/tensorflow -w sag_tf -sd ./code/ -f config_fed_client.conf app_script=cifar10_tf_fl.py
-```
+After we modify our training script, we can create a job using the in-process ScriptRunner: [tf_client_api_job.py](tf_client_api_job.py).
+(Please refer to [FedJob API](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html) for more details on formulating a job)
 
 Then we can run the job using the simulator:
 
 ```bash
 bash ./prepare_data.sh
-TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async nvflare simulator -n 2 -t 2 ./jobs/tensorflow -w tensorflow_workspace
+TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async python3 tf_client_api_job.py --script src/cifar10_tf_fl.py
 ```
 
 
 ## Transform CIFAR10 TensorFlow multi GPU training code to FL with NVFLARE Client API
 
 Following the [official documentation](https://www.tensorflow.org/guide/keras/distributed_training#single-host_multi-device_synchronous_training), we modified the single 
-device TensorFlow CIFAR10 example: [./code/cifar10_tf_original.py](./code/cifar10_tf_original.py) to
-a multi-device version: [./code/cifar10_tf_multi_gpu_original.py](./code/cifar10_tf_multi_gpu_original.py)
+device TensorFlow CIFAR10 example: [./src/cifar10_tf_original.py](./src/cifar10_tf_original.py) to
+a multi-device version: [./src/cifar10_tf_multi_gpu_original.py](./src/cifar10_tf_multi_gpu_original.py)
 
 You can run it using
 
 ```bash
-python3 ./code/cifar10_tf_multi_gpu_original.py
+python3 ./src/cifar10_tf_multi_gpu_original.py
 ```
 
 To transform the existing multi-gpu code to FL training code, we can apply the same changes as in [single GPU case](#transform-cifar10-tensorflow-training-code-to-fl-with-nvflare-client-api).
 
-The modified code can be found here: [./code/cifar10_tf_multi_gpu_fl.py](./code/cifar10_tf_multi_gpu_fl.py).
+The modified code can be found here: [./src/cifar10_tf_multi_gpu_fl.py](./src/cifar10_tf_multi_gpu_fl.py).
 
-After we modify our training script, we need to put it into a [job structure](https://nvflare.readthedocs.io/en/latest/real_world_fl/job.html) so that NVFlare system knows how to deploy and run the job.
-
-Please refer to [JOB CLI tutorial](../../../tutorials/job_cli.ipynb) on how to generate a job easily from our existing job templates.
-
-
-We choose the [tensorflow job template](../../../../job_templates/sag_tf/) and run the following command to create the job:
-
-```bash
-nvflare job create -force -j ./jobs/tensorflow_multi_gpu -w sag_tf -sd ./code/ -f config_fed_client.conf app_script=cifar10_tf_multi_gpu_fl.py
-```
+After we modify our training script, we can create a job using the ScriptRunner to launch our script: [tf_client_api_job.py](tf_client_api_job.py).
 
 Then we can run the job using the simulator:
 
 ```bash
 bash ./prepare_data.sh
-TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async nvflare simulator -n 2 -t 2 ./jobs/tensorflow_multi_gpu -w tensorflow_multi_gpu_workspace
+TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async python3 tf_client_api_job.py --script src/cifar10_tf_multi_gpu_fl.py --launch
 ```
