@@ -147,9 +147,11 @@ class XGBClientRunner(AppRunner, FLComponent):
             self.logger.info("XGBoost non-secure training")
         else:
             xgb_plugin_name = ConfigService.get_str_var(
-                name="xgb_plugin_name", conf=SystemConfigs.RESOURCES_CONF, default=None)
+                name="xgb_plugin_name", conf=SystemConfigs.RESOURCES_CONF, default=None
+            )
             xgb_plugin_path = ConfigService.get_str_var(
-                name="xgb_plugin_path", conf=SystemConfigs.RESOURCES_CONF, default=None)
+                name="xgb_plugin_path", conf=SystemConfigs.RESOURCES_CONF, default=None
+            )
             xgb_plugin_params: dict = ConfigService.get_dict_var(
                 name=PLUGIN_PARAM_KEY, conf=SystemConfigs.RESOURCES_CONF, default={}
             )
@@ -162,7 +164,7 @@ class XGBClientRunner(AppRunner, FLComponent):
                 xgb_plugin_params[PLUGIN_KEY_PATH] = xgb_plugin_path
 
             # Set default plugin name
-            if  not xgb_plugin_params.get(PLUGIN_KEY_NAME):
+            if not xgb_plugin_params.get(PLUGIN_KEY_NAME):
                 xgb_plugin_params[PLUGIN_KEY_NAME] = "cuda_paillier"
 
             if not xgb_plugin_params.get(PLUGIN_KEY_PATH):
@@ -173,7 +175,7 @@ class XGBClientRunner(AppRunner, FLComponent):
 
             self.logger.info(f"XGBoost secure training: {self._training_mode} Params: {xgb_plugin_params}")
 
-            communicator_env[PLUGIN_PARAM_KEY] = xgb_plugin_params;
+            communicator_env[PLUGIN_PARAM_KEY] = xgb_plugin_params
 
         with xgb.collective.CommunicatorContext(**communicator_env):
             # Load the data. Dmatrix must be created with column split mode in CommunicatorContext for vertical FL
