@@ -1,5 +1,7 @@
+// This proto definition is copied from flower's grpcadapter.proto, and must be kept in sync with it.
 syntax = "proto3";
 
+// Change flwr.proto to flower.proto to avoid namespace conflict when both Flower and Flare are installed
 package flower.proto;
 
 service GrpcAdapter {

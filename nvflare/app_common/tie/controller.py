@@ -74,7 +74,7 @@ class TieController(Controller, ABC):
             start_task_name - name of the start task
             start_task_timeout - time to wait for clients’ responses to the start task before timeout.
             job_status_check_interval - how often to check client statuses of the job
-            max_client_op_interval - max amount of time allowed between XGB ops from a client
+            max_client_op_interval - max amount of time allowed between app ops from a client
             progress_timeout- the maximum amount of time allowed for the workflow to not make any progress.
                 In other words, at least one participating client must have made progress during this time.
                 Otherwise, the workflow will be considered to be in trouble and the job will be aborted.
@@ -233,7 +233,7 @@ class TieController(Controller, ABC):
 
         Args:
             fl_ctx: FL context
-            op: the XGB operation requested
+            op: the app operation requested
             client_done: whether the client is done
 
         Returns: None
@@ -307,8 +307,8 @@ class TieController(Controller, ABC):
             self.log_warning(fl_ctx, f"dropped app request ({op=}) since server is already stopped")
             return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
 
-        # since XGB protocol is very strict, we'll stop the control flow when any error occurs
-        process_error = "XGB request process error"
+        # we assume app protocol to be very strict, we'll stop the control flow when any error occurs
+        process_error = "app request process error"
         self._update_client_status(fl_ctx, op=op)
         try:
             reply = self.connector.process_app_request(op, request, fl_ctx, self.abort_signal)

@@ -64,7 +64,7 @@ class Applet(ABC, FLComponent):
     def is_stopped(self) -> (bool, int):
         """Called to check whether the applet is already stopped.
 
-        Returns: whether the applet is stopped. If stopped, the exit code.
+        Returns: whether the applet is stopped, and the exit code if stopped.
 
         """
         pass

@@ -99,7 +99,7 @@ class TieExecutor(Executor):
         Returns: a dict of config params
 
         """
-        pass
+        return {}
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:

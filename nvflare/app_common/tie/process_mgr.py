@@ -43,7 +43,9 @@ class CommandDescriptor:
             env: system env for the new process
             log_file_name: base name of the log file.
             log_stdout: whether to output log messages to stdout.
-            stdout_msg_prefix: prefix to be prepended to log message when writing to stdout
+            stdout_msg_prefix: prefix to be prepended to log message when writing to stdout.
+                Since multiple processes could be running within the same terminal window, the prefix can help
+                differentiate log messages from these processes.
         """
         check_str("cmd", cmd)
 
@@ -84,6 +86,7 @@ class ProcessManager:
         self.cmd_desc = cmd_desc
         self.log_file = None
         self.msg_prefix = None
+        self.file_lock = threading.Lock()
         self.logger = get_logger(self)
 
     def start(
@@ -104,7 +107,6 @@ class ProcessManager:
             site_name = fl_ctx.get_identity_name()
             self.msg_prefix = f"[{self.cmd_desc.stdout_msg_prefix}@{site_name}]"
 
-        lf = None
         if self.cmd_desc.log_file_name:
             ws = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
             if not isinstance(ws, Workspace):
@@ -115,16 +117,7 @@ class ProcessManager:
 
             run_dir = ws.get_run_dir(job_id)
             log_file_path = os.path.join(run_dir, self.cmd_desc.log_file_name)
-
-            lf = open(log_file_path, "a")
-            self.log_file = lf
-
-        if lf and self.cmd_desc.log_stdout:
-            stdout = subprocess.PIPE
-        elif lf and not self.cmd_desc.log_stdout:
-            stdout = lf
-        else:
-            stdout = None
+            self.log_file = open(log_file_path, "a")
 
         env = os.environ.copy()
         if self.cmd_desc.env:
@@ -136,16 +129,12 @@ class ProcessManager:
             universal_newlines=True,
             stderr=subprocess.STDOUT,
             cwd=self.cmd_desc.cwd,
-            env=self.cmd_desc.env,
-            stdout=stdout,
+            env=env,
+            stdout=subprocess.PIPE,
         )
 
-        if stdout == subprocess.PIPE:
-            # both log file and stdout output are needed.
-            # we need a separate thread to monitor the process's stdout pipe and write messages to
-            # the log file and the sys.stdout!
-            log_writer = threading.Thread(target=self._write_log, daemon=True)
-            log_writer.start()
+        log_writer = threading.Thread(target=self._write_log, daemon=True)
+        log_writer.start()
 
     def _write_log(self):
         # write messages from the process's stdout pipe to log file and sys.stdout.
@@ -155,12 +144,17 @@ class ProcessManager:
             if not line:
                 break
 
-            self.log_file.write(line)
-            self.log_file.flush()
-            if self.msg_prefix:
-                line = f"{self.msg_prefix} {line}"
-            sys.stdout.write(line)
-            sys.stdout.flush()
+            # use file_lock to ensure file integrity since the log file could be closed by the self.stop() method!
+            with self.file_lock:
+                if self.log_file:
+                    self.log_file.write(line)
+                    self.log_file.flush()
+
+            if self.cmd_desc.log_stdout:
+                if self.msg_prefix:
+                    line = f"{self.msg_prefix} {line}"
+                sys.stdout.write(line)
+                sys.stdout.flush()
 
     def poll(self):
         """Perform a poll request on the process.
@@ -190,10 +184,11 @@ class ProcessManager:
                 pass
 
         # close the log file if any
-        if self.log_file:
-            self.logger.debug("closed subprocess log file!")
-            self.log_file.close()
-            self.log_file = None
+        with self.file_lock:
+            if self.log_file:
+                self.logger.debug("closed subprocess log file!")
+                self.log_file.close()
+                self.log_file = None
         return rc
 
 

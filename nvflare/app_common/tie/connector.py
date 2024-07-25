@@ -66,6 +66,8 @@ class _AppletStarter:
                 configure_logging(self.workspace)
                 add_log_file_handler(log_file_name)
             self.applet.start(ctx)
+
+            # Note: self.applet.start() does not return until the applet runs to completion!
             self.stopped = True
         except Exception as e:
             secure_log_traceback()
@@ -106,7 +108,7 @@ class Connector(ABC, FLComponent):
 
     def set_applet(self, applet: Applet):
         """Set the applet that will be used to run app processing logic.
-        Note that the connector is only responsible for starting the applet appropriately (in a thread or in a
+        Note that the connector is only responsible for starting the applet appropriately (in a separate thread or in a
         separate process).
 
         Args:
@@ -312,9 +314,10 @@ class Connector(ABC, FLComponent):
         Returns: a tuple of (whether the applet is stopped, exit code)
 
         """
+        applet = self.applet
         if self.applet_env == Constant.APPLET_ENV_SELF:
-            if self.applet:
-                return self.applet.is_stopped()
+            if applet:
+                return applet.is_stopped()
             else:
                 self.logger.warning("applet is not set with the connector")
                 return True, 0
@@ -325,8 +328,8 @@ class Connector(ABC, FLComponent):
                     self.logger.info("starter is stopped!")
                     return True, self.starter.exit_code
 
-            if self.applet:
-                return self.applet.is_stopped()
+            if applet:
+                return applet.is_stopped()
             else:
                 self.logger.warning("applet is not set with the connector")
                 return True, 0
@@ -370,7 +373,7 @@ class Connector(ABC, FLComponent):
         if not fl_ctx:
             fl_ctx = self.engine.new_context()
 
-        self.logger.debug(f"sending request with RM: {request=}; {type(request['flower.headers'])}")
+        self.logger.debug(f"sending request with RM: {op=}")
         return ReliableMessage.send_request(
             target=target,
             topic=Constant.TOPIC_APP_REQUEST,

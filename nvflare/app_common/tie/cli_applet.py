@@ -83,7 +83,7 @@ class CLIApplet(Applet, ABC):
                 rc = mgr.poll()
                 if rc is not None:
                     # already stopped
-                    self.logger.info(f"applet stopped ({rc=}) gracefully after {time.time()-start} seconds")
+                    self.logger.info(f"applet stopped ({rc=}) after {time.time()-start} seconds")
                     break
                 time.sleep(0.1)
 
@@ -95,8 +95,9 @@ class CLIApplet(Applet, ABC):
         if self._start_error:
             return True, Constant.EXIT_CODE_CANT_START
 
-        if self._proc_mgr:
-            return_code = self._proc_mgr.poll()
+        mgr = self._proc_mgr
+        if mgr:
+            return_code = mgr.poll()
             if return_code is None:
                 return False, 0
             else:
