@@ -15,9 +15,9 @@
 import concurrent.futures as futures
 
 import grpc
+from flwr.proto.grpcadapter_pb2_grpc import GrpcAdapterServicer, add_GrpcAdapterServicer_to_server
 
 from nvflare.app_opt.flower.defs import GRPC_DEFAULT_OPTIONS
-from nvflare.app_opt.flower.proto.grpcadapter_pb2_grpc import GrpcAdapterServicer, add_GrpcAdapterServicer_to_server
 from nvflare.fuel.utils.obj_utils import get_logger
 from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_int
 from nvflare.security.logging import secure_format_exception

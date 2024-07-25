@@ -11,9 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import nvflare.app_opt.flower.proto.grpcadapter_pb2 as pb2
+import flwr.proto.grpcadapter_pb2 as pb2
+from flwr.proto.grpcadapter_pb2_grpc import GrpcAdapterStub
+
 from nvflare.app_opt.flower.defs import GRPC_DEFAULT_OPTIONS
-from nvflare.app_opt.flower.proto.grpcadapter_pb2_grpc import GrpcAdapterStub
 from nvflare.app_opt.flower.utils import create_channel
 from nvflare.fuel.utils.obj_utils import get_logger
 

@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import nvflare.app_opt.flower.proto.grpcadapter_pb2 as pb2
+import flwr.proto.grpcadapter_pb2 as pb2
+
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.tie.defs import Constant as TieConstant
 from nvflare.fuel.f3.drivers.net_utils import MAX_FRAME_SIZE

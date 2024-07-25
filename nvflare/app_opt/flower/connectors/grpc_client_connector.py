@@ -11,13 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import nvflare.app_opt.flower.proto.grpcadapter_pb2 as pb2
+import flwr.proto.grpcadapter_pb2 as pb2
+from flwr.proto.grpcadapter_pb2_grpc import GrpcAdapterServicer
+
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode
 from nvflare.app_opt.flower.connectors.flower_connector import FlowerClientConnector
 from nvflare.app_opt.flower.defs import Constant, msg_container_to_shareable, shareable_to_msg_container
 from nvflare.app_opt.flower.grpc_server import GrpcServer
-from nvflare.app_opt.flower.proto.grpcadapter_pb2_grpc import GrpcAdapterServicer
 from nvflare.fuel.f3.drivers.net_utils import get_open_tcp_port
 from nvflare.security.logging import secure_format_exception
 
