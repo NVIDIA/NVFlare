@@ -24,7 +24,7 @@ namespace nvflare {
 void PassThruPlugin::BuildEncryptedHistHori(const double *in_histogram, std::size_t len,
                                             std::uint8_t **out_hist, std::size_t *out_len) {
   if (debug_) {
-    std::cout << "PassThruPlugin::BuildEncryptedHistHori called with " << len << " entries" << std::endl;
+    std::cout << Ident() << " PassThruPlugin::BuildEncryptedHistHori called with " << len << " entries" << std::endl;
   }
 
   DamEncoder encoder(kDataSetHistogramResult, true, dam_debug_);
@@ -42,7 +42,7 @@ void PassThruPlugin::BuildEncryptedHistHori(const double *in_histogram, std::siz
 void PassThruPlugin::SyncEncryptedHistHori(const std::uint8_t *buffer, std::size_t len,
                                            double **out_hist, std::size_t *out_len) {
   if (debug_) {
-    std::cout << "PassThruPlugin::SyncEncryptedHistHori called with buffer size: " << len << std::endl;
+    std::cout << Ident() << " PassThruPlugin::SyncEncryptedHistHori called with buffer size: " << len << std::endl;
   }
 
   auto remaining = len;
@@ -91,7 +91,7 @@ std::vector<double> PassThruPlugin::DecryptVector(const std::vector<Buffer>& cip
 
   for (auto const &v : ciphertext) {
     size_t n = v.buf_size/sizeof(double);
-    auto p = reinterpret_cast<double *>(v.buffer);
+    auto p = static_cast<double *>(v.buffer);
     for (int i = 0; i < n; i++) {
       result.push_back(p[i]);
     }

@@ -15,7 +15,7 @@
  */
 #pragma once
 
-#include "xgboost_plugin.h"
+#include "base_plugin.h"
 #include "dam.h"
 
 namespace nvflare {

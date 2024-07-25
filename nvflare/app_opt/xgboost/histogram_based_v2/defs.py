@@ -122,8 +122,6 @@ GRPC_DEFAULT_OPTIONS = [
 class SplitMode:
     ROW = 0
     COL = 1
-    COL_SECURE = 2
-    ROW_SECURE = 3
 
 
 # Mapping of text training mode to split mode
@@ -132,10 +130,10 @@ TRAINING_MODE_MAPPING = {
     "horizontal": SplitMode.ROW,
     "v": SplitMode.COL,
     "vertical": SplitMode.COL,
-    "hs": SplitMode.ROW_SECURE,
-    "horizontal_secure": SplitMode.ROW_SECURE,
-    "vs": SplitMode.COL_SECURE,
-    "vertical_secure": SplitMode.COL_SECURE,
+    "hs": SplitMode.ROW,
+    "horizontal_secure": SplitMode.ROW,
+    "vs": SplitMode.COL,
+    "vertical_secure": SplitMode.COL,
 }
 
 SECURE_TRAINING_MODES = {"hs", "horizontal_secure", "vs", "vertical_secure"}

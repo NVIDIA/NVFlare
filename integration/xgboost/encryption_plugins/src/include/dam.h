@@ -14,22 +14,21 @@
  * limitations under the License.
  */
 #pragma once
-#include <string>
 #include <vector>
 #include <map>
 
-const char kSignature[] = "NVDADAM1";       // DAM (Direct Accessible Marshalling) V1
-const char kSignatureLocal[] = "NVDADAML";  // DAM Local version
-const int kPrefixLen = 24;
+constexpr char kSignature[] = "NVDADAM1";       // DAM (Direct Accessible Marshalling) V1
+constexpr char kSignatureLocal[] = "NVDADAML";  // DAM Local version
+constexpr int kPrefixLen = 24;
 
-const int kDataTypeInt = 1;
-const int kDataTypeFloat = 2;
-const int kDataTypeString = 3;
-const int kDataTypeBuffer = 4;
-const int kDataTypeIntArray = 257;
-const int kDataTypeFloatArray = 258;
-const int kDataTypeBufferArray = 259;
-const int kDataTypeMap = 1025;
+constexpr int kDataTypeInt = 1;
+constexpr int kDataTypeFloat = 2;
+constexpr int kDataTypeString = 3;
+constexpr int kDataTypeBuffer = 4;
+constexpr int kDataTypeIntArray = 257;
+constexpr int kDataTypeFloatArray = 258;
+constexpr int kDataTypeBufferArray = 259;
+constexpr int kDataTypeMap = 1025;
 
 /*! \brief A replacement for std::span */
 class Buffer {
@@ -38,15 +37,15 @@ public:
     size_t buf_size;
     bool allocated;
 
-    Buffer() : buf_size(0), buffer(nullptr), allocated(false) {
+    Buffer() : buffer(nullptr), buf_size(0), allocated(false) {
     }
 
     Buffer(void *buffer, size_t buf_size, bool allocated=false) :
-        buf_size(buf_size), buffer(buffer), allocated(allocated) {
+        buffer(buffer), buf_size(buf_size), allocated(allocated) {
     }
 
     Buffer(const Buffer &that):
-        buf_size(that.buf_size), buffer(that.buffer), allocated(false) {
+        buffer(that.buffer), buf_size(that.buf_size), allocated(false) {
     }
 };
 
@@ -62,7 +61,8 @@ class Entry {
         this->size = size;
     }
 
-    std::size_t ItemSize() {
+    [[nodiscard]] std::size_t ItemSize() const
+    {
         size_t item_size;
         switch (data_type) {
             case kDataTypeBuffer:
@@ -121,15 +121,15 @@ class DamDecoder {
  public:
     explicit DamDecoder(std::uint8_t *buffer, std::size_t size, bool local_version=false, bool debug=false);
 
-    size_t Size() {
+    [[nodiscard]] std::size_t Size() const {
         return len_;
     }
 
-    int64_t GetDataSetId() {
+    [[nodiscard]] int64_t GetDataSetId() const {
         return data_set_id_;
     }
 
-    bool IsValid();
+    [[nodiscard]] bool IsValid() const;
 
     Buffer DecodeBuffer();
 
@@ -140,4 +140,4 @@ class DamDecoder {
     std::vector<Buffer> DecodeBufferArray();
 };
 
-void print_buffer(uint8_t *buffer, int size);
+void print_buffer(const uint8_t *buffer, std::size_t size);

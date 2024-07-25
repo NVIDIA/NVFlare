@@ -20,7 +20,7 @@
 #include <utility>     // for pair
 #include <vector>      // for vector
 
-#include "xgboost_plugin.h"
+#include "base_plugin.h"
 
 namespace nvflare {
 

@@ -11,7 +11,7 @@ namespace nvflare {
 
 void LocalPlugin::EncryptGPairs(const float *in_gpair, std::size_t n_in, std::uint8_t **out_gpair, std::size_t *n_out) {
   if (debug_) {
-    std::cout << "LocalPlugin::EncryptGPairs called with pairs size: " << n_in << std::endl;
+    std::cout << Ident() << " LocalPlugin::EncryptGPairs called with pairs size: " << n_in << std::endl;
   }
 
   if (print_timing_) {
@@ -25,7 +25,7 @@ void LocalPlugin::EncryptGPairs(const float *in_gpair, std::size_t n_in, std::ui
 
   if (print_timing_) {
     auto end = std::chrono::system_clock::now();
-    auto secs = (double) std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() / 1000.0;
+    auto secs = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()) / 1000.0;
     std::cout << "Encryption time: " << secs << " seconds" << std::endl;
   }
 
@@ -54,7 +54,7 @@ void LocalPlugin::EncryptGPairs(const float *in_gpair, std::size_t n_in, std::ui
 void LocalPlugin::SyncEncryptedGPairs(const std::uint8_t *in_gpair, std::size_t n_bytes,
                                       const std::uint8_t **out_gpair, std::size_t *out_n_bytes) {
   if (debug_) {
-    std::cout << "LocalPlugin::SyncEncryptedGPairs called with buffer:" << std::endl;
+    std::cout << Ident() << " LocalPlugin::SyncEncryptedGPairs called with buffer:" << std::endl;
     print_buffer(const_cast<uint8_t *>(in_gpair), n_bytes);
   }
 
@@ -80,7 +80,7 @@ void LocalPlugin::SyncEncryptedGPairs(const std::uint8_t *in_gpair, std::size_t 
 void LocalPlugin::ResetHistContext(const std::uint32_t *cutptrs, std::size_t cutptr_len, const std::int32_t *bin_idx,
                                    std::size_t n_idx) {
   if (debug_) {
-    std::cout << "LocalPlugin::ResetHistContext called with cutptrs size: " << cutptr_len << " bin_idx size: "
+    std::cout << Ident() << " LocalPlugin::ResetHistContext called with cutptrs size: " << cutptr_len << " bin_idx size: "
               << n_idx << std::endl;
   }
 
@@ -91,7 +91,7 @@ void LocalPlugin::ResetHistContext(const std::uint32_t *cutptrs, std::size_t cut
 void LocalPlugin::BuildEncryptedHistHori(const double *in_histogram, std::size_t len, std::uint8_t **out_hist,
                                          std::size_t *out_len) {
   if (debug_) {
-    std::cout << "LocalPlugin::BuildEncryptedHistHori called with " << len << " entries" << std::endl;
+    std::cout << Ident() << " LocalPlugin::BuildEncryptedHistHori called with " << len << " entries" << std::endl;
   }
 
   // don't have a local implementation yet, just encoded it and let NVFlare handle it.
@@ -111,7 +111,7 @@ void LocalPlugin::BuildEncryptedHistHori(const double *in_histogram, std::size_t
 void LocalPlugin::SyncEncryptedHistHori(const std::uint8_t *buffer, std::size_t len, double **out_hist,
                                         std::size_t *out_len) {
   if (debug_) {
-    std::cout << "LocalPlugin::SyncEncryptedHistHori called with buffer size: " << len << std::endl;
+    std::cout << Ident() << " LocalPlugin::SyncEncryptedHistHori called with buffer size: " << len << std::endl;
   }
 
   // No local implementation yet, just decode data from NVFlare
@@ -136,7 +136,7 @@ void LocalPlugin::SyncEncryptedHistHori(const std::uint8_t *buffer, std::size_t 
 void LocalPlugin::BuildEncryptedHistVert(const std::uint64_t **ridx, const std::size_t *sizes, const std::int32_t *nidx,
                                          std::size_t len, std::uint8_t **out_hist, std::size_t *out_len) {
   if (debug_) {
-    std::cout << "LocalPlugin::BuildEncryptedHistVert called with number of nodes: " << len << std::endl;
+    std::cout << Ident() << " LocalPlugin::BuildEncryptedHistVert called with number of nodes: " << len << std::endl;
   }
 
   if (gh_pairs_.empty()) {
@@ -150,7 +150,7 @@ void LocalPlugin::BuildEncryptedHistVertActive(const std::uint64_t **ridx, const
                                                std::size_t len, std::uint8_t **out_hist, std::size_t *out_len) {
 
   if (debug_) {
-    std::cout << "LocalPlugin::BuildEncryptedHistVertActive called with " << len << " nodes" << std::endl;
+    std::cout << Ident() << " LocalPlugin::BuildEncryptedHistVertActive called with " << len << " nodes" << std::endl;
   }
 
   auto total_bin_size = cuts_.back();
@@ -193,7 +193,7 @@ void LocalPlugin::BuildEncryptedHistVertActive(const std::uint64_t **ridx, const
 void LocalPlugin::BuildEncryptedHistVertPassive(const std::uint64_t **ridx, const std::size_t *sizes, const std::int32_t *nidx,
                                                 std::size_t len, std::uint8_t **out_hist, std::size_t *out_len) {
   if (debug_) {
-    std::cout << "LocalPlugin::BuildEncryptedHistVertPassive called with " << len << " nodes" << std::endl;
+    std::cout << Ident() << " LocalPlugin::BuildEncryptedHistVertPassive called with " << len << " nodes" << std::endl;
   }
 
   auto num_slot = cuts_.back();
@@ -235,7 +235,7 @@ void LocalPlugin::BuildEncryptedHistVertPassive(const std::uint64_t **ridx, cons
 
     if (print_timing_) {
       auto end = std::chrono::system_clock::now();
-      auto secs = (double) std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() / 1000.0;
+      auto secs = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()) / 1000.0;
       std::cout << "Aggregation time: " << secs << " seconds" << std::endl;
     }
 
@@ -267,7 +267,7 @@ void LocalPlugin::BuildEncryptedHistVertPassive(const std::uint64_t **ridx, cons
 void LocalPlugin::SyncEncryptedHistVert(std::uint8_t *hist_buffer, std::size_t len,
                                         double **out, std::size_t *out_len) {
   if (debug_) {
-    std::cout << "LocalPlugin::SyncEncryptedHistVert called with buffer size: " << len << " nodes" << std::endl;
+    std::cout << Ident() << " LocalPlugin::SyncEncryptedHistVert called with buffer size: " << len << " nodes" << std::endl;
   }
 
   auto remaining = len;
@@ -309,7 +309,7 @@ void LocalPlugin::SyncEncryptedHistVert(std::uint8_t *hist_buffer, std::size_t l
 
       if (print_timing_) {
         auto end = std::chrono::system_clock::now();
-        auto secs = (double) std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() / 1000.0;
+        auto secs = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()) / 1000.0;
         std::cout << "Decryption time: " << secs << " seconds" << std::endl;
       }
 

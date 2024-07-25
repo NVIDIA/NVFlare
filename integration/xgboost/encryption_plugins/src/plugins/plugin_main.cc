@@ -18,12 +18,8 @@
 #include <string_view> // for string_view
 #include <vector>      // for vector
 #include <algorithm>   // for transform
-#include <iostream>
 
 #include "delegated_plugin.h"
-#include "nvflare_plugin.h"
-#include "pass_thru_plugin.h"
-#include "util.h"
 
 // Opaque pointer type for the C API.
 typedef void *FederatedPluginHandle; // NOLINT
@@ -60,20 +56,6 @@ template <typename Fn> auto CApiGuard(FederatedPluginHandle handle, Fn &&fn) {
   }
 }
 } // namespace
-
-DelegatedPlugin::DelegatedPlugin(std::vector<std::pair<std::string_view, std::string_view>> const &args):
-  BasePlugin(args) {
-
-  auto name = get_string(args, "name");
-  // std::cout << "==== Name is " << name << std::endl;
-  if (name == "pass-thru") {
-    plugin_ = new PassThruPlugin(args);
-  } else if (name == "nvflare") {
-    plugin_ = new NvflarePlugin(args);
-  } else {
-    throw std::invalid_argument{"Unknown plugin name: " + name};
-  }
-}
 } // namespace nvflare
 
 #if defined(_MSC_VER) || defined(_WIN32)

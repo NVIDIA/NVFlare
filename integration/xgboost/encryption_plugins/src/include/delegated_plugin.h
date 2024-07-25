@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 #pragma once
-#include "xgboost_plugin.h"
+#include "base_plugin.h"
 
 namespace nvflare {
 

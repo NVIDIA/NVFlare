@@ -7,14 +7,14 @@ option(GOOGLE_TEST "Build google tests" OFF)
 
 file(GLOB_RECURSE LIB_SRC "src/*.cc")
 
-add_library(xgb_nvflare SHARED ${LIB_SRC})
-set_target_properties(xgb_nvflare PROPERTIES
+add_library(nvflare SHARED ${LIB_SRC})
+set_target_properties(nvflare PROPERTIES
   CXX_STANDARD 17
   CXX_STANDARD_REQUIRED ON
   POSITION_INDEPENDENT_CODE ON
   ENABLE_EXPORTS ON
 )
-target_include_directories(xgb_nvflare PRIVATE ${xgb_nvflare_SOURCE_DIR}/src/include)
+target_include_directories(nvflare PRIVATE ${xgb_nvflare_SOURCE_DIR}/src/include)
 
 if (APPLE)
     add_link_options("LINKER:-object_path_lto,$<TARGET_PROPERTY:NAME>_lto.o")
@@ -25,17 +25,17 @@ endif ()
 if(GOOGLE_TEST)
     find_package(GTest REQUIRED)
     enable_testing()
-    add_executable(xgb_nvflare_test)
-    target_link_libraries(xgb_nvflare_test PRIVATE xgb_nvflare)
+    add_executable(nvflare_test)
+    target_link_libraries(nvflare_test PRIVATE nvflare)
 
 
-    target_include_directories(xgb_nvflare_test PRIVATE ${xgb_nvflare_SOURCE_DIR}/src/include)
+    target_include_directories(nvflare_test PRIVATE ${xgb_nvflare_SOURCE_DIR}/src/include)
 
     add_subdirectory(${xgb_nvflare_SOURCE_DIR}/tests)
 
     add_test(
         NAME TestNvflarePlugins
-        COMMAND xgb_nvflare_test
+        COMMAND nvflare_test
         WORKING_DIRECTORY ${xgb_nvflare_BINARY_DIR})
 
 endif()

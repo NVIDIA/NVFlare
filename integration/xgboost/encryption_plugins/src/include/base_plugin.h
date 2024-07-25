@@ -19,6 +19,8 @@
 #include <string_view> // for string_view
 #include <utility>     // for pair
 #include <vector>      // for vector
+#include <sstream>
+#include <iomanip>
 
 #include "util.h"
 
@@ -40,6 +42,13 @@ public:
   }
 
   virtual ~BasePlugin() = default;
+
+  std::string Ident() {
+    std::stringstream ss;
+    ss << std::hex << std::uppercase << std::setw(sizeof(void*) * 2) << std::setfill('0') <<
+      reinterpret_cast<uintptr_t>(this);
+    return ss.str();
+  }
 
   // Gradient pairs
   virtual void EncryptGPairs(float const *in_gpair, std::size_t n_in,

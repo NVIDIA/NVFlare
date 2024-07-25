@@ -29,7 +29,7 @@ void NvflarePlugin::EncryptGPairs(float const *in_gpair, std::size_t n_in,
                                   std::uint8_t **out_gpair,
                                   std::size_t *n_out) {
   if (debug_) {
-    std::cout << "NvflarePlugin::EncryptGPairs called with pairs size: " << n_in<< std::endl;
+    std::cout << Ident() << " NvflarePlugin::EncryptGPairs called with pairs size: " << n_in<< std::endl;
   }
 
   auto pairs = std::vector<float>(in_gpair, in_gpair + n_in);
@@ -37,11 +37,16 @@ void NvflarePlugin::EncryptGPairs(float const *in_gpair, std::size_t n_in,
 
   DamEncoder encoder(kDataSetGHPairs, false, dam_debug_);
   encoder.AddFloatArray(gh_pairs_);
-  auto buffer = encoder.Finish(*n_out);
+  std::size_t size;
+  auto buffer = encoder.Finish(size);
   if (!out_gpair) {
     throw std::invalid_argument{"Invalid pointer to output gpair."};
   }
-  *out_gpair = buffer;
+  buffer_.resize(size);
+  std::copy_n(buffer, size, buffer_.begin());
+  free(buffer);
+  *out_gpair = buffer_.data();
+  *n_out = size;
 }
 
 void NvflarePlugin::SyncEncryptedGPairs(std::uint8_t const *in_gpair,
@@ -49,9 +54,10 @@ void NvflarePlugin::SyncEncryptedGPairs(std::uint8_t const *in_gpair,
                                         std::uint8_t const **out_gpair,
                                         std::size_t *out_n_bytes) {
   if (debug_) {
-    std::cout << "NvflarePlugin::SyncEncryptedGPairs called with buffer size: " << n_bytes << std::endl;
+    std::cout << Ident() << " NvflarePlugin::SyncEncryptedGPairs called with buffer size: " << n_bytes << std::endl;
   }
 
+  // For NVFlare plugin, nothing needs to be done here
   *out_n_bytes = n_bytes;
   *out_gpair = in_gpair;
 }
@@ -61,7 +67,7 @@ void NvflarePlugin::ResetHistContext(std::uint32_t const *cutptrs,
                                      std::int32_t const *bin_idx,
                                      std::size_t n_idx) {
   if (debug_) {
-    std::cout << "NvFlarePlugin::ResetHistContext called with cutptrs size: " << cutptr_len << " bin_idx size: "
+    std::cout << Ident() << " NvFlarePlugin::ResetHistContext called with cutptrs size: " << cutptr_len << " bin_idx size: "
               << n_idx<< std::endl;
   }
 
@@ -78,7 +84,7 @@ void NvflarePlugin::BuildEncryptedHistVert(std::uint64_t const **ridx,
                                            std::uint8_t** out_hist,
                                            std::size_t* out_len) {
   if (debug_) {
-    std::cout << "NvflarePlugin::BuildEncryptedHistVert called with len: " << len << std::endl;
+    std::cout << Ident() << " NvflarePlugin::BuildEncryptedHistVert called with len: " << len << std::endl;
   }
 
   std::int64_t data_set_id;
@@ -131,7 +137,7 @@ void NvflarePlugin::BuildEncryptedHistVert(std::uint64_t const **ridx,
   // Add nodes to build
   std::vector<int64_t> node_vec(len);
   for (std::size_t i = 0; i < len; i++) {
-    node_vec[i] = *(nidx+i);
+    node_vec[i] = nidx[i];
   }
   encoder.AddIntArray(node_vec);
 
@@ -139,7 +145,7 @@ void NvflarePlugin::BuildEncryptedHistVert(std::uint64_t const **ridx,
   for (std::size_t i = 0; i < len; ++i) {
     std::vector<int64_t> rows(sizes[i]);
     for (std::size_t j = 0; j < sizes[i]; j++) {
-      rows[i] = static_cast<int64_t>(*(ridx[i] + j));
+      rows[i] = static_cast<int64_t>(ridx[i][j]);
     }
     encoder.AddIntArray(rows);
   }
@@ -161,14 +167,13 @@ void NvflarePlugin::SyncEncryptedHistVert(std::uint8_t *buffer,
                                           double **out,
                                           std::size_t *out_len) {
   if (debug_) {
-    std::cout << "NvflarePlugin::SyncEncryptedHistVert called with buffer size: " << buf_size << std::endl;
+    std::cout << Ident() << " NvflarePlugin::SyncEncryptedHistVert called with buffer size: " << buf_size << std::endl;
   }
 
   auto remaining = buf_size;
   char *pointer = reinterpret_cast<char *>(buffer);
 
-  // The buffer is concatenated by AllGather. It may contain multiple DAM
-  // buffers
+  // The buffer is concatenated by AllGather. It may contain multiple DAM buffers
   std::vector<double> &result = hist_;
   result.clear();
   auto max_slot = cut_ptrs_.back();
@@ -184,7 +189,7 @@ void NvflarePlugin::SyncEncryptedHistVert(std::uint8_t *buffer,
     }
     auto size = decoder.Size();
     auto node_list = decoder.DecodeIntArray();
-    for (auto node : node_list) {
+    for ([[maybe_unused]] auto node : node_list) {
       std::memset(slots, 0, array_size);
       auto feature_list = decoder.DecodeIntArray();
       // Convert per-feature histo to a flat one
@@ -216,7 +221,7 @@ void NvflarePlugin::BuildEncryptedHistHori(double const *in_histogram,
                                            std::uint8_t **out_hist,
                                            std::size_t *out_len) {
   if (debug_) {
-    std::cout << "NvflarePlugin::BuildEncryptedHistHori called with histo size: " << len << std::endl;
+    std::cout << Ident() << " NvflarePlugin::BuildEncryptedHistHori called with histo size: " << len << std::endl;
   }
 
   DamEncoder encoder(kDataSetHistograms, false, dam_debug_);
@@ -227,6 +232,7 @@ void NvflarePlugin::BuildEncryptedHistHori(double const *in_histogram,
   auto buffer = encoder.Finish(size);
   buffer_.resize(size);
   std::copy_n(buffer, size, buffer_.begin());
+  free(buffer);
 
   *out_hist = this->buffer_.data();
   *out_len = this->buffer_.size();
@@ -237,7 +243,7 @@ void NvflarePlugin::SyncEncryptedHistHori(std::uint8_t const *buffer,
                                           double **out_hist,
                                           std::size_t *out_len) {
   if (debug_) {
-    std::cout << "NvflarePlugin::SyncEncryptedHistHori called with buffer size: " << len << std::endl;
+    std::cout << Ident() << " NvflarePlugin::SyncEncryptedHistHori called with buffer size: " << len << std::endl;
   }
 
   DamDecoder decoder(const_cast<uint8_t *>(buffer), len, false, dam_debug_);

@@ -13,11 +13,24 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#pragma once
+#include "delegated_plugin.h"
+#include "pass_thru_plugin.h"
+#include "nvflare_plugin.h"
 
-constexpr int kDataSetGHPairs = 1;
-constexpr int kDataSetAggregation = 2;
-constexpr int kDataSetAggregationWithFeatures = 3;
-constexpr int kDataSetAggregationResult = 4;
-constexpr int kDataSetHistograms = 5;
-constexpr int kDataSetHistogramResult = 6;
+namespace nvflare {
+
+DelegatedPlugin::DelegatedPlugin(std::vector<std::pair<std::string_view, std::string_view>> const &args):
+  BasePlugin(args) {
+
+  auto name = get_string(args, "name");
+  // std::cout << "==== Name is " << name << std::endl;
+  if (name == "pass-thru") {
+    plugin_ = new PassThruPlugin(args);
+  } else if (name == "nvflare") {
+    plugin_ = new NvflarePlugin(args);
+  } else {
+    throw std::invalid_argument{"Unknown plugin name: " + name};
+  }
+}
+
+} // namespace nvflare
