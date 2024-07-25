@@ -16,25 +16,30 @@ import logging
 
 from nvflare.apis.fl_constant import FLContextKey, ServerCommandKey
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
+from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import MessageHeaderKey, ReturnCode, make_reply
 from nvflare.fuel.f3.message import Message as CellMessage
+from nvflare.metrics.metrics_publisher import publish_app_metrics
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
+from nvflare.utils.collect_time_ctx import CollectTimeContext
 
 from .server_commands import ServerCommands
 
 
 class ServerCommandAgent(object):
     def __init__(self, engine, cell: Cell) -> None:
-        """To init the CommandAgent.
-
+        """
+        To init the CommandAgent.
         Args:
-            listen_port: port to listen the command
+            engine:
+            cell:
         """
         self.logger = logging.getLogger(self.__class__.__name__)
         self.asked_to_stop = False
         self.engine = engine
         self.cell = cell
+        self.data_bus = DataBus()
 
     def start(self):
         self.cell.register_request_cb(
@@ -47,51 +52,61 @@ class ServerCommandAgent(object):
             topic="*",
             cb=self.aux_communicate,
         )
+
         self.logger.info(f"ServerCommandAgent cell register_request_cb: {self.cell.get_fqcn()}")
 
     def execute_command(self, request: CellMessage) -> CellMessage:
+        metrics_name = ""
+        try:
+            with CollectTimeContext() as context:
+                command_name = self.get_command_name(request)
+                metrics_name = command_name
 
+                # data = fobs.loads(request.payload)
+                data = request.payload
+
+                token = request.get_header(CellMessageHeaderKeys.TOKEN, None)
+                # client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME, None)
+                client = None
+                if token:
+                    client = self._get_client(token)
+                    if client:
+                        data.set_header(ServerCommandKey.FL_CLIENT, client)
+
+                command = ServerCommands.get_command(command_name)
+                if command:
+                    if command_name in ServerCommands.client_request_commands_names:
+                        if not client:
+                            return make_reply(
+                                ReturnCode.AUTHENTICATION_ERROR,
+                                "Request from client: missing client token",
+                                None,
+                            )
+
+                    with self.engine.new_context() as new_fl_ctx:
+                        if command_name in ServerCommands.client_request_commands_names:
+                            state_check = command.get_state_check(new_fl_ctx)
+                            error = self.engine.server.authentication_check(request, state_check)
+                            if error:
+                                return make_reply(ReturnCode.AUTHENTICATION_ERROR, error, None)
+
+                        reply = command.process(data=data, fl_ctx=new_fl_ctx)
+                        if reply is not None:
+                            return_message = new_cell_message({}, reply)
+                            return_message.set_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
+                        else:
+                            return_message = make_reply(ReturnCode.PROCESS_EXCEPTION, "No process results", None)
+                        return return_message
+                else:
+                    return make_reply(ReturnCode.INVALID_REQUEST, "No server command found", None)
+        finally:
+            publish_app_metrics(context.metrics, metrics_name, {}, self.data_bus)
+
+    def get_command_name(self, request):
         if not isinstance(request, CellMessage):
             raise RuntimeError("request must be CellMessage but got {}".format(type(request)))
-
         command_name = request.get_header(MessageHeaderKey.TOPIC)
-        # data = fobs.loads(request.payload)
-        data = request.payload
-
-        token = request.get_header(CellMessageHeaderKeys.TOKEN, None)
-        # client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME, None)
-        client = None
-        if token:
-            client = self._get_client(token)
-            if client:
-                data.set_header(ServerCommandKey.FL_CLIENT, client)
-
-        command = ServerCommands.get_command(command_name)
-        if command:
-            if command_name in ServerCommands.client_request_commands_names:
-                if not client:
-                    return make_reply(
-                        ReturnCode.AUTHENTICATION_ERROR,
-                        "Request from client: missing client token",
-                        None,
-                    )
-
-            with self.engine.new_context() as new_fl_ctx:
-                if command_name in ServerCommands.client_request_commands_names:
-                    state_check = command.get_state_check(new_fl_ctx)
-                    error = self.engine.server.authentication_check(request, state_check)
-                    if error:
-                        return make_reply(ReturnCode.AUTHENTICATION_ERROR, error, None)
-
-                reply = command.process(data=data, fl_ctx=new_fl_ctx)
-                if reply is not None:
-                    return_message = new_cell_message({}, reply)
-                    return_message.set_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
-                else:
-                    return_message = make_reply(ReturnCode.PROCESS_EXCEPTION, "No process results", None)
-                return return_message
-        else:
-            return make_reply(ReturnCode.INVALID_REQUEST, "No server command found", None)
+        return command_name
 
     def _get_client(self, token):
         fl_server = self.engine.server
