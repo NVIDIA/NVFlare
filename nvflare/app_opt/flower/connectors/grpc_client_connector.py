@@ -111,10 +111,11 @@ class GrpcClientConnector(FlowerClientConnector, GrpcAdapterServicer):
 
     def SendReceive(self, request: pb2.MessageContainer, context):
         """Process request received from a Flower client.
+
         This implements the SendReceive method required by Flower gRPC server (LGS on FLARE Client).
         1. convert the request to a Shareable object.
         2. send the Shareable request to FLARE server.
-        3. convert the
+        3. convert received Shareable result to MessageContainer and return to the Flower client
 
         Args:
             request: the request received from the Flower client

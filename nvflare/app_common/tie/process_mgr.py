@@ -163,7 +163,7 @@ class ProcessManager:
 
         """
         if not self.process:
-            return 0
+            raise RuntimeError("there is no process to poll")
         return self.process.poll()
 
     def stop(self):
