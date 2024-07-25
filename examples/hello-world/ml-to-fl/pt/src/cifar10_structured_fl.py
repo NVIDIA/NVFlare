@@ -117,7 +117,7 @@ def main():
                 correct += (predicted == labels).sum().item()
 
         # return evaluation metrics
-        return 100 * correct // total
+        return {"accuracy": 100 * correct // total}
 
     while flare.is_running():
         # (6) receives FLModel from NVFlare

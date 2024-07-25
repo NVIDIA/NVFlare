@@ -19,7 +19,7 @@ from typing import Any, List, Union
 from nvflare.apis.executor import Executor
 from nvflare.apis.filter import Filter
 from nvflare.apis.impl.controller import Controller
-from nvflare.app_common.executors.script_executor import ScriptExecutor
+from nvflare.app_common.executors.in_process_client_api_executor import InProcessClientAPIExecutor
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
@@ -159,7 +159,7 @@ class FedJob:
         elif isinstance(obj, Executor):
             if target not in self._deploy_map:
                 self._deploy_map[target] = ExecutorApp()
-            if isinstance(obj, ScriptExecutor):
+            if isinstance(obj, InProcessClientAPIExecutor):
                 external_scripts = [obj._task_script_path]
                 self._deploy_map[target].add_external_scripts(external_scripts)
             if target not in self.clients:
@@ -197,19 +197,17 @@ class FedJob:
             else:  # TODO: handle other persistors
                 added_model = False
                 # Check different models framework types and add corresponding persistor
-                if torch_ok:
-                    if isinstance(obj, nn.Module):  # if model, create a PT persistor
-                        component = PTFileModelPersistor(model=obj)
-                        self._deploy_map[target].app.add_component("persistor", component)
+                if torch_ok and isinstance(obj, nn.Module):  # if model, create a PT persistor
+                    component = PTFileModelPersistor(model=obj)
+                    self._deploy_map[target].app.add_component("persistor", component)
 
-                        component = PTFileModelLocator(pt_persistor_id="persistor")
-                        self._deploy_map[target].app.add_component("model_locator", component)
-                        added_model = True
-                elif tf_ok:
-                    if isinstance(obj, tf.keras.Model):  # if model, create a TF persistor
-                        component = TFModelPersistor(model=obj)
-                        self._deploy_map[target].app.add_component("persistor", component)
-                        added_model = True
+                    component = PTFileModelLocator(pt_persistor_id="persistor")
+                    self._deploy_map[target].app.add_component("model_locator", component)
+                    added_model = True
+                elif tf_ok and isinstance(obj, tf.keras.Model):  # if model, create a TF persistor
+                    component = TFModelPersistor(model=obj)
+                    self._deploy_map[target].app.add_component("persistor", component)
+                    added_model = True
 
                 if not added_model:  # if it wasn't a model, add as component
                     self._deploy_map[target].add_component(obj, id)
