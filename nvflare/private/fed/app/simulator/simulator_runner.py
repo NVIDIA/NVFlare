@@ -149,7 +149,7 @@ class SimulatorRunner(FLComponent):
                 for i in range(self.args.n_clients):
                     self.client_names.append("site-" + str(i + 1))
 
-        log_config_file_path = os.path.join(self.args.workspace, "startup", WorkspaceConstants.LOGGING_CONFIG)
+        log_config_file_path = os.path.join(self.args.workspace, "local", WorkspaceConstants.LOGGING_CONFIG)
         if not os.path.isfile(log_config_file_path):
             log_config_file_path = os.path.join(os.path.dirname(__file__), WorkspaceConstants.LOGGING_CONFIG)
         logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
@@ -248,7 +248,7 @@ class SimulatorRunner(FLComponent):
             self.args.sp_scheme = parsed_url.scheme
 
             self.logger.info("Deploy the Apps.")
-            self._deploy_apps(job_name, data_bytes, meta, log_config_file_path)
+            self._deploy_apps(job_name, data_bytes, meta)
 
             server_workspace = os.path.join(self.args.workspace, "server")
             workspace = Workspace(root_dir=server_workspace, site_name="server")
@@ -271,18 +271,25 @@ class SimulatorRunner(FLComponent):
         with tempfile.TemporaryDirectory() as temp_dir:
             startup_dir = os.path.join(self.args.workspace, "startup")
             temp_start_up = os.path.join(temp_dir, "startup")
+            local_dir = os.path.join(self.args.workspace, "local")
+            temp_local_dir = os.path.join(temp_dir, "local")
             if os.path.exists(startup_dir):
                 shutil.move(startup_dir, temp_start_up)
+            if os.path.exists(local_dir):
+                shutil.move(local_dir, temp_local_dir)
+
             if os.path.exists(self.simulator_root):
                 shutil.rmtree(self.simulator_root)
+
             if os.path.exists(temp_start_up):
                 shutil.move(temp_start_up, startup_dir)
+            if os.path.exists(temp_local_dir):
+                shutil.move(temp_local_dir, local_dir)
 
-    def _setup_local_startup(self, log_config_file_path, workspace):
+    def _setup_local_startup(self, workspace):
         local_dir = os.path.join(workspace, "local")
         startup = os.path.join(workspace, "startup")
-        os.makedirs(local_dir, exist_ok=True)
-        shutil.copyfile(log_config_file_path, os.path.join(local_dir, WorkspaceConstants.LOGGING_CONFIG))
+        shutil.copytree(os.path.join(self.simulator_root, "local"), local_dir)
         shutil.copytree(os.path.join(self.simulator_root, "startup"), startup)
 
     def validate_job_data(self):
@@ -320,7 +327,7 @@ class SimulatorRunner(FLComponent):
         if no_app_clients:
             raise RuntimeError(f"The job does not have App to run for clients: {no_app_clients}")
 
-    def _deploy_apps(self, job_name, data_bytes, meta, log_config_file_path):
+    def _deploy_apps(self, job_name, data_bytes, meta):
         with tempfile.TemporaryDirectory() as temp_dir:
             if os.path.exists(temp_dir):
                 shutil.rmtree(temp_dir)
@@ -336,7 +343,7 @@ class SimulatorRunner(FLComponent):
                 for p in participants:
                     if p == "server" or p in self.client_names:
                         app_root = get_simulator_app_root(self.simulator_root, p)
-                        self._setup_local_startup(log_config_file_path, os.path.join(self.simulator_root, p))
+                        self._setup_local_startup(os.path.join(self.simulator_root, p))
                         app = os.path.join(temp_job_folder, app_name)
                         shutil.copytree(app, app_root)
 
