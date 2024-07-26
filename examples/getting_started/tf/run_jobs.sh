@@ -54,3 +54,13 @@ python ./tf_fl_script_executor_cifar10.py \
        --epochs 4 \
        --alpha 0.1 \
        --gpu $GPU_INDX
+
+# Run scaffold job
+python ./tf_fl_script_executor_cifar10.py \
+       --algo scaffold \
+       --n_clients 8 \
+       --num_rounds 50 \
+       --batch_size 64 \
+       --epochs 4 \
+       --alpha 0.1 \
+       --gpu $GPU_INDX       
