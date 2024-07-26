@@ -12,9 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import multiprocessing
-import os
-import sys
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -25,59 +22,10 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.reliable_message import ReliableMessage
-from nvflare.apis.workspace import Workspace
 from nvflare.app_common.tie.applet import Applet
-from nvflare.app_common.tie.defs import VALID_APPLET_ENV, Constant
+from nvflare.app_common.tie.defs import Constant
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
-from nvflare.fuel.utils.log_utils import add_log_file_handler, configure_logging
 from nvflare.fuel.utils.validation_utils import check_object_type
-from nvflare.security.logging import secure_format_exception, secure_log_traceback
-
-
-class _AppletStarter:
-    """This class is used to start applet. It is used when running the applet in a thread
-    or in a separate process.
-    """
-
-    def __init__(self, applet: Applet, in_process: bool, workspace: Workspace, job_id: str):
-        self.applet = applet
-        self.in_process = in_process
-        self.workspace = workspace
-        self.job_id = job_id
-        self.error = None
-        self.started = True
-        self.stopped = False
-        self.exit_code = 0
-
-    def start(self, ctx: dict):
-        """Start the applet and wait for it to finish.
-
-        Args:
-            ctx:
-
-        Returns:
-
-        """
-        try:
-            if not self.in_process:
-                # enable logging
-                run_dir = self.workspace.get_run_dir(self.job_id)
-                log_file_name = os.path.join(run_dir, "applet_log.txt")
-                configure_logging(self.workspace)
-                add_log_file_handler(log_file_name)
-            self.applet.start(ctx)
-
-            # Note: self.applet.start() does not return until the applet runs to completion!
-            self.stopped = True
-        except Exception as e:
-            secure_log_traceback()
-            self.error = f"Exception starting applet: {secure_format_exception(e)}"
-            self.started = False
-            self.exit_code = Constant.EXIT_CODE_CANT_START
-            self.stopped = True
-            if not self.in_process:
-                # this is a separate process
-                sys.exit(self.exit_code)
 
 
 class Connector(ABC, FLComponent):
@@ -87,24 +35,12 @@ class Connector(ABC, FLComponent):
     The Connector class defines commonly required methods for all Connector implementations.
     """
 
-    def __init__(self, applet_env: str):
-        """Constructor of Connector
-
-        Args:
-            applet_env: applet's running env
-        """
+    def __init__(self):
+        """Constructor of Connector"""
         FLComponent.__init__(self)
         self.abort_signal = None
         self.applet = None
-        self.applet_env = applet_env
-        self.starter = None
-        self.process = None
         self.engine = None
-
-        if applet_env not in VALID_APPLET_ENV:
-            raise ValueError(f"invalid applet_env {applet_env}: must be in {VALID_APPLET_ENV}")
-
-        self.in_process = self.applet_env == Constant.APPLET_ENV_THREAD
 
     def set_applet(self, applet: Applet):
         """Set the applet that will be used to run app processing logic.
@@ -238,8 +174,6 @@ class Connector(ABC, FLComponent):
 
     def start_applet(self, app_ctx: dict, fl_ctx: FLContext):
         """Start the applet set to the connector.
-        If self.in_process is True, then the applet will be started in a separate thread.
-        If self.in_process is False, then the applet will be started in a separate process.
 
         Args:
             app_ctx: the contextual info for running the applet
@@ -252,40 +186,8 @@ class Connector(ABC, FLComponent):
             raise RuntimeError("applet has not been set!")
 
         app_ctx[Constant.APP_CTX_FL_CONTEXT] = fl_ctx
-
-        engine = fl_ctx.get_engine()
-        workspace = engine.get_workspace()
-        job_id = fl_ctx.get_job_id()
-
-        if self.applet_env == Constant.APPLET_ENV_SELF:
-            self.logger.info("starting applet by itself")
-            self.applet.start(app_ctx)
-            return
-
-        starter = _AppletStarter(self.applet, self.in_process, workspace, job_id)
-        if self.in_process:
-            self.logger.info("starting applet in another thread")
-            t = threading.Thread(
-                target=starter.start,
-                args=(app_ctx,),
-                daemon=True,
-                name="applet",
-            )
-            t.start()
-            if not starter.started:
-                self.logger.error(f"cannot start applet: {starter.error}")
-                raise RuntimeError(starter.error)
-            self.starter = starter
-        else:
-            # start as a separate local process
-            self.logger.info("starting applet in another process")
-            self.process = multiprocessing.Process(
-                target=starter.start,
-                args=(app_ctx,),
-                daemon=True,
-                name="applet",
-            )
-            self.process.start()
+        self.logger.info("starting applet by itself")
+        self.applet.start(app_ctx)
 
     def stop_applet(self, timeout=0.0):
         """Stop the running of the applet
@@ -293,20 +195,7 @@ class Connector(ABC, FLComponent):
         Returns: None
 
         """
-        if self.applet_env == Constant.APPLET_ENV_SELF:
-            self.applet.stop(timeout)
-            return
-
-        if self.in_process:
-            applet = self.applet
-            self.applet = None
-            if applet:
-                applet.stop(timeout)
-        else:
-            p = self.process
-            self.process = None
-            if p:
-                p.kill()
+        self.applet.stop(timeout)
 
     def is_applet_stopped(self) -> (bool, int):
         """Check whether the applet is already stopped
@@ -315,34 +204,11 @@ class Connector(ABC, FLComponent):
 
         """
         applet = self.applet
-        if self.applet_env == Constant.APPLET_ENV_SELF:
-            if applet:
-                return applet.is_stopped()
-            else:
-                self.logger.warning("applet is not set with the connector")
-                return True, 0
-
-        if self.in_process:
-            if self.starter:
-                if self.starter.stopped:
-                    self.logger.info("starter is stopped!")
-                    return True, self.starter.exit_code
-
-            if applet:
-                return applet.is_stopped()
-            else:
-                self.logger.warning("applet is not set with the connector")
-                return True, 0
+        if applet:
+            return applet.is_stopped()
         else:
-            if self.process:
-                assert isinstance(self.process, multiprocessing.Process)
-                ec = self.process.exitcode
-                if ec is None:
-                    return False, 0
-                else:
-                    return True, ec
-            else:
-                return True, 0
+            self.logger.warning("applet is not set with the connector")
+            return True, 0
 
     def send_request(
         self,

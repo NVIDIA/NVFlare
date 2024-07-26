@@ -14,10 +14,9 @@
 from abc import abstractmethod
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
+from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.tie.connector import Connector
-from nvflare.app_common.tie.connector import Constant as TieConstant
 from nvflare.app_opt.flower.defs import Constant
 from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number
 
@@ -28,7 +27,7 @@ class FlowerServerConnector(Connector):
     """
 
     def __init__(self):
-        Connector.__init__(self, TieConstant.APPLET_ENV_SELF)
+        Connector.__init__(self)
         self.num_rounds = None
 
     def configure(self, config: dict, fl_ctx: FLContext):
@@ -76,7 +75,8 @@ class FlowerServerConnector(Connector):
         """
         stopped, ec = self._is_stopped()
         if stopped:
-            raise RuntimeError(f"dropped request '{op}' since connector is already stopped {ec=}")
+            self.log_warning(fl_ctx, f"dropped request '{op}' since connector is already stopped {ec=}")
+            return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
 
         reply = self.send_request_to_flower(request, fl_ctx)
         self.log_info(fl_ctx, f"received reply for '{op}'")
@@ -98,7 +98,7 @@ class FlowerClientConnector(Connector):
         check_positive_number("per_msg_timeout", per_msg_timeout)
         check_positive_number("tx_timeout", tx_timeout)
 
-        Connector.__init__(self, TieConstant.APPLET_ENV_SELF)
+        Connector.__init__(self)
         self.per_msg_timeout = per_msg_timeout
         self.tx_timeout = tx_timeout
         self.stopped = False

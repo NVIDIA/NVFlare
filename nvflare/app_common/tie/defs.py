@@ -40,11 +40,4 @@ class Constant:
     EXIT_CODE_CANT_START = 101
     EXIT_CODE_FATAL_ERROR = 102
 
-    APPLET_ENV_THREAD = "thread"
-    APPLET_ENV_PROCESS = "process"
-    APPLET_ENV_SELF = "self"
-
     APP_CTX_FL_CONTEXT = "tie.fl_context"
-
-
-VALID_APPLET_ENV = [Constant.APPLET_ENV_PROCESS, Constant.APPLET_ENV_THREAD, Constant.APPLET_ENV_SELF]

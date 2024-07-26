@@ -74,13 +74,20 @@ class FlowerClientApplet(CLIApplet):
 
 
 class FlowerServerApplet(Applet):
-    def __init__(self, server_app: str, database: str, superlink_ready_timeout: float):
+    def __init__(
+        self,
+        server_app: str,
+        database: str,
+        superlink_ready_timeout: float,
+        server_app_args: dict = None,
+    ):
         """Constructor of FlowerServerApplet.
 
         Args:
             server_app: Flower's server app specification
             database: database spec to be used by the server app
             superlink_ready_timeout: how long to wait for the superlink process to become ready
+            server_app_args: an optional dict that contains additional command args passed to flower server app
         """
         Applet.__init__(self)
         self._app_process_mgr = None
@@ -88,6 +95,7 @@ class FlowerServerApplet(Applet):
         self.server_app = server_app
         self.database = database
         self.superlink_ready_timeout = superlink_ready_timeout
+        self.server_app_args = server_app_args
         self._start_error = False
 
     def _start_process(self, name: str, cmd_desc: CommandDescriptor, fl_ctx: FLContext) -> ProcessManager:
@@ -163,7 +171,16 @@ class FlowerServerApplet(Applet):
         self.logger.info(f"superlink is ready for server app in {time.time()-start_time} seconds")
 
         # start the server app
-        app_cmd = f"flower-server-app --insecure --superlink {driver_addr} --dir {custom_dir} {self.server_app}"
+        args_str = ""
+        if self.server_app_args:
+            args = []
+            for k, v in self.server_app_args:
+                args.append(f"{k} {v}")
+            args_str = " ".join(args)
+
+        app_cmd = (
+            f"flower-server-app --insecure --superlink {driver_addr} --dir {custom_dir} {args_str} {self.server_app}"
+        )
         cmd_desc = CommandDescriptor(
             cmd=app_cmd,
             log_file_name="server_app_log.txt",

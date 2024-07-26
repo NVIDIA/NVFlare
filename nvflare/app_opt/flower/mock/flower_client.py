@@ -74,9 +74,9 @@ def main():
         result = client.send_request(req)
         total_reqs += 1
         total_time += time.time() - start
-        # if not isinstance(result, pb2.MessageContainer):
-        #     log(f"expect reply to be pb2.MessageContainer but got {type(result)}")
-        if result.grpc_message_name != req.grpc_message_name:
+        if not isinstance(result, pb2.MessageContainer):
+            log(f"expect reply to be pb2.MessageContainer but got {type(result)}")
+        elif result.grpc_message_name != req.grpc_message_name:
             log("ERROR: msg_name does not match request")
         elif result.grpc_message_content != data:
             log("ERROR: result does not match request")
