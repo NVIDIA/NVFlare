@@ -107,6 +107,7 @@ void NvflarePlugin::BuildEncryptedHistVert(std::uint64_t const **ridx,
     std::cout << "Samples: " << num_samples << " Features: " << num_features << std::endl;
   }
 
+  std::vector<int64_t> bins;
   if (data_set_id == kDataSetAggregationWithFeatures) {
     if (features_.empty()) { // when is it not empty?
       for (int64_t f = 0; f < num_features; f++) {
@@ -118,8 +119,7 @@ void NvflarePlugin::BuildEncryptedHistVert(std::uint64_t const **ridx,
       }
     }
     encoder.AddIntArray(features_);
-
-    std::vector<int64_t> bins;
+    
     for (int i = 0; i < num_samples; i++) {
       for (auto f : features_) {
         auto index = f + i * num_features;
@@ -142,19 +142,30 @@ void NvflarePlugin::BuildEncryptedHistVert(std::uint64_t const **ridx,
   encoder.AddIntArray(node_vec);
 
   // For each node, get the row_id/slot pair
+  auto row_ids = std::vector<std::vector<int64_t>>(len);
   for (std::size_t i = 0; i < len; ++i) {
-    std::vector<int64_t> rows(sizes[i]);
+    auto& rows = row_ids[i];
+    rows.resize(sizes[i]);
     for (std::size_t j = 0; j < sizes[i]; j++) {
-      rows[i] = static_cast<int64_t>(ridx[i][j]);
+      rows[j] = static_cast<int64_t>(ridx[i][j]);
     }
     encoder.AddIntArray(rows);
   }
 
   std::size_t n{0};
   auto buffer = encoder.Finish(n);
+  if (debug_) {
+    std::cout << "Finished size:  " << n << std::endl;
+  }
+
+  // XGBoost doesn't allow the change of allgatherV sizes. Make sure it's big
+  // enough to carry histograms
+  auto max_slot = cut_ptrs_.back();
+  auto histo_size = 2 * max_slot * sizeof(double) * len + 1024*1024; // 1M is DAM overhead
+  auto buf_size = histo_size > n ? histo_size : n;
 
   // Copy to an array so the buffer can be freed, should change encoder to return vector
-  buffer_.resize(n);
+  buffer_.resize(buf_size);
   std::copy_n(buffer, n, buffer_.begin());
   free(buffer);
 
@@ -178,6 +189,7 @@ void NvflarePlugin::SyncEncryptedHistVert(std::uint8_t *buffer,
   result.clear();
   auto max_slot = cut_ptrs_.back();
   auto array_size = 2 * max_slot * sizeof(double);
+
   // A new histogram array?
   auto slots = static_cast<double *>(malloc(array_size));
   while (remaining > kPrefixLen) {
@@ -189,6 +201,9 @@ void NvflarePlugin::SyncEncryptedHistVert(std::uint8_t *buffer,
     }
     auto size = decoder.Size();
     auto node_list = decoder.DecodeIntArray();
+    if (debug_) {
+      std::cout << "Number of nodes: " << node_list.size() << " Histo size: " << 2*max_slot << std::endl;
+    }
     for ([[maybe_unused]] auto node : node_list) {
       std::memset(slots, 0, array_size);
       auto feature_list = decoder.DecodeIntArray();
@@ -214,6 +229,9 @@ void NvflarePlugin::SyncEncryptedHistVert(std::uint8_t *buffer,
   // result is a reference to a histo_
   *out_len = result.size();
   *out = result.data();
+  if (debug_) {
+    std::cout << "Total histogram size: " << *out_len << std::endl;
+  }
 }
 
 void NvflarePlugin::BuildEncryptedHistHori(double const *in_histogram,

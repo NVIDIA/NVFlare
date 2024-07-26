@@ -110,6 +110,7 @@ class Constant:
     HEADER_KEY_ORIGINAL_BUF_SIZE = "xgb.original_buf_size"
     HEADER_KEY_IN_AGGR = "xgb.in_aggr"
     HEADER_KEY_WORLD_SIZE = "xgb.world_size"
+    HEADER_KEY_SIZE_DICT = "xgb.size_dict"
 
     DUMMY_BUFFER_SIZE = 4
 
