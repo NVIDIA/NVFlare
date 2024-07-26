@@ -15,7 +15,7 @@ Python virtual environment (the recommended environment) and how to install NVID
 Prerequisite
 -------------
 
-This example builds on the :doc:`Hello Scatter and Gather <hello_scatter_and_gather>` example
+This example builds on the :doc:`Hello FedAvg with NumPy <hello_fedavg_w_numpy>` example
 based on the :class:`ScatterAndGather<nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather>` workflow.
 
 Please make sure you go through it completely as the concepts are heavily tied.
@@ -29,7 +29,7 @@ without introducing any actual deep learning concepts.
 Through this exercise, you will learn how to use NVIDIA FLARE with numpy to perform cross site validation
 after training.
 
-The training process is explained in the :doc:`Hello Scatter and Gather <hello_scatter_and_gather>` example.
+The training process is explained in the :doc:`Hello FedAvg with NumPy <hello_fedavg_w_numpy>` example.
 
 Using simplified weights and metrics, you will be able to clearly see how NVIDIA FLARE performs
 validation across different sites with little extra work.
@@ -73,7 +73,7 @@ Now that you have all your dependencies installed, let's implement the Federated
 Training
 --------------------------------
  
-In the :doc:`Hello Scatter and Gather <hello_scatter_and_gather>` example, we implemented the ``NPTrainer`` object.
+In the :doc:`Hello FedAvg with NumPy <hello_fedavg_w_numpy>` example, we implemented the ``NPTrainer`` object.
 In this example, we use the same ``NPTrainer`` but extend it to process the ``submit_model`` task to
 work with the :class:`CrossSiteModelEval<nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval>`
 workflow to get the client models.
@@ -123,7 +123,7 @@ Inside the config folder there are two files, ``config_fed_client.json`` and ``c
 The server now has a second workflow configured after Scatter and Gather, :class:`CrossSiteModelEval<nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval>`.
 
 The components "model_locator" and "formatter" have been added to work with the cross site model evaluation workflow,
-and the rest is the same as in :doc:`Hello Scatter and Gather <hello_scatter_and_gather>`.
+and the rest is the same as in :doc:`Hello FedAvg with NumPy <hello_fedavg_w_numpy>`.
 
 
 .. literalinclude:: ../../examples/hello-world/hello-numpy-cross-val/jobs/hello-numpy-cross-val/app/config/config_fed_client.json

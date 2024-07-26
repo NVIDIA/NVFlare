@@ -37,32 +37,31 @@ def main():
 
     while flare.is_running():
         input_model = flare.receive()
-        print(input_model)
         print(f"current_round={input_model.current_round}")
         print(f"received weights: {input_model.params}")
 
         sys_info = flare.system_info()
         print(f"system info is: {sys_info}")
 
-        print(input_model.params)
-
         if input_model.params == {}:
-            input_numpy_array = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32)
+            params = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32)
         else:
-            input_numpy_array = input_model.params["numpy_key"]
+            params = np.array(input_model.params["numpy_key"], dtype=np.float32)
 
         # training
-        output_numpy_array = train(input_numpy_array)
+        new_params = train(params)
 
         # evaluation
-        metrics = evaluate(input_numpy_array)
+        metrics = evaluate(params)
 
         sys_info = flare.system_info()
         print(f"system info is: {sys_info}", flush=True)
         print(f"finished round: {input_model.current_round}", flush=True)
 
+        print(f"sending weights: {new_params}")
+
         output_model = flare.FLModel(
-            params={"numpy_key": output_numpy_array},
+            params={"numpy_key": new_params},
             params_type="FULL",
             metrics={"accuracy": metrics},
             current_round=input_model.current_round,

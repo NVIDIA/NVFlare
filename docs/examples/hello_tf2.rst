@@ -6,7 +6,7 @@ Hello TensorFlow 2
 Before You Start
 ----------------
 
-We recommend you first finish either the :doc:`hello_pt` or the :doc:`hello_scatter_and_gather` exercise.
+We recommend you first finish either the :doc:`hello_pt` or the :doc:`Hello FedAvg with NumPy <hello_fedavg_w_numpy>` exercise.
 
 Those guides go more in depth in explaining the federated learning aspect of `NVIDIA FLARE <https://pypi.org/project/nvflare/>`_.
 

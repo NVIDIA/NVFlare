@@ -20,7 +20,7 @@ if __name__ == "__main__":
     num_rounds = 3
     train_script = "src/hello-numpy_fl.py"
 
-    job = FedJob(name="hello-numpy_fedavg")
+    job = FedJob(name="hello-fedavg-numpy")
 
     # Define the controller workflow and send to server
     controller = FedAvg(
@@ -32,9 +32,9 @@ if __name__ == "__main__":
     # Add clients
     for i in range(n_clients):
         executor = ScriptExecutor(
-            task_script_path=train_script, task_script_args="", params_exchange_format=ExchangeFormat.NUMPY  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
+            task_script_path=train_script, task_script_args="", params_exchange_format=ExchangeFormat.NUMPY
         )
-        job.to(executor, f"site-{i}", gpu=0)
+        job.to(executor, f"site-{i}")
 
     #job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir")
