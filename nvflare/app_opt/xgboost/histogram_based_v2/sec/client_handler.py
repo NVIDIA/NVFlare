@@ -366,13 +366,13 @@ class ClientSecurityHandler(SecurityHandler):
                 item.aggregated_hist = [(0, 0)] * size
         zero_buf = self.data_converter.encode_aggregation_result(zero_result, fl_ctx)
         world_size = len(size_dict)
-        for _ in range(world_size-1):
+        for _ in range(world_size - 1):
             result += zero_buf
 
         # XGBoost checks that the size of allgatherv is not changed
         padding_size = total_size - len(result)
         if padding_size > 0:
-            result += b'\x00' * padding_size
+            result += b"\x00" * padding_size
         elif padding_size < 0:
             self.error(fl_ctx, f"The original size {total_size} is not big enough for data size {len(result)}")
 
@@ -391,9 +391,9 @@ class ClientSecurityHandler(SecurityHandler):
         result = self.data_converter.encode_histograms_result(histograms, fl_ctx)
 
         # XGBoost expect every worker returns a histogram, all zeros are returned for other workers
-        zeros = [0.0] * len(histograms);
+        zeros = [0.0] * len(histograms)
         zero_buf = self.data_converter.encode_histograms_result(zeros, fl_ctx)
-        for _ in range(world_size-1):
+        for _ in range(world_size - 1):
             result += zero_buf
         fl_ctx.set_prop(key=Constant.PARAM_KEY_RCV_BUF, value=result, private=True, sticky=False)
 
