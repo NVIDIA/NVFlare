@@ -16,8 +16,9 @@ import flwr.proto.grpcadapter_pb2 as pb2
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.app_opt.flower.connectors.flower_connector import FlowerServerConnector
-from nvflare.app_opt.flower.defs import Constant, msg_container_to_shareable, shareable_to_msg_container
+from nvflare.app_opt.flower.defs import Constant
 from nvflare.app_opt.flower.grpc_client import GrpcClient
+from nvflare.app_opt.flower.utils import msg_container_to_shareable, shareable_to_msg_container
 from nvflare.fuel.f3.drivers.net_utils import get_open_tcp_port
 
 

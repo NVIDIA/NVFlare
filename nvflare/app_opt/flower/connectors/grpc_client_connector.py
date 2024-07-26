@@ -17,8 +17,9 @@ from flwr.proto.grpcadapter_pb2_grpc import GrpcAdapterServicer
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode
 from nvflare.app_opt.flower.connectors.flower_connector import FlowerClientConnector
-from nvflare.app_opt.flower.defs import Constant, msg_container_to_shareable, shareable_to_msg_container
+from nvflare.app_opt.flower.defs import Constant
 from nvflare.app_opt.flower.grpc_server import GrpcServer
+from nvflare.app_opt.flower.utils import msg_container_to_shareable, reply_should_exit, shareable_to_msg_container
 from nvflare.fuel.f3.drivers.net_utils import get_open_tcp_port
 from nvflare.security.logging import secure_format_exception
 
@@ -132,7 +133,7 @@ class GrpcClientConnector(FlowerClientConnector, GrpcAdapterServicer):
                 return shareable_to_msg_container(reply)
             else:
                 # server side already ended
-                self.logger.warn(f"Flower server has stopped with RC {rc}")
-                return pb2.MessageContainer(metadata={"should-exit": "true"})
+                self.logger.warning(f"Flower server has stopped with RC {rc}")
+                return reply_should_exit()
         except Exception as ex:
             self._abort(reason=f"_send_flower_request exception: {secure_format_exception(ex)}")

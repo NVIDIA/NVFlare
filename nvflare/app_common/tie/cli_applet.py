@@ -89,7 +89,7 @@ class CLIApplet(Applet, ABC):
 
         rc = mgr.stop()
         if rc is None:
-            self.logger.warn(f"killed the applet process after waiting {timeout} seconds")
+            self.logger.warning(f"killed the applet process after waiting {timeout} seconds")
 
     def is_stopped(self) -> (bool, int):
         if self._start_error:

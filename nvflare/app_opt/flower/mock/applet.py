@@ -12,7 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from nvflare.app_common.tie.cli_applet import CLIApplet, CommandDescriptor
+from nvflare.app_common.tie.py_applet import PyApplet, PyRunner
 from nvflare.app_opt.flower.defs import Constant
+
+from .flower_client import train
 
 
 class MockClientApplet(CLIApplet):
@@ -46,3 +49,28 @@ class MockServerApplet(CLIApplet):
             log_file_name="flower_server_log.txt",
             stdout_msg_prefix="FLWR-SA",
         )
+
+
+class MockClientPyRunner(PyRunner):
+    def __init__(self):
+        self.stopped = False
+
+    def start(self, app_ctx: dict):
+        addr = app_ctx.get(Constant.APP_CTX_SERVER_ADDR)
+        client_name = app_ctx.get(Constant.APP_CTX_CLIENT_NAME)
+        train(server_addr=addr, client_name=client_name)
+        self.stopped = True
+
+    def stop(self, timeout: float):
+        pass
+
+    def is_stopped(self) -> (bool, int):
+        return self.stopped, 0
+
+
+class MockClientPyApplet(PyApplet):
+    def __init__(self, in_process=True):
+        PyApplet.__init__(self, in_process)
+
+    def get_runner(self, ctx: dict) -> PyRunner:
+        return MockClientPyRunner()

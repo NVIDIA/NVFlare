@@ -29,27 +29,9 @@ def log(msg: str):
     sys.stdout.flush()
 
 
-def main():
-    logging.basicConfig()
-    logging.getLogger().setLevel(logging.INFO)
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--addr", "-a", type=str, help="server address", required=True)
-    parser.add_argument("--client_name", "-c", type=str, help="client name", required=True)
-    parser.add_argument("--num_rounds", "-n", type=int, help="number of rounds", required=True)
-    args = parser.parse_args()
-
-    if not args.addr:
-        raise RuntimeError("missing server address '--addr/-a' in command")
-
-    if not args.num_rounds:
-        raise RuntimeError("missing num rounds '--num_rounds/-n' in command")
-
-    if args.num_rounds <= 0:
-        raise RuntimeError("bad num rounds '--num_rounds/-n' in command: must be > 0")
-
-    log(f"starting client {args.client_name} to connect to server at {args.addr}")
-    client = GrpcClient(server_addr=args.addr)
+def train(server_addr, client_name):
+    log(f"starting client {client_name} to connect to server at {server_addr}")
+    client = GrpcClient(server_addr=server_addr)
     client.start()
 
     total_time = 0
@@ -62,7 +44,7 @@ def main():
         headers = {
             "target": "server",
             "round": str(next_round),
-            "origin": args.client_name,
+            "origin": client_name,
         }
         req = pb2.MessageContainer(
             grpc_message_name="abc",
@@ -94,6 +76,28 @@ def main():
 
     time_per_req = total_time / total_reqs
     log(f"DONE: {total_reqs=} {total_time=} {time_per_req=}")
+
+
+def main():
+    logging.basicConfig()
+    logging.getLogger().setLevel(logging.INFO)
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--addr", "-a", type=str, help="server address", required=True)
+    parser.add_argument("--client_name", "-c", type=str, help="client name", required=True)
+    parser.add_argument("--num_rounds", "-n", type=int, help="number of rounds", required=True)
+    args = parser.parse_args()
+
+    if not args.addr:
+        raise RuntimeError("missing server address '--addr/-a' in command")
+
+    if not args.num_rounds:
+        raise RuntimeError("missing num rounds '--num_rounds/-n' in command")
+
+    if args.num_rounds <= 0:
+        raise RuntimeError("bad num rounds '--num_rounds/-n' in command: must be > 0")
+
+    train(args.addr, args.client_name)
 
 
 if __name__ == "__main__":

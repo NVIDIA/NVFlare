@@ -186,7 +186,6 @@ class Connector(ABC, FLComponent):
             raise RuntimeError("applet has not been set!")
 
         app_ctx[Constant.APP_CTX_FL_CONTEXT] = fl_ctx
-        self.logger.info("starting applet by itself")
         self.applet.start(app_ctx)
 
     def stop_applet(self, timeout=0.0):

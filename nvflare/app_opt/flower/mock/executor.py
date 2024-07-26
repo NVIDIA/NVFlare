@@ -14,7 +14,7 @@
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_opt.flower.executor import FlowerExecutor
-from nvflare.app_opt.flower.mock.applet import MockClientApplet
+from nvflare.app_opt.flower.mock.applet import MockClientApplet, MockClientPyApplet
 
 
 class MockExecutor(FlowerExecutor):
@@ -23,3 +23,12 @@ class MockExecutor(FlowerExecutor):
 
     def get_applet(self, fl_ctx: FLContext):
         return MockClientApplet()
+
+
+class MockPyExecutor(FlowerExecutor):
+    def __init__(self, in_process=True):
+        FlowerExecutor.__init__(self)
+        self.in_process = in_process
+
+    def get_applet(self, fl_ctx: FLContext):
+        return MockClientPyApplet(self.in_process)

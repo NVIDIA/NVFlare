@@ -18,6 +18,8 @@ from nvflare.app_opt.flower.defs import GRPC_DEFAULT_OPTIONS
 from nvflare.app_opt.flower.utils import create_channel
 from nvflare.fuel.utils.obj_utils import get_logger
 
+from .utils import reply_should_exit
+
 
 class GrpcClient:
     """This class implements a gRPC Client that is capable of sending Flower requests to a Flower gRPC Server."""
@@ -71,7 +73,12 @@ class GrpcClient:
 
         """
         self.logger.info(f"sending {len(request.grpc_message_content)} bytes: {request.grpc_message_name=}")
-        result = self.stub.SendReceive(request)
+        try:
+            result = self.stub.SendReceive(request)
+        except Exception as ex:
+            self.logger.warning(f"exception occurred communicating to Flower server: {ex}")
+            return reply_should_exit()
+
         if not isinstance(result, pb2.MessageContainer):
             self.logger.error(f"expect reply to be pb2.MessageContainer but got {type(result)}")
             return None
