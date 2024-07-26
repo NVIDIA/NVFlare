@@ -248,7 +248,7 @@ class SimulatorRunner(FLComponent):
             self.args.sp_scheme = parsed_url.scheme
 
             self.logger.info("Deploy the Apps.")
-            self._deploy_apps(job_name, data_bytes, meta)
+            self._deploy_apps(job_name, data_bytes, meta, log_config_file_path)
 
             server_workspace = os.path.join(self.args.workspace, "server")
             workspace = Workspace(root_dir=server_workspace, site_name="server")
@@ -286,10 +286,14 @@ class SimulatorRunner(FLComponent):
             if os.path.exists(temp_local_dir):
                 shutil.move(temp_local_dir, local_dir)
 
-    def _setup_local_startup(self, workspace):
+    def _setup_local_startup(self, log_config_file_path, workspace):
         local_dir = os.path.join(workspace, "local")
         startup = os.path.join(workspace, "startup")
-        shutil.copytree(os.path.join(self.simulator_root, "local"), local_dir)
+        os.makedirs(local_dir, exist_ok=True)
+        shutil.copyfile(log_config_file_path, os.path.join(local_dir, WorkspaceConstants.LOGGING_CONFIG))
+        workspace_local = os.path.join(self.simulator_root, "local")
+        if os.path.exists(workspace_local):
+            shutil.copytree(workspace_local, local_dir, dirs_exist_ok=True)
         shutil.copytree(os.path.join(self.simulator_root, "startup"), startup)
 
     def validate_job_data(self):
@@ -327,7 +331,7 @@ class SimulatorRunner(FLComponent):
         if no_app_clients:
             raise RuntimeError(f"The job does not have App to run for clients: {no_app_clients}")
 
-    def _deploy_apps(self, job_name, data_bytes, meta):
+    def _deploy_apps(self, job_name, data_bytes, meta, log_config_file_path):
         with tempfile.TemporaryDirectory() as temp_dir:
             if os.path.exists(temp_dir):
                 shutil.rmtree(temp_dir)
@@ -343,7 +347,7 @@ class SimulatorRunner(FLComponent):
                 for p in participants:
                     if p == "server" or p in self.client_names:
                         app_root = get_simulator_app_root(self.simulator_root, p)
-                        self._setup_local_startup(os.path.join(self.simulator_root, p))
+                        self._setup_local_startup(log_config_file_path, os.path.join(self.simulator_root, p))
                         app = os.path.join(temp_job_folder, app_name)
                         shutil.copytree(app, app_root)
 
