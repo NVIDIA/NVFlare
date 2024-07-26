@@ -42,7 +42,7 @@ class NvflarePlugin : public BasePlugin {
   // A temporary buffer to hold return value
   std::vector<std::uint8_t> buffer_;
   // Buffer for clear histogram
-  std::vector<double> hist_;
+  std::vector<double> histo_;
 
 public:
   explicit NvflarePlugin(std::vector<std::pair<std::string_view, std::string_view>> const &args) : BasePlugin(args) {}

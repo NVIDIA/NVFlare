@@ -39,6 +39,7 @@ class ServerSecurityHandler(SecurityHandler):
         self.aggr_result_dict = None
         self.aggr_result_to_send = None
         self.aggr_result_lock = threading.Lock()
+        self.world_size = 0
 
         if tenseal_imported:
             decomposers.register()
@@ -146,10 +147,12 @@ class ServerSecurityHandler(SecurityHandler):
         horizontal = fl_ctx.get_prop(Constant.HEADER_KEY_HORIZONTAL)
         reply.set_header(Constant.HEADER_KEY_ENCRYPTED_DATA, True)
         reply.set_header(Constant.HEADER_KEY_HORIZONTAL, horizontal)
+
         with self.aggr_result_lock:
             if not self.aggr_result_to_send:
                 if not self.aggr_result_dict:
                     return self._abort(f"Rank {rank}: no aggr result after AllGatherV!", fl_ctx)
+                self.world_size = len(self.aggr_result_dict)
 
                 if horizontal:
                     self.aggr_result_to_send = self._histogram_sum(fl_ctx)
@@ -158,6 +161,8 @@ class ServerSecurityHandler(SecurityHandler):
 
                 # reset aggr_result_dict for next gather
                 self.aggr_result_dict = None
+
+        reply.set_header(Constant.HEADER_KEY_WORLD_SIZE, self.world_size)
 
         if horizontal:
             length = self.aggr_result_to_send.size()

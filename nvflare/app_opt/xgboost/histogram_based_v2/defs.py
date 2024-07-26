@@ -109,6 +109,7 @@ class Constant:
     HEADER_KEY_HORIZONTAL = "xgb.horizontal"
     HEADER_KEY_ORIGINAL_BUF_SIZE = "xgb.original_buf_size"
     HEADER_KEY_IN_AGGR = "xgb.in_aggr"
+    HEADER_KEY_WORLD_SIZE = "xgb.world_size"
 
     DUMMY_BUFFER_SIZE = 4
 

@@ -174,7 +174,7 @@ void NvflarePlugin::SyncEncryptedHistVert(std::uint8_t *buffer,
   char *pointer = reinterpret_cast<char *>(buffer);
 
   // The buffer is concatenated by AllGather. It may contain multiple DAM buffers
-  std::vector<double> &result = hist_;
+  std::vector<double> &result = histo_;
   result.clear();
   auto max_slot = cut_ptrs_.back();
   auto array_size = 2 * max_slot * sizeof(double);
@@ -246,20 +246,34 @@ void NvflarePlugin::SyncEncryptedHistHori(std::uint8_t const *buffer,
     std::cout << Ident() << " NvflarePlugin::SyncEncryptedHistHori called with buffer size: " << len << std::endl;
   }
 
-  DamDecoder decoder(const_cast<uint8_t *>(buffer), len, false, dam_debug_);
-  if (!decoder.IsValid()) {
-    std::cout << "Not DAM encoded buffer, ignored" << std::endl;
-    *out_hist = nullptr;
-    *out_len = 0;
+  auto remaining = len;
+  auto pointer = buffer;
+
+  // The buffer is concatenated by AllGather. It may contain multiple DAM buffers
+  std::vector<double>& result = histo_;
+  result.clear();
+  while (remaining > kPrefixLen) {
+    DamDecoder decoder(const_cast<std::uint8_t *>(pointer), remaining, false, dam_debug_);
+    if (!decoder.IsValid()) {
+      std::cout << "Not DAM encoded histogram ignored at offset: "
+                << static_cast<int>(pointer - buffer) << std::endl;
+      break;
+    }
+
+    if (decoder.GetDataSetId() != kDataSetHistogramResult) {
+      throw std::runtime_error{"Invalid dataset: " + std::to_string(decoder.GetDataSetId())};
+    }
+
+    auto size = decoder.Size();
+    auto histo = decoder.DecodeFloatArray();
+    result.insert(result.end(), histo.cbegin(), histo.cend());
+
+    remaining -= size;
+    pointer += size;
   }
 
-  if (decoder.GetDataSetId() != kDataSetHistogramResult) {
-    throw std::runtime_error{"Invalid dataset: " + std::to_string(decoder.GetDataSetId())};
-  }
-
-  hist_ = decoder.DecodeFloatArray();
-  *out_hist = this->hist_.data();
-  *out_len = this->hist_.size();
+  *out_hist = result.data();
+  *out_len = result.size();
 }
 
 } // namespace nvflare

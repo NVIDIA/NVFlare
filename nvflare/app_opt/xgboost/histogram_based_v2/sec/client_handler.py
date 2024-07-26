@@ -355,13 +355,21 @@ class ClientSecurityHandler(SecurityHandler):
         fl_ctx.set_prop(key=Constant.PARAM_KEY_RCV_BUF, value=result, private=True, sticky=False)
 
     def _process_after_all_gather_v_horizontal(self, fl_ctx: FLContext):
+        reply = fl_ctx.get_prop(Constant.PARAM_KEY_REPLY)
+        world_size = reply.get_header(Constant.HEADER_KEY_WORLD_SIZE)
         encrypted_histograms = fl_ctx.get_prop(Constant.PARAM_KEY_RCV_BUF)
         rank = fl_ctx.get_prop(Constant.PARAM_KEY_RANK)
         if not isinstance(encrypted_histograms, CKKSVector):
             return self._abort(f"rank {rank}: expect a CKKSVector but got {type(encrypted_histograms)}", fl_ctx)
 
         histograms = encrypted_histograms.decrypt(secret_key=self.tenseal_context.secret_key())
+
+        # XGBoost expect every worker returns a histogram, all zeros are returned for other workers
         result = self.data_converter.encode_histograms_result(histograms, fl_ctx)
+        zeros = [0.0] * len(histograms);
+        zero_buf = self.data_converter.encode_histograms_result(zeros, fl_ctx)
+        for _ in range(world_size-1):
+            result += zero_buf
         fl_ctx.set_prop(key=Constant.PARAM_KEY_RCV_BUF, value=result, private=True, sticky=False)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
