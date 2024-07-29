@@ -27,54 +27,6 @@ import nvflare.client as flare
 PATH = "./tf_model.weights.h5"
 
 
-class SparseCategoricalCrossentropyWithFedProx(losses.SparseCategoricalCrossentropy):
-    """
-    Override SparseCategoricalCrossentropy loss for FedProx,
-    adding regularization term.
-    """
-    def __init__(
-            self,
-            *args,
-            mu: float = 1e-3,
-            **kwargs,
-    ):
-        super().__init__(*args, **kwargs)
-        if mu < 0.0:
-            raise ValueError("mu should be no less than 0.0")
-        self.mu = mu
-
-        self.current_model = None
-        self.target_model = None
-
-    def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
-        loss = super().call(y_true, y_pred)
-        if self.current_model and self.target_model:
-            fedprox_loss = 0
-            for key in self.target_model:
-                tar_layer = self.target_model[key]
-                cur_layer = self.current_model[key]
-                for t_w, c_w in zip(tar_layer, cur_layer):
-                    fedprox_loss += ops.sum((t_w - c_w) ** 2)
-            return loss + (self.mu/2) * fedprox_loss
-        else:
-            return loss
-
-
-class SetFedProxValues(callbacks.Callback):
-    """
-    Set up current model and target model for FedProx loss computation.
-    """
-    def __init__(self, fedprox_loss):
-        super().__init__()
-        self.fedprox_loss = fedprox_loss
-
-    def on_train_begin(self, logs=None):
-        self.fedprox_loss.target_model = {layer.name: layer.get_weights() for layer in self.model.layers}
-
-    def on_train_batch_begin(self, batch, logs=None):
-        self.fedprox_loss.current_model = {layer.name: layer.get_weights() for layer in self.model.layers}
-
-
 def preprocess_dataset(dataset, is_training, batch_size=1):
     """
     Apply pre-processing transformations to CIFAR10 dataset.
@@ -163,11 +115,6 @@ def main():
         type=str,
         required=True
     )
-    parser.add_argument(
-        "--fedprox_mu",
-        type=float,
-        default=0.0,
-    )
     args = parser.parse_args()
 
     (train_images, train_labels), (test_images, test_labels) = datasets.cifar10.load_data()
@@ -204,12 +151,8 @@ def main():
     # Tensorboard logs for each aggregation run
     tf_summary_writer = tf.summary.create_file_writer(logdir="./logs/rounds")
 
-    # Control whether FedProx is used.
-    if args.fedprox_mu > 0:
-        loss = SparseCategoricalCrossentropyWithFedProx(from_logits=True)
-        callbacks.append(SetFedProxValues(loss))
-    else:
-        loss = losses.SparseCategoricalCrossentropy(from_logits=True)
+    # Define loss function.
+    loss = losses.SparseCategoricalCrossentropy(from_logits=True)
 
     model.compile(
         optimizer=tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.9), loss=loss, metrics=["accuracy"]

@@ -31,8 +31,6 @@ for device in gpu_devices:
 CENTRALIZED_ALGO = "centralized"
 FEDAVG_ALGO = "fedavg"
 FEDOPT_ALGO = "fedopt"
-FEDPROX_ALGO = "fedprox"
-SCAFFOLD_ALGO = "scaffold"
 
 
 if __name__ == "__main__":
@@ -41,11 +39,6 @@ if __name__ == "__main__":
         "--algo",
         type=str,
         required=True,
-    )
-    parser.add_argument(
-        "--fedprox_mu",
-        type=float,
-        default=0.0,
     )
     parser.add_argument(
         "--n_clients",
@@ -89,9 +82,7 @@ if __name__ == "__main__":
     supported_algos = (
         CENTRALIZED_ALGO,
         FEDAVG_ALGO,
-        FEDOPT_ALGO,
-        FEDPROX_ALGO,
-        SCAFFOLD_ALGO
+        FEDOPT_ALGO
     )
 
     if not args.algo in supported_algos:
@@ -105,7 +96,11 @@ if __name__ == "__main__":
 
         # Do alpha splitting if alpha value > 0.0
         print(f"preparing CIFAR10 and doing alpha split with alpha = {args.alpha}")
-        train_idx_paths = cifar10_split(num_sites=args.n_clients, alpha=args.alpha, split_dir=train_split_root)
+        train_idx_paths = cifar10_split(
+            num_sites=args.n_clients,
+            alpha=args.alpha,
+            split_dir=train_split_root
+        )
 
         print(train_idx_paths)
     else:
@@ -131,14 +126,6 @@ if __name__ == "__main__":
             num_clients=args.n_clients,
             num_rounds=args.num_rounds,
         )
-
-    elif args.algo == FEDPROX_ALGO:
-        from nvflare import FedAvg
-        controller = FedAvg(
-            num_clients=args.n_clients,
-            num_rounds=args.num_rounds,
-        )
-        task_script_args += f" --fedprox_mu {args.fedprox_mu}"
 
     job.to(controller, "server")
 

@@ -1,7 +1,7 @@
 # Simulated Federated Learning with CIFAR10 Using Tensorflow
 
 This example shows `Tensorflow`-based classic Federated Learning
-algorithms, namely FedAvg, FedProx, FedOpt and Scaffold on CIFAR10
+algorithms, namely FedAvg and FedOpt on CIFAR10
 dataset. This example is analogous to [the example using `Pytorch`
 backend](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/cifar10-sim)
 on the same dataset, where same experiments
@@ -14,8 +14,10 @@ client-side training logics (details in file
 and the new
 [`FedJob`](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/job_config/fed_job.py#L106)
 APIs were used to programmatically set up an
-`nvflare` job to be exported or ran by simulator (details in file [`tf_fl_script_executor_cifar10.py`](tf_fl_script_executor_cifar10.py)), alleviating the need
-of writing job config files, simplifying development process.
+`nvflare` job to be exported or ran by simulator (details in file
+[`tf_fl_script_executor_cifar10.py`](tf_fl_script_executor_cifar10.py)),
+alleviating the need of writing job config files, simplifying
+development process.
 
 
 ## 1. Install requirements
@@ -104,21 +106,9 @@ for alpha in 1.0 0.5 0.3 0.1; do
 done
 ```
 
-### 2.3 Advanced FL algorithms (FedProx, FedOpt and SCAFFOLD)
+### 2.3 Advanced FL algorithms (FedOpt)
 
 Next, let's try some different FL algorithms on a more heterogeneous split:
-
-[FedProx](https://arxiv.org/abs/1812.06127) adds a regularizer to the loss:
-```
-python ./tf_fl_script_executor_cifar10.py \
-       --algo fedprox \
-       --n_clients 8 \
-       --num_rounds 50 \
-       --batch_size 64 \
-       --epochs 4 \
-       --fedprox_mu 1e-5 \
-       --alpha 0.1
-```
 
 [FedOpt](https://arxiv.org/abs/2003.00295) uses optimizers on server
 side to update the global model from client-side gradients. Here we
@@ -132,11 +122,6 @@ python ./tf_fl_script_executor_cifar10.py \
        --epochs 4 \
        --alpha 0.1
 ```
-
-[SCAFFOLD](https://arxiv.org/abs/1910.06378) adds a correction term
-during local training following the
-[implementation](https://github.com/Xtra-Computing/NIID-Bench) as
-described in [Li et al.](https://arxiv.org/abs/2102.02079)
 
 
 ## 3. Results
@@ -177,19 +162,14 @@ heterogeneity](./figs/fedavg-diff-alphas.png)
 ### 3.3 Impact of different FL algorithms
 
 Lastly, we compare the performance of different FL algorithms, with
-`alpha` value fixed to 0.1, i.e., a high client data
-heterogeneity. We can observe from the figure below that, FedOpt and
-SCAFFOLD achieve better performance, with better convergence rates
-compared to FedAvg and FedProx with the same alpha setting. SCAFFOLD
-achieves that by adding a correction term when updating the client
-models, while FedOpt utilizes SGD with momentum to update the global
-model on the server.
+`alpha` value fixed to 0.1, i.e., a high client data heterogeneity. We
+can observe from the figure below that, FedOpt achieves better
+performance, with better convergence rates compared to FedAvg with the
+same alpha setting.
 
 | Config |	Alpha |	Val score |
 | ----------- | ----------- |  ----------- |
 | cifar10_fedavg |	0.1 |	0.7903 |
-| cifar10_fedprox |	0.1 |	0.7897 |
 | cifar10_fedopt |	0.1 |	0.8145 |
-| cifar10_scaffold |	TODO |	TODO |
 
 ![Impact of different FL algorithms](./figs/fedavg-diff-algos.png)
