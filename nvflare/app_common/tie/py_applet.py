@@ -159,34 +159,30 @@ class PyApplet(Applet, ABC):
             raise RuntimeError(f"runner must be a PyRunner but got {type(runner)}")
 
         self.runner = runner
-        starter = _PyStarter(runner, self.in_process, workspace, job_id)
+        self.starter = _PyStarter(runner, self.in_process, workspace, job_id)
         if self.in_process:
-            self.logger.info("starting applet in another thread")
-            t = threading.Thread(
-                target=starter.start,
-                args=(ctx,),
-                daemon=True,
-                name="applet",
-            )
-            t.start()
-            if not starter.started:
-                self.logger.error(f"cannot start applet: {starter.error}")
-                raise RuntimeError(starter.error)
-            self.starter = starter
+            self._start_in_thread(self.starter, ctx)
         else:
-            # start in a separate local process
-            # must remove the fl_context from ctx since it's not pickleable!
-            ctx.pop(Constant.APP_CTX_FL_CONTEXT)
-            self.logger.info("starting applet in another process")
-            self.process = multiprocessing.Process(
-                target=starter.start,
-                args=(ctx,),
-                daemon=True,
-                name="applet",
-            )
-            self.process.start()
+            self._start_in_process(self.starter, ctx)
 
-    def stop(self, timeout=0.0):
+    def _start_in_thread(self, starter, ctx: dict):
+        """Start the applet in a separate thread."""
+        self.logger.info("Starting applet in another thread")
+        thread = threading.Thread(target=starter.start, args=(ctx,), daemon=True, name="applet")
+        thread.start()
+        if not self.starter.started:
+            self.logger.error(f"Cannot start applet: {self.starter.error}")
+            raise RuntimeError(self.starter.error)
+
+    def _start_in_process(self, starter, ctx: dict):
+        """Start the applet in a separate process."""
+        # must remove Constant.APP_CTX_FL_CONTEXT from ctx because it's not pickleable!
+        ctx.pop(Constant.APP_CTX_FL_CONTEXT, None)
+        self.logger.info("Starting applet in another process")
+        self.process = multiprocessing.Process(target=starter.start, args=(ctx,), daemon=True, name="applet")
+        self.process.start()
+
+    def stop(self, timeout=0.0) -> int:
         """Stop the applet
 
         Args:
@@ -201,6 +197,7 @@ class PyApplet(Applet, ABC):
 
         if self.in_process:
             self.runner.stop(timeout)
+            return 0
         else:
             p = self.process
             self.process = None
@@ -215,10 +212,11 @@ class PyApplet(Applet, ABC):
                             if p.exitcode is not None:
                                 # already stopped
                                 self.logger.info(f"applet stopped (rc={p.exitcode}) after {time.time()-start} secs")
-                                return
+                                return p.exitcode
                             time.sleep(0.1)
                     self.logger.info("stopped applet by killing the process")
                     p.kill()
+                    return -9
 
     def is_stopped(self) -> (bool, int):
         if not self.runner:

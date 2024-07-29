@@ -44,7 +44,7 @@ class GrpcServerConnector(FlowerServerConnector):
 
     def _stop_server(self):
         self._server_stopped = True
-        self.stop_applet()
+        self._exit_code = self.stop_applet()
 
     def _is_stopped(self) -> (bool, int):
         runner_stopped, ec = self.is_applet_stopped()

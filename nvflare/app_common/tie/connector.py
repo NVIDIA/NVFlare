@@ -188,13 +188,13 @@ class Connector(ABC, FLComponent):
         app_ctx[Constant.APP_CTX_FL_CONTEXT] = fl_ctx
         self.applet.start(app_ctx)
 
-    def stop_applet(self, timeout=0.0):
+    def stop_applet(self, timeout=0.0) -> int:
         """Stop the running of the applet
 
-        Returns: None
+        Returns: exit code of the applet
 
         """
-        self.applet.stop(timeout)
+        return self.applet.stop(timeout)
 
     def is_applet_stopped(self) -> (bool, int):
         """Check whether the applet is already stopped

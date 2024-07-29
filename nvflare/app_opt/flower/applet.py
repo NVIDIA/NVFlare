@@ -79,7 +79,7 @@ class FlowerServerApplet(Applet):
         server_app: str,
         database: str,
         superlink_ready_timeout: float,
-        server_app_args: dict = None,
+        server_app_args: list = None,
     ):
         """Constructor of FlowerServerApplet.
 
@@ -87,7 +87,7 @@ class FlowerServerApplet(Applet):
             server_app: Flower's server app specification
             database: database spec to be used by the server app
             superlink_ready_timeout: how long to wait for the superlink process to become ready
-            server_app_args: an optional dict that contains additional command args passed to flower server app
+            server_app_args: an optional list that contains additional command args passed to flower server app
         """
         Applet.__init__(self)
         self._app_process_mgr = None
@@ -173,10 +173,7 @@ class FlowerServerApplet(Applet):
         # start the server app
         args_str = ""
         if self.server_app_args:
-            args = []
-            for k, v in self.server_app_args:
-                args.append(f"{k} {v}")
-            args_str = " ".join(args)
+            args_str = " ".join(self.server_app_args)
 
         app_cmd = (
             f"flower-server-app --insecure --superlink {driver_addr} --dir {custom_dir} {args_str} {self.server_app}"
@@ -195,14 +192,14 @@ class FlowerServerApplet(Applet):
             raise RuntimeError("cannot start server_app process")
 
     @staticmethod
-    def _stop_process(p: ProcessManager):
-        if p:
-            try:
-                p.stop()
-            except:
-                pass
+    def _stop_process(p: ProcessManager) -> int:
+        if not p:
+            # nothing to stop
+            return 0
+        else:
+            return p.stop()
 
-    def stop(self, timeout=0.0):
+    def stop(self, timeout=0.0) -> int:
         """Stop the server applet's superlink and server app processes.
 
         Args:
@@ -213,11 +210,14 @@ class FlowerServerApplet(Applet):
         Returns:
 
         """
-        self._stop_process(self._app_process_mgr)
+        rc = self._stop_process(self._app_process_mgr)
         self._app_process_mgr = None
 
         self._stop_process(self._superlink_process_mgr)
         self._superlink_process_mgr = None
+
+        # return the rc of the server app!
+        return rc
 
     @staticmethod
     def _is_process_stopped(p: ProcessManager):

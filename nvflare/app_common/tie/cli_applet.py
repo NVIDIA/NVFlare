@@ -60,21 +60,21 @@ class CLIApplet(Applet, ABC):
             self.logger.error(f"exception starting applet '{cmd_desc.cmd}': {secure_format_exception(ex)}")
             self._start_error = True
 
-    def stop(self, timeout=0.0):
+    def stop(self, timeout=0.0) -> int:
         """Stop the applet
 
         Args:
             timeout: amount of time to wait for the applet to stop by itself. If the applet does not stop on
                 its own within this time, we'll forcefully stop it by kill.
 
-        Returns: None
+        Returns: exit code
 
         """
         mgr = self._proc_mgr
         self._proc_mgr = None
 
         if not mgr:
-            return
+            raise RuntimeError("no process manager to stop")
 
         if timeout > 0:
             # wait for the applet to stop by itself
@@ -90,6 +90,9 @@ class CLIApplet(Applet, ABC):
         rc = mgr.stop()
         if rc is None:
             self.logger.warning(f"killed the applet process after waiting {timeout} seconds")
+            return -9
+        else:
+            return rc
 
     def is_stopped(self) -> (bool, int):
         if self._start_error:

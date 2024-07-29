@@ -166,7 +166,7 @@ class ProcessManager:
             raise RuntimeError("there is no process to poll")
         return self.process.poll()
 
-    def stop(self):
+    def stop(self) -> int:
         """Stop the process.
         If the process is still running, kill the process. If a log file is open, close the log file.
 

@@ -17,7 +17,7 @@ from nvflare.app_common.tie.controller import TieController
 from nvflare.app_common.tie.defs import Constant as TieConstant
 from nvflare.app_opt.flower.applet import FlowerServerApplet
 from nvflare.app_opt.flower.connectors.grpc_server_connector import GrpcServerConnector
-from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_int, check_positive_number
+from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_number
 
 from .defs import Constant
 
@@ -25,10 +25,10 @@ from .defs import Constant
 class FlowerController(TieController):
     def __init__(
         self,
-        num_rounds: int = 1,
+        num_rounds=1,
         server_app: str = "server:app",
         database: str = "",
-        server_app_args: dict = None,
+        server_app_args: list = None,
         superlink_ready_timeout: float = 10.0,
         configure_task_name=TieConstant.CONFIG_TASK_NAME,
         configure_task_timeout=TieConstant.CONFIG_TASK_TIMEOUT,
@@ -39,6 +39,23 @@ class FlowerController(TieController):
         progress_timeout: float = TieConstant.WORKFLOW_PROGRESS_TIMEOUT,
         int_client_grpc_options=None,
     ):
+        """Constructor of FlowerController
+
+        Args:
+            num_rounds: number of rounds. Not used in this version.
+            server_app: the server app specification for Flower server app
+            database: database name
+            server_app_args: additional server app CLI args
+            superlink_ready_timeout: how long to wait for the superlink to become ready before starting server app
+            configure_task_name: name of the config task
+            configure_task_timeout: max time allowed for config task to complete
+            start_task_name: name of the start task
+            start_task_timeout: max time allowed for start task to complete
+            job_status_check_interval: how often to check job status
+            max_client_op_interval: max time allowed for missing client requests
+            progress_timeout: max time allowed for missing overall progress
+            int_client_grpc_options: internal grpc client options
+        """
         TieController.__init__(
             self,
             configure_task_name=configure_task_name,
@@ -50,11 +67,10 @@ class FlowerController(TieController):
             progress_timeout=progress_timeout,
         )
 
-        check_positive_int("num_rounds", num_rounds)
         check_positive_number("superlink_ready_timeout", superlink_ready_timeout)
 
         if server_app_args:
-            check_object_type("server_app_args", server_app_args, dict)
+            check_object_type("server_app_args", server_app_args, list)
 
         self.num_rounds = num_rounds
         self.server_app = server_app
