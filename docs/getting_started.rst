@@ -295,7 +295,6 @@ to a working directory:
 
 .. code-block:: shell
 
-  mkdir simulator-example
   cp -rf NVFlare/examples/hello-world/hello-pt simulator-example/
 
 The hello-pt application requires a few dependencies to be installed.  As in the installation section,
