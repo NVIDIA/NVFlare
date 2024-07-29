@@ -20,8 +20,8 @@ from nvflare.app_common.tie.cli_applet import CLIApplet
 from nvflare.app_common.tie.defs import Constant as TieConstant
 from nvflare.app_common.tie.process_mgr import CommandDescriptor, ProcessManager, start_process
 from nvflare.app_opt.flower.defs import Constant
-from nvflare.app_opt.flower.utils import create_channel
 from nvflare.fuel.f3.drivers.net_utils import get_open_tcp_port
+from nvflare.fuel.utils.grpc_utils import create_channel
 from nvflare.security.logging import secure_format_exception
 
 

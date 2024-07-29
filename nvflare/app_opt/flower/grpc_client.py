@@ -15,7 +15,7 @@ import flwr.proto.grpcadapter_pb2 as pb2
 from flwr.proto.grpcadapter_pb2_grpc import GrpcAdapterStub
 
 from nvflare.app_opt.flower.defs import GRPC_DEFAULT_OPTIONS
-from nvflare.app_opt.flower.utils import create_channel
+from nvflare.fuel.utils.grpc_utils import create_channel
 from nvflare.fuel.utils.obj_utils import get_logger
 
 from .utils import reply_should_exit

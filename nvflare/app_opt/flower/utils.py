@@ -12,39 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import flwr.proto.grpcadapter_pb2 as pb2
-import grpc
 
 from nvflare.apis.shareable import Shareable
 
 from .defs import Constant
-
-
-def create_channel(server_addr, grpc_options, ready_timeout: float, test_only: bool):
-    """Create gRPC channel and waits for the server to be ready
-
-    Args:
-        server_addr: the server address to connect to
-        grpc_options: gRPC client connection options
-        ready_timeout: how long to wait for the server to be ready
-        test_only: whether for testing the server readiness only
-
-    Returns: the gRPC channel created. Bit if test_only, the channel is closed and returns None.
-
-    If the server does not become ready within ready_timeout, the RuntimeError exception will raise.
-
-    """
-    channel = grpc.insecure_channel(server_addr, options=grpc_options)
-
-    # wait for channel ready
-    try:
-        grpc.channel_ready_future(channel).result(timeout=ready_timeout)
-    except grpc.FutureTimeoutError:
-        raise RuntimeError(f"cannot connect to server after {ready_timeout} seconds")
-
-    if test_only:
-        channel.close()
-        channel = None
-    return channel
 
 
 def msg_container_to_shareable(msg: pb2.MessageContainer) -> Shareable:
