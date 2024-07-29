@@ -57,8 +57,7 @@ if __name__ == "__main__":
         job.to(SimpleModelShareableGenerator(), f"site-{i}", id="shareable_generator")
 
         client_controller = SwarmClientController(
-            aggregator_id=job.as_id(aggregator),
-            persistor_id=job.as_id(persistor)
+            aggregator_id=job.as_id(aggregator), persistor_id=job.as_id(persistor)
         )
         job.to(client_controller, f"site-{i}", tasks=["swarm_*"])
 
