@@ -17,7 +17,7 @@ import copy
 import numpy as np
 import tensorflow as tf
 
-from nvflare.app_opt.tf.utils import flat_layer_weights_dict
+from .utils import flat_layer_weights_dict
 
 gpu_devices = tf.config.experimental.list_physical_devices("GPU")
 for device in gpu_devices:
