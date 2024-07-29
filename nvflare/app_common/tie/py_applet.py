@@ -128,32 +128,32 @@ class PyApplet(Applet, ABC):
         self.runner = None
 
     @abstractmethod
-    def get_runner(self, ctx: dict) -> PyRunner:
+    def get_runner(self, app_ctx: dict) -> PyRunner:
         """Subclass must implement this method to return a PyRunner.
         The returned PyRunner must be pickleable since it could be run in a separate subprocess!
 
         Args:
-            ctx: the app context for the runner
+            app_ctx: the app context for the runner
 
         Returns: a PyRunner object
 
         """
         pass
 
-    def start(self, ctx: dict):
+    def start(self, app_ctx: dict):
         """Start the execution of the applet.
 
         Args:
-            ctx: the app context
+            app_ctx: the app context
 
         Returns:
 
         """
-        fl_ctx = ctx.get(Constant.APP_CTX_FL_CONTEXT)
+        fl_ctx = app_ctx.get(Constant.APP_CTX_FL_CONTEXT)
         engine = fl_ctx.get_engine()
         workspace = engine.get_workspace()
         job_id = fl_ctx.get_job_id()
-        runner = self.get_runner(ctx)
+        runner = self.get_runner(app_ctx)
 
         if not isinstance(runner, PyRunner):
             raise RuntimeError(f"runner must be a PyRunner but got {type(runner)}")
@@ -161,25 +161,25 @@ class PyApplet(Applet, ABC):
         self.runner = runner
         self.starter = _PyStarter(runner, self.in_process, workspace, job_id)
         if self.in_process:
-            self._start_in_thread(self.starter, ctx)
+            self._start_in_thread(self.starter, app_ctx)
         else:
-            self._start_in_process(self.starter, ctx)
+            self._start_in_process(self.starter, app_ctx)
 
-    def _start_in_thread(self, starter, ctx: dict):
+    def _start_in_thread(self, starter, app_ctx: dict):
         """Start the applet in a separate thread."""
         self.logger.info("Starting applet in another thread")
-        thread = threading.Thread(target=starter.start, args=(ctx,), daemon=True, name="applet")
+        thread = threading.Thread(target=starter.start, args=(app_ctx,), daemon=True, name="applet")
         thread.start()
         if not self.starter.started:
             self.logger.error(f"Cannot start applet: {self.starter.error}")
             raise RuntimeError(self.starter.error)
 
-    def _start_in_process(self, starter, ctx: dict):
+    def _start_in_process(self, starter, app_ctx: dict):
         """Start the applet in a separate process."""
         # must remove Constant.APP_CTX_FL_CONTEXT from ctx because it's not pickleable!
-        ctx.pop(Constant.APP_CTX_FL_CONTEXT, None)
+        app_ctx.pop(Constant.APP_CTX_FL_CONTEXT, None)
         self.logger.info("Starting applet in another process")
-        self.process = multiprocessing.Process(target=starter.start, args=(ctx,), daemon=True, name="applet")
+        self.process = multiprocessing.Process(target=starter.start, args=(app_ctx,), daemon=True, name="applet")
         self.process.start()
 
     def stop(self, timeout=0.0) -> int:

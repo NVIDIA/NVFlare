@@ -106,7 +106,7 @@ class FlowerServerApplet(Applet):
             self.logger.error(f"exception starting applet: {secure_format_exception(ex)}")
             self._start_error = True
 
-    def start(self, ctx: dict):
+    def start(self, app_ctx: dict):
         """Start the applet.
 
         Flower requires two processes for server application:
@@ -118,7 +118,7 @@ class FlowerServerApplet(Applet):
         "superlink_log.txt". The server app's log file is named "server_app_log.txt".
 
         Args:
-            ctx: the run context of the applet.
+            app_ctx: the run context of the applet.
 
         Returns:
 
@@ -129,8 +129,8 @@ class FlowerServerApplet(Applet):
             raise RuntimeError("failed to get a port for Flower driver")
         driver_addr = f"127.0.0.1:{driver_port}"
 
-        server_addr = ctx.get(Constant.APP_CTX_SERVER_ADDR)
-        fl_ctx = ctx.get(Constant.APP_CTX_FL_CONTEXT)
+        server_addr = app_ctx.get(Constant.APP_CTX_SERVER_ADDR)
+        fl_ctx = app_ctx.get(Constant.APP_CTX_FL_CONTEXT)
         if not isinstance(fl_ctx, FLContext):
             self.logger.error(f"expect APP_CTX_FL_CONTEXT to be FLContext but got {type(fl_ctx)}")
             raise RuntimeError("invalid FLContext")

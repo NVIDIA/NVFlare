@@ -29,31 +29,31 @@ class CLIApplet(Applet, ABC):
         self._start_error = False
 
     @abstractmethod
-    def get_command(self, ctx: dict) -> CommandDescriptor:
+    def get_command(self, app_ctx: dict) -> CommandDescriptor:
         """Subclass must implement this method to return the CLI command to be executed.
 
         Args:
-            ctx: the applet context that contains execution env info
+            app_ctx: the applet context that contains execution env info
 
         Returns: a CommandDescriptor that describes the CLI command
 
         """
         pass
 
-    def start(self, ctx: dict):
+    def start(self, app_ctx: dict):
         """Start the execution of the applet.
 
         Args:
-            ctx: the applet run context
+            app_ctx: the applet run context
 
         Returns:
 
         """
-        cmd_desc = self.get_command(ctx)
+        cmd_desc = self.get_command(app_ctx)
         if not cmd_desc:
             raise RuntimeError("failed to get cli command from app context")
 
-        fl_ctx = ctx.get(Constant.APP_CTX_FL_CONTEXT)
+        fl_ctx = app_ctx.get(Constant.APP_CTX_FL_CONTEXT)
         try:
             self._proc_mgr = start_process(cmd_desc, fl_ctx)
         except Exception as ex:

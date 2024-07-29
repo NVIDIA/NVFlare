@@ -126,7 +126,6 @@ class ProcessManager:
         command_seq = shlex.split(self.cmd_desc.cmd)
         self.process = subprocess.Popen(
             command_seq,
-            universal_newlines=True,
             stderr=subprocess.STDOUT,
             cwd=self.cmd_desc.cwd,
             env=env,
@@ -144,6 +143,8 @@ class ProcessManager:
             if not line:
                 break
 
+            assert isinstance(line, bytes)
+            line = line.decode("utf-8")
             # use file_lock to ensure file integrity since the log file could be closed by the self.stop() method!
             with self.file_lock:
                 if self.log_file:
@@ -151,7 +152,8 @@ class ProcessManager:
                     self.log_file.flush()
 
             if self.cmd_desc.log_stdout:
-                if self.msg_prefix:
+                assert isinstance(line, str)
+                if self.msg_prefix and not line.startswith('\r'):
                     line = f"{self.msg_prefix} {line}"
                 sys.stdout.write(line)
                 sys.stdout.flush()

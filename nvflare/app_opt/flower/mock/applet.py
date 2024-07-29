@@ -22,11 +22,11 @@ class MockClientApplet(CLIApplet):
     def __init__(self):
         CLIApplet.__init__(self)
 
-    def get_command(self, ctx: dict) -> CommandDescriptor:
+    def get_command(self, app_ctx: dict) -> CommandDescriptor:
         main_module = "nvflare.app_opt.flower.mock.flower_client"
-        addr = ctx.get(Constant.APP_CTX_SERVER_ADDR)
-        num_rounds = ctx.get(Constant.APP_CTX_NUM_ROUNDS)
-        client_name = ctx.get(Constant.APP_CTX_CLIENT_NAME)
+        addr = app_ctx.get(Constant.APP_CTX_SERVER_ADDR)
+        num_rounds = app_ctx.get(Constant.APP_CTX_NUM_ROUNDS)
+        client_name = app_ctx.get(Constant.APP_CTX_CLIENT_NAME)
 
         return CommandDescriptor(
             cmd=f"python -m {main_module} -a {addr} -n {num_rounds} -c {client_name}",
@@ -39,10 +39,10 @@ class MockServerApplet(CLIApplet):
     def __init__(self):
         CLIApplet.__init__(self)
 
-    def get_command(self, ctx: dict) -> CommandDescriptor:
+    def get_command(self, app_ctx: dict) -> CommandDescriptor:
         main_module = "nvflare.app_opt.flower.mock.flower_server"
-        addr = ctx.get(Constant.APP_CTX_SERVER_ADDR)
-        num_rounds = ctx.get(Constant.APP_CTX_NUM_ROUNDS)
+        addr = app_ctx.get(Constant.APP_CTX_SERVER_ADDR)
+        num_rounds = app_ctx.get(Constant.APP_CTX_NUM_ROUNDS)
 
         return CommandDescriptor(
             cmd=f"python -m {main_module} -a {addr} -n {num_rounds}",
@@ -72,5 +72,5 @@ class MockClientPyApplet(PyApplet):
     def __init__(self, in_process=True):
         PyApplet.__init__(self, in_process)
 
-    def get_runner(self, ctx: dict) -> PyRunner:
+    def get_runner(self, app_ctx: dict) -> PyRunner:
         return MockClientPyRunner()

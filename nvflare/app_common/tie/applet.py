@@ -37,11 +37,11 @@ class Applet(ABC, FLComponent):
         pass
 
     @abstractmethod
-    def start(self, ctx: dict):
+    def start(self, app_ctx: dict):
         """Called to start the execution of the applet.
 
         Args:
-            ctx: the contextual info to help the applet execution
+            app_ctx: the contextual info to help the applet execution
 
         Returns: None
 
