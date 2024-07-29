@@ -26,7 +26,7 @@ from nvflare.fuel.utils.time_utils import time_to_string
 
 def log(msg: str):
     for i in range(5):
-        print(f"\r{i}", end=' ')
+        print(f"\r{i}", end=" ")
         sys.stdout.flush()
     print("\nend")
     print(f"{time_to_string(time.time())}: {msg}")

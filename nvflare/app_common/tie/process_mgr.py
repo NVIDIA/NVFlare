@@ -153,7 +153,7 @@ class ProcessManager:
 
             if self.cmd_desc.log_stdout:
                 assert isinstance(line, str)
-                if self.msg_prefix and not line.startswith('\r'):
+                if self.msg_prefix and not line.startswith("\r"):
                     line = f"{self.msg_prefix} {line}"
                 sys.stdout.write(line)
                 sys.stdout.flush()
