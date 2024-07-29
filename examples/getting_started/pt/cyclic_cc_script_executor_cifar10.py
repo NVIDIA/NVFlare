@@ -33,7 +33,7 @@ if __name__ == "__main__":
         executor = ScriptExecutor(
             task_script_path=train_script, task_script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
         )
-        job.to(executor, f"site-{i}", gpu=0)
+        job.to(executor, f"site-{i}", tasks=["train"], gpu=0)
 
         # Add client-side controller for cyclic workflow
         executor = CyclicClientController()

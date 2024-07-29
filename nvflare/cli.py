@@ -31,6 +31,7 @@ from nvflare.utils.cli_utils import (
     create_poc_workspace_config,
     create_startup_kit_config,
     get_hidden_config,
+    print_hidden_config,
     save_config,
 )
 
@@ -116,14 +117,18 @@ def def_config_parser(sub_cmd):
 def handle_config_cmd(args):
     config_file_path, nvflare_config = get_hidden_config()
 
-    if not args.job_templates_dir or not os.path.isdir(args.job_templates_dir):
-        raise ValueError(f"job_templates_dir='{args.job_templates_dir}', it is not a directory")
+    if args.startup_kit_dir is None and args.poc_workspace_dir is None and args.job_templates_dir is None:
+        print(f"not specifying any directory. print existing config at {config_file_path}")
+        print_hidden_config(config_file_path, nvflare_config)
+        return
 
     nvflare_config = create_startup_kit_config(nvflare_config, args.startup_kit_dir)
     nvflare_config = create_poc_workspace_config(nvflare_config, args.poc_workspace_dir)
     nvflare_config = create_job_template_config(nvflare_config, args.job_templates_dir)
 
     save_config(nvflare_config, config_file_path)
+    print(f"new config at {config_file_path}")
+    print_hidden_config(config_file_path, nvflare_config)
 
 
 def parse_args(prog_name: str):
