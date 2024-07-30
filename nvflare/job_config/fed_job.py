@@ -197,18 +197,20 @@ class FedJob:
             else:  # TODO: handle other persistors
                 added_model = False
                 # Check different models framework types and add corresponding persistor
+                persistor_id = self._deploy_map[target]._gen_tracked_id("persistor")
                 if torch_ok:
                     if isinstance(obj, nn.Module):  # if model, create a PT persistor
                         component = PTFileModelPersistor(model=obj)
-                        self._deploy_map[target].app.add_component("persistor", component)
+                        self._deploy_map[target].app.add_component(persistor_id, component)
 
-                        component = PTFileModelLocator(pt_persistor_id="persistor")
-                        self._deploy_map[target].app.add_component("model_locator", component)
+                        component = PTFileModelLocator(pt_persistor_id=persistor_id)
+                        locator_id = self._deploy_map[target]._gen_tracked_id("model_locator")
+                        self._deploy_map[target].app.add_component(locator_id, component)
                         added_model = True
                 elif tf_ok:
                     if isinstance(obj, tf.keras.Model):  # if model, create a TF persistor
                         component = TFModelPersistor(model=obj)
-                        self._deploy_map[target].app.add_component("persistor", component)
+                        self._deploy_map[target].app.add_component(persistor_id, component)
                         added_model = True
 
                 if not added_model:  # if it wasn't a model, add as component
