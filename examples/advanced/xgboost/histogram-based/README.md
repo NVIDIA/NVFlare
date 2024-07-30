@@ -33,7 +33,7 @@ tensorboard --logdir /tmp/nvflare/xgboost_v2_workspace/simulate_job/tb_events
 
 ## Timeout configuration
 
-Please refer to [Federated XGBoost Timeout Mechanism](https://nvflare.readthedocs.io/en/2.4/user_guide/federated_xgboost/timeout.html)
+Please refer to [Federated XGBoost Timeout Mechanism](https://nvflare.readthedocs.io/en/2.4/user_guide/federated_xgboost/reliable_xgboost_timeout.html)
 
 ## Customization
 
