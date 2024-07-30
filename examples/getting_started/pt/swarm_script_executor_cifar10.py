@@ -54,10 +54,13 @@ if __name__ == "__main__":
         # In swarm learning, each client uses a model persistor and shareable_generator
         persistor = PTFileModelPersistor(model=Net())
         job.to(persistor, f"site-{i}")
-        job.to(SimpleModelShareableGenerator(), f"site-{i}", id="shareable_generator")
+        shareable_generator = "shareable_generator"
+        job.to(SimpleModelShareableGenerator(), f"site-{i}")
 
         client_controller = SwarmClientController(
-            aggregator_id=job.as_id(aggregator), persistor_id=job.as_id(persistor)
+            aggregator_id=job.as_id(aggregator),
+            persistor_id=job.as_id(persistor),
+            shareable_generator_id=job.as_id(shareable_generator),
         )
         job.to(client_controller, f"site-{i}", tasks=["swarm_*"])
 
