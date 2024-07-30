@@ -26,6 +26,7 @@ from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
 from nvflare.fuel.utils.import_utils import optional_import
+from nvflare.fuel.utils.validation_utils import check_positive_int
 from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig, ServerAppConfig
 from nvflare.job_config.fed_job_config import FedJobConfig
 
@@ -45,13 +46,6 @@ if torch_ok and tb_ok:
     from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 
 SPECIAL_CHARACTERS = '"!@#$%^&*()+?=,<>/'
-
-
-def _check_positive_int(name, value):
-    if not isinstance(value, int):
-        raise TypeError("{} must be an instance of int, but got {}.".format(name, type(name)))
-    if value < 0:
-        raise ValueError("{} must >= 0.".format(name))
 
 
 class FilterType:
@@ -194,7 +188,7 @@ class FedJob:
         filter_type: FilterType = None,
         id=None,
     ):
-        """assign an `obj` to a target (server or clients).
+        """assign an object to a target (server or clients).
 
         Args:
             obj: The object to be assigned. The obj will be given a default `id` if non is provided based on its type.
@@ -279,28 +273,47 @@ class FedJob:
     def to_server(
         self,
         obj: Any,
-        tasks: List[str] = None,
-        gpu: Union[int, List[int]] = None,
         filter_type: FilterType = None,
         id=None,
     ):
+        """assign an object to the server.
+
+        Args:
+            obj: The object to be assigned. The obj will be given a default `id` if non is provided based on its type.
+            filter_type: The type of filter used. Either `FilterType.TASK_RESULT` or `FilterType.TASK_DATA`.
+            id: Optional user-defined id for the object. Defaults to `None` and ID will automatically be assigned.
+
+        Returns:
+
+        """
         if isinstance(obj, Executor):
             raise ValueError("Use `job.to(executor, <client_name>)` or `job.to_clients(executor)` for Executors.")
 
-        self.to(obj=obj, target=SERVER_SITE_NAME, tasks=tasks, gpu=gpu, filter_type=filter_type, id=id)
+        self.to(obj=obj, target=SERVER_SITE_NAME, filter_type=filter_type, id=id)
 
     def to_clients(
         self,
         obj: Any,
         tasks: List[str] = None,
-        gpu: Union[int, List[int]] = None,
         filter_type: FilterType = None,
         id=None,
     ):
+        """assign an object to all clients.
+
+        Args:
+            obj (Any): Object to be deployed.
+            tasks: In case object is an `Executor`, optional list of tasks the executor should handle.
+                Defaults to `None`. If `None`, all tasks will be handled using `[*]`.
+            filter_type: The type of filter used. Either `FilterType.TASK_RESULT` or `FilterType.TASK_DATA`.
+            id: Optional user-defined id for the object. Defaults to `None` and ID will automatically be assigned.
+
+        Returns:
+
+        """
         if isinstance(obj, Controller):
             raise ValueError('Use `job.to(controller, "server")` or `job.to_server(controller)` for Controllers.')
 
-        self.to(obj=obj, target=ALL_SITES, tasks=tasks, gpu=gpu, filter_type=filter_type, id=id)
+        self.to(obj=obj, target=ALL_SITES, tasks=tasks, filter_type=filter_type, id=id)
 
     def as_id(self, obj: Any):
         id = str(uuid.uuid4())
@@ -381,10 +394,10 @@ class FedJob:
         if ALL_SITES in self.clients and not n_clients:
             raise ValueError("Clients were not specified using to(). Please provide the number of clients to simulate.")
         elif ALL_SITES in self.clients and n_clients:
-            _check_positive_int("n_clients", n_clients)
+            check_positive_int("n_clients", n_clients)
             self.clients = [f"site-{i}" for i in range(1, n_clients + 1)]
         elif self.clients and n_clients:
-            raise ValueError("You already specified clients using `to()`. Don't use `n_clients` here.")
+            raise ValueError("You already specified clients using `to()`. Don't use `n_clients` in simulator_run.")
 
         n_clients = len(self.clients)
 
