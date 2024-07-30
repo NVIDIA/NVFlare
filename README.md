@@ -7,7 +7,7 @@
 
 # NVIDIA FLARE
 
-[NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) (**NV**IDIA **F**ederated **L**earning **A**pplication **R**untime **E**nvironment)
+[NVIDIA FLARE](https://nvidia.github.io/NVFlare/) (**NV**IDIA **F**ederated **L**earning **A**pplication **R**untime **E**nvironment)
 is a domain-agnostic, open-source, extensible SDK that allows researchers and data scientists to adapt existing ML/DL workflows to a federated paradigm.
 It enables platform developers to build a secure, privacy-preserving offering for a distributed multi-party collaboration.
 
