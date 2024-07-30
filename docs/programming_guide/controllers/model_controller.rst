@@ -159,27 +159,29 @@ For example we can use PyTorch's save and load functions for the model parameter
 
 .. code-block:: python
 
-  import torch
-  from nvflare.fuel.utils import fobs
+    import torch
+    from nvflare.fuel.utils import fobs
 
-  def save_model(self, model, filepath=""):
-        params = model.params
-        # PyTorch save
-        torch.save(params, filepath)
+    class MyController(ModelController):
+        ...
+        def save_model(self, model, filepath=""):
+            params = model.params
+            # PyTorch save
+            torch.save(params, filepath)
 
-        # save FLModel metadata
-        model.params = {}
-        fobs.dumpf(model, filepath + ".metadata")
-        model.params = params
+            # save FLModel metadata
+            model.params = {}
+            fobs.dumpf(model, filepath + ".metadata")
+            model.params = params
 
-    def load_model(self, filepath=""):
-        # PyTorch load
-        params = torch.load(filepath)
+        def load_model(self, filepath=""):
+            # PyTorch load
+            params = torch.load(filepath)
 
-        # load FLModel metadata
-        model = fobs.loadf(filepath + ".metadata")
-        model.params = params
-        return model
+            # load FLModel metadata
+            model = fobs.loadf(filepath + ".metadata")
+            model.params = params
+            return model
 
 
 Note: for non-primitive data types such as ``torch.nn.Module`` (used for the initial PyTorch model), we must configure a corresponding FOBS decomposer for serialization and deserialization.
