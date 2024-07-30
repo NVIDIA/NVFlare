@@ -65,6 +65,15 @@ class FedJobConfig:
         self.fed_apps[app_name] = fed_app
 
     def set_site_app(self, site_name: str, app_name: str):
+        """assign an app to a certain site.
+
+        Args:
+            site_name: The target site name.
+            app_name: The app name.
+
+        Returns:
+
+        """
         if app_name not in self.fed_apps.keys():
             raise RuntimeError(f"fed_app {app_name} does not exist.")
 
