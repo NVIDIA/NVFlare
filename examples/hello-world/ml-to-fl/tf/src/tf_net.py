@@ -16,9 +16,11 @@ from tensorflow.keras import layers, models
 
 
 class TFNet(models.Sequential):
-    def __init__(self):
+    def __init__(self, input_shape=(None, 32, 32, 3)):
         super().__init__()
-        self.add(layers.Input(shape=(32, 32, 3)))
+        self._input_shape = input_shape
+        # Do not specify input as we will use delayed built only during runtime of the model
+        # self.add(layers.Input(shape=(32, 32, 3)))
         self.add(layers.Conv2D(32, (3, 3), activation="relu"))
         self.add(layers.MaxPooling2D((2, 2)))
         self.add(layers.Conv2D(64, (3, 3), activation="relu"))

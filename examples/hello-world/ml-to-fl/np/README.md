@@ -38,94 +38,108 @@ nvflare job list_templates
 1 CPU
 
 
-## Send model parameters back to the NVFlare server
+## In-process Client API
 
-We use the mock training script in [./code/train_full.py](./code/train_full.py)
-And we send back the FLModel with "params_type"="FULL" in [./code/train_full.py](./code/train_full.py)
+With the ```InProcessClientAPIExecutor```, the client training script operates within the same process as the NVFlare Client job.
+This provides benefits with efficient shared the memory usage and a simple configuration useful for development or single GPU use cases.
+
+
+### Send model parameters back to the NVFlare server
+
+We use the mock training script in [./src/train_full.py](./src/train_full.py)
+And we send back the FLModel with "params_type"="FULL" in [./src/train_full.py](./src/train_full.py)
 
 To send back the whole model parameters, we need to make sure the "params_transfer_type" is also "FULL".
 
-Let reuse the job templates from [sag_np](../../../../job_templates/sag_np/):
+After we modify our training script, we can create a job using the in-process script executor: [np_client_api_in_process_job.py](./np_client_api_in_process_job.py).
+(Please refer to [FedJob API](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html) for more details on formulating a job)
 
 ```bash
-nvflare job create -force -j ./jobs/np_param_full_transfer_full -w sag_np -sd ./code/ \
--f config_fed_client.conf app_script=train_full.py params_transfer_type=FULL launch_once=false
+python3 np_client_api_in_process_job.py --script src/train_full.py --params_transfer_type FULL
 ```
 
-Then we can run it using the NVFlare Simulator:
-
-```bash
-nvflare simulator -n 2 -t 2 ./jobs/np_param_full_transfer_full -w np_param_full_transfer_full_workspace
-```
-
-## Send model parameters differences back to the NVFlare server
+### Send model parameters differences back to the NVFlare server
 
 There are two ways to send model parameters differences back to the NVFlare server:
 
 1. Send the full parameters in training script, change params_transfer_type to "DIFF"
 2. Calculate the parameters differences in training script and send it back via "flare.send"
 
-For the first way, we can reuse the mock training script [./code/train_full.py](./code/train_full.py)
-
-But we need to pass different parameters when creating job:
-
-```bash
-nvflare job create -force -j ./jobs/np_param_full_transfer_diff -w sag_np -sd ./code/ \
--f config_fed_client.conf app_script=train_full.py params_transfer_type=DIFF launch_once=false \
--f config_fed_server.conf expected_data_kind=WEIGHT_DIFF
-```
+For the first way, we can reuse the mock training script [./src/train_full.py](./src/train_full.py)
 
 By setting "params_transfer_type=DIFF" we are using the NVFlare built-in parameter difference method to calculate differences.
 
 Then we can run it using the NVFlare Simulator:
 
 ```bash
-nvflare simulator -n 2 -t 2 ./jobs/np_param_full_transfer_diff -w np_param_full_transfer_diff_workspace
+python3 np_client_api_in_process_job.py --script src/train_full.py --params_transfer_type DIFF
 ```
 
-For the second way, we write a new mock training script that calculate the model difference and send it back: [./code/train_diff.py](./code/train_diff.py)
+For the second way, we write a new mock training script that calculate the model difference and send it back: [./src/train_diff.py](./src/train_diff.py)
 
 Note that we set the "params_type" to DIFF when creating flare.FLModel.
-
-Then we create the job using the following command:
-
-```bash
-nvflare job create -force -j ./jobs/np_param_diff_transfer_full -w sag_np -sd ./code/ \
--f config_fed_client.conf app_script=train_diff.py launch_once=false \
--f config_fed_server.conf expected_data_kind=WEIGHT_DIFF
-```
 
 The "params_transfer_type" is "FULL", means that we DO NOT calculate the difference again using the NVFlare built-in parameter difference method.
 
 Then we can run it using the NVFlare Simulator:
 
 ```bash
-nvflare simulator -n 2 -t 2 ./jobs/np_param_diff_transfer_full -w np_param_diff_transfer_full_workspace
+python3 np_client_api_in_process_job.py --script src/train_diff.py --params_transfer_type FULL
 ```
 
-## Launch once for the whole job
+### Metrics streaming
+
+Sometimes we want to stream the training progress to the server.
+
+We have several ways of doing that:
+
+  - `SummaryWriter` mimics Tensorboard `SummaryWriter`'s `add_scalar`, `add_scalars` method
+  - `WandBWriter` mimics Weights And Biases's `log` method
+  - `MLflowWriter` mimics MLflow's tracking api
+  - `flare.log` is the underlying common pattern that can be directly used as well, you need to figure out the
+    corresponding `AnalyticsDataType` for your value
+
+We showcase `MLflowWriter` in [./src/train_metrics.py](./src/train_metrics.py) and a `MLflowReceiver` in the job script [np_client_api_in_process_job.py](np_client_api_in_process_job.py)
+
+Once the job is set up with a `MLflowReceiver`, we can run it using the NVFlare Simulator:
+
+```bash
+python3 np_client_api_in_process_job.py --script src/train_metrics.py --params_transfer_type DIFF
+```
+
+
+## Sub-process Client API
+
+With the ```ClientAPILauncherExecutor``` and ``SubprocessLauncher`` the client training script runs in a separate subprocess.
+Different communication mechanisms with the CellPipe and FilePipe can be used for different scenarios.
+This configuration is ideal for scenarios requiring multi-GPU or distributed PyTorch training.
+
+### Launch once for the whole job
 
 In some training scenarios, the data loading is taking a lot of time.
 And throughout the whole training job, we only want to load/set up the data once.
 
-In that case, we could use the "launch_once" option of "SubprocessLauncher" and wraps our training script into a loop.
-
-We wrap the [./code/train_full.py](./code/train_full.py) into a loop: [./code/train_loop.py](./code/train_loop.py)
-
-Then we can create the job:
-
-```bash
-nvflare job create -force -j ./jobs/np_loop -w sag_np -sd ./code/ \
--f config_fed_client.conf app_script=train_loop.py params_transfer_type=FULL launch_once=true
-```
+In that case, we could use the "launch_once" option of "SubprocessLauncher" and ensure our training script [./src/train_full.py](./src/train_full.py) is in a loop.
 
 Then we can run it using the NVFlare Simulator:
 
 ```bash
-nvflare simulator -n 2 -t 2 ./jobs/np_loop -w np_loop_workspace
+python3 np_client_api_ex_process_job.py --script src/train_full.py --params_transfer_type FULL --launch_once
 ```
 
-## Data exchange mechanism
+### Launch for every task
+
+Rather than launching once for the whole training job, we also have the option to launch for each task.
+We can use the train script [./src/train_once.py](./src/train_once.py) which does not have a `while flare.is_running():` loop.
+
+Then we can run it using the NVFlare Simulator:
+
+```bash
+python3 np_client_api_ex_process_job.py --script src/train_once.py --params_transfer_type FULL --no-launch_once
+```
+
+
+### Data exchange mechanism
 
 The underlying communication between the external process and NVFlare client is facilitated by the `Pipe` class.
 
@@ -148,11 +162,13 @@ You can also implement your own `Pipe`, please refer to https://github.com/NVIDI
 So far, we have demonstrated how to use the `FilePipe`.
 The following example illustrates how to use the `CellPipe`.
 
+The CellPipe is currently not support with the Job API, so instead we can use a job template with the CellPipe.
+
 First, let's create the job using the sag_np_cell_pipe template
 
 ```bash
-nvflare job create -force -j ./jobs/np_loop_cell_pipe -w sag_np_cell_pipe -sd ./code/ \
--f config_fed_client.conf app_script=train_loop.py params_transfer_type=FULL launch_once=true
+nvflare job create -force -j ./jobs/np_loop_cell_pipe -w sag_np_cell_pipe -sd ./src/ \
+-f config_fed_client.conf app_script=train_full.py params_transfer_type=FULL launch_once=true
 ```
 
 Then we can run it using the NVFlare Simulator:
@@ -161,24 +177,19 @@ Then we can run it using the NVFlare Simulator:
 nvflare simulator -n 2 -t 2 ./jobs/np_loop_cell_pipe -w np_loop_cell_pipe_workspace
 ```
 
-## Launch once for the whole job and with metrics streaming
+### Launch once for the whole job with metrics streaming
 
-Sometimes we want to stream the training progress to the server.
+Metrics streaming with the sub-process client API requires the use of CellPipe for high frequency data exchange. 
 
-We have several ways of doing that:
+The CellPipe is currently not support with the Job API, so instead we can use a job template.
 
-  - `SummaryWriter` mimics Tensorboard `SummaryWriter`'s `add_scalar`, `add_scalars` method
-  - `WandBWriter` mimics Weights And Biases's `log` method
-  - `MLflowWriter` mimics MLflow's tracking api
-  - `flare.log` is the underlying common pattern that can be directly used as well, you need to figure out the
-    corresponding `AnalyticsDataType` for your value
+We use sag_np_metrics template which uses the CellPipe and components such as "metrics_pipe," "metric_relayer," and "event_to_fed." 
+to allow values from an external process to be sent back to the server.
 
-We showcase `MLflowWriter` in [./code/train_metrics.py](./code/train_metrics.py)
-
-After that, we can set up the job using the sag_np_metrics template:
+Create the job with the [./src/train_metrics.py](./src/train_metrics.py) script:
 
 ```bash
-nvflare job create -force -j ./jobs/np_metrics -w sag_np_metrics -sd ./code/ \
+nvflare job create -force -j ./jobs/np_metrics -w sag_np_metrics -sd ./src/ \
 -f config_fed_client.conf app_script=train_metrics.py params_transfer_type=DIFF launch_once=true \
 -f config_fed_server.conf expected_data_kind=WEIGHT_DIFF
 ```
@@ -188,8 +199,3 @@ Once the job is set up, we can run it using the NVFlare Simulator:
 ```bash
 nvflare simulator -n 2 -t 2 ./jobs/np_metrics -w np_metrics_workspace
 ```
-
-Keep in mind that the difference between sag_np_cell_pipe and sag_np_metrics is the
-addition of components like "metrics_pipe," "metric_relayer," and "event_to_fed."
-These components allow values from an external process to be sent back to the server.
-
