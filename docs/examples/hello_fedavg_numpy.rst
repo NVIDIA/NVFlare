@@ -181,11 +181,11 @@ You now have a decent grasp of the main FL concepts, and are ready to start expl
 The full application for this exercise can be found in
 :github_nvflare_link:`examples/hello-world/hello-fedavg-numpy <examples/hello-world/hello-fedavg-numpy>`.
 
-Previous Versions of Hello Scatter and Gather
----------------------------------------------
+Previous Versions of this Example (previously Hello Scatter and Gather)
+-----------------------------------------------------------------------
 
    - `hello-numpy-sag for 2.0 <https://github.com/NVIDIA/NVFlare/tree/2.0/examples/hello-numpy-sag>`_
    - `hello-numpy-sag for 2.1 <https://github.com/NVIDIA/NVFlare/tree/2.1/examples/hello-numpy-sag>`_
    - `hello-numpy-sag for 2.2 <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/hello-numpy-sag>`_
    - `hello-numpy-sag for 2.3 <https://github.com/NVIDIA/NVFlare/tree/2.3/examples/hello-world/hello-numpy-sag>`_
-   - `hello-numpy-sag for 2.3 <https://github.com/NVIDIA/NVFlare/tree/2.4/examples/hello-world/hello-numpy-sag>`_
+   - `hello-numpy-sag for 2.4 <https://github.com/NVIDIA/NVFlare/tree/2.4/examples/hello-world/hello-numpy-sag>`_

@@ -20,7 +20,7 @@ Introduction
 
 Through this exercise, you will integrate NVIDIA FLARE with the popular
 deep learning framework `PyTorch <https://pytorch.org/>`_ and learn how to use NVIDIA FLARE to train a convolutional
-network with the CIFAR10 dataset using the included Scatter and Gather workflow.
+network with the CIFAR10 dataset using the included :class:`FedAvg<nvflare.app_common.workflows.fedavg.FedAvg>` workflow.
 
 The setup of this exercise consists of one **server** and two **clients**.
 
@@ -30,20 +30,15 @@ The following steps compose one cycle of weight updates, called a **round**:
  #. These updates are then sent to the server which will aggregate them to produce a model with new weights. 
  #. Finally, the server sends this updated version of the model back to each client.
 
-For this exercise, we will be working with the ``hello-pt`` application in the examples folder. 
-Custom FL applications can contain the folders:
+For this exercise, we will be working with the ``hello-pt`` application in the examples folder.
 
- #. **custom**: contains the custom components (``simple_network.py``, ``cifar10trainer.py``)
- #. **config**: contains client and server configurations (``config_fed_client.json``, ``config_fed_server.json``)
- #. **resources**: contains the logger config (``log.config``)
-
-Now that you have a rough idea of what is going on, let's get started. First clone the repo:
+Let's get started. First clone the repo:
 
 .. code-block:: shell
 
   $ git clone https://github.com/NVIDIA/NVFlare.git
 
-Now remember to activate your NVIDIA FLARE Python virtual environment from the installation guide.
+Remember to activate your NVIDIA FLARE Python virtual environment from the installation guide.
 
 Since you will use PyTorch and torchvision for this exercise, let's go ahead and install both libraries: 
 
@@ -61,23 +56,36 @@ Since you will use PyTorch and torchvision for this exercise, let's go ahead and
   
     (nvflare-env) $ python3 -m pip install torch torchvision Pillow==8.2.0
 
-If you would like to go ahead and run the exercise now, you can skip directly to :ref:`hands-on`.
+If you would like to go ahead and run the exercise now, you can run the ``fedavg_script_executor_hello-pt.py`` script which
+builds the job with the Job API and runs the job with the FLARE Simulator.
 
-NVIDIA FLARE Client
--------------------
+NVIDIA FLARE Job API
+--------------------
+
+The ``fedavg_script_executor_hello-pt.py`` script for this hello-pt example is very similar to the ``fedavg_script_executor_hello-numpy.py`` script
+for the :doc:`Hello FedAvg with NumPy <hello_fedavg_w_numpy>` exercise. Other than changes to the names of the job and client script, the only difference
+is a line to define the initial global model for the server:
+
+.. code-block:: python
+
+   # Define the initial global model and send to server
+   job.to(SimpleNetwork(), "server")
+
+
+NVIDIA FLARE Client Training Script
+------------------------------------
+The training script for this example, ``hello-pt_cifar10_fl.py``, is the main script that will be run on the clients. It contains the PyTorch specific
+logic for training.
 
 Neural Network
 ^^^^^^^^^^^^^^^
 
-With all the required dependencies installed, you are ready to run a Federated Learning
-with two clients and one server. The training procedure and network 
-architecture are modified from 
+The training procedure and network architecture are modified from 
 `Training a Classifier <https://pytorch.org/tutorials/beginner/blitz/cifar10_tutorial.html>`_.
-
 
 Let's see what an extremely simplified CIFAR10 training looks like:
 
-.. literalinclude:: ../../examples/hello-world/hello-pt/jobs/hello-pt/app/custom/simple_network.py
+.. literalinclude:: ../../examples/hello-world/hello-pt/src/simple_network.py
    :language: python
    :caption: simple_network.py
 
@@ -87,149 +95,168 @@ This is not related to NVIDIA FLARE, so we implement it in a file called ``simpl
 Dataset & Setup
 ^^^^^^^^^^^^^^^^
 
-Now implement the custom class ``Cifar10Trainer`` as an NVIDIA FLARE Executor in a file
-called ``cifar10trainer.py``.
-
 In a real FL experiment, each client would have their own dataset used for their local training.
-For simplicity's sake, you can download the same CIFAR10 dataset from the Internet via torchvision's datasets module.
+You can download the CIFAR10 dataset from the Internet via torchvision's datasets module, so for simplicity's sake, this is
+the dataset we will be using on each client.
 Additionally, you need to set up the optimizer, loss function and transform to process the data.
 You can think of all of this code as part of your local training loop, as every deep learning training has a similar setup.
 
-Since you will encapsulate every training-related step in the ``Cifar10Trainer`` class,
-let's put this preparation stage into the ``__init__`` method:
-
-.. literalinclude:: ../../examples/hello-world/hello-pt/jobs/hello-pt/app/custom/cifar10trainer.py
-   :language: python
-
+In the ``hello-pt_cifar10_fl.py`` script, we take care of all of this setup before the ``flare.init()``.
 
 Local Train
 ^^^^^^^^^^^
 
-Now that you have your network and dataset setup, in the ``Cifar10Trainer`` class.
-Let's also implement a local training loop in a method called ``local_train``:
+Now with the network and dataset setup, let's also implement the local training loop with the NVFlare's Client API:
 
-.. literalinclude:: ../../examples/hello-world/hello-pt/jobs/hello-pt/app/custom/cifar10trainer.py
-   :language: python
-   :pyobject: Cifar10Trainer._local_train
+.. code-block:: python
+
+   flare.init()
+
+   summary_writer = SummaryWriter()
+   while flare.is_running():
+      input_model = flare.receive()
+
+      model.load_state_dict(input_model.params)
+
+      steps = epochs * len(train_loader)
+      for epoch in range(epochs):
+         running_loss = 0.0
+         for i, batch in enumerate(train_loader):
+               images, labels = batch[0].to(device), batch[1].to(device)
+               optimizer.zero_grad()
+
+               predictions = model(images)
+               cost = loss(predictions, labels)
+               cost.backward()
+               optimizer.step()
+
+               running_loss += cost.cpu().detach().numpy() / images.size()[0]
+
+      output_model = flare.FLModel(params=model.cpu().state_dict(), meta={"NUM_STEPS_CURRENT_ROUND": steps})
+      
+      flare.send(output_model)
 
 
-.. note::
+The code above is simplified from the ``hello-pt_cifar10_fl.py`` script to focus on the three essential methods of the NVFlare's Client API to
+achieve the training workflow:
 
-  Everything up to this point is completely independent of NVIDIA FLARE. It is just purely a PyTorch
-  deep learning exercise.  You will now build the NVIDIA FLARE application based on this PyTorch code.
-
-
-Integrate NVIDIA FLARE with Local Train
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-NVIDIA FLARE makes it easy to integrate your local train code into the NVIDIA FLARE API.
-
-The simplest way to do this is to subclass the ``Executor`` class and
-implement one method ``execute``, which is called every time the client receives
-an updated model from the server with the task "train" (the server will broadcast the "train" task in the Scatter and
-Gather workflow we will configure below).
-We can then call our local train inside the ``execute`` method.
-
-.. note::
-
-  The ``execute`` method inside the ``Executor`` class is where all of the client side computation occurs.
-  In these exercises, we update the weights by training on a local dataset, however, it is important to remember that NVIDIA FLARE is not restricted to just deep learning.
-  The type of data passed between the server and the clients, and the computations that the clients perform can be anything, as long as all of the FL Components agree on the same format.
-
-Take a look at the following code:
-
-.. literalinclude:: ../../examples/hello-world/hello-pt/jobs/hello-pt/app/custom/cifar10trainer.py
-   :language: python
-   :pyobject: Cifar10Trainer.execute
-
-The concept of ``Shareable`` is described in :ref:`shareable <shareable>`.
-Essentially, every NVIDIA FLARE client receives the model weights from the server in ``shareable`` format.
-It is then passed into the ``execute`` method, and returns a new ``shareable`` back to the server.
-The data is managed by using DXO (see :ref:`data_exchange_object` for details).
-
-Thus, the first thing is to retrieve the model weights delivered by server via ``shareable``, and this can be seen in
-the first part of the code block above before ``local_train`` is called.
-
-We then perform a local train so the client's model is trained with its own dataset.
-
-After finishing the local train, the train method builds a new ``shareable`` with newly-trained weights
-and metadata and returns it back to the NVIDIA FLARE server for aggregation.
-
-There is additional logic to handle the "submit_model" task, but that is for the CrossSiteModelEval workflow,
-so we will be addressing that in a later example.
-
-FLContext
-^^^^^^^^^
-
-The ``FLContext`` is used to set and retrieve FL related information among the FL components via ``set_prop()`` and
-``get_prop()`` as well as get services provided by the underlying infrastructure. You can find more details in the
-:ref:`documentation <fl_context>`.
+   - `init()`: Initializes NVFlare Client API environment.
+   - `receive()`: Receives model from the FL server.
+   - `send()`: Sends the model to the FL server.
 
 NVIDIA FLARE Server & Application
 ---------------------------------
+In this example, the server runs :class:`FedAvg<nvflare.app_common.workflows.fedavg.FedAvg>` with the default settings.
 
-In this exercise, you can use the default settings, which leverage NVIDIA FLARE built-in components for NVIDIA FLARE server.
+If you export the job with the :func:`export<nvflare.job_config.fed_job.FedJob.export>` function, you will see the
+configurations for the server and each client. The server configuration is ``config_fed_server.json`` in the config folder
+in app_server:
 
-These built-in components are commonly used in most deep learning scenarios.
+.. code-block:: json
 
-However, you are encouraged to build your own components to fully customize NVIDIA FLARE to meet your environment,
- which we will demonstrate in the following exercises.
+   {
+      "format_version": 2,
+      "workflows": [
+         {
+               "id": "controller",
+               "path": "nvflare.app_common.workflows.fedavg.FedAvg",
+               "args": {
+                  "num_clients": 2,
+                  "num_rounds": 2
+               }
+         }
+      ],
+      "components": [
+         {
+               "id": "json_generator",
+               "path": "nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator",
+               "args": {}
+         },
+         {
+               "id": "model_selector",
+               "path": "nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector",
+               "args": {
+                  "aggregation_weights": {},
+                  "key_metric": "accuracy"
+               }
+         },
+         {
+               "id": "receiver",
+               "path": "nvflare.app_opt.tracking.tb.tb_receiver.TBAnalyticsReceiver",
+               "args": {
+                  "events": [
+                     "fed.analytix_log_stats"
+                  ]
+               }
+         },
+         {
+               "id": "persistor",
+               "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
+               "args": {
+                  "model": {
+                     "path": "src.simple_network.SimpleNetwork",
+                     "args": {}
+                  }
+               }
+         },
+         {
+               "id": "model_locator",
+               "path": "nvflare.app_opt.pt.file_model_locator.PTFileModelLocator",
+               "args": {
+                  "pt_persistor_id": "persistor"
+               }
+         }
+      ],
+      "task_data_filters": [],
+      "task_result_filters": []
+   }
+
+This is automatically created by the Job API. The server application configuration leverages NVIDIA FLARE built-in components.
+
+Note that ``persistor`` points to ``PTFileModelPersistor``. This is automatically configured when the model SimpleNetwork is added
+to the server with the :func:`to<nvflare.job_config.fed_job.FedJob.to>` function. The Job API detects that the model is a PyTorch model
+and automatically configures :class:`PTFileModelPersistor<nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor>`
+and :class:`PTFileModelLocator<nvflare.app_opt.pt.file_model_locator.PTFileModelLocator>`.
 
 
-Application Configuration
+Client Configuration
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Inside the config folder there are two files, ``config_fed_client.json`` and ``config_fed_server.json``.
+The client configuration is ``config_fed_client.json`` in the config folder of each client app folder:
 
-.. literalinclude:: ../../examples/hello-world/hello-pt/jobs/hello-pt/app/config/config_fed_client.json
-   :language: json
-   :linenos:
-   :caption: config_fed_client.json
+.. code-block:: json
 
-Take a look at line 8.
+   {
+      "format_version": 2,
+      "executors": [
+         {
+               "tasks": [
+                  "*"
+               ],
+               "executor": {
+                  "path": "nvflare.app_common.executors.script_executor.ScriptExecutor",
+                  "args": {
+                     "task_script_path": "src/hello-pt_cifar10_fl.py"
+                  }
+               }
+         }
+      ],
+      "components": [
+         {
+               "id": "event_to_fed",
+               "path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent",
+               "args": {
+                  "events_to_convert": [
+                     "analytix_log_stats"
+                  ]
+               }
+         }
+      ],
+      "task_data_filters": [],
+      "task_result_filters": []
+   }
 
-This is the ``Cifar10Trainer`` you just implemented.
-
-The NVIDIA FLARE client loads this application configuration and picks your implementation.
-
-You can easily change it to another class so your NVIDIA FLARE client has different training logic.
-
-The tasks "train" and "submit_model" have been configured to work with the ``Cifar10Trainer`` Executor.
-The "validate" task for ``Cifar10Validator`` and the "submit_model" task are used for the ``CrossSiteModelEval`` workflow,
-so we will be addressing that in a later example.
-
-
-.. literalinclude:: ../../examples/hello-world/hello-pt/jobs/hello-pt/app/config/config_fed_server.json
-   :language: json
-   :linenos:
-   :caption: config_fed_server.json
-
-The server application configuration, like said before, leverages NVIDIA FLARE built-in components.
-Remember, you are encouraged to change them to your own classes whenever you have different application logic.
-
-Note that on line 12, ``persistor`` points to ``PTFileModelPersistor``.
-NVIDIA FLARE provides a built-in PyTorch implementation for a model persistor,
-however for other frameworks/libraries, you will have to implement your own.
-
-The Scatter and Gather workflow is implemented by :class:`ScatterAndGather<nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather>`
-and is configured to make use of the components with id "aggregator", "persistor", and "shareable_generator".
-The workflow code is all open source now, so feel free to study and use it as inspiration
-to write your own workflows to support your needs.
-
-.. _hands-on:
-
-Train the Model, Federated!
----------------------------
-
-.. |ExampleApp| replace:: hello-pt
-.. include:: run_fl_system.rst
-
-.. include:: access_result.rst
-
-.. include:: shutdown_fl_system.rst
-
-Congratulations!
-You've successfully built and run your first federated learning system.
+The ``task_script_path`` is set to the path of the client training script.
 
 The full source code for this exercise can be found in
 :github_nvflare_link:`examples/hello-world/hello-pt <examples/hello-world/hello-pt/>`.
@@ -241,3 +268,4 @@ Previous Versions of Hello PyTorch
    - `hello-pt for 2.1 <https://github.com/NVIDIA/NVFlare/tree/2.1/examples/hello-pt>`_
    - `hello-pt for 2.2 <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/hello-pt>`_
    - `hello-pt for 2.3 <https://github.com/NVIDIA/NVFlare/tree/2.3/examples/hello-world/hello-pt>`_
+   - `hello-pt for 2.4 <https://github.com/NVIDIA/NVFlare/tree/2.4/examples/hello-world/hello-pt>`_

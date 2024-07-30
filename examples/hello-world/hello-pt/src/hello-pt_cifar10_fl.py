@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import torch
 from simple_network import SimpleNetwork
 from torch import nn
@@ -43,15 +44,13 @@ def main():
             Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
         ]
     )
-    train_dataset = CIFAR10(root=DATASET_PATH, transform=transforms, download=True, train=True)
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    n_iterations = len(train_loader)
-    default_train_conf = {"train": {"model": type(model).__name__}}
-    persistence_manager = PTModelPersistenceFormatManager(
-        data=model.state_dict(), default_train_conf=default_train_conf
-    )
 
     flare.init()
+    sys_info = flare.system_info()
+    client_name = sys_info["site_name"]
+
+    train_dataset = CIFAR10(root=os.path.join(DATASET_PATH, client_name), transform=transforms, download=True, train=True)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
     summary_writer = SummaryWriter()
     while flare.is_running():
@@ -90,9 +89,6 @@ def main():
         )
         
         flare.send(output_model)
-        # ml = make_model_learnable(model.state_dict(), {})
-        # persistence_manager.update(ml)
-        # torch.save(persistence_manager.to_persistence_dict(), PTConstants.PTLocalModelName)
 
 if __name__ == "__main__":
     main()

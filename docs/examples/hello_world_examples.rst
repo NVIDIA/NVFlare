@@ -11,5 +11,5 @@ Hello World examples can be run from the :github_nvflare_link:`hello_world noteb
    hello_cross_val
    Hello Cyclic Weight Transfer (GitHub) <https://github.com/NVIDIA/NVFlare/blob/main/examples/hello-world/hello-cyclic>
    hello_pt
-   hello_tf2
+   hello_tf
    Hello Client Controlled Workflow (GitHub) <https://github.com/NVIDIA/NVFlare/blob/main/examples/hello-world/hello-ccwf>

@@ -35,12 +35,10 @@ Using simplified weights and metrics, you will be able to clearly see how NVIDIA
 validation across different sites with little extra work.
 
 The setup of this exercise consists of one **server** and two **clients**.
-The server side model starting with weights ``[[1, 2, 3], [4, 5, 6], [7, 8, 9]]``.
+The server side model starts with the weights ``[[1, 2, 3], [4, 5, 6], [7, 8, 9]]``.
 
 Cross site validation consists of the following steps:
 
-    - During the initial phase of training with the :class:`ScatterAndGather<nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather>`
-      workflow, NPTrainer saves the local model to disk for the clients.
     - The :class:`CrossSiteModelEval<nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval>` workflow
       gets the client models with the ``submit_model`` task.
     - The ``validate`` task is broadcast to the all participating clients with the model shareable containing the model data,

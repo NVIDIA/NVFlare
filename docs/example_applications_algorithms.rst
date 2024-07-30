@@ -34,8 +34,7 @@ Can be run from the :github_nvflare_link:`hello_world notebook <examples/hello-w
 ------------------
 
   * :ref:`Hello PyTorch <hello_pt>` - Example image classifier using FedAvg and PyTorch as the deep learning training framework
-  * :ref:`Hello TensorFlow <hello_tf2>` - Example image classifier using FedAvg and TensorFlow as the deep learning training frameworks
-
+  * :ref:`Hello TensorFlow <hello_tf>` - Example image classifier using FedAvg and TensorFlow as the deep learning training frameworks
 
 
 2. Step-By-Step Example Series

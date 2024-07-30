@@ -1,4 +1,4 @@
-.. _hello_tf2:
+.. _hello_tf:
 
 Hello TensorFlow 2
 ==================
@@ -221,7 +221,7 @@ Finally, inside the config folder there are two files, ``config_fed_client.json`
 Note how the :class:`ScatterAndGather<nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather>` workflow is
 configured to use the included ``aggregator`` :class:`InTimeAccumulateWeightedAggregator<nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator>`
 and ``shareable_generator`` :class:`FullModelShareableGenerator<nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator>`.
-The ``persistor`` is configured to use ``TF2ModelPersistor`` in the custom directory of this hello_tf2 app with full
+The ``persistor`` is configured to use ``TF2ModelPersistor`` in the custom directory of this hello_tf app with full
 Python module paths.
 
 
