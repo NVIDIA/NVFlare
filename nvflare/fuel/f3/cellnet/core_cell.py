@@ -942,6 +942,10 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
         if message.payload is None:
             message.payload = bytes(0)
+        elif isinstance(message.payload, memoryview) or isinstance(message.payload, bytearray):
+            message.payload = bytes(message.payload)
+        elif not isinstance(message.payload, bytes):
+            raise RuntimeError(f"Payload type of {type(message.payload)} is not supported.")
 
         payload_len = len(message.payload)
         message.add_headers(
