@@ -19,10 +19,15 @@ APIs were used to programmatically set up an
 alleviating the need of writing job config files, simplifying
 development process.
 
+Before continuing with the following sections, you can first refer to
+the [getting started notebook](nvflare_tf_getting_started.ipynb)
+included under this folder, to learn more about the implementation
+details, with an example walkthrough of FedAvg using a small
+Tensorflow model.
 
 ## 1. Install requirements
 
-Install required packages for training
+Install required packages
 ```
 pip install --upgrade pip
 pip install -r ./requirements.txt
