@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import copy
+
 import numpy as np
 
 import nvflare.client as flare
@@ -66,8 +67,9 @@ def main():
             metrics={"accuracy": metrics},
             current_round=input_model.current_round,
         )
-        
+
         flare.send(output_model)
+
 
 if __name__ == "__main__":
     main()

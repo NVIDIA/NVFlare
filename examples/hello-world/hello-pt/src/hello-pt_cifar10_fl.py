@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+
 import torch
 from simple_network import SimpleNetwork
 from torch import nn
@@ -22,17 +23,16 @@ from torchvision.datasets import CIFAR10
 from torchvision.transforms import Compose, Normalize, ToTensor
 
 import nvflare.client as flare
-from nvflare.client.tracking import SummaryWriter
 from nvflare.app_opt.pt.model_persistence_format_manager import PTModelPersistenceFormatManager
-
+from nvflare.client.tracking import SummaryWriter
 
 DATASET_PATH = "/tmp/nvflare/data"
 
 
 def main():
-    batch_size=4
-    epochs=5
-    lr=0.01
+    batch_size = 4
+    epochs = 5
+    lr = 0.01
     model = SimpleNetwork()
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
@@ -49,7 +49,9 @@ def main():
     sys_info = flare.system_info()
     client_name = sys_info["site_name"]
 
-    train_dataset = CIFAR10(root=os.path.join(DATASET_PATH, client_name), transform=transforms, download=True, train=True)
+    train_dataset = CIFAR10(
+        root=os.path.join(DATASET_PATH, client_name), transform=transforms, download=True, train=True
+    )
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
     summary_writer = SummaryWriter()
@@ -87,8 +89,9 @@ def main():
             params=model.cpu().state_dict(),
             meta={"NUM_STEPS_CURRENT_ROUND": steps},
         )
-        
+
         flare.send(output_model)
+
 
 if __name__ == "__main__":
     main()

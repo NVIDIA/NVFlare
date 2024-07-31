@@ -1,24 +1,30 @@
 .. _hello_tf:
 
-Hello TensorFlow 2
-==================
+Hello TensorFlow
+================
 
 Before You Start
 ----------------
+Feel free to refer to the :doc:`detailed documentation <../programming_guide>` at any point
+to learn more about the specifics of `NVIDIA FLARE <https://pypi.org/project/nvflare/>`_.
 
-We recommend you first finish either the :doc:`hello_pt` or the :doc:`Hello FedAvg with NumPy <hello_fedavg_w_numpy>` exercise.
+We recommend you first finish the :doc:`Hello FedAvg with NumPy <hello_fedavg_w_numpy>` exercise since it introduces the
+federated learning concepts of `NVIDIA FLARE <https://pypi.org/project/nvflare/>`_.
 
-Those guides go more in depth in explaining the federated learning aspect of `NVIDIA FLARE <https://pypi.org/project/nvflare/>`_.
+Make sure you have an environment with NVIDIA FLARE installed.
+
+You can follow :ref:`getting_started` on the general concept of setting up a
+Python virtual environment (the recommended environment) and how to install NVIDIA FLARE.
 
 Here we assume you have already installed NVIDIA FLARE inside a python virtual environment
 and have already cloned the repo.
 
 Introduction
 -------------
-
 Through this exercise, you will integrate NVIDIA FLARE with the popular deep learning framework
-`TensorFlow 2 <https://www.tensorflow.org/>`_ and learn how to use NVIDIA FLARE to train a convolutional
-network with the MNIST dataset using the Scatter and Gather workflow.
+`TensorFlow <https://www.tensorflow.org/>`_ and learn how to use NVIDIA FLARE to train a convolutional
+network with the MNIST dataset using the :class:`FedAvg<nvflare.app_common.workflows.fedavg.FedAvg>` workflow.
+
 You will also be introduced to some new components and concepts, including filters, aggregators, and event handlers.
 
 The setup of this exercise consists of one **server** and two **clients**.
@@ -29,123 +35,76 @@ The following steps compose one cycle of weight updates, called a **round**:
  #. These updates are then sent to the server which will aggregate them to produce a model with new weights. 
  #. Finally, the server sends this updated version of the model back to each client.
 
-For this exercise, we will be working with the ``hello-tf2`` application in the examples folder. 
-Custom FL applications can contain the folders:
+For this exercise, we will be working with the ``hello-tf`` application in the examples folder. 
 
- #. **custom**: contains the custom components (``tf2_net.py``, ``trainer.py``, ``filter.py``, ``tf2_model_persistor.py``)
- #. **config**: contains client and server configurations (``config_fed_client.json``, ``config_fed_server.json``)
- #. **resources**: contains the logger config (``log.config``)
-
-Let's get started.
-Since this task is using TensorFlow, let's go ahead and install the library inside our virtual environment:
+Let's get started. Since this task is using TensorFlow, let's go ahead and install the library inside our virtual environment:
 
 .. code-block:: shell
 
   (nvflare-env) $ python3 -m pip install tensorflow
 
+With all the required dependencies installed, you are ready to run a Federated Learning system
+with two clients and one server. If you would like to go ahead and run the exercise now, you can run
+the ``fedavg_script_executor_hello-tf.py`` script which builds the job with the Job API and runs the
+job with the FLARE Simulator.
 
-NVIDIA FLARE Client
--------------------
+NVIDIA FLARE Job API
+--------------------
+The ``fedavg_script_executor_hello-tf.py`` script for this hello-tf example is very similar to the ``fedavg_script_executor_hello-numpy.py`` script
+for the :doc:`Hello FedAvg with NumPy <hello_fedavg_w_numpy>` example and also the script for the :doc:`Hello PyTorch <hello_pt>`
+example. Other than changes to the names of the job and client script, the only difference is the line to define the initial global model
+for the server:
+
+.. code-block:: python
+
+   # Define the initial global model and send to server
+   job.to(TFNet(), "server")
+
+
+NVIDIA FLARE Client Training Script
+------------------------------------
+The training script for this example, ``hello-tf_fl.py``, is the main script that will be run on the clients. It contains the TensorFlow specific
+logic for training.
 
 Neural Network
 ^^^^^^^^^^^^^^^
+Let's see what a simplified MNIST network looks like.
 
-With all the required dependencies installed, you are ready to run a Federated Learning system
-with two clients and one server.
-
-Before you start, let's see what a simplified MNIST network looks like.
-
-.. literalinclude:: ../../examples/hello-world/hello-tf2/jobs/hello-tf2/app/custom/tf2_net.py
+.. literalinclude:: ../../examples/hello-world/hello-tf/src/tf_net.py
    :language: python
    :lines: 15-
    :lineno-start: 15
    :linenos:
-   :caption: tf2_net.py
+   :caption: tf_net.py
 
-This ``Net`` class is the convolutional neural network to train with MNIST dataset.
-This is not related to NVIDIA FLARE, so implement it in a file called ``tf2_net.py``.
+This ``TFNet`` class is the convolutional neural network to train with MNIST dataset.
+This is not related to NVIDIA FLARE, and it is implemented in a file called ``tf_net.py``.
 
 Dataset & Setup
 ^^^^^^^^^^^^^^^^
+Before starting training, you need to set up your dataset.
+In this exercise, it is downloaded from the Internet via ``tf.keras``'s datasets module
+and split in half to create a separate dataset for each client.
+Additionally, the optimizer and loss function need to be configured.
 
-Now you have to implement the class ``Trainer``, which is a subclass of ``Executor`` in NVIDIA FLARE,
-in a file called ``trainer.py``.
+All of this happens before the ``while flare.is_running():`` line in ``hello-tf_fl.py``.
 
-Before you can really start a training, you need to set up your dataset.
-In this exercise, you can download it from the Internet via ``tf.keras``'s datasets module,
-and split it in half to create a separate dataset for each client.
-Additionally, you must setup the optimizer, loss function and transform to process the data.
-
-Since every step will be encapsulated in the ``SimpleTrainer`` class,
-let's put this preparation stage into one method ``setup``:
-
-.. literalinclude:: ../../examples/hello-world/hello-tf2/jobs/hello-tf2/app/custom/trainer.py
+.. literalinclude:: ../../examples/hello-world/hello-tf/src/hello-tf_fl.py
    :language: python
-   :lines: 41-71
-   :lineno-start: 41
+   :lines: 29-57
+   :lineno-start: 29
    :linenos:
+   :caption: hello-tf_fl.py
 
-
-How can you ensure this setup method is called before the client receives the model from the server?
-
-The Trainer class is also a :ref:`FLComponent <fl_component>`, which always receives ``Event`` whenever
-NVIDIA FLARE enters or leaves a certain stage.
-
-In this case, there is an ``Event`` called ``EventType.START_RUN`` which perfectly matches these requirements. 
-Because our trainer is a subclass of ``FLComponent``, you can implement the handler to handle the event and call the setup method:
-
-.. literalinclude:: ../../examples/hello-world/hello-tf2/jobs/hello-tf2/app/custom/trainer.py
-   :language: python
-   :lines: 37-39
-   :lineno-start: 37
-   :linenos:
-
-.. note::
-
-  This is a new concept you haven't learned in previous two exercises.
-
-  The concepts of ``event`` and ``handler`` are very powerful because you are free to
-  add your logic so it can run at different time and process various events.
-
-  The entire list of events fired by NVIDIA FLARE is shown at :ref:`Event types <event_system>`.
-
-
-You have everything you need, now let's implement the last method called ``execute``, which is
-called every time the client receives an updated model from the server with the Task we will configure.
-
-
-Link NVIDIA FLARE with Local Train
+Client Local Train
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+The client code gets the weights from the input_model received from the server then performs a simple :code:`self.model.fit`
+so the client's model is trained with its own dataset:
 
-Take a look at the following code:
-
-.. literalinclude:: ../../examples/hello-world/hello-tf2/jobs/hello-tf2/app/custom/trainer.py
+.. literalinclude:: ../../examples/hello-world/hello-tf/src/hello-tf_fl.py
    :language: python
-   :pyobject: SimpleTrainer.execute
-
-Every NVIDIA FLARE client receives the model weights from the server in the :ref:`shareable <shareable>`.
-This application uses the ``exclude_var`` filter, so make sure to replace the missing layer with weights from the clients' previous training round:
-
-.. literalinclude:: ../../examples/hello-world/hello-tf2/jobs/hello-tf2/app/custom/trainer.py
-   :language: python
-   :lines: 111-115
-   :lineno-start: 111
-   :linenos:
-
-Now update the local model with those received weights:
-
-.. literalinclude:: ../../examples/hello-world/hello-tf2/jobs/hello-tf2/app/custom/trainer.py
-   :language: python
-   :lines: 118
-   :lineno-start: 118
-   :linenos:
-
-Then perform a simple :code:`self.model.fit` so the client's model is trained with its own dataset:
-
-.. literalinclude:: ../../examples/hello-world/hello-tf2/jobs/hello-tf2/app/custom/trainer.py
-   :language: python
-   :lines: 122-127
-   :lineno-start: 122
+   :lines: 58-91
+   :lineno-start: 58
    :linenos:
   
 After finishing the local train, the train method uses the newly-trained weights to build a new ``DXO`` to update the
@@ -154,108 +113,109 @@ After finishing the local train, the train method uses the newly-trained weights
 
 NVIDIA FLARE Server & Application
 ---------------------------------
+In this example, the server runs :class:`FedAvg<nvflare.app_common.workflows.fedavg.FedAvg>` with the default settings.
 
-Filter
-^^^^^^^ 
+If you export the job with the :func:`export<nvflare.job_config.fed_job.FedJob.export>` function, you will see the
+configurations for the server and each client. The server configuration is ``config_fed_server.json`` in the config folder
+in app_server:
 
-:ref:`filter <filters>` can be used for additional data processing in the ``Shareable``, for both
-inbound and outbound data from the client and/or server.
+.. code-block:: json
 
-For this exercise, we use a basic ``exclude_var`` filter to exclude the variable/layer ``flatten`` from the task result
-as it goes outbound from the client to the server. The excluded layer is replaced with all zeros of the same shape,
-which reduces compression size and ensures that the clients' weights for this variable are not shared with the server.
+   {
+      "format_version": 2,
+      "workflows": [
+         {
+               "id": "controller",
+               "path": "nvflare.app_common.workflows.fedavg.FedAvg",
+               "args": {
+                  "num_clients": 2,
+                  "num_rounds": 3
+               }
+         }
+      ],
+      "components": [
+         {
+               "id": "json_generator",
+               "path": "nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator",
+               "args": {}
+         },
+         {
+               "id": "model_selector",
+               "path": "nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector",
+               "args": {
+                  "aggregation_weights": {},
+                  "key_metric": "accuracy"
+               }
+         },
+         {
+               "id": "persistor",
+               "path": "nvflare.app_opt.tf.model_persistor.TFModelPersistor",
+               "args": {
+                  "model": {
+                     "path": "src.tf_net.TFNet",
+                     "args": {}
+                  }
+               }
+         }
+      ],
+      "task_data_filters": [],
+      "task_result_filters": []
+   }
 
-.. literalinclude:: ../../examples/hello-world/hello-tf2/jobs/hello-tf2/app/custom/filter.py
-   :language: python
-   :lines: 15-
-   :lineno-start: 15
-   :linenos:
-   :caption: filter.py
+This is automatically created by the Job API. The server application configuration leverages NVIDIA FLARE built-in components.
 
-The filtering procedure occurs in the one required method, process, which receives and returns a shareable.
-The parameters for what is excluded and the inbound/outbound option are all set in ``config_fed_client.json``
-(shown later below) and passed in through the constructor.
+Note that ``persistor`` points to ``TFModelPersistor``. This is automatically configured when the model is added
+to the server with the :func:`to<nvflare.job_config.fed_job.FedJob.to>` function. The Job API detects that the model is a TensorFlow model
+and automatically configures :class:`TFModelPersistor<nvflare.app_opt.tf.model_persistor.TFModelPersistor>`.
 
 
-Model Aggregator
-^^^^^^^^^^^^^^^^
-
-The :ref:`model aggregator <aggregator>` is used by the server to aggregate the clients' models into one model
-within the Scatter and Gather workflow.
-
-In this exercise, we perform a simple average over the two clients' weights with the
-:class:`InTimeAccumulateWeightedAggregator<nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator>`
-and configure for it to be used in ``config_fed_server.json`` (shown later below).
-
-Model Persistor
-^^^^^^^^^^^^^^^
-
-The model persistor is used to load and save models on the server.
-
-.. literalinclude:: ../../examples/hello-world/hello-tf2/jobs/hello-tf2/app/custom/tf2_model_persistor.py
-   :language: python
-   :lines: 15-
-   :lineno-start: 15
-   :linenos:
-   :caption: tf2_model_persistor.py
-
-In this exercise, we simply serialize the model weights dictionary using pickle and
-save it to a log directory calculated in initialize.
-The file is saved on the FL server and the weights file name is defined in ``config_fed_server.json``.
-Depending on the frameworks and tools, the methods of saving the model may vary.
-
-FLContext is used throughout these functions to provide various useful FL-related information.
-You can find more details in the :ref:`documentation <fl_context>`.
-
-Application Configuration
+Client Configuration
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Finally, inside the config folder there are two files, ``config_fed_client.json`` and ``config_fed_server.json``.
+The client configuration is ``config_fed_client.json`` in the config folder of each client app folder:
 
-.. literalinclude:: ../../examples/hello-world/hello-tf2/jobs/hello-tf2/app/config/config_fed_server.json
-   :language: json
-   :linenos:
-   :caption: config_fed_server.json
+.. code-block:: json
 
+   {
+      "format_version": 2,
+      "executors": [
+         {
+               "tasks": [
+                  "*"
+               ],
+               "executor": {
+                  "path": "nvflare.app_common.executors.script_executor.ScriptExecutor",
+                  "args": {
+                     "task_script_path": "src/hello-tf_fl.py"
+                  }
+               }
+         }
+      ],
+      "components": [
+         {
+               "id": "event_to_fed",
+               "path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent",
+               "args": {
+                  "events_to_convert": [
+                     "analytix_log_stats"
+                  ]
+               }
+         }
+      ],
+      "task_data_filters": [],
+      "task_result_filters": []
+   }
 
-Note how the :class:`ScatterAndGather<nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather>` workflow is
-configured to use the included ``aggregator`` :class:`InTimeAccumulateWeightedAggregator<nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator>`
-and ``shareable_generator`` :class:`FullModelShareableGenerator<nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator>`.
-The ``persistor`` is configured to use ``TF2ModelPersistor`` in the custom directory of this hello_tf app with full
-Python module paths.
-
-
-.. literalinclude:: ../../examples/hello-world/hello-tf2/jobs/hello-tf2/app/config/config_fed_client.json
-   :language: json
-   :linenos:
-   :caption: config_fed_client.json
-
-
-Here, ``executors`` is configured with the Trainer implementation ``SimpleTrainer``.
-Also, we set up ``filter.ExcludeVars`` as a ``task_result_filters`` and pass in ``["flatten"]`` as the argument.
-Both of these are configured for the only Task that will be broadcast in the Scatter and Gather workflow, "train".
-
-Train the Model, Federated!
----------------------------
-
-.. |ExampleApp| replace:: hello-tf2
-.. include:: run_fl_system.rst
-
-.. include:: access_result.rst
-
-.. include:: shutdown_fl_system.rst
-
-Congratulations!
-
-You've successfully built and run a federated learning system using TensorFlow 2.
+The ``task_script_path`` is set to the path of the client training script.
 
 The full source code for this exercise can be found in
-:github_nvflare_link:`examples/hello-tf2 <examples/hello-world/hello-tf2>`.
+:github_nvflare_link:`examples/hello-tf <examples/hello-world/hello-tf>`.
 
-Previous Versions of Hello TensorFlow 2
----------------------------------------
+Previous Versions of Hello TensorFlow (previously Hello TensorFlow 2)
+---------------------------------------------------------------------
 
    - `hello-tf2 for 2.0 <https://github.com/NVIDIA/NVFlare/tree/2.0/examples/hello-tf2>`_
    - `hello-tf2 for 2.1 <https://github.com/NVIDIA/NVFlare/tree/2.1/examples/hello-tf2>`_
    - `hello-tf2 for 2.2 <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/hello-tf2>`_
    - `hello-tf2 for 2.3 <https://github.com/NVIDIA/NVFlare/tree/2.3/examples/hello-world/hello-tf2>`_
+   - `hello-tf2 for 2.4 <https://github.com/NVIDIA/NVFlare/tree/2.4/examples/hello-world/hello-tf2>`_

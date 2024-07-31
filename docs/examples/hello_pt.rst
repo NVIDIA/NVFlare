@@ -9,11 +9,13 @@ Before You Start
 Feel free to refer to the :doc:`detailed documentation <../programming_guide>` at any point
 to learn more about the specifics of `NVIDIA FLARE <https://pypi.org/project/nvflare/>`_.
 
+We recommend you first finish the :doc:`Hello FedAvg with NumPy <hello_fedavg_w_numpy>` exercise since it introduces the
+federated learning concepts of `NVIDIA FLARE <https://pypi.org/project/nvflare/>`_.
+
 Make sure you have an environment with NVIDIA FLARE installed.
 
 You can follow :ref:`getting_started` on the general concept of setting up a
 Python virtual environment (the recommended environment) and how to install NVIDIA FLARE.
-
 
 Introduction
 -------------
