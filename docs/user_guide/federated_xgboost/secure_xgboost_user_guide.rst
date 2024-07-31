@@ -20,24 +20,24 @@ It supports federated training in the following 4 modes:
 
 When running with NVFlare, all the GRPC connections in XGBoost are local and the messages are forwarded to other clients through NVFlare's CellNet communication. The local GRPC ports are selected automatically by NVFlare.
 
-The encryption, decryption, and secure aggregation in XGBoost are handled by processor plugins, which are external components that can be installed at runtime. The plugins are bundled with NVFlare.
+The encryption is handled in XGBoost by encryption plugins, which are external components that can be installed at runtime. The plugins are bundled with NVFlare.
 
 Prerequisites
 =============
 Required Python Packages
 ------------------------
 
-NVFlare 2.4.2 or above,
+NVFlare 2.5.1 or above,
 
 .. code-block:: bash
 
-    pip install nvflare~=2.4.2
+    pip install nvflare~=2.5.1
 
-A version of XGBoost that supports secure mode is required, which can be installed using this command,
+It requires XGBoost 2.2 or above, which can be installed using this command,
 
 .. code-block:: bash
 
-	pip install https://s3-us-west-2.amazonaws.com/xgboost-nightly-builds/vertical-federated-learning/xgboost-2.1.0.dev0%2Bde4013fc733648dfe5c2c803a13e2782056e00a2-py3-none-manylinux_2_28_x86_64.whl
+	pip install xgboost
 
 ``TenSEAL`` package is needed for horizontal secure training,
 
@@ -122,7 +122,7 @@ For vertical training, the datasets on all clients contain different columns, bu
 
 XGBoost Plugin Configuration
 ============================
-XGBoost requires a plugin to handle secure training. 
+XGBoost requires an encryption plugin to handle secure training.
 Two plugins are initially shipped with NVFlare,
 
 - **cuda_paillier**: The default plugin. This plugin uses GPU for cryptographic operations.
@@ -130,11 +130,11 @@ Two plugins are initially shipped with NVFlare,
 
 Vertical (Non-secure)
 ---------------------
-Any plugin can be used for vertical training. No configuration change is needed.
+No plugin is needed. Make sure no **federated_plugin** is configured in the communicator environment.
 
 Horizontal (Non-secure)
 -----------------------
-Any plugin can be used for horizontal training. No configuration change is needed.
+No plugin is needed. Make sure no **federated_plugin** is configured in the communicator environment.
 
 Vertical Secure
 ---------------
@@ -146,7 +146,7 @@ The default cuda_paillier plugin is preferred because it uses GPU for faster cry
 
     **cuda_paillier** plugin requires NVIDIA GPUs that support compute capability 7.0 or higher. Please refer to https://developer.nvidia.com/cuda-gpus for more information.
 
-If you see the following errors in the log, it means either no GPU is available or the GPU does not meet the requirements:
+If you see the following errors in the log, it means either no GPU is detected or the GPU does not meet the requirements:
 
 ::
 
@@ -160,14 +160,21 @@ The plugin can be configured in the ``local/resources.json`` file on clients:
 .. code-block:: json
 
     {
-        "xgb_plugin_name": "nvflare"
+        "federated_plugin": {
+            "name": "nvflare",
+            "path": "/tmp/libnvflare.so"
+        }
     }
 
-or by setting this environment variable,
+Where **name** is the plugin name and **path** is the full path of the plugin including the library file name.
+The **path** is optional, the default value is the library distributed with NVFlare for the plugin.
+
+The following environment variables can be used to override the values in the JSON,
 
 .. code-block:: bash
 
     export NVFLARE_XGB_PLUGIN_NAME=nvflare
+    export NVFLARE_XGB_PLUGIN_PATH=/tmp/libnvflare.so
 
 Horizontal Secure
 -----------------
@@ -192,8 +199,8 @@ XGBoost parameters are defined here, https://xgboost.readthedocs.io/en/stable/py
 
 - **num_rounds**: Number of training rounds
 - **training_mode**: Training mode, must be one of the following: horizontal, vertical, horizontal_secure, vertical_secure.
-- **xgb_params**: The training parameters defined in this dict are passed to XGBoost as params.
-- **xgb_options**: This dict contains other optional parameters passed to XGBoost. Currently, only early_stopping_rounds is supported.
+- **xgb_params**: The training parameters defined in this dict are passed to XGBoost as **params**, the boost paramter.
+- **xgb_options**: This dict contains other optional parameters passed to XGBoost. Currently, only **early_stopping_rounds** is supported.
 - **client_ranks**: A dict that maps client name to rank.
 
 Executor
