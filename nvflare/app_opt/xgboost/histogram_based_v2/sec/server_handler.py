@@ -166,7 +166,7 @@ class ServerSecurityHandler(SecurityHandler):
                 # reset aggr_result_dict for next gather
                 self.aggr_result_dict = None
 
-        self.word_size = len(self.size_dict)
+        self.world_size = len(self.size_dict)
         reply.set_header(Constant.HEADER_KEY_WORLD_SIZE, self.world_size)
         reply.set_header(Constant.HEADER_KEY_SIZE_DICT, self.size_dict)
 
