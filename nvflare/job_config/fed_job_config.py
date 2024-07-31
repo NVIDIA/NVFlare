@@ -178,8 +178,7 @@ class FedJobConfig:
 
     def _copy_ext_dirs(self, custom_dir, app_config: BaseAppConfig):
         for dir in app_config.ext_dirs:
-            dest = os.path.join(custom_dir, os.path.basename(dir))
-            shutil.copytree(dir, dest, dirs_exist_ok=True)
+            shutil.copytree(dir, custom_dir, dirs_exist_ok=True)
 
     def _get_relative_script(self, script):
         package_path = ""
