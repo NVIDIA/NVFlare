@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from src.tf_net import Net
+
 from nvflare import FedJob, ScriptExecutor
 from nvflare.app_common.workflows.cyclic import Cyclic
 from nvflare.client.config import ExchangeFormat
@@ -30,12 +32,17 @@ if __name__ == "__main__":
     )
     job.to(controller, "server")
 
+    # Define the initial global model and send to server
+    job.to(Net(), "server")
+
     # Add clients
     for i in range(n_clients):
         executor = ScriptExecutor(
-            task_script_path=train_script, task_script_args="", params_exchange_format=ExchangeFormat.NUMPY  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
+            task_script_path=train_script,
+            task_script_args="",
+            params_exchange_format=ExchangeFormat.NUMPY,  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
         )
         job.to(executor, f"site-{i}", gpu=0)
 
-    #job.export_job("/tmp/nvflare/jobs/job_config")
+    # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir")

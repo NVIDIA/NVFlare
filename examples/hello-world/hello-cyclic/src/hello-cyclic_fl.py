@@ -13,18 +13,19 @@
 # limitations under the License.
 
 import tensorflow as tf
-import nvflare.client as flare
 from tf_net import Net
+
+import nvflare.client as flare
 
 WEIGHTS_PATH = "./tf_model.weights.h5"
 
 
 def main():
     model = Net()
+    model.build(input_shape=(None, 28, 28))
     model.compile(
         optimizer="adam", loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=["accuracy"]
     )
-    _ = model(tf.keras.Input(shape=(28, 28)))
     model.summary()
 
     flare.init()
@@ -86,8 +87,9 @@ def main():
             metrics={"accuracy": test_global_acc},
             current_round=input_model.current_round,
         )
-        
+
         flare.send(output_model)
+
 
 if __name__ == "__main__":
     main()

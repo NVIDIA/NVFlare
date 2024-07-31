@@ -12,20 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import tensorflow as tf
+from tensorflow.keras import layers, models
 
 
-class Net(tf.keras.Model):
-    def __init__(self):
+class Net(models.Sequential):
+    def __init__(self, input_shape=(None, 28, 28)):
         super().__init__()
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        self.dense1 = tf.keras.layers.Dense(128, activation="relu")
-        self.dropout = tf.keras.layers.Dropout(0.2)
-        self.dense2 = tf.keras.layers.Dense(10)
-
-    def call(self, x):
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.dropout(x)
-        x = self.dense2(x)
-        return x
+        self._input_shape = input_shape
+        self.add(layers.Flatten())
+        self.add(layers.Dense(128, activation="relu"))
+        self.add(layers.Dropout(0.2))
+        self.add(layers.Dense(10))
