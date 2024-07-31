@@ -409,7 +409,7 @@ class ClientSecurityHandler(SecurityHandler):
                 else:
                     self.debug(fl_ctx, "Tenseal module not loaded, horizontal secure XGBoost is not supported")
             except Exception as ex:
-                self.debug(fl_ctx, f"Can't load tenseal context, horizontal secure XGBoost is not supported: {ex}")
+                self.error(fl_ctx, f"Can't load tenseal context, horizontal secure XGBoost is not supported: {ex}")
                 self.tenseal_context = None
         elif event_type == EventType.END_RUN:
             self.tenseal_context = None
