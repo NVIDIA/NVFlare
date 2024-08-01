@@ -38,7 +38,8 @@ def optimize_weights(model, c_delta_para_value):
     """
     c_delta_para = {}
     layer_weights_dict = {layer.name: layer.get_weights() for layer in model.layers}
-    trainable_layers_dict = {layer.name: layer.get_weights() for layer in model.layers if layer.trainable}
+    trainable_layers_dict = {layer.name: layer.trainable_weights for layer in model.layers if layer.trainable_weights}
+    flatten_layer_weights_dict= flat_layer_weights_dict(layer_weights_dict)
     flatten_layer_weights_dict = flat_layer_weights_dict(layer_weights_dict)
     flatten_trainable_layers_dict = flat_layer_weights_dict(trainable_layers_dict)
 
