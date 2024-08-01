@@ -23,8 +23,6 @@ from torchvision.datasets import CIFAR10
 from torchvision.transforms import Compose, Normalize, ToTensor
 
 import nvflare.client as flare
-from nvflare.app_opt.pt.model_persistence_format_manager import PTModelPersistenceFormatManager
-from nvflare.client.tracking import SummaryWriter
 
 DATASET_PATH = "/tmp/nvflare/data"
 
