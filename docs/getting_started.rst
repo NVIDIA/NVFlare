@@ -295,7 +295,7 @@ to a working directory:
 
 .. code-block:: shell
 
-  rm -rf simulator-example
+  mkdir simulator-example
   cp -rf NVFlare/examples/hello-world/hello-pt simulator-example/
 
 The hello-pt application requires a few dependencies to be installed.  As in the installation section,
@@ -304,18 +304,18 @@ we can install these in the Python virtual environment by running:
 .. code-block:: shell
 
   source nvflare-env/bin/activate
-  python3 -m pip install -r simulator-example/requirements.txt
+  python3 -m pip install -r simulator-example/hello-pt/requirements.txt
 
 If using the Dockerfile above to run in a container, these dependencies have already been installed.
 
 Next, we can create a workspace for the Simulator to use for outputs of the application run, and launch
-the simulator using ``simulator-example/jobs/hello-pt`` as the input job directory.  In this example, we'll
+the simulator using ``simulator-example/hello-pt/jobs/hello-pt`` as the input job directory.  In this example, we'll
 run on two clients using two threads:
 
 .. code-block:: shell
 
   mkdir simulator-example/workspace
-  nvflare simulator -w simulator-example/workspace -n 2 -t 2 simulator-example/jobs/hello-pt
+  nvflare simulator -w simulator-example/workspace -n 2 -t 2 simulator-example/hello-pt/jobs/hello-pt
 
 Now you will see output streaming from the server and client processes as they execute the federated
 application.  Once the run completes, your workspace directory will contain the input application configuration
