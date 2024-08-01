@@ -32,7 +32,9 @@ release_package = find_packages(
     exclude=["tests", "tests.*"],
 )
 
-package_data = {"": ["*.yml", "*.config"], }
+package_data = {
+    "": ["*.yml", "*.config"],
+}
 
 release = os.environ.get("NVFL_RELEASE")
 version = os.environ.get("NVFL_VERSION")

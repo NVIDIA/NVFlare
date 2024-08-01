@@ -19,88 +19,41 @@ import shutil
 exclude_extensions = [".md", ".rst", ".pyc", "__pycache__"]
 
 nvflight_packages = {
-    "nvflare": {
-        "include": ["_version.py"],
-        "exclude": ["*"]
-    },
-    "nvflare/apis": {
-        "include": ["__init__.py", "fl_constant.py"],
-        "exclude": ["*"]
-    },
-    "nvflare/app_common": {
-        "include": ["__init__.py"],
-        "exclude": ["*"]
-    },
-    "nvflare/app_common/decomposers": {
-        "include": ["__init__.py", "numpy_decomposers.py"],
-        "exclude": ["*"]
-    },
-    "nvflare/client": {
-        "include": ["__init__.py"],
-        "exclude": ["*"]
-    },
-    "nvflare/client/ipc": {
-        "include": ["__init__.py", "defs.py", "ipc_agent.py"],
-        "exclude": ["*"]
-    },
-    "nvflare/fuel": {
-        "include": ["__init__.py"],
-        "exclude": ["*"]
-    },
-    "nvflare/fuel/common": {
-        "include": ["*"],
-        "exclude": []
-    },
+    "nvflare": {"include": ["_version.py"], "exclude": ["*"]},
+    "nvflare/apis": {"include": ["__init__.py", "fl_constant.py"], "exclude": ["*"]},
+    "nvflare/app_common": {"include": ["__init__.py"], "exclude": ["*"]},
+    "nvflare/app_common/decomposers": {"include": ["__init__.py", "numpy_decomposers.py"], "exclude": ["*"]},
+    "nvflare/client": {"include": ["__init__.py"], "exclude": ["*"]},
+    "nvflare/client/ipc": {"include": ["__init__.py", "defs.py", "ipc_agent.py"], "exclude": ["*"]},
+    "nvflare/fuel": {"include": ["__init__.py"], "exclude": ["*"]},
+    "nvflare/fuel/common": {"include": ["*"], "exclude": []},
     "nvflare/fuel/f3": {
-        "include": ["__init__.py",
-                     "comm_error.py",
-                     "connection.py",
-                     "endpoint.py",
-                     "mpm.py",
-                     "stats_pool.py",
-                     "comm_config.py",
-                     "communicator.py",
-                     "message.py",
-                     "stream_cell.py"
+        "include": [
+            "__init__.py",
+            "comm_error.py",
+            "connection.py",
+            "endpoint.py",
+            "mpm.py",
+            "stats_pool.py",
+            "comm_config.py",
+            "communicator.py",
+            "message.py",
+            "stream_cell.py",
         ],
-        "exclude": ["*"]
+        "exclude": ["*"],
     },
-    "nvflare/fuel/f3/cellnet": {
-        "include": ["*"],
-        "exclude": []
-    },
+    "nvflare/fuel/f3/cellnet": {"include": ["*"], "exclude": []},
     "nvflare/fuel/f3/drivers": {
         "include": ["*"],
-        "exclude": ["grpc", "aio_grpc_driver.py", "aio_http_driver.py", "grpc_driver.py"]
+        "exclude": ["grpc", "aio_grpc_driver.py", "aio_http_driver.py", "grpc_driver.py"],
     },
-    "nvflare/fuel/f3/sfm": {
-        "include": ["*"],
-        "exclude": []
-    },
-    "nvflare/fuel/f3/streaming": {
-        "include": ["*"],
-        "exclude": []
-    },
-    "nvflare/fuel/hci": {
-        "include": ["__init__.py", "security.py"],
-        "exclude": ["*"]
-    },
-    "nvflare/fuel/utils": {
-        "include": ["*"],
-        "exclude": ["fobs"]
-    },
-    "nvflare/fuel/utils/fobs": {
-        "include": ["*"],
-        "exclude": []
-    },
-    "nvflare/fuel/utils/fobs/decomposers": {
-        "include": ["*"],
-        "exclude": []
-    },
-    "nvflare/security": {
-        "include": ["__init__.py", "logging.py"],
-        "exclude": ["*"]
-    }
+    "nvflare/fuel/f3/sfm": {"include": ["*"], "exclude": []},
+    "nvflare/fuel/f3/streaming": {"include": ["*"], "exclude": []},
+    "nvflare/fuel/hci": {"include": ["__init__.py", "security.py"], "exclude": ["*"]},
+    "nvflare/fuel/utils": {"include": ["*"], "exclude": ["fobs"]},
+    "nvflare/fuel/utils/fobs": {"include": ["*"], "exclude": []},
+    "nvflare/fuel/utils/fobs/decomposers": {"include": ["*"], "exclude": []},
+    "nvflare/security": {"include": ["__init__.py", "logging.py"], "exclude": ["*"]},
 }
 
 
@@ -147,7 +100,7 @@ def package_selected_files(package_info: dict):
 
 def create_empty_file(file_path):
     try:
-        with open(file_path, 'w'):
+        with open(file_path, "w"):
             pass  # This block is intentionally left empty
     except Exception as e:
         print(f"Error creating empty file: {e}")
@@ -174,13 +127,7 @@ def prepare_setup(setup_dir: str):
     nvflight_paths = package_selected_files(nvflight_packages)
     copy_files(nvflight_paths, setup_dir)
 
-    src_files = [
-        "setup.cfg",
-        "README.md",
-        "LICENSE",
-         os.path.join("nvflight", "setup.py")
-    ]
+    src_files = ["setup.cfg", "README.md", "LICENSE", os.path.join("nvflight", "setup.py")]
 
     for src in src_files:
         shutil.copy(src, os.path.join(setup_dir, os.path.basename(src)))
-    

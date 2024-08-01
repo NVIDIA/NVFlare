@@ -34,12 +34,13 @@ else:
 
 def patch(setup_dir, patch_file):
     file_dir_path = os.path.abspath(os.path.dirname(__file__))
-    cmd = ['git', 'apply', os.path.join(file_dir_path, patch_file)]
+    cmd = ["git", "apply", os.path.join(file_dir_path, patch_file)]
     try:
         subprocess.run(cmd, check=True, cwd=setup_dir)
     except subprocess.CalledProcessError as e:
         print(f"Error to patch prepared files {e}")
         exit(1)
+
 
 nvflight_setup_dir = "/tmp/nvflight_setup"
 patch_file = "patch.diff"
@@ -53,7 +54,7 @@ if os.path.isdir(dist_dir):
     shutil.rmtree(dist_dir)
 
 env = os.environ.copy()
-env['NVFL_VERSION'] = version
+env["NVFL_VERSION"] = version
 
 cmd_str = "python setup.py -v sdist bdist_wheel"
 cmd = cmd_str.split(" ")
