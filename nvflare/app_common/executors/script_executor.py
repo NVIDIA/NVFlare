@@ -12,17 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
-
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.executors.in_process_client_api_executor import InProcessClientAPIExecutor
 from nvflare.client.config import ExchangeFormat, TransferType
-from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.import_utils import optional_import
 
 torch, torch_ok = optional_import(module="torch")
 if torch_ok:
-    from nvflare.app_opt.pt.decomposers import TensorDecomposer
     from nvflare.app_opt.pt.params_converter import NumpyToPTParamsConverter, PTToNumpyParamsConverter
 
     DEFAULT_PARAMS_EXCHANGE_FORMAT = ExchangeFormat.PYTORCH
@@ -34,62 +29,54 @@ if tf_ok:
     from nvflare.app_opt.tf.params_converter import KerasModelToNumpyParamsConverter, NumpyToKerasModelParamsConverter
 
 
-class ScriptExecutor(InProcessClientAPIExecutor):
+class ScriptExecutor:
     def __init__(
         self,
-        task_script_path: str,
-        task_script_args: str = "",
-        task_wait_time: Optional[float] = None,
-        result_pull_interval: float = 0.5,
-        log_pull_interval: Optional[float] = None,
+        script: str,
+        script_args: str = "",
+        launch_external_process: bool = False,
+        launch_once: bool = True,
         params_transfer_type: TransferType = TransferType.FULL,
-        from_nvflare_converter_id: Optional[str] = None,
-        to_nvflare_converter_id: Optional[str] = None,
-        train_with_evaluation: bool = True,
-        train_task_name: str = "train",
-        evaluate_task_name: str = "evaluate",
-        submit_model_task_name: str = "submit_model",
         params_exchange_format=DEFAULT_PARAMS_EXCHANGE_FORMAT,
     ):
-        """Wrapper around InProcessClientAPIExecutor for different params_exchange_format. Currently defaulting to `params_exchange_format=ExchangeFormat.PYTORCH`.
+        """ScriptExecutor is used with FedJob API to run or launch a script.
+
+        in-process `launch_external_process=False` uses InProcessClientAPIExecutor (default).
+        ex-process `launch_external_process=True` uses ClientAPILauncherExecutor.
 
         Args:
+            script (str): Script to run. For in-process must be a python script path. For ex-process can be any command supported by python subprocess.
+            script_args (str): Optional arguments for script.
+            launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
+            launch_once (bool): If True launch script once, else launch for every task. Defaults to True.
+            params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
+                DIFF means that only the difference is sent. Defaults to TransferType.FULL.
+            params_exchange_format (str): Format to exchange the parameters. Defaults based on detected imports.
         """
-        super(ScriptExecutor, self).__init__(
-            task_script_path=task_script_path,
-            task_script_args=task_script_args,
-            task_wait_time=task_wait_time,
-            result_pull_interval=result_pull_interval,
-            train_with_evaluation=train_with_evaluation,
-            train_task_name=train_task_name,
-            evaluate_task_name=evaluate_task_name,
-            submit_model_task_name=submit_model_task_name,
-            from_nvflare_converter_id=from_nvflare_converter_id,
-            to_nvflare_converter_id=to_nvflare_converter_id,
-            params_exchange_format=params_exchange_format,
-            params_transfer_type=params_transfer_type,
-            log_pull_interval=log_pull_interval,
-        )
+        self._script = script
+        self._script_args = script_args
+        self._launch_external_process = launch_external_process
+        self._launch_once = launch_once
+        self._params_transfer_type = params_transfer_type
+        self._params_exchange_format = params_exchange_format
+
+        self._from_nvflare_converter = None
+        self._to_nvflare_converter = None
+
         if torch_ok:
             if params_exchange_format == ExchangeFormat.PYTORCH:
-                fobs.register(TensorDecomposer)
-
-                if self._from_nvflare_converter is None:
-                    self._from_nvflare_converter = NumpyToPTParamsConverter(
-                        [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION]
-                    )
-                if self._to_nvflare_converter is None:
-                    self._to_nvflare_converter = PTToNumpyParamsConverter(
-                        [AppConstants.TASK_TRAIN, AppConstants.TASK_SUBMIT_MODEL]
-                    )
+                self._from_nvflare_converter = NumpyToPTParamsConverter(
+                    [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION]
+                )
+                self._to_nvflare_converter = PTToNumpyParamsConverter(
+                    [AppConstants.TASK_TRAIN, AppConstants.TASK_SUBMIT_MODEL]
+                )
         if tf_ok:
             if params_exchange_format == ExchangeFormat.NUMPY:
-                if self._from_nvflare_converter is None:
-                    self._from_nvflare_converter = NumpyToKerasModelParamsConverter(
-                        [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION]
-                    )
-                if self._to_nvflare_converter is None:
-                    self._to_nvflare_converter = KerasModelToNumpyParamsConverter(
-                        [AppConstants.TASK_TRAIN, AppConstants.TASK_SUBMIT_MODEL]
-                    )
+                self._from_nvflare_converter = NumpyToKerasModelParamsConverter(
+                    [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION]
+                )
+                self._to_nvflare_converter = KerasModelToNumpyParamsConverter(
+                    [AppConstants.TASK_TRAIN, AppConstants.TASK_SUBMIT_MODEL]
+                )
         # TODO: support other params_exchange_format

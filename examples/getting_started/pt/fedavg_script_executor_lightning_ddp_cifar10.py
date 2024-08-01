@@ -15,7 +15,7 @@
 
 from src.lit_net import LitNet
 
-from nvflare import FedAvg, FedJob, ScriptLauncherExecutor
+from nvflare import FedAvg, FedJob, ScriptExecutor
 
 if __name__ == "__main__":
     n_clients = 2
@@ -35,7 +35,7 @@ if __name__ == "__main__":
 
     # Add clients
     for i in range(n_clients):
-        executor = ScriptLauncherExecutor(launch_script=f"python3 custom/{train_script}")
+        executor = ScriptExecutor(script=f"python3 custom/{train_script}", launch_external_process=True)
         job.to(executor, f"site-{i}", gpu=0)
         job.to(train_script, f"site-{i}")
         job.to("src/lit_net.py", f"site-{i}")

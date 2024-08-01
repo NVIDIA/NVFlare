@@ -20,8 +20,9 @@ from nvflare.apis.executor import Executor
 from nvflare.apis.filter import Filter
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
+from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
+from nvflare.app_common.executors.in_process_client_api_executor import InProcessClientAPIExecutor
 from nvflare.app_common.executors.script_executor import ScriptExecutor
-from nvflare.app_common.executors.script_launcher_executor import ScriptLauncherExecutor
 from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
@@ -221,46 +222,14 @@ class FedJob:
             if target not in self._deploy_map:
                 self._deploy_map[target] = ControllerApp(key_metric=self.key_metric)
             self._deploy_map[target].add_controller(obj, id)
-        elif isinstance(obj, Executor):
+        elif isinstance(obj, (Executor, ScriptExecutor)):
             if target not in self._deploy_map:
                 self._deploy_map[target] = ExecutorApp()
+
             if isinstance(obj, ScriptExecutor):
-                external_scripts = [obj._task_script_path]
-                self._deploy_map[target].add_external_scripts(external_scripts)
-            if isinstance(obj, ScriptLauncherExecutor):
-                component = SubprocessLauncher(script=obj._launch_script)
-                self._deploy_map[target].app.add_component("launcher", component)
-
-                component = CellPipe(
-                    mode="PASSIVE",
-                    site_name="{SITE_NAME}",
-                    token="{JOB_ID}",
-                    root_url="{ROOT_URL}",
-                    secure_mode="{SECURE_MODE}",
-                    workspace_dir="{WORKSPACE}",
-                )
-                self._deploy_map[target].app.add_component("pipe", component)
-
-                component = CellPipe(
-                    mode="PASSIVE",
-                    site_name="{SITE_NAME}",
-                    token="{JOB_ID}",
-                    root_url="{ROOT_URL}",
-                    secure_mode="{SECURE_MODE}",
-                    workspace_dir="{WORKSPACE}",
-                )
-                self._deploy_map[target].app.add_component("metrics_pipe", component)
-
-                component = MetricRelay(
-                    pipe_id="metrics_pipe",
-                    event_type="fed.analytix_log_stats",
-                )
-                self._deploy_map[target].app.add_component("metric_relay", component)
-
-                component = ExternalConfigurator(
-                    component_ids=["metric_relay"],
-                )
-                self._deploy_map[target].app.add_component("config_preparer", component)
+                self._add_script_executor(obj, target, tasks)
+            else:
+                self._deploy_map[target].add_executor(obj, tasks=tasks)
 
             if target not in self.clients:
                 self.clients.append(target)
@@ -269,7 +238,6 @@ class FedJob:
                     self._gpus[target] = str(gpu)
                 else:
                     print(f"{target} already set to use GPU {self._gpus[target]}. Ignoring gpu={gpu}.")
-            self._deploy_map[target].add_executor(obj, tasks=tasks)
         elif isinstance(obj, str):  # treat the str type object as external script
             if target not in self._deploy_map:
                 raise ValueError(
@@ -388,6 +356,71 @@ class FedJob:
                             self._add_referenced_components(self._components[base_id], target)
                             # remove already added components from tracked components
                             self._components.pop(base_id)
+
+    def _add_script_executor(self, obj, target, tasks):
+        if obj._launch_external_process:
+            executor = ClientAPILauncherExecutor(
+                pipe_id="pipe",
+                launcher_id="launcher",
+                params_exchange_format=obj._params_exchange_format,
+                params_transfer_type=obj._params_transfer_type,
+                from_nvflare_converter_id="from_nvflare",
+                to_nvflare_converter_id="to_nvflare",
+            )
+            self._deploy_map[target].add_executor(executor, tasks=tasks)
+
+            component = SubprocessLauncher(
+                script=obj._script + " " + obj._script_args,
+                launch_once=obj._launch_once,
+            )
+            self._deploy_map[target].app.add_component("launcher", component)
+
+            component = CellPipe(
+                mode="PASSIVE",
+                site_name="{SITE_NAME}",
+                token="{JOB_ID}",
+                root_url="{ROOT_URL}",
+                secure_mode="{SECURE_MODE}",
+                workspace_dir="{WORKSPACE}",
+            )
+            self._deploy_map[target].app.add_component("pipe", component)
+
+            component = CellPipe(
+                mode="PASSIVE",
+                site_name="{SITE_NAME}",
+                token="{JOB_ID}",
+                root_url="{ROOT_URL}",
+                secure_mode="{SECURE_MODE}",
+                workspace_dir="{WORKSPACE}",
+            )
+            self._deploy_map[target].app.add_component("metrics_pipe", component)
+
+            component = MetricRelay(
+                pipe_id="metrics_pipe",
+                event_type="fed.analytix_log_stats",
+            )
+            self._deploy_map[target].app.add_component("metric_relay", component)
+
+            component = ExternalConfigurator(
+                component_ids=["metric_relay"],
+            )
+            self._deploy_map[target].app.add_component("config_preparer", component)
+        else:
+            executor = InProcessClientAPIExecutor(
+                task_script_path=obj._script,
+                task_script_args=obj._script_args,
+                params_exchange_format=obj._params_exchange_format,
+                params_transfer_type=obj._params_transfer_type,
+                from_nvflare_converter_id="from_nvflare",
+                to_nvflare_converter_id="to_nvflare",
+            )
+            self._deploy_map[target].add_executor(executor, tasks=tasks)
+
+            external_scripts = [obj._script]
+            self._deploy_map[target].add_external_scripts(external_scripts)
+
+        self._deploy_map[target].app.add_component("from_nvflare", obj._from_nvflare_converter)
+        self._deploy_map[target].app.add_component("to_nvflare", obj._to_nvflare_converter)
 
     def _set_site_app(self, app: FedApp, target: str):
         if not isinstance(app, FedApp):
