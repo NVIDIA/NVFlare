@@ -15,42 +15,36 @@ Python virtual environment (the recommended environment) and how to install NVID
 Prerequisite
 -------------
 
-This example builds on the :doc:`Hello FedAvg with NumPy <hello_fedavg_w_numpy>` example
-based on the :class:`ScatterAndGather<nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather>` workflow.
-
-Please make sure you go through it completely as the concepts are heavily tied.
+This example introduces :class:`CrossSiteEval<nvflare.app_common.workflows.cross_site_eval.CrossSiteEval>` and builds
+on the :doc:`Hello PyTorch <hello_pt>` example
+based on the :class:`FedAvg<nvflare.app_common.workflows.fedavg.FedAvg>` workflow.
 
 Introduction
 -------------
-
-This tutorial is meant to solely demonstrate how the NVIDIA FLARE system works,
-without introducing any actual deep learning concepts.
-
-Through this exercise, you will learn how to use NVIDIA FLARE with numpy to perform cross site validation
+In this exercise, you will learn how to use NVIDIA FLARE to perform cross site validation
 after training.
 
-The training process is explained in the :doc:`Hello FedAvg with NumPy <hello_fedavg_w_numpy>` example.
-
-Using simplified weights and metrics, you will be able to clearly see how NVIDIA FLARE performs
-validation across different sites with little extra work.
+The training process is similar to the train script uesd in the :doc:`Hello PyTorch <hello_pt>` example. This example does not
+use the Job API to construct the job but instead has the job in the ``jobs`` folder of the example so you can see the server and
+client configurations.
 
 The setup of this exercise consists of one **server** and two **clients**.
-The server side model starts with the weights ``[[1, 2, 3], [4, 5, 6], [7, 8, 9]]``.
+The server side model starts with the default weights when the model is loaded with :class:`PTFileModelPersistor<nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor>`.
 
 Cross site validation consists of the following steps:
 
-    - The :class:`CrossSiteModelEval<nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval>` workflow
+    - The :class:`CrossSiteEval<nvflare.app_common.workflows.cross_site_eval.CrossSiteEval>` workflow
       gets the client models with the ``submit_model`` task.
     - The ``validate`` task is broadcast to the all participating clients with the model shareable containing the model data,
       and results from the ``validate`` task are saved.
 
 During this exercise, we will see how NVIDIA FLARE takes care of most of the above steps with little work from the user.
-We will be working with the ``hello-numpy-cross-val`` application in the examples folder.
+We will be working with the ``hello-cross-val`` application in the examples folder.
 Custom FL applications can contain the folders:
 
- #. **custom**: contains the custom components (``np_trainer.py``, ``np_model_persistor.py``, ``np_validator.py``, ``np_model_locator``, ``np_formatter``)
- #. **config**: contains client and server configurations (``config_fed_client.json``, ``config_fed_server.json``)
- #. **resources**: contains the logger config (``log.config``)
+ #. **custom**: contains the custom components including our training script (``train.py``, ``net.py``)
+ #. **config**: contains client and server configurations (``config_fed_client.conf``, ``config_fed_server.conf``)
+ #. **resources**: can optionally contain the logger config (``log.config``)
 
 Let's get started. First clone the repo, if you haven't already:
 
@@ -59,94 +53,86 @@ Let's get started. First clone the repo, if you haven't already:
   $ git clone https://github.com/NVIDIA/NVFlare.git
 
 Remember to activate your NVIDIA FLARE Python virtual environment from the installation guide.
-Ensure numpy is installed.
+
+Ensure PyTorch and torchvision are installed: 
 
 .. code-block:: shell
 
-  (nvflare-env) $ python3 -m pip install numpy
+  (nvflare-env) $ python3 -m pip install torch torchvision
 
-Now that you have all your dependencies installed, let's implement the Federated Learning system.
+Now that you have all your dependencies installed, let's take a look at the job.
 
 
 Training
 --------------------------------
  
-In the :doc:`Hello FedAvg with NumPy <hello_fedavg_w_numpy>` example, we implemented the ``NPTrainer`` object.
-In this example, we use the same ``NPTrainer`` but extend it to process the ``submit_model`` task to
-work with the :class:`CrossSiteModelEval<nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval>`
+In the :doc:`Hello PyTorch <hello_pt>` example, we implemented the setup and the training script in ``hello-pt_cifar10_fl.py``.
+In this example, we start from the same basic setup and training script but extend it to process the ``validate`` and ``submit_model`` tasks to
+work with the :class:`CrossSiteEval<nvflare.app_common.workflows.cross_site_eval.CrossSiteEval>`
 workflow to get the client models.
 
-The code in ``np_trainer.py`` saves the model to disk after each step of training in the model.
-
 Note that the server also produces a global model.
-The :class:`CrossSiteModelEval<nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval>`
+The :class:`CrossSiteEval<nvflare.app_common.workflows.cross_site_eval.CrossSiteEval>`
 workflow submits the server model for evaluation after the client models.
 
 Implementing the Validator
 --------------------------
 
-The validator is an Executor that is called for validating the models received from the server during
-the :class:`CrossSiteModelEval<nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval>` workflow.
+The code for processing the ``validate`` task during
+the :class:`CrossSiteEval<nvflare.app_common.workflows.cross_site_eval.CrossSiteEval>` workflow is added to the
+``while flare.is_running():`` loop in the training script.
 
-These models could be from other clients or models generated on server.
+.. code-block:: python
 
-.. literalinclude:: ../../nvflare/app_common/np/np_validator.py
-   :language: python
-   :lines: 15-
-   :lineno-start: 15
-   :linenos:
-   :caption: np_validator.py
+  elif flare.is_evaluate():
+      accuracy = evaluate(input_model.params)
+      print(f"({client_id}) accuracy: {accuracy}")
+      flare.send(flare.FLModel(metrics={"accuracy": accuracy}))
 
-The validator is an Executor and implements the **execute** function which receives a Shareable.
-
-It handles the ``validate`` task by performing a calculation to find the sum divided by the max of the data
-and adding a ``random_epsilon`` before returning the results packaged with a DXO into a Shareable.
-
-.. note::
-
-  Note that in our hello-examples, we are demonstrating Federated Learning using data that does not have to do with deep learning.
-  NVIDIA FLARE can be used with any data packaged inside a :ref:`Shareable <shareable>` object (subclasses ``dict``), and
-  :ref:`DXO <data_exchange_object>` is recommended as a way to manage that data in a standard way.
+It handles the ``validate`` task by performing calling the ``evaluate()`` method we have added to the ``train.py`` training script in our custom folder.
 
 Application Configuration
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Inside the config folder there are two files, ``config_fed_client.json`` and ``config_fed_server.json``.
 
-.. literalinclude:: ../../examples/hello-world/hello-numpy-cross-val/jobs/hello-numpy-cross-val/app/config/config_fed_server.json
-   :language: json
+.. literalinclude:: ../../examples/hello-world/hello-cross-val/jobs/hello-cross-val/app/config/config_fed_server.conf
+   :language: conf
    :linenos:
-   :caption: config_fed_server.json
+   :caption: config_fed_server.conf
 
-The server now has a second workflow configured after Scatter and Gather, :class:`CrossSiteModelEval<nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval>`.
-
-The components "model_locator" and "formatter" have been added to work with the cross site model evaluation workflow,
-and the rest is the same as in :doc:`Hello FedAvg with NumPy <hello_fedavg_w_numpy>`.
+The server now has a second workflow, :class:`CrossSiteEval<nvflare.app_common.workflows.cross_site_eval.CrossSiteEval>`, configured after Scatter and
+Gather (:class:`ScatterAndGather<nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather>` is an implementation of the :class:`FedAvg<nvflare.app_common.workflows.fedavg.FedAvg>` workflow).
 
 
-.. literalinclude:: ../../examples/hello-world/hello-numpy-cross-val/jobs/hello-numpy-cross-val/app/config/config_fed_client.json
-   :language: json
+.. literalinclude:: ../../examples/hello-world/hello-cross-val/jobs/hello-cross-val/app/config/config_fed_client.conf
+   :language: conf
    :linenos:
-   :caption: config_fed_client.json
+   :caption: config_fed_client.conf
 
-The client configuration now has more tasks and an additional Executor ``NPValidator`` configured to handle the "validate" task.
-The "submit_model" task has been added to the ``NPTrainer`` Executor to work with the :class:`CrossSiteModelEval<nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval>`
-workflow to get the client models.
+The client configuration now uses the Executor :class:`PTClientAPILauncherExecutor<nvflare.app_opt.pt.client_api_launcher_executor.PTClientAPILauncherExecutor>`
+configured to launch the train script ``train.py`` with :class:`SubprocessLauncher<nvflare.app_common.launchers.subprocess_launcher.SubprocessLauncher>`.
+The "train", "validate", and "submit_model" tasks have been configured for the added to the ``PTClientAPILauncherExecutor`` Executor to
+work with the :class:`CrossSiteEval<nvflare.app_common.workflows.cross_site_eval.CrossSiteEval>` workflow.
 
 Cross site validation!
 ----------------------
 
-.. |ExampleApp| replace:: hello-numpy-cross-val
-.. include:: run_fl_system.rst
+To run the application, you can use a POC environment or a real provisioned environment and use the FLARE Console or the FLARE API to submit the job,
+or you can run quickly run it with the FLARE Simulator with the following command:
+
+.. code-block:: shell
+
+  (nvflare-env) $ nvflare simulator -w /tmp/nvflare/ -n 2 -t 1 examples/hello-world/hello-cross-val/jobs/hello-cross-val
 
 During the first phase, the model will be trained.
 
 During the second phase, cross site validation will happen.
 
-The workflow on the client will change to :class:`CrossSiteModelEval<nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval>`
+The workflow on the client will change to :class:`CrossSiteEval<nvflare.app_common.workflows.cross_site_eval.CrossSiteEval>`
 as it enters this second phase.
 
-During cross site model evaluation, every client validates other clients' models and server models (if present).
+During cross site evaluation, every client validates other clients' models and server models (if present).
 This can produce a lot of results. All the results will be kept in the job's workspace when it is completed.
 
 Understanding the Output
@@ -168,12 +154,6 @@ require careful examination to make proper sense of events from the jumbled logs
     You could see the cross-site validation results
     at ``[DOWNLOAD_DIR]/[JOB_ID]/workspace/cross_site_val/cross_val_results.json``
 
-.. include:: shutdown_fl_system.rst
-
-Congratulations!
-
-You've successfully run your numpy federated learning system with cross site validation.
-
 The full source code for this exercise can be found in
 :github_nvflare_link:`examples/hello-world/hello-numpy-cross-val <examples/hello-world/hello-numpy-cross-val/>`.
 
@@ -184,3 +164,4 @@ Previous Versions of Hello Cross-Site Validation
   - `hello-numpy-cross-val for 2.1 <https://github.com/NVIDIA/NVFlare/tree/2.1/examples/hello-numpy-cross-val>`_
   - `hello-numpy-cross-val for 2.2 <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/hello-numpy-cross-val>`_
   - `hello-numpy-cross-val for 2.3 <https://github.com/NVIDIA/NVFlare/tree/2.3/examples/hello-world/hello-numpy-cross-val/>`_
+  - `hello-numpy-cross-val for 2.4 <https://github.com/NVIDIA/NVFlare/tree/2.4/examples/hello-world/hello-numpy-cross-val/>`_
