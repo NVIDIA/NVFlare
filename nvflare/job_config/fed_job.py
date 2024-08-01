@@ -21,11 +21,16 @@ from nvflare.apis.filter import Filter
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
 from nvflare.app_common.executors.script_executor import ScriptExecutor
+from nvflare.app_common.executors.script_launcher_executor import ScriptLauncherExecutor
+from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
+from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
+from nvflare.app_common.widgets.metric_relay import MetricRelay
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
 from nvflare.fuel.utils.import_utils import optional_import
+from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 from nvflare.fuel.utils.validation_utils import check_positive_int
 from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig, ServerAppConfig
 from nvflare.job_config.fed_job_config import FedJobConfig
@@ -222,6 +227,41 @@ class FedJob:
             if isinstance(obj, ScriptExecutor):
                 external_scripts = [obj._task_script_path]
                 self._deploy_map[target].add_external_scripts(external_scripts)
+            if isinstance(obj, ScriptLauncherExecutor):
+                component = SubprocessLauncher(script=obj._launch_script)
+                self._deploy_map[target].app.add_component("launcher", component)
+
+                component = CellPipe(
+                    mode="PASSIVE",
+                    site_name="{SITE_NAME}",
+                    token="{JOB_ID}",
+                    root_url="{ROOT_URL}",
+                    secure_mode="{SECURE_MODE}",
+                    workspace_dir="{WORKSPACE}",
+                )
+                self._deploy_map[target].app.add_component("pipe", component)
+
+                component = CellPipe(
+                    mode="PASSIVE",
+                    site_name="{SITE_NAME}",
+                    token="{JOB_ID}",
+                    root_url="{ROOT_URL}",
+                    secure_mode="{SECURE_MODE}",
+                    workspace_dir="{WORKSPACE}",
+                )
+                self._deploy_map[target].app.add_component("metrics_pipe", component)
+
+                component = MetricRelay(
+                    pipe_id="metrics_pipe",
+                    event_type="fed.analytix_log_stats",
+                )
+                self._deploy_map[target].app.add_component("metric_relay", component)
+
+                component = ExternalConfigurator(
+                    component_ids=["metric_relay"],
+                )
+                self._deploy_map[target].app.add_component("config_preparer", component)
+
             if target not in self.clients:
                 self.clients.append(target)
             if gpu is not None:
