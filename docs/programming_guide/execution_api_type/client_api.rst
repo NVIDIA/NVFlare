@@ -180,7 +180,7 @@ training systems, the in-process executor is preferable (when available).
 Sub-process Client API
 ----------------------
 
-On the other hand, the LauncherExecutor employs a sub-process to execute training script, leading to the client executor
+On the other hand, the LauncherExecutor employs the SubprocessLauncher to use a sub-process to execute the training script. This results in the client executor
 and training script residing in separate processes. The "launch_once" option is provided to the SubprocessLauncher to control
 whether to launch the external script everytime when getting the task from server, or just launch the script once at the event
 of START_RUN and keeps running till the END_RUN event. Communication between them is facilitated by either CellPipe

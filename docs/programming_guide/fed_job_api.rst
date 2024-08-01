@@ -104,19 +104,23 @@ Assign objects with :func:`to<nvflare.job_config.fed_job.FedJob.to>` for a speci
 
 These functions have the following parameters which are used depending on the type of object:
 
-* ``obj`` (any): The object to be assigned. The obj will be given a default id if non is provided based on its type.
+* ``obj`` (any): The object to be assigned. The obj will be given a default id if none is provided based on its type.
 * ``target`` (str): (For :func:`to<nvflare.job_config.fed_job.FedJob.to>`) The target location of the object. Can be “server” or a client name, e.g. “site-1”.
 * ``tasks`` (List[str]): If object is an Executor or Filter, optional list of tasks that should be handled. Defaults to None. If None, all tasks will be handled using [*].
 * ``gpu`` (int | List[int]): GPU index or list of GPU indices used for simulating the run on that target.
 * ``filter_type`` (FilterType): The type of filter used. Either FilterType.TASK_RESULT or FilterType.TASK_DATA.
 * ``id`` (int): Optional user-defined id for the object. Defaults to None and ID will automatically be assigned.
 
+.. note::
+
+    In order for the FedJob to use the values of arguments passed into the ``obj``, the arguments must be set as instance variables of the same name (or prefixed with ``_``) in the constructor.
+
 Below we cover in-depth how different types of objects are handled when using :func:`to<nvflare.job_config.fed_job.FedJob.to>`:
 
 Controller
 ----------
 
-If the object is a :class:`Controller<nvflare.apis.impl.controller.Controller>`, the controller is added to the server app workflows.
+If the object is a :class:`Controller<nvflare.apis.impl.controller.Controller>` sent to the server, the controller is added to the server app workflows.
 
 * If the ``key_metric`` is defined in the FedJob (see initialization), an :class:`IntimeModelSelector<nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector>` widget will be added for best model selection.
 * A :class:`ValidationJsonGenerator<nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator>` is automatically added for creating json validation results.
@@ -132,15 +136,19 @@ Example:
   )
   job.to(controller, "server")
 
+If the object is a :class:`Controller<nvflare.apis.impl.controller.Controller>` sent to a client, the controller is added to the client app components as a client-side controller.
+The controller can then be used by the :class:`ClientControllerExecutor<nvflare.app_common.ccwf.client_controller_executor.ClientControllerExecutor>`.
+
 
 Executor
 --------
 
-If the object is an :class:`Executor<nvflare.apis.executor.Executor>`, the executor is added to the client app executors.
+If the object is an :class:`Executor<nvflare.apis.executor.Executor>`, it must be sent to a client. The executor is added to the client app executors.
 
 * The ``tasks`` parameter specifies the tasks that the executor is defined the handle.
 * The ``gpu`` parameter specifies which gpus to use for simulating the run on the target.
 * If the object is a :class:`ScriptExecutor<nvflare.app_common.executors.script_executor.ScriptExecutor>`, the task_script_path will be added to the external scripts to be included in the custom directory.
+* If the object is a :class:`ScriptLauncherExecutor<nvflare.app_common.executors.script_launcher_executor.ScriptLauncherExecutor>`, the launch_script will be launched in a subprocess. Corresponding :class:`SubprocessLauncher<nvflare.app_common.launchers.subprocess_launcher.SubprocessLauncher>`, :class:`CellPipe<nvflare.fuel.utils.pipe.cell_pipe.CellPipe>`, :class:`MetricRelay<nvflare.app_common.widgets.metric_relay.MetricRelay>`, and :class:`ExternalConfigurator<nvflare.app_common.widgets.external_configurator.ExternalConfigurator>` components will be automatically configured.
 * The :class:`ConvertToFedEvent<nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent>` widget is automatically added to convert local events to federated events.
 
 Example:

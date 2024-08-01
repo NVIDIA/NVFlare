@@ -145,7 +145,7 @@ class FedJob:
         """assign an `obj` to a target (server or clients).
 
         Args:
-            obj: The object to be assigned. The obj will be given a default `id` if non is provided based on its type.
+            obj: The object to be assigned. The obj will be given a default `id` if none is provided based on its type.
             target: The target location of the object. Can be "server" or a client name, e.g. "site-1".
             tasks: In case object is an `Executor` or `Filter`, optional list of tasks that should be handled.
                 Defaults to `None`. If `None`, all tasks will be handled using `[*]`.
@@ -161,7 +161,7 @@ class FedJob:
         if isinstance(obj, Controller):
             if target != "server":  # add client-side controllers as components
                 if target not in self._deploy_map:
-                    raise ValueError(f"{target} doesn't have an `Executor`. Deploy one first before adding components!")
+                    raise ValueError(f"{target} doesn't have an `Executor`. Deploy one first before adding client-side controllers!")
                 self._deploy_map[target].add_component(obj, id)
             else:
                 if target not in self._deploy_map:
