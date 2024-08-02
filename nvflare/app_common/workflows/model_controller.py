@@ -103,7 +103,7 @@ class ModelController(BaseModelController, ABC):
             callback=callback,
         )
 
-    def load_model(self):
+    def load_model(self) -> FLModel:
         """Load initial model from persistor. If persistor is not configured, returns empty FLModel.
 
         Returns:
@@ -111,7 +111,7 @@ class ModelController(BaseModelController, ABC):
         """
         return super().load_model()
 
-    def save_model(self, model: FLModel):
+    def save_model(self, model: FLModel) -> None:
         """Saves model with persistor. If persistor is not configured, does not save.
 
         Args:
@@ -122,12 +122,12 @@ class ModelController(BaseModelController, ABC):
         """
         super().save_model(model)
 
-    def sample_clients(self, num_clients=None):
+    def sample_clients(self, num_clients: int = None) -> List[str]:
         """Returns a list of `num_clients` clients.
 
         Args:
             num_clients: number of clients to return. If None or > number available clients, returns all available clients. Defaults to None.
 
-        Returns: list of clients.
+        Returns: list of clients names.
         """
         return super().sample_clients(num_clients)

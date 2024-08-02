@@ -31,16 +31,28 @@ class MetricsSender(AnalyticsSender):
         read_interval: float = 0.1,
         heartbeat_interval: float = 5.0,
         heartbeat_timeout: float = 30.0,
-        topic: str = "metrics",
         pipe_channel_name=PipeChannelName.METRIC,
     ):
+        """MetricsSender is a special type of AnalyticsSender that uses `Pipe` to communicate.
+
+        Args:
+            pipe_id (str): Identifier for obtaining the Pipe from NVFlare components.
+            read_interval (float): Interval for reading from the pipe.
+            heartbeat_interval (float): Interval for sending heartbeat to the peer.
+            heartbeat_timeout (float): Timeout for waiting for a heartbeat from the peer.
+            pipe_channel_name: the channel name for sending task requests.
+
+        Note:
+            Users can use MetricsSender with `FilePipe`, `CellPipe`, or any other customize
+            `Pipe` class.
+
+        """
         super().__init__()
         self._pipe_id = pipe_id
         self._read_interval = read_interval
         self._heartbeat_interval = heartbeat_interval
         self._heartbeat_timeout = heartbeat_timeout
         self._pipe_handler = None
-        self._topic = topic
         self._pipe_channel_name = pipe_channel_name
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
@@ -64,5 +76,5 @@ class MetricsSender(AnalyticsSender):
 
     def add(self, tag: str, value: Any, data_type: AnalyticsDataType, **kwargs):
         data = create_analytic_dxo(tag=tag, value=value, data_type=data_type, **kwargs)
-        req = Message.new_request(topic=self._topic, data=data)
+        req = Message.new_request(topic="_metrics_sender", data=data)
         self._pipe_handler.send_to_peer(req)

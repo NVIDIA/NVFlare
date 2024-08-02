@@ -83,7 +83,7 @@ class TestOverseer:
             oa_launcher.stop_overseer()
             time.sleep(10)
             oa_launcher.start_overseer()
-            time.sleep(10)
+            time.sleep(20)
             for client_agent in client_agent_list:
                 psp = oa_launcher.get_primary_sp(client_agent)
                 assert psp.name == "server00"

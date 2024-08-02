@@ -98,6 +98,9 @@ class _RequestReceiver:
         self.replying = False
 
     def process(self, request: Shareable, fl_ctx: FLContext) -> Shareable:
+        if not ReliableMessage.is_available():
+            return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
+
         self.tx_id = request.get_header(HEADER_TX_ID)
         op = request.get_header(HEADER_OP)
         peer_ctx = fl_ctx.get_peer_context()
@@ -111,9 +114,14 @@ class _RequestReceiver:
                 self.tx_timeout = request.get_header(HEADER_TX_TIMEOUT)
 
                 # start processing
-                ReliableMessage.debug(fl_ctx, f"started processing request of topic {self.topic}")
-                self.executor.submit(self._do_request, request, fl_ctx)
-                return _status_reply(STATUS_IN_PROCESS)  # ack
+                ReliableMessage.info(fl_ctx, f"started processing request of topic {self.topic}")
+                try:
+                    self.executor.submit(self._do_request, request, fl_ctx)
+                    return _status_reply(STATUS_IN_PROCESS)  # ack
+                except Exception as ex:
+                    # it is possible that the RM is already closed (self.executor is shut down)
+                    ReliableMessage.error(fl_ctx, f"failed to submit request: {secure_format_exception(ex)}")
+                    return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
             elif self.result:
                 # we already finished processing - send the result back
                 ReliableMessage.info(fl_ctx, "resend result back to requester")
@@ -169,6 +177,8 @@ class _RequestReceiver:
             # release the receiver kept by the ReliableMessage!
             ReliableMessage.release_request_receiver(self, fl_ctx)
         else:
+            # unsure whether the reply was sent successfully
+            # do not release the request receiver in case the requester asks for result in a query
             ReliableMessage.error(
                 fl_ctx, f"failed to send reply in {time_spent} secs: {rc=}; will wait for requester to query"
             )
@@ -192,6 +202,8 @@ class _RequestReceiver:
 
 
 class _ReplyReceiver:
+    """This class handles reliable message replies on the sending end"""
+
     def __init__(self, tx_id: str, per_msg_timeout: float, tx_timeout: float):
         self.tx_id = tx_id
         self.tx_start_time = time.time()
@@ -426,6 +438,21 @@ class ReliableMessage:
         cls._logger.error(cls._log_msg(fl_ctx, msg))
 
     @classmethod
+    def is_available(cls):
+        """Return whether the ReliableMessage service is available
+
+        Returns:
+
+        """
+        if cls._shutdown_asked:
+            return False
+
+        if not cls._enabled:
+            return False
+
+        return True
+
+    @classmethod
     def debug(cls, fl_ctx: FLContext, msg: str):
         cls._logger.debug(cls._log_msg(fl_ctx, msg))
 
@@ -614,7 +641,7 @@ class ReliableMessage:
                 fl_ctx=fl_ctx,
             )
 
-            # Ignore query result if result is already received
+            # Ignore query result if reply result is already received
             if receiver.result_ready.is_set():
                 return receiver.result
 
