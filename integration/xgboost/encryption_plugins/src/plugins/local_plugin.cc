@@ -55,7 +55,7 @@ void LocalPlugin::SyncEncryptedGPairs(const std::uint8_t *in_gpair, std::size_t 
                                       const std::uint8_t **out_gpair, std::size_t *out_n_bytes) {
   if (debug_) {
     std::cout << Ident() << " LocalPlugin::SyncEncryptedGPairs called with buffer:" << std::endl;
-    print_buffer(const_cast<uint8_t *>(in_gpair), n_bytes);
+    print_buffer(in_gpair, n_bytes);
   }
 
   *out_n_bytes = n_bytes;
@@ -92,6 +92,7 @@ void LocalPlugin::BuildEncryptedHistHori(const double *in_histogram, std::size_t
                                          std::size_t *out_len) {
   if (debug_) {
     std::cout << Ident() << " LocalPlugin::BuildEncryptedHistHori called with " << len << " entries" << std::endl;
+    print_buffer(reinterpret_cast<const uint8_t*>(in_histogram), len);
   }
 
   // don't have a local implementation yet, just encoded it and let NVFlare handle it.
@@ -106,12 +107,17 @@ void LocalPlugin::BuildEncryptedHistHori(const double *in_histogram, std::size_t
 
   *out_hist = buffer_.data();
   *out_len = buffer_.size();
+  if (debug_) {
+    std::cout << "Output buffer" << std::endl;
+    print_buffer(*out_hist, *out_len);
+  }
 }
 
 void LocalPlugin::SyncEncryptedHistHori(const std::uint8_t *buffer, std::size_t len, double **out_hist,
                                         std::size_t *out_len) {
   if (debug_) {
     std::cout << Ident() << " LocalPlugin::SyncEncryptedHistHori called with buffer size: " << len << std::endl;
+    print_buffer(buffer, len);
   }
 
   // No local implementation yet, just decode data from NVFlare
@@ -131,6 +137,11 @@ void LocalPlugin::SyncEncryptedHistHori(const std::uint8_t *buffer, std::size_t 
   histo_ = decoder.DecodeFloatArray();
   *out_hist = histo_.data();
   *out_len = histo_.size();
+
+  if (debug_) {
+    std::cout << "Output buffer" << std::endl;
+    print_buffer(reinterpret_cast<const uint8_t*>(*out_hist), histo_.size() * sizeof(double));
+  }
 }
 
 void LocalPlugin::BuildEncryptedHistVert(const std::uint64_t **ridx, const std::size_t *sizes, const std::int32_t *nidx,
@@ -143,6 +154,11 @@ void LocalPlugin::BuildEncryptedHistVert(const std::uint64_t **ridx, const std::
     BuildEncryptedHistVertPassive(ridx, sizes, nidx, len, out_hist, out_len);
   } else {
     BuildEncryptedHistVertActive(ridx, sizes, nidx, len, out_hist, out_len);
+  }
+
+  if (debug_) {
+    std::cout << "Encrypted histogram output:" << std::endl;
+    print_buffer(*out_hist, *out_len);
   }
 }
 
@@ -268,6 +284,7 @@ void LocalPlugin::SyncEncryptedHistVert(std::uint8_t *hist_buffer, std::size_t l
                                         double **out, std::size_t *out_len) {
   if (debug_) {
     std::cout << Ident() << " LocalPlugin::SyncEncryptedHistVert called with buffer size: " << len << " nodes" << std::endl;
+    print_buffer(hist_buffer, len);
   }
 
   auto remaining = len;
@@ -276,6 +293,9 @@ void LocalPlugin::SyncEncryptedHistVert(std::uint8_t *hist_buffer, std::size_t l
   *out = nullptr;
   *out_len = 0;
   if (gh_pairs_.empty()) {
+    if (debug_) {
+      std::cout << Ident() << " LocalPlugin::SyncEncryptedHistVert Do nothing for passive worker" << std::endl;
+    }
     // Do nothing for passive worker
     return;
   }
@@ -324,7 +344,7 @@ void LocalPlugin::SyncEncryptedHistVert(std::uint8_t *hist_buffer, std::size_t l
   }
 
   if (debug_) {
-    std::cout << "Decrypted result size: " << histo_.size() << std::endl;
+    std::cout << Ident() << " Decrypted result size: " << histo_.size() << std::endl;
   }
 
   // print_buffer(reinterpret_cast<uint8_t *>(result.data()), result.size()*8);

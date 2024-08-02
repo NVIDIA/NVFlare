@@ -21,6 +21,7 @@
 #include <vector>      // for vector
 #include <sstream>
 #include <iomanip>
+#include <unistd.h>
 
 #include "util.h"
 
@@ -47,7 +48,7 @@ public:
     std::stringstream ss;
     ss << std::hex << std::uppercase << std::setw(sizeof(void*) * 2) << std::setfill('0') <<
       reinterpret_cast<uintptr_t>(this);
-    return ss.str();
+    return ss.str() + "-" + std::to_string(getpid());
   }
 
   // Gradient pairs
