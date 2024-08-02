@@ -2,7 +2,6 @@
  * Copyright 2014-2024 by XGBoost Contributors
  */
 #include <iostream>
-#include <chrono>
 #include <algorithm>
 #include "local_plugin.h"
 #include "data_set_ids.h"
@@ -119,24 +118,34 @@ void LocalPlugin::SyncEncryptedHistHori(const std::uint8_t *buffer, std::size_t 
     std::cout << Ident() << " LocalPlugin::SyncEncryptedHistHori called with buffer size: " << len << std::endl;
     print_buffer(buffer, len);
   }
+  auto remaining = len;
+  auto pointer = buffer;
 
-  // No local implementation yet, just decode data from NVFlare
-  *out_hist = nullptr;
-  *out_len = 0;
-  DamDecoder decoder(const_cast<std::uint8_t *>(buffer), len, false, dam_debug_);
-  if (!decoder.IsValid()) {
-    std::cout << "Not DAM encoded buffer, ignored" << std::endl;
-    return;
+  // The buffer is concatenated by AllGather. It may contain multiple DAM buffers
+  std::vector<double>& result = histo_;
+  result.clear();
+  while (remaining > kPrefixLen) {
+    DamDecoder decoder(const_cast<std::uint8_t *>(pointer), remaining, false, dam_debug_);
+    if (!decoder.IsValid()) {
+      std::cout << "Not DAM encoded histogram ignored at offset: "
+                << static_cast<int>(pointer - buffer) << std::endl;
+      break;
+    }
+
+    if (decoder.GetDataSetId() != kDataSetHistogramResult) {
+      throw std::runtime_error{"Invalid dataset: " + std::to_string(decoder.GetDataSetId())};
+    }
+
+    auto size = decoder.Size();
+    auto histo = decoder.DecodeFloatArray();
+    result.insert(result.end(), histo.cbegin(), histo.cend());
+
+    remaining -= size;
+    pointer += size;
   }
 
-  if (decoder.GetDataSetId() != kDataSetHistogramResult) {
-    std::cout << "Invalid dataset for SyncEncryptedHistHori: " << decoder.GetDataSetId() << std::endl;
-    return;
-  }
-
-  histo_ = decoder.DecodeFloatArray();
-  *out_hist = histo_.data();
-  *out_len = histo_.size();
+  *out_hist = result.data();
+  *out_len = result.size();
 
   if (debug_) {
     std::cout << "Output buffer" << std::endl;
@@ -162,7 +171,7 @@ void LocalPlugin::BuildEncryptedHistVert(const std::uint64_t **ridx, const std::
   }
 }
 
-void LocalPlugin::BuildEncryptedHistVertActive(const std::uint64_t **ridx, const std::size_t *sizes, const std::int32_t *nidx,
+void LocalPlugin::BuildEncryptedHistVertActive(const std::uint64_t **ridx, const std::size_t *sizes, const std::int32_t *,
                                                std::size_t len, std::uint8_t **out_hist, std::size_t *out_len) {
 
   if (debug_) {
@@ -206,7 +215,7 @@ void LocalPlugin::BuildEncryptedHistVertActive(const std::uint64_t **ridx, const
   *out_len = size;
 }
 
-void LocalPlugin::BuildEncryptedHistVertPassive(const std::uint64_t **ridx, const std::size_t *sizes, const std::int32_t *nidx,
+void LocalPlugin::BuildEncryptedHistVertPassive(const std::uint64_t **ridx, const std::size_t *sizes, const std::int32_t *,
                                                 std::size_t len, std::uint8_t **out_hist, std::size_t *out_len) {
   if (debug_) {
     std::cout << Ident() << " LocalPlugin::BuildEncryptedHistVertPassive called with " << len << " nodes" << std::endl;
