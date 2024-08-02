@@ -63,3 +63,6 @@ for federated model evaluation.
 ```commandline
 python fedavg_model_learner_xsite_val_cifar10.py
 ```
+
+> [!NOTE]
+> More examples can be found at https://nvidia.github.io/NVFlare.

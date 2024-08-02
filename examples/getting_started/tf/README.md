@@ -184,3 +184,6 @@ same alpha setting.
 | cifar10_fedopt |	0.1 |	0.8145 |
 
 ![Impact of different FL algorithms](./figs/fedavg-diff-algos.png)
+
+> [!NOTE]
+> More examples can be found at https://nvidia.github.io/NVFlare.
