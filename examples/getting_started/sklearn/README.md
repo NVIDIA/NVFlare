@@ -1,7 +1,7 @@
 # Getting Started with NVFlare (scikit-learn)
 [![Scikit-Learn Logo](https://upload.wikimedia.org/wikipedia/commons/0/05/Scikit_learn_logo_small.svg)](https://scikit-learn.org/)
 
-We provide several examples to quickly get you started using NVFlare's Job API. 
+We provide examples to quickly get you started using NVFlare's Job API. 
 All examples in this folder are based on using [scikit-learn](https://scikit-learn.org/), a popular library for general machine learning with Python.
 
 ## Setup environment
