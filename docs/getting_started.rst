@@ -308,7 +308,7 @@ we can install these in the Python virtual environment by running:
 .. code-block:: shell
 
   source nvflare-env/bin/activate
-  python3 -m pip install -r simulator-example/requirements.txt
+  python3 -m pip install -r simulator-example/hello-pt/requirements.txt
 
 If using the Dockerfile above to run in a container, these dependencies have already been installed.
 
