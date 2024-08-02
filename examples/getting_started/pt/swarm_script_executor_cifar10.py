@@ -49,13 +49,10 @@ if __name__ == "__main__":
 
         # In swarm learning, each client acts also as an aggregator
         aggregator = InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS)
-        job.to(aggregator, f"site-{i}")
 
         # In swarm learning, each client uses a model persistor and shareable_generator
         persistor = PTFileModelPersistor(model=Net())
-        job.to(persistor, f"site-{i}")
-        shareable_generator = "shareable_generator"
-        job.to(SimpleModelShareableGenerator(), f"site-{i}")
+        shareable_generator = SimpleModelShareableGenerator()
 
         client_controller = SwarmClientController(
             aggregator_id=job.as_id(aggregator),
