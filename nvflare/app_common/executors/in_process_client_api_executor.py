@@ -17,11 +17,12 @@ from typing import Optional
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
-from nvflare.apis.fl_constant import FLMetaKey, ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
+from nvflare.apis.workspace import Workspace
 from nvflare.app_common.abstract.params_converter import ParamsConverter
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
@@ -107,10 +108,11 @@ class InProcessClientAPIExecutor(Executor):
             self._fl_ctx = fl_ctx
             self._init_converter(fl_ctx)
 
+            workspace: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+            job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
+            custom_dir = workspace.get_app_custom_dir(job_id)
             self._task_fn_wrapper = TaskScriptRunner(
-                site_name=fl_ctx.get_identity_name(),
-                script_path=self._task_script_path,
-                script_args=self._task_script_args,
+                custom_dir=custom_dir, script_path=self._task_script_path, script_args=self._task_script_args
             )
 
             self._task_fn_thread = threading.Thread(target=self._task_fn_wrapper.run)

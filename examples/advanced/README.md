@@ -57,6 +57,8 @@ Please also install "./requirements.txt" in each example folder.
   * Example of gathering local image histogram to compute the global dataset histograms.
 * [Federated Statistics for DataFrame](./federated-statistics/df_stats/README.md)
   * Example of gathering local statistics summary from Pandas DataFrame to compute the global dataset statistics.
+* [Federated Hierarchical Statistics](./federated-statistics/hierarchical_stats/README.md)
+  * Example of generating federated hierarchical statistics for data that can be represented as Pandas DataFrame.
 
 ## Federated Policies
 * [Federated Policies](./federated-policies/README.rst) 

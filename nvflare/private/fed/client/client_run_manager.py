@@ -229,6 +229,19 @@ class ClientRunManager(ClientEngineExecutorSpec):
         else:
             return {}
 
+    def multicast_aux_requests(
+        self,
+        topic: str,
+        target_requests: Dict[str, Shareable],
+        timeout: float,
+        fl_ctx: FLContext,
+        optional: bool = False,
+        secure: bool = False,
+    ) -> dict:
+        return self.aux_runner.multicast_aux_requests(
+            topic, target_requests, timeout, fl_ctx, optional=optional, secure=secure
+        )
+
     def get_all_clients_from_server(self, fl_ctx, retry=0):
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
         get_clients_message = new_cell_message({CellMessageHeaderKeys.JOB_ID: job_id}, {})

@@ -35,6 +35,7 @@ class CommandCtxKey(object):
     CUSTOM_PROPS = "custom_props"
     BYTES_RECEIVER = "bytes_receiver"
     BYTES_SENDER = "bytes_sender"
+    CMD_PROPS = "cmd_props"
 
 
 class SendBytesToServer(ABC):
@@ -121,6 +122,12 @@ class CommandContext(SimpleContext):
 
     def get_custom_props(self):
         return self.get_prop(CommandCtxKey.CUSTOM_PROPS)
+
+    def set_command_props(self, value):
+        self.set_prop(CommandCtxKey.CMD_PROPS, value)
+
+    def get_command_props(self):
+        return self.get_prop(CommandCtxKey.CMD_PROPS)
 
 
 class ApiPocValue(object):

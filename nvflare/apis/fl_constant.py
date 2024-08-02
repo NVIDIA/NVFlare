@@ -42,7 +42,6 @@ class ReturnCode(object):
     EARLY_TERMINATION = "EARLY_TERMINATION"
     SERVER_NOT_READY = "SERVER_NOT_READY"
     SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
-    EARLY_TERMINATION = "EARLY_TERMINATION"
 
 
 class MachineStatus(Enum):
@@ -229,6 +228,7 @@ class AdminCommandNames(object):
     SHELL_HEAD = "head"
     SHELL_TAIL = "tail"
     SHELL_GREP = "grep"
+    APP_COMMAND = "app_command"
 
 
 class ServerCommandNames(object):
@@ -246,6 +246,7 @@ class ServerCommandNames(object):
     UPDATE_RUN_STATUS = "update_run_status"
     HANDLE_DEAD_JOB = "handle_dead_job"
     SERVER_STATE = "server_state"
+    APP_COMMAND = "app_command"
 
 
 class ServerCommandKey(object):
@@ -475,6 +476,9 @@ class ConfigVarName:
     # customized nvflare decomposers module name
     DECOMPOSER_MODULE = "nvflare_decomposers"
 
+    # client and server: max amount of time to wait for communication cell to be created
+    CELL_WAIT_TIMEOUT = "cell_wait_timeout"
+
 
 class SystemVarName:
     """
@@ -489,6 +493,7 @@ class SystemVarName:
     JOB_ID = "JOB_ID"  # Job ID
     ROOT_URL = "ROOT_URL"  # the URL of the Service Provider (server)
     SECURE_MODE = "SECURE_MODE"  # whether the system is running in secure mode
+    JOB_CUSTOM_DIR = "JOB_CUSTOM_DIR"  # custom dir of the job
 
 
 class RunnerTask:

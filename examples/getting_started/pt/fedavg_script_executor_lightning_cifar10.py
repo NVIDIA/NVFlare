@@ -25,7 +25,7 @@ if __name__ == "__main__":
 
     # Define the controller workflow and send to server
     controller = FedAvg(
-        min_clients=n_clients,
+        num_clients=n_clients,
         num_rounds=num_rounds,
     )
     job.to(controller, "server")

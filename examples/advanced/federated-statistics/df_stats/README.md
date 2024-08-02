@@ -50,12 +50,12 @@ With FL simulator, we can just run the example with CLI command
 
 ```
 cd NVFlare/examples/advanced/federated-statistics
-nvflare simulator df_stats/jobs/df_stats -w /tmp/nvflare/df_stats -n 2 -t 2
+nvflare simulator df_stats/jobs/df_stats -w /tmp/nvflare/workspace/df_stats -n 2 -t 2
 ```
 
 The results are stored in workspace "/tmp/nvflare"
 ```
-/tmp/nvflare/df_stats/simulate_job/statistics/adults_stats.json
+/tmp/nvflare/workspace/df_stats/simulate_job/statistics/adults_stats.json
 ```
 
 ## 3. Visualization
@@ -66,7 +66,7 @@ The results are stored in workspace "/tmp/nvflare"
    assuming NVFLARE_HOME env variable point to the GitHub project location (NVFlare) which contains current example. 
 
 ```bash
-    cp /tmp/nvflare/df_stats/simulate_job/advanced/statistics/adults_stats.json $NVFLARE_HOME/examples/advanced/federated-statistics/df_stats/demo/.
+    cp /tmp/nvflare/workspace/df_stats/simulate_job/advanced/statistics/adults_stats.json $NVFLARE_HOME/examples/advanced/federated-statistics/df_stats/demo/.
     
     cd $NVFLARE_HOME/examples/advanced/federated-statistics/df_stats/demo
     

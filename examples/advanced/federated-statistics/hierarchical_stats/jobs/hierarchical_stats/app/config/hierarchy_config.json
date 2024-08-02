@@ -1,0 +1,16 @@
+{
+  "States": [
+    {
+      "Name": "state-1",
+      "universities": ["university-1", "university-2"]
+    },
+    {
+      "Name": "state-2",
+      "universities": ["university-3", "university-4", "university-5"]
+    },
+    {
+      "Name": "state-3",
+      "universities": ["university-6", "university-7"]
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 {
   "format_version": 2,
 
-  "min_clients": 1,
+  "num_clients": 1,
   "num_rounds": 1,
 
   "server": {
@@ -43,7 +43,7 @@
           "id": "fedavg_ctl",
           "name": "FedAvg",
           "args": {
-              "min_clients": "{min_clients}",
+              "num_clients": "{num_clients}",
               "num_rounds": "{num_rounds}",
               "persistor_id": "persistor"
           }

@@ -19,7 +19,7 @@ class Cyclic(ModelController):
     def __init__(
         self,
         *args,
-        min_clients: int = 2,
+        num_clients: int = 2,
         num_rounds: int = 5,
         start_round: int = 0,
         **kwargs,
@@ -27,13 +27,13 @@ class Cyclic(ModelController):
         """The Cyclic ModelController to implement the Cyclic Weight Transfer (CWT) algorithm.
 
         Args:
-            min_clients (int, optional): The minimum number of clients. Defaults to 2.
+            num_clients (int, optional): The number of clients. Defaults to 2.
             num_rounds (int, optional): The total number of training rounds. Defaults to 5.
             start_round (int, optional): The starting round number. Defaults to 0
         """
         super().__init__(*args, **kwargs)
 
-        self.min_clients = min_clients
+        self.num_clients = num_clients
         self.num_rounds = num_rounds
         self.start_round = start_round
         self.current_round = None
@@ -49,7 +49,7 @@ class Cyclic(ModelController):
             self.info(f"Round {self.current_round} started.")
             model.current_round = self.current_round
 
-            clients = self.sample_clients(self.min_clients)
+            clients = self.sample_clients(self.num_clients)
 
             for client in clients:
                 result = self.send_model_and_wait(targets=[client], data=model)[0]

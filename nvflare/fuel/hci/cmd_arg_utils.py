@@ -30,6 +30,26 @@ def split_to_args(line: str) -> List[str]:
         return line.split(" ")
 
 
+def parse_command_line(line: str) -> (str, List[str], str):
+    """Parse the command line and extract command args and command props, if any
+
+    Args:
+        line:
+
+    Returns:
+
+    """
+    if '"' in line:
+        return line, shlex.split(line), None
+    else:
+        # cmd props are after "#"
+        parts = line.split("#", maxsplit=1)
+        line = parts[0].strip()
+        props = parts[1] if len(parts) > 1 else None
+        line = re.sub(" +", " ", line)
+        return line, line.split(" "), props
+
+
 def join_args(segs: List[str]) -> str:
     result = ""
     sep = ""

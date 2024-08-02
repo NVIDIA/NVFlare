@@ -68,12 +68,6 @@ The final folder structure under `JOB_NAME` will be:
 ```
 
 
-The logging.conf inside the bundle will overwrite the logger behavior, so let's remove it:
-
-```
-rm ./${JOB_NAME}/app/config/spleen_ct_segmentation/configs/logging.conf
-```
-
 ## 2. Download the data
 
 Download the spleen CT data from the [MSD challenge](http://medicaldecathlon.com/) and update data path.
@@ -166,17 +160,17 @@ Experiment tracking for the FLARE-MONAI integration now uses `NVFlareStatsHandle
 
 In this example, the `spleen_ct_segmentation_local` job is configured to automatically log metrics to MLflow through the FL server.
 
-- The `config_fed_client.json` contains the `NVFlareStatsHandler`, `MetricsSender`, and `MetricRelay` (with their respective pipes) to send the metrics to the server side as federated events.
-- Then in `config_fed_server.json`, the `MLflowReceiver` is configured for the server to write the results to the default MLflow tracking server URI.
+- The `config_fed_client.conf` contains the `NVFlareStatsHandler`, `MetricsSender`, and `MetricRelay` (with their respective pipes) to send the metrics to the server side as federated events.
+- Then in `config_fed_server.conf`, the `MLflowReceiver` is configured for the server to write the results to the MLflow tracking server URI `http://127.0.0.1:5000`.
 
-With this configuration the MLflow tracking server must be started before running the job:
+We need to start MLflow tracking server before running this job:
 
 ```
 mlflow server
 ```
 
 > **_NOTE:_** The receiver on the server side can be easily configured to support other experiment tracking formats.
-  In addition to the `MLflowReceiver`, the `WandBReceiver` and `TBAnalyticsReceiver` can also be used in `config_fed_server.json` for Tensorboard and Weights & Biases experiment tracking streaming to the server.
+  In addition to the `MLflowReceiver`, the `WandBReceiver` and `TBAnalyticsReceiver` can also be used in `config_fed_server.conf` for Tensorboard and Weights & Biases experiment tracking streaming to the server.
 
 Next, we can submit the job.
 
@@ -225,10 +219,16 @@ nvflare job submit -j jobs/spleen_ct_segementation_he
 
 ### 5.4 MLflow experiment tracking results
 
-To view the results, you can access the MLflow dashboard in your browser using the default tracking uri `http://127.0.0.1:5000`.
-
-> **_NOTE:_** To write the results to the server workspace instead of using the MLflow server, users can remove the `tracking_uri` argument from the `MLflowReceiver` configuration and instead view the results by running `mlflow ui --port 5000` in the directory that contains the `mlruns/` directory in the server workspace.
+To view the results, you can access the MLflow dashboard in your browser using the tracking uri `http://127.0.0.1:5000`.
 
 Once the training is started, you can see the experiment curves for the local clients in the current run on the MLflow dashboard.
 
 ![MLflow dashboard](./mlflow.png)
+
+
+> **_NOTE:_** If you prefer not to start the MLflow server before federated training,
+> you can alternatively choose to write the metrics streaming results to the server's
+> job workspace directory. Remove the tracking_uri argument from the MLflowReceiver
+> configuration. After the job finishes, download the server job workspace and unzip it.
+> You can view the results by running mlflow ui --port 5000 in the directory containing
+> the mlruns/ directory within the server job workspace.
