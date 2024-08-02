@@ -14,15 +14,14 @@
 
 
 import argparse
-import numpy as np
 
+import numpy as np
 import tensorflow as tf
-from tensorflow.keras import datasets, callbacks, losses, ops
+from tensorflow.keras import datasets, losses
 from tf_net import ModerateTFNet
 
 # (1) import nvflare client API
 import nvflare.client as flare
-
 
 PATH = "./tf_model.weights.h5"
 
@@ -70,21 +69,22 @@ def preprocess_dataset(dataset, is_training, batch_size=1):
         # Padding each dimension by 4 pixels each side
         dataset = dataset.map(
             lambda image, label: (
-                tf.stack([tf.pad(tf.squeeze(t, [2]), [[4, 4], [4, 4]], mode='REFLECT')
-                          for t in tf.split(image, num_or_size_splits=3, axis=2)], axis=2), label)
+                tf.stack(
+                    [
+                        tf.pad(tf.squeeze(t, [2]), [[4, 4], [4, 4]], mode="REFLECT")
+                        for t in tf.split(image, num_or_size_splits=3, axis=2)
+                    ],
+                    axis=2,
+                ),
+                label,
+            )
         )
         # Random crop of 32 x 32 x 3
-        dataset = dataset.map(
-            lambda image, label: (tf.image.random_crop(image, size=(32, 32, 3)), label)
-        )
+        dataset = dataset.map(lambda image, label: (tf.image.random_crop(image, size=(32, 32, 3)), label))
         # Random horizontal flip
-        dataset = dataset.map(
-            lambda image, label: (tf.image.random_flip_left_right(image), label)
-        )
+        dataset = dataset.map(lambda image, label: (tf.image.random_flip_left_right(image), label))
         # Normalize by dividing by given mean & std
-        dataset = dataset.map(
-            lambda image, label: ((tf.cast(image, tf.float32) - mean_cifar10) / std_cifar10, label)
-        )
+        dataset = dataset.map(lambda image, label: ((tf.cast(image, tf.float32) - mean_cifar10) / std_cifar10, label))
         # Random shuffle
         dataset = dataset.shuffle(len(dataset), reshuffle_each_iteration=True)
         # Convert to batches.
@@ -100,21 +100,9 @@ def preprocess_dataset(dataset, is_training, batch_size=1):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--batch_size",
-        type=int,
-        required=True
-    )
-    parser.add_argument(
-        "--epochs",
-        type=int,
-        required=True
-    )
-    parser.add_argument(
-        "--train_idx_path",
-        type=str,
-        required=True
-    )
+    parser.add_argument("--batch_size", type=int, required=True)
+    parser.add_argument("--epochs", type=int, required=True)
+    parser.add_argument("--train_idx_path", type=str, required=True)
     args = parser.parse_args()
 
     (train_images, train_labels), (test_images, test_labels) = datasets.cifar10.load_data()
@@ -131,8 +119,10 @@ def main():
 
         unq, unq_cnt = np.unique(train_labels, return_counts=True)
         print(
-            (f"Loaded {len(train_idx)} training indices from {args.train_idx_path} "
-             "with label distribution:\nUnique labels: {unq}\nUnique Counts: {unq_cnt}")
+            (
+                f"Loaded {len(train_idx)} training indices from {args.train_idx_path} "
+                "with label distribution:\nUnique labels: {unq}\nUnique Counts: {unq_cnt}"
+            )
         )
 
     # Convert training & testing data to datasets
@@ -154,9 +144,7 @@ def main():
     # Define loss function.
     loss = losses.SparseCategoricalCrossentropy(from_logits=True)
 
-    model.compile(
-        optimizer=tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.9), loss=loss, metrics=["accuracy"]
-    )
+    model.compile(optimizer=tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.9), loss=loss, metrics=["accuracy"])
     model.summary()
 
     # (2) initializes NVFlare client API
@@ -184,7 +172,7 @@ def main():
             f"Accuracy of the received model on round {input_model.current_round} on the {len(test_images)} test images: {test_global_acc * 100} %"
         )
 
-        start_epoch = args.epochs*input_model.current_round
+        start_epoch = args.epochs * input_model.current_round
         end_epoch = start_epoch + args.epochs
 
         print(f"Train from epoch {start_epoch} to {end_epoch}")
@@ -194,7 +182,7 @@ def main():
             validation_data=test_ds,
             callbacks=callbacks,
             initial_epoch=start_epoch,
-            validation_freq=1
+            validation_freq=1,
         )
 
         print("Finished Training")
