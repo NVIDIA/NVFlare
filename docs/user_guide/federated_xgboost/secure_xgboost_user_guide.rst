@@ -37,7 +37,13 @@ It requires XGBoost 2.2 or above, which can be installed using this command,
 
 .. code-block:: bash
 
-	pip install xgboost
+	pip install "xgboost>=2.2"
+
+or if XGBoost 2.2 is not released yet, use
+
+.. code-block:: bash
+
+    pip install xgboost --extra-index-url https://s3-us-west-2.amazonaws.com/xgboost-nightly-builds/list.html?prefix=federated-secure/
 
 ``TenSEAL`` package is needed for horizontal secure training,
 
@@ -162,7 +168,8 @@ The plugin can be configured in the ``local/resources.json`` file on clients:
     {
         "federated_plugin": {
             "name": "nvflare",
-            "path": "/tmp/libnvflare.so"
+            "path": "/tmp/libnvflare.so",
+            "debug": "false"
         }
     }
 
