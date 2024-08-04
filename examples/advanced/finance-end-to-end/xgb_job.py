@@ -14,14 +14,14 @@
 
 import argparse
 
+from nvflare import FedJob
+from nvflare.app_opt.xgboost.histogram_based_v2.fed_controller import XGBFedController
+from nvflare.app_opt.xgboost.histogram_based_v2.fed_executor import FedXGBHistogramExecutor
 from xgb_data_loader import CreditCardDataLoader
 
-from nvflare import FedJob
 
-# from nvflare.app_opt.xgboost.histogram_based_v2.fed_controller import XGBFedController
-# from nvflare.app_opt.xgboost.histogram_based_v2.fed_executor import FedXGBHistogramExecutor
-from nvflare.app_opt.xgboost.histogram_based.controller import XGBFedController
-from nvflare.app_opt.xgboost.histogram_based.executor import FedXGBHistogramExecutor
+# from nvflare.app_opt.xgboost.histogram_based.controller import XGBFedController
+# from nvflare.app_opt.xgboost.histogram_based.executor import FedXGBHistogramExecutor
 
 
 def main():
@@ -47,17 +47,17 @@ def main():
     job = FedJob(name=job_name)
 
     # Define the controller workflow and send to server
-    controller = XGBFedController()
+    controller = XGBFedController(
+        num_rounds=num_rounds,
+        training_mode="horizontal",
+        xgb_params=xgb_params,
+        xgb_options={"early_stopping_rounds": early_stopping_rounds},
+    )
     job.to(controller, "server")
 
     # Add clients
     for site_name in site_names:
-        executor = FedXGBHistogramExecutor(
-            num_rounds=num_rounds,
-            early_stopping_rounds=early_stopping_rounds,
-            xgb_params=xgb_params,
-            data_loader_id="data_loader",
-        )
+        executor = FedXGBHistogramExecutor(data_loader_id="data_loader")
         job.to(executor, site_name, gpu=0)
         data_loader = CreditCardDataLoader(root_dir=root_dir, file_postfix=file_postfix)
         job.to(data_loader, site_name, id="data_loader")
