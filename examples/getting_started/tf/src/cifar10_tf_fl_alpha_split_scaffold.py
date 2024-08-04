@@ -24,9 +24,9 @@ from tf_net import ModerateTFNet
 # (1) import nvflare client API
 import nvflare.client as flare
 from nvflare.app_common.app_constant import AlgorithmConstants
+from nvflare.app_opt.tf.fedprox_loss import TFFedProxLoss
 from nvflare.app_opt.tf.scaffold import ScaffoldCallback, TFScaffoldHelper, get_lr_values
 from nvflare.client.tracking import SummaryWriter
-from nvflare.app_opt.tf.fedprox_loss import TFFedProxLoss
 
 PATH = "./tf_model.weights.h5"
 
@@ -199,14 +199,13 @@ def main():
             model.get_layer(k).set_weights(v)
 
         if args.fedprox_mu > 0:
-    
+
             local_model_weights = model.trainable_variables
             global_model_weights = copy.deepcopy(model.trainable_variables)
             model.loss = TFFedProxLoss(local_model_weights, global_model_weights, args.fedprox_mu, loss)
         elif args.fedprox_mu < 0.0:
 
             raise ValueError("mu should be no less than 0.0")
-    
 
         # (step 4) load regularization parameters from scaffold
         global_ctrl_weights = input_model.meta.get(AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL)

@@ -34,8 +34,6 @@ SCAFFOLD_ALGO = "scaffold"
 FEDPROX_ALGO = "fedprox"
 
 
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(

@@ -72,10 +72,6 @@ class FedOpt(FedAvg):
         try:
             if "args" not in self.optimizer_args:
                 self.optimizer_args["args"] = {}
-<<<<<<< HEAD
-            # self.optimizer_args["args"]["params"] = self.keras_model.parameters()
-=======
->>>>>>> upstream/main
             self.optimizer = self.build_component(self.optimizer_args)
         except Exception as e:
             error_msg = f"Exception while constructing optimizer: {secure_format_exception(e)}"
