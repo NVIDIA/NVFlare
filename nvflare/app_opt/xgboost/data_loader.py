@@ -14,14 +14,14 @@
 
 
 from abc import ABC, abstractmethod
-from typing import Tuple
+from typing import Tuple, Optional
 
 import xgboost as xgb
 
 
 class XGBDataLoader(ABC):
     @abstractmethod
-    def load_data(self, client_id: str) -> Tuple[xgb.DMatrix, xgb.DMatrix]:
+    def load_data(self, client_id: str, training_mode: Optional[str] = "h") -> Tuple[xgb.DMatrix, xgb.DMatrix]:
         """Loads data for xgboost.
 
         Returns:

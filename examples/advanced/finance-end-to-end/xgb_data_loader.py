@@ -14,11 +14,13 @@
 
 
 import os
+from typing import Optional
 
 import pandas as pd
 import xgboost as xgb
 
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
+from nvflare.app_opt.xgboost.histogram_based_v2.defs import TRAINING_MODE_MAPPING
 
 
 class CreditCardDataLoader(XGBDataLoader):
@@ -42,7 +44,7 @@ class CreditCardDataLoader(XGBDataLoader):
             "x3_y2",
         ]
 
-    def load_data(self, client_id: str):
+    def load_data(self, client_id: str, training_mode: Optional[str] = "h"):
         data = {}
         for ds_name in self.dataset_names:
             print("\nloading for site = ", client_id, f"{ds_name} dataset \n")
@@ -55,12 +57,17 @@ class CreditCardDataLoader(XGBDataLoader):
             x = df[self.numerical_columns]
             data[ds_name] = (x, y, data_num)
 
+        if training_mode not in TRAINING_MODE_MAPPING:
+            raise ValueError(f"Invalid training_mode: {training_mode}")
+
+        data_split_mode = TRAINING_MODE_MAPPING[training_mode]
+
         # training
         x_train, y_train, total_train_data_num = data["train"]
-        dmat_train = xgb.DMatrix(x_train, label=y_train)
+        dmat_train = xgb.DMatrix(x_train, label=y_train, data_split_mode=data_split_mode)
 
         # validation
         x_valid, y_valid, total_valid_data_num = data["test"]
-        dmat_valid = xgb.DMatrix(x_valid, label=y_valid)
+        dmat_valid = xgb.DMatrix(x_valid, label=y_valid, data_split_mode=data_split_mode)
 
         return dmat_train, dmat_valid

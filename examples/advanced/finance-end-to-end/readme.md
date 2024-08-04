@@ -289,8 +289,8 @@ def main():
     job = FedJob(name=job_name)
 
     # Define the controller workflow and send to server
-
-    controller = XGBFedController(
+    
+   controller = XGBFedController(
         num_rounds=num_rounds,
         training_mode="horizontal",
         xgb_params=xgb_params,
@@ -304,7 +304,6 @@ def main():
         job.to(executor, site_name, gpu=0)
         data_loader = CreditCardDataLoader(root_dir=root_dir, file_postfix=file_postfix)
         job.to(data_loader, site_name, id="data_loader")
-
     if work_dir:
         job.export_job(work_dir)
 
@@ -369,27 +368,29 @@ python xgb_job.py -c CHASUS33_JPMorgan_Chase HSBCHKHH_HSBC DEUTDEFF_Deutsche_Ban
 ```
 Here is the output of last 9th and 10th round of training (starting round = 0) 
 ```
+...
 
-[07:33:52] [8]	eval-auc:0.60359	train-auc:0.55790
-[07:33:52] [8]	eval-auc:0.60359	train-auc:0.55790
-[07:33:52] [8]	eval-auc:0.60359	train-auc:0.55790
-[07:33:52] [8]	eval-auc:0.60359	train-auc:0.55790
-[07:33:52] [8]	eval-auc:0.60359	train-auc:0.55790
-[07:33:52] [8]	eval-auc:0.60359	train-auc:0.55790
-[07:33:52] [8]	eval-auc:0.60359	train-auc:0.55790
-[07:33:52] [8]	eval-auc:0.60359	train-auc:0.55790
-[07:33:52] [8]	eval-auc:0.60359	train-auc:0.55790
-[07:33:52] [8]	eval-auc:0.60359	train-auc:0.55790
-[07:33:54] [9]	eval-auc:0.61461	train-auc:0.58750
-[07:33:54] [9]	eval-auc:0.61461	train-auc:0.58750
-[07:33:54] [9]	eval-auc:0.61461	train-auc:0.58750
-[07:33:54] [9]	eval-auc:0.61461	train-auc:0.58750
-[07:33:54] [9]	eval-auc:0.61461	train-auc:0.58750
-[07:33:54] [9]	eval-auc:0.61461	train-auc:0.58750
-[07:33:54] [9]	eval-auc:0.61461	train-auc:0.58750
-[07:33:54] [9]	eval-auc:0.61461	train-auc:0.58750
-[07:33:54] [9]	eval-auc:0.61461	train-auc:0.58750
-[07:33:54] [9]	eval-auc:0.61461	train-auc:0.58750
+[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
+[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
+[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
+[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
+[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
+[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
+[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
+[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
+[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
+[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
+
+[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
+[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
+[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
+[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
+[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
+[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
+[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
+[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
+[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
+[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
 [07:33:54] Finished training
 ```
 
