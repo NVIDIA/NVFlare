@@ -30,8 +30,10 @@ for device in gpu_devices:
 CENTRALIZED_ALGO = "centralized"
 FEDAVG_ALGO = "fedavg"
 FEDOPT_ALGO = "fedopt"
-FEDPROX_ALGO = "fedprox"
 SCAFFOLD_ALGO = "scaffold"
+FEDPROX_ALGO = "fedprox"
+
+
 
 
 if __name__ == "__main__":
@@ -72,6 +74,11 @@ if __name__ == "__main__":
         default=1.0,
     )
     parser.add_argument(
+        "--workspace",
+        type=str,
+        default="/tmp",
+    )
+    parser.add_argument(
         "--gpu",
         type=int,
         default=0,
@@ -80,30 +87,22 @@ if __name__ == "__main__":
     args = parser.parse_args()
     multiprocessing.set_start_method("spawn")
 
-    supported_algos = (
-        CENTRALIZED_ALGO,
-        FEDAVG_ALGO,
-        FEDOPT_ALGO,
-        FEDPROX_ALGO,
-        SCAFFOLD_ALGO,
-    )
+    supported_algos = (CENTRALIZED_ALGO, FEDAVG_ALGO, FEDOPT_ALGO, SCAFFOLD_ALGO, FEDPROX_ALGO)
 
     if args.algo not in supported_algos:
         raise ValueError(f"--algo should be one of: {supported_algos}, got: {args.algo}")
 
     train_script = "src/cifar10_tf_fl_alpha_split.py"
-    train_split_root = f"/tmp/cifar10_splits/clients{args.n_clients}_alpha{args.alpha}"  # avoid overwriting results
+    train_split_root = (
+        f"{args.workspace}/cifar10_splits/clients{args.n_clients}_alpha{args.alpha}"  # avoid overwriting results
+    )
 
     # Prepare data splits
     if args.alpha > 0.0:
 
         # Do alpha splitting if alpha value > 0.0
         print(f"preparing CIFAR10 and doing alpha split with alpha = {args.alpha}")
-        train_idx_paths = cifar10_split(
-            num_sites=args.n_clients,
-            alpha=args.alpha,
-            split_dir=train_split_root,
-        )
+        train_idx_paths = cifar10_split(num_sites=args.n_clients, alpha=args.alpha, split_dir=train_split_root)
 
         print(train_idx_paths)
     else:
@@ -131,7 +130,6 @@ if __name__ == "__main__":
             num_clients=args.n_clients,
             num_rounds=args.num_rounds,
         )
-
     elif args.algo == FEDPROX_ALGO:
         from nvflare import FedAvg
 
@@ -158,11 +156,11 @@ if __name__ == "__main__":
     # Add clients
     for i, train_idx_path in enumerate(train_idx_paths):
         curr_task_script_args = task_script_args + f" --train_idx_path {train_idx_path}"
-        executor = ScriptExecutor(
-            task_script_path=train_script,
-            task_script_args=curr_task_script_args,
-        )
+        executor = ScriptExecutor(task_script_path=train_script, task_script_args=curr_task_script_args)
         job.to(executor, f"site-{i+1}", gpu=args.gpu)
 
-    # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run(f"/tmp/nvflare/jobs/{job.name}")
+    # Can export current job to folder.
+    # job.export_job(f"{args.workspace}/nvflare/jobs/job_config")
+
+    # Here we launch the job using simulator.
+    job.simulator_run(f"{args.workspace}/nvflare/jobs/{job.name}")

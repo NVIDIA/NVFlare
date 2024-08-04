@@ -39,6 +39,8 @@ class ServerSecurityHandler(SecurityHandler):
         self.aggr_result_dict = None
         self.aggr_result_to_send = None
         self.aggr_result_lock = threading.Lock()
+        self.world_size = 0
+        self.size_dict = None
 
         if tenseal_imported:
             decomposers.register()
@@ -124,6 +126,10 @@ class ServerSecurityHandler(SecurityHandler):
         else:
             self.info(fl_ctx, f"no aggr data from {rank=}")
 
+        if self.size_dict is None:
+            self.size_dict = {}
+
+        self.size_dict[rank] = request.get_header(Constant.HEADER_KEY_ORIGINAL_BUF_SIZE)
         # only send a dummy to the Server
         fl_ctx.set_prop(
             key=Constant.PARAM_KEY_SEND_BUF, value=os.urandom(Constant.DUMMY_BUFFER_SIZE), private=True, sticky=False
@@ -146,6 +152,7 @@ class ServerSecurityHandler(SecurityHandler):
         horizontal = fl_ctx.get_prop(Constant.HEADER_KEY_HORIZONTAL)
         reply.set_header(Constant.HEADER_KEY_ENCRYPTED_DATA, True)
         reply.set_header(Constant.HEADER_KEY_HORIZONTAL, horizontal)
+
         with self.aggr_result_lock:
             if not self.aggr_result_to_send:
                 if not self.aggr_result_dict:
@@ -158,6 +165,10 @@ class ServerSecurityHandler(SecurityHandler):
 
                 # reset aggr_result_dict for next gather
                 self.aggr_result_dict = None
+
+        self.world_size = len(self.size_dict)
+        reply.set_header(Constant.HEADER_KEY_WORLD_SIZE, self.world_size)
+        reply.set_header(Constant.HEADER_KEY_SIZE_DICT, self.size_dict)
 
         if horizontal:
             length = self.aggr_result_to_send.size()

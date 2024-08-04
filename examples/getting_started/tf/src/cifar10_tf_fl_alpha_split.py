@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,6 @@
 
 
 import argparse
-import copy
 
 import numpy as np
 import tensorflow as tf
@@ -23,10 +22,6 @@ from tf_net import ModerateTFNet
 
 # (1) import nvflare client API
 import nvflare.client as flare
-from nvflare.app_opt.tf.fedprox_loss import TFFedProxLoss
-
-# (optional) metrics
-from nvflare.client.tracking import SummaryWriter
 
 PATH = "./tf_model.weights.h5"
 
@@ -65,7 +60,7 @@ def preprocess_dataset(dataset, is_training, batch_size=1):
     Tensorflow Dataset with pre-processings applied.
 
     """
-    # Values from: https://github.com/NVIDIA/NVFlare/blob/fc2bc47889b980c8de37de5528e3d07e6b1a942e/examples/advanced/cifar10/pt/learners/cifar10_model_learner.py#L147
+    # Values from: https://github.com/NVIDIA/NVFlare/blob/main/examples/advanced/cifar10/pt/learners/cifar10_model_learner.py#L147
     mean_cifar10 = tf.constant([125.3, 123.0, 113.9], dtype=tf.float32)
     std_cifar10 = tf.constant([63.0, 62.1, 66.7], dtype=tf.float32)
 
@@ -108,21 +103,13 @@ def main():
     parser.add_argument("--batch_size", type=int, required=True)
     parser.add_argument("--epochs", type=int, required=True)
     parser.add_argument("--train_idx_path", type=str, required=True)
-    parser.add_argument(
-        "--fedprox_mu",
-        type=float,
-        default=0.0,
-    )
     args = parser.parse_args()
-
-    # (2) initializes NVFlare client API
-    flare.init()
 
     (train_images, train_labels), (test_images, test_labels) = datasets.cifar10.load_data()
 
     # Use alpha-split per-site data to simulate data heteogeniety,
     # only if if train_idx_path is not None.
-
+    #
     if args.train_idx_path != "None":
 
         print(f"Loading train indices from {args.train_idx_path}")
@@ -149,10 +136,12 @@ def main():
     model = ModerateTFNet()
     model.build(input_shape=(None, 32, 32, 3))
 
-    callbacks = [tf.keras.callbacks.TensorBoard(log_dir="./logs_keras", write_graph=False)]
+    # Tensorboard logs for each local training epoch
+    callbacks = [tf.keras.callbacks.TensorBoard(log_dir="./logs/epochs", write_graph=False)]
+    # Tensorboard logs for each aggregation run
+    tf_summary_writer = tf.summary.create_file_writer(logdir="./logs/rounds")
 
-    # Control whether FedProx is used.
-
+    # Define loss function.
     loss = losses.SparseCategoricalCrossentropy(from_logits=True)
 
     model.compile(optimizer=tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.9), loss=loss, metrics=["accuracy"])
@@ -161,8 +150,6 @@ def main():
     # (2) initializes NVFlare client API
     flare.init()
 
-    summary_writer = SummaryWriter()
-    tf_summary_writer = tf.summary.create_file_writer(logdir="./logs/validation")
     while flare.is_running():
         # (3) receives FLModel from NVFlare
         input_model = flare.receive()
@@ -176,20 +163,8 @@ def main():
         for k, v in input_model.params.items():
             model.get_layer(k).set_weights(v)
 
-        if args.fedprox_mu > 0:
-
-            local_model_weights = model.trainable_variables
-            global_model_weights = copy.deepcopy(model.trainable_variables)
-            model.loss = TFFedProxLoss(local_model_weights, global_model_weights, args.fedprox_mu, loss)
-        elif args.fedprox_mu < 0.0:
-
-            raise ValueError("mu should be no less than 0.0")
-
         # (5) evaluate aggregated/received model
         _, test_global_acc = model.evaluate(x=test_ds, verbose=2)
-        summary_writer.add_scalar(
-            tag="global_model_accuracy", scalar=test_global_acc, global_step=input_model.current_round
-        )
 
         with tf_summary_writer.as_default():
             tf.summary.scalar("global_model_accuracy", test_global_acc, input_model.current_round)
@@ -207,7 +182,7 @@ def main():
             validation_data=test_ds,
             callbacks=callbacks,
             initial_epoch=start_epoch,
-            validation_freq=1,  # args.epochs
+            validation_freq=1,
         )
 
         print("Finished Training")
@@ -215,8 +190,6 @@ def main():
         model.save_weights(PATH)
 
         _, test_acc = model.evaluate(x=test_ds, verbose=2)
-
-        summary_writer.add_scalar(tag="local_model_accuracy", scalar=test_acc, global_step=input_model.current_round)
 
         with tf_summary_writer.as_default():
             tf.summary.scalar("local_model_accuracy", test_acc, input_model.current_round)

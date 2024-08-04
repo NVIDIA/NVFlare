@@ -30,7 +30,9 @@ from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.obj_utils import get_logger
 from nvflare.utils.cli_utils import get_package_root
 
-LOADER_PARAMS_LIBRARY_PATH = "LIBRARY_PATH"
+PLUGIN_PARAM_KEY = "federated_plugin"
+PLUGIN_KEY_NAME = "name"
+PLUGIN_KEY_PATH = "path"
 
 
 class XGBClientRunner(AppRunner, FLComponent):
@@ -135,7 +137,7 @@ class XGBClientRunner(AppRunner, FLComponent):
         self.logger.info(f"server address is {self._server_addr}")
 
         communicator_env = {
-            "xgboost_communicator": "federated",
+            "dmlc_communicator": "federated",
             "federated_server_address": f"{self._server_addr}",
             "federated_world_size": self._world_size,
             "federated_rank": self._rank,
@@ -145,38 +147,35 @@ class XGBClientRunner(AppRunner, FLComponent):
             self.logger.info("XGBoost non-secure training")
         else:
             xgb_plugin_name = ConfigService.get_str_var(
-                name="xgb_plugin_name", conf=SystemConfigs.RESOURCES_CONF, default="nvflare"
+                name="xgb_plugin_name", conf=SystemConfigs.RESOURCES_CONF, default=None
+            )
+            xgb_plugin_path = ConfigService.get_str_var(
+                name="xgb_plugin_path", conf=SystemConfigs.RESOURCES_CONF, default=None
+            )
+            xgb_plugin_params: dict = ConfigService.get_dict_var(
+                name=PLUGIN_PARAM_KEY, conf=SystemConfigs.RESOURCES_CONF, default={}
             )
 
-            xgb_loader_params = ConfigService.get_dict_var(
-                name="xgb_loader_params", conf=SystemConfigs.RESOURCES_CONF, default={}
-            )
+            # path and name can be overwritten by scalar configuration
+            if xgb_plugin_name:
+                xgb_plugin_params[PLUGIN_KEY_NAME] = xgb_plugin_name
 
-            # Library path is frequently used, add a scalar config var and overwrite what's in the dict
-            xgb_library_path = ConfigService.get_str_var(name="xgb_library_path", conf=SystemConfigs.RESOURCES_CONF)
-            if xgb_library_path:
-                xgb_loader_params[LOADER_PARAMS_LIBRARY_PATH] = xgb_library_path
+            if xgb_plugin_path:
+                xgb_plugin_params[PLUGIN_KEY_PATH] = xgb_plugin_path
 
-            lib_path = xgb_loader_params.get(LOADER_PARAMS_LIBRARY_PATH, None)
-            if not lib_path:
-                xgb_loader_params[LOADER_PARAMS_LIBRARY_PATH] = str(get_package_root() / "libs")
+            # Set default plugin name
+            if not xgb_plugin_params.get(PLUGIN_KEY_NAME):
+                xgb_plugin_params[PLUGIN_KEY_NAME] = "cuda_paillier"
 
-            xgb_proc_params = ConfigService.get_dict_var(
-                name="xgb_proc_params", conf=SystemConfigs.RESOURCES_CONF, default={}
-            )
+            if not xgb_plugin_params.get(PLUGIN_KEY_PATH):
+                # This only works on Linux. Need to support other platforms
+                lib_ext = "so"
+                lib_name = f"lib{xgb_plugin_params[PLUGIN_KEY_NAME]}.{lib_ext}"
+                xgb_plugin_params[PLUGIN_KEY_PATH] = str(get_package_root() / "libs" / lib_name)
 
-            self.logger.info(
-                f"XGBoost secure mode: {self._training_mode} plugin_name: {xgb_plugin_name} "
-                f"proc_params: {xgb_proc_params} loader_params: {xgb_loader_params}"
-            )
+            self.logger.info(f"XGBoost secure training: {self._training_mode} Params: {xgb_plugin_params}")
 
-            communicator_env.update(
-                {
-                    "plugin_name": xgb_plugin_name,
-                    "proc_params": xgb_proc_params,
-                    "loader_params": xgb_loader_params,
-                }
-            )
+            communicator_env[PLUGIN_PARAM_KEY] = xgb_plugin_params
 
         with xgb.collective.CommunicatorContext(**communicator_env):
             # Load the data. Dmatrix must be created with column split mode in CommunicatorContext for vertical FL

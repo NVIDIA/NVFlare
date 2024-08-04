@@ -14,6 +14,7 @@
 
 
 import argparse
+import copy
 
 import numpy as np
 import tensorflow as tf
@@ -25,6 +26,7 @@ import nvflare.client as flare
 from nvflare.app_common.app_constant import AlgorithmConstants
 from nvflare.app_opt.tf.scaffold import ScaffoldCallback, TFScaffoldHelper, get_lr_values
 from nvflare.client.tracking import SummaryWriter
+from nvflare.app_opt.tf.fedprox_loss import TFFedProxLoss
 
 PATH = "./tf_model.weights.h5"
 
@@ -129,6 +131,7 @@ def main():
     parser.add_argument("--epochs", type=int, required=True)
     parser.add_argument("--train_idx_path", type=str, required=True)
     parser.add_argument("--clip_norm", type=float, default=1.55, required=False)
+    parser.add_argument("--fedprox_mu", type=float, default=0.0)
 
     args = parser.parse_args()
 
@@ -194,6 +197,16 @@ def main():
         # (4) loads model from NVFlare
         for k, v in input_model.params.items():
             model.get_layer(k).set_weights(v)
+
+        if args.fedprox_mu > 0:
+    
+            local_model_weights = model.trainable_variables
+            global_model_weights = copy.deepcopy(model.trainable_variables)
+            model.loss = TFFedProxLoss(local_model_weights, global_model_weights, args.fedprox_mu, loss)
+        elif args.fedprox_mu < 0.0:
+
+            raise ValueError("mu should be no less than 0.0")
+    
 
         # (step 4) load regularization parameters from scaffold
         global_ctrl_weights = input_model.meta.get(AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL)
