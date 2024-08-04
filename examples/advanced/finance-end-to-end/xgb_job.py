@@ -14,14 +14,11 @@
 
 import argparse
 
+from xgb_data_loader import CreditCardDataLoader
+
 from nvflare import FedJob
 from nvflare.app_opt.xgboost.histogram_based_v2.fed_controller import XGBFedController
 from nvflare.app_opt.xgboost.histogram_based_v2.fed_executor import FedXGBHistogramExecutor
-from xgb_data_loader import CreditCardDataLoader
-
-
-# from nvflare.app_opt.xgboost.histogram_based.controller import XGBFedController
-# from nvflare.app_opt.xgboost.histogram_based.executor import FedXGBHistogramExecutor
 
 
 def main():

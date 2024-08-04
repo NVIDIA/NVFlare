@@ -14,7 +14,7 @@
 
 
 from abc import ABC, abstractmethod
-from typing import Tuple, Optional
+from typing import Optional, Tuple
 
 import xgboost as xgb
 
