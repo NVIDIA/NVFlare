@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 WORKSPACE_ROOT="/tmp/nvflare/xgb_workspaces"
-n=3
+n=2
 
 echo "Training horizontal"
 nvflare simulator jobs/xgb_hori -w ${WORKSPACE_ROOT}/workspace_hori -n ${n} -t ${n}

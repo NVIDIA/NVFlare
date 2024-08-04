@@ -1,0 +1,9 @@
+nvflare~=2.4.2rc
+ipcl_python @ git+https://github.com/intel/pailliercryptolib_python.git@development
+xgboost @ https://s3-us-west-2.amazonaws.com/xgboost-nightly-builds/vertical-federated-learning/xgboost-2.1.0.dev0%2Bde4013fc733648dfe5c2c803a13e2782056e00a2-py3-none-manylinux_2_28_x86_64.whl
+pandas
+scikit-learn
+shap
+matplotlib
+tensorboard
+tenseal
