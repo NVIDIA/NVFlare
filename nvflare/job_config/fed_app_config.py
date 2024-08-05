@@ -36,8 +36,10 @@ class ClientAppConfig(BaseAppConfig):
         if not isinstance(executor, Executor):
             raise RuntimeError(f"workflow must be type of Executor, but got {executor.__class__}")
 
+        task_set = set(tasks)
         for item in self.executors:
-            if item.tasks == tasks:
+            b_set = set(item.tasks)
+            if len(task_set.intersection(b_set)) > 0:
                 raise RuntimeError(f"executor for tasks: {tasks} already exist.")
 
         e = _ExecutorDef()
