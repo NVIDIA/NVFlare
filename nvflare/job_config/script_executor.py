@@ -12,9 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import re
+
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.import_utils import optional_import
+from nvflare.job_config.fed_object import FedObject
 
 torch, torch_ok = optional_import(module="torch")
 if torch_ok:
@@ -29,7 +32,7 @@ if tf_ok:
     from nvflare.app_opt.tf.params_converter import KerasModelToNumpyParamsConverter, NumpyToKerasModelParamsConverter
 
 
-class ScriptExecutor:
+class ScriptExecutor(FedObject):
     def __init__(
         self,
         script: str,
@@ -80,3 +83,9 @@ class ScriptExecutor:
                     [AppConstants.TASK_TRAIN, AppConstants.TASK_SUBMIT_MODEL]
                 )
         # TODO: support other params_exchange_format
+
+    def get_resources(self):
+        if self._launch_external_process:
+            return re.compile(r"custom\/([A-Za-z0-9_\/.]*)").findall(self._script)
+        else:
+            return self._script

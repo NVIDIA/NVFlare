@@ -37,8 +37,6 @@ if __name__ == "__main__":
     for i in range(n_clients):
         executor = ScriptExecutor(script=f"python3 custom/{train_script}", launch_external_process=True)
         job.to(executor, f"site-{i}", gpu=0)
-        job.to(train_script, f"site-{i}")
-        job.to("src/lit_net.py", f"site-{i}")
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir")
