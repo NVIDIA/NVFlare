@@ -2,3 +2,4 @@ nvflare~=2.5.0rc
 flwr[simulation]>=1.8.0
 torch==2.2.1
 torchvision==0.17.1
+tensorboard

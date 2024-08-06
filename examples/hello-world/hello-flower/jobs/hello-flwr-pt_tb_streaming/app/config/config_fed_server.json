@@ -1,0 +1,21 @@
+{
+  "format_version": 2,
+  "task_data_filters": [],
+  "task_result_filters": [],
+  "workflows": [
+    {
+      "id": "ctl",
+      "path": "nvflare.app_opt.flower.controller.FlowerController",
+      "args": {
+        "server_app": "server:app"
+      }
+    }
+  ],
+  "components": [
+    {
+      "id": "tb_analytics_receiver",
+      "path": "nvflare.app_opt.tracking.tb.tb_receiver.TBAnalyticsReceiver",
+      "args.events": ["fed.analytix_log_stats"]
+    }
+  ]
+}
