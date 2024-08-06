@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import os
 from enum import Enum
 from typing import Any, Dict, Optional
@@ -45,10 +46,11 @@ def init(rank: Optional[str] = None):
     api_type_name = os.environ.get(CLIENT_API_TYPE_KEY, ClientAPIType.IN_PROCESS_API.value)
     api_type = ClientAPIType(api_type_name)
     global client_api
-    if api_type == ClientAPIType.IN_PROCESS_API:
-        client_api = data_bus.get_data(CLIENT_API_KEY)
-    else:
-        client_api = ExProcessClientAPI()
+    if client_api is None:
+        if api_type == ClientAPIType.IN_PROCESS_API:
+            client_api = data_bus.get_data(CLIENT_API_KEY)
+        else:
+            client_api = ExProcessClientAPI()
 
     client_api.init(rank=rank)
 
