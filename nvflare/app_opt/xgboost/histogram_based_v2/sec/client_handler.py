@@ -299,6 +299,10 @@ class ClientSecurityHandler(SecurityHandler):
             self._process_after_all_gather_v_vertical(fl_ctx)
 
     def _process_after_all_gather_v_vertical(self, fl_ctx: FLContext):
+        reply = fl_ctx.get_prop(Constant.PARAM_KEY_REPLY)
+        size_dict = reply.get_header(Constant.HEADER_KEY_SIZE_DICT)
+        total_size = sum(size_dict.values())
+        self.info(fl_ctx, f"{total_size=} {size_dict=}")
         rcv_buf = fl_ctx.get_prop(Constant.PARAM_KEY_RCV_BUF)
         # this rcv_buf is a list of replies from ALL clients!
         rank = fl_ctx.get_prop(Constant.PARAM_KEY_RANK)
@@ -309,7 +313,7 @@ class ClientSecurityHandler(SecurityHandler):
 
         if not self.clear_ghs:
             # this is non-label client - don't care about the results
-            dummy = os.urandom(Constant.DUMMY_BUFFER_SIZE)
+            dummy = os.urandom(total_size)
             fl_ctx.set_prop(key=Constant.PARAM_KEY_RCV_BUF, value=dummy, private=True, sticky=False)
             self.info(fl_ctx, "non-label client: return dummy buffer back to XGB")
             return
@@ -352,16 +356,45 @@ class ClientSecurityHandler(SecurityHandler):
             self.info(fl_ctx, f"final aggr: {gid=} features={fid_list}")
 
         result = self.data_converter.encode_aggregation_result(final_result, fl_ctx)
+
+        # XGBoost expects every work has a set of histograms. They are already combined here so
+        # just add zeros
+        zero_result = final_result
+        for result_list in zero_result.values():
+            for item in result_list:
+                size = len(item.aggregated_hist)
+                item.aggregated_hist = [(0, 0)] * size
+        zero_buf = self.data_converter.encode_aggregation_result(zero_result, fl_ctx)
+        world_size = len(size_dict)
+        for _ in range(world_size - 1):
+            result += zero_buf
+
+        # XGBoost checks that the size of allgatherv is not changed
+        padding_size = total_size - len(result)
+        if padding_size > 0:
+            result += b"\x00" * padding_size
+        elif padding_size < 0:
+            self.error(fl_ctx, f"The original size {total_size} is not big enough for data size {len(result)}")
+
         fl_ctx.set_prop(key=Constant.PARAM_KEY_RCV_BUF, value=result, private=True, sticky=False)
 
     def _process_after_all_gather_v_horizontal(self, fl_ctx: FLContext):
+        reply = fl_ctx.get_prop(Constant.PARAM_KEY_REPLY)
+        world_size = reply.get_header(Constant.HEADER_KEY_WORLD_SIZE)
         encrypted_histograms = fl_ctx.get_prop(Constant.PARAM_KEY_RCV_BUF)
         rank = fl_ctx.get_prop(Constant.PARAM_KEY_RANK)
         if not isinstance(encrypted_histograms, CKKSVector):
             return self._abort(f"rank {rank}: expect a CKKSVector but got {type(encrypted_histograms)}", fl_ctx)
 
         histograms = encrypted_histograms.decrypt(secret_key=self.tenseal_context.secret_key())
+
         result = self.data_converter.encode_histograms_result(histograms, fl_ctx)
+
+        # XGBoost expect every worker returns a histogram, all zeros are returned for other workers
+        zeros = [0.0] * len(histograms)
+        zero_buf = self.data_converter.encode_histograms_result(zeros, fl_ctx)
+        for _ in range(world_size - 1):
+            result += zero_buf
         fl_ctx.set_prop(key=Constant.PARAM_KEY_RCV_BUF, value=result, private=True, sticky=False)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
@@ -376,7 +409,7 @@ class ClientSecurityHandler(SecurityHandler):
                 else:
                     self.debug(fl_ctx, "Tenseal module not loaded, horizontal secure XGBoost is not supported")
             except Exception as ex:
-                self.debug(fl_ctx, f"Can't load tenseal context, horizontal secure XGBoost is not supported: {ex}")
+                self.error(fl_ctx, f"Can't load tenseal context, horizontal secure XGBoost is not supported: {ex}")
                 self.tenseal_context = None
         elif event_type == EventType.END_RUN:
             self.tenseal_context = None
