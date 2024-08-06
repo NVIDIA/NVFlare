@@ -12,9 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 
 from flwr.client import ClientApp, NumPyClient
+from flwr.common import Context
+from flwr.common.record import MetricsRecord, RecordSet
 from task import DEVICE, Net, get_weights, load_data, set_weights, test, train
 
 # Load model and data (simple CNN, CIFAR-10)
@@ -28,29 +29,27 @@ from nvflare.client.tracking import SummaryWriter
 
 flare.init()
 
-STEP_FILE = "step.txt"
-
-
-def get_step():
-    with open(STEP_FILE, "r") as f:
-        number = int(f.read())
-    return number
-
-
-def write_step(step):
-    with open(STEP_FILE, "w") as f:
-        f.write(str(step))
-
 
 # Define FlowerClient and client_fn
 class FlowerClient(NumPyClient):
-    def __init__(self):
+    def __init__(self, context: Context):
+        super().__init__()
         self.writer = SummaryWriter()
-        if not os.path.exists(STEP_FILE):
-            write_step(0)
+        self.set_context(context)
+        if "step" not in context.state.metrics_records:
+            self.set_step(0)
+
+    def set_step(self, step: int):
+        context = self.get_context()
+        context.state = RecordSet(metrics_records={"step": MetricsRecord({"step": step})})
+        self.set_context(context)
+
+    def get_step(self):
+        context = self.get_context()
+        return int(context.state.metrics_records["step"]["step"])
 
     def fit(self, parameters, config):
-        step = get_step()
+        step = self.get_step()
         set_weights(net, parameters)
         results = train(net, trainloader, testloader, epochs=1, device=DEVICE)
 
@@ -59,13 +58,13 @@ class FlowerClient(NumPyClient):
         self.writer.add_scalar("val_loss", results["val_loss"], step)
         self.writer.add_scalar("val_accuracy", results["val_accuracy"], step)
 
-        write_step(step + 1)
+        self.set_step(step + 1)
 
         return get_weights(net), len(trainloader.dataset), results
 
     def evaluate(self, parameters, config):
         set_weights(net, parameters)
-        step = get_step()
+        step = self.get_step()
         loss, accuracy = test(net, testloader)
 
         self.writer.add_scalar("test_loss", loss, step)
@@ -74,9 +73,9 @@ class FlowerClient(NumPyClient):
         return loss, len(testloader.dataset), {"accuracy": accuracy}
 
 
-def client_fn(cid: str):
+def client_fn(context: Context):
     """Create and return an instance of Flower `Client`."""
-    return FlowerClient().to_client()
+    return FlowerClient(context).to_client()
 
 
 # Flower ClientApp
