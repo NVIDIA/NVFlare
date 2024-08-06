@@ -11,7 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 from flwr.client import ClientApp, NumPyClient
+from flwr.common import Context
 from task import DEVICE, Net, get_weights, load_data, set_weights, test, train
 
 # Load model and data (simple CNN, CIFAR-10)
@@ -32,7 +34,7 @@ class FlowerClient(NumPyClient):
         return loss, len(testloader.dataset), {"accuracy": accuracy}
 
 
-def client_fn(cid: str):
+def client_fn(context: Context):
     """Create and return an instance of Flower `Client`."""
     return FlowerClient().to_client()
 
