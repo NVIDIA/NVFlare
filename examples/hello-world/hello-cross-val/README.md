@@ -8,7 +8,7 @@ Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html
 
 ### 2. Run the experiment
 
-Use nvflare simulator to run the hello-examples:
+Use nvflare simulator to run the example:
 
 ```
 nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 hello-cross-val/jobs/hello-cross-val

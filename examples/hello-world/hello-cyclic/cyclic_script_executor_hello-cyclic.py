@@ -39,8 +39,8 @@ if __name__ == "__main__":
     for i in range(n_clients):
         executor = ScriptExecutor(
             task_script_path=train_script,
-            task_script_args="",
-            params_exchange_format=ExchangeFormat.NUMPY,  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
+            task_script_args="",  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
+            params_exchange_format=ExchangeFormat.NUMPY,
         )
         job.to(executor, f"site-{i}", gpu=0)
 

@@ -5,7 +5,14 @@ This workflow follows the hub and spoke model for communicating the global model
 
 > **_NOTE:_** This example uses a Numpy-based trainer and will generate its data within the code.
 
-You can follow the [hello_world notebook](../hello_world.ipynb) or the following:
+You can follow the [Getting Started with NVFlare (Numpy)](hello-fedavg-numpy_getting_started.ipynb)
+for a detailed walkthrough of the basic concepts.
+
+See the [Hello FedAvg with NumPy](https://nvflare.readthedocs.io/en/main/examples/hello_fedavg_numpy.html) example documentation page for details on this
+example.
+
+To run this example with the FLARE API, you can follow the [hello_world notebook](../hello_world.ipynb), or you can quickly get
+started with the following:
 
 ### 1. Install NVIDIA FLARE
 
@@ -13,20 +20,18 @@ Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html
 
 ### 2. Run the experiment
 
-Use nvflare simulator to run the hello-examples:
+Run the script using the job API to create the job and run it with the simulator:
 
 ```
-nvflare simulator -w /tmp/nvflare/hello-numpy-sag -n 2 -t 2 hello-world/hello-numpy-sag/jobs/hello-numpy-sag
+python3 fedavg_script_executor_hello-numpy.py
 ```
 
 ### 3. Access the logs and results
 
-You can find the running logs and results inside the simulator's workspace/simulate_job
+You can find the running logs and results inside the simulator's workspace:
 
 ```bash
-$ ls /tmp/nvflare/hello-numpy-sag/simulate_job/
-app_server  app_site-1  app_site-2  log.txt  model  models
-
+$ ls /tmp/nvflare/jobs/workdir/
 ```
 
-For how to use the FLARE API to run this app, see [this notebook](hello_numpy_sag.ipynb).
+For how to use the FLARE API to run this app, see [this notebook](hello-fedavg-numpy_flare_api.ipynb).
