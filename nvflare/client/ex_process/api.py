@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import importlib
+import logging
 import os
 from typing import Any, Dict, Optional, Tuple
 
@@ -35,7 +36,7 @@ def _create_client_config(config: str) -> ClientConfig:
     if isinstance(config, str):
         client_config = from_file(config_file=config)
     else:
-        raise ValueError("config should be a string but got: {type(config)}")
+        raise ValueError(f"config should be a string but got: {type(config)}")
     return client_config
 
 
@@ -81,10 +82,11 @@ class ExProcessClientAPI(APISpec):
             rank = os.environ.get("RANK", "0")
 
         if self.process_model_registry:
-            print("Warning: called init() more than once. The subsequence calls are ignored")
+            logging.warn("Warning: called init() more than once. The subsequence calls are ignored")
             return
 
-        client_config = _create_client_config(config=f"config/{CLIENT_API_CONFIG}")
+        config_file = f"config/{CLIENT_API_CONFIG}"
+        client_config = _create_client_config(config=config_file)
 
         flare_agent = None
         try:
@@ -92,9 +94,11 @@ class ExProcessClientAPI(APISpec):
                 if client_config.get_exchange_format() == ExchangeFormat.PYTORCH:
                     _register_tensor_decomposer()
 
-                pipe, task_channel_name = _create_pipe_using_config(
-                    client_config=client_config, section=ConfigKey.TASK_EXCHANGE
-                )
+                pipe, task_channel_name = None, ""
+                if ConfigKey.TASK_EXCHANGE in client_config.config:
+                    pipe, task_channel_name = _create_pipe_using_config(
+                        client_config=client_config, section=ConfigKey.TASK_EXCHANGE
+                    )
                 metric_pipe, metric_channel_name = None, ""
                 if ConfigKey.METRICS_EXCHANGE in client_config.config:
                     metric_pipe, metric_channel_name = _create_pipe_using_config(
@@ -106,12 +110,13 @@ class ExProcessClientAPI(APISpec):
                     task_channel_name=task_channel_name,
                     metric_pipe=metric_pipe,
                     metric_channel_name=metric_channel_name,
+                    heartbeat_timeout=client_config.config.get(ConfigKey.HEARTBEAT_TIMEOUT, 60),
                 )
                 flare_agent.start()
 
             self.process_model_registry = ModelRegistry(client_config, rank, flare_agent)
         except Exception as e:
-            print(f"flare.init failed: {e}")
+            logging.error(f"flare.init failed: {e}")
             raise e
 
     def receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
