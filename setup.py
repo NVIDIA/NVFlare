@@ -100,3 +100,4 @@ setup(
 )
 
 remove_dir(target_path=tmp_job_template_folder)
+
