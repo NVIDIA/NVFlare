@@ -109,6 +109,8 @@ class Constant:
     HEADER_KEY_HORIZONTAL = "xgb.horizontal"
     HEADER_KEY_ORIGINAL_BUF_SIZE = "xgb.original_buf_size"
     HEADER_KEY_IN_AGGR = "xgb.in_aggr"
+    HEADER_KEY_WORLD_SIZE = "xgb.world_size"
+    HEADER_KEY_SIZE_DICT = "xgb.size_dict"
 
     DUMMY_BUFFER_SIZE = 4
 
@@ -122,8 +124,6 @@ GRPC_DEFAULT_OPTIONS = [
 class SplitMode:
     ROW = 0
     COL = 1
-    COL_SECURE = 2
-    ROW_SECURE = 3
 
 
 # Mapping of text training mode to split mode
@@ -132,10 +132,10 @@ TRAINING_MODE_MAPPING = {
     "horizontal": SplitMode.ROW,
     "v": SplitMode.COL,
     "vertical": SplitMode.COL,
-    "hs": SplitMode.ROW_SECURE,
-    "horizontal_secure": SplitMode.ROW_SECURE,
-    "vs": SplitMode.COL_SECURE,
-    "vertical_secure": SplitMode.COL_SECURE,
+    "hs": SplitMode.ROW,
+    "horizontal_secure": SplitMode.ROW,
+    "vs": SplitMode.COL,
+    "vertical_secure": SplitMode.COL,
 }
 
 SECURE_TRAINING_MODES = {"hs", "horizontal_secure", "vs", "vertical_secure"}
