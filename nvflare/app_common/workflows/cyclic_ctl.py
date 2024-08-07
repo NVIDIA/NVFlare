@@ -170,58 +170,53 @@ class CyclicController(Controller):
         self._is_done = True
 
     def _process_result(self, client_task: ClientTask, fl_ctx: FLContext):
-        result = client_task.result
-        rc = result.get_return_code()
-        client_name = client_task.client.name
-
-        # Raise errors if ReturnCode is not OK.
-        if rc and rc != ReturnCode.OK:
-            self.system_panic(
-                f"Result from {client_name} is bad, error code: {rc}. "
-                f"{self.__class__.__name__} exiting at round {self._current_round}.",
-                fl_ctx=fl_ctx,
-            )
-            return False
-
         # submitted shareable is stored in client_task.result
         # we need to update task.data with that shareable so the next target
         # will get the updated shareable
         task = client_task.task
 
         result = client_task.result
+        client_name = client_task.client.name
         if isinstance(result, Shareable):
             # update the global learnable with the received result (shareable)
             # e.g. the received result could be weight_diffs, the learnable could be full weights.
             rc = result.get_return_code()
+
+            # check for early termination
+            if rc:
+                if rc == ReturnCode.EARLY_TERMINATION:
+                    if self._allow_early_termination:
+                        # the workflow is done
+                        self._stop_workflow(task)
+                        self.log_info(fl_ctx, f"Stopping workflow due to {rc} from client {client_name}")
+                        return
+                    else:
+                        self.log_warning(
+                            fl_ctx,
+                            f"Ignored {rc} from client {client_name} because early termination is not allowed",
+                        )
+                # Raise errors if ReturnCode is not OK.
+                elif rc != ReturnCode.OK:
+                    self._stop_workflow(task)
+                    self.log_error(
+                        fl_ctx,
+                        f"Result from {client_name} is bad, error code: {rc}. "
+                        f"{self.__class__.__name__} exiting at round {self._current_round}.",
+                    )
+                    return
+
+            # if user did not set RC, just try to generate
             try:
                 self._last_learnable = self.shareable_generator.shareable_to_learnable(result, fl_ctx)
             except Exception as ex:
-                if rc != ReturnCode.EARLY_TERMINATION:
-                    self._stop_workflow(task)
-                    self.log_error(fl_ctx, f"exception {secure_format_exception(ex)} from shareable_to_learnable")
-                    return
-                else:
-                    self.log_warning(
-                        fl_ctx,
-                        f"ignored {secure_format_exception(ex)} from shareable_to_learnable in early termination",
-                    )
-
-            if rc == ReturnCode.EARLY_TERMINATION:
-                if self._allow_early_termination:
-                    # the workflow is done
-                    self._stop_workflow(task)
-                    self.log_info(fl_ctx, f"Stopping workflow due to {rc} from client {client_task.client.name}")
-                    return
-                else:
-                    self.log_warning(
-                        fl_ctx,
-                        f"Ignored {rc} from client {client_task.client.name} because early termination is not allowed",
-                    )
+                self._stop_workflow(task)
+                self.log_error(fl_ctx, f"exception {secure_format_exception(ex)} from shareable_to_learnable")
+                return
         else:
             self._stop_workflow(task)
             self.log_error(
                 fl_ctx,
-                f"Stopping workflow due to result from client {client_task.client.name} is not a Shareable",
+                f"Stopping workflow due to result from client {client_name} is not a Shareable",
             )
             return
 
