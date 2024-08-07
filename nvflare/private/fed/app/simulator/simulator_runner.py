@@ -174,6 +174,10 @@ class SimulatorRunner(FLComponent):
         self._cleanup_workspace()
         init_security_content_service(self.args.workspace)
 
+        os.makedirs(os.path.join(self.simulator_root, "server"))
+        log_file = os.path.join(self.simulator_root, "server", WorkspaceConstants.LOG_FILE_NAME)
+        add_logfile_handler(log_file)
+
         try:
             data_bytes, job_name, meta = self.validate_job_data()
 
@@ -500,9 +504,6 @@ class SimulatorRunner(FLComponent):
         app_server_root = os.path.join(self.simulator_root, "server", SimulatorConstants.JOB_NAME, "app_server")
         args.workspace = os.path.join(self.simulator_root, "server")
         os.chdir(args.workspace)
-
-        log_file = os.path.join(self.simulator_root, "server", WorkspaceConstants.LOG_FILE_NAME)
-        add_logfile_handler(log_file)
 
         args.server_config = os.path.join("config", JobConstants.SERVER_JOB_CONFIG)
         app_custom_folder = os.path.join(app_server_root, "custom")
