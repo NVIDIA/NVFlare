@@ -54,14 +54,15 @@ if __name__ == "__main__":
         persistor = PTFileModelPersistor(model=Net())
         shareable_generator = SimpleModelShareableGenerator()
 
+        persistor_id = job.as_id(persistor)
         client_controller = SwarmClientController(
             aggregator_id=job.as_id(aggregator),
-            persistor_id=job.as_id(persistor),
+            persistor_id=persistor_id,
             shareable_generator_id=job.as_id(shareable_generator),
         )
         job.to(client_controller, f"site-{i}", tasks=["swarm_*"])
 
-        client_controller = CrossSiteEvalClientController()
+        client_controller = CrossSiteEvalClientController(persistor_id=persistor_id)
         job.to(client_controller, f"site-{i}", tasks=["cse_*"])
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
