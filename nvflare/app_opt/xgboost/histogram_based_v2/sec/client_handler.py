@@ -48,8 +48,10 @@ try:
     from nvflare.app_opt.he.homomorphic_encrypt import load_tenseal_context_from_workspace
 
     tenseal_imported = True
-except Exception:
+    tenseal_error = None
+except Exception as ex:
     tenseal_imported = False
+    tenseal_error = f"Import error: {ex}"
 
 
 class ClientSecurityHandler(SecurityHandler):
@@ -216,9 +218,7 @@ class ClientSecurityHandler(SecurityHandler):
 
     def _process_before_all_gather_v_horizontal(self, fl_ctx: FLContext):
         if not self.tenseal_context:
-            return self._abort(
-                "Horizontal secure XGBoost not supported due to missing context or missing module", fl_ctx
-            )
+            return self._abort(f"Horizontal secure XGBoost not supported due to error: {tenseal_error}", fl_ctx)
 
         buffer = fl_ctx.get_prop(Constant.PARAM_KEY_SEND_BUF)
         histograms = self.data_converter.decode_histograms(buffer, fl_ctx)
@@ -398,6 +398,7 @@ class ClientSecurityHandler(SecurityHandler):
         fl_ctx.set_prop(key=Constant.PARAM_KEY_RCV_BUF, value=result, private=True, sticky=False)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
+        global tenseal_error
         if event_type == EventType.START_RUN:
             self.public_key, self.private_key = generate_keys(self.key_length)
             self.encryptor = Encryptor(self.public_key, self.num_workers)
@@ -409,7 +410,8 @@ class ClientSecurityHandler(SecurityHandler):
                 else:
                     self.debug(fl_ctx, "Tenseal module not loaded, horizontal secure XGBoost is not supported")
             except Exception as ex:
-                self.error(fl_ctx, f"Can't load tenseal context, horizontal secure XGBoost is not supported: {ex}")
+                tenseal_error = f"Can't load tenseal context: {ex}"
+                self.debug(fl_ctx, tenseal_error)
                 self.tenseal_context = None
         elif event_type == EventType.END_RUN:
             self.tenseal_context = None

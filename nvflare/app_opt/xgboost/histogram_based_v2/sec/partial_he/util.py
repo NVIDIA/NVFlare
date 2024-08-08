@@ -31,7 +31,10 @@ ENABLE_DJN = True
 
 
 def generate_keys(n_length=1024):
-    return ipcl_python.PaillierKeypair.generate_keypair(n_length=n_length, enable_DJN=ENABLE_DJN)
+    if ipcl_imported:
+        return ipcl_python.PaillierKeypair.generate_keypair(n_length=n_length, enable_DJN=ENABLE_DJN)
+    else:
+        return None, None
 
 
 def encrypt_number(pubkey, ciphertext, exponent):
