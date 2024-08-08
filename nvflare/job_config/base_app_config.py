@@ -32,6 +32,7 @@ class BaseAppConfig(ABC):
         self.task_result_filters: [(List[str], Filter)] = []
         self.components: Dict[str, object] = {}
         self.ext_scripts = []
+        self.ext_dirs = []
 
         self.handlers: [FLComponent] = []
 
@@ -61,6 +62,12 @@ class BaseAppConfig(ABC):
             raise RuntimeError(f"External script: {ext_script} must be a '.py' file.")
 
         self.ext_scripts.append(ext_script)
+
+    def add_ext_dir(self, ext_dir: str):
+        if not (os.path.isdir(ext_dir) and os.path.exists(ext_dir)):
+            raise RuntimeError(f"external resource dir: {ext_dir} does not exist")
+
+        self.ext_dirs.append(ext_dir)
 
     def _add_task_filter(self, tasks, filter, filters):
         if not isinstance(filter, Filter):
