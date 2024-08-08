@@ -44,7 +44,7 @@ if __name__ == "__main__":
     job.to(Net(), "server")
 
     for i in range(n_clients):
-        executor = ScriptExecutor(task_script_path=train_script)
+        executor = ScriptExecutor(task_script_path=train_script, evaluate_task_name="validate")
         job.to(executor, f"site-{i}", gpu=0, tasks=["train", "validate", "submit_model"])
 
         # In swarm learning, each client acts also as an aggregator
