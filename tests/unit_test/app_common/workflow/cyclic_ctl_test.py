@@ -55,16 +55,17 @@ ORDER_TEST_CASES = [
 ]
 
 
-def gen_shareable(is_early_termination: bool = False, is_not_shareable: bool = False):
-    if is_not_shareable:
-        return [1, 2, 3]
+def gen_shareable(return_code: ReturnCode):
     return_result = Shareable()
-    if is_early_termination:
-        return_result.set_return_code(ReturnCode.EARLY_TERMINATION)
+    return_result.set_return_code(return_code)
     return return_result
 
 
-PROCESS_RESULT_TEST_CASES = [gen_shareable(is_early_termination=True), gen_shareable(is_not_shareable=True)]
+PROCESS_RESULT_TEST_CASES = [
+    gen_shareable(return_code=ReturnCode.EARLY_TERMINATION),
+    gen_shareable(return_code=ReturnCode.EXECUTION_EXCEPTION),
+    [1, 2, 3],
+]
 
 
 class TestCyclicController:
