@@ -51,7 +51,7 @@ with the appropriate path to the directory containing the "pt" directory with cu
 Adding MLflow Logging to Configurations
 ------------------------------------------------
 
-Inside the config folder there are two files, ``config_fed_client.json`` and ``config_fed_server.json``.
+Inside the config folder there are two files, ``config_fed_client.conf`` and ``config_fed_server.conf``.
 
 .. literalinclude:: ../../examples/advanced/experiment-tracking/mlflow/jobs/hello-pt-mlflow/app/config/config_fed_client.conf
    :language:

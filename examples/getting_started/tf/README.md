@@ -1,4 +1,10 @@
-# Simulated Federated Learning with CIFAR10 Using Tensorflow
+# Getting Started with NVFlare (TensorFlow)
+[![TensorFlow Logo](https://upload.wikimedia.org/wikipedia/commons/a/ab/TensorFlow_logo.svg)](https://tensorflow.org/)
+
+We provide several examples to quickly get you started using NVFlare's Job API. 
+All examples in this folder are based on using [TensorFlow](https://tensorflow.org/) as the model training framework.
+
+## Simulated Federated Learning with CIFAR10 Using Tensorflow
 
 This example shows `Tensorflow`-based classic Federated Learning
 algorithms, namely FedAvg and FedOpt on CIFAR10
@@ -207,3 +213,6 @@ number of training steps as FedAvg/FedProx.
 | cifar10_scaffold |	0.1 |	0.8164 |
 
 ![Impact of different FL algorithms](./figs/fedavg-diff-algos-new.png)
+> [!NOTE]
+> More examples can be found at https://nvidia.github.io/NVFlare.
+
