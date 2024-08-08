@@ -260,19 +260,17 @@ class FedJob:
             else:  # TODO: handle other persistors
                 added_model = False
                 # Check different models framework types and add corresponding persistor
-                if torch_ok:
-                    if isinstance(obj, nn.Module):  # if model, create a PT persistor
-                        component = PTFileModelPersistor(model=obj)
-                        self._deploy_map[target].app.add_component("persistor", component)
+                if torch_ok and isinstance(obj, nn.Module):  # if model, create a PT persistor
+                    component = PTFileModelPersistor(model=obj)
+                    self._deploy_map[target].app.add_component("persistor", component)
 
-                        component = PTFileModelLocator(pt_persistor_id="persistor")
-                        self._deploy_map[target].app.add_component("model_locator", component)
-                        added_model = True
-                elif tf_ok:
-                    if isinstance(obj, tf.keras.Model):  # if model, create a TF persistor
-                        component = TFModelPersistor(model=obj)
-                        self._deploy_map[target].app.add_component("persistor", component)
-                        added_model = True
+                    component = PTFileModelLocator(pt_persistor_id="persistor")
+                    self._deploy_map[target].app.add_component("model_locator", component)
+                    added_model = True
+                elif tf_ok and isinstance(obj, tf.keras.Model):  # if model, create a TF persistor
+                    component = TFModelPersistor(model=obj)
+                    self._deploy_map[target].app.add_component("persistor", component)
+                    added_model = True
 
                 if not added_model:  # if it wasn't a model, add as component
                     self._deploy_map[target].add_component(obj, id)
