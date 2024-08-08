@@ -22,6 +22,7 @@ from tempfile import TemporaryDirectory
 from typing import Dict
 
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
+from nvflare.job_config.base_app_config import BaseAppConfig
 from nvflare.job_config.fed_app_config import FedAppConfig
 from nvflare.private.fed.app.fl_conf import FL_PACKAGES
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
@@ -65,6 +66,15 @@ class FedJobConfig:
         self.fed_apps[app_name] = fed_app
 
     def set_site_app(self, site_name: str, app_name: str):
+        """assign an app to a certain site.
+
+        Args:
+            site_name: The target site name.
+            app_name: The app name.
+
+        Returns:
+
+        """
         if app_name not in self.fed_apps.keys():
             raise RuntimeError(f"fed_app {app_name} does not exist.")
 
@@ -153,6 +163,7 @@ class FedJobConfig:
             outfile.write(json_dump)
 
         self._copy_ext_scripts(custom_dir, fed_app.server_app.ext_scripts)
+        self._copy_ext_dirs(custom_dir, fed_app.server_app)
 
     def _copy_ext_scripts(self, custom_dir, ext_scripts):
         for script in ext_scripts:
@@ -164,6 +175,10 @@ class FedJobConfig:
                 dest_file = os.path.join(custom_dir, relative_script)
                 module = "".join(relative_script.rsplit(".py", 1)).replace(os.sep, ".")
                 self._copy_source_file(custom_dir, module, script, dest_file)
+
+    def _copy_ext_dirs(self, custom_dir, app_config: BaseAppConfig):
+        for dir in app_config.ext_dirs:
+            shutil.copytree(dir, custom_dir, dirs_exist_ok=True)
 
     def _get_relative_script(self, script):
         package_path = ""
@@ -236,6 +251,7 @@ class FedJobConfig:
             outfile.write(json_dump)
 
         self._copy_ext_scripts(custom_dir, fed_app.client_app.ext_scripts)
+        self._copy_ext_dirs(custom_dir, fed_app.client_app)
 
     def _get_base_app(self, custom_dir, app, app_config):
         app_config["components"] = []

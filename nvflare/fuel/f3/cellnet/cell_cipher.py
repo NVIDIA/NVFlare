@@ -89,7 +89,7 @@ def _verify(k, m, s):
     )
 
 
-def _sym_enc(k, n, m):
+def _sym_enc(k: bytes, n: bytes, m: bytes):
     cipher = ciphers.Cipher(ciphers.algorithms.AES(k), ciphers.modes.CBC(n))
     encryptor = cipher.encryptor()
     padder = padding.PKCS7(PADDING_LENGTH).padder()
@@ -97,7 +97,7 @@ def _sym_enc(k, n, m):
     return encryptor.update(padded_data) + encryptor.finalize()
 
 
-def _sym_dec(k, n, m):
+def _sym_dec(k: bytes, n: bytes, m: bytes):
     cipher = ciphers.Cipher(ciphers.algorithms.AES(k), ciphers.modes.CBC(n))
     decryptor = cipher.decryptor()
     plain_text = decryptor.update(m)
@@ -155,28 +155,6 @@ class SessionKeyManager:
         except KeyError as e:
             raise SessionKeyUnavailable("No session key established yet")
         return last_value
-
-
-class CellCipher:
-    def __init__(self, session_key_manager: SessionKeyManager):
-        self.session_key_manager = session_key_manager
-
-    def encrypt(self, message):
-        key = self.session_key_manager.get_latest_key()
-        key_hash = get_hash(key)
-        nonce = os.urandom(NONCE_LENGTH)
-        return nonce + key_hash[-HASH_LENGTH:] + _sym_enc(key, nonce, message)
-
-    def decrypt(self, message):
-        nonce, key_hash, message = (
-            message[:NONCE_LENGTH],
-            message[NONCE_LENGTH:HEADER_LENGTH],
-            message[HEADER_LENGTH:],
-        )
-        key = self.session_key_manager.get_key(key_hash)
-        if key is None:
-            raise SessionKeyUnavailable("No session key found for received message")
-        return _sym_dec(key, nonce, message)
 
 
 class SimpleCellCipher:

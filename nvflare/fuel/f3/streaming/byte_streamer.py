@@ -191,6 +191,7 @@ class ByteStreamer:
                 StreamHeaderKey.DATA_TYPE: StreamDataType.FINAL if final else StreamDataType.CHUNK,
                 StreamHeaderKey.SEQUENCE: task.seq,
                 StreamHeaderKey.OFFSET: task.offset,
+                StreamHeaderKey.OPTIONAL: task.optional,
             }
         )
 

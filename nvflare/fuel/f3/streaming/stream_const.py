@@ -53,3 +53,4 @@ class StreamHeaderKey:
     OBJECT_INDEX = STREAM_PREFIX + "oi"
     STREAM_REQ_ID = STREAM_PREFIX + "ri"
     PAYLOAD_ENCODING = STREAM_PREFIX + "pe"
+    OPTIONAL = STREAM_PREFIX + "op"
