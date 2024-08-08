@@ -104,12 +104,12 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         if not port:
             raise RuntimeError("failed to get a port for XGB server")
         self.internal_server_addr = f"127.0.0.1:{port}"
-        self.logger.info(f"Start internal server at {self.internal_server_addr}")
+        self.log_info(fl_ctx, f"Start internal server at {self.internal_server_addr}")
         self.internal_xgb_server = GrpcServer(self.internal_server_addr, 10, self.int_server_grpc_options, self)
         self.internal_xgb_server.start(no_blocking=True)
-        self.logger.info(f"Started internal server at {self.internal_server_addr}")
+        self.log_info(fl_ctx, f"Started internal server at {self.internal_server_addr}")
         self._start_client(self.internal_server_addr, fl_ctx)
-        self.logger.info("Started external XGB Client")
+        self.log_info(fl_ctx, "Started external XGB Client")
 
     def stop(self, fl_ctx: FLContext):
         if self.stopped:
@@ -119,7 +119,7 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         self._stop_client()
 
         if self.internal_xgb_server:
-            self.logger.info("Stop internal XGB Server")
+            self.log_info(fl_ctx, "Stop internal XGB Server")
             self.internal_xgb_server.shutdown()
 
     def _abort(self, reason: str):
@@ -217,10 +217,10 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         with self._lock:
             event = self._pending_req.get((rank, seq), None)
         if event:
-            self.logger.info(f"Duplicate seq {op=} {rank=} {seq=}, wait till original req is done")
+            self.log_info(fl_ctx, f"Duplicate seq {op=} {rank=} {seq=}, wait till original req is done")
             event.wait(DUPLICATE_REQ_MAX_HOLD_TIME)
             time.sleep(1)  # To ensure the first request is returned first
-            self.logger.info(f"Duplicate seq {op=} {rank=} {seq=} returned with empty buffer")
+            self.log_info(fl_ctx, f"Duplicate seq {op=} {rank=} {seq=} returned with empty buffer")
             return True
 
         with self._lock:
@@ -236,4 +236,4 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
 
             event.set()
             del self._pending_req[(rank, seq)]
-            self.logger.info(f"Request seq {op=} {rank=} {seq=} finished processing")
+            self.log_info(fl_ctx, f"Request seq {op=} {rank=} {seq=} finished processing")
