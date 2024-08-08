@@ -210,7 +210,7 @@ def fobs_initialize(workspace: Workspace = None, job_id: str = None):
 
 def custom_fobs_initialize(workspace: Workspace = None, job_id: str = None):
     if workspace:
-        site_custom_dir = workspace.get_client_custom_dir()
+        site_custom_dir = workspace.get_client_custom_dir(job_id)
         decomposer_dir = os.path.join(site_custom_dir, ConfigVarName.DECOMPOSER_MODULE)
         if os.path.exists(decomposer_dir):
             register_custom_folder(decomposer_dir)
