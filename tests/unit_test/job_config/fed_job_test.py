@@ -15,19 +15,22 @@
 import pytest
 
 from nvflare import FedAvg
+from nvflare.app_common.abstract.model_learner import ModelLearner
+from nvflare.app_common.executors.model_learner_executor import ModelLearnerExecutor
 from nvflare.job_config.fed_job import FedJob
 
 
 class TestFedJob:
     def test_validate_targets(self):
         job = FedJob()
-        component = FedAvg()
+        controller = FedAvg()
+        executor = ModelLearnerExecutor(learner_id=job.as_id(ModelLearner()))
 
-        job.to(component, "server")
-        job.to(component, "site-1")
+        job.to(controller, "server")
+        job.to(executor, "site-1")
 
         with pytest.raises(Exception):
-            job.to(component, "site-/1", gpu=0)
+            job.to(executor, "site-/1", gpu=0)
 
     def test_non_empty_target(self):
         job = FedJob()

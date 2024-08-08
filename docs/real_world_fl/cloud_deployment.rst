@@ -219,6 +219,11 @@ The configuration file provided is formatted as follows:
     EC2_TYPE=t2.small
     REGION=us-west-2
 
+.. note::
+
+    For the AWS AMIs, we recommend the following images for each version of Ubuntu:
+    20.04:ami-04bad3c587fe60d89, 22.04:ami-03c983f9003cb9cd1, 24.04:ami-0406d1fdd021121cd
+
 Deploy FL Client in the Cloud
 =============================
 As an organization admin for an FL project, you are responsible for setting up your FL Client system. You will receive a Client startup kit either from email, sftp

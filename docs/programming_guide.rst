@@ -35,6 +35,7 @@ Please refer to :ref:`application` for more details.
 .. toctree::
    :maxdepth: 1
 
+   programming_guide/fed_job_api
    programming_guide/workflows_and_controllers
    programming_guide/execution_api_type
    programming_guide/fl_model

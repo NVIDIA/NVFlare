@@ -21,6 +21,7 @@ Publications: 2023
 
 Publications: 2022
 ------------------
+* **2022-11** `Federated Learning with Azure Machine Learning <https://www.youtube.com/watch?v=aTj4AqbCWEA>`__ (Video)
 * **2022-10** `Auto-FedRL: Federated Hyperparameter Optimization for Multi-institutional Medical Image Segmentation <https://arxiv.org/abs/2203.06338>`__ (`ECCV 2022 <https://eccv2022.ecva.net/>`__)
 * **2022-10** `Joint Multi Organ and Tumor Segmentation from Partial Labels Using Federated Learning <https://link.springer.com/chapter/10.1007/978-3-031-18523-6_6>`__ (`DeCaF @ MICCAI 2022 <https://decaf-workshop.github.io/decaf-2022/>`__)
 * **2022-10** `Split-U-Net: Preventing Data Leakage in Split Learning for Collaborative Multi-modal Brain Tumor Segmentation <https://arxiv.org/abs/2208.10553>`__ (`DeCaF @ MICCAI 2022 <https://decaf-workshop.github.io/decaf-2022/>`__)
