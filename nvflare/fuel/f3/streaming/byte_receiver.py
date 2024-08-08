@@ -172,7 +172,17 @@ class ByteReceiver:
             self.rx_task_map.pop(task.sid, None)
 
         if error:
-            log.error(f"Stream error: {error}")
+            if task.headers:
+                optional = task.headers.get(MessageHeaderKey.OPTIONAL, False)
+            else:
+                optional = False
+
+            msg = f"Stream error: {error}"
+            if optional:
+                log.debug(msg)
+            else:
+                log.error(msg)
+
             task.stream_future.set_exception(error)
 
             if notify:

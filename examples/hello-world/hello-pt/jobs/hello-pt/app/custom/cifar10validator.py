@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
 
 import torch
 from simple_network import SimpleNetwork
@@ -19,6 +20,7 @@ from torchvision.datasets import CIFAR10
 from torchvision.transforms import Compose, Normalize, ToTensor
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
+from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
@@ -38,6 +40,9 @@ class Cifar10Validator(Executor):
         self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
         self.model.to(self.device)
 
+        self.data_path = data_path
+
+    def _initialize(self, data_path):
         # Preparing the dataset for testing.
         transforms = Compose(
             [
@@ -47,6 +52,11 @@ class Cifar10Validator(Executor):
         )
         test_data = CIFAR10(root=data_path, train=False, transform=transforms)
         self._test_loader = DataLoader(test_data, batch_size=4, shuffle=False)
+
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        if event_type == EventType.START_RUN:
+            data_path = os.path.join(self.data_path, fl_ctx.get_identity_name())
+            self._initialize(data_path)
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if task_name == self._validate_task_name:
