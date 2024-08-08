@@ -80,7 +80,7 @@ extensions = [
     "sphinx.ext.autosectionlabel",
     "sphinx_copybutton",
     "sphinxcontrib.jquery",
-    "sphinx.ext.extlinks",
+    "sphinx.ext.extlinks"
 ]
 
 autoclass_content = "both"
