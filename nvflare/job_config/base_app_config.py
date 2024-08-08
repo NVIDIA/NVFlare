@@ -58,9 +58,6 @@ class BaseAppConfig(ABC):
         if not (os.path.isabs(ext_script) or os.path.exists(ext_script)):
             raise RuntimeError(f"Could not locate external script: {ext_script}")
 
-        if not ext_script.endswith(".py"):
-            raise RuntimeError(f"External script: {ext_script} must be a '.py' file.")
-
         self.ext_scripts.append(ext_script)
 
     def add_ext_dir(self, ext_dir: str):

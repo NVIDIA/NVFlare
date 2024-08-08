@@ -172,7 +172,7 @@ class FedJobConfig:
                     relative_script = self._get_relative_script(script)
                 else:
                     relative_script = script
-                dest_file = os.path.join(custom_dir, relative_script)
+                dest_file = os.path.join(custom_dir, os.path.basename(relative_script))
                 module = "".join(relative_script.rsplit(".py", 1)).replace(os.sep, ".")
                 self._copy_source_file(custom_dir, module, script, dest_file)
 
@@ -209,7 +209,7 @@ class FedJobConfig:
                     self.custom_modules.append(module)
                     os.makedirs(custom_dir, exist_ok=True)
                     # dest_file = os.path.join(custom_dir, module.replace(".", os.sep) + ".py")
-                    dest_file = os.path.join(custom_dir, dest)
+                    dest_file = os.path.join(custom_dir, os.path.basename(dest))
 
                     self._copy_source_file(custom_dir, module, source_file, dest_file)
 

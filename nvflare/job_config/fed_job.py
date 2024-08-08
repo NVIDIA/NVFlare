@@ -11,7 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import os.path
+
+import os
 import re
 import uuid
 from typing import Any, List, Union
@@ -20,15 +21,23 @@ from nvflare.apis.executor import Executor
 from nvflare.apis.filter import Filter
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
-from nvflare.app_common.executors.script_executor import ScriptExecutor
+from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
+from nvflare.app_common.executors.in_process_client_api_executor import InProcessClientAPIExecutor
+from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
+from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
+from nvflare.app_common.widgets.metric_relay import MetricRelay
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
 from nvflare.fuel.utils.import_utils import optional_import
+from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 from nvflare.fuel.utils.validation_utils import check_positive_int
 from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig, ServerAppConfig
 from nvflare.job_config.fed_job_config import FedJobConfig
+
+from .fed_object import FedObject
+from .script_executor import ScriptExecutor
 
 torch, torch_ok = optional_import(module="torch")
 if torch_ok:
@@ -191,6 +200,7 @@ class FedJob:
         self,
         obj: Any,
         target: str,
+        resources: Union[str, List[str]] = None,
         tasks: List[str] = None,
         gpu: Union[int, List[int]] = None,
         filter_type: FilterType = None,
@@ -201,6 +211,7 @@ class FedJob:
         Args:
             obj: The object to be assigned. The obj will be given a default `id` if non is provided based on its type.
             target: The target location of th object. Can be "server" or a client name, e.g. "site-1".
+            resources: Additional external resources to be included in the custom directory of the target. Resources can be filenames or directories.
             tasks: In case object is an `Executor`, optional list of tasks the executor should handle.
                 Defaults to `None`. If `None`, all tasks will be handled using `[*]`.
             gpu: GPU index or list of GPU indices used for simulating the run on that target.
@@ -216,12 +227,15 @@ class FedJob:
             if target not in self._deploy_map:
                 self._deploy_map[target] = ControllerApp(key_metric=self.key_metric)
             self._deploy_map[target].add_controller(obj, id)
-        elif isinstance(obj, Executor):
+        elif isinstance(obj, (Executor, ScriptExecutor)):
             if target not in self._deploy_map:
                 self._deploy_map[target] = ExecutorApp()
+
             if isinstance(obj, ScriptExecutor):
-                external_scripts = [obj._task_script_path]
-                self._deploy_map[target].add_external_scripts(external_scripts)
+                self._add_script_executor(obj, target, tasks)
+            else:
+                self._deploy_map[target].add_executor(obj, tasks=tasks)
+
             if target not in self.clients:
                 self.clients.append(target)
             if gpu is not None:
@@ -229,17 +243,6 @@ class FedJob:
                     self._gpus[target] = str(gpu)
                 else:
                     print(f"{target} already set to use GPU {self._gpus[target]}. Ignoring gpu={gpu}.")
-            self._deploy_map[target].add_executor(obj, tasks=tasks)
-        elif isinstance(obj, str):  # treat the str type object as external script
-            if target not in self._deploy_map:
-                raise ValueError(
-                    f"{target} doesn't have a `Controller` or `Executor`. Deploy one first before adding external script!"
-                )
-
-            if os.path.isdir(obj):
-                self._deploy_map[target].add_external_dir(obj)
-            else:
-                self._deploy_map[target].add_external_scripts([obj])
         else:  # handle objects that are not Controller or Executor type
             if target not in self._deploy_map:
                 raise ValueError(
@@ -276,6 +279,11 @@ class FedJob:
 
                 if not added_model:  # if it wasn't a model, add as component
                     self._deploy_map[target].add_component(obj, id)
+
+        if isinstance(obj, FedObject):
+            self._add_external_resources(obj.get_resources(), target)
+
+        self._add_external_resources(resources, target)
 
         # add any other components the object might have referenced via id
         if self._components:
@@ -348,6 +356,91 @@ class FedJob:
                             self._add_referenced_components(self._components[base_id], target)
                             # remove already added components from tracked components
                             self._components.pop(base_id)
+
+    def _add_script_executor(self, obj, target, tasks):
+        if obj._launch_external_process:
+            executor = ClientAPILauncherExecutor(
+                pipe_id="pipe",
+                launcher_id="launcher",
+                params_exchange_format=obj._params_exchange_format,
+                params_transfer_type=obj._params_transfer_type,
+                from_nvflare_converter_id="from_nvflare",
+                to_nvflare_converter_id="to_nvflare",
+            )
+            self._deploy_map[target].add_executor(executor, tasks=tasks)
+
+            for resource in obj.get_resources():
+                script = obj._script.replace(resource, os.path.basename(resource))
+            component = SubprocessLauncher(
+                script=script + " " + obj._script_args,
+                launch_once=obj._launch_once,
+            )
+            self._deploy_map[target].app.add_component("launcher", component)
+
+            component = CellPipe(
+                mode="PASSIVE",
+                site_name="{SITE_NAME}",
+                token="{JOB_ID}",
+                root_url="{ROOT_URL}",
+                secure_mode="{SECURE_MODE}",
+                workspace_dir="{WORKSPACE}",
+            )
+            self._deploy_map[target].app.add_component("pipe", component)
+
+            component = CellPipe(
+                mode="PASSIVE",
+                site_name="{SITE_NAME}",
+                token="{JOB_ID}",
+                root_url="{ROOT_URL}",
+                secure_mode="{SECURE_MODE}",
+                workspace_dir="{WORKSPACE}",
+            )
+            self._deploy_map[target].app.add_component("metrics_pipe", component)
+
+            component = MetricRelay(
+                pipe_id="metrics_pipe",
+                event_type="fed.analytix_log_stats",
+            )
+            self._deploy_map[target].app.add_component("metric_relay", component)
+
+            component = ExternalConfigurator(
+                component_ids=["metric_relay"],
+            )
+            self._deploy_map[target].app.add_component("config_preparer", component)
+        else:
+            executor = InProcessClientAPIExecutor(
+                task_script_path=os.path.basename(obj._script),
+                task_script_args=obj._script_args,
+                params_exchange_format=obj._params_exchange_format,
+                params_transfer_type=obj._params_transfer_type,
+                from_nvflare_converter_id="from_nvflare",
+                to_nvflare_converter_id="to_nvflare",
+            )
+            self._deploy_map[target].add_executor(executor, tasks=tasks)
+
+        self._deploy_map[target].app.add_component("from_nvflare", obj._from_nvflare_converter)
+        self._deploy_map[target].app.add_component("to_nvflare", obj._to_nvflare_converter)
+
+    def _add_external_resources(self, resources: Union[str, List[str]], target: str):
+        if not resources:
+            return
+
+        if target not in self._deploy_map:
+            raise ValueError(
+                f"{target} doesn't have a `Controller` or `Executor`. Deploy one first before adding external script!"
+            )
+
+        if not isinstance(resources, List):
+            resources = [resources]
+
+        if not all(isinstance(resource, str) for resource in resources):
+            raise ValueError(f"resources must be type str but received {resources}")
+
+        for resource in resources:
+            if os.path.isdir(resource):
+                self._deploy_map[target].add_external_dir(resource)
+            elif os.path.isfile(resource):
+                self._deploy_map[target].add_external_scripts([resource])
 
     def _set_site_app(self, app: FedApp, target: str):
         if not isinstance(app, FedApp):

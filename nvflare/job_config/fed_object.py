@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,13 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from . import _version
+from abc import ABC, abstractmethod
+from typing import List, Union
 
-__version__ = _version.get_versions()["version"]
 
-# https://github.com/microsoft/pylance-release/issues/856
+class FedObject(ABC):
+    """Interface for objects with external resources used in FedJob API."""
 
-from nvflare.job_config.script_executor import ScriptExecutor
-from nvflare.app_common.workflows.fedavg import FedAvg
-from nvflare.job_config.fed_job import FedJob, FilterType
-from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
+    @abstractmethod
+    def get_resources(self) -> Union[str, List[str]]:
+        """Get resources (filenames or directories) to be included in job custom folder.
+
+        Returns:
+            path or list of paths of resources.
+        """
+        pass
