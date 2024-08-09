@@ -49,8 +49,11 @@ try:
     from nvflare.app_opt.he.homomorphic_encrypt import load_tenseal_context_from_workspace
 
     tenseal_imported = True
-except Exception:
+    tenseal_error = None
+except Exception as ex:
     tenseal_imported = False
+    tenseal_error = f"Import error: {ex}"
+
 
 
 class ClientSecurityHandler(SecurityHandler):
@@ -402,6 +405,7 @@ class ClientSecurityHandler(SecurityHandler):
         fl_ctx.set_prop(key=Constant.PARAM_KEY_RCV_BUF, value=result, private=True, sticky=False)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
+        global tenseal_error
         if event_type == Constant.EVENT_XGB_JOB_CONFIGURED:
             training_mode = fl_ctx.get_prop(Constant.PARAM_KEY_TRAINING_MODE)
             if training_mode in {"vertical_secure", "vs"} and ipcl_imported:
@@ -409,15 +413,18 @@ class ClientSecurityHandler(SecurityHandler):
                 self.encryptor = Encryptor(self.public_key, self.num_workers)
                 self.decrypter = Decrypter(self.private_key, self.num_workers)
                 self.adder = Adder(self.num_workers)
-
-            try:
-                if tenseal_imported:
+            elif training_mode in {"horizontal_secure", "hs"}:
+                if not tenseal_imported:
+                    self.debug(fl_ctx, f"TenSEAL library is required for horizontal secure training")
+                    fl_ctx.set_prop(Constant.PARAM_KEY_CONFIG_ERROR, tenseal_error, private=True, sticky=False)
+                    return
+                try:
                     self.tenseal_context = load_tenseal_context_from_workspace(self.tenseal_context_file, fl_ctx)
-                else:
-                    self.debug(fl_ctx, "Tenseal module not loaded, horizontal secure XGBoost is not supported")
-            except Exception as ex:
-                self.error(fl_ctx, f"Can't load tenseal context, horizontal secure XGBoost is not supported: {ex}")
-                self.tenseal_context = None
+                except Exception as err:
+                    tenseal_error = f"Can't load tenseal context: {err}"
+                    self.tenseal_context = None
+                    self.debug(fl_ctx, tenseal_error)
+                    fl_ctx.set_prop(Constant.PARAM_KEY_CONFIG_ERROR, tenseal_error, private=True, sticky=False)
         elif event_type == EventType.END_RUN:
             self.tenseal_context = None
         else:
