@@ -414,7 +414,6 @@ class ClientSecurityHandler(SecurityHandler):
                 self.adder = Adder(self.num_workers)
             elif training_mode in {"horizontal_secure", "hs"}:
                 if not tenseal_imported:
-                    self.debug(fl_ctx, f"TenSEAL library is required for horizontal secure training")
                     fl_ctx.set_prop(Constant.PARAM_KEY_CONFIG_ERROR, tenseal_error, private=True, sticky=False)
                     return
                 try:
@@ -422,7 +421,6 @@ class ClientSecurityHandler(SecurityHandler):
                 except Exception as err:
                     tenseal_error = f"Can't load tenseal context: {err}"
                     self.tenseal_context = None
-                    self.debug(fl_ctx, tenseal_error)
                     fl_ctx.set_prop(Constant.PARAM_KEY_CONFIG_ERROR, tenseal_error, private=True, sticky=False)
         elif event_type == EventType.END_RUN:
             self.tenseal_context = None
