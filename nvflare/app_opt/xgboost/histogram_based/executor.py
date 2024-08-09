@@ -243,9 +243,10 @@ class FedXGBHistogramExecutor(Executor):
         self.world_size = world_size
 
         if self.use_gpus:
-            # mapping each rank to a GPU (can set to cuda:0 if simulating with only one gpu)
-            self.log_info(fl_ctx, f"Training with GPU {self.rank}")
-            self.xgb_params["device"] = f"cuda:{self.rank}"
+            # mapping each rank to a GPU if not set (can set to cuda:0 if simulating with only one gpu)
+            device = self.xgb_params.get("device", f"cuda:{self.rank}")
+            self.log_info(fl_ctx, f"Training with GPU: {device}")
+            self.xgb_params["device"] = device
 
         self.log_info(fl_ctx, f"Using xgb params: {self.xgb_params}")
         params = XGBoostParams(
