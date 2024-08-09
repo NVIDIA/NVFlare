@@ -55,7 +55,6 @@ except Exception as ex:
     tenseal_error = f"Import error: {ex}"
 
 
-
 class ClientSecurityHandler(SecurityHandler):
     def __init__(self, key_length=1024, num_workers=10, tenseal_context_file="client_context.tenseal"):
         FLComponent.__init__(self)
