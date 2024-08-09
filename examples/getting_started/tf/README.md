@@ -133,8 +133,32 @@ python ./tf_fl_script_executor_cifar10.py \
        --epochs 4 \
        --alpha 0.1
 ```
+[FedProx](https://arxiv.org/abs/1812.06127) adds a regularizer to the loss:
+```
+python ./tf_fl_script_executor_cifar10.py \
+       --algo fedprox \
+       --n_clients 8 \
+       --num_rounds 50 \
+       --batch_size 64 \
+       --epochs 4 \
+       --fedprox_mu 1e-5 \
+       --alpha 0.1
+```
+[SCAFFOLD](https://arxiv.org/abs/1910.06378) adds a correction term
+during local training following the
+[implementation](https://github.com/Xtra-Computing/NIID-Bench) as
+described in [Li et al.](https://arxiv.org/abs/2102.02079)
 
-
+```
+python ./tf_fl_script_executor_cifar10.py \
+       --algo scaffold \
+       --n_clients 8 \
+       --num_rounds 50 \
+       --batch_size 64 \
+       --epochs 4 \
+       --fedprox_mu 1e-5 \
+       --alpha 0.1
+```
 ## 3. Results
 
 Now let's compare experimental results.
@@ -173,17 +197,22 @@ heterogeneity](./figs/fedavg-diff-alphas.png)
 ### 3.3 Impact of different FL algorithms
 
 Lastly, we compare the performance of different FL algorithms, with
-`alpha` value fixed to 0.1, i.e., a high client data heterogeneity. We
-can observe from the figure below that, FedOpt achieves better
-performance, with better convergence rates compared to FedAvg with the
-same alpha setting.
+`alpha` value fixed to 0.1, i.e., a high client data heterogeneity. We can observe from the figure below that, FedProx and
+SCAFFOLD achieve better performance, with better convergence rates
+compared to FedAvg and FedProx with the same alpha setting. SCAFFOLD
+achieves that by adding a correction term when updating the client
+models, while FedOpt utilizes SGD with momentum to update the global
+model on the server. Both achieve better performance with the same
+number of training steps as FedAvg/FedProx.
 
 | Config |	Alpha |	Val score |
 | ----------- | ----------- |  ----------- |
 | cifar10_fedavg |	0.1 |	0.7903 |
 | cifar10_fedopt |	0.1 |	0.8145 |
+| cifar10_fedprox |	0.1 |	0.7843 |
+| cifar10_scaffold |	0.1 |	0.8164 |
 
-![Impact of different FL algorithms](./figs/fedavg-diff-algos.png)
-
+![Impact of different FL algorithms](./figs/fedavg-diff-algos-new.png)
 > [!NOTE]
 > More examples can be found at https://nvidia.github.io/NVFlare.
+
