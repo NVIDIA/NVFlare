@@ -26,7 +26,6 @@ class FlowerController(TieController):
     def __init__(
         self,
         num_rounds=1,
-        server_app: str = "server:app",
         database: str = "",
         server_app_args: list = None,
         superlink_ready_timeout: float = 10.0,
@@ -43,7 +42,6 @@ class FlowerController(TieController):
 
         Args:
             num_rounds: number of rounds. Not used in this version.
-            server_app: the server app specification for Flower server app
             database: database name
             server_app_args: additional server app CLI args
             superlink_ready_timeout: how long to wait for the superlink to become ready before starting server app
@@ -73,7 +71,6 @@ class FlowerController(TieController):
             check_object_type("server_app_args", server_app_args, list)
 
         self.num_rounds = num_rounds
-        self.server_app = server_app
         self.database = database
         self.server_app_args = server_app_args
         self.superlink_ready_timeout = superlink_ready_timeout
@@ -86,7 +83,6 @@ class FlowerController(TieController):
 
     def get_applet(self, fl_ctx: FLContext):
         return FlowerServerApplet(
-            server_app=self.server_app,
             database=self.database,
             superlink_ready_timeout=self.superlink_ready_timeout,
             server_app_args=self.server_app_args,
