@@ -16,10 +16,11 @@ import time
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_opt.xgboost.histogram_based_v2.aggr import Aggregator
-from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
+from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant, TrainingMode
 from nvflare.app_opt.xgboost.histogram_based_v2.sec.dam import DamDecoder
 from nvflare.app_opt.xgboost.histogram_based_v2.sec.data_converter import FeatureAggregationResult
 from nvflare.app_opt.xgboost.histogram_based_v2.sec.partial_he.adder import Adder
@@ -49,8 +50,10 @@ try:
     from nvflare.app_opt.he.homomorphic_encrypt import load_tenseal_context_from_workspace
 
     tenseal_imported = True
-except Exception:
+    tenseal_error = None
+except Exception as ex:
     tenseal_imported = False
+    tenseal_error = f"Import error: {ex}"
 
 
 class ClientSecurityHandler(SecurityHandler):
@@ -402,22 +405,25 @@ class ClientSecurityHandler(SecurityHandler):
         fl_ctx.set_prop(key=Constant.PARAM_KEY_RCV_BUF, value=result, private=True, sticky=False)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
+        global tenseal_error
         if event_type == Constant.EVENT_XGB_JOB_CONFIGURED:
-            training_mode = fl_ctx.get_prop(Constant.PARAM_KEY_TRAINING_MODE)
-            if training_mode in {"vertical_secure", "vs"} and ipcl_imported:
+            task_data = fl_ctx.get_prop(FLContextKey.TASK_DATA)
+            training_mode = task_data.get(Constant.CONF_KEY_TRAINING_MODE)
+            if training_mode in {TrainingMode.VS, TrainingMode.VERTICAL_SECURE} and ipcl_imported:
                 self.public_key, self.private_key = generate_keys(self.key_length)
                 self.encryptor = Encryptor(self.public_key, self.num_workers)
                 self.decrypter = Decrypter(self.private_key, self.num_workers)
                 self.adder = Adder(self.num_workers)
-
-            try:
-                if tenseal_imported:
+            elif training_mode in {TrainingMode.HS, TrainingMode.HORIZONTAL_SECURE}:
+                if not tenseal_imported:
+                    fl_ctx.set_prop(Constant.PARAM_KEY_CONFIG_ERROR, tenseal_error, private=True, sticky=False)
+                    return
+                try:
                     self.tenseal_context = load_tenseal_context_from_workspace(self.tenseal_context_file, fl_ctx)
-                else:
-                    self.debug(fl_ctx, "Tenseal module not loaded, horizontal secure XGBoost is not supported")
-            except Exception as ex:
-                self.error(fl_ctx, f"Can't load tenseal context, horizontal secure XGBoost is not supported: {ex}")
-                self.tenseal_context = None
+                except Exception as err:
+                    tenseal_error = f"Can't load tenseal context: {err}"
+                    self.tenseal_context = None
+                    fl_ctx.set_prop(Constant.PARAM_KEY_CONFIG_ERROR, tenseal_error, private=True, sticky=False)
         elif event_type == EventType.END_RUN:
             self.tenseal_context = None
         else:
