@@ -17,18 +17,20 @@ import uuid
 from typing import Any, List, Optional, Union
 
 from nvflare.apis.executor import Executor
-from nvflare.apis.filter import Filter
+from nvflare.apis.filter import Filter, FilterType
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
-from nvflare.app_common.executors.script_executor import ScriptExecutor
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
+from nvflare.app_opt.script_executor import ScriptExecutor
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.validation_utils import check_positive_int
 from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig, ServerAppConfig
 from nvflare.job_config.fed_job_config import FedJobConfig
+
+from .job_object import ExecutorJobObj, FilterJobObj, JobObj
 
 torch, torch_ok = optional_import(module="torch")
 if torch_ok:
@@ -46,11 +48,6 @@ if torch_ok and tb_ok:
     from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 
 SPECIAL_CHARACTERS = '"!@#$%^&*()+?=,<>/'
-
-
-class FilterType:
-    TASK_RESULT = "_TASK_RESULT_FILTER_TYPE_"
-    TASK_DATA = "_TASK_DATA_FILTER_TYPE_"
 
 
 class FedApp:
@@ -197,6 +194,31 @@ class FedJob:
         self,
         obj: Any,
         target: str,
+        id=None,
+    ):
+        """assign an object to a target (server or clients).
+        Args:
+            obj: The object to be assigned. The obj will be given a default `id` if none is provided based on its type.
+            target: The target location of the object. Can be "server" or a client name, e.g. "site-1".
+            id: Optional user-defined id for the object. Defaults to `None` and ID will automatically be assigned.
+        Returns:
+        """
+        self._validate_target(target)
+
+        if isinstance(obj, JobObj):
+            if isinstance(obj, ExecutorJobObj):
+                self._to(obj=obj.base_obj, target=target, tasks=obj.tasks, gpu=obj.gpu, id=id)
+            elif isinstance(obj, FilterJobObj):
+                self._to(obj=obj.base_obj, target=target, tasks=obj.tasks, filter_type=obj.filter_type)
+
+            self._add_external_resources(obj.resources, target)
+        else:
+            self._to(obj, target, id)
+
+    def _to(
+        self,
+        obj: Any,
+        target: str,
         tasks: List[str] = None,
         gpu: Union[int, List[int]] = None,
         filter_type: FilterType = None,
@@ -239,6 +261,7 @@ class FedJob:
             if isinstance(obj, ScriptExecutor):
                 external_scripts = [obj._task_script_path]
                 self._deploy_map[target].add_external_scripts(external_scripts)
+                obj._task_script_path = os.path.basename(obj._task_script_path)
             if target not in self.clients:
                 self.clients.append(target)
             if gpu is not None:
@@ -247,16 +270,6 @@ class FedJob:
                 else:
                     print(f"{target} already set to use GPU {self._gpus[target]}. Ignoring gpu={gpu}.")
             self._deploy_map[target].add_executor(obj, tasks=tasks)
-        elif isinstance(obj, str):  # treat the str type object as external script
-            if target not in self._deploy_map:
-                raise ValueError(
-                    f"{target} doesn't have a `Controller` or `Executor`. Deploy one first before adding external script!"
-                )
-
-            if os.path.isdir(obj):
-                self._deploy_map[target].add_external_dir(obj)
-            else:
-                self._deploy_map[target].add_external_scripts([obj])
         else:  # handle objects that are not Controller or Executor type
             if target not in self._deploy_map:
                 raise ValueError(
@@ -299,14 +312,12 @@ class FedJob:
     def to_server(
         self,
         obj: Any,
-        filter_type: FilterType = None,
         id=None,
     ):
         """assign an object to the server.
 
         Args:
             obj: The object to be assigned. The obj will be given a default `id` if non is provided based on its type.
-            filter_type: The type of filter used. Either `FilterType.TASK_RESULT` or `FilterType.TASK_DATA`.
             id: Optional user-defined id for the object. Defaults to `None` and ID will automatically be assigned.
 
         Returns:
@@ -315,22 +326,17 @@ class FedJob:
         if isinstance(obj, Executor):
             raise ValueError("Use `job.to(executor, <client_name>)` or `job.to_clients(executor)` for Executors.")
 
-        self.to(obj=obj, target=SERVER_SITE_NAME, filter_type=filter_type, id=id)
+        self.to(obj=obj, target=SERVER_SITE_NAME, id=id)
 
     def to_clients(
         self,
         obj: Any,
-        tasks: List[str] = None,
-        filter_type: FilterType = None,
         id=None,
     ):
         """assign an object to all clients.
 
         Args:
             obj (Any): Object to be deployed.
-            tasks: In case object is an `Executor`, optional list of tasks the executor should handle.
-                Defaults to `None`. If `None`, all tasks will be handled using `[*]`.
-            filter_type: The type of filter used. Either `FilterType.TASK_RESULT` or `FilterType.TASK_DATA`.
             id: Optional user-defined id for the object. Defaults to `None` and ID will automatically be assigned.
 
         Returns:
@@ -339,7 +345,7 @@ class FedJob:
         if isinstance(obj, Controller):
             raise ValueError('Use `job.to(controller, "server")` or `job.to_server(controller)` for Controllers.')
 
-        self.to(obj=obj, target=ALL_SITES, tasks=tasks, filter_type=filter_type, id=id)
+        self.to(obj=obj, target=ALL_SITES, id=id)
 
     def as_id(self, obj: Any) -> str:
         """Generate and return uuid for `obj`. If this id is referenced by another added object, this `obj` will also be added as a component."""
@@ -364,6 +370,27 @@ class FedJob:
                             self._add_referenced_components(self._components[base_id], target)
                             # remove already added components from tracked components
                             self._components.pop(base_id)
+
+    def _add_external_resources(self, resources: Union[str, List[str]], target: str):
+        if not resources:
+            return
+
+        if target not in self._deploy_map:
+            raise ValueError(
+                f"{target} doesn't have a `Controller` or `Executor`. Deploy one first before adding external script!"
+            )
+
+        if not isinstance(resources, List):
+            resources = [resources]
+
+        if not all(isinstance(resource, str) for resource in resources):
+            raise ValueError(f"resources must be type str but received {resources}")
+
+        for resource in resources:
+            if os.path.isdir(resource):
+                self._deploy_map[target].add_external_dir(resource)
+            elif os.path.isfile(resource):
+                self._deploy_map[target].add_external_scripts([resource])
 
     def _set_site_app(self, app: FedApp, target: str):
         if not isinstance(app, FedApp):

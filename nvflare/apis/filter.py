@@ -27,6 +27,11 @@ class ContentBlockedException(Exception):
     pass
 
 
+class FilterType(object):
+    TASK_RESULT = "_TASK_RESULT_FILTER_TYPE_"
+    TASK_DATA = "_TASK_DATA_FILTER_TYPE_"
+
+
 class FilterChainType(object):
 
     TASK_DATA_CHAIN = "task_data"
