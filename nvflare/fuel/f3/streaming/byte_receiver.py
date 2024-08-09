@@ -173,7 +173,7 @@ class ByteReceiver:
 
         if error:
             if task.headers:
-                optional = task.headers.get(MessageHeaderKey.OPTIONAL, False)
+                optional = task.headers.get(StreamHeaderKey.OPTIONAL, False)
             else:
                 optional = False
 

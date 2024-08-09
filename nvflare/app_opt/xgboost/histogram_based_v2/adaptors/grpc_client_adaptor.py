@@ -49,7 +49,7 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         self._workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
         self._run_dir = self._workspace.get_run_dir(run_number)
-        self.engine = engine
+        self.engine = fl_ctx.get_engine()
 
     def _start_client(self, server_addr: str, fl_ctx: FLContext):
         """Start the XGB client runner in a separate thread or separate process based on config.
@@ -212,10 +212,10 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         with self._lock:
             event = self._pending_req.get((rank, seq), None)
         if event:
-            self.log_info(fl_ctx, f"Duplicate seq {op=} {rank=} {seq=}, wait till original req is done")
+            self.logger.info(f"Duplicate seq {op=} {rank=} {seq=}, wait till original req is done")
             event.wait(DUPLICATE_REQ_MAX_HOLD_TIME)
             time.sleep(1)  # To ensure the first request is returned first
-            self.log_info(fl_ctx, f"Duplicate seq {op=} {rank=} {seq=} returned with empty buffer")
+            self.logger.info(f"Duplicate seq {op=} {rank=} {seq=} returned with empty buffer")
             return True
 
         with self._lock:
@@ -231,4 +231,4 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
 
             event.set()
             del self._pending_req[(rank, seq)]
-            self.log_info(fl_ctx, f"Request seq {op=} {rank=} {seq=} finished processing")
+            self.logger.info(f"Request seq {op=} {rank=} {seq=} finished processing")
