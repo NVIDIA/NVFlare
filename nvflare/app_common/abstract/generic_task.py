@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,18 +13,20 @@
 # limitations under the License.
 
 
-from abc import ABC, abstractmethod
-from typing import Optional, Tuple
+from typing import Dict, Optional
 
-import xgboost as xgb
+from nvflare.app_common.abstract.fl_model import FLModel
 
 
-class XGBDataLoader(ABC):
-    @abstractmethod
-    def load_data(self, client_id: str, training_mode: Optional[str] = "h") -> Tuple[xgb.DMatrix, xgb.DMatrix]:
-        """Loads data for xgboost.
-
-        Returns:
-            A tuple of train_data, validation_data
-        """
-        pass
+class GenericTask(FLModel):
+    def __init__(self, meta: Optional[Dict] = None):
+        super().__init__(
+            params_type=None,
+            params={},
+            optimizer_params=None,
+            metrics=None,
+            start_round=0,
+            current_round=0,
+            total_rounds=1,
+            meta=meta,
+        )

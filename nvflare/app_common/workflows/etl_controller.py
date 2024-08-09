@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,18 +13,10 @@
 # limitations under the License.
 
 
-from abc import ABC, abstractmethod
-from typing import Optional, Tuple
-
-import xgboost as xgb
+from nvflare.app_common.workflows.generic_task_controller import GenericTaskController
 
 
-class XGBDataLoader(ABC):
-    @abstractmethod
-    def load_data(self, client_id: str, training_mode: Optional[str] = "h") -> Tuple[xgb.DMatrix, xgb.DMatrix]:
-        """Loads data for xgboost.
-
-        Returns:
-            A tuple of train_data, validation_data
-        """
-        pass
+class ETLController(GenericTaskController):
+    def __init__(self, task_name="etl", *args, **kwargs):
+        kwargs["task_name"] = task_name
+        super().__init__(*args, **kwargs)
