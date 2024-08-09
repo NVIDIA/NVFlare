@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# change to "gpu_hist" for gpu training
 TREE_METHOD="hist"
 
 prepare_job_config() {

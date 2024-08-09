@@ -399,7 +399,11 @@ class AdminClient(cmd.Cmd, EventHandler):
 
     def preloop(self):
         if readline and os.path.exists(self.cli_history_file):
-            readline.read_history_file(self.cli_history_file)
+            try:
+                readline.read_history_file(self.cli_history_file)
+            except OSError:
+                self.stdout.write("Unable to read history file.  No command history loaded\n")
+                readline.clear_history()
 
     def postcmd(self, stop, line):
         if readline:
