@@ -129,16 +129,29 @@ class SplitMode:
     COL = 1
 
 
+class TrainingMode:
+    # Non-secure mode
+    H = "h"
+    HORIZONTAL = "horizontal"
+    V = "v"
+    VERTICAL = "vertical"
+    # Secure mode
+    HS = "hs"
+    HORIZONTAL_SECURE = "horizontal_secure"
+    VS = "VS"
+    VERTICAL_SECURE = "vertical_secure"
+
+
 # Mapping of text training mode to split mode
 TRAINING_MODE_MAPPING = {
-    "h": SplitMode.ROW,
-    "horizontal": SplitMode.ROW,
-    "v": SplitMode.COL,
-    "vertical": SplitMode.COL,
-    "hs": SplitMode.ROW,
-    "horizontal_secure": SplitMode.ROW,
-    "vs": SplitMode.COL,
-    "vertical_secure": SplitMode.COL,
+    TrainingMode.H: SplitMode.ROW,
+    TrainingMode.HORIZONTAL: SplitMode.ROW,
+    TrainingMode.V: SplitMode.COL,
+    TrainingMode.VERTICAL: SplitMode.COL,
+    TrainingMode.HS: SplitMode.ROW,
+    TrainingMode.HORIZONTAL_SECURE: SplitMode.ROW,
+    TrainingMode.VS: SplitMode.COL,
+    TrainingMode.VERTICAL_SECURE: SplitMode.COL,
 }
 
-SECURE_TRAINING_MODES = {"hs", "horizontal_secure", "vs", "vertical_secure"}
+SECURE_TRAINING_MODES = {TrainingMode.HS, TrainingMode.HORIZONTAL_SECURE, TrainingMode.VS, TrainingMode.VERTICAL_SECURE}

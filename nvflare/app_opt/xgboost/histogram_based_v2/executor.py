@@ -91,7 +91,6 @@ class XGBExecutor(Executor):
             self.abort_signal.trigger(True)
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        engine = fl_ctx.get_engine()
         if task_name == self.configure_task_name:
             # there are two important config params for the client:
             #   the rank assigned to the client;
@@ -123,7 +122,7 @@ class XGBExecutor(Executor):
                 shareable,
                 fl_ctx,
             )
-            engine.fire_event(Constant.EVENT_XGB_JOB_CONFIGURED, fl_ctx)
+            self.fire_event(Constant.EVENT_XGB_JOB_CONFIGURED, fl_ctx)
             config_error = fl_ctx.get_prop(Constant.PARAM_KEY_CONFIG_ERROR, None)
             if not config_error:
                 return make_reply(ReturnCode.OK)
