@@ -189,6 +189,7 @@ class XGBClientAdaptor(AppAdaptor):
         self.training_mode = config.get(Constant.CONF_KEY_TRAINING_MODE)
         if self.training_mode is None:
             raise RuntimeError("training_mode is not configured")
+        fl_ctx.set_prop(key=Constant.PARAM_KEY_TRAINING_MODE, value=self.training_mode, private=True, sticky=True)
 
         self.xgb_params = config.get(Constant.CONF_KEY_XGB_PARAMS)
         if not self.xgb_params:

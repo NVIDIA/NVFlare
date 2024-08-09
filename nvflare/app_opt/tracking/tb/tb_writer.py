@@ -32,6 +32,9 @@ class TBWriter(LogWriter):
     def get_writer_name(self) -> LogWriterName:
         return LogWriterName.TORCH_TB
 
+    def get_default_metric_data_type(self) -> AnalyticsDataType:
+        return AnalyticsDataType.SCALARS
+
     def add_scalar(self, tag: str, scalar: float, global_step: Optional[int] = None, **kwargs):
         """Sends a scalar.
 
@@ -41,7 +44,7 @@ class TBWriter(LogWriter):
             global_step (optional, int): Global step value.
             **kwargs: Additional arguments to pass to the receiver side.
         """
-        self.sender.add(tag=tag, value=scalar, data_type=AnalyticsDataType.SCALAR, global_step=global_step, **kwargs)
+        self.write(tag=tag, value=scalar, data_type=AnalyticsDataType.SCALAR, global_step=global_step, **kwargs)
 
     def add_scalars(self, tag: str, scalars: dict, global_step: Optional[int] = None, **kwargs):
         """Sends scalars.
@@ -52,7 +55,7 @@ class TBWriter(LogWriter):
             global_step (optional, int): Global step value.
             **kwargs: Additional arguments to pass to the receiver side.
         """
-        self.sender.add(tag=tag, value=scalars, data_type=AnalyticsDataType.SCALARS, global_step=global_step, **kwargs)
+        self.write(tag=tag, value=scalars, data_type=AnalyticsDataType.SCALARS, global_step=global_step, **kwargs)
 
     def flush(self):
         """Flushes out the message.

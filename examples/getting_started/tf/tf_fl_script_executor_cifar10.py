@@ -30,6 +30,8 @@ for device in gpu_devices:
 CENTRALIZED_ALGO = "centralized"
 FEDAVG_ALGO = "fedavg"
 FEDOPT_ALGO = "fedopt"
+SCAFFOLD_ALGO = "scaffold"
+FEDPROX_ALGO = "fedprox"
 
 
 if __name__ == "__main__":
@@ -38,6 +40,11 @@ if __name__ == "__main__":
         "--algo",
         type=str,
         required=True,
+    )
+    parser.add_argument(
+        "--fedprox_mu",
+        type=float,
+        default=0.0,
     )
     parser.add_argument(
         "--n_clients",
@@ -78,7 +85,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     multiprocessing.set_start_method("spawn")
 
-    supported_algos = (CENTRALIZED_ALGO, FEDAVG_ALGO, FEDOPT_ALGO)
+    supported_algos = (CENTRALIZED_ALGO, FEDAVG_ALGO, FEDOPT_ALGO, SCAFFOLD_ALGO, FEDPROX_ALGO)
 
     if args.algo not in supported_algos:
         raise ValueError(f"--algo should be one of: {supported_algos}, got: {args.algo}")
@@ -118,6 +125,23 @@ if __name__ == "__main__":
         from nvflare.app_opt.tf.fedopt_ctl import FedOpt
 
         controller = FedOpt(
+            num_clients=args.n_clients,
+            num_rounds=args.num_rounds,
+        )
+    elif args.algo == FEDPROX_ALGO:
+        from nvflare import FedAvg
+
+        controller = FedAvg(
+            num_clients=args.n_clients,
+            num_rounds=args.num_rounds,
+        )
+        task_script_args += f" --fedprox_mu {args.fedprox_mu}"
+
+    elif args.algo == SCAFFOLD_ALGO:
+        train_script = "src/cifar10_tf_fl_alpha_split_scaffold.py"
+        from nvflare.app_common.workflows.scaffold import Scaffold
+
+        controller = Scaffold(
             num_clients=args.n_clients,
             num_rounds=args.num_rounds,
         )

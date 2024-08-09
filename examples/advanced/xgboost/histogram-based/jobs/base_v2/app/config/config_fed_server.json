@@ -1,8 +1,6 @@
 {
   "format_version": 2,
-  "server": {
-    "heart_beat_timeout": 600
-  },
+  "num_rounds": 100,
   "task_data_filters": [],
   "task_result_filters": [],
   "components": [
@@ -17,9 +15,9 @@
   "workflows": [
     {
       "id": "xgb_controller",
-      "path": "nvflare.app_opt.xgboost.histogram_based.controller.XGBFedController",
+      "path": "nvflare.app_opt.xgboost.histogram_based_v2.controller.XGBFedController",
       "args": {
-        "train_timeout": 30000
+        "num_rounds": "{num_rounds}"
       }
     }
   ]

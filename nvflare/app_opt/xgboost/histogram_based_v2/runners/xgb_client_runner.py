@@ -11,7 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import os
+from typing import Tuple
 
 import xgboost as xgb
 from xgboost import callback
@@ -23,10 +25,8 @@ from nvflare.app_common.tracking.log_writer import LogWriter
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import SECURE_TRAINING_MODES, Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.runners.xgb_runner import AppRunner
-from nvflare.app_opt.xgboost.histogram_based_v2.tb import TensorBoardCallback
 from nvflare.app_opt.xgboost.metrics_cb import MetricsCallback
 from nvflare.fuel.utils.config_service import ConfigService
-from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.obj_utils import get_logger
 from nvflare.utils.cli_utils import get_package_root
 
@@ -56,7 +56,6 @@ class XGBClientRunner(AppRunner, FLComponent):
         self._xgb_options = None
         self._server_addr = None
         self._data_loader = None
-        self._tb_dir = None
         self._model_dir = None
         self._stopped = False
         self._metrics_writer_id = metrics_writer_id
@@ -93,10 +92,6 @@ class XGBClientRunner(AppRunner, FLComponent):
         if self._metrics_writer:
             callbacks.append(MetricsCallback(self._metrics_writer))
 
-        tensorboard, flag = optional_import(module="torch.utils.tensorboard")
-        if flag and self._tb_dir:
-            callbacks.append(TensorBoardCallback(self._tb_dir, tensorboard))
-
         early_stopping_rounds = xgb_options.get("early_stopping_rounds", 0)
         verbose_eval = xgb_options.get("verbose_eval", False)
 
@@ -121,8 +116,6 @@ class XGBClientRunner(AppRunner, FLComponent):
         self._xgb_params = ctx.get(Constant.RUNNER_CTX_XGB_PARAMS)
         self._xgb_options = ctx.get(Constant.RUNNER_CTX_XGB_OPTIONS)
         self._server_addr = ctx.get(Constant.RUNNER_CTX_SERVER_ADDR)
-        # self._data_loader = ctx.get(Constant.RUNNER_CTX_DATA_LOADER)
-        self._tb_dir = ctx.get(Constant.RUNNER_CTX_TB_DIR)
         self._model_dir = ctx.get(Constant.RUNNER_CTX_MODEL_DIR)
 
         use_gpus = self._xgb_options.get("use_gpus", False)
@@ -132,7 +125,7 @@ class XGBClientRunner(AppRunner, FLComponent):
             self._xgb_params["device"] = f"cuda:{self._rank}"
 
         self.logger.info(
-            f"XGB trainging_mode: {self._training_mode} " f"params: {self._xgb_params} XGB options: {self._xgb_options}"
+            f"XGB training_mode: {self._training_mode} " f"params: {self._xgb_params} XGB options: {self._xgb_options}"
         )
         self.logger.info(f"server address is {self._server_addr}")
 
@@ -193,5 +186,5 @@ class XGBClientRunner(AppRunner, FLComponent):
         # currently no way to stop the runner
         pass
 
-    def is_stopped(self) -> (bool, int):
+    def is_stopped(self) -> Tuple[bool, int]:
         return self._stopped, 0

@@ -2,7 +2,7 @@
 This example shows how to use vertical federated learning with [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on tabular data.
 Here we use the optimized gradient boosting library [XGBoost](https://github.com/dmlc/xgboost) and leverage its federated learning support.
 
-Before starting please make sure you set up a [virtual environment](../../../README.md#set-up-a-virtual-environment) and install the additional requirements:
+Before starting please make sure you set up a [virtual environment](../../README.md#set-up-a-virtual-environment) and install the additional requirements:
 ```
 python3 -m pip install -r requirements.txt
 ```
@@ -30,7 +30,7 @@ Run the following command to prepare the data splits:
 ### Private Set Intersection (PSI)
 Since not every site will have the same set of data samples (rows), we can use PSI to compare encrypted versions of the sites' datasets in order to jointly compute the intersection based on common IDs. In this example, the HIGGS dataset does not contain unique identifiers so we add a temporary `uid_{idx}` to each instance and give each site a portion of the HIGGS dataset that includes a common overlap. Afterwards the identifiers are dropped since they are only used for matching, and training is then done on the intersected data. To learn more about our PSI protocol implementation, see our [psi example](../psi/README.md).
 
-> **_NOTE:_** The uid can be a composition of multiple variabes with a transformation, however in this example we use indices for simplicity. PSI can also be used for computing the intersection of overlapping features, but here we give each site unique features.
+> **_NOTE:_** The uid can be a composition of multiple variables with a transformation, however in this example we use indices for simplicity. PSI can also be used for computing the intersection of overlapping features, but here we give each site unique features.
 
 Create the psi job using the predefined psi_csv template:
 ```
@@ -58,7 +58,9 @@ Lastly, we must subclass `XGBDataLoader` and implement the `load_data()` method.
 By default, CPU based training is used.
 
 In order to enable GPU accelerated training, first ensure that your machine has CUDA installed and has at least one GPU.
-In `config_fed_client.json` set `"use_gpus": true` and  `"tree_method": "hist"` in `xgb_params`. Then, in `FedXGBHistogramExecutor` we use the `device` parameter to map each rank to a GPU device ordinal in `xgb_params`. If using multiple GPUs, we can map each rank to a different GPU device, however you can also map each rank to the same GPU device if using a single GPU.
+In `config_fed_client.json` set `"use_gpus": true` and  `"tree_method": "hist"` in `xgb_params`.
+Then, in `FedXGBHistogramExecutor` we use the `device` parameter to map each rank to a GPU device ordinal in `xgb_params`.
+If using multiple GPUs, we can map each rank to a different GPU device, however you can also map each rank to the same GPU device if using a single GPU.
 
 We can create a GPU enabled job using the job CLI:
 ```
@@ -87,10 +89,11 @@ The model will be saved to `test.model.json`.
 ## Results
 Model accuracy can be visualized in tensorboard:
 ```
-tensorboard --logdir /tmp/nvflare/vertical_xgb
+tensorboard --logdir /tmp/nvflare/vertical_xgb/simulate_job/tb_events
 ```
 
-An example training (pink) and validation (orange) AUC graph from running vertical XGBoost on HIGGS.
-Used an intersection of 50000 samples across 5 clients each with different features, and ran for ~50 rounds due to early stopping.
+An example training (pink) and validation (orange) AUC graph from running vertical XGBoost on HIGGS:
+(Used an intersection of 50000 samples across 5 clients each with different features,
+and ran for ~50 rounds due to early stopping.)
 
 ![Vertical XGBoost graph](./figs/vertical_xgboost_graph.png)

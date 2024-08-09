@@ -122,6 +122,7 @@ def main():
 
         # (6) evaluate on received model for model selection
         accuracy = evaluate(input_model.params)
+        summary_writer.add_scalar(tag="global_model_accuracy", scalar=accuracy, global_step=input_model.current_round)
         # (7) construct trained FL model
         output_model = flare.FLModel(
             params=net.cpu().state_dict(),

@@ -11,13 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import logging
 import multiprocessing
 import os
 import sys
 import threading
 import time
 from abc import ABC, abstractmethod
+
+from xgboost.core import XGBoostError
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
@@ -46,6 +48,7 @@ class _RunnerStarter:
         self.started = True
         self.stopped = False
         self.exit_code = 0
+        self.logger = logging.getLogger(self.__class__.__name__)
 
     def start(self, ctx: dict):
         """Start the runner and wait for it to finish.
@@ -67,8 +70,11 @@ class _RunnerStarter:
             self.runner.run(ctx)
             self.stopped = True
         except Exception as e:
-            secure_log_traceback()
             self.error = f"Exception starting {self.app_name} runner: {secure_format_exception(e)}"
+            self.logger.error(self.error)
+            # XGBoost already prints a traceback
+            if not isinstance(e, XGBoostError):
+                secure_log_traceback()
             self.started = False
             self.exit_code = Constant.EXIT_CODE_CANT_START
             self.stopped = True
