@@ -1,0 +1,1 @@
+python3 -c "from tensorflow.keras.datasets import mnist; mnist_data = mnist.load_data()"
