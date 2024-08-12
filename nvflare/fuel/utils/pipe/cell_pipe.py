@@ -18,6 +18,7 @@ import threading
 import time
 from typing import Tuple, Union
 
+from nvflare.apis.fl_constant import SystemVarName
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
@@ -178,17 +179,21 @@ class CellPipe(Pipe):
         super().__init__(mode)
         self.logger = logging.getLogger(self.__class__.__name__)
 
+        self.site_name = site_name
+        self.token = token
+        self.root_url = root_url
+        self.secure_mode = secure_mode
+        self.workspace_dir = workspace_dir
+
+        sysvarname_placeholders = ["{" + varname + "}" for varname in dir(SystemVarName)]
+        if any([arg in sysvarname_placeholders for arg in [site_name, token, root_url, secure_mode, workspace_dir]]):
+            return
+
         check_str("root_url", root_url)
         check_object_type("secure_mode", secure_mode, bool)
         check_str("token", token)
         check_str("site_name", site_name)
         check_str("workspace_dir", workspace_dir)
-
-        self.root_url = root_url
-        self.secure_mode = secure_mode
-        self.workspace_dir = workspace_dir
-        self.site_name = site_name
-        self.token = token
 
         mode = f"{mode}".strip().lower()  # convert to lower case string
         self.ci = self._build_cell(mode, root_url, site_name, token, secure_mode, workspace_dir)

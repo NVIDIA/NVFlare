@@ -20,17 +20,11 @@ from nvflare.apis.executor import Executor
 from nvflare.apis.filter import Filter, FilterType
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
-from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
-from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
-from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
-from nvflare.app_opt.script_executor import ScriptExecutor
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.validation_utils import check_positive_int
 from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig, ServerAppConfig
 from nvflare.job_config.fed_job_config import FedJobConfig
-
-from .job_object import ExecutorJobObj, FilterJobObj, JobObj
 
 torch, torch_ok = optional_import(module="torch")
 if torch_ok:
@@ -42,10 +36,6 @@ if torch_ok:
 tf, tf_ok = optional_import(module="tensorflow")
 if tf_ok:
     from nvflare.app_opt.tf.model_persistor import TFModelPersistor
-
-tb, tb_ok = optional_import(module="tensorboard")
-if torch_ok and tb_ok:
-    from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 
 SPECIAL_CHARACTERS = '"!@#$%^&*()+?=,<>/'
 
@@ -124,9 +114,6 @@ class ExecutorApp(FedApp):
     def _create_client_app(self):
         self.app = ClientAppConfig()
 
-        component = ConvertToFedEvent(events_to_convert=["analytix_log_stats"], fed_event_prefix="fed.")
-        self.app.add_component("event_to_fed", component)
-
 
 class ControllerApp(FedApp):
     """Wrapper around `ServerAppConfig`.
@@ -146,18 +133,6 @@ class ControllerApp(FedApp):
 
     def _create_server_app(self):
         self.app: ServerAppConfig = ServerAppConfig()
-
-        component = ValidationJsonGenerator()
-        self.app.add_component("json_generator", component)
-
-        if self.key_metric:
-            component = IntimeModelSelector(key_metric=self.key_metric)
-            self.app.add_component("model_selector", component)
-
-        # TODO: make different tracking receivers configurable
-        if torch_ok and tb_ok:
-            component = TBAnalyticsReceiver(events=["fed.analytix_log_stats"])
-            self.app.add_component("receiver", component)
 
 
 class FedJob:
@@ -205,17 +180,13 @@ class FedJob:
         """
         self._validate_target(target)
 
-        if isinstance(obj, JobObj):
-            if isinstance(obj, ExecutorJobObj):
-                self._to(obj=obj.base_obj, target=target, tasks=obj.tasks, gpu=obj.gpu, id=id)
-            elif isinstance(obj, FilterJobObj):
-                self._to(obj=obj.base_obj, target=target, tasks=obj.tasks, filter_type=obj.filter_type)
-
-            self._add_external_resources(obj.resources, target)
+        add_to_job_f = getattr(obj, "add_to_job", None)
+        if callable(add_to_job_f):
+            add_to_job_f(self, target)
         else:
-            self._to(obj, target, id)
+            self.add_object(obj, target, id=id)
 
-    def _to(
+    def add_object(
         self,
         obj: Any,
         target: str,
@@ -224,7 +195,7 @@ class FedJob:
         filter_type: FilterType = None,
         id=None,
     ):
-        """assign an object to a target (server or clients).
+        """add an object to the target in the job (server or clients).
 
         Args:
             obj: The object to be assigned. The obj will be given a default `id` if none is provided based on its type.
@@ -258,10 +229,6 @@ class FedJob:
                 )
             if target not in self._deploy_map:
                 self._deploy_map[target] = ExecutorApp()
-            if isinstance(obj, ScriptExecutor):
-                external_scripts = [obj._task_script_path]
-                self._deploy_map[target].add_external_scripts(external_scripts)
-                obj._task_script_path = os.path.basename(obj._task_script_path)
             if target not in self.clients:
                 self.clients.append(target)
             if gpu is not None:
@@ -289,6 +256,7 @@ class FedJob:
             # else assume a model is being set
             else:  # TODO: handle other persistors
                 added_model = False
+
                 # Check different models framework types and add corresponding persistor
                 if torch_ok and isinstance(obj, nn.Module):  # if model, create a PT persistor
                     component = PTFileModelPersistor(model=obj)
@@ -371,7 +339,7 @@ class FedJob:
                             # remove already added components from tracked components
                             self._components.pop(base_id)
 
-    def _add_external_resources(self, resources: Union[str, List[str]], target: str):
+    def add_external_resources(self, resources: Union[str, List[str]], target: str):
         if not resources:
             return
 
