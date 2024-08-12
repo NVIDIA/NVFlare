@@ -73,6 +73,7 @@ class Constant:
     ERR_TARGET_ERROR = -4
 
     EXIT_CODE_CANT_START = 101
+    EXIT_CODE_JOB_ABORT = 102
 
     # XGB operation parameter keys
     PARAM_KEY_RANK = "xgb.rank"
@@ -86,6 +87,8 @@ class Constant:
     PARAM_KEY_REPLY = "xgb.reply"
     PARAM_KEY_REQUEST = "xgb.request"
     PARAM_KEY_EVENT = "xgb.event"
+    PARAM_KEY_TRAINING_MODE = "xgb.training_mode"
+    PARAM_KEY_CONFIG_ERROR = "xgb.config_error"
 
     RUNNER_CTX_SERVER_ADDR = "server_addr"
     RUNNER_CTX_PORT = "port"
@@ -96,19 +99,21 @@ class Constant:
     RUNNER_CTX_XGB_OPTIONS = "xgb_options"
     RUNNER_CTX_WORLD_SIZE = "world_size"
     RUNNER_CTX_RANK = "rank"
-    RUNNER_CTX_DATA_LOADER = "data_loader"
-    RUNNER_CTX_TB_DIR = "tb_dir"
     RUNNER_CTX_MODEL_DIR = "model_dir"
 
     EVENT_BEFORE_BROADCAST = "xgb.before_broadcast"
     EVENT_AFTER_BROADCAST = "xgb.after_broadcast"
     EVENT_BEFORE_ALL_GATHER_V = "xgb.before_all_gather_v"
     EVENT_AFTER_ALL_GATHER_V = "xgb.after_all_gather_v"
+    EVENT_XGB_JOB_CONFIGURED = "xgb.job_configured"
+    EVENT_XGB_ABORTED = "xgb.aborted"
 
     HEADER_KEY_ENCRYPTED_DATA = "xgb.encrypted_data"
     HEADER_KEY_HORIZONTAL = "xgb.horizontal"
     HEADER_KEY_ORIGINAL_BUF_SIZE = "xgb.original_buf_size"
     HEADER_KEY_IN_AGGR = "xgb.in_aggr"
+    HEADER_KEY_WORLD_SIZE = "xgb.world_size"
+    HEADER_KEY_SIZE_DICT = "xgb.size_dict"
 
     DUMMY_BUFFER_SIZE = 4
 
@@ -122,20 +127,31 @@ GRPC_DEFAULT_OPTIONS = [
 class SplitMode:
     ROW = 0
     COL = 1
-    COL_SECURE = 2
-    ROW_SECURE = 3
+
+
+class TrainingMode:
+    # Non-secure mode
+    H = "h"
+    HORIZONTAL = "horizontal"
+    V = "v"
+    VERTICAL = "vertical"
+    # Secure mode
+    HS = "hs"
+    HORIZONTAL_SECURE = "horizontal_secure"
+    VS = "VS"
+    VERTICAL_SECURE = "vertical_secure"
 
 
 # Mapping of text training mode to split mode
 TRAINING_MODE_MAPPING = {
-    "h": SplitMode.ROW,
-    "horizontal": SplitMode.ROW,
-    "v": SplitMode.COL,
-    "vertical": SplitMode.COL,
-    "hs": SplitMode.ROW_SECURE,
-    "horizontal_secure": SplitMode.ROW_SECURE,
-    "vs": SplitMode.COL_SECURE,
-    "vertical_secure": SplitMode.COL_SECURE,
+    TrainingMode.H: SplitMode.ROW,
+    TrainingMode.HORIZONTAL: SplitMode.ROW,
+    TrainingMode.V: SplitMode.COL,
+    TrainingMode.VERTICAL: SplitMode.COL,
+    TrainingMode.HS: SplitMode.ROW,
+    TrainingMode.HORIZONTAL_SECURE: SplitMode.ROW,
+    TrainingMode.VS: SplitMode.COL,
+    TrainingMode.VERTICAL_SECURE: SplitMode.COL,
 }
 
-SECURE_TRAINING_MODES = {"hs", "horizontal_secure", "vs", "vertical_secure"}
+SECURE_TRAINING_MODES = {TrainingMode.HS, TrainingMode.HORIZONTAL_SECURE, TrainingMode.VS, TrainingMode.VERTICAL_SECURE}

@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import os.path
 import re
 import uuid
 from typing import Any, List, Optional, Union
@@ -103,6 +103,14 @@ class FedApp:
         """
         for _script in external_scripts:
             self.app.add_ext_script(_script)
+
+    def add_external_dir(self, ext_dir: str):
+        """Register external folder to include them in custom directory.
+
+        Args:
+            ext_dir: external folder that need to be deployed to the client/server.
+        """
+        self.app.add_ext_dir(ext_dir)
 
 
 class ExecutorApp(FedApp):
@@ -245,7 +253,10 @@ class FedJob:
                     f"{target} doesn't have a `Controller` or `Executor`. Deploy one first before adding external script!"
                 )
 
-            self._deploy_map[target].add_external_scripts([obj])
+            if os.path.isdir(obj):
+                self._deploy_map[target].add_external_dir(obj)
+            else:
+                self._deploy_map[target].add_external_scripts([obj])
         else:  # handle objects that are not Controller or Executor type
             if target not in self._deploy_map:
                 raise ValueError(
