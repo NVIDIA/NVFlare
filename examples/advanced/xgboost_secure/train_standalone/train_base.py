@@ -22,23 +22,19 @@ import xgboost as xgb
 
 PRINT_SAMPLE = False
 
+
 def train_base_args_parser():
     parser = argparse.ArgumentParser(description="Train baseline XGBoost model")
-    parser.add_argument(
-        "--gpu",
-        type=int,
-        default=0,
-        help="Whether to use gpu for training, 0 for cpu, 1 for gpu")
+    parser.add_argument("--gpu", type=int, default=0, help="Whether to use gpu for training, 0 for cpu, 1 for gpu")
     parser.add_argument(
         "--data_train_root",
         type=str,
         default="/tmp/nvflare/xgb_dataset/base_xgb_data",
-        help="Path to training data folder")
+        help="Path to training data folder",
+    )
     parser.add_argument(
-        "--data_test_file",
-        type=str,
-        default="/tmp/nvflare/xgb_dataset/test.csv",
-        help="Path to testing data file")
+        "--data_test_file", type=str, default="/tmp/nvflare/xgb_dataset/test.csv", help="Path to testing data file"
+    )
     parser.add_argument(
         "--out_path",
         type=str,
@@ -47,12 +43,14 @@ def train_base_args_parser():
     )
     return parser
 
+
 def load_test_data(data_path: str):
     df = pd.read_csv(data_path)
     # Split to feature and label
     X = df.iloc[:, 1:]
     y = df.iloc[:, 0]
     return X, y
+
 
 def main():
     parser = train_base_args_parser()

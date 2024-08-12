@@ -25,38 +25,26 @@ import xgboost.federated
 
 PRINT_SAMPLE = False
 
+
 def train_federated_args_parser():
     parser = argparse.ArgumentParser(description="Train federated XGBoost model")
+    parser.add_argument("--world_size", type=int, default=3, help="Total number of clients")
+    parser.add_argument("--gpu", type=int, default=0, help="Whether to use gpu for training, 0 for cpu, 1 for gpu")
     parser.add_argument(
-        "--world_size",
-        type=int,
-        default=3,
-        help="Total number of clients")
+        "--vert", type=int, default=0, help="Horizontal or vertical training, 0 for horizontal, 1 for vertical"
+    )
     parser.add_argument(
-        "--gpu",
-        type=int,
-        default=0,
-        help="Whether to use gpu for training, 0 for cpu, 1 for gpu")
-    parser.add_argument(
-        "--vert",
-        type=int,
-        default=0,
-        help="Horizontal or vertical training, 0 for horizontal, 1 for vertical")
-    parser.add_argument(
-        "--enc",
-        type=int,
-        default=0,
-        help="Whether to use encryption plugin, 0 for non-encrypted, 1 for encrypted")
+        "--enc", type=int, default=0, help="Whether to use encryption plugin, 0 for non-encrypted, 1 for encrypted"
+    )
     parser.add_argument(
         "--data_train_root",
         type=str,
         default="/tmp/nvflare/xgb_dataset/base_xgb_data",
-        help="Path to training data folder")
+        help="Path to training data folder",
+    )
     parser.add_argument(
-        "--data_test_file",
-        type=str,
-        default="/tmp/nvflare/xgb_dataset/test.csv",
-        help="Path to testing data file")
+        "--data_test_file", type=str, default="/tmp/nvflare/xgb_dataset/test.csv", help="Path to testing data file"
+    )
     parser.add_argument(
         "--out_path",
         type=str,
@@ -65,12 +53,14 @@ def train_federated_args_parser():
     )
     return parser
 
+
 def load_test_data(data_path: str):
     df = pd.read_csv(data_path)
     # Split to feature and label
     X = df.iloc[:, 1:]
     y = df.iloc[:, 0]
     return X, y
+
 
 def run_server(port: int, world_size: int) -> None:
     xgboost.federated.run_federated_server(port, world_size)
