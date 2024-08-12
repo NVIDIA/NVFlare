@@ -139,7 +139,7 @@ For example:
 
     {
         "id": "shareable_generator",
-        "name": "PTFedOptModelShareableGenerator",
+        "path": "nvflare.app_opt.pt.fedopt.PTFedOptModelShareableGenerator",
         "args": {
             "device": "cpu",
             "source_model": "model",

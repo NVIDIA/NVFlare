@@ -39,7 +39,6 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         self.internal_server_addr = None
         self._training_stopped = False
         self._client_name = None
-        self._app_dir = None
         self._workspace = None
         self._run_dir = None
         self._lock = threading.Lock()
@@ -47,13 +46,10 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
 
     def initialize(self, fl_ctx: FLContext):
         self._client_name = fl_ctx.get_identity_name()
-        engine = fl_ctx.get_engine()
-        ws = engine.get_workspace()
-        self._app_dir = ws.get_app_dir(fl_ctx.get_job_id())
         self._workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
         self._run_dir = self._workspace.get_run_dir(run_number)
-        self.engine = engine
+        self.engine = fl_ctx.get_engine()
 
     def _start_client(self, server_addr: str, fl_ctx: FLContext):
         """Start the XGB client runner in a separate thread or separate process based on config.
@@ -77,7 +73,6 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
             Constant.RUNNER_CTX_XGB_PARAMS: self.xgb_params,
             Constant.RUNNER_CTX_XGB_OPTIONS: self.xgb_options,
             Constant.RUNNER_CTX_MODEL_DIR: self._run_dir,
-            Constant.RUNNER_CTX_TB_DIR: self._app_dir,
         }
         self.start_runner(runner_ctx, fl_ctx)
 
@@ -104,12 +99,12 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         if not port:
             raise RuntimeError("failed to get a port for XGB server")
         self.internal_server_addr = f"127.0.0.1:{port}"
-        self.logger.info(f"Start internal server at {self.internal_server_addr}")
+        self.log_info(fl_ctx, f"Start internal server at {self.internal_server_addr}")
         self.internal_xgb_server = GrpcServer(self.internal_server_addr, 10, self.int_server_grpc_options, self)
         self.internal_xgb_server.start(no_blocking=True)
-        self.logger.info(f"Started internal server at {self.internal_server_addr}")
+        self.log_info(fl_ctx, f"Started internal server at {self.internal_server_addr}")
         self._start_client(self.internal_server_addr, fl_ctx)
-        self.logger.info("Started external XGB Client")
+        self.log_info(fl_ctx, "Started external XGB Client")
 
     def stop(self, fl_ctx: FLContext):
         if self.stopped:
@@ -119,7 +114,7 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         self._stop_client()
 
         if self.internal_xgb_server:
-            self.logger.info("Stop internal XGB Server")
+            self.log_info(fl_ctx, "Stop internal XGB Server")
             self.internal_xgb_server.shutdown()
 
     def _abort(self, reason: str):

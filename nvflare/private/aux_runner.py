@@ -152,7 +152,7 @@ class AuxRunner(FLComponent):
             )
 
         start = time.time()
-        self.logger.info(f"waiting for cell for {self.cell_wait_timeout} seconds")
+        self.logger.debug(f"waiting for cell for {self.cell_wait_timeout} seconds")
         while True:
             cell = self.engine.get_cell()
             if cell:

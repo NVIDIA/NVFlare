@@ -29,8 +29,8 @@ class XGBServerRunner(AppRunner):
         self._world_size = ctx.get(Constant.RUNNER_CTX_WORLD_SIZE)
 
         xgb_federated.run_federated_server(
+            n_workers=self._world_size,
             port=self._port,
-            world_size=self._world_size,
         )
         self._stopped = True
 
