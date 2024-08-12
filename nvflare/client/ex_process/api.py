@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import importlib
-import logging
 import os
 from typing import Any, Dict, Optional, Tuple
 
@@ -29,6 +28,7 @@ from nvflare.client.flare_agent_with_fl_model import FlareAgentWithFLModel
 from nvflare.client.model_registry import ModelRegistry
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.import_utils import optional_import
+from nvflare.fuel.utils.obj_utils import get_logger
 from nvflare.fuel.utils.pipe.pipe import Pipe
 
 
@@ -63,6 +63,7 @@ def _register_tensor_decomposer():
 class ExProcessClientAPI(APISpec):
     def __init__(self):
         self.process_model_registry = None
+        self.logger = get_logger(self)
 
     def get_model_registry(self) -> ModelRegistry:
         """Gets the ModelRegistry."""
@@ -82,7 +83,7 @@ class ExProcessClientAPI(APISpec):
             rank = os.environ.get("RANK", "0")
 
         if self.process_model_registry:
-            logging.warn("Warning: called init() more than once. The subsequence calls are ignored")
+            self.logger.warning("Warning: called init() more than once. The subsequence calls are ignored")
             return
 
         config_file = f"config/{CLIENT_API_CONFIG}"
@@ -116,7 +117,7 @@ class ExProcessClientAPI(APISpec):
 
             self.process_model_registry = ModelRegistry(client_config, rank, flare_agent)
         except Exception as e:
-            logging.error(f"flare.init failed: {e}")
+            self.logger.error(f"flare.init failed: {e}")
             raise e
 
     def receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:

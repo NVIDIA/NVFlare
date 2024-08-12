@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import os
 from enum import Enum
 from typing import Any, Dict, Optional
@@ -51,8 +52,9 @@ def init(rank: Optional[str] = None):
             client_api = data_bus.get_data(CLIENT_API_KEY)
         else:
             client_api = ExProcessClientAPI()
-
-    client_api.init(rank=rank)
+        client_api.init(rank=rank)
+    else:
+        logging.warning("Warning: called init() more than once. The subsequence calls are ignored")
 
 
 def receive(timeout: Optional[float] = None) -> Optional[FLModel]:
