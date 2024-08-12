@@ -48,7 +48,7 @@ def train_federated_args_parser():
     parser.add_argument(
         "--out_path",
         type=str,
-        default="/tmp/nvflare/xgb_exp/base",
+        default="/tmp/nvflare/xgboost_secure/train_standalone/federated",
         help="Output path for the data split file",
     )
     return parser

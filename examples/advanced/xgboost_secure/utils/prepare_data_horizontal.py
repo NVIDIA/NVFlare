@@ -70,7 +70,7 @@ def main():
     df_valid = df.iloc[int(0.8 * rows_total) :, :]
 
     for site in range(args.site_num):
-        # sort df_train by feature 7,
+        # sort df_train by an arbitrary feature, 7,
         # creating distribution shift between sites
         # to illustrate the horizontal split quantile difference
         df_train = df_train.sort_values(by=7)
