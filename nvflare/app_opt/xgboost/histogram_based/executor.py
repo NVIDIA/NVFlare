@@ -43,7 +43,7 @@ class XGBoostParams:
             xgb_params: The Booster parameters. This dict is passed to `xgboost.train()`
                 as the argument `params`. It contains all the Booster parameters.
                 Please refer to XGBoost documentation for details:
-                https://xgboost.readthedocs.io/en/stable/python/python_api.html#module-xgboost.training
+                https://xgboost.readthedocs.io/en/stable/parameter.html
         """
         self.num_rounds = num_rounds
         self.early_stopping_rounds = early_stopping_rounds
@@ -243,9 +243,10 @@ class FedXGBHistogramExecutor(Executor):
         self.world_size = world_size
 
         if self.use_gpus:
-            # mapping each rank to a GPU (can set to cuda:0 if simulating with only one gpu)
-            self.log_info(fl_ctx, f"Training with GPU {self.rank}")
-            self.xgb_params["device"] = f"cuda:{self.rank}"
+            # mapping each rank to the first GPU if not set
+            device = self.xgb_params.get("device", "cuda:0")
+            self.log_info(fl_ctx, f"Training with GPU {device}")
+            self.xgb_params["device"] = device
 
         self.log_info(fl_ctx, f"Using xgb params: {self.xgb_params}")
         params = XGBoostParams(
@@ -259,7 +260,7 @@ class FedXGBHistogramExecutor(Executor):
         self.log_info(fl_ctx, f"server address is {self._server_address}")
 
         communicator_env = {
-            "xgboost_communicator": "federated",
+            "dmlc_communicator": "federated",
             "federated_server_address": f"{self._server_address}:{xgb_fl_server_port}",
             "federated_world_size": self.world_size,
             "federated_rank": self.rank,
