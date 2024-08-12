@@ -18,7 +18,6 @@ import argparse
 import copy
 import logging
 import os
-import sys
 import threading
 import time
 
@@ -310,9 +309,6 @@ class SubWorkerExecutor(Runner):
 
 def main(args):
     workspace = Workspace(args.workspace, args.client_name)
-    app_custom_folder = workspace.get_app_custom_dir(args.job_id)
-    if os.path.isdir(app_custom_folder) and app_custom_folder not in sys.path:
-        sys.path.append(app_custom_folder)
     configure_logging(workspace)
 
     fobs_initialize(workspace=workspace, job_id=args.job_id)
