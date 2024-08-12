@@ -14,7 +14,7 @@
 import os.path
 import re
 import uuid
-from typing import Any, List, Union
+from typing import Any, List, Optional, Union
 
 from nvflare.apis.executor import Executor
 from nvflare.apis.filter import Filter
@@ -164,7 +164,13 @@ class ControllerApp(FedApp):
 
 
 class FedJob:
-    def __init__(self, name="fed_job", min_clients=1, mandatory_clients=None, key_metric="accuracy") -> None:
+    def __init__(
+        self,
+        name: str = "fed_job",
+        min_clients: int = 1,
+        mandatory_clients: Optional[List[str]] = None,
+        key_metric: str = "accuracy",
+    ) -> None:
         """FedJob allows users to generate job configurations in a Pythonic way.
         The `to()` routine allows users to send different components to either the server or clients.
 
@@ -199,9 +205,9 @@ class FedJob:
         """assign an object to a target (server or clients).
 
         Args:
-            obj: The object to be assigned. The obj will be given a default `id` if non is provided based on its type.
-            target: The target location of th object. Can be "server" or a client name, e.g. "site-1".
-            tasks: In case object is an `Executor`, optional list of tasks the executor should handle.
+            obj: The object to be assigned. The obj will be given a default `id` if none is provided based on its type.
+            target: The target location of the object. Can be "server" or a client name, e.g. "site-1".
+            tasks: In case object is an `Executor` or `Filter`, optional list of tasks that should be handled.
                 Defaults to `None`. If `None`, all tasks will be handled using `[*]`.
             gpu: GPU index or list of GPU indices used for simulating the run on that target.
             filter_type: The type of filter used. Either `FilterType.TASK_RESULT` or `FilterType.TASK_DATA`.
@@ -213,10 +219,21 @@ class FedJob:
         self._validate_target(target)
 
         if isinstance(obj, Controller):
-            if target not in self._deploy_map:
-                self._deploy_map[target] = ControllerApp(key_metric=self.key_metric)
-            self._deploy_map[target].add_controller(obj, id)
+            if target != "server":  # add client-side controllers as components
+                if target not in self._deploy_map:
+                    raise ValueError(
+                        f"{target} doesn't have an `Executor`. Deploy one first before adding client-side controllers!"
+                    )
+                self._deploy_map[target].add_component(obj, id)
+            else:
+                if target not in self._deploy_map:
+                    self._deploy_map[target] = ControllerApp(key_metric=self.key_metric)
+                self._deploy_map[target].add_controller(obj, id)
         elif isinstance(obj, Executor):
+            if target == "server":
+                raise ValueError(
+                    f"`Executor` must be assigned to a client, but tried to assign `Executor` {obj} to 'server'!"
+                )
             if target not in self._deploy_map:
                 self._deploy_map[target] = ExecutorApp()
             if isinstance(obj, ScriptExecutor):
@@ -324,7 +341,8 @@ class FedJob:
 
         self.to(obj=obj, target=ALL_SITES, tasks=tasks, filter_type=filter_type, id=id)
 
-    def as_id(self, obj: Any):
+    def as_id(self, obj: Any) -> str:
+        """Generate and return uuid for `obj`. If this id is referenced by another added object, this `obj` will also be added as a component."""
         id = str(uuid.uuid4())
         self._components[id] = obj
         return id
@@ -393,11 +411,13 @@ class FedJob:
 
             self._deployed = True
 
-    def export_job(self, job_root):
+    def export_job(self, job_root: str):
+        """Export job config to `job_root` directory with name `self.job_name`."""
         self._set_all_apps()
         self.job.generate_job_config(job_root)
 
-    def simulator_run(self, workspace, n_clients: int = None, threads: int = None):
+    def simulator_run(self, workspace: str, n_clients: int = None, threads: int = None):
+        """Run the job with the simulator with the `workspace` using `n_clients` and `threads`."""
         self._set_all_apps()
 
         if ALL_SITES in self.clients and not n_clients:
