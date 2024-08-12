@@ -355,9 +355,11 @@ class SimulatorRunner(FLComponent):
                         app = os.path.join(temp_job_folder, app_name)
                         shutil.copytree(app, app_root)
 
-            job_meta_file = os.path.join(self.simulator_root, "server", WorkspaceConstants.JOB_META_FILE)
-            with open(job_meta_file, "w") as f:
-                json.dump(meta, f, indent=4)
+                        job_meta_file = os.path.join(
+                            self.simulator_root, p, SimulatorConstants.JOB_NAME, WorkspaceConstants.JOB_META_FILE
+                        )
+                        with open(job_meta_file, "w") as f:
+                            json.dump(meta, f, indent=4)
 
     def split_clients(self, clients: [], gpus: []):
         split_clients = []
@@ -668,6 +670,10 @@ class SimulatorClientRunner(FLComponent):
             name=ConfigVarName.DECOMPOSER_MODULE, conf=SystemConfigs.RESOURCES_CONF
         )
 
+        app_custom_folder = Workspace(root_dir=client_workspace, site_name="mgh").get_app_custom_dir(
+            SimulatorConstants.JOB_NAME
+        )
+
         command = (
             sys.executable
             + " -m nvflare.private.fed.app.simulator.simulator_worker -o "
@@ -696,7 +702,7 @@ class SimulatorClientRunner(FLComponent):
         if gpu:
             command += " --gpu " + str(gpu)
         new_env = os.environ.copy()
-        new_env["PYTHONPATH"] = os.pathsep.join(self._get_new_sys_path())
+        new_env["PYTHONPATH"] = os.pathsep.join(self._get_new_sys_path()) + os.pathsep + app_custom_folder
 
         _ = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
 
