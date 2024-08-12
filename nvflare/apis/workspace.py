@@ -164,8 +164,8 @@ class Workspace:
     def get_site_privacy_file_path(self):
         return self.get_file_path_in_site_config(WorkspaceConstants.PRIVACY_CONFIG)
 
-    def get_client_custom_dir(self, job_id: str) -> str:
-        return os.path.join(self.get_app_dir(job_id), WorkspaceConstants.CUSTOM_FOLDER_NAME)
+    def get_client_custom_dir(self) -> str:
+        return os.path.join(self.get_site_config_dir(), WorkspaceConstants.CUSTOM_FOLDER_NAME)
 
     def get_stats_pool_summary_path(self, job_id: str, prefix=None) -> str:
         file_name = WorkspaceConstants.STATS_POOL_SUMMARY_FILE_NAME

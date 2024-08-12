@@ -310,7 +310,7 @@ class SubWorkerExecutor(Runner):
 
 def main(args):
     workspace = Workspace(args.workspace, args.client_name)
-    app_custom_folder = workspace.get_client_custom_dir(args.job_id)
+    app_custom_folder = workspace.get_app_custom_dir(args.job_id)
     if os.path.isdir(app_custom_folder) and app_custom_folder not in sys.path:
         sys.path.append(app_custom_folder)
     configure_logging(workspace)

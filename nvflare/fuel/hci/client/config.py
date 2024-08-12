@@ -11,7 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
 import re
+import sys
 
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
@@ -36,6 +38,10 @@ class FLAdminClientStarterConfigurator(JsonConfigurator):
         """
         base_pkgs = FL_PACKAGES
         module_names = FL_MODULES
+
+        custom_dir = workspace.get_client_custom_dir()
+        if os.path.isdir(custom_dir):
+            sys.path.append(custom_dir)
 
         admin_config_file_path = workspace.get_admin_startup_file_path()
         config_files = [admin_config_file_path]
