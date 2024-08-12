@@ -24,6 +24,7 @@ from torchvision.datasets import CIFAR10
 from torchvision.transforms import Compose, Normalize, ToTensor
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
+from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
@@ -73,6 +74,9 @@ class Cifar10Trainer(Executor):
         self.loss = nn.CrossEntropyLoss()
         self.optimizer = SGD(self.model.parameters(), lr=lr, momentum=0.9)
 
+        self.data_path = data_path
+
+    def _initialize(self, data_path):
         # Create Cifar10 dataset for training.
         transforms = Compose(
             [
@@ -83,7 +87,6 @@ class Cifar10Trainer(Executor):
         self._train_dataset = CIFAR10(root=data_path, transform=transforms, download=True, train=True)
         self._train_loader = DataLoader(self._train_dataset, batch_size=4, shuffle=True)
         self._n_iterations = len(self._train_loader)
-
         # Setup the persistence manager to save PT model.
         # The default training configuration is used by persistence manager
         # in case no initial model is found.
@@ -91,6 +94,11 @@ class Cifar10Trainer(Executor):
         self.persistence_manager = PTModelPersistenceFormatManager(
             data=self.model.state_dict(), default_train_conf=self._default_train_conf
         )
+
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        if event_type == EventType.START_RUN:
+            data_path = os.path.join(self.data_path, fl_ctx.get_identity_name())
+            self._initialize(data_path)
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         try:
