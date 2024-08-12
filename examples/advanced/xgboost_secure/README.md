@@ -62,11 +62,14 @@ bash run_training_fl.sh
 The running time of each job depends mainly on the encryption workload. 
 
 ## Results
-Comparing the AUC results with centralized baseline, we have three observations:
+Comparing the AUC results with centralized baseline, we have four observations:
 1. The performance of the model trained with homomorphic encryption is identical to its counterpart without encryption.
 2. Vertical federated learning (both secure and non-secure) have identical performance as the centralized baseline.
 3. Horizontal federated learning (both secure and non-secure) have performance slightly different from the centralized baseline. This is because under horizontal FL, the local histogram quantiles are based on the local data distribution, which may not be the same as the global distribution.
-￼
+4. GPU leads to different results compared to CPU, which is expected as the GPU involves some data conversions.
+
+Below are sample results for CPU training:
+
 The AUC of vertical learning (both secure and non-secure):
 ```
 [0]	eval-auc:0.90515	train-auc:0.92747
@@ -99,20 +102,5 @@ In this case we can notice that Party 0 holds Feature 7 and 10, Party 1 holds Fe
 
 By combining the feature splits at all parties, the tree structures will be identical to the centralized baseline model.
 
-## Switch to different plugins for encryption/decryption in vertical xgboost
-For vertical secure xgboost, we can choose from "nvflare" (using intel ipcl lib) or "cuda_paillier".
-￼
-By default, we are using plugin_name "nvflare" and plugin_path "python3.xx/dist-packages/nvflare/libs".
-￼
-We can switch to a different plugin by either specifying the environment variable or specify it in the local/resources.json file on clients.
-￼
-For example, to switch to CUDA encryption/decryption we can do:
-```
-export NVFLARE_XGB_PLUGIN_NAME=cuda_paillier
-```
-￼
-Then we can just run the xgb_vert_secure job as before.
-Please refer to the [documentation]() for more information.
-￼
-To add:
-- link to the documentation
+## Different Encryption Plugins
+We can switch to different plugins for encryption/decryption in federated xgboost. The plugin information is specified in `xgb.collective.CommunicatorContext`.

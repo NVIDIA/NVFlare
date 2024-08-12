@@ -57,7 +57,6 @@ def load_test_data(data_path: str):
 def main():
     parser = train_base_args_parser()
     args = parser.parse_args()
-
     if not os.path.exists(args.out_path):
         os.makedirs(args.out_path)
 
