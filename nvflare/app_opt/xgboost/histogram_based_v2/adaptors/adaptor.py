@@ -18,6 +18,7 @@ import sys
 import threading
 import time
 from abc import ABC, abstractmethod
+from typing import Tuple
 
 from xgboost.core import XGBoostError
 
@@ -84,19 +85,15 @@ class _RunnerStarter:
 
 
 class AppAdaptor(ABC, FLComponent):
-    """
-    AppAdaptors are used to integrate FLARE with App Target (Server or Client) in run time.
-
-    For example, an XGB server could be run as a gRPC server process, or be run as part of the FLARE's FL server
-    process. Similarly, an XGB client could be run as a gRPC client process, or be run as part of the
-    FLARE's FL client process.
-
-    Each type of XGB Target requires an appropriate adaptor to integrate it with FLARE's XGB Controller or Executor.
-
-    The XGBAdaptor class defines commonly required methods for all adaptor implementations.
-    """
+    """AppAdaptors are used to integrate FLARE with App Target (Server or Client) in run time."""
 
     def __init__(self, app_name: str, in_process: bool):
+        """Constructor of AppAdaptor.
+
+        Args:
+            app_name (str): The name of the application.
+            in_process (bool): Whether to call the `AppRunner.run()` in the same process or not.
+        """
         FLComponent.__init__(self)
         self.abort_signal = None
         self.app_runner = None
@@ -111,7 +108,7 @@ class AppAdaptor(ABC, FLComponent):
         separate process).
 
         Args:
-            runner: the runner to be set
+            runner (AppRunner): the runner to be set
 
         Returns: None
 
@@ -187,7 +184,7 @@ class AppAdaptor(ABC, FLComponent):
         pass
 
     @abstractmethod
-    def _is_stopped(self) -> (bool, int):
+    def _is_stopped(self) -> Tuple[bool, int]:
         """Called by the adaptor's monitor to know whether the target is stopped.
         Note that this method is not called by XGB Controller/Executor.
 
@@ -277,7 +274,7 @@ class AppAdaptor(ABC, FLComponent):
             if p:
                 p.kill()
 
-    def is_runner_stopped(self) -> (bool, int):
+    def is_runner_stopped(self) -> Tuple[bool, int]:
         if self.in_process:
             if self.starter:
                 if self.starter.stopped:

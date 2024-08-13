@@ -11,6 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+from typing import Tuple
+
 import nvflare.app_opt.xgboost.histogram_based_v2.proto.federated_pb2 as pb2
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_opt.xgboost.histogram_based_v2.adaptors.xgb_adaptor import XGBServerAdaptor
@@ -20,12 +23,41 @@ from nvflare.fuel.f3.drivers.net_utils import get_open_tcp_port
 
 
 class GrpcServerAdaptor(XGBServerAdaptor):
+    """Implementation of XGBServerAdaptor that uses an internal `GrpcClient`.
+
+    The `GrpcServerAdaptor` class serves as an interface between the XGBoost
+    federated client and federated server components.
+    It employs its `XGBRunner` to initiate an XGBoost federated gRPC server
+    and utilizes an internal `GrpcClient` to forward client requests/responses.
+
+    The communication flow is as follows:
+        1. XGBoost federated gRPC client talks to `GrpcClientAdaptor`, which
+           encapsulates a `GrpcServer`.
+           Requests are then forwarded to `GrpcServerAdaptor`, which internally
+           manages a `GrpcClient` responsible for interacting with the XGBoost
+           federated gRPC server.
+        2. XGBoost federated gRPC server talks to `GrpcServerAdaptor`, which
+           encapsulates a `GrpcClient`.
+           Responses are then forwarded to `GrpcClientAdaptor`, which internally
+           manages a `GrpcServer` responsible for interacting with the XGBoost
+           federated gRPC client.
+    """
+
     def __init__(
         self,
         int_client_grpc_options=None,
         xgb_server_ready_timeout=Constant.XGB_SERVER_READY_TIMEOUT,
         in_process=True,
     ):
+        """Constructor method to initialize the object.
+
+        Args:
+            int_client_grpc_options: An optional list of key-value pairs (`channel_arguments`
+                in gRPC Core runtime) to configure the gRPC channel of internal `GrpcClient`.
+            in_process (bool): Specifies whether to call the `AppRunner.run()` in the same process or not.
+            xgb_server_ready_timeout (float): Duration for which the internal `GrpcClient`
+                should wait for the XGBoost gRPC server before timing out.
+        """
         XGBServerAdaptor.__init__(self, in_process)
         self.int_client_grpc_options = int_client_grpc_options
         self.xgb_server_ready_timeout = xgb_server_ready_timeout
@@ -47,7 +79,7 @@ class GrpcServerAdaptor(XGBServerAdaptor):
         self._server_stopped = True
         self.stop_runner()
 
-    def _is_stopped(self) -> (bool, int):
+    def _is_stopped(self) -> Tuple[bool, int]:
         runner_stopped, ec = self.is_runner_stopped()
         if runner_stopped:
             return runner_stopped, ec
