@@ -11,13 +11,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import logging
 import multiprocessing
 import os
 import sys
 import threading
 import time
 from abc import ABC, abstractmethod
+from typing import Tuple
+
+from xgboost.core import XGBoostError
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
@@ -46,6 +49,7 @@ class _RunnerStarter:
         self.started = True
         self.stopped = False
         self.exit_code = 0
+        self.logger = logging.getLogger(self.__class__.__name__)
 
     def start(self, ctx: dict):
         """Start the runner and wait for it to finish.
@@ -67,8 +71,11 @@ class _RunnerStarter:
             self.runner.run(ctx)
             self.stopped = True
         except Exception as e:
-            secure_log_traceback()
             self.error = f"Exception starting {self.app_name} runner: {secure_format_exception(e)}"
+            self.logger.error(self.error)
+            # XGBoost already prints a traceback
+            if not isinstance(e, XGBoostError):
+                secure_log_traceback()
             self.started = False
             self.exit_code = Constant.EXIT_CODE_CANT_START
             self.stopped = True
@@ -78,19 +85,15 @@ class _RunnerStarter:
 
 
 class AppAdaptor(ABC, FLComponent):
-    """
-    AppAdaptors are used to integrate FLARE with App Target (Server or Client) in run time.
-
-    For example, an XGB server could be run as a gRPC server process, or be run as part of the FLARE's FL server
-    process. Similarly, an XGB client could be run as a gRPC client process, or be run as part of the
-    FLARE's FL client process.
-
-    Each type of XGB Target requires an appropriate adaptor to integrate it with FLARE's XGB Controller or Executor.
-
-    The XGBAdaptor class defines commonly required methods for all adaptor implementations.
-    """
+    """AppAdaptors are used to integrate FLARE with App Target (Server or Client) in run time."""
 
     def __init__(self, app_name: str, in_process: bool):
+        """Constructor of AppAdaptor.
+
+        Args:
+            app_name (str): The name of the application.
+            in_process (bool): Whether to call the `AppRunner.run()` in the same process or not.
+        """
         FLComponent.__init__(self)
         self.abort_signal = None
         self.app_runner = None
@@ -105,7 +108,7 @@ class AppAdaptor(ABC, FLComponent):
         separate process).
 
         Args:
-            runner: the runner to be set
+            runner (AppRunner): the runner to be set
 
         Returns: None
 
@@ -181,7 +184,7 @@ class AppAdaptor(ABC, FLComponent):
         pass
 
     @abstractmethod
-    def _is_stopped(self) -> (bool, int):
+    def _is_stopped(self) -> Tuple[bool, int]:
         """Called by the adaptor's monitor to know whether the target is stopped.
         Note that this method is not called by XGB Controller/Executor.
 
@@ -271,7 +274,7 @@ class AppAdaptor(ABC, FLComponent):
             if p:
                 p.kill()
 
-    def is_runner_stopped(self) -> (bool, int):
+    def is_runner_stopped(self) -> Tuple[bool, int]:
         if self.in_process:
             if self.starter:
                 if self.starter.stopped:

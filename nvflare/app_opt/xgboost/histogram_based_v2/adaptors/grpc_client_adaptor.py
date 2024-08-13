@@ -11,8 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import threading
 import time
+from typing import Tuple
 
 import grpc
 
@@ -30,7 +32,34 @@ DUPLICATE_REQ_MAX_HOLD_TIME = 3600.0
 
 
 class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
+    """Implementation of XGBClientAdaptor that uses an internal `GrpcServer`.
+
+    The `GrpcClientAdaptor` class serves as an interface between the XGBoost
+    federated client and federated server components.
+    It employs its `XGBRunner` to initiate an XGBoost federated gRPC client
+    and utilizes an internal `GrpcServer` to forward client requests/responses.
+
+    The communication flow is as follows:
+        1. XGBoost federated gRPC client talks to `GrpcClientAdaptor`, which
+           encapsulates a `GrpcServer`.
+           Requests are then forwarded to `GrpcServerAdaptor`, which internally
+           manages a `GrpcClient` responsible for interacting with the XGBoost
+           federated gRPC server.
+        2. XGBoost federated gRPC server talks to `GrpcServerAdaptor`, which
+           encapsulates a `GrpcClient`.
+           Responses are then forwarded to `GrpcClientAdaptor`, which internally
+           manages a `GrpcServer` responsible for interacting with the XGBoost
+           federated gRPC client.
+    """
+
     def __init__(self, int_server_grpc_options=None, in_process=True, per_msg_timeout=10.0, tx_timeout=100.0):
+        """Constructor method to initialize the object.
+
+        Args:
+            int_server_grpc_options: An optional list of key-value pairs (`channel_arguments`
+                in gRPC Core runtime) to configure the gRPC channel of internal `GrpcServer`.
+            in_process (bool): Specifies whether to start the `XGBRunner` in the same process or not.
+        """
         XGBClientAdaptor.__init__(self, in_process, per_msg_timeout, tx_timeout)
         self.int_server_grpc_options = int_server_grpc_options
         self.in_process = in_process
@@ -39,7 +68,6 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         self.internal_server_addr = None
         self._training_stopped = False
         self._client_name = None
-        self._app_dir = None
         self._workspace = None
         self._run_dir = None
         self._lock = threading.Lock()
@@ -47,13 +75,10 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
 
     def initialize(self, fl_ctx: FLContext):
         self._client_name = fl_ctx.get_identity_name()
-        engine = fl_ctx.get_engine()
-        ws = engine.get_workspace()
-        self._app_dir = ws.get_app_dir(fl_ctx.get_job_id())
         self._workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
         self._run_dir = self._workspace.get_run_dir(run_number)
-        self.engine = engine
+        self.engine = fl_ctx.get_engine()
 
     def _start_client(self, server_addr: str, fl_ctx: FLContext):
         """Start the XGB client runner in a separate thread or separate process based on config.
@@ -77,7 +102,6 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
             Constant.RUNNER_CTX_XGB_PARAMS: self.xgb_params,
             Constant.RUNNER_CTX_XGB_OPTIONS: self.xgb_options,
             Constant.RUNNER_CTX_MODEL_DIR: self._run_dir,
-            Constant.RUNNER_CTX_TB_DIR: self._app_dir,
         }
         self.start_runner(runner_ctx, fl_ctx)
 
@@ -85,7 +109,7 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         self._training_stopped = True
         self.stop_runner()
 
-    def _is_stopped(self) -> (bool, int):
+    def _is_stopped(self) -> Tuple[bool, int]:
         runner_stopped, ec = self.is_runner_stopped()
         if runner_stopped:
             return runner_stopped, ec
@@ -104,12 +128,12 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         if not port:
             raise RuntimeError("failed to get a port for XGB server")
         self.internal_server_addr = f"127.0.0.1:{port}"
-        self.logger.info(f"Start internal server at {self.internal_server_addr}")
-        self.internal_xgb_server = GrpcServer(self.internal_server_addr, 10, self.int_server_grpc_options, self)
+        self.log_info(fl_ctx, f"Start internal server at {self.internal_server_addr}")
+        self.internal_xgb_server = GrpcServer(self.internal_server_addr, 10, self, self.int_server_grpc_options)
         self.internal_xgb_server.start(no_blocking=True)
-        self.logger.info(f"Started internal server at {self.internal_server_addr}")
+        self.log_info(fl_ctx, f"Started internal server at {self.internal_server_addr}")
         self._start_client(self.internal_server_addr, fl_ctx)
-        self.logger.info("Started external XGB Client")
+        self.log_info(fl_ctx, "Started external XGB Client")
 
     def stop(self, fl_ctx: FLContext):
         if self.stopped:
@@ -119,7 +143,7 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         self._stop_client()
 
         if self.internal_xgb_server:
-            self.logger.info("Stop internal XGB Server")
+            self.log_info(fl_ctx, "Stop internal XGB Server")
             self.internal_xgb_server.shutdown()
 
     def _abort(self, reason: str):

@@ -11,15 +11,21 @@ Switch to this directory and install additional requirements (suggest to do this
 python3 -m pip install -r requirements.txt
 ```
 
-### Run federated experiments with simulator locally
-Next, we will use the NVFlare simulator to run FL training automatically.
-```
-bash run_experiment_simulator.sh
-```
-
 ### Run centralized experiments
 ```
 bash run_experiment_centralized.sh
+```
+
+### Run federated experiments with simulator locally
+Next, we will use the NVFlare simulator to run FL training automatically.
+```
+nvflare simulator jobs/higgs_2_histogram_v2_uniform_split_uniform_lr \
+   -w /tmp/nvflare/xgboost_v2_workspace -n 2 -t 2
+```
+
+Model accuracy can be visualized in tensorboard:
+```
+tensorboard --logdir /tmp/nvflare/xgboost_v2_workspace/simulate_job/tb_events
 ```
 
 ### Run federated experiments in real world
@@ -51,4 +57,21 @@ The custom executor can inherit the base class `FedXGBHistogramExecutor` and
 overwrite the `xgb_train()` method.
 
 To use other dataset, can inherit the base class `XGBDataLoader` and
-implement that `load_data()` method.
+implement the `load_data()` method.
+
+## Loose integration
+
+We can use the NVFlare controller/executor just to launch the external xgboost
+federated server and client.
+
+### Run federated experiments with simulator locally
+Next, we will use the NVFlare simulator to run FL training automatically.
+```
+nvflare simulator jobs/higgs_2_histogram_uniform_split_uniform_lr \
+   -w /tmp/nvflare/xgboost_workspace -n 2 -t 2
+```
+
+Model accuracy can be visualized in tensorboard:
+```
+tensorboard --logdir /tmp/nvflare/xgboost_workspace/simulate_job/tb_events
+```

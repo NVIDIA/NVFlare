@@ -11,7 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from abc import abstractmethod
+
+from abc import ABC, abstractmethod
+from typing import Tuple
 
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
@@ -27,11 +29,17 @@ XGB_APP_NAME = "XGBoost"
 
 
 class XGBServerAdaptor(AppAdaptor):
-    """
-    XGBServerAdaptor specifies commonly required methods for server adaptor implementations.
+    """XGBServerAdaptor specifies commonly required methods for server adaptor implementations.
+
+    For example, an XGB server could be run as a gRPC server process, or be run as part of the FLARE's FL server
+    process. Similarly, an XGB client could be run as a gRPC client process, or be run as part of the
+    FLARE's FL client process.
+
+    Each type of XGB Target requires an appropriate adaptor to integrate it with FLARE's XGB Controller or Executor.
+
     """
 
-    def __init__(self, in_process):
+    def __init__(self, in_process: bool):
         AppAdaptor.__init__(self, XGB_APP_NAME, in_process)
         self.world_size = None
 
@@ -126,13 +134,17 @@ class XGBServerAdaptor(AppAdaptor):
         pass
 
 
-class XGBClientAdaptor(AppAdaptor):
-    """
-    XGBClientAdaptor specifies commonly required methods for client adaptor implementations.
-    """
+class XGBClientAdaptor(AppAdaptor, ABC):
+    """XGBClientAdaptor specifies commonly required methods for client adaptor implementations."""
 
-    def __init__(self, in_process, per_msg_timeout: float, tx_timeout: float):
-        """Constructor of XGBClientAdaptor"""
+    def __init__(self, in_process: bool, per_msg_timeout: float, tx_timeout: float):
+        """Constructor of XGBClientAdaptor.
+
+        Args:
+            in_process (bool):
+            per_msg_timeout (float): Number of seconds to wait for each message before timing out.
+            tx_timeout (float): Timeout for the entire transaction.
+        """
         AppAdaptor.__init__(self, XGB_APP_NAME, in_process)
         self.engine = None
         self.stopped = False
@@ -145,14 +157,21 @@ class XGBClientAdaptor(AppAdaptor):
         self.per_msg_timeout = per_msg_timeout
         self.tx_timeout = tx_timeout
 
-    def start(self, fl_ctx: FLContext):
-        pass
+    def _check_rank(self, ranks: dict, site_name: str):
+        if ranks is None or not isinstance(ranks, dict):
+            raise RuntimeError(f"{Constant.CONF_KEY_CLIENT_RANKS} is not configured.")
 
-    def stop(self, fl_ctx: FLContext):
-        pass
+        ws = len(ranks)
+        if ws == 0:
+            raise RuntimeError(f"{Constant.CONF_KEY_CLIENT_RANKS} length is 0.")
+        self.world_size = ws
 
-    def _is_stopped(self) -> (bool, int):
-        pass
+        rank = ranks.get(site_name, None)
+        if rank is None:
+            raise RuntimeError(f"rank is not configured ({site_name})")
+
+        check_non_negative_int(f"{Constant.CONF_KEY_CLIENT_RANKS}[{site_name}]", rank)
+        self.rank = rank
 
     def configure(self, config: dict, fl_ctx: FLContext):
         """Called by XGB Executor to configure the target.
@@ -166,18 +185,9 @@ class XGBClientAdaptor(AppAdaptor):
         Returns: None
 
         """
-        ranks = config.get(Constant.CONF_KEY_CLIENT_RANKS)
-        ws = len(ranks)
-        if not ws:
-            raise RuntimeError("world_size is not configured")
-        self.world_size = ws
-
-        me = fl_ctx.get_identity_name()
-        rank = ranks.get(me)
-        if rank is None:
-            raise RuntimeError("rank is not configured")
-        check_non_negative_int(Constant.CONF_KEY_RANK, rank)
-        self.rank = rank
+        ranks = config.get(Constant.CONF_KEY_CLIENT_RANKS, None)
+        site_name = fl_ctx.get_identity_name()
+        self._check_rank(ranks, site_name)
 
         num_rounds = config.get(Constant.CONF_KEY_NUM_ROUNDS)
         if num_rounds is None or num_rounds <= 0:
@@ -189,6 +199,7 @@ class XGBClientAdaptor(AppAdaptor):
         self.training_mode = config.get(Constant.CONF_KEY_TRAINING_MODE)
         if self.training_mode is None:
             raise RuntimeError("training_mode is not configured")
+        fl_ctx.set_prop(key=Constant.PARAM_KEY_TRAINING_MODE, value=self.training_mode, private=True, sticky=True)
 
         self.xgb_params = config.get(Constant.CONF_KEY_XGB_PARAMS)
         if not self.xgb_params:
@@ -196,7 +207,7 @@ class XGBClientAdaptor(AppAdaptor):
 
         self.xgb_options = config.get(Constant.CONF_KEY_XGB_OPTIONS, {})
 
-    def _send_request(self, op: str, req: Shareable) -> (bytes, Shareable):
+    def _send_request(self, op: str, req: Shareable) -> Tuple[bytes, Shareable]:
         """Send XGB operation request to the FL server via FLARE message.
 
         Args:
@@ -233,7 +244,7 @@ class XGBClientAdaptor(AppAdaptor):
         else:
             raise RuntimeError(f"invalid reply for op {op}: expect Shareable but got {type(reply)}")
 
-    def _send_all_gather(self, rank: int, seq: int, send_buf: bytes) -> (bytes, Shareable):
+    def _send_all_gather(self, rank: int, seq: int, send_buf: bytes) -> Tuple[bytes, Shareable]:
         """This method is called by a concrete client adaptor to send Allgather operation to the server.
 
         Args:
@@ -250,7 +261,7 @@ class XGBClientAdaptor(AppAdaptor):
         req[Constant.PARAM_KEY_SEND_BUF] = send_buf
         return self._send_request(Constant.OP_ALL_GATHER, req)
 
-    def _send_all_gather_v(self, rank: int, seq: int, send_buf: bytes, headers=None) -> (bytes, Shareable):
+    def _send_all_gather_v(self, rank: int, seq: int, send_buf: bytes, headers=None) -> Tuple[bytes, Shareable]:
         req = Shareable()
         self._add_headers(req, headers)
         req[Constant.PARAM_KEY_RANK] = rank
@@ -258,7 +269,7 @@ class XGBClientAdaptor(AppAdaptor):
         req[Constant.PARAM_KEY_SEND_BUF] = send_buf
         return self._send_request(Constant.OP_ALL_GATHER_V, req)
 
-    def _do_all_gather_v(self, rank: int, seq: int, send_buf: bytes) -> (bytes, Shareable):
+    def _do_all_gather_v(self, rank: int, seq: int, send_buf: bytes) -> Tuple[bytes, Shareable]:
         """This method is called by a concrete client adaptor to send AllgatherV operation to the server.
 
         Args:
@@ -311,7 +322,7 @@ class XGBClientAdaptor(AppAdaptor):
         req[Constant.PARAM_KEY_SEND_BUF] = send_buf
         return self._send_request(Constant.OP_ALL_REDUCE, req)
 
-    def _send_broadcast(self, rank: int, seq: int, root: int, send_buf: bytes, headers=None) -> (bytes, Shareable):
+    def _send_broadcast(self, rank: int, seq: int, root: int, send_buf: bytes, headers=None) -> Tuple[bytes, Shareable]:
         req = Shareable()
         self._add_headers(req, headers)
         req[Constant.PARAM_KEY_RANK] = rank

@@ -62,7 +62,7 @@ class VerticalDataLoader(XGBDataLoader):
         self.label_owner = label_owner
         self.train_proportion = train_proportion
 
-    def load_data(self, client_id: str):
+    def load_data(self, client_id: str, training_mode: str = ""):
         client_data_split_path = self.data_split_path.replace("site-x", client_id)
         client_psi_path = self.psi_path.replace("site-x", client_id)
 

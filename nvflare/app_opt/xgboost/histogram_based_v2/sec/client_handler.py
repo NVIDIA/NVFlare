@@ -16,10 +16,11 @@ import time
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_opt.xgboost.histogram_based_v2.aggr import Aggregator
-from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
+from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant, TrainingMode
 from nvflare.app_opt.xgboost.histogram_based_v2.sec.dam import DamDecoder
 from nvflare.app_opt.xgboost.histogram_based_v2.sec.data_converter import FeatureAggregationResult
 from nvflare.app_opt.xgboost.histogram_based_v2.sec.partial_he.adder import Adder
@@ -32,6 +33,7 @@ from nvflare.app_opt.xgboost.histogram_based_v2.sec.partial_he.util import (
     encode_encrypted_data,
     encode_feature_aggregations,
     generate_keys,
+    ipcl_imported,
     split,
 )
 from nvflare.app_opt.xgboost.histogram_based_v2.sec.processor_data_converter import (
@@ -48,8 +50,10 @@ try:
     from nvflare.app_opt.he.homomorphic_encrypt import load_tenseal_context_from_workspace
 
     tenseal_imported = True
-except Exception:
+    tenseal_error = None
+except Exception as ex:
     tenseal_imported = False
+    tenseal_error = f"Import error: {ex}"
 
 
 class ClientSecurityHandler(SecurityHandler):
@@ -91,6 +95,9 @@ class ClientSecurityHandler(SecurityHandler):
             self.info(fl_ctx, "no clear gh pairs - ignore")
             return
 
+        if self.encryptor is None:
+            return self._abort("Encryptor is not created due to missing packages", fl_ctx)
+
         self.info(fl_ctx, f"got gh {len(clear_ghs)} pairs; original buf len: {len(buffer)}")
         self.original_gh_buffer = buffer
 
@@ -106,7 +113,7 @@ class ClientSecurityHandler(SecurityHandler):
 
         # Remember the original buffer size, so we could send a dummy buffer of this size to other clients
         # This is important since all XGB clients already prepared a buffer of this size and expect the data
-        # to be this size.
+        # to be the same size.
         headers = {Constant.HEADER_KEY_ENCRYPTED_DATA: True, Constant.HEADER_KEY_ORIGINAL_BUF_SIZE: len(buffer)}
         fl_ctx.set_prop(key=Constant.PARAM_KEY_SEND_BUF, value=encoded, private=True, sticky=False)
         fl_ctx.set_prop(key=Constant.PARAM_KEY_HEADERS, value=headers, private=True, sticky=False)
@@ -398,19 +405,25 @@ class ClientSecurityHandler(SecurityHandler):
         fl_ctx.set_prop(key=Constant.PARAM_KEY_RCV_BUF, value=result, private=True, sticky=False)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
-        if event_type == EventType.START_RUN:
-            self.public_key, self.private_key = generate_keys(self.key_length)
-            self.encryptor = Encryptor(self.public_key, self.num_workers)
-            self.decrypter = Decrypter(self.private_key, self.num_workers)
-            self.adder = Adder(self.num_workers)
-            try:
-                if tenseal_imported:
+        global tenseal_error
+        if event_type == Constant.EVENT_XGB_JOB_CONFIGURED:
+            task_data = fl_ctx.get_prop(FLContextKey.TASK_DATA)
+            training_mode = task_data.get(Constant.CONF_KEY_TRAINING_MODE)
+            if training_mode in {TrainingMode.VS, TrainingMode.VERTICAL_SECURE} and ipcl_imported:
+                self.public_key, self.private_key = generate_keys(self.key_length)
+                self.encryptor = Encryptor(self.public_key, self.num_workers)
+                self.decrypter = Decrypter(self.private_key, self.num_workers)
+                self.adder = Adder(self.num_workers)
+            elif training_mode in {TrainingMode.HS, TrainingMode.HORIZONTAL_SECURE}:
+                if not tenseal_imported:
+                    fl_ctx.set_prop(Constant.PARAM_KEY_CONFIG_ERROR, tenseal_error, private=True, sticky=False)
+                    return
+                try:
                     self.tenseal_context = load_tenseal_context_from_workspace(self.tenseal_context_file, fl_ctx)
-                else:
-                    self.debug(fl_ctx, "Tenseal module not loaded, horizontal secure XGBoost is not supported")
-            except Exception as ex:
-                self.error(fl_ctx, f"Can't load tenseal context, horizontal secure XGBoost is not supported: {ex}")
-                self.tenseal_context = None
+                except Exception as err:
+                    tenseal_error = f"Can't load tenseal context: {err}"
+                    self.tenseal_context = None
+                    fl_ctx.set_prop(Constant.PARAM_KEY_CONFIG_ERROR, tenseal_error, private=True, sticky=False)
         elif event_type == EventType.END_RUN:
             self.tenseal_context = None
         else:
