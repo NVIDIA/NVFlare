@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,24 +11,3 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-
-from abc import ABC, abstractmethod
-from typing import Tuple
-
-import xgboost as xgb
-
-from .constant import TrainingMode
-
-
-class XGBDataLoader(ABC):
-    @abstractmethod
-    def load_data(
-        self, client_id: str, training_mode: str = TrainingMode.HORIZONTAL
-    ) -> Tuple[xgb.DMatrix, xgb.DMatrix]:
-        """Loads data for xgboost.
-
-        Returns:
-            A tuple of train_data, validation_data
-        """
-        pass

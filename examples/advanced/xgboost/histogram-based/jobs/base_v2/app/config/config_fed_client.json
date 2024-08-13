@@ -1,6 +1,5 @@
 {
   "format_version": 2,
-  "num_rounds": 100,
   "executors": [
     {
       "tasks": [
@@ -8,19 +7,10 @@
       ],
       "executor": {
         "id": "Executor",
-        "path": "nvflare.app_opt.xgboost.histogram_based_v2.executor.FedXGBHistogramExecutor",
+        "path": "nvflare.app_opt.xgboost.histogram_based_v2.fed_executor.FedXGBHistogramExecutor",
         "args": {
           "data_loader_id": "dataloader",
-          "metrics_writer_id": "metrics_writer",
-          "early_stopping_rounds": 2,
-          "xgb_params": {
-            "max_depth": 8,
-            "eta": 0.1,
-            "objective": "binary:logistic",
-            "eval_metric": "auc",
-            "tree_method": "hist",
-            "nthread": 16
-          }
+          "metrics_writer_id": "metrics_writer"
         }
       }
     }

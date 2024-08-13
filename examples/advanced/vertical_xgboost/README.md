@@ -89,7 +89,7 @@ The model will be saved to `test.model.json`.
 ## Results
 Model accuracy can be visualized in tensorboard:
 ```
-tensorboard --logdir /tmp/nvflare/vertical_xgb/simulate_job/tb_events
+tensorboard --logdir /tmp/nvflare/vertical_xgb/server/simulate_job/tb_events
 ```
 
 An example training (pink) and validation (orange) AUC graph from running vertical XGBoost on HIGGS:
