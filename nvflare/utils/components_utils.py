@@ -36,7 +36,7 @@ def create_classes_table_static():
     from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
     from nvflare.app_common.workflows.scatter_and_gather_scaffold import ScatterAndGatherScaffold
 
-    objects = {
+    classes = {
         ScatterAndGather,
         ScatterAndGatherScaffold,
         Aggregator,
@@ -59,6 +59,6 @@ def create_classes_table_static():
     }
 
     class_table = {}
-    for obj in objects:
-        class_table[obj.__name__] = obj.__module__
+    for item in classes:
+        class_table[item.__name__] = item.__module__
     return class_table
