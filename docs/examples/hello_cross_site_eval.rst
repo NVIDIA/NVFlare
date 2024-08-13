@@ -138,8 +138,7 @@ This can produce a lot of results. All the results will be kept in the job's wor
 Understanding the Output
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
-After starting the server and clients, you should begin to see
-some outputs in each terminal tracking the progress of the FL run.
+After running the job, you should begin to see outputs tracking the progress of the FL run.
 As each client finishes training, it will start the cross site validation process.
 During this you'll see several important outputs the track the progress of cross site validation.
 
