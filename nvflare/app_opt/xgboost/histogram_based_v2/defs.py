@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from nvflare.app_opt.xgboost.constant import TrainingMode
 from nvflare.fuel.f3.drivers.net_utils import MAX_FRAME_SIZE
 
 
@@ -23,7 +24,6 @@ class Constant:
 
     # keys of adaptor config parameters
     CONF_KEY_CLIENT_RANKS = "client_ranks"
-    CONF_KEY_RANK = "rank"
     CONF_KEY_WORLD_SIZE = "world_size"
     CONF_KEY_NUM_ROUNDS = "num_rounds"
     CONF_KEY_TRAINING_MODE = "training_mode"
@@ -127,19 +127,6 @@ GRPC_DEFAULT_OPTIONS = [
 class SplitMode:
     ROW = 0
     COL = 1
-
-
-class TrainingMode:
-    # Non-secure mode
-    H = "h"
-    HORIZONTAL = "horizontal"
-    V = "v"
-    VERTICAL = "vertical"
-    # Secure mode
-    HS = "hs"
-    HORIZONTAL_SECURE = "horizontal_secure"
-    VS = "VS"
-    VERTICAL_SECURE = "vertical_secure"
 
 
 # Mapping of text training mode to split mode

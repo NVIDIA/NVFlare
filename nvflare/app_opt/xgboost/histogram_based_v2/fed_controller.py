@@ -38,7 +38,6 @@ class XGBFedController(XGBController):
         max_client_op_interval: float = Constant.MAX_CLIENT_OP_INTERVAL,
         progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
         client_ranks=None,
-        int_client_grpc_options=None,
         in_process=True,
     ):
         XGBController.__init__(
@@ -57,7 +56,8 @@ class XGBFedController(XGBController):
             progress_timeout=progress_timeout,
             client_ranks=client_ranks,
         )
-        self.int_client_grpc_options = int_client_grpc_options
+        # do not let user specify int_client_grpc_options in this version - always use default.
+        self.int_client_grpc_options = None
         self.in_process = in_process
 
     def get_adaptor(self, fl_ctx: FLContext):
