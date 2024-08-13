@@ -31,8 +31,8 @@ class SecureDataLoader(XGBDataLoader):
 
     def load_data(self, client_id: str, training_mode: str):
 
-        train_path = f"{self.folder}/site-{self.rank + 1}/train.csv"
-        valid_path = f"{self.folder}/site-{self.rank + 1}/valid.csv"
+        train_path = f"{self.folder}/{client_id}/train.csv"
+        valid_path = f"{self.folder}/{client_id}/valid.csv"
 
         if training_mode not in TRAINING_MODE_MAPPING:
             raise ValueError(f"Invalid training_mode: {training_mode}")

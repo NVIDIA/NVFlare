@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from nvflare.app_opt.xgboost.constant import TrainingMode
 from nvflare.fuel.f3.drivers.net_utils import MAX_FRAME_SIZE
 
 
@@ -23,7 +24,6 @@ class Constant:
 
     # keys of adaptor config parameters
     CONF_KEY_CLIENT_RANKS = "client_ranks"
-    CONF_KEY_RANK = "rank"
     CONF_KEY_WORLD_SIZE = "world_size"
     CONF_KEY_NUM_ROUNDS = "num_rounds"
     CONF_KEY_TRAINING_MODE = "training_mode"
@@ -88,6 +88,7 @@ class Constant:
     PARAM_KEY_REQUEST = "xgb.request"
     PARAM_KEY_EVENT = "xgb.event"
     PARAM_KEY_TRAINING_MODE = "xgb.training_mode"
+    PARAM_KEY_CONFIG_ERROR = "xgb.config_error"
 
     RUNNER_CTX_SERVER_ADDR = "server_addr"
     RUNNER_CTX_PORT = "port"
@@ -130,14 +131,14 @@ class SplitMode:
 
 # Mapping of text training mode to split mode
 TRAINING_MODE_MAPPING = {
-    "h": SplitMode.ROW,
-    "horizontal": SplitMode.ROW,
-    "v": SplitMode.COL,
-    "vertical": SplitMode.COL,
-    "hs": SplitMode.ROW,
-    "horizontal_secure": SplitMode.ROW,
-    "vs": SplitMode.COL,
-    "vertical_secure": SplitMode.COL,
+    TrainingMode.H: SplitMode.ROW,
+    TrainingMode.HORIZONTAL: SplitMode.ROW,
+    TrainingMode.V: SplitMode.COL,
+    TrainingMode.VERTICAL: SplitMode.COL,
+    TrainingMode.HS: SplitMode.ROW,
+    TrainingMode.HORIZONTAL_SECURE: SplitMode.ROW,
+    TrainingMode.VS: SplitMode.COL,
+    TrainingMode.VERTICAL_SECURE: SplitMode.COL,
 }
 
-SECURE_TRAINING_MODES = {"hs", "horizontal_secure", "vs", "vertical_secure"}
+SECURE_TRAINING_MODES = {TrainingMode.HS, TrainingMode.HORIZONTAL_SECURE, TrainingMode.VS, TrainingMode.VERTICAL_SECURE}

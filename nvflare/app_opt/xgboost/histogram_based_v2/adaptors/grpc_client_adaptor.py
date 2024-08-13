@@ -11,8 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import threading
 import time
+from typing import Tuple
 
 import grpc
 
@@ -30,7 +32,34 @@ DUPLICATE_REQ_MAX_HOLD_TIME = 3600.0
 
 
 class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
+    """Implementation of XGBClientAdaptor that uses an internal `GrpcServer`.
+
+    The `GrpcClientAdaptor` class serves as an interface between the XGBoost
+    federated client and federated server components.
+    It employs its `XGBRunner` to initiate an XGBoost federated gRPC client
+    and utilizes an internal `GrpcServer` to forward client requests/responses.
+
+    The communication flow is as follows:
+        1. XGBoost federated gRPC client talks to `GrpcClientAdaptor`, which
+           encapsulates a `GrpcServer`.
+           Requests are then forwarded to `GrpcServerAdaptor`, which internally
+           manages a `GrpcClient` responsible for interacting with the XGBoost
+           federated gRPC server.
+        2. XGBoost federated gRPC server talks to `GrpcServerAdaptor`, which
+           encapsulates a `GrpcClient`.
+           Responses are then forwarded to `GrpcClientAdaptor`, which internally
+           manages a `GrpcServer` responsible for interacting with the XGBoost
+           federated gRPC client.
+    """
+
     def __init__(self, int_server_grpc_options=None, in_process=True, per_msg_timeout=10.0, tx_timeout=100.0):
+        """Constructor method to initialize the object.
+
+        Args:
+            int_server_grpc_options: An optional list of key-value pairs (`channel_arguments`
+                in gRPC Core runtime) to configure the gRPC channel of internal `GrpcServer`.
+            in_process (bool): Specifies whether to start the `XGBRunner` in the same process or not.
+        """
         XGBClientAdaptor.__init__(self, in_process, per_msg_timeout, tx_timeout)
         self.int_server_grpc_options = int_server_grpc_options
         self.in_process = in_process
@@ -49,7 +78,7 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         self._workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
         self._run_dir = self._workspace.get_run_dir(run_number)
-        self.engine = engine
+        self.engine = fl_ctx.get_engine()
 
     def _start_client(self, server_addr: str, fl_ctx: FLContext):
         """Start the XGB client runner in a separate thread or separate process based on config.
@@ -80,7 +109,7 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         self._training_stopped = True
         self.stop_runner()
 
-    def _is_stopped(self) -> (bool, int):
+    def _is_stopped(self) -> Tuple[bool, int]:
         runner_stopped, ec = self.is_runner_stopped()
         if runner_stopped:
             return runner_stopped, ec
@@ -100,7 +129,7 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
             raise RuntimeError("failed to get a port for XGB server")
         self.internal_server_addr = f"127.0.0.1:{port}"
         self.log_info(fl_ctx, f"Start internal server at {self.internal_server_addr}")
-        self.internal_xgb_server = GrpcServer(self.internal_server_addr, 10, self.int_server_grpc_options, self)
+        self.internal_xgb_server = GrpcServer(self.internal_server_addr, 10, self, self.int_server_grpc_options)
         self.internal_xgb_server.start(no_blocking=True)
         self.log_info(fl_ctx, f"Started internal server at {self.internal_server_addr}")
         self._start_client(self.internal_server_addr, fl_ctx)
@@ -212,10 +241,10 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         with self._lock:
             event = self._pending_req.get((rank, seq), None)
         if event:
-            self.log_info(fl_ctx, f"Duplicate seq {op=} {rank=} {seq=}, wait till original req is done")
+            self.logger.info(f"Duplicate seq {op=} {rank=} {seq=}, wait till original req is done")
             event.wait(DUPLICATE_REQ_MAX_HOLD_TIME)
             time.sleep(1)  # To ensure the first request is returned first
-            self.log_info(fl_ctx, f"Duplicate seq {op=} {rank=} {seq=} returned with empty buffer")
+            self.logger.info(f"Duplicate seq {op=} {rank=} {seq=} returned with empty buffer")
             return True
 
         with self._lock:
@@ -231,4 +260,4 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
 
             event.set()
             del self._pending_req[(rank, seq)]
-            self.log_info(fl_ctx, f"Request seq {op=} {rank=} {seq=} finished processing")
+            self.logger.info(f"Request seq {op=} {rank=} {seq=} finished processing")

@@ -25,9 +25,6 @@ class FedXGBHistogramExecutor(XGBExecutor):
     def __init__(
         self,
         data_loader_id: str,
-        verbose_eval=False,
-        use_gpus=False,
-        int_server_grpc_options=None,
         per_msg_timeout=60.0,
         tx_timeout=600.0,
         model_file_name="model.json",
@@ -41,9 +38,8 @@ class FedXGBHistogramExecutor(XGBExecutor):
             tx_timeout=tx_timeout,
         )
         self.data_loader_id = data_loader_id
-        self.verbose_eval = verbose_eval
-        self.use_gpus = use_gpus
-        self.int_server_grpc_options = int_server_grpc_options
+        # do not let use specify int_server_grpc_options in this version - always use default
+        self.int_server_grpc_options = None
         self.model_file_name = model_file_name
         self.metrics_writer_id = metrics_writer_id
         self.in_process = in_process
