@@ -17,6 +17,7 @@ from abc import ABC, abstractmethod
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.job_config.defs import FilterType
 
 
 class ContentBlockedException(Exception):
@@ -68,3 +69,19 @@ class Filter(FLComponent, ABC):
             return getattr(self, key)
         except AttributeError:
             return default
+
+    def add_to_fed_job(self, job, ctx, filter_type, tasks):
+        """This method is required by Job API.
+
+        Args:
+            job: the Job object to add to
+            ctx: Job Context
+            filter_type: type of filter
+            tasks: tasks for the filter
+
+        Returns:
+
+        """
+        if not tasks:
+            tasks = ["*"]
+        job.add_filter(self, obj=self, filter_type=filter_type, task=tasks, ctx=ctx)
