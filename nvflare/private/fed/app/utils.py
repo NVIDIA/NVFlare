@@ -56,7 +56,7 @@ def kill_child_processes(parent_pid, sig=signal.SIGTERM):
         return
     children = parent.children(recursive=True)
     for process in children:
-        process.send_signal(sig)
+        process.kill()
 
 
 def create_admin_server(fl_server: FederatedServer, server_conf=None, args=None, secure_train=False):
