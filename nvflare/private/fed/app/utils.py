@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import os
-import signal
 import sys
 import threading
 import time
@@ -49,14 +48,14 @@ def check_parent_alive(parent_pid, stop_event: threading.Event):
         time.sleep(1)
 
 
-def kill_child_processes(parent_pid, sig=signal.SIGTERM):
+def kill_child_processes(parent_pid):
     try:
         parent = psutil.Process(parent_pid)
     except psutil.NoSuchProcess:
         return
     children = parent.children(recursive=True)
     for process in children:
-        process.send_signal(sig)
+        process.kill()
 
 
 def create_admin_server(fl_server: FederatedServer, server_conf=None, args=None, secure_train=False):
