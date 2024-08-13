@@ -107,8 +107,8 @@ so the client's model is trained with its own dataset:
    :lineno-start: 58
    :linenos:
   
-After finishing the local train, the train method uses the newly-trained weights to build a new ``DXO`` to update the
-``Shareable`` with and then returns it back to the NVIDIA FLARE server.
+After finishing the local training, the newly-trained weights are sent back to the NVIDIA FLARE server in the params of
+:mod:`FLModel<nvflare.app_common.abstract.fl_model>`.
 
 
 NVIDIA FLARE Server & Application
