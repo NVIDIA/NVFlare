@@ -14,7 +14,14 @@
 
 from src.net import Net
 
-from nvflare import FedAvg, FedJob, ScriptExecutor
+from nvflare import FedJob
+from nvflare.job_config.defs import JobTargetType
+from nvflare.app_common.workflows.fedavg import FedAvg
+from nvflare.app_common.executors.script_executor import ScriptExecutor
+from nvflare.job_config.controller_apps.deep_learning import DeepLearningControllerApp
+from nvflare.job_config.executor_apps.basic import BasicExecutorApp
+from nvflare.job_config.pt.model import Wrap
+
 
 if __name__ == "__main__":
     n_clients = 2
@@ -22,6 +29,9 @@ if __name__ == "__main__":
     train_script = "src/cifar10_fl.py"
 
     job = FedJob(name="cifar10_fedavg")
+
+    server_app = DeepLearningControllerApp()
+    job.to(server_app, JobTargetType.SERVER)
 
     # Define the controller workflow and send to server
     controller = FedAvg(
@@ -31,7 +41,10 @@ if __name__ == "__main__":
     job.to_server(controller)
 
     # Define the initial global model and send to server
-    job.to_server(Net())
+    job.to_server(Wrap(Net()))
+
+    client_app = BasicExecutorApp(gpu=0)
+    job.to_clients(client_app)
 
     # Send executor to all clients
     executor = ScriptExecutor(

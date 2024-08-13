@@ -14,7 +14,14 @@
 
 from src.net import Net
 
-from nvflare import FedAvg, FedJob, ScriptExecutor
+from nvflare import FedJob
+from nvflare.job_config.defs import JobTargetType
+from nvflare.app_common.workflows.fedavg import FedAvg
+from nvflare.app_common.executors.script_executor import ScriptExecutor
+from nvflare.job_config.controller_apps.deep_learning import DeepLearningControllerApp
+from nvflare.job_config.executor_apps.basic import BasicExecutorApp
+from nvflare.job_config.pt.model import Wrap
+
 
 if __name__ == "__main__":
     n_clients = 2
@@ -22,23 +29,27 @@ if __name__ == "__main__":
     train_script = "src/cifar10_fl.py"
 
     job = FedJob(name="cifar10_fedavg")
+    app = DeepLearningControllerApp()
+    job.to(app, JobTargetType.SERVER)
 
     # Define the controller workflow and send to server
     controller = FedAvg(
         num_clients=n_clients,
         num_rounds=num_rounds,
     )
-    job.to(controller, "server")
+    job.to(controller, JobTargetType.SERVER)
 
     # Define the initial global model and send to server
-    job.to(Net(), "server")
+    job.to(Wrap(Net()), JobTargetType.SERVER)
 
     # Add clients
     for i in range(n_clients):
+        app = BasicExecutorApp(gpu=0)
+        job.to(app, target=f"site-{i}")
         executor = ScriptExecutor(
             task_script_path=train_script, task_script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
         )
-        job.to(executor, f"site-{i}", gpu=0)
+        job.to(executor, target=f"site-{i}")
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir")

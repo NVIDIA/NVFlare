@@ -39,4 +39,4 @@ class Wrap:
         """
         if tf_ok and isinstance(self.model, tf.keras.Model):  # if model, create a TF persistor
             component = TFModelPersistor(model=self.model)
-            job.add_component(self.persistor_id, component, ctx)
+            job.add_component(comp_id=self.persistor_id, obj=component, ctx=ctx)

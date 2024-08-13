@@ -44,7 +44,7 @@ class Wrap:
         """
         if torch_ok and isinstance(self.model, nn.Module):  # if model, create a PT persistor
             component = PTFileModelPersistor(model=self.model)
-            job.add_component(self.persistor_id, component, ctx)
+            job.add_component(comp_id=self.persistor_id, obj=component, ctx=ctx)
 
             component = PTFileModelLocator(pt_persistor_id=self.persistor_id)
-            job.add_component(self.model_locator_id, component, ctx)
+            job.add_component(comp_id=self.model_locator_id, obj=component, ctx=ctx)

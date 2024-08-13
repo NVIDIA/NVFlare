@@ -90,10 +90,9 @@ class FedApp:
 
 
 class JobCtx:
-    def __init__(self, obj: Any, target: str, target_type: str, comp_id: str, app: FedApp):
+    def __init__(self, obj: Any, target: str, comp_id: str, app: FedApp):
         self.obj = obj
         self.target = target
-        self.target_type = target_type
         self.comp_id = comp_id
         self.app = app
 
@@ -162,18 +161,30 @@ class FedJob:
         self._deploy_map[target] = obj
 
     def _add_controller(self, obj, target: str, id: str):
+        app = self._deploy_map.get(target)
         if target != JobTargetType.SERVER:  # add client-side controllers as components
-            app = self._deploy_map.get(target)
-            if not app:
-                raise ValueError(
-                    f"{target} doesn't have an `ExecutorApp`. Deploy one first before adding client-side controllers!"
-                )
             app.add_component(obj, id)
         else:
             app = self._deploy_map.get(target)
-            if not app:
-                raise ValueError(f"{target} doesn't have a 'ControllerApp'. Deploy one before adding Controller!")
             app.add_controller(obj, id)
+
+    def _try_add_controller(self, obj, target: str, id: str, **kwargs):
+        app = self._deploy_map.get(target)
+        target_type = JobTargetType.get_target_type(target)
+        if not app:
+            if target_type != JobTargetType.SERVER:  # add client-side controllers as components
+                raise ValueError(
+                    f"{target} doesn't have an `ExecutorApp`. Deploy one first before adding client-side controllers!"
+                )
+            else:
+                raise ValueError(f"{target} doesn't have a 'ControllerApp'. Deploy one before adding Controller!")
+
+        add_to_job_method = getattr(obj, "add_to_fed_job")
+        if add_to_job_method is not None:
+            ctx = JobCtx(obj, target, id, app)
+            add_to_job_method(self, ctx, **kwargs)
+        else:
+            self._add_controller(obj, target, id)
 
     def _add_executor_app(self, obj: ExecutorApp, target: str):
         if target == JobTargetType.SERVER:
@@ -199,7 +210,7 @@ class FedJob:
         id=None,
         **kwargs,
     ):
-        """Assign an object to the target.
+        """Assign an object to the target. For end users.
 
         Args:
             obj: the object to be assigned
@@ -210,7 +221,7 @@ class FedJob:
         If the obj provides the add_to_fed_job method, it will be called with the kwargs.
         This method must follow this signature:
 
-            add_to_fed_job(job, ctx)
+            add_to_fed_job(job, ctx, ...)
 
             job: this is the job (self)
             ctx: this is the JobCtx that keeps contextual info of this call.
@@ -230,11 +241,11 @@ class FedJob:
         if isinstance(obj, ControllerApp):
             self._add_controller_app(obj, target)
         elif isinstance(obj, Controller):
-            self._add_controller(obj, target, id)
+            self._try_add_controller(obj, target, id, **kwargs)
         elif isinstance(obj, ExecutorApp):
             self._add_executor_app(obj, target)
         else:
-            target_type = JobTargetType.SERVER if target == JobTargetType.SERVER else JobTargetType.CLIENT
+            target_type = JobTargetType.get_target_type(target)
 
             get_target_type_method = getattr(obj, "get_job_target_type")
             if get_target_type_method is not None:
@@ -255,7 +266,7 @@ class FedJob:
 
             add_to_job_method = getattr(obj, "add_to_fed_job")
             if add_to_job_method is not None:
-                ctx = JobCtx(obj, target, target_type, id, app)
+                ctx = JobCtx(obj, target, id, app)
                 add_to_job_method(self, ctx, **kwargs)
             else:
                 # basic object
@@ -286,7 +297,8 @@ class FedJob:
     def _get_app(self, ctx: JobCtx):
         app = self._deploy_map.get(ctx.target)
         if not app:
-            if ctx.target_type == JobTargetType.CLIENT:
+            target_type = JobTargetType.get_target_type(ctx.target)
+            if target_type == JobTargetType.CLIENT:
                 app_type = "an ExecutorApp"
             else:
                 app_type = "a ControllerApp"
@@ -294,6 +306,16 @@ class FedJob:
         return app
 
     def add_component(self, comp_id: str, obj: Any, ctx: JobCtx):
+        """Add a component to the job. To be used by job component programmer.
+
+        Args:
+            comp_id:
+            obj:
+            ctx:
+
+        Returns:
+
+        """
         app = self._get_app(ctx)
         if not comp_id:
             comp_id = ctx.comp_id
@@ -301,11 +323,44 @@ class FedJob:
         if self._components:
             self._add_referenced_components(obj, ctx.target)
 
+    def add_controller(self, obj: Controller, ctx: JobCtx):
+        """Add a Controller object to the job. To be used by controller programmer.
+
+        Args:
+            obj:
+            ctx:
+
+        Returns:
+
+        """
+        self._add_controller(obj, ctx.target, ctx.comp_id)
+
     def add_executor(self, obj: Executor, tasks: List[str], ctx: JobCtx):
+        """Add an executor to the job. To be used by executor programmer.
+
+        Args:
+            obj:
+            tasks:
+            ctx:
+
+        Returns:
+
+        """
         app = self._get_app(ctx)
         app.add_executor(obj, tasks=tasks)
 
     def add_filter(self, obj: Filter, filter_type: str, tasks, ctx: JobCtx):
+        """Add a filter to the job. To be used by filter programmer.
+
+        Args:
+            obj:
+            filter_type:
+            tasks:
+            ctx:
+
+        Returns:
+
+        """
         app = self._get_app(ctx)
         if filter_type == FilterType.TASK_RESULT:
             app.add_task_result_filter(tasks, obj)
@@ -331,6 +386,15 @@ class FedJob:
             )
 
     def add_resources(self, resources: List[str], ctx: JobCtx):
+        """Add resources to the job. To be used by job component programmer.
+
+        Args:
+            resources:
+            ctx:
+
+        Returns:
+
+        """
         app = self._get_app(ctx)
         for r in resources:
             self._add_resource(app, r, ctx)
@@ -341,7 +405,7 @@ class FedJob:
         id=None,
         **kwargs,
     ):
-        """assign an object to the server.
+        """assign an object to the server. For end users.
 
         Args:
             obj: The object to be assigned. The obj will be given a default `id` if non is provided based on its type.
@@ -361,7 +425,7 @@ class FedJob:
         id=None,
         **kwargs,
     ):
-        """assign an object to all clients.
+        """assign an object to all clients. For end users.
 
         Args:
             obj (Any): Object to be deployed.
@@ -430,12 +494,30 @@ class FedJob:
             self._deployed = True
 
     def export_job(self, job_root: str):
-        """Export job config to `job_root` directory with name `self.job_name`."""
+        """Export job config to `job_root` directory with name `self.job_name`.
+        For end users.
+
+        Args:
+            job_root:
+
+        Returns:
+
+        """
         self._set_all_apps()
         self.job.generate_job_config(job_root)
 
     def simulator_run(self, workspace: str, n_clients: int = None, threads: int = None):
-        """Run the job with the simulator with the `workspace` using `n_clients` and `threads`."""
+        """Run the job with the simulator with the `workspace` using `n_clients` and `threads`.
+        For end users.
+
+        Args:
+            workspace:
+            n_clients:
+            threads:
+
+        Returns:
+
+        """
         self._set_all_apps()
 
         if ALL_SITES in self.clients and not n_clients:
@@ -460,7 +542,7 @@ class FedJob:
         )
 
     def as_id(self, obj: Any) -> str:
-        """Generate and return uuid for `obj`.
+        """Generate and return uuid for `obj`. For end users.
         If this id is referenced by another added object, this `obj` will also be added as a component.
         """
         cid = str(uuid.uuid4())
