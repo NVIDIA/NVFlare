@@ -164,7 +164,7 @@ class FlowerServerApplet(Applet):
         if self.server_app_args:
             args_str = " ".join(self.server_app_args)
 
-        app_cmd = f"flower-server-app --insecure --superlink {driver_addr} --dir {custom_dir} {args_str} {custom_dir}"
+        app_cmd = f"flower-server-app --insecure --superlink {driver_addr} {args_str} {custom_dir}"
         cmd_desc = CommandDescriptor(
             cmd=app_cmd,
             log_file_name="server_app_log.txt",

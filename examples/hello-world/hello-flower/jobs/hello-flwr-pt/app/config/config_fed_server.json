@@ -8,9 +8,7 @@
     {
       "id": "ctl",
       "path": "nvflare.app_opt.flower.controller.FlowerController",
-      "args": {
-        "server_app": "server:app"
-      }
+      "args": {}
     }
   ]
 }
