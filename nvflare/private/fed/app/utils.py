@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import os
-import signal
 import sys
 import threading
 import time
