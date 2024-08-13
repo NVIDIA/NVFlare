@@ -19,7 +19,7 @@ import xgboost as xgb
 from xgboost import callback
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import SystemConfigs
+from nvflare.apis.fl_constant import SystemConfigs, FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.tracking.log_writer import LogWriter
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
@@ -33,6 +33,7 @@ from nvflare.utils.cli_utils import get_package_root
 PLUGIN_PARAM_KEY = "federated_plugin"
 PLUGIN_KEY_NAME = "name"
 PLUGIN_KEY_PATH = "path"
+MODEL_FILE_NAME = "model.json"
 
 
 class XGBClientRunner(AppRunner, FLComponent):
@@ -46,6 +47,7 @@ class XGBClientRunner(AppRunner, FLComponent):
         self.model_file_name = model_file_name
         self.data_loader_id = data_loader_id
         self.logger = get_logger(self)
+        self.fl_ctx = None
 
         self._client_name = None
         self._rank = None
@@ -62,6 +64,7 @@ class XGBClientRunner(AppRunner, FLComponent):
         self._metrics_writer = None
 
     def initialize(self, fl_ctx: FLContext):
+        self.fl_ctx = fl_ctx
         engine = fl_ctx.get_engine()
         self._data_loader = engine.get_component(self.data_loader_id)
         if not isinstance(self._data_loader, XGBDataLoader):
@@ -95,6 +98,17 @@ class XGBClientRunner(AppRunner, FLComponent):
         early_stopping_rounds = xgb_options.get("early_stopping_rounds", 0)
         verbose_eval = xgb_options.get("verbose_eval", False)
 
+        # Check for pre-trained model
+        job_id = self.fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
+        workspace = self.fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        custom_dir = workspace.get_app_custom_dir(job_id)
+        model_file = os.path.join(custom_dir, MODEL_FILE_NAME)
+        if os.path.isfile(model_file):
+            self.logger.info(f"Pre-trained model is used: {model_file}")
+            xgb_model = model_file
+        else:
+            xgb_model = None
+
         # Run training, all the features in training API is available.
         bst = xgb.train(
             xgb_params,
@@ -104,6 +118,7 @@ class XGBClientRunner(AppRunner, FLComponent):
             early_stopping_rounds=early_stopping_rounds,
             verbose_eval=verbose_eval,
             callbacks=callbacks,
+            xgb_model=xgb_model
         )
         return bst
 
@@ -117,12 +132,6 @@ class XGBClientRunner(AppRunner, FLComponent):
         self._xgb_options = ctx.get(Constant.RUNNER_CTX_XGB_OPTIONS)
         self._server_addr = ctx.get(Constant.RUNNER_CTX_SERVER_ADDR)
         self._model_dir = ctx.get(Constant.RUNNER_CTX_MODEL_DIR)
-
-        use_gpus = self._xgb_options.get("use_gpus", False)
-        if use_gpus:
-            # mapping each rank to a GPU (can set to cuda:0 if simulating with only one gpu)
-            self.logger.info(f"Training with GPU {self._rank}")
-            self._xgb_params["device"] = f"cuda:{self._rank}"
 
         self.logger.info(
             f"XGB training_mode: {self._training_mode} " f"params: {self._xgb_params} XGB options: {self._xgb_options}"
