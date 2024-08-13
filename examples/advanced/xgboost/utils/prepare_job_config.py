@@ -155,6 +155,7 @@ def _update_server_config(config: dict, args):
         config["workflows"][0]["args"]["split_mode"] = args.split_mode
         config["workflows"][0]["args"]["secure_training"] = args.secure_training
 
+
 def _copy_custom_files(src_job_path, src_app_name, dst_job_path, dst_app_name):
     dst_path = dst_job_path / dst_app_name / "custom"
     os.makedirs(dst_path, exist_ok=True)
