@@ -34,7 +34,8 @@ from nvflare.security.logging import secure_format_exception
 class FedXGBTreeExecutor(Executor):
     def __init__(
         self,
-        training_mode,
+        split_mode,
+        secure_training,
         lr_scale,
         data_loader_id: str,
         num_client_bagging: int = 1,
@@ -56,7 +57,8 @@ class FedXGBTreeExecutor(Executor):
         self.client_id = None
         self.writer = None
 
-        self.training_mode = training_mode
+        self.split_mode = split_mode
+        self.secure_training = secure_training
         self.num_client_bagging = num_client_bagging
         self.lr = None
         self.lr_scale = lr_scale

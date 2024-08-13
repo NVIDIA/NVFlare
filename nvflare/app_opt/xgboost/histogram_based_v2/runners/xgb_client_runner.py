@@ -19,7 +19,7 @@ import xgboost as xgb
 from xgboost import callback
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import SystemConfigs, FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.tracking.log_writer import LogWriter
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
@@ -119,7 +119,7 @@ class XGBClientRunner(AppRunner, FLComponent):
             early_stopping_rounds=early_stopping_rounds,
             verbose_eval=verbose_eval,
             callbacks=callbacks,
-            xgb_model=xgb_model
+            xgb_model=xgb_model,
         )
         return bst
 
@@ -136,7 +136,7 @@ class XGBClientRunner(AppRunner, FLComponent):
         self._model_dir = ctx.get(Constant.RUNNER_CTX_MODEL_DIR)
 
         self.logger.info(
-            f"XGB split_mode: {self._split_mode} secure_training: {self._secure_training} " 
+            f"XGB split_mode: {self._split_mode} secure_training: {self._secure_training} "
             f"params: {self._xgb_params} XGB options: {self._xgb_options}"
         )
         self.logger.info(f"server address is {self._server_addr}")

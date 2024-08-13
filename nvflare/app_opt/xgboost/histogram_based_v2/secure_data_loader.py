@@ -31,8 +31,8 @@ class SecureDataLoader(XGBDataLoader):
 
     def load_data(self, client_id: str, split_mode: int):
 
-        train_path = f"{self.folder}/site-{self.rank + 1}/train.csv"
-        valid_path = f"{self.folder}/site-{self.rank + 1}/valid.csv"
+        train_path = f"{self.folder}/{client_id}/train.csv"
+        valid_path = f"{self.folder}/{client_id}/valid.csv"
 
         if self.rank == 0 or split_mode == SplitMode.ROW:
             label = "&label_column=0"

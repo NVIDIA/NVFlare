@@ -23,7 +23,6 @@ class Constant:
 
     # keys of adaptor config parameters
     CONF_KEY_CLIENT_RANKS = "client_ranks"
-    CONF_KEY_RANK = "rank"
     CONF_KEY_WORLD_SIZE = "world_size"
     CONF_KEY_NUM_ROUNDS = "num_rounds"
     CONF_KEY_SPLIT_MODE = "split_mode"

@@ -13,6 +13,7 @@
 # limitations under the License.
 import threading
 import time
+from typing import Optional
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task
@@ -61,7 +62,7 @@ class XGBController(Controller):
         split_mode: int,
         secure_training: bool,
         xgb_params: dict,
-        xgb_options: dict,
+        xgb_options: Optional[dict] = None,
         configure_task_name=Constant.CONFIG_TASK_NAME,
         configure_task_timeout=Constant.CONFIG_TASK_TIMEOUT,
         start_task_name=Constant.START_TASK_NAME,
