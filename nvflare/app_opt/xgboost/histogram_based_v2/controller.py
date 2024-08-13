@@ -122,7 +122,7 @@ class XGBController(Controller):
         self.abort_signal = None
 
         if split_mode not in {0, 1}:
-            raise ValueError(f"split_mode must be either 0 or 1")
+            raise ValueError("split_mode must be either 0 or 1")
 
         if not self.xgb_params:
             raise ValueError("xgb_params can't be empty")
