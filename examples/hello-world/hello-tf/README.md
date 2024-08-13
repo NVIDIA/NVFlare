@@ -24,12 +24,6 @@ pip3 install tensorflow
 
 ### 2. Run the experiment
 
-Prepare the data first:
-
-```bash
-bash ./prepare_data.sh
-```
-
 Run the script using the job API to create the job and run it with the simulator:
 
 ```
