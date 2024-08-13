@@ -49,7 +49,7 @@ def check_parent_alive(parent_pid, stop_event: threading.Event):
         time.sleep(1)
 
 
-def kill_child_processes(parent_pid, sig=signal.SIGTERM):
+def kill_child_processes(parent_pid):
     try:
         parent = psutil.Process(parent_pid)
     except psutil.NoSuchProcess:
