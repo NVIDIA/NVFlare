@@ -802,8 +802,27 @@ class Session(SessionSpec):
         reply = self._do_command(command, enforce_meta=False)
         return self._get_dict_data(reply)
 
-    def do_app_command(self, job_id: str, topic: str, cmd_data):
+    def do_app_command(self, job_id: str, topic: str, cmd_data) -> dict:
+        """Ask a running job to execute an app command
+
+        Args:
+            job_id: the ID of the running job
+            topic: topic of the command
+            cmd_data: the data of the command. Must be JSON serializable.
+
+        Returns: result of the app command
+
+        If the job is not currently running, an exception will occur. User must make sure that the job is running when
+        calling this method.
+
+        """
         command = f"{AdminCommandNames.APP_COMMAND} {job_id} {topic}"
+        if cmd_data:
+            # cmd_data must be JSON serializable!
+            try:
+                json.dumps(cmd_data)
+            except Exception as ex:
+                raise ValueError(f"cmd_data cannot be JSON serialized: {ex}")
         reply = self._do_command(command, enforce_meta=False, props=cmd_data)
         return self._get_dict_data(reply)
 
