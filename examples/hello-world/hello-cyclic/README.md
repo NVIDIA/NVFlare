@@ -49,16 +49,8 @@ If you choose to run the example using GPUs, it is important to note that by def
 In scenarios where multiple clients are involved, you have a couple of options to address this.
 
 One approach is to include specific flags to prevent TensorFlow from allocating all GPU memory.
-For instance if you are running the job with the simulator after exporting it with `job.export_job("/tmp/nvflare/jobs/job_config")` uncommented at the end of script in this directory:
+For instance:
 
 ```bash
-TF_FORCE_GPU_ALLOW_GROWTH=true nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 /tmp/nvflare/jobs/job_config/hello-tf_cyclic
-```
-
-If you possess more GPUs than clients,
-an alternative strategy is to run one client on each GPU.
-This can be achieved as illustrated below:
-
-```bash
-TF_FORCE_GPU_ALLOW_GROWTH=true nvflare simulator -w /tmp/nvflare/ -n 2 -gpu 0,1 /tmp/nvflare/jobs/job_config/hello-tf_cyclic
+TF_FORCE_GPU_ALLOW_GROWTH=true python3 cyclic_script-executor-hello-cyclic.py
 ```
