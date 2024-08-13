@@ -23,7 +23,7 @@ from nvflare.apis.fl_constant import SystemConfigs, FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.tracking.log_writer import LogWriter
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
-from nvflare.app_opt.xgboost.histogram_based_v2.defs import SECURE_TRAINING_MODES, Constant
+from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.runners.xgb_runner import AppRunner
 from nvflare.app_opt.xgboost.metrics_cb import MetricsCallback
 from nvflare.fuel.utils.config_service import ConfigService
@@ -53,7 +53,8 @@ class XGBClientRunner(AppRunner, FLComponent):
         self._rank = None
         self._world_size = None
         self._num_rounds = None
-        self._training_mode = None
+        self._split_mode = None
+        self._secure_training = None
         self._xgb_params = None
         self._xgb_options = None
         self._server_addr = None
@@ -127,14 +128,16 @@ class XGBClientRunner(AppRunner, FLComponent):
         self._rank = ctx.get(Constant.RUNNER_CTX_RANK)
         self._world_size = ctx.get(Constant.RUNNER_CTX_WORLD_SIZE)
         self._num_rounds = ctx.get(Constant.RUNNER_CTX_NUM_ROUNDS)
-        self._training_mode = ctx.get(Constant.RUNNER_CTX_TRAINING_MODE)
+        self._split_mode = ctx.get(Constant.RUNNER_CTX_SPLIT_MODE)
+        self._secure_training = ctx.get(Constant.RUNNER_CTX_SECURE_TRAINING)
         self._xgb_params = ctx.get(Constant.RUNNER_CTX_XGB_PARAMS)
         self._xgb_options = ctx.get(Constant.RUNNER_CTX_XGB_OPTIONS)
         self._server_addr = ctx.get(Constant.RUNNER_CTX_SERVER_ADDR)
         self._model_dir = ctx.get(Constant.RUNNER_CTX_MODEL_DIR)
 
         self.logger.info(
-            f"XGB training_mode: {self._training_mode} " f"params: {self._xgb_params} XGB options: {self._xgb_options}"
+            f"XGB split_mode: {self._split_mode} secure_training: {self._secure_training} " 
+            f"params: {self._xgb_params} XGB options: {self._xgb_options}"
         )
         self.logger.info(f"server address is {self._server_addr}")
 
@@ -145,7 +148,7 @@ class XGBClientRunner(AppRunner, FLComponent):
             "federated_rank": self._rank,
         }
 
-        if self._training_mode not in SECURE_TRAINING_MODES:
+        if not self._secure_training:
             self.logger.info("XGBoost non-secure training")
         else:
             xgb_plugin_name = ConfigService.get_str_var(
@@ -175,13 +178,13 @@ class XGBClientRunner(AppRunner, FLComponent):
                 lib_name = f"lib{xgb_plugin_params[PLUGIN_KEY_NAME]}.{lib_ext}"
                 xgb_plugin_params[PLUGIN_KEY_PATH] = str(get_package_root() / "libs" / lib_name)
 
-            self.logger.info(f"XGBoost secure training: {self._training_mode} Params: {xgb_plugin_params}")
+            self.logger.info(f"XGBoost secure training: split_mode: {self._split_mode} Params: {xgb_plugin_params}")
 
             communicator_env[PLUGIN_PARAM_KEY] = xgb_plugin_params
 
         with xgb.collective.CommunicatorContext(**communicator_env):
             # Load the data. Dmatrix must be created with column split mode in CommunicatorContext for vertical FL
-            train_data, val_data = self._data_loader.load_data(self._client_name, self._training_mode)
+            train_data, val_data = self._data_loader.load_data(self._client_name, self._split_mode)
 
             bst = self._xgb_train(self._num_rounds, self._xgb_params, self._xgb_options, train_data, val_data)
 

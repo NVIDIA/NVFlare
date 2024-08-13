@@ -26,7 +26,7 @@ from nvflare.app_opt.xgboost.histogram_based_v2.adaptors.xgb_adaptor import XGBS
 from nvflare.fuel.utils.validation_utils import check_number_range, check_object_type, check_positive_number, check_str
 from nvflare.security.logging import secure_format_exception
 
-from .defs import TRAINING_MODE_MAPPING, Constant
+from .defs import Constant
 
 
 class ClientStatus:
@@ -58,7 +58,8 @@ class XGBController(Controller):
         self,
         adaptor_component_id: str,
         num_rounds: int,
-        training_mode: str,
+        split_mode: int,
+        secure_training: bool,
         xgb_params: dict,
         xgb_options: dict,
         configure_task_name=Constant.CONFIG_TASK_NAME,
@@ -79,7 +80,8 @@ class XGBController(Controller):
         Args:
             adaptor_component_id - the component ID of server target adaptor
             num_rounds - number of rounds
-            training_mode - Split mode (horizontal, vertical, horizontal_secure, vertical_secure)
+            split_mode - 0 for horizontal/row-split, 1 for vertical/column-split
+            secure_training - If true, secure training is enabled
             xgb_params - The params argument for train method
             xgb_options - All other arguments for train method are passed through this dictionary
             configure_task_name - name of the config task
@@ -99,7 +101,8 @@ class XGBController(Controller):
         Controller.__init__(self)
         self.adaptor_component_id = adaptor_component_id
         self.num_rounds = num_rounds
-        self.training_mode = training_mode.lower()
+        self.split_mode = split_mode
+        self.secure_training = secure_training
         self.xgb_params = xgb_params
         self.xgb_options = xgb_options
         self.configure_task_name = configure_task_name
@@ -117,10 +120,8 @@ class XGBController(Controller):
         self.client_statuses = {}  # client name => ClientStatus
         self.abort_signal = None
 
-        check_str("training_mode", training_mode)
-        valid_mode = TRAINING_MODE_MAPPING.keys()
-        if training_mode not in valid_mode:
-            raise ValueError(f"training_mode must be one of following values: {valid_mode}")
+        if split_mode not in {0, 1}:
+            raise ValueError(f"split_mode must be either 0 or 1")
 
         if not self.xgb_params:
             raise ValueError("xgb_params can't be empty")
@@ -461,7 +462,8 @@ class XGBController(Controller):
 
         shareable[Constant.CONF_KEY_CLIENT_RANKS] = self.client_ranks
         shareable[Constant.CONF_KEY_NUM_ROUNDS] = self.num_rounds
-        shareable[Constant.CONF_KEY_TRAINING_MODE] = self.training_mode
+        shareable[Constant.CONF_KEY_SPLIT_MODE] = self.split_mode
+        shareable[Constant.CONF_KEY_SECURE_TRAINING] = self.secure_training
         shareable[Constant.CONF_KEY_XGB_PARAMS] = self.xgb_params
         shareable[Constant.CONF_KEY_XGB_OPTIONS] = self.xgb_options
 
