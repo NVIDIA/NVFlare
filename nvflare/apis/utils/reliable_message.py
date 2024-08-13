@@ -467,20 +467,23 @@ class ReliableMessage:
         abort_signal: Signal,
         fl_ctx: FLContext,
     ) -> Shareable:
-        """Send a reliable request.
+        """Send a request reliably.
 
         Args:
-            target: the target cell of this request
-            topic: topic of the request;
-            request: the request to be sent
-            per_msg_timeout: timeout when sending a message
-            tx_timeout: the timeout of the whole transaction
-            abort_signal: abort signal
-            fl_ctx: the FL context
+            target: The target cell of this request.
+            topic: The topic of the request.
+            request: The request to be sent.
+            per_msg_timeout (float): Number of seconds to wait for each message before timing out.
+            tx_timeout (float): Timeout for the entire transaction.
+            abort_signal (Signal): Signal to abort the request.
+            fl_ctx (FLContext): Context for federated learning.
 
-        Returns: reply from the peer.
+        Returns:
+            The reply from the peer.
 
-        If tx_timeout is not specified or <= per_msg_timeout, the request will be sent only once without retrying.
+        Note:
+            If `tx_timeout` is not specified or is less than or equal to `per_msg_timeout`,
+            the request will be sent only once without retrying.
 
         """
         check_positive_number("per_msg_timeout", per_msg_timeout)
