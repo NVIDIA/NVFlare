@@ -84,7 +84,7 @@ class VerticalDataLoader(XGBDataLoader):
             label = ""
 
         # for Vertical XGBoost, read from csv with label_column and set data_split_mode to 1 for column mode
-        dtrain = xgb.DMatrix(train_path + f"?format=csv{label}", split_mode=split_mode)
-        dvalid = xgb.DMatrix(valid_path + f"?format=csv{label}", split_mode=split_mode)
+        dtrain = xgb.DMatrix(train_path + f"?format=csv{label}", data_split_mode=split_mode)
+        dvalid = xgb.DMatrix(valid_path + f"?format=csv{label}", data_split_mode=split_mode)
 
         return dtrain, dvalid
