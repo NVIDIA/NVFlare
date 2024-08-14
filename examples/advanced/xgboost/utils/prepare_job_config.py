@@ -152,7 +152,8 @@ def _update_server_config(config: dict, args):
         config["num_rounds"] = args.round_num
         config["workflows"][0]["args"]["xgb_params"]["nthread"] = args.nthread
         config["workflows"][0]["args"]["xgb_params"]["tree_method"] = args.tree_method
-        config["workflows"][0]["args"]["training_mode"] = args.training_mode
+        config["workflows"][0]["args"]["split_mode"] = args.split_mode
+        config["workflows"][0]["args"]["secure_training"] = args.secure_training
 
 
 def _copy_custom_files(src_job_path, src_app_name, dst_job_path, dst_app_name):

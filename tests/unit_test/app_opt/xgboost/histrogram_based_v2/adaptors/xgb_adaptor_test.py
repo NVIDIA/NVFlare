@@ -37,7 +37,8 @@ class TestXGBClientAdaptor:
         config = {
             Constant.CONF_KEY_CLIENT_RANKS: {"site-test": 1},
             Constant.CONF_KEY_NUM_ROUNDS: 100,
-            Constant.CONF_KEY_TRAINING_MODE: "horizontal",
+            Constant.CONF_KEY_SPLIT_MODE: 0,
+            Constant.CONF_KEY_SECURE_TRAINING: False,
             Constant.CONF_KEY_XGB_PARAMS: {"depth": 1},
         }
         ctx = FLContext()
