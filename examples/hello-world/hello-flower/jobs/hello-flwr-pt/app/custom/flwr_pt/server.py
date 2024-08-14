@@ -13,10 +13,11 @@
 # limitations under the License.
 from typing import List, Tuple
 
-from flwr.common import Metrics, ndarrays_to_parameters
-from flwr.server import ServerApp, ServerConfig
+from flwr.common import Context, Metrics, ndarrays_to_parameters
+from flwr.server import ServerApp, ServerAppComponents, ServerConfig
 from flwr.server.strategy import FedAvg
-from task import Net, get_weights
+
+from .task import Net, get_weights
 
 
 # Define metric aggregation function
@@ -53,23 +54,16 @@ strategy = FedAvg(
 )
 
 
-# Define config
-config = ServerConfig(num_rounds=3)
-
-
 # Flower ServerApp
-app = ServerApp(
-    config=config,
-    strategy=strategy,
-)
+def server_fn(context: Context):
+    # Read from config
+    num_rounds = context.run_config["num-server-rounds"]
+
+    # Define config
+    config = ServerConfig(num_rounds=num_rounds)
+
+    return ServerAppComponents(strategy=strategy, config=config)
 
 
-# Legacy mode
-if __name__ == "__main__":
-    from flwr.server import start_server
-
-    start_server(
-        server_address="0.0.0.0:8080",
-        config=config,
-        strategy=strategy,
-    )
+# Create ServerApp
+app = ServerApp(server_fn=server_fn)
