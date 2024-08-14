@@ -32,10 +32,7 @@ SPECIAL_CHARACTERS = '"!@#$%^&*()+?=,<>/'
 
 class FedApp:
     def __init__(self):
-        """FedApp handles `ClientAppConfig` and `ServerAppConfig` and allows setting task result or task data filters.
-
-        Args:
-        """
+        """FedApp handles `ClientAppConfig` and `ServerAppConfig` and allows setting task result or task data filters."""
         self.app = None  # Union[ClientAppConfig, ServerAppConfig]
         self._used_ids = []
 
@@ -111,12 +108,8 @@ class ExecutorApp(FedApp):
 
 
 class ControllerApp(FedApp):
-    """Wrapper around `ServerAppConfig`.
-
-    Args:
-    """
-
     def __init__(self):
+        """Wrapper around `ServerAppConfig`."""
         super().__init__()
         self.app: ServerAppConfig = ServerAppConfig()
 
@@ -154,7 +147,7 @@ class FedJob:
 
     def _add_controller_app(self, obj: ControllerApp, target: str):
         if target != JobTargetType.SERVER:
-            raise ValueError(f"`ControllerApp` must be assigned to the server, but tried to assign it to client!")
+            raise ValueError("`ControllerApp` must be assigned to the server, but tried to assign it to client!")
         app = self._deploy_map.get(target)
         if app:
             raise ValueError(f"A ControllerApp was already assigned to {target}")
@@ -177,9 +170,10 @@ class FedJob:
                     f"{target} doesn't have an `ExecutorApp`. Deploy one first before adding client-side controllers!"
                 )
             else:
-                raise ValueError(f"{target} doesn't have a 'ControllerApp'. Deploy one before adding Controller!")
+                self._add_controller_app(ControllerApp(), target)
+                app = self._deploy_map.get(target)
 
-        add_to_job_method = getattr(obj, "add_to_fed_job")
+        add_to_job_method = getattr(obj, "add_to_fed_job", None)
         if add_to_job_method is not None:
             ctx = JobCtx(obj, target, id, app)
             add_to_job_method(self, ctx, **kwargs)
@@ -188,7 +182,7 @@ class FedJob:
 
     def _add_executor_app(self, obj: ExecutorApp, target: str):
         if target == JobTargetType.SERVER:
-            raise ValueError(f"`ExecutorApp` must be assigned to a client, but tried to assign it to server!")
+            raise ValueError("`ExecutorApp` must be assigned to a client, but tried to assign it to server!")
 
         app = self._deploy_map.get(target)
         if app:
@@ -198,10 +192,24 @@ class FedJob:
         if target not in self.clients:
             self.clients.append(target)
 
-        if target not in self._gpus:  # GPU can only be selected once per client.
-            self._gpus[target] = obj.gpu
+        if obj.gpu is not None:
+            if target not in self._gpus:  # GPU can only be selected once per client.
+                self._gpus[target] = str(obj.gpu)
+            else:
+                print(f"{target} already set to use GPU {self._gpus[target]}. Ignoring gpu={obj.gpu}.")
+
+    def _add_executor(self, obj: Executor, target: str, **kwargs):
+        app = self._deploy_map.get(target)
+        if not app:
+            self._add_executor_app(ExecutorApp(), target)
+            app = self._deploy_map.get(target)
+
+        add_to_job_method = getattr(obj, "add_to_fed_job", None)
+        if add_to_job_method is not None:
+            ctx = JobCtx(obj, target, id, app)
+            add_to_job_method(self, ctx, **kwargs)
         else:
-            print(f"{target} already set to use GPU {self._gpus[target]}. Ignoring gpu={obj.gpu}.")
+            app.add_executor(obj, **kwargs)
 
     def to(
         self,
@@ -244,10 +252,12 @@ class FedJob:
             self._try_add_controller(obj, target, id, **kwargs)
         elif isinstance(obj, ExecutorApp):
             self._add_executor_app(obj, target)
+        elif isinstance(obj, Executor):
+            self._add_executor(obj, target, **kwargs)
         else:
             target_type = JobTargetType.get_target_type(target)
 
-            get_target_type_method = getattr(obj, "get_job_target_type")
+            get_target_type_method = getattr(obj, "get_job_target_type", None)
             if get_target_type_method is not None:
                 expected_target_type = get_target_type_method()
                 if expected_target_type != target_type:
@@ -264,7 +274,7 @@ class FedJob:
                 else:
                     raise ValueError(f"cannot add to target {target}: please assign an ExecutorApp first.")
 
-            add_to_job_method = getattr(obj, "add_to_fed_job")
+            add_to_job_method = getattr(obj, "add_to_fed_job", None)
             if add_to_job_method is not None:
                 ctx = JobCtx(obj, target, id, app)
                 add_to_job_method(self, ctx, **kwargs)
@@ -309,9 +319,9 @@ class FedJob:
         """Add a component to the job. To be used by job component programmer.
 
         Args:
-            comp_id:
-            obj:
-            ctx:
+            comp_id: component id
+            obj: component to be added to job.
+            ctx: JobCtx for contextual information.
 
         Returns:
 
@@ -327,8 +337,9 @@ class FedJob:
         """Add a Controller object to the job. To be used by controller programmer.
 
         Args:
-            obj:
-            ctx:
+            obj: Controller to be added to job.
+            ctx: JobCtx for contextual information.
+
 
         Returns:
 
@@ -339,9 +350,9 @@ class FedJob:
         """Add an executor to the job. To be used by executor programmer.
 
         Args:
-            obj:
-            tasks:
-            ctx:
+            obj: Executor to be added to job.
+            tasks: List of tasks that should be handled. If `None`, all tasks will be handled using `[*]`.
+            ctx: JobCtx for contextual information.
 
         Returns:
 
@@ -353,10 +364,10 @@ class FedJob:
         """Add a filter to the job. To be used by filter programmer.
 
         Args:
-            obj:
-            filter_type:
-            tasks:
-            ctx:
+            obj: Filter to be added to job.
+            filter_type: The type of filter used. Either `FilterType.TASK_RESULT` or `FilterType.TASK_DATA`.
+            tasks: List of tasks that Filter applies to.
+            ctx: JobCtx for contextual information.
 
         Returns:
 
@@ -389,8 +400,8 @@ class FedJob:
         """Add resources to the job. To be used by job component programmer.
 
         Args:
-            resources:
-            ctx:
+            resources: List of filenames or directories to be added to job.
+            ctx: JobCtx for contextual information.
 
         Returns:
 
@@ -408,8 +419,9 @@ class FedJob:
         """assign an object to the server. For end users.
 
         Args:
-            obj: The object to be assigned. The obj will be given a default `id` if non is provided based on its type.
+            obj: The object to be assigned. The obj will be given a default `id` if none is provided based on its type.
             id: Optional user-defined id for the object. Defaults to `None` and ID will automatically be assigned.
+            **kwargs: additional args to be passed to the object's add_to_fed_job method.
 
         Returns:
 
@@ -430,6 +442,7 @@ class FedJob:
         Args:
             obj (Any): Object to be deployed.
             id: Optional user-defined id for the object. Defaults to `None` and ID will automatically be assigned.
+            **kwargs: additional args to be passed to the object's add_to_fed_job method.
 
         Returns:
 
@@ -474,8 +487,7 @@ class FedJob:
             app_name = "app_server"
         else:
             raise ValueError(
-                f"App needs to be of type `ClientAppConfig` or `ServerAppConfig` "
-                "but was type {type(client_server_config)}"
+                f"App needs to be of type `ClientAppConfig` or `ServerAppConfig` but was type {type(client_server_config)}"
             )
 
         self.job.add_fed_app(app_name, app_config)
@@ -498,7 +510,7 @@ class FedJob:
         For end users.
 
         Args:
-            job_root:
+            job_root: directory to export job configuration.
 
         Returns:
 
@@ -511,9 +523,9 @@ class FedJob:
         For end users.
 
         Args:
-            workspace:
-            n_clients:
-            threads:
+            workspace: workspace directory for job.
+            n_clients: number of clients.
+            threads: number of threads.
 
         Returns:
 

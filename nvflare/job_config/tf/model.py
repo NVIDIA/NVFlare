@@ -18,7 +18,7 @@ if tf_ok:
     from nvflare.app_opt.tf.model_persistor import TFModelPersistor
 
 
-class Wrap:
+class TFModel:
     def __init__(
         self,
         model,

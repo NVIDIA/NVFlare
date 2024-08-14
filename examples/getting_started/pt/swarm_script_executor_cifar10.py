@@ -14,7 +14,7 @@
 
 from src.net import Net
 
-from nvflare import FedJob, ScriptExecutor
+from nvflare import FedJob
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.ccwf import (
@@ -24,7 +24,9 @@ from nvflare.app_common.ccwf import (
     SwarmServerController,
 )
 from nvflare.app_common.ccwf.comps.simple_model_shareable_generator import SimpleModelShareableGenerator
+from nvflare.app_common.executors.script_executor import ScriptExecutor
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+from nvflare.job_config.pt.model import PTModel
 
 if __name__ == "__main__":
     n_clients = 2
@@ -41,11 +43,11 @@ if __name__ == "__main__":
     job.to(controller, "server")
 
     # Define the initial server model
-    job.to(Net(), "server")
+    job.to(PTModel(Net()), "server")
 
     for i in range(n_clients):
         executor = ScriptExecutor(task_script_path=train_script, evaluate_task_name="validate")
-        job.to(executor, f"site-{i}", gpu=0, tasks=["train", "validate", "submit_model"])
+        job.to(executor, f"site-{i}", tasks=["train", "validate", "submit_model"])
 
         # In swarm learning, each client acts also as an aggregator
         aggregator = InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS)

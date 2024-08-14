@@ -21,7 +21,7 @@ if torch_ok:
     from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
 
 
-class Wrap:
+class PTModel:
     def __init__(
         self,
         model,

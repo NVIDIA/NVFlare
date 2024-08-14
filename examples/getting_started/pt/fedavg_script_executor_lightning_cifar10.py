@@ -14,7 +14,10 @@
 
 from src.lit_net import LitNet
 
-from nvflare import FedAvg, FedJob, ScriptExecutor
+from nvflare import FedJob
+from nvflare.app_common.executors.script_executor import ScriptExecutor
+from nvflare.app_common.workflows.fedavg import FedAvg
+from nvflare.job_config.pt.model import PTModel
 
 if __name__ == "__main__":
     n_clients = 2
@@ -31,14 +34,14 @@ if __name__ == "__main__":
     job.to(controller, "server")
 
     # Define the initial global model and send to server
-    job.to(LitNet(), "server")
+    job.to(PTModel(LitNet()), "server")
 
     # Add clients
     for i in range(n_clients):
         executor = ScriptExecutor(
             task_script_path=train_script, task_script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
         )
-        job.to(executor, f"site-{i}", gpu=0)
+        job.to(executor, f"site-{i}")
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir")

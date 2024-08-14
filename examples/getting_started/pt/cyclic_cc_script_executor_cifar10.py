@@ -14,9 +14,10 @@
 
 from src.net import Net
 
-from nvflare import FedJob, ScriptExecutor
+from nvflare import FedJob
 from nvflare.app_common.ccwf import CyclicClientController, CyclicServerController
 from nvflare.app_common.ccwf.comps.simple_model_shareable_generator import SimpleModelShareableGenerator
+from nvflare.app_common.executors.script_executor import ScriptExecutor
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 
 if __name__ == "__main__":
@@ -33,7 +34,7 @@ if __name__ == "__main__":
         executor = ScriptExecutor(
             task_script_path=train_script, task_script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
         )
-        job.to(executor, f"site-{i}", tasks=["train"], gpu=0)
+        job.to(executor, f"site-{i}", tasks=["train"])
 
         # Add client-side controller for cyclic workflow
         executor = CyclicClientController()

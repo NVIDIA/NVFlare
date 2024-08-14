@@ -14,8 +14,11 @@
 
 from src.net import Net
 
-from nvflare import FedAvg, FedJob, FilterType, ScriptExecutor
+from nvflare import FedJob, FilterType
+from nvflare.app_common.executors.script_executor import ScriptExecutor
 from nvflare.app_common.filters.percentile_privacy import PercentilePrivacy
+from nvflare.app_common.workflows.fedavg import FedAvg
+from nvflare.job_config.pt.model import PTModel
 
 if __name__ == "__main__":
     n_clients = 2
@@ -32,11 +35,11 @@ if __name__ == "__main__":
     job.to(controller, "server")
 
     # Define the initial global model and send to server
-    job.to(Net(), "server")
+    job.to(PTModel(Net()), "server")
 
     for i in range(n_clients):
         executor = ScriptExecutor(task_script_path=train_script, task_script_args="")
-        job.to(executor, f"site-{i}", tasks=["train"], gpu=0)
+        job.to(executor, f"site-{i}", tasks=["train"])
 
         # add privacy filter.
         pp_filter = PercentilePrivacy(percentile=10, gamma=0.01)

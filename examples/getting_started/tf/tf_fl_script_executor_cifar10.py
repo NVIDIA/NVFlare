@@ -20,7 +20,9 @@ import tensorflow as tf
 from src.cifar10_data_split import cifar10_split
 from src.tf_net import ModerateTFNet
 
-from nvflare import FedJob, ScriptExecutor
+from nvflare import FedJob
+from nvflare.app_common.executors.script_executor import ScriptExecutor
+from nvflare.job_config.tf.model import TFModel
 
 gpu_devices = tf.config.experimental.list_physical_devices("GPU")
 for device in gpu_devices:
@@ -114,7 +116,7 @@ if __name__ == "__main__":
     task_script_args = f"--batch_size {args.batch_size} --epochs {args.epochs}"
 
     if args.algo == FEDAVG_ALGO or args.algo == CENTRALIZED_ALGO:
-        from nvflare import FedAvg
+        from nvflare.app_common.workflows.fedavg import FedAvg
 
         controller = FedAvg(
             num_clients=args.n_clients,
@@ -129,7 +131,7 @@ if __name__ == "__main__":
             num_rounds=args.num_rounds,
         )
     elif args.algo == FEDPROX_ALGO:
-        from nvflare import FedAvg
+        from nvflare.app_common.workflows.fedavg import FedAvg
 
         controller = FedAvg(
             num_clients=args.n_clients,
@@ -149,7 +151,7 @@ if __name__ == "__main__":
     job.to(controller, "server")
 
     # Define the initial global model and send to server
-    job.to(ModerateTFNet(input_shape=(None, 32, 32, 3)), "server")
+    job.to(TFModel(ModerateTFNet(input_shape=(None, 32, 32, 3))), "server")
 
     # Add clients
     for i, train_idx_path in enumerate(train_idx_paths):

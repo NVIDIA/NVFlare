@@ -17,7 +17,6 @@ from abc import ABC, abstractmethod
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.job_config.defs import FilterType
 
 
 class ContentBlockedException(Exception):
@@ -84,4 +83,4 @@ class Filter(FLComponent, ABC):
         """
         if not tasks:
             tasks = ["*"]
-        job.add_filter(self, obj=self, filter_type=filter_type, task=tasks, ctx=ctx)
+        job.add_filter(obj=self, filter_type=filter_type, tasks=tasks, ctx=ctx)

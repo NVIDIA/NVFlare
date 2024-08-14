@@ -15,13 +15,12 @@
 from src.net import Net
 
 from nvflare import FedJob
-from nvflare.job_config.defs import JobTargetType
-from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_common.executors.script_executor import ScriptExecutor
+from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.job_config.controller_apps.deep_learning import DeepLearningControllerApp
+from nvflare.job_config.defs import JobTargetType
 from nvflare.job_config.executor_apps.basic import BasicExecutorApp
-from nvflare.job_config.pt.model import Wrap
-
+from nvflare.job_config.pt.model import PTModel
 
 if __name__ == "__main__":
     n_clients = 2
@@ -40,7 +39,7 @@ if __name__ == "__main__":
     job.to(controller, JobTargetType.SERVER)
 
     # Define the initial global model and send to server
-    job.to(Wrap(Net()), JobTargetType.SERVER)
+    job.to(PTModel(Net()), JobTargetType.SERVER)
 
     # Add clients
     for i in range(n_clients):

@@ -22,9 +22,10 @@ from pt.networks.cifar10_nets import ModerateCNN
 from pt.utils.cifar10_data_splitter import Cifar10DataSplitter
 from pt.utils.cifar10_data_utils import load_cifar10_data
 
-from nvflare import FedAvg, FedJob
+from nvflare import FedJob
 from nvflare.app_common.executors.model_learner_executor import ModelLearnerExecutor
 from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
+from nvflare.app_common.workflows.fedavg import FedAvg
 
 if __name__ == "__main__":
     n_clients = 2
@@ -58,7 +59,7 @@ if __name__ == "__main__":
     for i in range(n_clients):
         learner = CIFAR10ModelLearner(train_idx_root=train_split_root, aggregation_epochs=aggregation_epochs, lr=0.01)
         executor = ModelLearnerExecutor(learner_id=job.as_id(learner))
-        job.to(executor, f"site-{i+1}", gpu=0)  # data splitter assumes client names start from 1
+        job.to(executor, f"site-{i+1}")  # data splitter assumes client names start from 1
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir")
