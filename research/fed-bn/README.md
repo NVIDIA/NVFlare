@@ -39,7 +39,10 @@ Download the necessary datasets by running:
 ```
 
 # Run FedBN on different data splits
-
+We first set the job template path
+```commandline
+nvflare config -jt ../../job_templates
+```
 We will use the in-process client API, we choose the sag_pt job template and run the following command to create the job:
 ```
 ./create_job.sh
@@ -53,12 +56,9 @@ Run the FedBN simulation with the following command:
 ```
 
 ## Visualizing Results
-To visualize training losses, we use the [Comet ML](https://www.comet.com/site/).
-Below is an example of the loss visualization output:
-![FedBN Loss Results](./figs/loss.jpeg)
+With tensorboard, below is an example of the loss for the two sites:
+![FedBN Loss Results](./figs/loss.png)
 
-> **Note**: To use Comet ML experiment tracking system, you need to get Comet API key to get access.
-> Alternatively, you can use Tensorboard or MLfow. 
 
 ## Citation
 If you find the code and dataset useful, please cite our paper.
