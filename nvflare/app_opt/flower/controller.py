@@ -102,19 +102,3 @@ class FlowerController(TieController):
         return {
             Constant.CONF_KEY_NUM_ROUNDS: self.num_rounds,
         }
-
-    def add_to_fed_job(self, job, ctx, flower_content: str):
-        """This method is required by Job API.
-
-        Args:
-            job: the Job object to add to
-            ctx: Job Context
-            flower_content: the directory to flower code
-
-        Returns:
-
-        """
-        if not os.path.isdir(flower_content):
-            raise ValueError(f"{flower_content} is not a valid directory")
-        job.add_controller(obj=self, ctx=ctx)
-        job.add_resources(resources=[flower_content], ctx=ctx)

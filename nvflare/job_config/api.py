@@ -14,7 +14,7 @@
 import os.path
 import re
 import uuid
-from typing import Any, List, Optional, Union
+from typing import Any, List, Optional
 
 from nvflare.apis.executor import Executor
 from nvflare.apis.filter import Filter
@@ -51,7 +51,7 @@ class FedApp:
     def add_component(self, component, id=None):
         if id is None:
             id = "component"
-        self.app.add_component(self._gen_tracked_id(id), component)
+        self.app.add_component(self.generate_tracked_id(id), component)
 
     def _generate_id(self, id: str = "") -> str:
         if id not in self._used_ids:
@@ -67,7 +67,7 @@ class FedApp:
                     id = id + "1"
         return id
 
-    def _gen_tracked_id(self, id: str = "") -> str:
+    def generate_tracked_id(self, id: str = "") -> str:
         id = self._generate_id(id)
         self._used_ids.append(id)
         return id
@@ -88,6 +88,28 @@ class FedApp:
         """
         self.app.add_ext_dir(ext_dir)
 
+    def _add_resource(self, resource: str):
+        if not isinstance(resource, str):
+            raise ValueError(f"cannot add resource: resource must be a str but got {type(resource)}")
+        elif os.path.isdir(resource):
+            self.add_external_dir(resource)
+        elif os.path.isfile(resource):
+            self.add_external_script(resource)
+        else:
+            raise ValueError(f"cannot add resource: invalid resource {resource}: it must be either a directory or file")
+
+    def add_resources(self, resources: List[str]):
+        """Add resources to the job. To be used by job component programmer.
+
+        Args:
+            resources:
+
+        Returns:
+
+        """
+        for r in resources:
+            self._add_resource(r)
+
 
 class JobCtx:
     def __init__(self, obj: Any, target: str, comp_id: str, app: FedApp):
@@ -98,11 +120,12 @@ class JobCtx:
 
 
 class ExecutorApp(FedApp):
-    def __init__(self, gpu: Union[int, List[int]] = None):
+    def __init__(self, resources=None):
         """Wrapper around `ClientAppConfig`."""
         super().__init__()
         self.app = ClientAppConfig()
-        self.gpu = gpu
+        if resources:
+            self.add_resources(resources)
 
     def add_executor(self, executor: Executor, tasks=None):
         if tasks is None:
@@ -116,14 +139,16 @@ class ControllerApp(FedApp):
     Args:
     """
 
-    def __init__(self):
+    def __init__(self, resources=None):
         super().__init__()
         self.app: ServerAppConfig = ServerAppConfig()
+        if resources:
+            self.add_resources(resources)
 
     def add_controller(self, controller: Controller, id=None):
         if id is None:
             id = "controller"
-        self.app.add_workflow(self._gen_tracked_id(id), controller)
+        self.app.add_workflow(self.generate_tracked_id(id), controller)
 
 
 class FedJob:
@@ -149,7 +174,6 @@ class FedJob:
         )
         self._deploy_map = {}
         self._deployed = False
-        self._gpus = {}
         self._components = {}
 
     def _add_controller_app(self, obj: ControllerApp, target: str):
@@ -168,24 +192,6 @@ class FedJob:
             app = self._deploy_map.get(target)
             app.add_controller(obj, id)
 
-    def _try_add_controller(self, obj, target: str, id: str, **kwargs):
-        app = self._deploy_map.get(target)
-        target_type = JobTargetType.get_target_type(target)
-        if not app:
-            if target_type != JobTargetType.SERVER:  # add client-side controllers as components
-                raise ValueError(
-                    f"{target} doesn't have an `ExecutorApp`. Deploy one first before adding client-side controllers!"
-                )
-            else:
-                raise ValueError(f"{target} doesn't have a 'ControllerApp'. Deploy one before adding Controller!")
-
-        add_to_job_method = getattr(obj, "add_to_fed_job")
-        if add_to_job_method is not None:
-            ctx = JobCtx(obj, target, id, app)
-            add_to_job_method(self, ctx, **kwargs)
-        else:
-            self._add_controller(obj, target, id)
-
     def _add_executor_app(self, obj: ExecutorApp, target: str):
         if target == JobTargetType.SERVER:
             raise ValueError(f"`ExecutorApp` must be assigned to a client, but tried to assign it to server!")
@@ -197,11 +203,6 @@ class FedJob:
 
         if target not in self.clients:
             self.clients.append(target)
-
-        if target not in self._gpus:  # GPU can only be selected once per client.
-            self._gpus[target] = obj.gpu
-        else:
-            print(f"{target} already set to use GPU {self._gpus[target]}. Ignoring gpu={obj.gpu}.")
 
     def to(
         self,
@@ -240,14 +241,16 @@ class FedJob:
 
         if isinstance(obj, ControllerApp):
             self._add_controller_app(obj, target)
-        elif isinstance(obj, Controller):
-            self._try_add_controller(obj, target, id, **kwargs)
         elif isinstance(obj, ExecutorApp):
             self._add_executor_app(obj, target)
         else:
             target_type = JobTargetType.get_target_type(target)
 
-            get_target_type_method = getattr(obj, "get_job_target_type")
+            try:
+                get_target_type_method = getattr(obj, "get_job_target_type")
+            except:
+                get_target_type_method = None
+
             if get_target_type_method is not None:
                 expected_target_type = get_target_type_method()
                 if expected_target_type != target_type:
@@ -264,7 +267,11 @@ class FedJob:
                 else:
                     raise ValueError(f"cannot add to target {target}: please assign an ExecutorApp first.")
 
-            add_to_job_method = getattr(obj, "add_to_fed_job")
+            try:
+                add_to_job_method = getattr(obj, "add_to_fed_job")
+            except:
+                add_to_job_method = None
+
             if add_to_job_method is not None:
                 ctx = JobCtx(obj, target, id, app)
                 add_to_job_method(self, ctx, **kwargs)
@@ -304,6 +311,20 @@ class FedJob:
                 app_type = "a ControllerApp"
             raise RuntimeError(f"No app found for target '{ctx.target}' - you must add {app_type} first")
         return app
+
+    def generate_tracked_component_id(self, base_id: str, ctx: JobCtx) -> str:
+        """Generate a tracked component id. To be used by job component programmer.
+
+        Args:
+            base_id: the base ID of the component
+            ctx: Job context
+
+        Returns: a tracked ID
+
+        """
+        if not ctx.app:
+            raise ValueError(f"No ControllerApp nor ExecutorApp is assigned to target {ctx.target}")
+        return ctx.app.generate_tracked_id(base_id)
 
     def add_component(self, comp_id: str, obj: Any, ctx: JobCtx):
         """Add a component to the job. To be used by job component programmer.
@@ -372,18 +393,16 @@ class FedJob:
                 f"Select from `FilterType.TASK_RESULT` or `FilterType.TASK_DATA`."
             )
 
-    def _add_resource(self, app, resource: str, ctx: JobCtx):
-        if not isinstance(resource, str):
-            raise ValueError(f"cannot add resource to {ctx.target}: resource must be a str but got {type(resource)}")
-        elif os.path.isdir(resource):
-            app.add_external_dir(resource)
-        elif os.path.isfile(resource):
-            app.add_external_script(resource)
-        else:
-            raise ValueError(
-                f"cannot add resource to {ctx.target}: invalid resource {resource}: "
-                "it must be either a directory or file"
-            )
+    def get_app(self, target: str):
+        """Get app assigned to the target.
+
+        Args:
+            target:
+
+        Returns:
+
+        """
+        return self._deploy_map.get(target)
 
     def add_resources(self, resources: List[str], ctx: JobCtx):
         """Add resources to the job. To be used by job component programmer.
@@ -396,8 +415,7 @@ class FedJob:
 
         """
         app = self._get_app(ctx)
-        for r in resources:
-            self._add_resource(app, r, ctx)
+        app.add_resources(resources)
 
     def to_server(
         self,
@@ -506,14 +524,15 @@ class FedJob:
         self._set_all_apps()
         self.job.generate_job_config(job_root)
 
-    def simulator_run(self, workspace: str, n_clients: int = None, threads: int = None):
-        """Run the job with the simulator with the `workspace` using `n_clients` and `threads`.
+    def simulator_run(self, workspace: str, n_clients: int = None, threads: int = None, gpu=None):
+        """Run the job with the simulator with the `workspace` using `clients` and `threads`.
         For end users.
 
         Args:
             workspace:
             n_clients:
             threads:
+            gpu:
 
         Returns:
 
@@ -533,12 +552,15 @@ class FedJob:
         if threads is None:
             threads = n_clients
 
+        if threads is None:
+            threads = n_clients
+
         self.job.simulator_run(
             workspace,
-            clients=",".join(self.clients),
+            clients=self.clients,
             n_clients=n_clients,
             threads=threads,
-            gpu=",".join([self._gpus[client] for client in self._gpus.keys()]),
+            gpu=gpu,
         )
 
     def as_id(self, obj: Any) -> str:
@@ -548,3 +570,26 @@ class FedJob:
         cid = str(uuid.uuid4())
         self._components[cid] = obj
         return cid
+
+    @staticmethod
+    def check_kwargs(args_to_check: dict, args_expected: dict):
+        if not args_expected and not args_to_check:
+            return
+
+        if args_to_check and not args_expected:
+            raise ValueError(f"received args {list(args_to_check.keys())}, but no args expected")
+
+        args_info = {}
+        for k, required in args_expected.items():
+            args_info[k] = "required" if required else "optional"
+
+        # see whether required args are present
+        for k, required in args_expected.items():
+            if required and (not args_to_check or k not in args_to_check):
+                raise ValueError(f"Missing required arg '{k}'. " f"Supported args: {args_info}")
+
+        # see whether we got unexpected args
+        if args_to_check:
+            for k in args_to_check.keys():
+                if k not in args_expected:
+                    raise ValueError(f"Received unexpected arg '{k}'. " f"Supported args: {args_info}")

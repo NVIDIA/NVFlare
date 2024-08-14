@@ -22,15 +22,8 @@ if torch_ok:
 
 
 class Wrap:
-    def __init__(
-        self,
-        model,
-        persistor_id="persistor",
-        model_locator_id="model_locator",
-    ):
+    def __init__(self, model):
         self.model = model
-        self.persistor_id = persistor_id
-        self.model_locator_id = model_locator_id
 
     def add_to_fed_job(self, job, ctx):
         """This method is required by Job API.
@@ -43,8 +36,10 @@ class Wrap:
 
         """
         if torch_ok and isinstance(self.model, nn.Module):  # if model, create a PT persistor
+            persistor_id = job.generate_tracked_component_id(base_id="persistor", ctx=ctx)
             component = PTFileModelPersistor(model=self.model)
-            job.add_component(comp_id=self.persistor_id, obj=component, ctx=ctx)
+            job.add_component(comp_id=persistor_id, obj=component, ctx=ctx)
 
-            component = PTFileModelLocator(pt_persistor_id=self.persistor_id)
-            job.add_component(comp_id=self.model_locator_id, obj=component, ctx=ctx)
+            component = PTFileModelLocator(pt_persistor_id=persistor_id)
+            locator_id = job.generate_tracked_component_id(base_id="model_locator", ctx=ctx)
+            job.add_component(comp_id=locator_id, obj=component, ctx=ctx)

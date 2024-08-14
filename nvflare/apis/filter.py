@@ -70,7 +70,7 @@ class Filter(FLComponent, ABC):
         except AttributeError:
             return default
 
-    def add_to_fed_job(self, job, ctx, filter_type, tasks):
+    def add_to_fed_job(self, job, ctx, **kwargs):
         """This method is required by Job API.
 
         Args:
@@ -82,6 +82,9 @@ class Filter(FLComponent, ABC):
         Returns:
 
         """
-        if not tasks:
-            tasks = ["*"]
-        job.add_filter(self, obj=self, filter_type=filter_type, task=tasks, ctx=ctx)
+        job.check_kwargs(args_to_check=kwargs, args_expected={"filter_type": True, "tasks": False})
+        tasks = kwargs.get("tasks", ["*"])
+        filter_type = kwargs.get("filter_type")
+        if not filter_type:
+            raise ValueError("filter_type is not specified")
+        job.add_filter(obj=self, filter_type=filter_type, tasks=tasks, ctx=ctx)

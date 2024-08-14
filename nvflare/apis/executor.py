@@ -59,17 +59,16 @@ class Executor(FLComponent, ABC):
         """
         return JobTargetType.CLIENT
 
-    def add_to_fed_job(self, job, ctx, tasks=None):
+    def add_to_fed_job(self, job, ctx, **kwargs):
         """This method is required by Job API.
 
         Args:
             job: the Job object to add to
             ctx: Job Context
-            tasks: tasks for the executor
 
         Returns:
 
         """
-        if not tasks:
-            tasks = ["*"]
+        job.check_kwargs(args_to_check=kwargs, args_expected={"tasks": False})
+        tasks = kwargs.get("tasks", ["*"])
         job.add_executor(obj=self, tasks=tasks, ctx=ctx)

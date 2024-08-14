@@ -19,13 +19,8 @@ if tf_ok:
 
 
 class Wrap:
-    def __init__(
-        self,
-        model,
-        persistor_id="persistor",
-    ):
+    def __init__(self, model):
         self.model = model
-        self.persistor_id = persistor_id
 
     def add_to_fed_job(self, job, ctx):
         """This method is required by Job API.
@@ -39,4 +34,5 @@ class Wrap:
         """
         if tf_ok and isinstance(self.model, tf.keras.Model):  # if model, create a TF persistor
             component = TFModelPersistor(model=self.model)
-            job.add_component(comp_id=self.persistor_id, obj=component, ctx=ctx)
+            persistor_id = job.generate_tracked_component_id(base_id="persistor", ctx=ctx)
+            job.add_component(comp_id=persistor_id, obj=component, ctx=ctx)
