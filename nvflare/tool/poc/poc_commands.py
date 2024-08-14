@@ -249,6 +249,22 @@ def get_fl_client_names(project_config: OrderedDict) -> List[str]:
     return client_names
 
 
+def replace_server_with_localhost(sp_end_point: str) -> str:
+    """
+    :param sp_end_point:(str) example: server1:8002:8003
+    :return: localhost:<port1>:<port2>
+    """
+    parts = sp_end_point.split(':')
+    if len(parts) != 3:
+        raise ValueError("Input must be in the format 'server:port1:port2'")
+    for p in parts:
+        if not p:
+            raise ValueError("Input must be in the format 'server:port1:port2', each part can not be empty")
+
+    parts[0] = 'localhost'
+    return ':'.join(parts)
+
+
 def prepare_builders(project_dict: OrderedDict) -> List:
     builders = list()
     for b in project_dict.get("builders"):
@@ -257,7 +273,8 @@ def prepare_builders(project_dict: OrderedDict) -> List:
 
         if b.get("path") == "nvflare.lighter.impl.static_file.StaticFileBuilder":
             path = "nvflare.lighter.impl.local_static_file.LocalStaticFileBuilder"
-            args["overseer_agent"]["args"]["sp_end_point"] = "localhost:8002:8003"
+            sp_end_point = args["overseer_agent"]["args"]["sp_end_point"]
+            args["overseer_agent"]["args"]["sp_end_point"] = replace_server_with_localhost(sp_end_point)
 
         elif b.get("path") == "nvflare.lighter.impl.cert.CertBuilder":
             path = "nvflare.lighter.impl.local_cert.LocalCertBuilder"
