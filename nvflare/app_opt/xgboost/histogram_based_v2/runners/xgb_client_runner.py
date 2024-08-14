@@ -135,10 +135,17 @@ class XGBClientRunner(AppRunner, FLComponent):
         self._server_addr = ctx.get(Constant.RUNNER_CTX_SERVER_ADDR)
         self._model_dir = ctx.get(Constant.RUNNER_CTX_MODEL_DIR)
 
+        use_gpus = self._xgb_options.get("use_gpus", False)
+        if use_gpus:
+            # mapping each rank to a GPU (can set to cuda:0 if simulating with only one gpu)
+            self.logger.info(f"Training with GPU {self._rank}")
+            self._xgb_params["device"] = f"cuda:{self._rank}"
+            
         self.logger.info(
             f"XGB split_mode: {self._split_mode} secure_training: {self._secure_training} "
             f"params: {self._xgb_params} XGB options: {self._xgb_options}"
         )
+
         self.logger.info(f"server address is {self._server_addr}")
 
         communicator_env = {
@@ -177,8 +184,6 @@ class XGBClientRunner(AppRunner, FLComponent):
                 lib_ext = "so"
                 lib_name = f"lib{xgb_plugin_params[PLUGIN_KEY_NAME]}.{lib_ext}"
                 xgb_plugin_params[PLUGIN_KEY_PATH] = str(get_package_root() / "libs" / lib_name)
-
-            self.logger.info(f"XGBoost secure training: split_mode: {self._split_mode} Params: {xgb_plugin_params}")
 
             communicator_env[PLUGIN_PARAM_KEY] = xgb_plugin_params
 
