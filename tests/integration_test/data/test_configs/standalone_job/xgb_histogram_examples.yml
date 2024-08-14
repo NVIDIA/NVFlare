@@ -41,7 +41,7 @@ tests:
     --out_path "/tmp/nvflare/xgboost_higgs_dataset/2_uniform"
   - python3 ../../examples/advanced/xgboost/utils/prepare_job_config.py
     --site_num 2
-    --training_mode histogram
+    --training_algo histogram
     --split_method uniform
     --lr_mode uniform
     --nthread 16
@@ -81,7 +81,7 @@ tests:
   - pip install -r ../../examples/advanced/xgboost/histogram-based/temp_requirements.txt
   - python3 ../../examples/advanced/xgboost/utils/prepare_job_config.py
     --site_num 2
-    --training_mode histogram_v2
+    --training_algo histogram_v2
     --split_method uniform
     --lr_mode uniform
     --nthread 16
