@@ -52,7 +52,8 @@ def job_config_args_parser():
     parser.add_argument(
         "--tree_method", type=str, default="hist", help="tree_method for xgboost - use hist for best perf"
     )
-    parser.add_argument("--training_mode", type=str, default="horizontal", help="histogram_v2 training mode")
+    parser.add_argument("--split_mode", type=int, default=0, help="dataset split mode, 0 or 1")
+    parser.add_argument("--secure_training", type=bool, default=False, help="histogram_v2 secure training or not")
     return parser
 
 
@@ -152,7 +153,8 @@ def _update_server_config(config: dict, args):
         config["num_rounds"] = args.round_num
         config["workflows"][0]["args"]["xgb_params"]["nthread"] = args.nthread
         config["workflows"][0]["args"]["xgb_params"]["tree_method"] = args.tree_method
-        config["workflows"][0]["args"]["training_mode"] = args.training_mode
+        config["workflows"][0]["args"]["split_mode"] = args.split_mode
+        config["workflows"][0]["args"]["secure_training"] = args.secure_training
 
 
 def _copy_custom_files(src_job_path, src_app_name, dst_job_path, dst_app_name):
