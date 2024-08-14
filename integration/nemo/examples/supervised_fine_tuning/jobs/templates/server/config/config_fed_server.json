@@ -12,7 +12,7 @@
   "components": [
     {
       "id": "persistor",
-      "name": "PTFileModelPersistor",
+      "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
       "args": {
         "model": {
           "path": "nemo_nvflare.ServerSFTModel",

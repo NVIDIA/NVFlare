@@ -13,7 +13,7 @@
   "components": [
     {
       "id": "persistor",
-      "name": "PTFileModelPersistor",
+      "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
       "args": {
         "model": "model",
         "source_ckpt_file_full_name": null
@@ -35,7 +35,7 @@
     },
     {
       "id": "shareable_generator",
-      "name": "PTFedOptModelShareableGenerator",
+      "path": "nvflare.app_opt.pt.fedopt.PTFedOptModelShareableGenerator",
       "args": {
         "device": "cpu",
         "source_model": "model",

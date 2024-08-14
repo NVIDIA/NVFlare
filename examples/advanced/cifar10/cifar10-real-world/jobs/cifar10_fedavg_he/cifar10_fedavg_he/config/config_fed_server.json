@@ -24,13 +24,13 @@
     },
     {
       "id": "serialize_filter",
-      "name": "HEModelSerializeFilter",
+      "path": "nvflare.app_opt.he.model_serialize_filter.HEModelSerializeFilter",
       "args": {
       }
     },
     {
       "id": "persistor",
-      "name": "PTFileModelPersistor",
+      "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
       "args": {
         "model": {
           "path": "pt.networks.cifar10_nets.ModerateCNN",
@@ -41,12 +41,12 @@
     },
     {
       "id": "shareable_generator",
-      "name": "HEModelShareableGenerator",
+      "path": "nvflare.app_opt.he.model_sharable_generator.HEModelShareableGenerator",
       "args": {}
     },
     {
       "id": "aggregator",
-      "name": "HEInTimeAccumulateWeightedAggregator",
+      "path": "nvflare.app_opt.he.intime_accumulate_model_aggregator.HEInTimeAccumulateWeightedAggregator",
       "args": {
         "weigh_by_local_iter": false
       }
@@ -58,7 +58,7 @@
     },
     {
       "id": "model_locator",
-      "name": "PTFileModelLocator",
+      "path": "nvflare.app_opt.pt.file_model_locator.PTFileModelLocator",
       "args": {
         "pt_persistor_id": "persistor"
       }
@@ -87,7 +87,7 @@
       },
       {
         "id": "cross_site_model_eval",
-        "name": "HECrossSiteModelEval",
+        "path": "nvflare.app_opt.he.cross_site_model_eval.HECrossSiteModelEval",
         "args": {
           "model_locator_id": "model_locator",
           "submit_model_timeout": 600,
