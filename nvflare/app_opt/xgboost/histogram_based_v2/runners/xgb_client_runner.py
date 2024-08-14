@@ -140,7 +140,7 @@ class XGBClientRunner(AppRunner, FLComponent):
             # mapping each rank to a GPU (can set to cuda:0 if simulating with only one gpu)
             self.logger.info(f"Training with GPU {self._rank}")
             self._xgb_params["device"] = f"cuda:{self._rank}"
-            
+
         self.logger.info(
             f"XGB split_mode: {self._split_mode} secure_training: {self._secure_training} "
             f"params: {self._xgb_params} XGB options: {self._xgb_options}"
