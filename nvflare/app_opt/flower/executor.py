@@ -22,7 +22,6 @@ from .defs import Constant
 class FlowerExecutor(TieExecutor):
     def __init__(
         self,
-        client_app: str = "client:app",
         start_task_name=Constant.START_TASK_NAME,
         configure_task_name=Constant.CONFIG_TASK_NAME,
         per_msg_timeout=10.0,
@@ -40,7 +39,6 @@ class FlowerExecutor(TieExecutor):
         self.tx_timeout = tx_timeout
         self.client_shutdown_timeout = client_shutdown_timeout
         self.num_rounds = None
-        self.client_app = client_app
 
     def get_connector(self, fl_ctx: FLContext):
         return GrpcClientConnector(
@@ -50,7 +48,7 @@ class FlowerExecutor(TieExecutor):
         )
 
     def get_applet(self, fl_ctx: FLContext):
-        return FlowerClientApplet(self.client_app)
+        return FlowerClientApplet()
 
     def configure(self, config: dict, fl_ctx: FLContext):
         self.num_rounds = config.get(Constant.CONF_KEY_NUM_ROUNDS)
