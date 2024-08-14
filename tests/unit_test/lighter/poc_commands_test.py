@@ -24,7 +24,8 @@ from nvflare.tool.poc.poc_commands import (
     get_service_command,
     get_service_config,
     prepare_builders,
-    update_clients, replace_server_with_localhost,
+    replace_server_with_localhost,
+    update_clients,
 )
 from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
 
@@ -234,6 +235,7 @@ class TestPOCCommands:
         with pytest.raises(ValueError):
             assert "localhost:8002:8003" == replace_server_with_localhost("server:8002")
 
-        with pytest.raises(ValueError,
-                           match="Input must be in the format 'server:port1:port2', each part can not be empty"):
+        with pytest.raises(
+            ValueError, match="Input must be in the format 'server:port1:port2', each part can not be empty"
+        ):
             assert "localhost:8002:8003" == replace_server_with_localhost("server:8002:")

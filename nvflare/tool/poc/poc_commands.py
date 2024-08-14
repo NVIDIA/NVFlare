@@ -254,15 +254,15 @@ def replace_server_with_localhost(sp_end_point: str) -> str:
     :param sp_end_point:(str) example: server1:8002:8003
     :return: localhost:<port1>:<port2>
     """
-    parts = sp_end_point.split(':')
+    parts = sp_end_point.split(":")
     if len(parts) != 3:
         raise ValueError("Input must be in the format 'server:port1:port2'")
     for p in parts:
         if not p:
             raise ValueError("Input must be in the format 'server:port1:port2', each part can not be empty")
 
-    parts[0] = 'localhost'
-    return ':'.join(parts)
+    parts[0] = "localhost"
+    return ":".join(parts)
 
 
 def prepare_builders(project_dict: OrderedDict) -> List:
