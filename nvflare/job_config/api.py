@@ -246,11 +246,7 @@ class FedJob:
         else:
             target_type = JobTargetType.get_target_type(target)
 
-            try:
-                get_target_type_method = getattr(obj, "get_job_target_type")
-            except:
-                get_target_type_method = None
-
+            get_target_type_method = getattr(obj, "get_job_target_type", None)
             if get_target_type_method is not None:
                 expected_target_type = get_target_type_method()
                 if expected_target_type != target_type:
@@ -267,11 +263,7 @@ class FedJob:
                 else:
                     raise ValueError(f"cannot add to target {target}: please assign an ExecutorApp first.")
 
-            try:
-                add_to_job_method = getattr(obj, "add_to_fed_job")
-            except:
-                add_to_job_method = None
-
+            add_to_job_method = getattr(obj, "add_to_fed_job", None)
             if add_to_job_method is not None:
                 ctx = JobCtx(obj, target, id, app)
                 add_to_job_method(self, ctx, **kwargs)
