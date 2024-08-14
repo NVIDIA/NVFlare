@@ -20,7 +20,7 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_opt.xgboost.histogram_based_v2.aggr import Aggregator
-from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant, TrainingMode
+from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant, SplitMode
 from nvflare.app_opt.xgboost.histogram_based_v2.sec.dam import DamDecoder
 from nvflare.app_opt.xgboost.histogram_based_v2.sec.data_converter import FeatureAggregationResult
 from nvflare.app_opt.xgboost.histogram_based_v2.sec.partial_he.adder import Adder
@@ -408,13 +408,14 @@ class ClientSecurityHandler(SecurityHandler):
         global tenseal_error
         if event_type == Constant.EVENT_XGB_JOB_CONFIGURED:
             task_data = fl_ctx.get_prop(FLContextKey.TASK_DATA)
-            training_mode = task_data.get(Constant.CONF_KEY_TRAINING_MODE)
-            if training_mode in {TrainingMode.VS, TrainingMode.VERTICAL_SECURE} and ipcl_imported:
+            split_mode = task_data.get(Constant.CONF_KEY_SPLIT_MODE)
+            secure_training = task_data.get(Constant.CONF_KEY_SECURE_TRAINING)
+            if secure_training and split_mode == SplitMode.COL and ipcl_imported:
                 self.public_key, self.private_key = generate_keys(self.key_length)
                 self.encryptor = Encryptor(self.public_key, self.num_workers)
                 self.decrypter = Decrypter(self.private_key, self.num_workers)
                 self.adder = Adder(self.num_workers)
-            elif training_mode in {TrainingMode.HS, TrainingMode.HORIZONTAL_SECURE}:
+            elif secure_training and split_mode == SplitMode.ROW:
                 if not tenseal_imported:
                     fl_ctx.set_prop(Constant.PARAM_KEY_CONFIG_ERROR, tenseal_error, private=True, sticky=False)
                     return

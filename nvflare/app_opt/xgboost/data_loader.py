@@ -18,14 +18,10 @@ from typing import Tuple
 
 import xgboost as xgb
 
-from .constant import TrainingMode
-
 
 class XGBDataLoader(ABC):
     @abstractmethod
-    def load_data(
-        self, client_id: str, training_mode: str = TrainingMode.HORIZONTAL
-    ) -> Tuple[xgb.DMatrix, xgb.DMatrix]:
+    def load_data(self, client_id: str, split_mode: int) -> Tuple[xgb.DMatrix, xgb.DMatrix]:
         """Loads data for xgboost.
 
         Returns:

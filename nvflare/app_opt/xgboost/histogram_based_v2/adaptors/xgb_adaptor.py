@@ -150,7 +150,8 @@ class XGBClientAdaptor(AppAdaptor, ABC):
         self.stopped = False
         self.rank = None
         self.num_rounds = None
-        self.training_mode = None
+        self.split_mode = None
+        self.secure_training = None
         self.xgb_params = None
         self.xgb_options = None
         self.world_size = None
@@ -196,10 +197,15 @@ class XGBClientAdaptor(AppAdaptor, ABC):
         check_positive_int(Constant.CONF_KEY_NUM_ROUNDS, num_rounds)
         self.num_rounds = num_rounds
 
-        self.training_mode = config.get(Constant.CONF_KEY_TRAINING_MODE)
-        if self.training_mode is None:
-            raise RuntimeError("training_mode is not configured")
-        fl_ctx.set_prop(key=Constant.PARAM_KEY_TRAINING_MODE, value=self.training_mode, private=True, sticky=True)
+        self.split_mode = config.get(Constant.CONF_KEY_SPLIT_MODE)
+        if self.split_mode is None:
+            raise RuntimeError("split_mode is not configured")
+        fl_ctx.set_prop(key=Constant.PARAM_KEY_SPLIT_MODE, value=self.split_mode, private=True, sticky=True)
+
+        self.secure_training = config.get(Constant.CONF_KEY_SECURE_TRAINING)
+        if self.secure_training is None:
+            raise RuntimeError("secure_training is not configured")
+        fl_ctx.set_prop(key=Constant.PARAM_KEY_SECURE_TRAINING, value=self.secure_training, private=True, sticky=True)
 
         self.xgb_params = config.get(Constant.CONF_KEY_XGB_PARAMS)
         if not self.xgb_params:
