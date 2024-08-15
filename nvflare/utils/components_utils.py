@@ -14,8 +14,6 @@
 
 
 def create_classes_table_static():
-    from nvflare.app_common.abstract.aggregator import Aggregator
-    from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
     from nvflare.app_common.aggregators import InTimeAccumulateWeightedAggregator
     from nvflare.app_common.aggregators.collect_and_assemble_aggregator import CollectAndAssembleAggregator
     from nvflare.app_common.aggregators.dxo_aggregator import DXOAggregator
@@ -35,11 +33,11 @@ def create_classes_table_static():
     from nvflare.app_common.workflows.global_model_eval import GlobalModelEval
     from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
     from nvflare.app_common.workflows.scatter_and_gather_scaffold import ScatterAndGatherScaffold
+    from nvflare.app_opt.pt import PTFileModelLocator, PTFileModelPersistor
 
     classes = {
         ScatterAndGather,
         ScatterAndGatherScaffold,
-        Aggregator,
         CollectAndAssembleAggregator,
         CrossSiteEval,
         CrossSiteEvalClientController,
@@ -51,11 +49,12 @@ def create_classes_table_static():
         GlobalModelEval,
         GlobalWeightsInitializer,
         Gatherer,
-        ShareableGenerator,
         SwarmClientController,
         SwarmServerController,
         FullModelShareableGenerator,
         InTimeAccumulateWeightedAggregator,
+        PTFileModelPersistor,
+        PTFileModelLocator,
     }
 
     class_table = {}
