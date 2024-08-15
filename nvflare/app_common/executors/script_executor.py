@@ -95,18 +95,15 @@ class ScriptExecutor(InProcessClientAPIExecutor):
                     )
         # TODO: support other params_exchange_format
 
-    def add_to_fed_job(self, job, ctx, tasks=None):
+    def add_to_fed_job(self, job, ctx, **kwargs):
         """This method is required by Job API.
 
         Args:
             job: the Job object to add to
             ctx: Job Context
-            tasks: tasks for the executor
 
         Returns:
 
         """
-        if not tasks:
-            tasks = ["*"]
-        job.add_executor(obj=self, tasks=tasks, ctx=ctx)
+        super().add_to_fed_job(job, ctx, **kwargs)
         job.add_resources(resources=[self.task_script_path], ctx=ctx)

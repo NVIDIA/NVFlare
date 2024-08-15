@@ -11,15 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import List, Union
 
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.job_config.api import ExecutorApp
 
 
 class BasicExecutorApp(ExecutorApp):
-    def __init__(self, gpu: Union[int, List[int]] = None):
+    def __init__(self):
         """Wrapper around `ClientAppConfig`."""
-        super().__init__(gpu)
+        super().__init__()
         component = ConvertToFedEvent(events_to_convert=["analytix_log_stats"], fed_event_prefix="fed.")
         self.app.add_component("event_to_fed", component)

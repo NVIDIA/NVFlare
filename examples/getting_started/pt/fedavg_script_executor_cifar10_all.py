@@ -42,7 +42,7 @@ if __name__ == "__main__":
     # Define the initial global model and send to server
     job.to_server(PTModel(Net()))
 
-    client_app = BasicExecutorApp(gpu=0)
+    client_app = BasicExecutorApp()
     job.to_clients(client_app)
 
     # Send executor to all clients

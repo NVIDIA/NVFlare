@@ -22,15 +22,8 @@ if torch_ok:
 
 
 class PTModel:
-    def __init__(
-        self,
-        model,
-        persistor_id="persistor",
-        model_locator_id="model_locator",
-    ):
+    def __init__(self, model):
         self.model = model
-        self.persistor_id = persistor_id
-        self.model_locator_id = model_locator_id
 
     def add_to_fed_job(self, job, ctx):
         """This method is required by Job API.
@@ -44,7 +37,7 @@ class PTModel:
         """
         if torch_ok and isinstance(self.model, nn.Module):  # if model, create a PT persistor
             component = PTFileModelPersistor(model=self.model)
-            job.add_component(comp_id=self.persistor_id, obj=component, ctx=ctx)
+            job.add_component(comp_id="persistor", obj=component, ctx=ctx)
 
-            component = PTFileModelLocator(pt_persistor_id=self.persistor_id)
-            job.add_component(comp_id=self.model_locator_id, obj=component, ctx=ctx)
+            component = PTFileModelLocator(pt_persistor_id="persistor")
+            job.add_component(comp_id="model_locator", obj=component, ctx=ctx)
