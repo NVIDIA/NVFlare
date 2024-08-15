@@ -84,7 +84,9 @@ Dataset & Setup
 ^^^^^^^^^^^^^^^^
 Before starting training, you need to set up your dataset.
 In this exercise, it is downloaded from the Internet via ``tf.keras``'s datasets module
-and split in half to create a separate dataset for each client.
+and split in half to create a separate dataset for each client. Note that this is just for an example since in a real-world scenario,
+you will likely have different datasets for each client.
+
 Additionally, the optimizer and loss function need to be configured.
 
 All of this happens before the ``while flare.is_running():`` line in ``hello-tf_fl.py``.
