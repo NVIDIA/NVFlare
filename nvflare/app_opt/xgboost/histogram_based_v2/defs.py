@@ -23,15 +23,15 @@ class Constant:
 
     # keys of adaptor config parameters
     CONF_KEY_CLIENT_RANKS = "client_ranks"
-    CONF_KEY_RANK = "rank"
     CONF_KEY_WORLD_SIZE = "world_size"
     CONF_KEY_NUM_ROUNDS = "num_rounds"
-    CONF_KEY_TRAINING_MODE = "training_mode"
+    CONF_KEY_SPLIT_MODE = "split_mode"
+    CONF_KEY_SECURE_TRAINING = "secure_training"
     CONF_KEY_XGB_PARAMS = "xgb_params"
     CONF_KEY_XGB_OPTIONS = "xgb_options"
 
     # default component config values
-    CONFIG_TASK_TIMEOUT = 20
+    CONFIG_TASK_TIMEOUT = 60
     START_TASK_TIMEOUT = 10
     XGB_SERVER_READY_TIMEOUT = 10.0
 
@@ -87,14 +87,16 @@ class Constant:
     PARAM_KEY_REPLY = "xgb.reply"
     PARAM_KEY_REQUEST = "xgb.request"
     PARAM_KEY_EVENT = "xgb.event"
-    PARAM_KEY_TRAINING_MODE = "xgb.training_mode"
+    PARAM_KEY_SPLIT_MODE = "xgb.split_mode"
+    PARAM_KEY_SECURE_TRAINING = "xgb.secure_training"
     PARAM_KEY_CONFIG_ERROR = "xgb.config_error"
 
     RUNNER_CTX_SERVER_ADDR = "server_addr"
     RUNNER_CTX_PORT = "port"
     RUNNER_CTX_CLIENT_NAME = "client_name"
     RUNNER_CTX_NUM_ROUNDS = "num_rounds"
-    RUNNER_CTX_TRAINING_MODE = "training_mode"
+    RUNNER_CTX_SPLIT_MODE = "split_mode"
+    RUNNER_CTX_SECURE_TRAINING = "secure_training"
     RUNNER_CTX_XGB_PARAMS = "xgb_params"
     RUNNER_CTX_XGB_OPTIONS = "xgb_options"
     RUNNER_CTX_WORLD_SIZE = "world_size"
@@ -127,31 +129,3 @@ GRPC_DEFAULT_OPTIONS = [
 class SplitMode:
     ROW = 0
     COL = 1
-
-
-class TrainingMode:
-    # Non-secure mode
-    H = "h"
-    HORIZONTAL = "horizontal"
-    V = "v"
-    VERTICAL = "vertical"
-    # Secure mode
-    HS = "hs"
-    HORIZONTAL_SECURE = "horizontal_secure"
-    VS = "VS"
-    VERTICAL_SECURE = "vertical_secure"
-
-
-# Mapping of text training mode to split mode
-TRAINING_MODE_MAPPING = {
-    TrainingMode.H: SplitMode.ROW,
-    TrainingMode.HORIZONTAL: SplitMode.ROW,
-    TrainingMode.V: SplitMode.COL,
-    TrainingMode.VERTICAL: SplitMode.COL,
-    TrainingMode.HS: SplitMode.ROW,
-    TrainingMode.HORIZONTAL_SECURE: SplitMode.ROW,
-    TrainingMode.VS: SplitMode.COL,
-    TrainingMode.VERTICAL_SECURE: SplitMode.COL,
-}
-
-SECURE_TRAINING_MODES = {TrainingMode.HS, TrainingMode.HORIZONTAL_SECURE, TrainingMode.VS, TrainingMode.VERTICAL_SECURE}

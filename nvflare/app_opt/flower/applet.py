@@ -26,17 +26,9 @@ from nvflare.security.logging import secure_format_exception
 
 
 class FlowerClientApplet(CLIApplet):
-    def __init__(
-        self,
-        client_app: str,
-    ):
-        """Constructor of FlowerClientApplet, which extends CLIApplet.
-
-        Args:
-            client_app: the client app specification of the Flower app
-        """
+    def __init__(self):
+        """Constructor of FlowerClientApplet, which extends CLIApplet."""
         CLIApplet.__init__(self)
-        self.client_app = client_app
 
     def get_command(self, ctx: dict) -> CommandDescriptor:
         """Implementation of the get_command method required by the super class CLIApplet.
@@ -64,7 +56,7 @@ class FlowerClientApplet(CLIApplet):
         job_id = fl_ctx.get_job_id()
         custom_dir = ws.get_app_custom_dir(job_id)
         app_dir = ws.get_app_dir(job_id)
-        cmd = f"flower-client-app --insecure --grpc-adapter --superlink {addr} --dir {custom_dir} {self.client_app}"
+        cmd = f"flower-supernode --insecure --grpc-adapter --superlink {addr} {custom_dir}"
 
         # use app_dir as the cwd for flower's client app.
         # this is necessary for client_api to be used with the flower client app for metrics logging
@@ -76,7 +68,6 @@ class FlowerClientApplet(CLIApplet):
 class FlowerServerApplet(Applet):
     def __init__(
         self,
-        server_app: str,
         database: str,
         superlink_ready_timeout: float,
         server_app_args: list = None,
@@ -84,7 +75,6 @@ class FlowerServerApplet(Applet):
         """Constructor of FlowerServerApplet.
 
         Args:
-            server_app: Flower's server app specification
             database: database spec to be used by the server app
             superlink_ready_timeout: how long to wait for the superlink process to become ready
             server_app_args: an optional list that contains additional command args passed to flower server app
@@ -92,7 +82,6 @@ class FlowerServerApplet(Applet):
         Applet.__init__(self)
         self._app_process_mgr = None
         self._superlink_process_mgr = None
-        self.server_app = server_app
         self.database = database
         self.superlink_ready_timeout = superlink_ready_timeout
         self.server_app_args = server_app_args
@@ -148,8 +137,8 @@ class FlowerServerApplet(Applet):
             db_arg = f"--database {self.database}"
 
         superlink_cmd = (
-            f"flower-superlink --insecure {db_arg} "
-            f"--fleet-api-address {server_addr} --fleet-api-type grpc-adapter "
+            f"flower-superlink --insecure --fleet-api-type grpc-adapter {db_arg} "
+            f"--fleet-api-address {server_addr}  "
             f"--driver-api-address {driver_addr}"
         )
 
@@ -175,9 +164,7 @@ class FlowerServerApplet(Applet):
         if self.server_app_args:
             args_str = " ".join(self.server_app_args)
 
-        app_cmd = (
-            f"flower-server-app --insecure --superlink {driver_addr} --dir {custom_dir} {args_str} {self.server_app}"
-        )
+        app_cmd = f"flower-server-app --insecure --superlink {driver_addr} {args_str} {custom_dir}"
         cmd_desc = CommandDescriptor(
             cmd=app_cmd,
             log_file_name="server_app_log.txt",
