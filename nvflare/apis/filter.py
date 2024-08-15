@@ -70,7 +70,7 @@ class Filter(FLComponent, ABC):
             return default
 
     def add_to_fed_job(self, job, ctx, **kwargs):
-        """This method is required by Job API.
+        """This method is used by Job API.
 
         Args:
             job: the Job object to add to

@@ -18,5 +18,6 @@ __version__ = _version.get_versions()["version"]
 
 # https://github.com/microsoft/pylance-release/issues/856
 
-from nvflare.job_config.api import FedJob, FilterType
+from nvflare.job_config.api import FedJob
+from nvflare.job_config.defs import FilterType
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner

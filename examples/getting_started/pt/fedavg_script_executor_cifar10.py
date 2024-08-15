@@ -32,7 +32,7 @@ if __name__ == "__main__":
         executor = ScriptExecutor(
             task_script_path=train_script, task_script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
         )
-        job.to(executor, target=f"site-{i}", tasks=["t1", "t2"])
+        job.to(executor, target=f"site-{i}")
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir")

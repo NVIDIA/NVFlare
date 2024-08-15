@@ -52,7 +52,7 @@ class Executor(FLComponent, ABC):
         pass
 
     def get_job_target_type(self):
-        """This method is required by Job API.
+        """This method is used by Job API.
 
         Returns:
 
@@ -60,7 +60,7 @@ class Executor(FLComponent, ABC):
         return JobTargetType.CLIENT
 
     def add_to_fed_job(self, job, ctx, **kwargs):
-        """This method is required by Job API.
+        """This method is used by Job API.
 
         Args:
             job: the Job object to add to
