@@ -48,16 +48,6 @@ Since you will use PyTorch and torchvision for this exercise, let's go ahead and
 
   (nvflare-env) $ python3 -m pip install torch torchvision
 
-
-.. note::
-
-  There is a pending fix related to Pillow, PyTorch==1.9 and Numpy.  If you see exception related to
-  ``enumerate(self.train_loader)``, downgrade your Pillow to 8.2.0.
-
-  .. code-block:: shell
-  
-    (nvflare-env) $ python3 -m pip install torch torchvision Pillow==8.2.0
-
 If you would like to go ahead and run the exercise now, you can run the ``fedavg_script_executor_hello-pt.py`` script which
 builds the job with the Job API and runs the job with the FLARE Simulator.
 
