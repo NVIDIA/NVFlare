@@ -36,10 +36,9 @@ class Wrap:
 
         """
         if torch_ok and isinstance(self.model, nn.Module):  # if model, create a PT persistor
-            persistor_id = job.generate_tracked_component_id(base_id="persistor", ctx=ctx)
-            component = PTFileModelPersistor(model=self.model)
-            job.add_component(comp_id=persistor_id, obj=component, ctx=ctx)
+            persistor = PTFileModelPersistor(model=self.model)
+            persistor_id = job.add_component(comp_id="persistor", obj=persistor, ctx=ctx)
 
-            component = PTFileModelLocator(pt_persistor_id=persistor_id)
-            locator_id = job.generate_tracked_component_id(base_id="model_locator", ctx=ctx)
-            job.add_component(comp_id=locator_id, obj=component, ctx=ctx)
+            locator = PTFileModelLocator(pt_persistor_id=persistor_id)
+            locator_id = job.add_component(comp_id="locator", obj=locator, ctx=ctx)
+            return {"persistor_id": persistor_id, "locator_id": locator_id}

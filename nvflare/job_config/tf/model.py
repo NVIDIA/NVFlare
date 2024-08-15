@@ -33,6 +33,8 @@ class Wrap:
 
         """
         if tf_ok and isinstance(self.model, tf.keras.Model):  # if model, create a TF persistor
-            component = TFModelPersistor(model=self.model)
-            persistor_id = job.generate_tracked_component_id(base_id="persistor", ctx=ctx)
-            job.add_component(comp_id=persistor_id, obj=component, ctx=ctx)
+            persistor = TFModelPersistor(model=self.model)
+            persistor_id = job.add_component(comp_id="persistor", obj=persistor, ctx=ctx)
+            return persistor_id
+        else:
+            return None

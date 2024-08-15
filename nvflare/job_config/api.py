@@ -51,7 +51,9 @@ class FedApp:
     def add_component(self, component, id=None):
         if id is None:
             id = "component"
-        self.app.add_component(self.generate_tracked_id(id), component)
+        final_id = self.generate_tracked_id(id)
+        self.app.add_component(final_id, component)
+        return final_id
 
     def _generate_id(self, id: str = "") -> str:
         if id not in self._used_ids:
@@ -210,7 +212,7 @@ class FedJob:
         target: str,
         id=None,
         **kwargs,
-    ):
+    ) -> Any:
         """Assign an object to the target. For end users.
 
         Args:
@@ -239,6 +241,7 @@ class FedJob:
 
         self._validate_target(target)
 
+        result = None
         if isinstance(obj, ControllerApp):
             self._add_controller_app(obj, target)
         elif isinstance(obj, ExecutorApp):
@@ -266,14 +269,15 @@ class FedJob:
             add_to_job_method = getattr(obj, "add_to_fed_job", None)
             if add_to_job_method is not None:
                 ctx = JobCtx(obj, target, id, app)
-                add_to_job_method(self, ctx, **kwargs)
+                result = add_to_job_method(self, ctx, **kwargs)
             else:
                 # basic object
-                app.add_component(obj, id)
+                result = app.add_component(obj, id)
 
         # add any other components the object might have referenced via id
         if self._components:
             self._add_referenced_components(obj, target)
+        return result
 
     def _add_referenced_components(self, base_component, target):
         """Adds any other components the object might have referenced via id"""
@@ -332,9 +336,10 @@ class FedJob:
         app = self._get_app(ctx)
         if not comp_id:
             comp_id = ctx.comp_id
-        app.add_component(obj, comp_id)
+        final_id = app.add_component(obj, comp_id)
         if self._components:
             self._add_referenced_components(obj, ctx.target)
+        return final_id
 
     def add_controller(self, obj: Controller, ctx: JobCtx):
         """Add a Controller object to the job. To be used by controller programmer.
