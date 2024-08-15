@@ -23,11 +23,6 @@ if torch_ok and tb_ok:
 
 
 class DeepLearningControllerApp(ControllerApp):
-    """Wrapper around `ServerAppConfig`.
-
-    Args:
-    """
-
     def __init__(self, key_metric="accuracy"):
         super().__init__()
         self.key_metric = key_metric

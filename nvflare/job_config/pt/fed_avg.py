@@ -14,16 +14,17 @@
 from typing import List, Optional
 
 from nvflare.app_common.workflows.fedavg import FedAvg
-from nvflare.job_config.api import FedJob
+from nvflare.job_config.api import ExecutorApp, JobTargetType
 from nvflare.job_config.controller_apps.deep_learning import DeepLearningControllerApp
-from nvflare.job_config.defs import JobTargetType
+from nvflare.job_config.executor_apps.basic import BasicExecutorApp
+from nvflare.job_config.generic_job import GenericJob
 from nvflare.job_config.pt.model import PTModel
 
 
-class FedAvgJob(FedJob):
+class FedAvgJob(GenericJob):
     def __init__(
         self,
-        model,
+        initial_model,
         n_clients,
         num_rounds,
         name: str = "fed_job",
@@ -32,15 +33,24 @@ class FedAvgJob(FedJob):
         key_metric: str = "accuracy",
     ):
         super().__init__(name, min_clients, mandatory_clients)
-        server_app = DeepLearningControllerApp(key_metric=key_metric)
-        self.to(server_app, JobTargetType.SERVER)
+        self.key_metric = key_metric
+        self.initial_model = initial_model
+        self.num_rounds = num_rounds
+        self.n_clients = n_clients
+
+    def set_up_server(self):
+        server_app = DeepLearningControllerApp(key_metric=self.key_metric)
+        self.to_server(server_app)
+
+        comp_ids = self.to_server(PTModel(self.initial_model))
 
         # Define the controller workflow and send to server
         controller = FedAvg(
-            num_clients=n_clients,
-            num_rounds=num_rounds,
+            num_clients=self.n_clients,
+            num_rounds=self.num_rounds,
+            persistor_id=comp_ids["persistor_id"],
         )
-        self.to(controller, JobTargetType.SERVER)
+        self.to_server(controller)
 
-        # Define the initial global model and send to server
-        self.to(PTModel(model), JobTargetType.SERVER)
+    def get_executor_app(self, client: str) -> ExecutorApp:
+        return BasicExecutorApp()

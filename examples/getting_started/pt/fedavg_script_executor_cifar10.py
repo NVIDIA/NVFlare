@@ -15,7 +15,6 @@
 from src.net import Net
 
 from nvflare.app_common.executors.script_executor import ScriptExecutor
-from nvflare.job_config.executor_apps.basic import BasicExecutorApp
 from nvflare.job_config.pt.fed_avg import FedAvgJob
 
 if __name__ == "__main__":
@@ -23,16 +22,15 @@ if __name__ == "__main__":
     num_rounds = 2
     train_script = "src/cifar10_fl.py"
 
-    job = FedAvgJob(name="cifar10_fedavg", num_rounds=num_rounds, n_clients=n_clients, model=Net())
+    job = FedAvgJob(name="cifar10_fedavg", num_rounds=num_rounds, n_clients=n_clients, initial_model=Net())
 
     # Add clients
     for i in range(n_clients):
-        app = BasicExecutorApp()
-        job.to(app, target=f"site-{i}")
+        site_name = f"site-{i}"
         executor = ScriptExecutor(
             task_script_path=train_script, task_script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
         )
-        job.to(executor, target=f"site-{i}")
+        job.to(executor, target=site_name)
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir")

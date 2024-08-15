@@ -36,8 +36,9 @@ class PTModel:
 
         """
         if torch_ok and isinstance(self.model, nn.Module):  # if model, create a PT persistor
-            component = PTFileModelPersistor(model=self.model)
-            job.add_component(comp_id="persistor", obj=component, ctx=ctx)
+            persistor = PTFileModelPersistor(model=self.model)
+            persistor_id = job.add_component(comp_id="persistor", obj=persistor, ctx=ctx)
 
-            component = PTFileModelLocator(pt_persistor_id="persistor")
-            job.add_component(comp_id="model_locator", obj=component, ctx=ctx)
+            locator = PTFileModelLocator(pt_persistor_id=persistor_id)
+            locator_id = job.add_component(comp_id="locator", obj=locator, ctx=ctx)
+            return {"persistor_id": persistor_id, "locator_id": locator_id}
