@@ -17,6 +17,7 @@ test_configs:
     - ./data/test_configs/ha/fladminapi.yml
   numpy:
     - ./data/test_configs/standalone_job/hello_numpy_examples.yml
+    - ./data/test_configs/standalone_job/hello_numpy_previous_examples.yml
     - ./data/test_configs/standalone_job/internal_numpy.yml
   tensorflow:
     - ./data/test_configs/standalone_job/hello_tf_examples.yml
