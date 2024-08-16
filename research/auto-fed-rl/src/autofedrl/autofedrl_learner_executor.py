@@ -53,6 +53,10 @@ class AutoFedRLLearnerExecutor(LearnerExecutor):
         """Same as LearnerExecutor.execute() apart for additional support for an `validate_for_search_task`."""
         self.log_info(fl_ctx, f"Client trainer got task: {task_name}")
 
+        if not self.is_initialized:
+            self.is_initialized = True
+            self.initialize(fl_ctx)
+
         try:
             if task_name == self.train_task:
                 return self.train(shareable, fl_ctx, abort_signal)

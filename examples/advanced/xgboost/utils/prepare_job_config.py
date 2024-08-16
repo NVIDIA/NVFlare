@@ -52,7 +52,8 @@ def job_config_args_parser():
     parser.add_argument(
         "--tree_method", type=str, default="hist", help="tree_method for xgboost - use hist for best perf"
     )
-    parser.add_argument("--training_mode", type=str, default="horizontal", help="histogram_v2 training mode")
+    parser.add_argument("--split_mode", type=int, default=0, help="dataset split mode, 0 or 1")
+    parser.add_argument("--secure_training", type=bool, default=False, help="histogram_v2 secure training or not")
     return parser
 
 

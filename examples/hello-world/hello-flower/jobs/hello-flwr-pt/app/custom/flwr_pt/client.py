@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from flwr.client import ClientApp, NumPyClient
-from task import DEVICE, Net, get_weights, load_data, set_weights, test, train
+from flwr.common import Context
+
+from .task import DEVICE, Net, get_weights, load_data, set_weights, test, train
 
 # Load model and data (simple CNN, CIFAR-10)
 net = Net().to(DEVICE)
@@ -32,7 +34,7 @@ class FlowerClient(NumPyClient):
         return loss, len(testloader.dataset), {"accuracy": accuracy}
 
 
-def client_fn(cid: str):
+def client_fn(context: Context):
     """Create and return an instance of Flower `Client`."""
     return FlowerClient().to_client()
 
@@ -41,13 +43,3 @@ def client_fn(cid: str):
 app = ClientApp(
     client_fn=client_fn,
 )
-
-
-# Legacy mode
-if __name__ == "__main__":
-    from flwr.client import start_client
-
-    start_client(
-        server_address="127.0.0.1:8080",
-        client=FlowerClient().to_client(),
-    )

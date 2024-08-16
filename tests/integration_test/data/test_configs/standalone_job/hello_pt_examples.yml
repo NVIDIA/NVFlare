@@ -1,6 +1,6 @@
 n_servers: 1
 n_clients: 2
-jobs_root_dir: ../../examples/hello-world
+jobs_root_dir: data/test_configs/standalone_job/previous_jobs
 cleanup: True
 
 
@@ -10,7 +10,7 @@ tests:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job hello-pt/jobs/hello-pt" ]
+        "actions": [ "submit_job hello-pt" ]
         "result":
           "type": "job_submit_success"
       - "trigger":
