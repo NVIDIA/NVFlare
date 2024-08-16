@@ -36,11 +36,26 @@ PLUGIN_KEY_PATH = "path"
 MODEL_FILE_NAME = "model.json"
 
 
+def _check_ctx(ctx: dict):
+    required_ctx_keys = [
+        Constant.RUNNER_CTX_CLIENT_NAME,
+        Constant.RUNNER_CTX_RANK,
+        Constant.RUNNER_CTX_WORLD_SIZE,
+        Constant.RUNNER_CTX_NUM_ROUNDS,
+        Constant.RUNNER_CTX_XGB_PARAMS,
+        Constant.RUNNER_CTX_SERVER_ADDR,
+        Constant.RUNNER_CTX_MODEL_DIR,
+    ]
+    for k in required_ctx_keys:
+        if k not in ctx:
+            raise RuntimeError(f"Missing {k} in context.")
+
+
 class XGBClientRunner(AppRunner, FLComponent):
     def __init__(
         self,
         data_loader_id: str,
-        model_file_name,
+        model_file_name: str,
         metrics_writer_id: str = None,
     ):
         FLComponent.__init__(self)
@@ -53,7 +68,7 @@ class XGBClientRunner(AppRunner, FLComponent):
         self._rank = None
         self._world_size = None
         self._num_rounds = None
-        self._split_mode = None
+        self._data_split_mode = None
         self._secure_training = None
         self._xgb_params = None
         self._xgb_options = None
@@ -124,16 +139,17 @@ class XGBClientRunner(AppRunner, FLComponent):
         return bst
 
     def run(self, ctx: dict):
-        self._client_name = ctx.get(Constant.RUNNER_CTX_CLIENT_NAME)
-        self._rank = ctx.get(Constant.RUNNER_CTX_RANK)
-        self._world_size = ctx.get(Constant.RUNNER_CTX_WORLD_SIZE)
-        self._num_rounds = ctx.get(Constant.RUNNER_CTX_NUM_ROUNDS)
-        self._split_mode = ctx.get(Constant.RUNNER_CTX_SPLIT_MODE)
-        self._secure_training = ctx.get(Constant.RUNNER_CTX_SECURE_TRAINING)
-        self._xgb_params = ctx.get(Constant.RUNNER_CTX_XGB_PARAMS)
-        self._xgb_options = ctx.get(Constant.RUNNER_CTX_XGB_OPTIONS)
-        self._server_addr = ctx.get(Constant.RUNNER_CTX_SERVER_ADDR)
-        self._model_dir = ctx.get(Constant.RUNNER_CTX_MODEL_DIR)
+        _check_ctx(ctx)
+        self._client_name = ctx[Constant.RUNNER_CTX_CLIENT_NAME]
+        self._rank = ctx[Constant.RUNNER_CTX_RANK]
+        self._world_size = ctx[Constant.RUNNER_CTX_WORLD_SIZE]
+        self._num_rounds = ctx[Constant.RUNNER_CTX_NUM_ROUNDS]
+        self._data_split_mode = ctx.get(Constant.RUNNER_CTX_SPLIT_MODE, 0)
+        self._secure_training = ctx.get(Constant.RUNNER_CTX_SECURE_TRAINING, False)
+        self._xgb_params = ctx[Constant.RUNNER_CTX_XGB_PARAMS]
+        self._xgb_options = ctx.get(Constant.RUNNER_CTX_XGB_OPTIONS, {})
+        self._server_addr = ctx[Constant.RUNNER_CTX_SERVER_ADDR]
+        self._model_dir = ctx[Constant.RUNNER_CTX_MODEL_DIR]
 
         use_gpus = self._xgb_options.get("use_gpus", False)
         if use_gpus:
@@ -142,7 +158,7 @@ class XGBClientRunner(AppRunner, FLComponent):
             self._xgb_params["device"] = f"cuda:{self._rank}"
 
         self.logger.info(
-            f"XGB split_mode: {self._split_mode} secure_training: {self._secure_training} "
+            f"XGB data_split_mode: {self._data_split_mode} secure_training: {self._secure_training} "
             f"params: {self._xgb_params} XGB options: {self._xgb_options}"
         )
 
@@ -187,9 +203,12 @@ class XGBClientRunner(AppRunner, FLComponent):
 
             communicator_env[PLUGIN_PARAM_KEY] = xgb_plugin_params
 
+        self._data_loader.initialize(
+            client_id=self._client_name, rank=self._rank, data_split_mode=self._data_split_mode
+        )
         with xgb.collective.CommunicatorContext(**communicator_env):
             # Load the data. Dmatrix must be created with column split mode in CommunicatorContext for vertical FL
-            train_data, val_data = self._data_loader.load_data(self._client_name, self._split_mode)
+            train_data, val_data = self._data_loader.load_data()
 
             bst = self._xgb_train(self._num_rounds, self._xgb_params, self._xgb_options, train_data, val_data)
 
