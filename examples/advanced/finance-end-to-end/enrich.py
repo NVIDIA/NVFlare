@@ -19,7 +19,6 @@ import pandas as pd
 
 # (1) import nvflare client API
 import nvflare.client as flare
-from nvflare.app_common.abstract.generic_task import GenericTask
 
 
 def main():
@@ -42,8 +41,8 @@ def main():
         save_to_csv(merged_dfs[ds_name], output_dir, site_name, ds_name)
 
     # send message back the controller indicating end.
-    end_task = GenericTask()
-    flare.send(end_task)
+    etl_task.meta["status"] = "done"
+    flare.send(etl_task)
 
 
 def save_to_csv(merged_df, output_dir, site_name, ds_name):

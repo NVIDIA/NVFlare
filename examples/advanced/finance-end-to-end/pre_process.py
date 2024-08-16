@@ -21,7 +21,6 @@ from sklearn.preprocessing import MinMaxScaler
 
 # (1) import nvflare client API
 import nvflare.client as flare
-from nvflare.app_common.abstract.generic_task import GenericTask
 
 dataset_names = ["train", "test"]
 datasets = {}
@@ -46,8 +45,8 @@ def main():
 
     print("end task")
     # send message back the controller indicating end.
-    end_task = GenericTask()
-    flare.send(end_task)
+    etl_task.meta["status"] = "done"
+    flare.send(etl_task)
 
 
 def save_normalized_files(output_dir, processed_dfs, site_name):

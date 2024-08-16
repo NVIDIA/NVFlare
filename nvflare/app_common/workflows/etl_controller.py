@@ -13,10 +13,10 @@
 # limitations under the License.
 
 
-from nvflare.app_common.workflows.generic_task_controller import GenericTaskController
+from nvflare.app_common.workflows.cmd_task_controller import CmdTaskController
 
 
-class ETLController(GenericTaskController):
+class ETLController(CmdTaskController):
     def __init__(self, task_name="etl", *args, **kwargs):
         kwargs["task_name"] = task_name
         super().__init__(*args, **kwargs)
