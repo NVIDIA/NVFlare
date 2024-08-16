@@ -1,6 +1,6 @@
 # Additional Examples for NVIDIA FLARE Job API
 
-ypu probably already has looked at [getting started](../../getting_started) examples,
+you probably already have looked at [getting started](../../getting_started) examples,
 and [hello-world](../../hello-world) examples. Here are additional examples for advanced algorithms 
 
 ### Basic Concepts
