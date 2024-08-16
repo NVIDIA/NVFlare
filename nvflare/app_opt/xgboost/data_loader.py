@@ -20,8 +20,27 @@ import xgboost as xgb
 
 
 class XGBDataLoader(ABC):
+    def initialize(
+        self, client_id: str, rank: int, data_split_mode: xgb.core.DataSplitMode = xgb.core.DataSplitMode.ROW
+    ):
+        self._client_id = client_id
+        self._rank = rank
+        self._data_split_mode = data_split_mode
+
+    @property
+    def client_id(self):
+        return self._client_id
+
+    @property
+    def rank(self):
+        return self._rank
+
+    @property
+    def data_split_mode(self):
+        return self._data_split_mode
+
     @abstractmethod
-    def load_data(self, client_id: str, split_mode: int) -> Tuple[xgb.DMatrix, xgb.DMatrix]:
+    def load_data(self) -> Tuple[xgb.DMatrix, xgb.DMatrix]:
         """Loads data for xgboost.
 
         Returns:
