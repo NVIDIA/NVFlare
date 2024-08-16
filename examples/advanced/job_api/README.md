@@ -1,6 +1,7 @@
-# Getting Started with NVFlare
-NVFlare is an open-source framework that allows researchers and data scientists to seamlessly move their 
-machine learning and deep learning workflows into a federated paradigm.
+# Additional Examples for NVIDIA FLARE Job API
+
+ypu probably already has looked at [getting started](../../getting_started) examples,
+and [hello-world](../../hello-world) examples. Here are additional examples for advanced algorithms 
 
 ### Basic Concepts
 At the heart of NVFlare lies the concept of collaboration through "tasks." An FL controller assigns tasks 
@@ -13,18 +14,16 @@ We can also add data filters (for example, for [homomorphic encryption](https://
 or [differential privacy filters](https://arxiv.org/abs/1910.00962)) to the task data
 or results received or produced by the server or clients.
 
-![NVIDIA FLARE Overview](../../docs/resources/controller_executor_no_filter.png)
-
+![NVIDIA FLARE Overview](../../../docs/resources/nvflare_overview.svg)
 
 ### Examples
-We provide several examples to quickly get you started using NVFlare's Job API. 
+We have several examples to illustrate job APIs 
 Each example folder includes basic job configurations for running different FL algorithms. 
-Starting from [FedAvg](https://arxiv.org/abs/1602.05629), to more advanced ones, 
 such as [FedOpt](https://arxiv.org/abs/2003.00295), or [SCAFFOLD](https://arxiv.org/abs/1910.06378).
 
 ### 1. [PyTorch Examples](./pt/README.md)
 ### 2. [Tensorflow Examples](./tf/README.md)
 ### 3. [Scikit-Learn Examples](./sklearn/README.md)
 
-Once you finished above examples, 
-you can look at the ["hello-world"](../hello-world) examples or look at more examples at tutorial catelog https://nvidia.github.io/NVFlare/.
+> [!NOTE]
+> More examples can be found at https://nvidia.github.io/NVFlare.

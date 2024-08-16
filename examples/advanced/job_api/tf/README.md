@@ -1,7 +1,8 @@
-# Getting Started with NVFlare (TensorFlow)
+# Advanced Job API Examples with Tensorflow
+
 [![TensorFlow Logo](https://upload.wikimedia.org/wikipedia/commons/a/ab/TensorFlow_logo.svg)](https://tensorflow.org/)
 
-We provide several examples to quickly get you started using NVFlare's Job API. 
+We provide several examples for advanced algorithms using NVFlare's Job API. 
 All examples in this folder are based on using [TensorFlow](https://tensorflow.org/) as the model training framework.
 
 ## Simulated Federated Learning with CIFAR10 Using Tensorflow
@@ -110,7 +111,39 @@ for alpha in 1.0 0.5 0.3 0.1; do
 
 done
 ```
- 
+
+### 2.3 Advanced FL algorithms (FedOpt)
+
+Next, let's try some different FL algorithms on a more heterogeneous split:
+
+[FedOpt](https://arxiv.org/abs/2003.00295) uses optimizers on server
+side to update the global model from client-side gradients. Here we
+use SGD with momentum and cosine learning rate decay:
+```
+python ./tf_fl_script_executor_cifar10.py \
+       --algo fedopt \
+       --n_clients 8 \
+       --num_rounds 50 \
+       --batch_size 64 \
+       --epochs 4 \
+       --alpha 0.1
+```
+[FedProx](https://arxiv.org/abs/1812.06127) adds a regularizer to the loss:
+```
+python ./tf_fl_script_executor_cifar10.py \
+       --algo fedprox \
+       --n_clients 8 \
+       --num_rounds 50 \
+       --batch_size 64 \
+       --epochs 4 \
+       --fedprox_mu 1e-5 \
+       --alpha 0.1
+```
+[SCAFFOLD](https://arxiv.org/abs/1910.06378) adds a correction term
+during local training following the
+[implementation](https://github.com/Xtra-Computing/NIID-Bench) as
+described in [Li et al.](https://arxiv.org/abs/2102.02079)
+
 ```
 python ./tf_fl_script_executor_cifar10.py \
        --algo scaffold \
@@ -121,11 +154,11 @@ python ./tf_fl_script_executor_cifar10.py \
        --fedprox_mu 1e-5 \
        --alpha 0.1
 ```
-## 2. Results
+## 3. Results
 
 Now let's compare experimental results.
 
-### 2.1 Centralized training vs. FedAvg for homogeneous split
+### 3.1 Centralized training vs. FedAvg for homogeneous split
 Let's first compare FedAvg with homogeneous data split
 (i.e. `alpha=1.0`) and centralized training. As can be seen from the
 figure and table below, FedAvg can achieve similar performance to
@@ -139,7 +172,7 @@ no difference in data distributions among different clients.
 
 ![Central vs. FedAvg](./figs/fedavg-vs-centralized.png)
 
-### 2.2 Impact of client data heterogeneity
+### 3.2 Impact of client data heterogeneity
 
 Here we compare the impact of data heterogeneity by varying the
 `alpha` value, where lower values cause higher heterogeneity. As can
@@ -155,7 +188,26 @@ as data heterogeneity becomes higher.
 
 ![Impact of client data
 heterogeneity](./figs/fedavg-diff-alphas.png)
- 
+
+### 3.3 Impact of different FL algorithms
+
+Lastly, we compare the performance of different FL algorithms, with
+`alpha` value fixed to 0.1, i.e., a high client data heterogeneity. We can observe from the figure below that, FedProx and
+SCAFFOLD achieve better performance, with better convergence rates
+compared to FedAvg and FedProx with the same alpha setting. SCAFFOLD
+achieves that by adding a correction term when updating the client
+models, while FedOpt utilizes SGD with momentum to update the global
+model on the server. Both achieve better performance with the same
+number of training steps as FedAvg/FedProx.
+
+| Config |	Alpha |	Val score |
+| ----------- | ----------- |  ----------- |
+| cifar10_fedavg |	0.1 |	0.7903 |
+| cifar10_fedopt |	0.1 |	0.8145 |
+| cifar10_fedprox |	0.1 |	0.7843 |
+| cifar10_scaffold |	0.1 |	0.8164 |
+
+![Impact of different FL algorithms](./figs/fedavg-diff-algos-new.png)
 > [!NOTE]
 > More examples can be found at https://nvidia.github.io/NVFlare.
 
