@@ -11,28 +11,29 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import os
+from typing import Tuple
 
 import xgboost as xgb
 from xgboost import callback
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import SystemConfigs
+from nvflare.apis.fl_constant import FLContextKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.tracking.log_writer import LogWriter
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
-from nvflare.app_opt.xgboost.histogram_based_v2.defs import SECURE_TRAINING_MODES, Constant
+from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.runners.xgb_runner import AppRunner
-from nvflare.app_opt.xgboost.histogram_based_v2.tb import TensorBoardCallback
 from nvflare.app_opt.xgboost.metrics_cb import MetricsCallback
 from nvflare.fuel.utils.config_service import ConfigService
-from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.obj_utils import get_logger
 from nvflare.utils.cli_utils import get_package_root
 
 PLUGIN_PARAM_KEY = "federated_plugin"
 PLUGIN_KEY_NAME = "name"
 PLUGIN_KEY_PATH = "path"
+MODEL_FILE_NAME = "model.json"
 
 
 class XGBClientRunner(AppRunner, FLComponent):
@@ -46,23 +47,25 @@ class XGBClientRunner(AppRunner, FLComponent):
         self.model_file_name = model_file_name
         self.data_loader_id = data_loader_id
         self.logger = get_logger(self)
+        self.fl_ctx = None
 
         self._client_name = None
         self._rank = None
         self._world_size = None
         self._num_rounds = None
-        self._training_mode = None
+        self._split_mode = None
+        self._secure_training = None
         self._xgb_params = None
         self._xgb_options = None
         self._server_addr = None
         self._data_loader = None
-        self._tb_dir = None
         self._model_dir = None
         self._stopped = False
         self._metrics_writer_id = metrics_writer_id
         self._metrics_writer = None
 
     def initialize(self, fl_ctx: FLContext):
+        self.fl_ctx = fl_ctx
         engine = fl_ctx.get_engine()
         self._data_loader = engine.get_component(self.data_loader_id)
         if not isinstance(self._data_loader, XGBDataLoader):
@@ -93,12 +96,19 @@ class XGBClientRunner(AppRunner, FLComponent):
         if self._metrics_writer:
             callbacks.append(MetricsCallback(self._metrics_writer))
 
-        tensorboard, flag = optional_import(module="torch.utils.tensorboard")
-        if flag and self._tb_dir:
-            callbacks.append(TensorBoardCallback(self._tb_dir, tensorboard))
-
         early_stopping_rounds = xgb_options.get("early_stopping_rounds", 0)
         verbose_eval = xgb_options.get("verbose_eval", False)
+
+        # Check for pre-trained model
+        job_id = self.fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
+        workspace = self.fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        custom_dir = workspace.get_app_custom_dir(job_id)
+        model_file = os.path.join(custom_dir, MODEL_FILE_NAME)
+        if os.path.isfile(model_file):
+            self.logger.info(f"Pre-trained model is used: {model_file}")
+            xgb_model = model_file
+        else:
+            xgb_model = None
 
         # Run training, all the features in training API is available.
         bst = xgb.train(
@@ -109,6 +119,7 @@ class XGBClientRunner(AppRunner, FLComponent):
             early_stopping_rounds=early_stopping_rounds,
             verbose_eval=verbose_eval,
             callbacks=callbacks,
+            xgb_model=xgb_model,
         )
         return bst
 
@@ -117,12 +128,11 @@ class XGBClientRunner(AppRunner, FLComponent):
         self._rank = ctx.get(Constant.RUNNER_CTX_RANK)
         self._world_size = ctx.get(Constant.RUNNER_CTX_WORLD_SIZE)
         self._num_rounds = ctx.get(Constant.RUNNER_CTX_NUM_ROUNDS)
-        self._training_mode = ctx.get(Constant.RUNNER_CTX_TRAINING_MODE)
+        self._split_mode = ctx.get(Constant.RUNNER_CTX_SPLIT_MODE)
+        self._secure_training = ctx.get(Constant.RUNNER_CTX_SECURE_TRAINING)
         self._xgb_params = ctx.get(Constant.RUNNER_CTX_XGB_PARAMS)
         self._xgb_options = ctx.get(Constant.RUNNER_CTX_XGB_OPTIONS)
         self._server_addr = ctx.get(Constant.RUNNER_CTX_SERVER_ADDR)
-        # self._data_loader = ctx.get(Constant.RUNNER_CTX_DATA_LOADER)
-        self._tb_dir = ctx.get(Constant.RUNNER_CTX_TB_DIR)
         self._model_dir = ctx.get(Constant.RUNNER_CTX_MODEL_DIR)
 
         use_gpus = self._xgb_options.get("use_gpus", False)
@@ -132,8 +142,10 @@ class XGBClientRunner(AppRunner, FLComponent):
             self._xgb_params["device"] = f"cuda:{self._rank}"
 
         self.logger.info(
-            f"XGB trainging_mode: {self._training_mode} " f"params: {self._xgb_params} XGB options: {self._xgb_options}"
+            f"XGB split_mode: {self._split_mode} secure_training: {self._secure_training} "
+            f"params: {self._xgb_params} XGB options: {self._xgb_options}"
         )
+
         self.logger.info(f"server address is {self._server_addr}")
 
         communicator_env = {
@@ -143,7 +155,7 @@ class XGBClientRunner(AppRunner, FLComponent):
             "federated_rank": self._rank,
         }
 
-        if self._training_mode not in SECURE_TRAINING_MODES:
+        if not self._secure_training:
             self.logger.info("XGBoost non-secure training")
         else:
             xgb_plugin_name = ConfigService.get_str_var(
@@ -173,13 +185,11 @@ class XGBClientRunner(AppRunner, FLComponent):
                 lib_name = f"lib{xgb_plugin_params[PLUGIN_KEY_NAME]}.{lib_ext}"
                 xgb_plugin_params[PLUGIN_KEY_PATH] = str(get_package_root() / "libs" / lib_name)
 
-            self.logger.info(f"XGBoost secure training: {self._training_mode} Params: {xgb_plugin_params}")
-
             communicator_env[PLUGIN_PARAM_KEY] = xgb_plugin_params
 
         with xgb.collective.CommunicatorContext(**communicator_env):
             # Load the data. Dmatrix must be created with column split mode in CommunicatorContext for vertical FL
-            train_data, val_data = self._data_loader.load_data(self._client_name, self._training_mode)
+            train_data, val_data = self._data_loader.load_data(self._client_name, self._split_mode)
 
             bst = self._xgb_train(self._num_rounds, self._xgb_params, self._xgb_options, train_data, val_data)
 
@@ -193,5 +203,5 @@ class XGBClientRunner(AppRunner, FLComponent):
         # currently no way to stop the runner
         pass
 
-    def is_stopped(self) -> (bool, int):
+    def is_stopped(self) -> Tuple[bool, int]:
         return self._stopped, 0

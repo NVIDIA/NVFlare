@@ -6,18 +6,26 @@ In this example, we run 2 Flower clients and Flower Server in parallel using NVF
 
 To run Flower code in NVFlare, we created a job, including an app with the following custom folder content 
 ```bash
-$ tree jobs/hello-flwr-pt
-.
-├── client.py           # <-- contains `ClientApp`
-├── server.py           # <-- contains `ServerApp`
-├── task.py             # <-- task-specific code (model, data)
+$ tree jobs/hello-flwr-pt/app/custom
+
+├── flwr_pt
+│   ├── client.py   # <-- contains `ClientApp`
+│   ├── __init__.py # <-- to register the python module
+│   ├── server.py   # <-- contains `ServerApp`
+│   └── task.py     # <-- task-specific code (model, data)
+└── pyproject.toml  # <-- Flower project file
 ```
-Note, this code is directly copied from Flower's [app-pytorch](https://github.com/adap/flower/tree/main/examples/app-pytorch) example.
+Note, this code is adapted from Flower's [app-pytorch](https://github.com/adap/flower/tree/main/examples/app-pytorch) example.
 
 ## Install dependencies
-To run this job with NVFlare, we first need to install the dependencies.
+If you haven't already, we recommend creating a virtual environment.
 ```bash
-pip install -r requirements.txt
+python3 -m venv nvflare_flwr
+source nvflare_flwr/bin/activate
+```
+To run a job with NVFlare, we first need to install its dependencies.
+```bash
+pip install ./jobs/hello-flwr-pt/app/custom
 ```
 
 ## Run a simulation

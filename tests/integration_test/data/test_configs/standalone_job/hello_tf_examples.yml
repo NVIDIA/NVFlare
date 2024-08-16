@@ -1,6 +1,6 @@
 n_servers: 1
 n_clients: 2
-jobs_root_dir: ../../examples/hello-world
+jobs_root_dir: data/test_configs/standalone_job/previous_jobs
 cleanup: True
 
 
@@ -10,7 +10,7 @@ tests:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job hello-cyclic/jobs/hello-cyclic" ]
+        "actions": [ "submit_job hello-cyclic" ]
         "result":
           "type": "job_submit_success"
       - "trigger":
@@ -31,7 +31,7 @@ tests:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job hello-tf2/jobs/hello-tf2" ]
+        "actions": [ "submit_job hello-tf2" ]
         "result":
           "type": "job_submit_success"
       - "trigger":

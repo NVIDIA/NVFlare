@@ -93,7 +93,7 @@ processes to use.
                     "local_epochs": 5,
                     "steps_aggregation": 0,
                     "model_reader_writer": {
-                      "name": "PTModelReaderWriter"
+                      "path": "nvflare.app_opt.pt.model_reader_writer.PTModelReaderWriter"
                     }
                   }
                 }

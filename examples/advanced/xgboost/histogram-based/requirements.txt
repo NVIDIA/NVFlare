@@ -1,6 +1,10 @@
-nvflare~=2.4.0rc
+nvflare~=2.5.0rc
 pandas
-xgboost>=2.0.0
 scikit-learn
 torch
 tensorboard
+# require xgboost 2.2 version, for now need to install a binary build
+# "xgboost>=2.2"
+
+--extra-index-url https://s3-us-west-2.amazonaws.com/xgboost-nightly-builds/list.html?prefix=federated-secure/
+xgboost

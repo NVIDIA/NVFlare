@@ -27,7 +27,8 @@ class XGBFedController(XGBController):
     def __init__(
         self,
         num_rounds: int,
-        training_mode: str,
+        split_mode: int,
+        secure_training: bool,
         xgb_params: dict,
         xgb_options: Optional[dict] = None,
         configure_task_name=Constant.CONFIG_TASK_NAME,
@@ -38,14 +39,14 @@ class XGBFedController(XGBController):
         max_client_op_interval: float = Constant.MAX_CLIENT_OP_INTERVAL,
         progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
         client_ranks=None,
-        int_client_grpc_options=None,
         in_process=True,
     ):
         XGBController.__init__(
             self,
             adaptor_component_id="",
             num_rounds=num_rounds,
-            training_mode=training_mode,
+            split_mode=split_mode,
+            secure_training=secure_training,
             xgb_params=xgb_params,
             xgb_options=xgb_options,
             configure_task_name=configure_task_name,
@@ -57,7 +58,8 @@ class XGBFedController(XGBController):
             progress_timeout=progress_timeout,
             client_ranks=client_ranks,
         )
-        self.int_client_grpc_options = int_client_grpc_options
+        # do not let user specify int_client_grpc_options in this version - always use default.
+        self.int_client_grpc_options = None
         self.in_process = in_process
 
     def get_adaptor(self, fl_ctx: FLContext):

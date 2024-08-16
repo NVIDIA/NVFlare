@@ -175,6 +175,10 @@ Using any text editor to edit the Dockerfile and paste the following:
 .. literalinclude:: resources/Dockerfile
     :language: dockerfile
 
+.. note::
+
+    For nvflare version 2.3 set PYTORCH_IMAGE=nvcr.io/nvidia/pytorch:23.02-py3
+
 We can then build the new container by running docker build in the directory containing
 this Dockerfile, for example tagging it nvflare-pt:
 
