@@ -36,8 +36,15 @@ Data splits used in this example can be generated with
 bash prepare_data.sh
 ```
 
-This will generate data splits for 3 clients under all experimental settings. In this example, we assume the Private Set Intersection (PSI) step has already been performed for vertical collaboration.
-See [vertical xgboost](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/vertical_xgboost) for more details. With this assumption, the overlapping ratio between clients for vertical setting is 1.0, such that the training data amount is the same as baseline and horizontal experiments.
+This will generate data splits for 3 clients under all experimental settings.
+
+> **_NOTE:_** In this example, we have divided the dataset into separate columns for each site,
+> assuming that the datasets from different sites have already been joined using Private Set
+> Intersection (PSI). However, in practice, each site initially has its own separate dataset. To
+> combine these datasets accurately, you need to use PSI to match records with the same ID across
+> different sites. For more information on how to perform PSI, please refer to the
+> [vertical xgboost example](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/vertical_xgboost).
+
 
 > **_NOTE:_** The generated data files will be stored in the folder `/tmp/nvflare/xgb_dataset/`,
 > and will be used by jobs by specifying the path within `config_fed_client`
