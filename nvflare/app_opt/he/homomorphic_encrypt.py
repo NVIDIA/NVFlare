@@ -23,7 +23,7 @@ def load_tenseal_context_from_workspace(ctx_file_name: str, fl_ctx: FLContext):
     """Loads homomorphic encryption (HE) context from TenSEAL (https://github.com/OpenMined/TenSEAL) containing encryption keys and parameters.
 
     Args:
-        ctx_file_name: filepath of TensSEAL context file
+        ctx_file_name: filepath of TenSEAL context file
         fl_ctx: FL context
 
     Returns:
