@@ -110,17 +110,7 @@ for alpha in 1.0 0.5 0.3 0.1; do
 
 done
 ```
- 
-```
-python ./tf_fl_script_executor_cifar10.py \
-       --algo scaffold \
-       --n_clients 8 \
-       --num_rounds 50 \
-       --batch_size 64 \
-       --epochs 4 \
-       --fedprox_mu 1e-5 \
-       --alpha 0.1
-```
+
 ## 2. Results
 
 Now let's compare experimental results.
