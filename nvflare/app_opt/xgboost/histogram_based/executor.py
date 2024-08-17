@@ -274,10 +274,14 @@ class FedXGBHistogramExecutor(Executor):
             communicator_env["federated_client_cert_path"] = self._client_cert_path
 
         try:
+            self._data_loader.initialize(
+                client_id=self.client_id,
+                rank=self.rank,
+            )
             with xgb.collective.CommunicatorContext(**communicator_env):
                 # Load the data. Dmatrix must be created with column split mode in CommunicatorContext for vertical FL
                 if not self.train_data or not self.val_data:
-                    self.train_data, self.val_data = self.data_loader.load_data(self.client_id)
+                    self.train_data, self.val_data = self.data_loader.load_data()
 
                 bst = self.xgb_train(params)
 

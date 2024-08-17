@@ -42,7 +42,8 @@
                     "args": {
                         "lr": 1.0,
                         "momentum": 0.0
-                    }
+                    },
+                    "config_type": "dict"
                 }
             }
         },
@@ -60,7 +61,8 @@
                             0.7,
                             0.7
                         ]
-                    }
+                    },
+                    "config_type": "dict"
                 },
                 "n_clients": "{min_clients}",
                 "search_lr": true,
@@ -117,7 +119,7 @@
             "id": "model_locator",
             "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
             "args": {
-                "pt_persistor_id": "persistor"
+                "model": "model"
             }
         },
         {
