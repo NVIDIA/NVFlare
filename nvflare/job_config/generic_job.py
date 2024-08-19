@@ -56,4 +56,4 @@ class GenericJob(ABC, FedJob):
                     raise RuntimeError(f"get_executor_app() must return a valid ExecutorApp but got {type(app)}")
                 super().to(app, target)
 
-        super().to(obj, target, id, **kwargs)
+        return super().to(obj, target, id, **kwargs)

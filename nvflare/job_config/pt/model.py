@@ -11,14 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.fuel.utils.import_utils import optional_import
 
-torch, torch_ok = optional_import(module="torch")
-if torch_ok:
-    import torch.nn as nn
+import torch.nn as nn
 
-    from nvflare.app_opt.pt import PTFileModelPersistor
-    from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
+from nvflare.app_opt.pt import PTFileModelPersistor
+from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
 
 
 class PTModel:
@@ -35,7 +32,7 @@ class PTModel:
         Returns:
 
         """
-        if torch_ok and isinstance(self.model, nn.Module):  # if model, create a PT persistor
+        if isinstance(self.model, nn.Module):  # if model, create a PT persistor
             persistor = PTFileModelPersistor(model=self.model)
             persistor_id = job.add_component(comp_id="persistor", obj=persistor, ctx=ctx)
 

@@ -180,33 +180,6 @@ class FedJob:
             raise ValueError(f"A ControllerApp was already assigned to {target}")
         self._deploy_map[target] = obj
 
-    def _add_controller(self, obj, target: str, id: str):
-        app = self._deploy_map.get(target)
-        if target != JobTargetType.SERVER:  # add client-side controllers as components
-            app.add_component(obj, id)
-        else:
-            app = self._deploy_map.get(target)
-            app.add_controller(obj, id)
-
-    def _try_add_controller(self, obj, target: str, id: str, **kwargs):
-        app = self._deploy_map.get(target)
-        target_type = JobTargetType.get_target_type(target)
-        if not app:
-            if target_type != JobTargetType.SERVER:  # add client-side controllers as components
-                raise ValueError(
-                    f"{target} doesn't have an `ExecutorApp`. Deploy one first before adding client-side controllers!"
-                )
-            else:
-                self._add_controller_app(ControllerApp(), target)
-                app = self._deploy_map.get(target)
-
-        add_to_job_method = getattr(obj, "add_to_fed_job", None)
-        if add_to_job_method is not None:
-            ctx = JobCtx(obj, target, id, app)
-            add_to_job_method(self, ctx, **kwargs)
-        else:
-            self._add_controller(obj, target, id)
-
     def _add_executor_app(self, obj: ExecutorApp, target: str):
         if target == JobTargetType.SERVER:
             raise ValueError("`ExecutorApp` must be assigned to a client, but tried to assign it to server!")
@@ -218,19 +191,6 @@ class FedJob:
 
         if target not in self.clients:
             self.clients.append(target)
-
-    def _add_executor(self, obj: Executor, target: str, **kwargs):
-        app = self._deploy_map.get(target)
-        if not app:
-            self._add_executor_app(ExecutorApp(), target)
-            app = self._deploy_map.get(target)
-
-        add_to_job_method = getattr(obj, "add_to_fed_job", None)
-        if add_to_job_method is not None:
-            ctx = JobCtx(obj, target, id, app)
-            add_to_job_method(self, ctx, **kwargs)
-        else:
-            app.add_executor(obj, **kwargs)
 
     def to(
         self,
@@ -270,12 +230,8 @@ class FedJob:
         result = None
         if isinstance(obj, ControllerApp):
             self._add_controller_app(obj, target)
-        elif isinstance(obj, Controller):
-            self._try_add_controller(obj, target, id, **kwargs)
         elif isinstance(obj, ExecutorApp):
             self._add_executor_app(obj, target)
-        elif isinstance(obj, Executor):
-            self._add_executor(obj, target, **kwargs)
         else:
             target_type = JobTargetType.get_target_type(target)
 
@@ -291,10 +247,11 @@ class FedJob:
             app = self._deploy_map.get(target)
             if not app:
                 if target_type == JobTargetType.SERVER:
-                    # server app must be present!
-                    raise ValueError(f"cannot add to target {target}: please assign a ServerApp first.")
+                    self._add_controller_app(ControllerApp(), target)
+                    app = self._deploy_map.get(target)
                 else:
-                    raise ValueError(f"cannot add to target {target}: please assign an ExecutorApp first.")
+                    self._add_executor_app(ExecutorApp(), target)
+                    app = self._deploy_map.get(target)
 
             add_to_job_method = getattr(obj, "add_to_fed_job", None)
             if add_to_job_method is not None:
@@ -338,20 +295,6 @@ class FedJob:
             raise RuntimeError(f"No app found for target '{ctx.target}' - you must add {app_type} first")
         return app
 
-    def generate_tracked_component_id(self, base_id: str, ctx: JobCtx) -> str:
-        """Generate a tracked component id. To be used by job component programmer.
-
-        Args:
-            base_id: the base ID of the component
-            ctx: Job context
-
-        Returns: a tracked ID
-
-        """
-        if not ctx.app:
-            raise ValueError(f"No ControllerApp nor ExecutorApp is assigned to target {ctx.target}")
-        return ctx.app.generate_tracked_id(base_id)
-
     def add_component(self, comp_id: str, obj: Any, ctx: JobCtx):
         """Add a component to the job. To be used by job component programmer.
 
@@ -382,7 +325,11 @@ class FedJob:
         Returns:
 
         """
-        self._add_controller(obj, ctx.target, ctx.comp_id)
+        app = self._get_app(ctx)
+        if ctx.target != JobTargetType.SERVER:  # add client-side controllers as components
+            app.add_component(obj, ctx.comp_id)
+        else:
+            app.add_controller(obj, ctx.comp_id)
 
     def add_executor(self, obj: Executor, tasks: List[str], ctx: JobCtx):
         """Add an executor to the job. To be used by executor programmer.
@@ -464,7 +411,7 @@ class FedJob:
         if isinstance(obj, Executor):
             raise ValueError("Use `job.to(executor, <client_name>)` or `job.to_clients(executor)` for Executors.")
 
-        self.to(obj=obj, target=SERVER_SITE_NAME, id=id, **kwargs)
+        return self.to(obj=obj, target=SERVER_SITE_NAME, id=id, **kwargs)
 
     def to_clients(
         self,
@@ -485,7 +432,7 @@ class FedJob:
         if isinstance(obj, Controller):
             raise ValueError('Use `job.to(controller, "server")` or `job.to_server(controller)` for Controllers.')
 
-        self.to(obj=obj, target=ALL_SITES, id=id, **kwargs)
+        return self.to(obj=obj, target=ALL_SITES, id=id, **kwargs)
 
     def _validate_target(self, target):
         if not target:

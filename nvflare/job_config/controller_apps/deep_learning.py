@@ -22,7 +22,7 @@ if torch_ok and tb_ok:
     from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 
 
-class DeepLearningControllerApp(ControllerApp):
+class DLControllerApp(ControllerApp):
     def __init__(self, key_metric="accuracy"):
         super().__init__()
         self.key_metric = key_metric

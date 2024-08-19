@@ -11,11 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.fuel.utils.import_utils import optional_import
 
-tf, tf_ok = optional_import(module="tensorflow")
-if tf_ok:
-    from nvflare.app_opt.tf.model_persistor import TFModelPersistor
+import tensorflow as tf
+from nvflare.app_opt.tf.model_persistor import TFModelPersistor
 
 
 class TFModel:
@@ -32,9 +30,7 @@ class TFModel:
         Returns:
 
         """
-        if tf_ok and isinstance(self.model, tf.keras.Model):  # if model, create a TF persistor
+        if isinstance(self.model, tf.keras.Model):  # if model, create a TF persistor
             persistor = TFModelPersistor(model=self.model)
             persistor_id = job.add_component(comp_id="persistor", obj=persistor, ctx=ctx)
             return persistor_id
-        else:
-            return None
