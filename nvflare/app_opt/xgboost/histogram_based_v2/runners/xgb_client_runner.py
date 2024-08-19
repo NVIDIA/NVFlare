@@ -144,7 +144,7 @@ class XGBClientRunner(AppRunner, FLComponent):
         self._rank = ctx[Constant.RUNNER_CTX_RANK]
         self._world_size = ctx[Constant.RUNNER_CTX_WORLD_SIZE]
         self._num_rounds = ctx[Constant.RUNNER_CTX_NUM_ROUNDS]
-        self._data_split_mode = ctx.get(Constant.RUNNER_CTX_SPLIT_MODE, 0)
+        self._data_split_mode = ctx.get(Constant.RUNNER_CTX_DATA_SPLIT_MODE, 0)
         self._secure_training = ctx.get(Constant.RUNNER_CTX_SECURE_TRAINING, False)
         self._xgb_params = ctx[Constant.RUNNER_CTX_XGB_PARAMS]
         self._xgb_options = ctx.get(Constant.RUNNER_CTX_XGB_OPTIONS, {})
@@ -202,6 +202,9 @@ class XGBClientRunner(AppRunner, FLComponent):
                 xgb_plugin_params[PLUGIN_KEY_PATH] = str(get_package_root() / "libs" / lib_name)
 
             communicator_env[PLUGIN_PARAM_KEY] = xgb_plugin_params
+
+            self.logger.info(f"XGBoost secure training with plugin name: {xgb_plugin_params.get(PLUGIN_KEY_NAME)} "
+                             f"path: {xgb_plugin_params.get(PLUGIN_KEY_PATH)}")
 
         self._data_loader.initialize(
             client_id=self._client_name, rank=self._rank, data_split_mode=self._data_split_mode

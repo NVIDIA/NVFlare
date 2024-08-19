@@ -150,10 +150,11 @@ class XGBClientAdaptor(AppAdaptor, ABC):
         self.stopped = False
         self.rank = None
         self.num_rounds = None
-        self.split_mode = None
+        self.data_split_mode = None
         self.secure_training = None
         self.xgb_params = None
         self.xgb_options = None
+        self.disable_version_check = None
         self.world_size = None
         self.per_msg_timeout = per_msg_timeout
         self.tx_timeout = tx_timeout
@@ -197,10 +198,10 @@ class XGBClientAdaptor(AppAdaptor, ABC):
         check_positive_int(Constant.CONF_KEY_NUM_ROUNDS, num_rounds)
         self.num_rounds = num_rounds
 
-        self.split_mode = config.get(Constant.CONF_KEY_SPLIT_MODE)
-        if self.split_mode is None:
-            raise RuntimeError("split_mode is not configured")
-        fl_ctx.set_prop(key=Constant.PARAM_KEY_SPLIT_MODE, value=self.split_mode, private=True, sticky=True)
+        self.data_split_mode = config.get(Constant.CONF_KEY_DATA_SPLIT_MODE)
+        if self.data_split_mode is None:
+            raise RuntimeError("data_split_mode is not configured")
+        fl_ctx.set_prop(key=Constant.PARAM_KEY_DATA_SPLIT_MODE, value=self.data_split_mode, private=True, sticky=True)
 
         self.secure_training = config.get(Constant.CONF_KEY_SECURE_TRAINING)
         if self.secure_training is None:
@@ -212,6 +213,11 @@ class XGBClientAdaptor(AppAdaptor, ABC):
             raise RuntimeError("xgb_params is not configured")
 
         self.xgb_options = config.get(Constant.CONF_KEY_XGB_OPTIONS, {})
+
+        self.disable_version_check = config.get(Constant.CONF_KEY_DISABLE_VERSION_CHECK)
+        if self.disable_version_check is None:
+            raise RuntimeError("disable_version_check is not configured")
+        fl_ctx.set_prop(key=Constant.PARAM_KEY_DISABLE_VERSION_CHECK, value=self.disable_version_check, private=True, sticky=True)
 
     def _send_request(self, op: str, req: Shareable) -> Tuple[bytes, Shareable]:
         """Send XGB operation request to the FL server via FLARE message.
