@@ -143,3 +143,116 @@ Developer Tutorial Page
 To let users quickly learn Federated Learning with FLARE, we developed a `tutorial web page <https://nvidia.github.io/NVFlare>`_ with
 both code and video to interactively learn how to convert and run FL in a few minutes. We also
 created a tutorial catalog to help you easily search and find the examples you are interested in.
+
+**********************************
+Migration to 2.5.0: Notes and Tips
+**********************************
+
+FLARE 2.5.0 introduces some API and behavior changes. This migration guide will help you to migrate from the previous NVFlare version
+to the current version.
+
+
+XGBoost v1 - v2
+===============
+
+XGBoost support is enhanced in 2.5.0 to support secure training using Homomorphic Encryption (HE). The user interface is also simplified by
+setting the XGBoost parameters in the controller so all clients get the same parameters. 
+
+The main changes are:
+
+  - The xgboost params have been moved from the client configuration to server.
+  - New split_mode and secure_training parameters
+  - New :class:`SecureDataLoader<nvflare.app_opt.xgboost.histogram_based_v2.secure_data_loader.SecureDataLoader>`
+
+Sample configuration files for 2.5.0
+-------------------------------------
+
+config_fed_server.json
+""""""""""""""""""""""
+
+.. code-block:: json
+
+  {
+      "format_version": 2,
+      "num_rounds": 3,
+      "workflows": [
+          {
+              "id": "xgb_controller",
+              "path": "nvflare.app_opt.xgboost.histogram_based_v2.fed_controller.XGBFedController",
+              "args": {
+                  "num_rounds": "{num_rounds}",
+                  "split_mode": 1,
+                  "secure_training": false,
+                  "xgb_options": {
+                      "early_stopping_rounds": 2
+                  },
+                  "xgb_params": {
+                      "max_depth": 3,
+                      "eta": 0.1,
+                      "objective": "binary:logistic",
+                      "eval_metric": "auc",
+                      "tree_method": "hist",
+                      "nthread": 1
+                  },
+                  "client_ranks": {
+                      "site-1": 0,
+                      "site-2": 1
+                  },
+                  "in_process": true 
+              }
+          }
+      ]
+  }
+
+config_fed_client.json
+""""""""""""""""""""""
+
+.. code-block:: json
+
+  {
+      "format_version": 2,
+      "executors": [
+          {
+              "tasks": [
+                  "config",
+                  "start"
+              ],
+              "executor": {
+                  "id": "Executor",
+                  "path": "nvflare.app_opt.xgboost.histogram_based_v2.fed_executor.FedXGBHistogramExecutor",
+                  "args": {
+                      "data_loader_id": "dataloader",
+                      "in_process": true
+                  }
+              }
+          }
+      ],
+      "components": [
+          {
+              "id": "dataloader",
+              "path": "nvflare.app_opt.xgboost.histogram_based_v2.secure_data_loader.SecureDataLoader",
+              "args": {
+                  "rank": 0,
+                  "folder": "/tmp/nvflare/dataset/vertical_xgb_data"
+              }
+          }
+      ]
+  }
+
+Simulator workspace structure
+=============================
+
+In 2.4.0, the server and all the clients are sharing the same simulator workspace root ``simulate_job``. Server and each client has
+its own app_XXXX job definition, but the Workspace same root folder may result in conflicting model file location.
+
+In 2.5.0, the server and all the clients will have its own workspace subfolder under the simulator workspace. The ``simulator_job``
+is within the workspace of each site. This results in total isolation of each site, with no model file conflicting. This workspace
+structure is consistent with the format of the POC real world application.
+
+Allow Simulator local resources configuration
+==============================================
+In 2.4.0, we only support the ``log.config`` setting file within the simulator workspace ``startup`` folder to be used to change the log format.
+
+In 2.5.0, we enable the full ``local`` and ``startup`` contents to be configured under the simulator workspace. All the POC real world application
+local settings can be placed within the ``workspace/local`` folder and be deployed to each site. The ``log.config`` file is also moved to
+this ``workspace/local`` folder.
