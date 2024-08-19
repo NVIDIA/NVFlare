@@ -24,6 +24,7 @@ from nvflare.tool.poc.poc_commands import (
     get_service_command,
     get_service_config,
     prepare_builders,
+    replace_server_with_localhost,
     update_clients,
 )
 from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
@@ -187,7 +188,6 @@ class TestPOCCommands:
         }
 
         project_config = collections.OrderedDict(project_config)
-
         builders = prepare_builders(project_config)
         assert len(builders) == 2
         for c in builders:
@@ -227,3 +227,15 @@ class TestPOCCommands:
         assert "server1" == global_config[SC.FLARE_SERVER]
         assert "admin@nvidia.com" == global_config[SC.FLARE_PROJ_ADMIN]
         assert ["client-1", "client-2"] == global_config[SC.FLARE_CLIENTS]
+
+    def test_replace_server_with_localhost(self):
+
+        assert "localhost:8002:8003" == replace_server_with_localhost("server:8002:8003")
+
+        with pytest.raises(ValueError):
+            assert "localhost:8002:8003" == replace_server_with_localhost("server:8002")
+
+        with pytest.raises(
+            ValueError, match="Input must be in the format 'server:port1:port2', each part can not be empty"
+        ):
+            assert "localhost:8002:8003" == replace_server_with_localhost("server:8002:")

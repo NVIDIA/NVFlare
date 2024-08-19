@@ -19,7 +19,6 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
-from pt.learners.cifar10_learner import CIFAR10Learner
 from pt.utils.cifar10_data_utils import CIFAR10_ROOT
 from pt.utils.cifar10_dataset import CIFAR10_Idx
 from torchvision import datasets
@@ -34,7 +33,7 @@ from nvflare.app_opt.pt.decomposers import TensorDecomposer
 from nvflare.fuel.utils import fobs
 
 from .autofedrl_constants import AutoFedRLConstants
-
+from .cifar10_learner import CIFAR10Learner
 
 class CIFAR10AutoFedRLearner(CIFAR10Learner):  # TODO: also support CIFAR10ScaffoldLearner
     def __init__(
@@ -116,7 +115,7 @@ class CIFAR10AutoFedRLearner(CIFAR10Learner):  # TODO: also support CIFAR10Scaff
             else:
                 site_idx = None  # use whole training dataset if self.central=True
 
-            self.log_debug(fl_ctx, msg)(fl_ctx, f"site_idx: {site_idx}")
+            self.log_debug(fl_ctx, f"site_idx: {site_idx}")
 
             # Train set
             n_img_for_search = self.batch_size * 10

@@ -13,7 +13,8 @@ We can also add data filters (for example, for [homomorphic encryption](https://
 or [differential privacy filters](https://arxiv.org/abs/1910.00962)) to the task data
 or results received or produced by the server or clients.
 
-![NVIDIA FLARE Overview](../../docs/resources/nvflare_overview.svg)
+![NVIDIA FLARE Overview](../../docs/resources/controller_executor_no_filter.png)
+
 
 ### Examples
 We provide several examples to quickly get you started using NVFlare's Job API. 
@@ -25,5 +26,5 @@ such as [FedOpt](https://arxiv.org/abs/2003.00295), or [SCAFFOLD](https://arxiv.
 ### 2. [Tensorflow Examples](./tf/README.md)
 ### 3. [Scikit-Learn Examples](./sklearn/README.md)
 
-> [!NOTE]
-> More examples can be found at https://nvidia.github.io/NVFlare.
+Once you finished above examples, 
+you can look at the ["hello-world"](../hello-world) examples or look at more examples at tutorial catelog https://nvidia.github.io/NVFlare/.
