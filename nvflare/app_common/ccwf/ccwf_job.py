@@ -22,6 +22,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.ccwf.common import Constant, CyclicOrder
 from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.job_config.api import ControllerApp, ExecutorApp, FedJob
+from nvflare.widgets.widget import Widget
 
 from .cse_client_ctl import CrossSiteEvalClientController
 from .cse_server_ctl import CrossSiteEvalServerController
@@ -69,6 +70,7 @@ class FedAvgClientConfig:
         shareable_generator: ShareableGenerator,
         aggregator: Aggregator,
         metric_comparator: MetricComparator = None,
+        model_selector: Widget = None,
         learn_task_check_interval=Constant.LEARN_TASK_CHECK_INTERVAL,
         learn_task_abort_timeout=Constant.LEARN_TASK_ABORT_TIMEOUT,
         learn_task_ack_timeout=Constant.LEARN_TASK_ACK_TIMEOUT,
@@ -81,6 +83,10 @@ class FedAvgClientConfig:
         check_object_type("persistor", persistor, ModelPersistor)
         check_object_type("shareable_generator", shareable_generator, ShareableGenerator)
         check_object_type("aggregator", aggregator, Aggregator)
+
+        if model_selector:
+            check_object_type("model_selector", model_selector, Widget)
+
         if metric_comparator:
             check_object_type("metric_comparator", metric_comparator, MetricComparator)
 
@@ -89,6 +95,7 @@ class FedAvgClientConfig:
         self.shareable_generator = shareable_generator
         self.aggregator = aggregator
         self.metric_comparator = metric_comparator
+        self.model_selector = model_selector
         self.learn_task_check_interval = learn_task_check_interval
         self.learn_task_abort_timeout = learn_task_abort_timeout
         self.learn_task_ack_timeout = learn_task_ack_timeout
@@ -232,6 +239,9 @@ class CCWFJob(FedJob):
         )
         self.to_clients(client_controller, tasks=["swarm_*"])
         self.to_clients(client_config.executor, tasks=["train", "validate", "submit_model"])
+
+        if client_config.model_selector:
+            self.to_clients(client_config.model_selector, id="model_selector")
 
         if cse_config:
             self._add_cross_site_eval(cse_config, persistor_id)
