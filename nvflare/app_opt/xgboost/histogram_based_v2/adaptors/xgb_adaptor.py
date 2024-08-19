@@ -217,7 +217,9 @@ class XGBClientAdaptor(AppAdaptor, ABC):
         self.disable_version_check = config.get(Constant.CONF_KEY_DISABLE_VERSION_CHECK)
         if self.disable_version_check is None:
             raise RuntimeError("disable_version_check is not configured")
-        fl_ctx.set_prop(key=Constant.PARAM_KEY_DISABLE_VERSION_CHECK, value=self.disable_version_check, private=True, sticky=True)
+        fl_ctx.set_prop(
+            key=Constant.PARAM_KEY_DISABLE_VERSION_CHECK, value=self.disable_version_check, private=True, sticky=True
+        )
 
     def _send_request(self, op: str, req: Shareable) -> Tuple[bytes, Shareable]:
         """Send XGB operation request to the FL server via FLARE message.

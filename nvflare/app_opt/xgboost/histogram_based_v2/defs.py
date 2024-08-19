@@ -127,4 +127,3 @@ GRPC_DEFAULT_OPTIONS = [
     ("grpc.max_send_message_length", MAX_FRAME_SIZE),
     ("grpc.max_receive_message_length", MAX_FRAME_SIZE),
 ]
-

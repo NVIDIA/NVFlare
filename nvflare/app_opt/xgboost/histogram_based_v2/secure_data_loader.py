@@ -17,6 +17,7 @@ import xgboost.core
 
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
 
+
 class SecureDataLoader(XGBDataLoader):
     def __init__(self, folder: str):
         """Reads CSV dataset and return XGB data matrix for both vertical and horizontal training

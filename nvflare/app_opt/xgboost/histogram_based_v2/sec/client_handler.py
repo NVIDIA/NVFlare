@@ -15,8 +15,8 @@ import os
 import time
 
 import xgboost
-
 from packaging import version
+
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
@@ -410,7 +410,7 @@ class ClientSecurityHandler(SecurityHandler):
         fl_ctx.set_prop(key=Constant.PARAM_KEY_RCV_BUF, value=result, private=True, sticky=False)
 
     def _check_xgboost_version(self, disable_version_check: bool) -> bool:
-        """Check XGBoost version. Returns true if it supports secure training """
+        """Check XGBoost version. Returns true if it supports secure training"""
         if disable_version_check:
             self.logger.info("XGBoost version check is disabled")
             return True
@@ -427,7 +427,6 @@ class ClientSecurityHandler(SecurityHandler):
             self.logger.error(f"Unknown XGBoost version {xgboost.__version__}. Error: {error}")
             return False
 
-
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         global tenseal_error
         if event_type == Constant.EVENT_XGB_JOB_CONFIGURED:
@@ -437,9 +436,12 @@ class ClientSecurityHandler(SecurityHandler):
             disable_version_check = task_data.get(Constant.CONF_KEY_DISABLE_VERSION_CHECK)
 
             if secure_training and not self._check_xgboost_version(disable_version_check):
-                fl_ctx.set_prop(Constant.PARAM_KEY_CONFIG_ERROR,
-                                f"XGBoost version {xgboost.__version__} doesn't support secure training",
-                                private=True, sticky=False)
+                fl_ctx.set_prop(
+                    Constant.PARAM_KEY_CONFIG_ERROR,
+                    f"XGBoost version {xgboost.__version__} doesn't support secure training",
+                    private=True,
+                    sticky=False,
+                )
                 return
 
             if secure_training and data_split_mode == xgboost.core.DataSplitMode.COL and ipcl_imported:

@@ -203,8 +203,10 @@ class XGBClientRunner(AppRunner, FLComponent):
 
             communicator_env[PLUGIN_PARAM_KEY] = xgb_plugin_params
 
-            self.logger.info(f"XGBoost secure training with plugin name: {xgb_plugin_params.get(PLUGIN_KEY_NAME)} "
-                             f"path: {xgb_plugin_params.get(PLUGIN_KEY_PATH)}")
+            self.logger.info(
+                f"XGBoost secure training with plugin name: {xgb_plugin_params.get(PLUGIN_KEY_NAME)} "
+                f"path: {xgb_plugin_params.get(PLUGIN_KEY_PATH)}"
+            )
 
         self._data_loader.initialize(
             client_id=self._client_name, rank=self._rank, data_split_mode=self._data_split_mode
