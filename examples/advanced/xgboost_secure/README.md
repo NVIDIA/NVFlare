@@ -27,37 +27,81 @@ By default, we assume the dataset is downloaded, uncompressed, and stored in `${
 To prepare data for further experiments, we perform the following steps:
 1. Split the dataset into training/validation and testing sets. 
 2. Split the training/validation set: 
-    * Into train and valid for baseline centralized training.
-    * Into train and valid for each client under horizontal setting. 
-    * Into train and valid for each client under vertical setting.
+    * Into "train" and "valid" for baseline centralized training.
+    * Into "train" and "valid" for each client under horizontal setting. 
+    * Into "train" and "valid" for each client under vertical setting.
 
 Data splits used in this example can be generated with
 ```
 bash prepare_data.sh
 ```
 
-This will generate data splits for 3 clients under all experimental settings. In this example, we assume the Private Set Intersection (PSI) step has already been performed for vertical collaboration.
-See [vertical xgboost](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/vertical_xgboost) for more details. With this assumption, the overlapping ratio between clients for vertical setting is 1.0, such that the training data amount is the same as baseline and horizontal experiments.
+This will generate data splits for 3 clients under all experimental settings.
+
+> **_NOTE:_** In this example, we have divided the dataset into separate columns for each site,
+> assuming that the datasets from different sites have already been joined using Private Set
+> Intersection (PSI). However, in practice, each site initially has its own separate dataset. To
+> combine these datasets accurately, you need to use PSI to match records with the same ID across
+> different sites. For more information on how to perform PSI, please refer to the
+> [vertical xgboost example](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/vertical_xgboost).
+
 
 > **_NOTE:_** The generated data files will be stored in the folder `/tmp/nvflare/xgb_dataset/`,
-> and will be used by jobs by specifying the path within `config_fed_client.json` 
+> and will be used by jobs by specifying the path within `config_fed_client`
 
 ## Run Baseline and Standalone Experiments
 First, we run the baseline centralized training and standalone federated XGBoost training for comparison.
 In this case, we utilized the `mock` plugin to simulate the homomorphic encryption process. 
-For more details regarding federated XGBoost and the interface-plugin design, please refer to our [documentation]().
+For more details regarding federated XGBoost and the interface-plugin design,
+please refer to our [documentation](https://nvflare.readthedocs.io/en/main/user_guide/federated_xgboost/secure_xgboost_user_guide.html).
 
 To run all experiments, we provide a script for all settings.
 ```
 bash run_training_standalone.sh
 ```
-This will cover baseline centralized training, local FL with and without secure feature.
+This will cover baseline centralized training, federated xgboost run in the same machine
+(server and clients are running in different processes) with and without secure feature.
+
+## Generates the FLARE Job
+We can use our job template and `nvflare job` command to generates different jobs for
+different scenarios:
+
+```
+# config the job template directory
+nvflare config -jt ../../../job_templates/
+
+# create horizontal job
+nvflare job create -force -w xgboost -j ./jobs/xgb_hori \
+    -f config_fed_server.conf secure_training=false split_mode=0 \
+    -f config_fed_client.conf folder="/tmp/nvflare/xgb_dataset/horizontal_xgb_data"
+
+# create horizontal secure job
+nvflare job create -force -w xgboost -j ./jobs/xgb_hori_secure \
+    -f config_fed_server.conf secure_training=true split_mode=0 \
+    -f config_fed_client.conf folder="/tmp/nvflare/xgb_dataset/horizontal_xgb_data"
+
+# create vertical job
+nvflare job create -force -w xgboost -j ./jobs/xgb_vert \
+    -f config_fed_server.conf secure_training=false split_mode=1 \
+    -f config_fed_client.conf folder="/tmp/nvflare/xgb_dataset/vertical_xgb_data"
+
+# create vertical secure job
+nvflare job create -force -w xgboost -j ./jobs/xgb_vert_secure \
+    -f config_fed_server.conf secure_training=true split_mode=1 \
+    -f config_fed_client.conf folder="/tmp/nvflare/xgb_dataset/vertical_xgb_data"
+
+```
+
+Or you can just run the script:
+```
+bash prepare_flare_job.sh
+```
 
 ## Run Federated Experiments with NVFlare
 Next, we run the federated XGBoost training without and with homomorphic encryption using NVFlare. 
 We run the NVFlare jobs using simulator with: 
 ```
-bash run_training_fl.sh
+bash run_training_flare.sh
 ```
 The running time of each job depends mainly on the encryption workload. 
 
@@ -85,7 +129,7 @@ The AUC of horizontal learning (both secure and non-secure):
 
 Comparing the tree models with centralized baseline, we have the following observations:
 1. Vertical federated learning (non-secure) has exactly the same tree model as the centralized baseline.
-2. Vertical federated learning (secure) has the same tree structures as the centralized baseline, however, it produces produces different tree records at different parties - because each party holds different feature subsets, as illustrated below.
+2. Vertical federated learning (secure) has the same tree structures as the centralized baseline, however, it produces different tree records at different parties - because each party holds different feature subsets, as illustrated below.
 3. Horizontal federated learning (both secure and non-secure) have different tree models from the centralized baseline.
 
 |     ![Tree Structures](./figs/tree.base.png)      |
@@ -102,5 +146,5 @@ In this case we can notice that Party 0 holds Feature 7 and 10, Party 1 holds Fe
 
 By combining the feature splits at all parties, the tree structures will be identical to the centralized baseline model.
 
-## Different Encryption Plugins
-We can switch to different plugins for encryption/decryption in federated xgboost. The plugin information is specified in `xgb.collective.CommunicatorContext`.
+For more information on the secure xgboost user guide please refer to
+https://nvflare.readthedocs.io/en/main/user_guide/federated_xgboost/secure_xgboost_user_guide.html
