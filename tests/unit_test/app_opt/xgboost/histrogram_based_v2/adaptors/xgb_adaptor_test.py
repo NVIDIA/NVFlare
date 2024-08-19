@@ -37,9 +37,10 @@ class TestXGBClientAdaptor:
         config = {
             Constant.CONF_KEY_CLIENT_RANKS: {"site-test": 1},
             Constant.CONF_KEY_NUM_ROUNDS: 100,
-            Constant.CONF_KEY_SPLIT_MODE: 0,
+            Constant.CONF_KEY_DATA_SPLIT_MODE: 0,
             Constant.CONF_KEY_SECURE_TRAINING: False,
             Constant.CONF_KEY_XGB_PARAMS: {"depth": 1},
+            Constant.CONF_KEY_DISABLE_VERSION_CHECK: False,
         }
         ctx = FLContext()
         ctx.set_prop(ReservedKey.IDENTITY_NAME, "site-test")
