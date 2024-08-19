@@ -49,7 +49,7 @@ builders:
       # app_validator: PATH_TO_YOUR_OWN_APP_VALIDATOR
 
       # when docker_image is set to a docker image name, docker.sh will be generated on server/client/admin
-      docker_image: nvflare-docker
+      docker_image: nvflare-pt-docker
 
       # download_job_url is set to http://download.server.com/ as default in fed_server.json.  You can override this
       # to different url.
