@@ -15,31 +15,30 @@
 import xgboost as xgb
 
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
-from nvflare.app_opt.xgboost.histogram_based_v2.defs import SplitMode
 
 
-class SecureDataLoader(XGBDataLoader):
-    def __init__(self, rank: int, folder: str):
-        """Reads CSV dataset and return XGB data matrix in vertical secure mode.
+class CSVDataLoader(XGBDataLoader):
+    def __init__(self, folder: str):
+        """Reads CSV dataset and return XGB data matrix.
+
+        Note: if split mode is vertical, we assume the label owner is rank 0.
 
         Args:
-            rank: Rank of the site
             folder: Folder to find the CSV files
         """
-        self.rank = rank
         self.folder = folder
 
-    def load_data(self, client_id: str, split_mode: int):
+    def load_data(self):
 
-        train_path = f"{self.folder}/{client_id}/train.csv"
-        valid_path = f"{self.folder}/{client_id}/valid.csv"
+        train_path = f"{self.folder}/{self.client_id}/train.csv"
+        valid_path = f"{self.folder}/{self.client_id}/valid.csv"
 
-        if self.rank == 0 or split_mode == SplitMode.ROW:
+        if self.rank == 0 or self.data_split_mode == xgb.core.DataSplitMode.ROW:
             label = "&label_column=0"
         else:
             label = ""
 
-        train_data = xgb.DMatrix(train_path + f"?format=csv{label}", data_split_mode=split_mode)
-        valid_data = xgb.DMatrix(valid_path + f"?format=csv{label}", data_split_mode=split_mode)
+        train_data = xgb.DMatrix(train_path + f"?format=csv{label}", data_split_mode=self.data_split_mode)
+        valid_data = xgb.DMatrix(valid_path + f"?format=csv{label}", data_split_mode=self.data_split_mode)
 
         return train_data, valid_data
