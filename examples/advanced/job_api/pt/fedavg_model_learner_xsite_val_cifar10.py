@@ -26,6 +26,7 @@ from nvflare import FedJob
 from nvflare.app_common.executors.model_learner_executor import ModelLearnerExecutor
 from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
 from nvflare.app_common.workflows.fedavg import FedAvg
+from nvflare.job_config.pt.model import PTModel
 
 if __name__ == "__main__":
     n_clients = 2
@@ -54,7 +55,7 @@ if __name__ == "__main__":
     job.to(data_splitter, "server")
 
     # Define the initial global model and send to server
-    job.to(ModerateCNN(), "server")
+    job.to(PTModel(ModerateCNN()), "server")
 
     for i in range(n_clients):
         learner = CIFAR10ModelLearner(train_idx_root=train_split_root, aggregation_epochs=aggregation_epochs, lr=0.01)

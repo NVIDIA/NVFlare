@@ -14,7 +14,11 @@
 
 from src.simple_network import SimpleNetwork
 
-from nvflare import FedAvg, FedJob, ScriptExecutor
+from nvflare import FedJob
+from nvflare.app_common.executors.script_executor import ScriptExecutor
+from nvflare.app_common.workflows.fedavg import FedAvg
+from nvflare.job_config.pt.model import PTModel
+
 
 if __name__ == "__main__":
     n_clients = 2
@@ -31,7 +35,7 @@ if __name__ == "__main__":
     job.to(controller, "server")
 
     # Define the initial global model and send to server
-    job.to(SimpleNetwork(), "server")
+    job.to(PTModel(SimpleNetwork()), "server")
 
     # Add clients
     for i in range(n_clients):

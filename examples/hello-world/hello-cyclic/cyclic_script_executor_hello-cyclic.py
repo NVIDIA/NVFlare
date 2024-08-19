@@ -14,9 +14,11 @@
 
 from src.tf_net import Net
 
-from nvflare import FedJob, ScriptExecutor
+from nvflare import FedJob
+from nvflare.app_common.executors.script_executor import ScriptExecutor
 from nvflare.app_common.workflows.cyclic import Cyclic
 from nvflare.client.config import ExchangeFormat
+from nvflare.job_config.pt.model import PTModel
 
 if __name__ == "__main__":
     n_clients = 2
@@ -33,7 +35,7 @@ if __name__ == "__main__":
     job.to(controller, "server")
 
     # Define the initial global model and send to server
-    job.to(Net(), "server")
+    job.to(PTModel(Net()), "server")
 
     # Add clients
     for i in range(n_clients):
