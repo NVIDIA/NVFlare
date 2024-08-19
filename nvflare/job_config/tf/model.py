@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import tensorflow as tf
+
 from nvflare.app_opt.tf.model_persistor import TFModelPersistor
 
 

@@ -15,7 +15,7 @@
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.getcwd(), "..", "..", "advanced", "cifar10"))
+sys.path.insert(0, os.path.join(os.getcwd(), "..", "..", "cifar10"))
 
 from pt.learners.cifar10_model_learner import CIFAR10ModelLearner
 from pt.networks.cifar10_nets import ModerateCNN
@@ -63,4 +63,4 @@ if __name__ == "__main__":
         job.to(executor, f"site-{i+1}")  # data splitter assumes client names start from 1
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir")
+    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")

@@ -500,7 +500,7 @@ class FedJob:
         self._set_all_apps()
         self.job.generate_job_config(job_root)
 
-    def simulator_run(self, workspace: str, n_clients: int = None, threads: int = None, gpu=None):
+    def simulator_run(self, workspace: str, n_clients: int = None, threads: int = None, gpu: str = None):
         """Run the job with the simulator with the `workspace` using `clients` and `threads`.
         For end users.
 

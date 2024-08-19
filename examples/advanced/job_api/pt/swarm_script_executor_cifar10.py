@@ -14,58 +14,31 @@
 
 from src.net import Net
 
-from nvflare import FedJob
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
-from nvflare.app_common.ccwf import (
-    CrossSiteEvalClientController,
-    CrossSiteEvalServerController,
-    SwarmClientController,
-    SwarmServerController,
-)
+from nvflare.app_common.ccwf.ccwf_job import CrossSiteEvalConfig, FedAvgClientConfig, FedAvgServerConfig
 from nvflare.app_common.ccwf.comps.simple_model_shareable_generator import SimpleModelShareableGenerator
 from nvflare.app_common.executors.script_executor import ScriptExecutor
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
-from nvflare.job_config.pt.model import PTModel
+from nvflare.job_config.pt.swarm_job import SwarmJob
 
 if __name__ == "__main__":
     n_clients = 2
     num_rounds = 3
     train_script = "src/train_eval_submit.py"
 
-    job = FedJob(name="cifar10_swarm")
-
-    controller = SwarmServerController(
-        num_rounds=num_rounds,
+    job = SwarmJob(name="cifar10_swarm", initial_model=Net())
+    aggregator = InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS)
+    job.add_fed_avg(
+        server_config=FedAvgServerConfig(num_rounds=num_rounds),
+        client_config=FedAvgClientConfig(
+            executor=ScriptExecutor(task_script_path=train_script),
+            aggregator=aggregator,
+            persistor=PTFileModelPersistor(model=Net()),
+            shareable_generator=SimpleModelShareableGenerator(),
+        ),
+        cse_config=CrossSiteEvalConfig(eval_task_timeout=300),
     )
-    job.to(controller, "server")
-    controller = CrossSiteEvalServerController(eval_task_timeout=300)
-    job.to(controller, "server")
-
-    # Define the initial server model
-    job.to(PTModel(Net()), "server")
-
-    for i in range(n_clients):
-        executor = ScriptExecutor(task_script_path=train_script, evaluate_task_name="validate")
-        job.to(executor, f"site-{i}", tasks=["train", "validate", "submit_model"])
-
-        # In swarm learning, each client acts also as an aggregator
-        aggregator = InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS)
-
-        # In swarm learning, each client uses a model persistor and shareable_generator
-        persistor = PTFileModelPersistor(model=Net())
-        shareable_generator = SimpleModelShareableGenerator()
-
-        persistor_id = job.as_id(persistor)
-        client_controller = SwarmClientController(
-            aggregator_id=job.as_id(aggregator),
-            persistor_id=persistor_id,
-            shareable_generator_id=job.as_id(shareable_generator),
-        )
-        job.to(client_controller, f"site-{i}", tasks=["swarm_*"])
-
-        client_controller = CrossSiteEvalClientController(persistor_id=persistor_id)
-        job.to(client_controller, f"site-{i}", tasks=["cse_*"])
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir")
+    job.simulator_run("/tmp/nvflare/jobs/workdir", n_clients=n_clients, gpu="0")

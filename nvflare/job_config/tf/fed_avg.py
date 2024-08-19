@@ -17,7 +17,7 @@ from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.job_config.api import FedJob
 from nvflare.job_config.controller_apps.deep_learning import DLControllerApp
 from nvflare.job_config.executor_apps.basic import BasicExecutorApp
-from nvflare.job_config.pt.model import PTModel
+from nvflare.job_config.tf.model import TFModel
 
 
 class FedAvgJob(FedJob):
@@ -36,7 +36,7 @@ class FedAvgJob(FedJob):
         server_app = DLControllerApp(key_metric=key_metric)
         self.to_server(server_app)
 
-        comp_ids = self.to_server(PTModel(initial_model))
+        comp_ids = self.to_server(TFModel(initial_model))
 
         controller = FedAvg(
             num_clients=n_clients,

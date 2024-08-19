@@ -20,7 +20,6 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
 from nvflare.apis.wf_comm_spec import WFCommSpec
-from nvflare.job_config.defs import JobTargetType
 
 
 class Controller(FLComponent, ControllerSpec, ABC):

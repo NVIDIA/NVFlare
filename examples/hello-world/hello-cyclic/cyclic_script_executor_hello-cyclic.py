@@ -44,7 +44,7 @@ if __name__ == "__main__":
             task_script_args="",  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
             params_exchange_format=ExchangeFormat.NUMPY,
         )
-        job.to(executor, f"site-{i+1}", gpu=0)
+        job.to(executor, f"site-{i+1}")
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir")
+    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")

@@ -80,8 +80,8 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--gpu",
-        type=int,
-        default=0,
+        type=str,
+        default="0",
     )
 
     args = parser.parse_args()
@@ -157,10 +157,10 @@ if __name__ == "__main__":
     for i, train_idx_path in enumerate(train_idx_paths):
         curr_task_script_args = task_script_args + f" --train_idx_path {train_idx_path}"
         executor = ScriptExecutor(task_script_path=train_script, task_script_args=curr_task_script_args)
-        job.to(executor, f"site-{i+1}", gpu=args.gpu)
+        job.to(executor, f"site-{i+1}")
 
     # Can export current job to folder.
     # job.export_job(f"{args.workspace}/nvflare/jobs/job_config")
 
     # Here we launch the job using simulator.
-    job.simulator_run(f"{args.workspace}/nvflare/jobs/{job.name}")
+    job.simulator_run(f"{args.workspace}/nvflare/jobs/{job.name}", gpu=args.gpu)

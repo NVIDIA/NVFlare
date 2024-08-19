@@ -26,11 +26,11 @@ if __name__ == "__main__":
 
     # Add clients
     for i in range(n_clients):
-        site_name = f"site-{i}"
         executor = ScriptExecutor(
             task_script_path=train_script, task_script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
         )
-        job.to(executor, target=site_name)
+        job.to(executor, target=f"site-{i}")
+    # job.to_clients(executor)
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir")
+    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")

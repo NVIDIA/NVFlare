@@ -13,38 +13,17 @@
 # limitations under the License.
 from typing import List, Optional
 
-from nvflare.app_common.workflows.fedavg import FedAvg
-from nvflare.job_config.api import FedJob
-from nvflare.job_config.controller_apps.deep_learning import DLControllerApp
-from nvflare.job_config.executor_apps.basic import BasicExecutorApp
+from nvflare.app_common.ccwf.ccwf_job import CCWFJob
 from nvflare.job_config.pt.model import PTModel
 
 
-class FedAvgJob(FedJob):
+class SwarmJob(CCWFJob):
     def __init__(
         self,
         initial_model,
-        n_clients,
-        num_rounds,
-        name: str = "fed_job",
+        name,
         min_clients: int = 1,
         mandatory_clients: Optional[List[str]] = None,
-        key_metric: str = "accuracy",
     ):
         super().__init__(name, min_clients, mandatory_clients)
-
-        server_app = DLControllerApp(key_metric=key_metric)
-        self.to_server(server_app)
-
-        comp_ids = self.to_server(PTModel(initial_model))
-
-        controller = FedAvg(
-            num_clients=n_clients,
-            num_rounds=num_rounds,
-            persistor_id=comp_ids["persistor_id"],
-        )
-        self.to_server(controller)
-
-        for i in range(n_clients):
-            client_app = BasicExecutorApp()
-            self.to(client_app, target=f"site-{i}")
+        self.comp_ids = self.to_server(PTModel(initial_model))
