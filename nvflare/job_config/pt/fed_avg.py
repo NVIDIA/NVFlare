@@ -13,15 +13,16 @@
 # limitations under the License.
 from typing import List, Optional
 
+from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
+from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
+from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 from nvflare.app_common.workflows.fedavg import FedAvg
-from nvflare.job_config.api import ExecutorApp, JobTargetType
-from nvflare.job_config.controller_apps.deep_learning import DeepLearningControllerApp
-from nvflare.job_config.executor_apps.basic import BasicExecutorApp
-from nvflare.job_config.generic_job import GenericJob
+from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
+from nvflare.job_config.api import FedJob
 from nvflare.job_config.pt.model import Wrap
 
 
-class FedAvgJob(GenericJob):
+class FedAvgJob(FedJob):
     def __init__(
         self,
         initial_model,
@@ -38,9 +39,16 @@ class FedAvgJob(GenericJob):
         self.num_rounds = num_rounds
         self.n_clients = n_clients
 
-    def set_up_server(self):
-        server_app = DeepLearningControllerApp(key_metric=self.key_metric)
-        self.to_server(server_app)
+        component = ValidationJsonGenerator()
+        self.to_server(id="json_generator", obj=component)
+
+        if self.key_metric:
+            component = IntimeModelSelector(key_metric=self.key_metric)
+            self.to_server(id="model_selector", obj=component)
+
+        # TODO: make different tracking receivers configurable
+        component = TBAnalyticsReceiver(events=["fed.analytix_log_stats"])
+        self.to_server(id="receiver", obj=component)
 
         comp_ids = self.to_server(Wrap(self.initial_model))
 
@@ -52,5 +60,6 @@ class FedAvgJob(GenericJob):
         )
         self.to_server(controller)
 
-    def get_executor_app(self, client: str) -> ExecutorApp:
-        return BasicExecutorApp()
+    def set_up_client(self, target: str):
+        component = ConvertToFedEvent(events_to_convert=["analytix_log_stats"], fed_event_prefix="fed.")
+        self.to(id="event_to_fed", obj=component, target=target)

@@ -1,7 +1,6 @@
 from typing import List, Optional
 
 from nvflare.app_common.ccwf.ccwf_job import CCWFJob
-from nvflare.job_config.defs import JobTargetType
 from nvflare.job_config.pt.model import Wrap
 
 

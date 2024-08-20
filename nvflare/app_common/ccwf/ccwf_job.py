@@ -21,7 +21,7 @@ from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.ccwf.common import Constant, CyclicOrder
 from nvflare.fuel.utils.validation_utils import check_object_type
-from nvflare.job_config.api import ControllerApp, ExecutorApp, FedJob
+from nvflare.job_config.api import FedJob
 from nvflare.widgets.widget import Widget
 
 from .cse_client_ctl import CrossSiteEvalClientController
@@ -192,8 +192,8 @@ class CCWFJob(FedJob):
         external_resources=None,
     ):
         super().__init__(name, min_clients, mandatory_clients)
-        self.to_server(ControllerApp(external_resources))
-        self.to_clients(ExecutorApp(external_resources))
+        self.to_server(external_resources)
+        self.to_clients(external_resources)
 
     def add_fed_avg(
         self,

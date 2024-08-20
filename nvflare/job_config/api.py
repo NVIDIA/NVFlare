@@ -114,43 +114,38 @@ class FedApp:
 
 
 class JobCtx:
-    def __init__(self, obj: Any, target: str, comp_id: str, app: FedApp):
+    def __init__(self, obj: Any, target: str, comp_id: str):
         self.obj = obj
         self.target = target
         self.comp_id = comp_id
-        self.app = app
 
 
-class ExecutorApp(FedApp):
-    def __init__(self, resources=None):
+class ClientApp(FedApp):
+    def __init__(self):
         """Wrapper around `ClientAppConfig`."""
         super().__init__()
         self.app = ClientAppConfig()
-        if resources:
-            self.add_resources(resources)
 
     def add_executor(self, executor: Executor, tasks=None):
-        if tasks is None:
+        if not tasks:
             tasks = ["*"]  # Add executor for any task by default
         self.app.add_executor(tasks, executor)
 
 
-class ControllerApp(FedApp):
+class ServerApp(FedApp):
     """Wrapper around `ServerAppConfig`.
 
     Args:
     """
 
-    def __init__(self, resources=None):
+    def __init__(self):
         super().__init__()
         self.app: ServerAppConfig = ServerAppConfig()
-        if resources:
-            self.add_resources(resources)
 
     def add_controller(self, controller: Controller, id=None):
-        if id is None:
+        if not id:
             id = "controller"
-        self.app.add_workflow(self.generate_tracked_id(id), controller)
+        self.app.add_workflow(id, controller)
 
 
 class FedJob:
@@ -178,31 +173,23 @@ class FedJob:
         self._deployed = False
         self._components = {}
 
-    def _add_controller_app(self, obj: ControllerApp, target: str):
-        if target != JobTargetType.SERVER:
-            raise ValueError(f"`ControllerApp` must be assigned to the server, but tried to assign it to client!")
-        app = self._deploy_map.get(target)
-        if app:
-            raise ValueError(f"A ControllerApp was already assigned to {target}")
+    def set_up_client(self, target: str):
+        pass
+
+    def _add_server_app(self, obj: ServerApp, target: str):
         self._deploy_map[target] = obj
 
     def _add_controller(self, obj, target: str, id: str):
+        target_type = JobTargetType.get_target_type(target)
         app = self._deploy_map.get(target)
-        if target != JobTargetType.SERVER:  # add client-side controllers as components
+        if target_type != JobTargetType.SERVER:  # add client-side controllers as components
             app.add_component(obj, id)
         else:
             app = self._deploy_map.get(target)
             app.add_controller(obj, id)
 
-    def _add_executor_app(self, obj: ExecutorApp, target: str):
-        if target == JobTargetType.SERVER:
-            raise ValueError(f"`ExecutorApp` must be assigned to a client, but tried to assign it to server!")
-
-        app = self._deploy_map.get(target)
-        if app:
-            raise ValueError(f"An ExecutorApp was already assigned to {target}")
+    def _add_client_app(self, obj: ClientApp, target: str):
         self._deploy_map[target] = obj
-
         if target not in self.clients:
             self.clients.append(target)
 
@@ -239,40 +226,45 @@ class FedJob:
         if not obj:
             raise ValueError("cannot add empty object to job")
 
+        if isinstance(obj, (ClientApp, ServerApp)):
+            raise ValueError("adding (ClientApp, ServerApp) is not allowed")
+
         self._validate_target(target)
 
-        result = None
-        if isinstance(obj, ControllerApp):
-            self._add_controller_app(obj, target)
-        elif isinstance(obj, ExecutorApp):
-            self._add_executor_app(obj, target)
-        else:
-            target_type = JobTargetType.get_target_type(target)
-
-            get_target_type_method = getattr(obj, "get_job_target_type", None)
-            if get_target_type_method is not None:
-                expected_target_type = get_target_type_method()
-                if expected_target_type != target_type:
-                    if target_type == JobTargetType.SERVER:
-                        raise ValueError(f"this object can only be assigned to server, but tried to assign to {target}")
-                    else:
-                        raise ValueError(f"this object can only be assigned to client, but tried to assign to {target}")
-
-            app = self._deploy_map.get(target)
-            if not app:
-                if target_type == JobTargetType.SERVER:
-                    # server app must be present!
-                    raise ValueError(f"cannot add to target {target}: please assign a ServerApp first.")
-                else:
-                    raise ValueError(f"cannot add to target {target}: please assign an ExecutorApp first.")
-
-            add_to_job_method = getattr(obj, "add_to_fed_job", None)
-            if add_to_job_method is not None:
-                ctx = JobCtx(obj, target, id, app)
-                result = add_to_job_method(self, ctx, **kwargs)
+        target_type = JobTargetType.get_target_type(target)
+        app = self._deploy_map.get(target)
+        if not app:
+            if target_type == JobTargetType.SERVER:
+                app = ServerApp()
+                self._add_server_app(app, target)
             else:
-                # basic object
-                result = app.add_component(obj, id)
+                app = ClientApp()
+                self._add_client_app(app, target)
+                self.set_up_client(target)
+
+        if isinstance(obj, str):  # treat the str type object as external script
+            if os.path.isdir(obj):
+                app.add_external_dir(obj)
+            else:
+                app.add_external_script(obj)
+            return None
+
+        get_target_type_method = getattr(obj, "get_job_target_type", None)
+        if get_target_type_method is not None:
+            expected_target_type = get_target_type_method()
+            if expected_target_type != target_type:
+                if target_type == JobTargetType.SERVER:
+                    raise ValueError(f"this object can only be assigned to server, but tried to assign to {target}")
+                else:
+                    raise ValueError(f"this object can only be assigned to client, but tried to assign to {target}")
+
+        add_to_job_method = getattr(obj, "add_to_fed_job", None)
+        if add_to_job_method is not None:
+            ctx = JobCtx(obj, target, id)
+            result = add_to_job_method(self, ctx, **kwargs)
+        else:
+            # basic object
+            result = app.add_component(obj, id)
 
         # add any other components the object might have referenced via id
         if self._components:
@@ -302,10 +294,10 @@ class FedJob:
         if not app:
             target_type = JobTargetType.get_target_type(ctx.target)
             if target_type == JobTargetType.CLIENT:
-                app_type = "an ExecutorApp"
+                app_type = "a ClientApp"
             else:
-                app_type = "a ControllerApp"
-            raise RuntimeError(f"No app found for target '{ctx.target}' - you must add {app_type} first")
+                app_type = "a ServerApp"
+            raise RuntimeError(f"No app found for target '{ctx.target}' - missing {app_type}")
         return app
 
     def generate_tracked_component_id(self, base_id: str, ctx: JobCtx) -> str:
@@ -318,9 +310,8 @@ class FedJob:
         Returns: a tracked ID
 
         """
-        if not ctx.app:
-            raise ValueError(f"No ControllerApp nor ExecutorApp is assigned to target {ctx.target}")
-        return ctx.app.generate_tracked_id(base_id)
+        app = self._get_app(ctx)
+        return app.generate_tracked_id(base_id)
 
     def add_component(self, comp_id: str, obj: Any, ctx: JobCtx):
         """Add a component to the job. To be used by job component programmer.
@@ -390,17 +381,6 @@ class FedJob:
                 f"Select from `FilterType.TASK_RESULT` or `FilterType.TASK_DATA`."
             )
 
-    def get_app(self, target: str):
-        """Get app assigned to the target.
-
-        Args:
-            target:
-
-        Returns:
-
-        """
-        return self._deploy_map.get(target)
-
     def add_resources(self, resources: List[str], ctx: JobCtx):
         """Add resources to the job. To be used by job component programmer.
 
@@ -461,10 +441,10 @@ class FedJob:
         if any(c in SPECIAL_CHARACTERS for c in target) and target != ALL_SITES:
             raise ValueError(f"target {target} name contains invalid character")
 
-    def _set_all_app(self, client_app: ExecutorApp, server_app: ControllerApp):
-        if not isinstance(client_app, ExecutorApp):
+    def _set_all_app(self, client_app: ClientApp, server_app: ServerApp):
+        if not isinstance(client_app, ClientApp):
             raise ValueError(f"`client_app` needs to be of type `ExecutorApp` but was type {type(client_app)}")
-        if not isinstance(server_app, ControllerApp):
+        if not isinstance(server_app, ServerApp):
             raise ValueError(f"`server_app` needs to be of type `ControllerApp` but was type {type(server_app)}")
 
         client_config = client_app.get_app_config()
