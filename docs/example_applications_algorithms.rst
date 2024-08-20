@@ -24,8 +24,8 @@ Can be run from the :github_nvflare_link:`hello_world notebook <examples/hello-w
 1.2. Workflows
 --------------
 
-  * :ref:`Hello Scatter and Gather <hello_scatter_and_gather>` - Example using the Scatter And Gather (SAG) workflow with a Numpy trainer
-  * :ref:`Hello Cross-Site Validation <hello_cross_val>` - Example using the Cross Site Model Eval workflow with a Numpy trainer, also demonstrates running cross site validation using the previous training results.
+  * :ref:`Hello FedAvg with NumPy <hello_fedavg_numpy>` - Example using the FedAvg workflow with a NumPy trainer
+  * :ref:`Hello Cross-Site Validation <hello_cross_val>` - Example using the Cross Site Eval workflow, also demonstrates running cross site validation using the previous training results.
   * :github_nvflare_link:`Hello Cyclic Weight Transfer (GitHub) <examples/hello-world/hello-cyclic>` - Example using the CyclicController workflow to implement `Cyclic Weight Transfer <https://pubmed.ncbi.nlm.nih.gov/29617797/>`_ with TensorFlow as the deep learning training framework
   * :github_nvflare_link:`Swarm Learning <examples/advanced/swarm_learning>` - Example using Swarm Learning and Client-Controlled Cross-site Evaluation workflows.
   * :github_nvflare_link:`Client-Controlled Cyclic Weight Transfer <examples/hello-world/step-by-step/cifar10/cyclic_ccwf>` - Example using Client-Controlled Cyclic workflow using Client API.
@@ -33,9 +33,8 @@ Can be run from the :github_nvflare_link:`hello_world notebook <examples/hello-w
 1.3. Deep Learning
 ------------------
 
-  * :ref:`Hello PyTorch <hello_pt>` - Example image classifier using FedAvg and PyTorch as the deep learning training framework
-  * :ref:`Hello TensorFlow <hello_tf2>` - Example image classifier using FedAvg and TensorFlow as the deep learning training frameworks
-
+  * :ref:`Hello PyTorch <hello_pt_job_api>` - Example image classifier using FedAvg and PyTorch as the deep learning training framework
+  * :ref:`Hello TensorFlow <hello_tf_job_api>` - Example image classifier using FedAvg and TensorFlow as the deep learning training frameworks
 
 
 2. Step-By-Step Example Series

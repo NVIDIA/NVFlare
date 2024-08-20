@@ -14,8 +14,12 @@
 import os
 import time
 
+import xgboost
+from packaging import version
+
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_opt.xgboost.histogram_based_v2.aggr import Aggregator
@@ -49,8 +53,12 @@ try:
     from nvflare.app_opt.he.homomorphic_encrypt import load_tenseal_context_from_workspace
 
     tenseal_imported = True
-except Exception:
+    tenseal_error = None
+except Exception as ex:
     tenseal_imported = False
+    tenseal_error = f"Import error: {ex}"
+
+XGBOOST_MIN_VERSION = "2.2.0-dev"
 
 
 class ClientSecurityHandler(SecurityHandler):
@@ -401,23 +409,56 @@ class ClientSecurityHandler(SecurityHandler):
             result += zero_buf
         fl_ctx.set_prop(key=Constant.PARAM_KEY_RCV_BUF, value=result, private=True, sticky=False)
 
+    def _check_xgboost_version(self, disable_version_check: bool) -> bool:
+        """Check XGBoost version. Returns true if it supports secure training"""
+        if disable_version_check:
+            self.logger.info("XGBoost version check is disabled")
+            return True
+
+        try:
+            min_version = version.parse(XGBOOST_MIN_VERSION)
+            current_version = version.parse(xgboost.__version__)
+            if current_version < min_version:
+                self.logger.error(f"XGBoost version {xgboost.__version__} doesn't support secure training")
+                return False
+            else:
+                return True
+        except Exception as error:
+            self.logger.error(f"Unknown XGBoost version {xgboost.__version__}. Error: {error}")
+            return False
+
     def handle_event(self, event_type: str, fl_ctx: FLContext):
+        global tenseal_error
         if event_type == Constant.EVENT_XGB_JOB_CONFIGURED:
-            training_mode = fl_ctx.get_prop(Constant.PARAM_KEY_TRAINING_MODE)
-            if training_mode in {"vertical_secure", "vs"} and ipcl_imported:
+            task_data = fl_ctx.get_prop(FLContextKey.TASK_DATA)
+            data_split_mode = task_data.get(Constant.CONF_KEY_DATA_SPLIT_MODE)
+            secure_training = task_data.get(Constant.CONF_KEY_SECURE_TRAINING)
+            disable_version_check = task_data.get(Constant.CONF_KEY_DISABLE_VERSION_CHECK)
+
+            if secure_training and not self._check_xgboost_version(disable_version_check):
+                fl_ctx.set_prop(
+                    Constant.PARAM_KEY_CONFIG_ERROR,
+                    f"XGBoost version {xgboost.__version__} doesn't support secure training",
+                    private=True,
+                    sticky=False,
+                )
+                return
+
+            if secure_training and data_split_mode == xgboost.core.DataSplitMode.COL and ipcl_imported:
                 self.public_key, self.private_key = generate_keys(self.key_length)
                 self.encryptor = Encryptor(self.public_key, self.num_workers)
                 self.decrypter = Decrypter(self.private_key, self.num_workers)
                 self.adder = Adder(self.num_workers)
-
-            try:
-                if tenseal_imported:
+            elif secure_training and data_split_mode == xgboost.core.DataSplitMode.ROW:
+                if not tenseal_imported:
+                    fl_ctx.set_prop(Constant.PARAM_KEY_CONFIG_ERROR, tenseal_error, private=True, sticky=False)
+                    return
+                try:
                     self.tenseal_context = load_tenseal_context_from_workspace(self.tenseal_context_file, fl_ctx)
-                else:
-                    self.debug(fl_ctx, "Tenseal module not loaded, horizontal secure XGBoost is not supported")
-            except Exception as ex:
-                self.error(fl_ctx, f"Can't load tenseal context, horizontal secure XGBoost is not supported: {ex}")
-                self.tenseal_context = None
+                except Exception as err:
+                    tenseal_error = f"Can't load tenseal context: {err}"
+                    self.tenseal_context = None
+                    fl_ctx.set_prop(Constant.PARAM_KEY_CONFIG_ERROR, tenseal_error, private=True, sticky=False)
         elif event_type == EventType.END_RUN:
             self.tenseal_context = None
         else:

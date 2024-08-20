@@ -41,7 +41,7 @@ tests:
     --out_path "/tmp/nvflare/xgboost_higgs_dataset/5_uniform"
   - python3 ../../examples/advanced/xgboost/utils/prepare_job_config.py
     --site_num 5
-    --training_mode cyclic
+    --training_algo cyclic
     --split_method uniform
     --lr_mode uniform
     --nthread 16
@@ -75,7 +75,7 @@ tests:
         run_finished: true
       type: run_state
   setup:
-  - python3 ../../examples/advanced/xgboost/utils/prepare_job_config.py --site_num 5 --training_mode bagging
+  - python3 ../../examples/advanced/xgboost/utils/prepare_job_config.py --site_num 5 --training_algo bagging
     --split_method uniform --lr_mode uniform --nthread 16 --tree_method hist
   - python3 convert_to_test_job.py
     --job ../../examples/advanced/xgboost/tree-based/jobs/higgs_5_bagging_uniform_split_uniform_lr

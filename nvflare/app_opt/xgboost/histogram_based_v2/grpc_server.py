@@ -29,14 +29,15 @@ from nvflare.security.logging import secure_format_exception
 class GrpcServer:
     """This class implements a gRPC XGB Server that is capable of processing XGB operations."""
 
-    def __init__(self, addr, max_workers: int, grpc_options, servicer):
+    def __init__(self, addr, max_workers: int, servicer, grpc_options=None):
         """Constructor
 
         Args:
             addr: the listening address of the server
             max_workers: max number of workers
-            grpc_options: gRPC options
             servicer: the servicer that is capable of processing XGB requests
+            grpc_options: An optional list of key-value pairs (`channel_arguments`
+                in gRPC Core runtime) to configure the gRPC channel.
         """
         if not grpc_options:
             grpc_options = GRPC_DEFAULT_OPTIONS

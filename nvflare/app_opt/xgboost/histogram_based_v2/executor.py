@@ -14,7 +14,7 @@
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
-from nvflare.apis.fl_constant import FLContextKey, ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
@@ -91,7 +91,6 @@ class XGBExecutor(Executor):
             self.abort_signal.trigger(True)
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        engine = fl_ctx.get_engine()
         if task_name == self.configure_task_name:
             # there are two important config params for the client:
             #   the rank assigned to the client;
@@ -123,8 +122,13 @@ class XGBExecutor(Executor):
                 shareable,
                 fl_ctx,
             )
-            engine.fire_event(Constant.EVENT_XGB_JOB_CONFIGURED, fl_ctx)
-            return make_reply(ReturnCode.OK)
+            self.fire_event(Constant.EVENT_XGB_JOB_CONFIGURED, fl_ctx)
+            config_error = fl_ctx.get_prop(Constant.PARAM_KEY_CONFIG_ERROR, None)
+            if not config_error:
+                return make_reply(ReturnCode.OK)
+            else:
+                self.log_error(fl_ctx, f"Config error: {config_error}")
+                return make_reply(ReturnCode.SERVICE_UNAVAILABLE, {ReservedKey.EXCEPTIONS: config_error})
         elif task_name == self.start_task_name:
             # start adaptor
             try:

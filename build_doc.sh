@@ -49,7 +49,7 @@ function clean_docs() {
 }
 
 function build_html_docs() {
-    pip install -e .[doc]
+    pip install -e .[dev]
     sphinx-apidoc --module-first -f -o docs/apidocs/ nvflare "*poc" "*private"
     sphinx-build -b html docs docs/_build
 }

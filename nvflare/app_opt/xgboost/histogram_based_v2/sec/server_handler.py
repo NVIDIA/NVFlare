@@ -103,8 +103,8 @@ class ServerSecurityHandler(SecurityHandler):
             return
 
         horizontal = request.get_header(Constant.HEADER_KEY_HORIZONTAL)
-        split_mode = "horizontal" if horizontal else "vertical"
-        self.info(fl_ctx, f"start - {split_mode}")
+        training_mode = "horizontal" if horizontal else "vertical"
+        self.info(fl_ctx, f"start - {training_mode}")
 
         fl_ctx.set_prop(key=Constant.HEADER_KEY_IN_AGGR, value=True, private=True, sticky=False)
         fl_ctx.set_prop(key=Constant.HEADER_KEY_HORIZONTAL, value=horizontal, private=True, sticky=False)
