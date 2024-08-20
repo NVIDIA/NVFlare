@@ -96,63 +96,67 @@ class _RequestReceiver:
         self.tx_id = None
         self.reply_time = None
         self.replying = False
+        self.lock = threading.Lock()
 
     def process(self, request: Shareable, fl_ctx: FLContext) -> Shareable:
         if not ReliableMessage.is_available():
             return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
 
-        self.tx_id = request.get_header(HEADER_TX_ID)
-        op = request.get_header(HEADER_OP)
-        peer_ctx = fl_ctx.get_peer_context()
-        assert isinstance(peer_ctx, FLContext)
-        self.source = peer_ctx.get_identity_name()
-        if op == OP_REQUEST:
-            # it is possible that a new request for the same tx is received while we are processing the previous one
-            if not self.rcv_time:
-                self.rcv_time = time.time()
-                self.per_msg_timeout = request.get_header(HEADER_PER_MSG_TIMEOUT)
-                self.tx_timeout = request.get_header(HEADER_TX_TIMEOUT)
+        with self.lock:
+            self.tx_id = request.get_header(HEADER_TX_ID)
+            op = request.get_header(HEADER_OP)
+            peer_ctx = fl_ctx.get_peer_context()
+            assert isinstance(peer_ctx, FLContext)
+            self.source = peer_ctx.get_identity_name()
+            if op == OP_REQUEST:
+                # it is possible that a new request for the same tx is received while we are processing the previous one
+                if not self.rcv_time:
+                    self.rcv_time = time.time()
+                    self.per_msg_timeout = request.get_header(HEADER_PER_MSG_TIMEOUT)
+                    self.tx_timeout = request.get_header(HEADER_TX_TIMEOUT)
 
-                # start processing
-                ReliableMessage.info(fl_ctx, f"started processing request of topic {self.topic}")
-                try:
-                    self.executor.submit(self._do_request, request, fl_ctx)
-                    return _status_reply(STATUS_IN_PROCESS)  # ack
-                except Exception as ex:
-                    # it is possible that the RM is already closed (self.executor is shut down)
-                    ReliableMessage.error(fl_ctx, f"failed to submit request: {secure_format_exception(ex)}")
-                    return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
-            elif self.result:
-                # we already finished processing - send the result back
-                ReliableMessage.info(fl_ctx, "resend result back to requester")
-                return self.result
-            else:
-                # we are still processing
-                ReliableMessage.info(fl_ctx, "got request - the request is being processed")
-                return _status_reply(STATUS_IN_PROCESS)
-        elif op == OP_QUERY:
-            if self.result:
-                if self.reply_time:
-                    # result already sent back successfully
-                    ReliableMessage.info(fl_ctx, "got query: we already replied successfully")
-                    return _status_reply(STATUS_REPLIED)
-                elif self.replying:
-                    # result is being sent
-                    ReliableMessage.info(fl_ctx, "got query: reply is being sent")
-                    return _status_reply(STATUS_IN_REPLY)
-                else:
-                    # try to send the result again
-                    ReliableMessage.info(fl_ctx, "got query: sending reply again")
+                    # start processing
+                    ReliableMessage.info(fl_ctx, f"started processing request of topic {self.topic}")
+                    try:
+                        self.executor.submit(self._do_request, request, fl_ctx)
+                        return _status_reply(STATUS_IN_PROCESS)  # ack
+                    except Exception as ex:
+                        # it is possible that the RM is already closed (self.executor is shut down)
+                        ReliableMessage.error(fl_ctx, f"failed to submit request: {secure_format_exception(ex)}")
+                        return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
+                elif self.result:
+                    # we already finished processing - send the result back
+                    ReliableMessage.info(fl_ctx, "resend result back to requester")
                     return self.result
-            else:
-                # still in process
-                if time.time() - self.rcv_time > self.tx_timeout:
-                    # the process is taking too much time
-                    ReliableMessage.error(fl_ctx, f"aborting processing since exceeded max tx time {self.tx_timeout}")
-                    return _status_reply(STATUS_ABORTED)
                 else:
-                    ReliableMessage.debug(fl_ctx, "got query: request is in-process")
+                    # we are still processing
+                    ReliableMessage.info(fl_ctx, "got request - the request is being processed")
                     return _status_reply(STATUS_IN_PROCESS)
+            elif op == OP_QUERY:
+                if self.result:
+                    if self.reply_time:
+                        # result already sent back successfully
+                        ReliableMessage.info(fl_ctx, "got query: we already replied successfully")
+                        return _status_reply(STATUS_REPLIED)
+                    elif self.replying:
+                        # result is being sent
+                        ReliableMessage.info(fl_ctx, "got query: reply is being sent")
+                        return _status_reply(STATUS_IN_REPLY)
+                    else:
+                        # try to send the result again
+                        ReliableMessage.info(fl_ctx, "got query: sending reply again")
+                        return self.result
+                else:
+                    # still in process
+                    if time.time() - self.rcv_time > self.tx_timeout:
+                        # the process is taking too much time
+                        ReliableMessage.error(
+                            fl_ctx, f"aborting processing since exceeded max tx time {self.tx_timeout}"
+                        )
+                        return _status_reply(STATUS_ABORTED)
+                    else:
+                        ReliableMessage.debug(fl_ctx, "got query: request is in-process")
+                        return _status_reply(STATUS_IN_PROCESS)
 
     def _try_reply(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
