@@ -13,24 +13,44 @@
 # limitations under the License.
 from typing import List, Optional
 
+import tensorflow as tf
+
 from nvflare.app_common.workflows.fedavg import FedAvg
+from nvflare.app_opt.tf.job_config.model import TFModel
 from nvflare.job_config.api import FedJob
 from nvflare.job_config.controller_apps.deep_learning import DLControllerApp
 from nvflare.job_config.executor_apps.basic import BasicExecutorApp
-from nvflare.job_config.tf.model import TFModel
 
 
 class FedAvgJob(FedJob):
     def __init__(
         self,
-        initial_model,
-        n_clients,
-        num_rounds,
+        initial_model: tf.keras.Model,
+        n_clients: int,
+        num_rounds: int,
         name: str = "fed_job",
         min_clients: int = 1,
         mandatory_clients: Optional[List[str]] = None,
         key_metric: str = "accuracy",
     ):
+        """TensorFlow FedAvg Job.
+
+        Adds server side controller and persistor with initial model.
+        Additional components and widgets added in DLControllerApp and BasicExecutorApp.
+
+        User must add executors.
+
+        Args:
+            initial_model (tf.keras.Model): initial TensorFlow Model
+            n_clients (int): number of clients for this job
+            num_rounds (int): number of rounds for FedAvg
+            name (name, optional): name of the job. Defaults to "fed_job"
+            min_clients (int, optional): the minimum number of clients for the job. Defaults to 1.
+            mandatory_clients (List[str], optional): mandatory clients to run the job. Default None.
+            key_metric (str, optional): Metric used to determine if the model is globally best.
+                if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
+                Defaults to "accuracy".
+        """
         super().__init__(name, min_clients, mandatory_clients)
 
         server_app = DLControllerApp(key_metric=key_metric)

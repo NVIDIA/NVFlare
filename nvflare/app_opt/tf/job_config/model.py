@@ -19,6 +19,13 @@ from nvflare.app_opt.tf.model_persistor import TFModelPersistor
 
 class TFModel:
     def __init__(self, model):
+        """TensorFLow model wrapper.
+
+        If model is a tf.keras.Model, add a TFModelPersistor with the model.
+
+        Args:
+            model (any): model
+        """
         self.model = model
 
     def add_to_fed_job(self, job, ctx):
@@ -29,9 +36,13 @@ class TFModel:
             ctx: Job Context
 
         Returns:
-
+            dictionary of ids of component added
         """
         if isinstance(self.model, tf.keras.Model):  # if model, create a TF persistor
             persistor = TFModelPersistor(model=self.model)
             persistor_id = job.add_component(comp_id="persistor", obj=persistor, ctx=ctx)
             return persistor_id
+        else:
+            raise ValueError(
+                f"Unable to add {self.model} to job with TFModelPersistor. Expected tf.keras.Model but got {type(self.model)}."
+            )

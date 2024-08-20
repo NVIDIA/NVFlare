@@ -16,20 +16,19 @@ from src.net import Net
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
-from nvflare.app_common.ccwf.ccwf_job import CrossSiteEvalConfig, FedAvgClientConfig, FedAvgServerConfig
+from nvflare.app_common.ccwf.ccwf_job import CCWFJob, CrossSiteEvalConfig, FedAvgClientConfig, FedAvgServerConfig
 from nvflare.app_common.ccwf.comps.simple_model_shareable_generator import SimpleModelShareableGenerator
 from nvflare.app_common.executors.script_executor import ScriptExecutor
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
-from nvflare.job_config.pt.swarm_job import SwarmJob
 
 if __name__ == "__main__":
     n_clients = 2
     num_rounds = 3
     train_script = "src/train_eval_submit.py"
 
-    job = SwarmJob(name="cifar10_swarm", initial_model=Net())
+    job = CCWFJob(name="cifar10_swarm")
     aggregator = InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS)
-    job.add_fed_avg(
+    job.add_swarm(
         server_config=FedAvgServerConfig(num_rounds=num_rounds),
         client_config=FedAvgClientConfig(
             executor=ScriptExecutor(task_script_path=train_script),

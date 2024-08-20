@@ -189,13 +189,23 @@ class CCWFJob(FedJob):
         name: str = "fed_job",
         min_clients: int = 1,
         mandatory_clients: Optional[List[str]] = None,
-        external_resources=None,
+        external_resources: Optional[List[str]] = None,
     ):
+        """Client-Controlled Workflow Job.
+
+        Provides methods for adding client-controlled swarm learning, cyclic, and cross-site evaluation workflows.
+
+        Args:
+            name (name, optional): name of the job. Defaults to "fed_job"
+            min_clients (int, optional): the minimum number of clients for the job. Defaults to 1.
+            mandatory_clients (List[str], optional): mandatory clients to run the job. Default None.
+            external_resources (List[str], optional): List of external resources. Defaults to None.
+        """
         super().__init__(name, min_clients, mandatory_clients)
         self.to_server(ControllerApp(external_resources))
         self.to_clients(ExecutorApp(external_resources))
 
-    def add_fed_avg(
+    def add_swarm(
         self,
         server_config: FedAvgServerConfig,
         client_config: FedAvgClientConfig,
@@ -244,7 +254,7 @@ class CCWFJob(FedJob):
             self.to_clients(client_config.model_selector, id="model_selector")
 
         if cse_config:
-            self._add_cross_site_eval(cse_config, persistor_id)
+            self.add_cross_site_eval(cse_config, persistor_id)
 
     def add_cyclic(
         self,
@@ -281,7 +291,7 @@ class CCWFJob(FedJob):
         if cse_config:
             self._add_cross_site_eval(cse_config, persistor_id)
 
-    def _add_cross_site_eval(
+    def add_cross_site_eval(
         self,
         cse_config: CrossSiteEvalConfig,
         persistor_id: str,

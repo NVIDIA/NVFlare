@@ -39,6 +39,25 @@ class FlowerJob(FedJob):
         tx_timeout=100.0,
         client_shutdown_timeout=5.0,
     ):
+        """
+        Flower Job.
+
+        Args:
+            job_name (str): Name of the job.
+            flower_content (str): Content for the flower job.
+            min_clients (int, optional): The minimum number of clients for the job. Defaults to 1.
+            mandatory_clients (List[str], optional): List of mandatory clients for the job. Defaults to None.
+            database (str, optional): Database string. Defaults to "".
+            server_app_args (list, optional): List of arguments to pass to the server application. Defaults to None.
+            superlink_ready_timeout (float, optional): Timeout for the superlink to be ready. Defaults to 10.0 seconds.
+            configure_task_timeout (float, optional): Timeout for configuring the task. Defaults to Constant.CONFIG_TASK_TIMEOUT.
+            start_task_timeout (float, optional): Timeout for starting the task. Defaults to Constant.START_TASK_TIMEOUT.
+            max_client_op_interval (float, optional): Maximum interval between client operations. Defaults to Constant.MAX_CLIENT_OP_INTERVAL.
+            progress_timeout (float, optional): Timeout for workflow progress. Defaults to Constant.WORKFLOW_PROGRESS_TIMEOUT.
+            per_msg_timeout (float, optional): Timeout for receiving individual messages. Defaults to 10.0 seconds.
+            tx_timeout (float, optional): Timeout for transmitting data. Defaults to 100.0 seconds.
+            client_shutdown_timeout (float, optional): Timeout for client shutdown. Defaults to 5.0 seconds.
+        """
         if not os.path.isdir(flower_content):
             raise ValueError(f"{flower_content} is not a valid directory")
 

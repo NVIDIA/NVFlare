@@ -20,6 +20,13 @@ from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
 
 class PTModel:
     def __init__(self, model):
+        """PyTorch model wrapper.
+
+        If model is an nn.Module, add a PTFileModelPersistor with the model and a TFModelPersistor.
+
+        Args:
+            model (any): model
+        """
         self.model = model
 
     def add_to_fed_job(self, job, ctx):
@@ -30,7 +37,7 @@ class PTModel:
             ctx: Job Context
 
         Returns:
-
+            dictionary of ids of component added
         """
         if isinstance(self.model, nn.Module):  # if model, create a PT persistor
             persistor = PTFileModelPersistor(model=self.model)
@@ -39,3 +46,7 @@ class PTModel:
             locator = PTFileModelLocator(pt_persistor_id=persistor_id)
             locator_id = job.add_component(comp_id="locator", obj=locator, ctx=ctx)
             return {"persistor_id": persistor_id, "locator_id": locator_id}
+        else:
+            raise ValueError(
+                f"Unable to add {self.model} to job with PTFileModelPersistor. Expected nn.Module but got {type(self.model)}."
+            )

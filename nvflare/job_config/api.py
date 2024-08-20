@@ -220,6 +220,7 @@ class FedJob:
         the "add_xxx" methods of the "job" object: add_component, add_resources, add_filter, add_executor, etc.
 
         Returns:
+            result of add_to_job_method if called, or id of added component
 
         """
         if not obj:
@@ -304,6 +305,7 @@ class FedJob:
             ctx: JobCtx for contextual information.
 
         Returns:
+            final id assigned to component.
 
         """
         app = self._get_app(ctx)
@@ -320,7 +322,6 @@ class FedJob:
         Args:
             obj: Controller to be added to job.
             ctx: JobCtx for contextual information.
-
 
         Returns:
 
@@ -375,6 +376,7 @@ class FedJob:
             target:
 
         Returns:
+            app (FedApp)
 
         """
         return self._deploy_map.get(target)
@@ -406,6 +408,7 @@ class FedJob:
             **kwargs: additional args to be passed to the object's add_to_fed_job method.
 
         Returns:
+            result of add_to_job_method if called, or id of added component
 
         """
         if isinstance(obj, Executor):
@@ -427,6 +430,7 @@ class FedJob:
             **kwargs: additional args to be passed to the object's add_to_fed_job method.
 
         Returns:
+            result of add_to_job_method if called, or id of added component
 
         """
         if isinstance(obj, Controller):
@@ -508,7 +512,7 @@ class FedJob:
             workspace: workspace directory for job.
             n_clients: number of clients.
             threads: number of threads.
-            gpu: gpu assignments for simulating clients
+            gpu: gpu assignments for simulating clients, comma separated
 
         Returns:
 
@@ -546,6 +550,13 @@ class FedJob:
 
     @staticmethod
     def check_kwargs(args_to_check: dict, args_expected: dict):
+        """Check kwargs for arguments. Raise Error if required arg is missing, or unexpected arg is given.
+
+        Args:
+            args_to_check (dict): kwargs dictionary to check.
+            args_expected (dict): dictionary of argument name to boolean of whether argument is required (True) or optional (False).
+
+        """
         if not args_expected and not args_to_check:
             return
 

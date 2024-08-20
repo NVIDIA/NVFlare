@@ -22,7 +22,7 @@ from src.tf_net import ModerateTFNet
 
 from nvflare import FedJob
 from nvflare.app_common.executors.script_executor import ScriptExecutor
-from nvflare.job_config.tf.model import TFModel
+from nvflare.app_opt.tf.job_config.model import TFModel
 
 gpu_devices = tf.config.experimental.list_physical_devices("GPU")
 for device in gpu_devices:
