@@ -21,7 +21,7 @@ from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.ccwf.common import Constant, CyclicOrder
 from nvflare.fuel.utils.validation_utils import check_object_type
-from nvflare.job_config.api import ControllerApp, ExecutorApp, FedJob
+from nvflare.job_config.api import FedJob
 from nvflare.widgets.widget import Widget
 
 from .cse_client_ctl import CrossSiteEvalClientController
@@ -32,7 +32,7 @@ from .swarm_client_ctl import SwarmClientController
 from .swarm_server_ctl import SwarmServerController
 
 
-class FedAvgServerConfig:
+class SwarmServerConfig:
     def __init__(
         self,
         num_rounds: int,
@@ -62,7 +62,7 @@ class FedAvgServerConfig:
         self.train_clients = train_clients
 
 
-class FedAvgClientConfig:
+class SwarmClientConfig:
     def __init__(
         self,
         executor: Executor,
@@ -189,7 +189,7 @@ class CCWFJob(FedJob):
         name: str = "fed_job",
         min_clients: int = 1,
         mandatory_clients: Optional[List[str]] = None,
-        external_resources: Optional[List[str]] = None,
+        external_resources: Optional[str] = None,
     ):
         """Client-Controlled Workflow Job.
 
@@ -199,16 +199,17 @@ class CCWFJob(FedJob):
             name (name, optional): name of the job. Defaults to "fed_job"
             min_clients (int, optional): the minimum number of clients for the job. Defaults to 1.
             mandatory_clients (List[str], optional): mandatory clients to run the job. Default None.
-            external_resources (List[str], optional): List of external resources. Defaults to None.
+            external_resources (str, optional): External resources directory or filename. Defaults to None.
         """
         super().__init__(name, min_clients, mandatory_clients)
-        self.to_server(ControllerApp(external_resources))
-        self.to_clients(ExecutorApp(external_resources))
+        if external_resources:
+            self.to_server(external_resources)
+            self.to_clients(external_resources)
 
     def add_swarm(
         self,
-        server_config: FedAvgServerConfig,
-        client_config: FedAvgClientConfig,
+        server_config: SwarmServerConfig,
+        client_config: SwarmClientConfig,
         cse_config: CrossSiteEvalConfig = None,
     ):
         controller = SwarmServerController(
@@ -289,7 +290,7 @@ class CCWFJob(FedJob):
         self.to_clients(client_config.executor, tasks=["train", "validate", "submit_model"])
 
         if cse_config:
-            self._add_cross_site_eval(cse_config, persistor_id)
+            self.add_cross_site_eval(cse_config, persistor_id)
 
     def add_cross_site_eval(
         self,

@@ -15,11 +15,13 @@ from typing import List, Optional
 
 import torch.nn as nn
 
+from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
+from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
+from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt.job_config.model import PTModel
+from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.job_config.api import FedJob
-from nvflare.job_config.controller_apps.deep_learning import DLControllerApp
-from nvflare.job_config.executor_apps.basic import BasicExecutorApp
 
 
 class FedAvgJob(FedJob):
@@ -35,8 +37,7 @@ class FedAvgJob(FedJob):
     ):
         """PyTorch FedAvg Job.
 
-        Configures Server side FedAvg controller and persistor with initial model.
-        Additional components and widgets added in DLControllerApp and BasicExecutorApp.
+        Configures server side FedAvg controller, persistor with initial model, and widgets.
 
         User must add executors.
 
@@ -52,9 +53,21 @@ class FedAvgJob(FedJob):
                 Defaults to "accuracy".
         """
         super().__init__(name, min_clients, mandatory_clients)
+        self.key_metric = key_metric
+        self.initial_model = initial_model
+        self.num_rounds = num_rounds
+        self.n_clients = n_clients
 
-        server_app = DLControllerApp(key_metric=key_metric)
-        self.to_server(server_app)
+        component = ValidationJsonGenerator()
+        self.to_server(id="json_generator", obj=component)
+
+        if self.key_metric:
+            component = IntimeModelSelector(key_metric=self.key_metric)
+            self.to_server(id="model_selector", obj=component)
+
+        # TODO: make different tracking receivers configurable
+        component = TBAnalyticsReceiver(events=["fed.analytix_log_stats"])
+        self.to_server(id="receiver", obj=component)
 
         comp_ids = self.to_server(PTModel(initial_model))
 
@@ -65,6 +78,6 @@ class FedAvgJob(FedJob):
         )
         self.to_server(controller)
 
-        for i in range(n_clients):
-            client_app = BasicExecutorApp()
-            self.to(client_app, target=f"site-{i}")
+    def set_up_client(self, target: str):
+        component = ConvertToFedEvent(events_to_convert=["analytix_log_stats"], fed_event_prefix="fed.")
+        self.to(id="event_to_fed", obj=component, target=target)

@@ -16,7 +16,7 @@ from src.net import Net
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
-from nvflare.app_common.ccwf.ccwf_job import CCWFJob, CrossSiteEvalConfig, FedAvgClientConfig, FedAvgServerConfig
+from nvflare.app_common.ccwf.ccwf_job import CCWFJob, CrossSiteEvalConfig, SwarmClientConfig, SwarmServerConfig
 from nvflare.app_common.ccwf.comps.simple_model_shareable_generator import SimpleModelShareableGenerator
 from nvflare.app_common.executors.script_executor import ScriptExecutor
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
@@ -29,9 +29,9 @@ if __name__ == "__main__":
     job = CCWFJob(name="cifar10_swarm")
     aggregator = InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS)
     job.add_swarm(
-        server_config=FedAvgServerConfig(num_rounds=num_rounds),
-        client_config=FedAvgClientConfig(
-            executor=ScriptExecutor(task_script_path=train_script),
+        server_config=SwarmServerConfig(num_rounds=num_rounds),
+        client_config=SwarmClientConfig(
+            executor=ScriptExecutor(task_script_path=train_script, evaluate_task_name="validate"),
             aggregator=aggregator,
             persistor=PTFileModelPersistor(model=Net()),
             shareable_generator=SimpleModelShareableGenerator(),

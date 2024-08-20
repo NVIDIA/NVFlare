@@ -15,7 +15,7 @@ import os.path
 from typing import List, Optional
 
 from nvflare.app_common.tie.defs import Constant
-from nvflare.job_config.api import ControllerApp, ExecutorApp, FedJob
+from nvflare.job_config.api import FedJob
 
 from .controller import FlowerController
 from .executor import FlowerExecutor
@@ -62,8 +62,6 @@ class FlowerJob(FedJob):
             raise ValueError(f"{flower_content} is not a valid directory")
 
         super().__init__(name=job_name, min_clients=min_clients, mandatory_clients=mandatory_clients)
-        controller_app = ControllerApp(resources=[flower_content])
-        self.to_server(controller_app)
 
         controller = FlowerController(
             database=database,
@@ -75,9 +73,7 @@ class FlowerJob(FedJob):
             progress_timeout=progress_timeout,
         )
         self.to_server(controller)
-
-        executor_app = ExecutorApp(resources=[flower_content])
-        self.to_clients(executor_app)
+        self.to_server(obj=flower_content)
 
         executor = FlowerExecutor(
             per_msg_timeout=per_msg_timeout,
@@ -85,3 +81,4 @@ class FlowerJob(FedJob):
             client_shutdown_timeout=client_shutdown_timeout,
         )
         self.to_clients(executor)
+        self.to_clients(obj=flower_content)
