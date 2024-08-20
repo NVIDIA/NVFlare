@@ -14,13 +14,13 @@
 
 from src.net import Net
 
-from nvflare.job_config.pt.swarm_job import SwarmJob
-from nvflare.app_common.executors.script_executor import ScriptExecutor
-from nvflare.app_common.ccwf.ccwf_job import FedAvgClientConfig, FedAvgServerConfig, CrossSiteEvalConfig
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
+from nvflare.app_common.ccwf.ccwf_job import CrossSiteEvalConfig, FedAvgClientConfig, FedAvgServerConfig
 from nvflare.app_common.ccwf.comps.simple_model_shareable_generator import SimpleModelShareableGenerator
+from nvflare.app_common.executors.script_executor import ScriptExecutor
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+from nvflare.job_config.pt.swarm_job import SwarmJob
 
 if __name__ == "__main__":
     n_clients = 2
@@ -37,9 +37,7 @@ if __name__ == "__main__":
             persistor=PTFileModelPersistor(model=Net()),
             shareable_generator=SimpleModelShareableGenerator(),
         ),
-        cse_config=CrossSiteEvalConfig(
-            eval_task_timeout=300
-        )
+        cse_config=CrossSiteEvalConfig(eval_task_timeout=300),
     )
 
     # job.export_job("/tmp/nvflare/jobs/job_config")

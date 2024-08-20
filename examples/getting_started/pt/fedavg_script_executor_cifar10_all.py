@@ -17,7 +17,6 @@ from src.net import Net
 from nvflare.app_common.executors.script_executor import ScriptExecutor
 from nvflare.job_config.pt.fed_avg import FedAvgJob
 
-
 if __name__ == "__main__":
     n_clients = 2
     num_rounds = 2
