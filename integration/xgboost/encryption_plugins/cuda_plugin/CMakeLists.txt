@@ -1,21 +1,4 @@
-cmake_minimum_required(VERSION 3.18)
-set(CMAKE_C_STANDARD 17)
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CUDA_STANDARD 17)
-set(CMAKE_BUILD_TYPE Debug)
-set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}")
-cmake_policy(VERSION ${CMAKE_VERSION})
-message(STATUS "CMAKE_SOURCE_DIR: ${CMAKE_SOURCE_DIR}")
-message(STATUS "CMAKE_VERSION: ${CMAKE_VERSION}")
-
-
-# this has to be set before project()
-if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-  set(CMAKE_CUDA_ARCHITECTURES 70)
-endif()
-
-
-project(cuda_paillier LANGUAGES CUDA CXX VERSION 1.0)
+set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}")
 find_package(gmp REQUIRED)
 
 # Set NVCC compiler
@@ -25,20 +8,26 @@ if(NOT NVCC)
 endif()
 
 file(GLOB_RECURSE LIB_SRC
-	"src/dam/*.cc"
-	"src/plugins/*.cc"
+	${CMAKE_SOURCE_DIR}/shared/dam/*.cc
+	${CMAKE_SOURCE_DIR}/shared/plugins/*.cc
+	${CMAKE_CURRENT_SOURCE_DIR}/src/*.cc
 )
 message(STATUS "LIB_SRC files: ${LIB_SRC}")
 
 file(GLOB_RECURSE CUDA_SRC
-	"CGBN/include/cgbn/cgbn.h"
-	"src/cuda-plugin/*.h"
+	${CMAKE_CURRENT_SOURCE_DIR}/CGBN/include/cgbn/cgbn.h
+	${CMAKE_CURRENT_SOURCE_DIR}/src/*.h
 )
 message(STATUS "CUDA_SRC files: ${CUDA_SRC}")
 
 set(TARGET_NAME cuda_paillier)
 
-set_source_files_properties(src/plugins/delegated_plugin.cc src/plugins/plugin_main.cc ${CUDA_SRC} PROPERTIES LANGUAGE CUDA)
+set_source_files_properties(
+	${CMAKE_CURRENT_SOURCE_DIR}/src/delegated_plugin.cc
+	${CMAKE_CURRENT_SOURCE_DIR}/src/plugin_main.cc
+	${CUDA_SRC}
+	PROPERTIES LANGUAGE CUDA
+)
 
 add_library(${TARGET_NAME} SHARED ${LIB_SRC})
 set_target_properties(${TARGET_NAME}
@@ -51,9 +40,9 @@ set_target_properties(${TARGET_NAME}
 )
 
 target_include_directories(${TARGET_NAME} PRIVATE
-	${CMAKE_SOURCE_DIR}/src/include
-	${CMAKE_SOURCE_DIR}/src/cuda-plugin
-	${CMAKE_SOURCE_DIR}/CGBN/include/cgbn
+	${CMAKE_SOURCE_DIR}/shared/include
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}/CGBN/include/cgbn
 )
 
 target_compile_features(${TARGET_NAME} PRIVATE cuda_std_17)
