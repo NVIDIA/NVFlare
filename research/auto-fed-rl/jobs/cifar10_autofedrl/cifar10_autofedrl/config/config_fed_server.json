@@ -117,7 +117,7 @@
         },
         {
             "id": "model_locator",
-            "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
+            "path": "nvflare.app_opt.pt.file_model_locator.PTFileModelLocator",
             "args": {
                 "model": "model"
             }

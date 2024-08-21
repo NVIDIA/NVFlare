@@ -14,13 +14,16 @@
 import os
 import time
 
+import xgboost
+from packaging import version
+
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_opt.xgboost.histogram_based_v2.aggr import Aggregator
-from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant, SplitMode
+from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.sec.dam import DamDecoder
 from nvflare.app_opt.xgboost.histogram_based_v2.sec.data_converter import FeatureAggregationResult
 from nvflare.app_opt.xgboost.histogram_based_v2.sec.partial_he.adder import Adder
@@ -54,6 +57,8 @@ try:
 except Exception as ex:
     tenseal_imported = False
     tenseal_error = f"Import error: {ex}"
+
+XGBOOST_MIN_VERSION = "2.2.0-dev"
 
 
 class ClientSecurityHandler(SecurityHandler):
@@ -404,18 +409,47 @@ class ClientSecurityHandler(SecurityHandler):
             result += zero_buf
         fl_ctx.set_prop(key=Constant.PARAM_KEY_RCV_BUF, value=result, private=True, sticky=False)
 
+    def _check_xgboost_version(self, disable_version_check: bool) -> bool:
+        """Check XGBoost version. Returns true if it supports secure training"""
+        if disable_version_check:
+            self.logger.info("XGBoost version check is disabled")
+            return True
+
+        try:
+            min_version = version.parse(XGBOOST_MIN_VERSION)
+            current_version = version.parse(xgboost.__version__)
+            if current_version < min_version:
+                self.logger.error(f"XGBoost version {xgboost.__version__} doesn't support secure training")
+                return False
+            else:
+                return True
+        except Exception as error:
+            self.logger.error(f"Unknown XGBoost version {xgboost.__version__}. Error: {error}")
+            return False
+
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         global tenseal_error
         if event_type == Constant.EVENT_XGB_JOB_CONFIGURED:
             task_data = fl_ctx.get_prop(FLContextKey.TASK_DATA)
-            split_mode = task_data.get(Constant.CONF_KEY_SPLIT_MODE)
+            data_split_mode = task_data.get(Constant.CONF_KEY_DATA_SPLIT_MODE)
             secure_training = task_data.get(Constant.CONF_KEY_SECURE_TRAINING)
-            if secure_training and split_mode == SplitMode.COL and ipcl_imported:
+            disable_version_check = task_data.get(Constant.CONF_KEY_DISABLE_VERSION_CHECK)
+
+            if secure_training and not self._check_xgboost_version(disable_version_check):
+                fl_ctx.set_prop(
+                    Constant.PARAM_KEY_CONFIG_ERROR,
+                    f"XGBoost version {xgboost.__version__} doesn't support secure training",
+                    private=True,
+                    sticky=False,
+                )
+                return
+
+            if secure_training and data_split_mode == xgboost.core.DataSplitMode.COL and ipcl_imported:
                 self.public_key, self.private_key = generate_keys(self.key_length)
                 self.encryptor = Encryptor(self.public_key, self.num_workers)
                 self.decrypter = Decrypter(self.private_key, self.num_workers)
                 self.adder = Adder(self.num_workers)
-            elif secure_training and split_mode == SplitMode.ROW:
+            elif secure_training and data_split_mode == xgboost.core.DataSplitMode.ROW:
                 if not tenseal_imported:
                     fl_ctx.set_prop(Constant.PARAM_KEY_CONFIG_ERROR, tenseal_error, private=True, sticky=False)
                     return

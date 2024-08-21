@@ -18,7 +18,7 @@
       "path": "nvflare.app_opt.xgboost.histogram_based_v2.fed_controller.XGBFedController",
       "args": {
         "num_rounds": "{num_rounds}",
-        "split_mode": 0,
+        "data_split_mode": 0,
         "secure_training": false,
         "xgb_params": {
           "max_depth": 8,

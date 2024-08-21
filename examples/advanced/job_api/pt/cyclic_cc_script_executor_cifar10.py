@@ -14,9 +14,9 @@
 
 from src.net import Net
 
-from nvflare import FedJob, ScriptExecutor
-from nvflare.app_common.ccwf import CyclicClientController, CyclicServerController
+from nvflare.app_common.ccwf.ccwf_job import CCWFJob, CyclicClientConfig, CyclicServerConfig
 from nvflare.app_common.ccwf.comps.simple_model_shareable_generator import SimpleModelShareableGenerator
+from nvflare.app_common.executors.script_executor import ScriptExecutor
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 
 if __name__ == "__main__":
@@ -24,24 +24,16 @@ if __name__ == "__main__":
     num_rounds = 3
     train_script = "src/cifar10_fl.py"
 
-    job = FedJob(name="cifar10_cyclic")
+    job = CCWFJob(name="cifar10_cyclic")
 
-    controller = CyclicServerController(num_rounds=num_rounds, max_status_report_interval=300)
-    job.to(controller, "server")
-
-    for i in range(n_clients):
-        executor = ScriptExecutor(
-            task_script_path=train_script, task_script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
-        )
-        job.to(executor, f"site-{i}", tasks=["train"], gpu=0)
-
-        # Add client-side controller for cyclic workflow
-        executor = CyclicClientController()
-        job.to(executor, f"site-{i}", tasks=["cyclic_*"])
-
-        # In swarm learning, each client uses a model persistor and shareable_generator
-        job.to(PTFileModelPersistor(model=Net()), f"site-{i}", id="persistor")
-        job.to(SimpleModelShareableGenerator(), f"site-{i}", id="shareable_generator")
+    job.add_cyclic(
+        server_config=CyclicServerConfig(num_rounds=num_rounds, max_status_report_interval=300),
+        client_config=CyclicClientConfig(
+            executor=ScriptExecutor(task_script_path=train_script),
+            persistor=PTFileModelPersistor(model=Net()),
+            shareable_generator=SimpleModelShareableGenerator(),
+        ),
+    )
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir")
+    job.simulator_run("/tmp/nvflare/jobs/workdir", n_clients=n_clients, gpu="0")
