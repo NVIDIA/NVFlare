@@ -1,16 +1,16 @@
 n_servers: 1
 n_clients: 2
-jobs_root_dir: data/test_configs/standalone_job/previous_jobs
+jobs_root_dir: ./data/jobs
 cleanup: True
 
 
 tests:
-  - test_name: "run hello-numpy-sag"
+  - test_name: "run hello-cyclic"
     event_sequence:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job hello-numpy-sag" ]
+        "actions": [ "submit_job hello-cyclic" ]
         "result":
           "type": "job_submit_success"
       - "trigger":
@@ -21,14 +21,17 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     validators:
-      - path: tests.integration_test.src.validators.NumpySAGResultValidator
-        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
-  - test_name: "run hello-numpy-cross-val"
+      - path: tests.integration_test.src.validators.TFModelValidator
+    setup:
+      - python -c "import tensorflow as tf; tf.keras.datasets.mnist.load_data()"
+    teardown:
+      - rm ~/.keras/datasets/mnist.npz
+  - test_name: "run hello-tf2"
     event_sequence:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job hello-numpy-cross-val" ]
+        "actions": [ "submit_job hello-tf2" ]
         "result":
           "type": "job_submit_success"
       - "trigger":
@@ -39,7 +42,8 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     validators:
-      - path: tests.integration_test.src.validators.CrossValResultValidator
-        args: { server_model_names: ["server"] }
-      - path: tests.integration_test.src.validators.NumpySAGResultValidator
-        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
+      - path: tests.integration_test.src.validators.TFModelValidator
+    setup:
+      - python -c "import tensorflow as tf; tf.keras.datasets.mnist.load_data()"
+    teardown:
+      - rm ~/.keras/datasets/mnist.npz
