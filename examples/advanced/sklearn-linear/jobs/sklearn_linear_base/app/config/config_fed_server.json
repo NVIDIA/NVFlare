@@ -25,12 +25,12 @@
     },
     {
       "id": "shareable_generator",
-      "name": "FullModelShareableGenerator",
+      "path": "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator",
       "args": {}
     },
     {
       "id": "aggregator",
-      "name": "InTimeAccumulateWeightedAggregator",
+      "path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
       "args": {
         "expected_data_kind": "WEIGHTS"
       }
@@ -39,7 +39,7 @@
   "workflows": [
     {
       "id": "scatter_and_gather",
-      "name": "ScatterAndGather",
+      "path": "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
       "args": {
         "min_clients" : "{min_clients}",
         "num_rounds" : "{num_rounds}",

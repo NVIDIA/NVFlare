@@ -28,7 +28,7 @@
     "workflows": [
         {
             "id": "scatter_and_gather",
-            "name": "ScatterAndGather",
+            "path": "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
             "args": {
                 "min_clients": 2,
                 "num_rounds": 100,

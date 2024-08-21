@@ -7,7 +7,7 @@
             ],
             "executor": {
                 "id": "Executor",
-                "name": "FedXGBTreeExecutor",
+                "path": "nvflare.app_opt.xgboost.tree_based.executor.FedXGBTreeExecutor",
                 "args": {
                     "data_loader_id": "dataloader",
                     "training_mode": "cyclic",
