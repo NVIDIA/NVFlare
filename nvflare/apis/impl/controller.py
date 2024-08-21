@@ -170,3 +170,16 @@ class Controller(FLComponent, ControllerSpec, ABC):
         except Exception as e:
             self.logger.warning(f"get_client_disconnect_time() is not supported by {self.communicator}: {e}")
             return None
+
+    def add_to_fed_job(self, job, ctx, **kwargs):
+        """This method is used by Job API.
+
+        Args:
+            job: the Job object to add to
+            ctx: Job Context
+
+        Returns:
+
+        """
+        job.check_kwargs(args_to_check=kwargs, args_expected={})
+        job.add_controller(obj=self, ctx=ctx)
