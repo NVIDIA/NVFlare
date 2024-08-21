@@ -95,16 +95,16 @@ def run_worker(port: int, world_size: int, rank: int, args) -> None:
 
         # Load file, file will not be sharded in federated mode.
         if args.vert:
-            split_mode = 1
+            data_split_mode = 1
             if rank == 0:
                 label = "&label_column=0"
             else:
                 label = ""
         else:
-            split_mode = 0
+            data_split_mode = 0
             label = "&label_column=0"
-        dtrain = xgb.DMatrix(train_path + f"?format=csv{label}", data_split_mode=split_mode)
-        dvalid = xgb.DMatrix(valid_path + f"?format=csv{label}", data_split_mode=split_mode)
+        dtrain = xgb.DMatrix(train_path + f"?format=csv{label}", data_split_mode=data_split_mode)
+        dvalid = xgb.DMatrix(valid_path + f"?format=csv{label}", data_split_mode=data_split_mode)
 
         if PRINT_SAMPLE:
             # print number of rows and columns for each worker

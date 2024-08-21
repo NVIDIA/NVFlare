@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare import FedAvg, FedJob, ScriptExecutor
+from nvflare import FedJob
+from nvflare.app_common.executors.script_executor import ScriptExecutor
+from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.client.config import ExchangeFormat
 
 if __name__ == "__main__":
@@ -37,4 +39,4 @@ if __name__ == "__main__":
         job.to(executor, f"site-{i+1}")
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir")
+    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")

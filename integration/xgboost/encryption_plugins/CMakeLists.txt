@@ -1,41 +1,32 @@
 cmake_minimum_required(VERSION 3.19)
-project(xgb_nvflare LANGUAGES CXX C VERSION 1.0)
+set(CMAKE_C_STANDARD 17)
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_BUILD_TYPE Debug)
-
-option(GOOGLE_TEST "Build google tests" OFF)
-
-file(GLOB_RECURSE LIB_SRC "src/*.cc")
-
-add_library(nvflare SHARED ${LIB_SRC})
-set_target_properties(nvflare PROPERTIES
-  CXX_STANDARD 17
-  CXX_STANDARD_REQUIRED ON
-  POSITION_INDEPENDENT_CODE ON
-  ENABLE_EXPORTS ON
-)
-target_include_directories(nvflare PRIVATE ${xgb_nvflare_SOURCE_DIR}/src/include)
-
-if (APPLE)
-    add_link_options("LINKER:-object_path_lto,$<TARGET_PROPERTY:NAME>_lto.o")
-    add_link_options("LINKER:-cache_path_lto,${CMAKE_BINARY_DIR}/LTOCache")
-endif ()
-
-#-- Unit Tests
-if(GOOGLE_TEST)
-    find_package(GTest REQUIRED)
-    enable_testing()
-    add_executable(nvflare_test)
-    target_link_libraries(nvflare_test PRIVATE nvflare)
+set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}")
+cmake_policy(VERSION ${CMAKE_VERSION})
+message(STATUS "CMAKE_SOURCE_DIR: ${CMAKE_SOURCE_DIR}")
+message(STATUS "CMAKE_VERSION: ${CMAKE_VERSION}")
 
 
-    target_include_directories(nvflare_test PRIVATE ${xgb_nvflare_SOURCE_DIR}/src/include)
-
-    add_subdirectory(${xgb_nvflare_SOURCE_DIR}/tests)
-
-    add_test(
-        NAME TestNvflarePlugins
-        COMMAND nvflare_test
-        WORKING_DIRECTORY ${xgb_nvflare_BINARY_DIR})
-
+# this has to be set before project()
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+  set(CMAKE_CUDA_ARCHITECTURES 70)
 endif()
+
+project(xgb_plugins LANGUAGES CUDA CXX VERSION 1.0)
+option(BUILD_CUDA_PLUGIN "Build CUDA plugin" ON)
+option(BUILD_NVFLARE_PLUGIN "Build NVFlare plugin" ON)
+
+if (BUILD_CUDA_PLUGIN)
+  add_subdirectory(cuda_plugin)
+else()
+  message(STATUS "Skipping CUDA plugin")
+endif()
+
+if (BUILD_NVFLARE_PLUGIN)
+  add_subdirectory(nvflare_plugin)
+else()
+  message(STATUS "Skipping NVFLARE plugin")
+endif()
+

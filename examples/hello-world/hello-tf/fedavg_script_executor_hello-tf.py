@@ -14,7 +14,10 @@
 
 from src.tf_net import TFNet
 
-from nvflare import FedAvg, FedJob, ScriptExecutor
+from nvflare import FedJob
+from nvflare.app_common.executors.script_executor import ScriptExecutor
+from nvflare.app_common.workflows.fedavg import FedAvg
+from nvflare.app_opt.tf.job_config.model import TFModel
 
 if __name__ == "__main__":
     n_clients = 2
@@ -31,14 +34,14 @@ if __name__ == "__main__":
     job.to(controller, "server")
 
     # Define the initial global model and send to server
-    job.to(TFNet(), "server")
+    job.to(TFModel(TFNet()), "server")
 
     # Add clients
     for i in range(n_clients):
         executor = ScriptExecutor(
             task_script_path=train_script, task_script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
         )
-        job.to(executor, f"site-{i+1}", gpu=0)
+        job.to(executor, f"site-{i+1}")
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir")
+    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
