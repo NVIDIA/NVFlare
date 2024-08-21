@@ -5,9 +5,7 @@
       "tasks": ["*"],
       "executor": {
         "path": "nvflare.app_opt.flower.executor.FlowerExecutor",
-        "args": {
-          "client_app": "client:app"
-        }
+        "args": {}
       }
     }
   ],

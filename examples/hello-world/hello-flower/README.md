@@ -23,12 +23,13 @@ If you haven't already, we recommend creating a virtual environment.
 python3 -m venv nvflare_flwr
 source nvflare_flwr/bin/activate
 ```
-To run this job with NVFlare, we first need to install its dependencies.
+
+## 2.1 Run a simulation
+
+To run hello-flwr-pt job with NVFlare, we first need to install its dependencies.
 ```bash
 pip install ./jobs/hello-flwr-pt/app/custom
 ```
-
-## 2.1 Run a simulation
 
 Next, we run 2 Flower clients and Flower Server in parallel using NVFlare's simulator.
 ```bash
@@ -36,6 +37,11 @@ nvflare simulator jobs/hello-flwr-pt -n 2 -t 2 -w /tmp/nvflare/flwr
 ```
 
 ## 2.2 Run a simulation with TensorBoard streaming
+
+To run hello-flwr-pt_tb_streaming job with NVFlare, we first need to install its dependencies.
+```bash
+pip install ./jobs/hello-flwr-pt_tb_streaming/app/custom
+```
 
 Next, we run 2 Flower clients and Flower Server in parallel using NVFlare while streaming 
 the TensorBoard metrics to the server at each iteration using NVFlare's metric streaming.
