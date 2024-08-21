@@ -19,12 +19,12 @@
     },
     {
       "id": "event_recorder",
-      "name": "ServerEventRecorder",
+      "path": "nvflare.app_common.widgets.event_recorder.ServerEventRecorder",
       "args": {}
     },
     {
       "id": "tb_analytics_receive",
-      "name": "TBAnalyticsReceiver",
+      "path": "nvflare.app_opt.tracking.tb.tb_receiver.TBAnalyticsReceiver",
       "args": {"events": ["fed.analytix_log_stats"]}
     }
   ],

@@ -41,7 +41,7 @@
     },
     {
       "id": "shareable_generator",
-      "path": "nvflare.app_opt.he.model_sharable_generator.HEModelShareableGenerator",
+      "path": "nvflare.app_opt.he.model_shareable_generator.HEModelShareableGenerator",
       "args": {}
     },
     {
