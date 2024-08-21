@@ -1,5 +1,5 @@
 ha: True
-jobs_root_dir: ../../examples/hello-world
+jobs_root_dir: ./data/jobs
 cleanup: True
 project_yaml: ./data/projects/ha_2_servers_2_clients.yml
 
@@ -10,7 +10,7 @@ tests:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job hello-numpy-sag/jobs/hello-numpy-sag" ]
+        "actions": [ "submit_job hello-numpy-sag" ]
         "result":
           "type": "job_submit_success"
       - "trigger":
