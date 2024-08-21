@@ -146,6 +146,7 @@ class GrpcServerAdaptor(XGBServerAdaptor):
             raise RuntimeError(f"bad result from XGB server: expect AllreduceReply but got {type(result)}")
 
     def broadcast(self, rank: int, seq: int, root: int, send_buf: bytes, fl_ctx: FLContext) -> bytes:
+        self.logger.debug(f"Sending broadcast: {rank=} {seq=} {root=} {len(send_buf)=}")
         result = self.internal_xgb_client.send_broadcast(seq_num=seq, rank=rank, data=send_buf, root=root)
         if isinstance(result, pb2.BroadcastReply):
             return result.receive_buffer

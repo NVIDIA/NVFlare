@@ -14,7 +14,8 @@
 
 from src.net import Net
 
-from nvflare import FedJob, ScriptExecutor
+from nvflare import FedJob
+from nvflare.app_common.executors.script_executor import ScriptExecutor
 from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvgEarlyStopping
 
 if __name__ == "__main__":
@@ -22,7 +23,7 @@ if __name__ == "__main__":
     num_rounds = 5
     train_script = "src/cifar10_fl.py"
 
-    job = FedJob(name="cifar10_fedavg_early_stopping", key_metric=None)
+    job = FedJob(name="cifar10_fedavg_early_stopping")
 
     # Define the controller workflow and send to server
     controller = PTFedAvgEarlyStopping(
@@ -36,7 +37,7 @@ if __name__ == "__main__":
     # Add clients
     for i in range(n_clients):
         executor = ScriptExecutor(task_script_path=train_script, task_script_args="")
-        job.to(executor, f"site-{i}", gpu=0)
+        job.to(executor, f"site-{i}")
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir")
+    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")

@@ -14,7 +14,12 @@
 
 from src.net import Net
 
-from nvflare import FedAvg, FedJob, ScriptExecutor
+from nvflare.app_common.executors.script_executor import ScriptExecutor
+from nvflare.app_common.workflows.fedavg import FedAvg
+from nvflare.app_opt.pt.job_config.model import PTModel
+
+# from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
+from nvflare.job_config.api import FedJob
 
 if __name__ == "__main__":
     n_clients = 2
@@ -32,16 +37,18 @@ if __name__ == "__main__":
     # job.to_server(controller)
 
     # Define the initial global model and send to server
-    job.to(Net(), "server")
-    # job.to_server(Net())
+    job.to(PTModel(Net()), "server")
+
+    # Note: We can optionally replace the above code with the FedAvgJob, which is a pattern to simplify FedAvg job creations
+    # job = FedAvgJob(name="cifar10_fedavg", num_rounds=num_rounds, n_clients=n_clients, initial_model=Net())
 
     # Add clients
     for i in range(n_clients):
         executor = ScriptExecutor(
             task_script_path=train_script, task_script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
         )
-        job.to(executor, f"site-{i}", gpu=0)
-        # job.to_clients(executor)
+        job.to(executor, target=f"site-{i}")
+    # job.to_clients(executor)
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir")
+    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")

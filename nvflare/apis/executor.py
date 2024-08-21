@@ -15,6 +15,7 @@
 from abc import ABC, abstractmethod
 
 from nvflare.apis.signal import Signal
+from nvflare.job_config.defs import JobTargetType
 
 from .fl_component import FLComponent
 from .fl_context import FLContext
@@ -49,3 +50,25 @@ class Executor(FLComponent, ABC):
             An output shareable.
         """
         pass
+
+    def get_job_target_type(self):
+        """This method is used by Job API.
+
+        Returns:
+
+        """
+        return JobTargetType.CLIENT
+
+    def add_to_fed_job(self, job, ctx, **kwargs):
+        """This method is used by Job API.
+
+        Args:
+            job: the Job object to add to
+            ctx: Job Context
+
+        Returns:
+
+        """
+        job.check_kwargs(args_to_check=kwargs, args_expected={"tasks": False})
+        tasks = kwargs.get("tasks", ["*"])
+        job.add_executor(obj=self, tasks=tasks, ctx=ctx)

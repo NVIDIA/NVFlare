@@ -146,5 +146,9 @@ In this case we can notice that Party 0 holds Feature 7 and 10, Party 1 holds Fe
 
 By combining the feature splits at all parties, the tree structures will be identical to the centralized baseline model.
 
+When comparing the training and validation accuracy as well as the model outputs,
+experiments conducted with NVFlare produce results that are identical
+to those obtained from standalone scripts.
+
 For more information on the secure xgboost user guide please refer to
 https://nvflare.readthedocs.io/en/main/user_guide/federated_xgboost/secure_xgboost_user_guide.html
