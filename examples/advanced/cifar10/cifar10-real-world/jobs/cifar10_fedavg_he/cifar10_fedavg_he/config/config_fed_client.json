@@ -47,7 +47,7 @@
       "tasks": ["train", "validate"],
       "filters":[
           {
-          "path": "nvflare.app_opt.he.model_encryptor.HEModelEncryptor",
+          "path": "nvflare.app_opt.he.model_decryptor.HEModelDecryptor",
           "args": {
           }
         }

@@ -26,6 +26,7 @@
       "id": "pt_learner",
       "path": "pt.learner_with_tb.PTLearner",
       "args": {
+        "data_path": "/tmp/nvflare/tensorboard-streaming",
         "lr": 0.01,
         "epochs": 5,
         "analytic_sender_id": "log_writer"
