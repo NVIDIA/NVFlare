@@ -27,7 +27,7 @@ class Constant:
     CONF_KEY_NUM_ROUNDS = "num_rounds"
 
     # default component config values
-    CONFIG_TASK_TIMEOUT = 10
+    CONFIG_TASK_TIMEOUT = 60
     START_TASK_TIMEOUT = 10
     XGB_SERVER_READY_TIMEOUT = 5.0
 

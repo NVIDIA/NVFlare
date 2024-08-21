@@ -260,7 +260,7 @@ class FedXGBHistogramExecutor(Executor):
         self.log_info(fl_ctx, f"server address is {self._server_address}")
 
         communicator_env = {
-            "xgboost_communicator": "federated",
+            "dmlc_communicator": "federated",
             "federated_server_address": f"{self._server_address}:{xgb_fl_server_port}",
             "federated_world_size": self.world_size,
             "federated_rank": self.rank,

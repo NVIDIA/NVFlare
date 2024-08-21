@@ -32,10 +32,7 @@ class XGBServerRunner(XGBRunner):
         _world_size = ctx.get(Constant.RUNNER_CTX_WORLD_SIZE, None)
 
         self._stopped = False
-        xgb_federated.run_federated_server(
-            port=_port,
-            world_size=_world_size,
-        )
+        xgb_federated.run_federated_server(_world_size, _port)
         self._stopped = True
 
     def stop(self):
