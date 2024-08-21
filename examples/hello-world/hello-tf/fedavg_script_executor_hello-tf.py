@@ -15,8 +15,8 @@
 from src.tf_net import TFNet
 
 from nvflare import FedJob
-from nvflare.app_common.executors.script_executor import ScriptExecutor
 from nvflare.app_common.workflows.fedavg import FedAvg
+from nvflare.app_opt.script_executor import ScriptExecutor
 from nvflare.app_opt.tf.job_config.model import TFModel
 
 if __name__ == "__main__":

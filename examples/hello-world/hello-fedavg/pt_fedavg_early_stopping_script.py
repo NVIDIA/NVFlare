@@ -15,8 +15,8 @@
 from src.net import Net
 
 from nvflare import FedJob
-from nvflare.app_common.executors.script_executor import ScriptExecutor
 from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvgEarlyStopping
+from nvflare.app_opt.script_executor import ScriptExecutor
 
 if __name__ == "__main__":
     n_clients = 2

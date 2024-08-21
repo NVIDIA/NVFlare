@@ -14,8 +14,8 @@
 
 from src.lit_net import LitNet
 
-from nvflare.app_common.executors.script_executor import ScriptExecutor
 from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
+from nvflare.app_opt.script_executor import ScriptExecutor
 
 if __name__ == "__main__":
     n_clients = 2
