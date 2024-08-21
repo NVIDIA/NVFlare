@@ -6,7 +6,7 @@
       "tasks": ["train", "submit_model", "validate"],
       "executor": {
         "id": "Executor",
-        "name": "LearnerExecutor",
+        "path": "nvflare.app_common.executors.learner_executor.LearnerExecutor",
         "args": {
           "learner_id": "learner"
         }

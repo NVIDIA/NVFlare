@@ -4,7 +4,7 @@
       "name": "data-exploratory-policy",
       "task_result_filters": [
         {
-          "name": "StatisticsPrivacyFilter",
+          "path": "nvflare.app_common.filters.statistics_privacy_filter.StatisticsPrivacyFilter",
           "args": {
             "result_cleanser_ids": [
               "min_count_cleanser",

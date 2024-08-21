@@ -21,12 +21,12 @@
     },
     {
       "id": "shareable_generator",
-      "name": "FullModelShareableGenerator",
+      "path": "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator",
       "args": {}
     },
     {
       "id": "json_generator",
-      "name": "ValidationJsonGenerator",
+      "path": "nvflare.app_common.widgets.validation_json_generator",
       "args": {}
     }
   ],
