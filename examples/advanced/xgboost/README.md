@@ -11,7 +11,7 @@ These examples show how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/
 They use [XGBoost](https://github.com/dmlc/xgboost),
 which is an optimized distributed gradient boosting library.
 
-The code was tested against XGBoost V2.11. It may not work with other versions of XGBoost.
+The code was tested with XGBoost V2.1.1. It may not work with other versions of XGBoost.
 
 ### HIGGS
 The examples illustrate a binary classification task based on [HIGGS dataset](https://archive.ics.uci.edu/dataset/280/higgs).
