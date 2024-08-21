@@ -1,0 +1,3 @@
+[submodule "integration/xgboost/encryption_plugins/cuda_plugin/CGBN"]
+	path = integration/xgboost/encryption_plugins/cuda_plugin/CGBN
+	url = https://github.com/NVlabs/CGBN.git
