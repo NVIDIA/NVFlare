@@ -14,10 +14,10 @@
 
 import pytest
 
-from nvflare import FedAvg
 from nvflare.app_common.abstract.model_learner import ModelLearner
 from nvflare.app_common.executors.model_learner_executor import ModelLearnerExecutor
-from nvflare.job_config.fed_job import FedJob
+from nvflare.app_common.workflows.fedavg import FedAvg
+from nvflare.job_config.api import FedJob
 
 
 class TestFedJob:
@@ -30,7 +30,7 @@ class TestFedJob:
         job.to(executor, "site-1")
 
         with pytest.raises(Exception):
-            job.to(executor, "site-/1", gpu=0)
+            job.to(executor, "site-/1")
 
     def test_non_empty_target(self):
         job = FedJob()

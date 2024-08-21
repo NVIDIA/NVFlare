@@ -70,6 +70,7 @@ class ScriptExecutor(InProcessClientAPIExecutor):
             params_transfer_type=params_transfer_type,
             log_pull_interval=log_pull_interval,
         )
+        self.task_script_path = task_script_path
         if torch_ok:
             if params_exchange_format == ExchangeFormat.PYTORCH:
                 fobs.register(TensorDecomposer)
@@ -93,3 +94,16 @@ class ScriptExecutor(InProcessClientAPIExecutor):
                         [AppConstants.TASK_TRAIN, AppConstants.TASK_SUBMIT_MODEL]
                     )
         # TODO: support other params_exchange_format
+
+    def add_to_fed_job(self, job, ctx, **kwargs):
+        """This method is used by Job API.
+
+        Args:
+            job: the Job object to add to
+            ctx: Job Context
+
+        Returns:
+
+        """
+        super().add_to_fed_job(job, ctx, **kwargs)
+        job.add_resources(resources=[self.task_script_path], ctx=ctx)

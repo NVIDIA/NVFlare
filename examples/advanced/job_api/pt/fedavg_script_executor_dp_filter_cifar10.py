@@ -14,33 +14,25 @@
 
 from src.net import Net
 
-from nvflare import FedAvg, FedJob, FilterType, ScriptExecutor
+from nvflare import FilterType
+from nvflare.app_common.executors.script_executor import ScriptExecutor
 from nvflare.app_common.filters.percentile_privacy import PercentilePrivacy
+from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
 
 if __name__ == "__main__":
     n_clients = 2
     num_rounds = 2
     train_script = "src/cifar10_fl.py"
 
-    job = FedJob(name="cifar10_fedavg_privacy")
-
-    # Define the controller workflow and send to server
-    controller = FedAvg(
-        num_clients=n_clients,
-        num_rounds=num_rounds,
-    )
-    job.to(controller, "server")
-
-    # Define the initial global model and send to server
-    job.to(Net(), "server")
+    job = FedAvgJob(name="cifar10_fedavg_privacy", num_rounds=num_rounds, n_clients=n_clients, initial_model=Net())
 
     for i in range(n_clients):
         executor = ScriptExecutor(task_script_path=train_script, task_script_args="")
-        job.to(executor, f"site-{i}", tasks=["train"], gpu=0)
+        job.to(executor, f"site-{i}", tasks=["train"])
 
         # add privacy filter.
         pp_filter = PercentilePrivacy(percentile=10, gamma=0.01)
         job.to(pp_filter, f"site-{i}", tasks=["train"], filter_type=FilterType.TASK_RESULT)
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir")
+    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
