@@ -1,6 +1,6 @@
 n_servers: 1
 n_clients: 2
-jobs_root_dir: data/test_configs/standalone_job/previous_jobs
+jobs_root_dir: ./data/jobs
 cleanup: True
 
 

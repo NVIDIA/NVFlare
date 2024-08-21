@@ -34,7 +34,7 @@
     },
     {
       "id": "model_selector",
-      "name": "IntimeModelSelector",
+      "path": "nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector",
       "args": {}
     },
     {
@@ -46,14 +46,14 @@
     },
     {
       "id": "json_generator",
-      "name": "ValidationJsonGenerator",
+      "path": "nvflare.app_common.widgets.validation_json_generator",
       "args": {}
     }
   ],
   "workflows": [
       {
         "id": "scatter_gather_ctl",
-        "name": "ScatterAndGather",
+        "path": "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
         "args": {
             "min_clients" : "{min_clients}",
             "num_rounds" : "{num_rounds}",
