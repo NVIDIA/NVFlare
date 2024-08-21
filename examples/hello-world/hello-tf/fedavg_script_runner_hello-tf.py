@@ -14,9 +14,7 @@
 
 from src.tf_net import TFNet
 
-from nvflare import FedJob
-from nvflare.app_common.workflows.fedavg import FedAvg
-from nvflare.app_opt.tf.job_config.model import TFModel
+from nvflare.app_opt.tf.job_config.fed_avg import FedAvgJob
 from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
@@ -24,17 +22,7 @@ if __name__ == "__main__":
     num_rounds = 3
     train_script = "src/hello-tf_fl.py"
 
-    job = FedJob(name="hello-tf_fedavg")
-
-    # Define the controller workflow and send to server
-    controller = FedAvg(
-        num_clients=n_clients,
-        num_rounds=num_rounds,
-    )
-    job.to(controller, "server")
-
-    # Define the initial global model and send to server
-    job.to(TFModel(TFNet()), "server")
+    job = FedAvgJob(name="hello-tf_fedavg", n_clients=n_clients, num_rounds=num_rounds, initial_model=TFNet())
 
     # Add clients
     for i in range(n_clients):

@@ -21,6 +21,7 @@ from src.split_csv import distribute_header_file, split_csv
 from nvflare import FedJob
 from nvflare.app_common.aggregators.collect_and_assemble_aggregator import CollectAndAssembleAggregator
 from nvflare.app_common.shareablegenerators.full_model_shareable_generator import FullModelShareableGenerator
+from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor
 from nvflare.client.config import ExchangeFormat
@@ -117,23 +118,28 @@ if __name__ == "__main__":
     # ScatterAndGather also expects an "aggregator" which we define here.
     # The actual aggregation function is defined by an "assembler" to specify how to handle the collected updates.
     # We use KMeansAssembler which is the assembler designed for k-Means algorithm.
-    aggregator = CollectAndAssembleAggregator(assembler_id=job.as_id(KMeansAssembler()))
+    assembler_id = job.to_server(KMeansAssembler(), id="assembler")
+    aggregator_id = job.to_server(CollectAndAssembleAggregator(assembler_id=assembler_id), id="aggregator")
 
     # For kmeans with sklean, we need a custom persistor
     # JoblibModelParamPersistor is a persistor which save/read the model to/from file with JobLib format.
-    persistor = JoblibModelParamPersistor(initial_params={"n_clusters": 2})
+    persistor_id = job.to_server(JoblibModelParamPersistor(initial_params={"n_clusters": 2}), id="persistor")
+
+    shareable_generator_id = job.to_server(FullModelShareableGenerator(), id="shareable_generator")
 
     controller = ScatterAndGather(
         min_clients=n_clients,
         num_rounds=num_rounds,
         wait_time_after_min_received=0,
-        aggregator_id=job.as_id(aggregator),
-        persistor_id=job.as_id(persistor),
-        shareable_generator_id=job.as_id(FullModelShareableGenerator()),
+        aggregator_id=aggregator_id,
+        persistor_id=persistor_id,
+        shareable_generator_id=shareable_generator_id,
         train_task_name="train",  # Client will start training once received such task.
         train_timeout=0,
     )
     job.to(controller, "server")
+
+    job.to(IntimeModelSelector(key_metric="accuracy"), "server")
 
     # Add clients
     for i in range(n_clients):
