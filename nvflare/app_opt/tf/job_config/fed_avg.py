@@ -69,12 +69,12 @@ class FedAvgJob(FedJob):
         component = TBAnalyticsReceiver(events=["fed.analytix_log_stats"])
         self.to_server(id="receiver", obj=component)
 
-        comp_ids = self.to_server(TFModel(initial_model))
+        persistor_id = self.to_server(TFModel(initial_model))
 
         controller = FedAvg(
             num_clients=n_clients,
             num_rounds=num_rounds,
-            persistor_id=comp_ids["persistor_id"],
+            persistor_id=persistor_id,
         )
         self.to_server(controller)
 

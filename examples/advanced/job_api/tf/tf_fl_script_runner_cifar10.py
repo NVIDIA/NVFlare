@@ -21,8 +21,9 @@ from src.cifar10_data_split import cifar10_split
 from src.tf_net import ModerateTFNet
 
 from nvflare import FedJob
-from nvflare.app_common.executors.script_executor import ScriptExecutor
+from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_opt.tf.job_config.model import TFModel
+from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 
 gpu_devices = tf.config.experimental.list_physical_devices("GPU")
 for device in gpu_devices:
@@ -153,10 +154,14 @@ if __name__ == "__main__":
     # Define the initial global model and send to server
     job.to(TFModel(ModerateTFNet(input_shape=(None, 32, 32, 3))), "server")
 
+    job.to(IntimeModelSelector(key_metric="accuracy"), "server")
+
     # Add clients
     for i, train_idx_path in enumerate(train_idx_paths):
         curr_task_script_args = task_script_args + f" --train_idx_path {train_idx_path}"
-        executor = ScriptExecutor(task_script_path=train_script, task_script_args=curr_task_script_args)
+        executor = ScriptRunner(
+            script=train_script, script_args=curr_task_script_args, framework=FrameworkType.TENSORFLOW
+        )
         job.to(executor, f"site-{i+1}")
 
     # Can export current job to folder.
