@@ -65,7 +65,7 @@ class SwarmServerConfig:
 class SwarmClientConfig:
     def __init__(
         self,
-        executor: Executor,
+        executor,
         persistor: ModelPersistor,
         shareable_generator: ShareableGenerator,
         aggregator: Aggregator,
@@ -79,7 +79,8 @@ class SwarmClientConfig:
         min_responses_required: int = 1,
         wait_time_after_min_resps_received: float = 10.0,
     ):
-        check_object_type("executor", executor, Executor)
+        # the executor could be a wrapper object that adds real Executor when added to job!
+        # check_object_type("executor", executor, Executor)
         check_object_type("persistor", persistor, ModelPersistor)
         check_object_type("shareable_generator", shareable_generator, ShareableGenerator)
         check_object_type("aggregator", aggregator, Aggregator)
@@ -134,14 +135,15 @@ class CyclicServerConfig:
 class CyclicClientConfig:
     def __init__(
         self,
-        executor: Executor,
+        executor,
         persistor: ModelPersistor,
         shareable_generator: ShareableGenerator,
         learn_task_abort_timeout=Constant.LEARN_TASK_ABORT_TIMEOUT,
         learn_task_ack_timeout=Constant.LEARN_TASK_ACK_TIMEOUT,
         final_result_ack_timeout=Constant.FINAL_RESULT_ACK_TIMEOUT,
     ):
-        check_object_type("executor", executor, Executor)
+        # the executor could be a wrapper object that adds real Executor when added to job!
+        # check_object_type("executor", executor, Executor)
         check_object_type("persistor", persistor, ModelPersistor)
         check_object_type("shareable_generator", shareable_generator, ShareableGenerator)
 
