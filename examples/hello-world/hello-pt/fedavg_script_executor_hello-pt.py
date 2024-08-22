@@ -17,7 +17,7 @@ from src.simple_network import SimpleNetwork
 from nvflare import FedJob
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt.job_config.model import PTModel
-from nvflare.app_opt.script_executor import ScriptExecutor
+from nvflare.job_config.script_executor import ScriptExecutor
 
 if __name__ == "__main__":
     n_clients = 2

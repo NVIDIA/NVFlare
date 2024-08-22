@@ -19,7 +19,7 @@ from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import In
 from nvflare.app_common.ccwf.ccwf_job import CCWFJob, CrossSiteEvalConfig, SwarmClientConfig, SwarmServerConfig
 from nvflare.app_common.ccwf.comps.simple_model_shareable_generator import SimpleModelShareableGenerator
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
-from nvflare.app_opt.script_executor import ScriptExecutor
+from nvflare.job_config.script_executor import ScriptExecutor
 
 if __name__ == "__main__":
     n_clients = 2

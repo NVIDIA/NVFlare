@@ -21,8 +21,8 @@ from src.cifar10_data_split import cifar10_split
 from src.tf_net import ModerateTFNet
 
 from nvflare import FedJob
-from nvflare.app_opt.script_executor import ScriptExecutor
 from nvflare.app_opt.tf.job_config.model import TFModel
+from nvflare.job_config.script_executor import ScriptExecutor
 
 gpu_devices = tf.config.experimental.list_physical_devices("GPU")
 for device in gpu_devices:
