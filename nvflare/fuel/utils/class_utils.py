@@ -19,7 +19,7 @@ import pkgutil
 from typing import Dict, List, Optional
 
 from nvflare.security.logging import secure_format_exception
-from nvflare.utils.components_utils import create_classes_table_static
+from nvflare.fuel.utils.components_utils import create_classes_table_static
 
 DEPRECATED_PACKAGES = ["nvflare.app_common.pt", "nvflare.app_common.homomorphic_encryption"]
 
