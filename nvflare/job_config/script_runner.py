@@ -141,7 +141,7 @@ class ScriptRunner:
             component = ExternalConfigurator(
                 component_ids=[metric_relay_id],
             )
-            job.add_component("config_preparer", component, ctx)
+            comp_ids["config_preparer_id"] = job.add_component("config_preparer", component, ctx)
         else:
             executor = self._get_in_process_executor_cls(self._framework)(
                 task_script_path=os.path.basename(self._script),
