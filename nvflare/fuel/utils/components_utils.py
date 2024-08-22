@@ -25,9 +25,8 @@ def create_classes_table_static():
         file = os.path.join(os.path.dirname(__file__), COMPONENT_CLASS_FILE)
         with open(file, "r") as f:
             class_table = json.load(f)
-    except:
-        logger.warning("There's an error creating the classes table.")
-
+    except Exception as ex:
+        logger.warning(f"Exception occurred when loading class table from {file}: {ex}")
     return class_table
 
 
