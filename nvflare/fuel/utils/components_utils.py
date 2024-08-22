@@ -11,10 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import json
 import logging
 import os
 
-COMPONENT_CLASS_FILE = "component_classes.txt"
+COMPONENT_CLASS_FILE = "component_classes.json"
 logger = logging.getLogger(__name__)
 
 
@@ -23,9 +24,7 @@ def create_classes_table_static():
     try:
         file = os.path.join(os.path.dirname(__file__), COMPONENT_CLASS_FILE)
         with open(file, "r") as f:
-            for line in f:
-                items = line.strip().split(":")
-                class_table[items[0]] = items[1]
+            class_table = json.load(f)
     except:
         logger.warning("There's an error creating the classes table.")
 
@@ -34,17 +33,12 @@ def create_classes_table_static():
 
 if __name__ == "__main__":
 
-    from nvflare.apis.fl_component import FLComponent
     from nvflare.fuel.utils.class_utils import ModuleScanner, get_class
 
     module_scanner = ModuleScanner(["nvflare"], ["apis", "app_common", "app_opt", "widgets"], True)
     class_table = module_scanner.create_classes_table()
 
     file = os.path.join(os.path.dirname(__file__), COMPONENT_CLASS_FILE)
+    json_object = json.dumps(class_table)
     with open(file, "w") as f:
-        for name, module in class_table.items():
-            try:
-                if issubclass(get_class(module + "." + name), FLComponent):
-                    f.write(f"{name}:{module}\n")
-            except:
-                pass
+        f.write(json_object)
