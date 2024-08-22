@@ -19,7 +19,7 @@ from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import In
 from nvflare.app_common.ccwf.ccwf_job import CCWFJob, CrossSiteEvalConfig, SwarmClientConfig, SwarmServerConfig
 from nvflare.app_common.ccwf.comps.simple_model_shareable_generator import SimpleModelShareableGenerator
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
-from nvflare.job_config.script_executor import ScriptExecutor
+from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
     n_clients = 2
@@ -31,7 +31,7 @@ if __name__ == "__main__":
     job.add_swarm(
         server_config=SwarmServerConfig(num_rounds=num_rounds),
         client_config=SwarmClientConfig(
-            executor=ScriptExecutor(task_script_path=train_script, evaluate_task_name="validate"),
+            executor=ScriptRunner(script=train_script, evaluate_task_name="validate"),
             aggregator=aggregator,
             persistor=PTFileModelPersistor(model=Net()),
             shareable_generator=SimpleModelShareableGenerator(),

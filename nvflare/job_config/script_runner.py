@@ -13,8 +13,10 @@
 # limitations under the License.
 
 import os
+from typing import Type
 
-from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
+from nvflare.app_common.executors.in_process_client_api_executor import InProcessClientAPIExecutor
 from nvflare.client.config import ExchangeFormat
 from nvflare.fuel.utils.import_utils import optional_import
 
@@ -26,7 +28,7 @@ class FrameworkType:
     TENSORFLOW = "tensorflow"
 
 
-class ScriptExecutor:
+class ScriptRunner:
     def __init__(
         self,
         script: str,
@@ -35,7 +37,7 @@ class ScriptExecutor:
         command: str = "python3",
         framework: FrameworkType = FrameworkType.PYTORCH,
     ):
-        """ScriptExecutor is used with FedJob API to run or launch a script.
+        """ScriptRunner is used with FedJob API to run or launch a script.
 
         in-process `launch_external_process=False` uses InProcessClientAPIExecutor (default).
         ex-process `launch_external_process=True` uses ClientAPILauncherExecutor.
@@ -54,37 +56,16 @@ class ScriptExecutor:
         self._framework = framework
 
         self._params_exchange_format = None
-        self._from_nvflare_converter = None
-        self._to_nvflare_converter = None
 
         if self._framework == FrameworkType.PYTORCH:
             _, torch_ok = optional_import(module="torch")
             if torch_ok:
-                from nvflare.app_opt.pt.params_converter import NumpyToPTParamsConverter, PTToNumpyParamsConverter
-
-                self._from_nvflare_converter = NumpyToPTParamsConverter(
-                    [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION]
-                )
-                self._to_nvflare_converter = PTToNumpyParamsConverter(
-                    [AppConstants.TASK_TRAIN, AppConstants.TASK_SUBMIT_MODEL]
-                )
                 self._params_exchange_format = ExchangeFormat.PYTORCH
             else:
                 raise ValueError("Using FrameworkType.PYTORCH, but unable to import torch")
         elif self._framework == FrameworkType.TENSORFLOW:
             _, tf_ok = optional_import(module="tensorflow")
             if tf_ok:
-                from nvflare.app_opt.tf.params_converter import (
-                    KerasModelToNumpyParamsConverter,
-                    NumpyToKerasModelParamsConverter,
-                )
-
-                self._from_nvflare_converter = NumpyToKerasModelParamsConverter(
-                    [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION]
-                )
-                self._to_nvflare_converter = KerasModelToNumpyParamsConverter(
-                    [AppConstants.TASK_TRAIN, AppConstants.TASK_SUBMIT_MODEL]
-                )
                 self._params_exchange_format = ExchangeFormat.NUMPY
             else:
                 raise ValueError("Using FrameworkType.TENSORFLOW, but unable to import tensorflow")
@@ -108,15 +89,7 @@ class ScriptExecutor:
         job.check_kwargs(args_to_check=kwargs, args_expected={"tasks": False})
         tasks = kwargs.get("tasks", ["*"])
 
-        from_nvflare_id = None
-        to_nvflare_id = None
-
-        if self._from_nvflare_converter and self._to_nvflare_converter:
-            from_nvflare_id = job.add_component("from_nvflare", self._from_nvflare_converter, ctx)
-            to_nvflare_id = job.add_component("to_nvflare", self._to_nvflare_converter, ctx)
-
         if self._launch_external_process:
-            from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
             from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
             from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
             from nvflare.app_common.widgets.metric_relay import MetricRelay
@@ -137,12 +110,10 @@ class ScriptExecutor:
             )
             launcher_id = job.add_component("launcher", component, ctx)
 
-            executor = ClientAPILauncherExecutor(
+            executor = self._get_ex_process_executor_cls(self._framework)(
                 pipe_id=pipe_id,
                 launcher_id=launcher_id,
                 params_exchange_format=self._params_exchange_format,
-                from_nvflare_converter_id=from_nvflare_id,
-                to_nvflare_converter_id=to_nvflare_id,
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
 
@@ -167,15 +138,35 @@ class ScriptExecutor:
             )
             job.add_component("config_preparer", component, ctx)
         else:
-            from nvflare.app_common.executors.in_process_client_api_executor import InProcessClientAPIExecutor
-
-            executor = InProcessClientAPIExecutor(
+            executor = self._get_in_process_executor_cls(self._framework)(
                 task_script_path=os.path.basename(self._script),
                 task_script_args=self._script_args,
                 params_exchange_format=self._params_exchange_format,
-                from_nvflare_converter_id=from_nvflare_id,
-                to_nvflare_converter_id=to_nvflare_id,
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
 
         job.add_resources(resources=[self._script], ctx=ctx)
+
+    def _get_ex_process_executor_cls(self, framework: FrameworkType) -> Type[ClientAPILauncherExecutor]:
+        if framework == FrameworkType.PYTORCH:
+            from nvflare.app_opt.pt.client_api_launcher_executor import PTClientAPILauncherExecutor
+
+            return PTClientAPILauncherExecutor
+        elif framework == FrameworkType.TENSORFLOW:
+            from nvflare.app_opt.tf.client_api_launcher_executor import TFClientAPILauncherExecutor
+
+            return TFClientAPILauncherExecutor
+        else:
+            return ClientAPILauncherExecutor
+
+    def _get_in_process_executor_cls(self, framework: FrameworkType) -> Type[InProcessClientAPIExecutor]:
+        if framework == FrameworkType.PYTORCH:
+            from nvflare.app_opt.pt.in_process_client_api_executor import PTInProcessClientAPIExecutor
+
+            return PTInProcessClientAPIExecutor
+        elif framework == FrameworkType.TENSORFLOW:
+            from nvflare.app_opt.tf.in_process_client_api_executor import TFInProcessClientAPIExecutor
+
+            return TFInProcessClientAPIExecutor
+        else:
+            return InProcessClientAPIExecutor

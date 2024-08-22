@@ -31,7 +31,7 @@ pip3 install -r requirements.txt
 Run the script using the job API to create the job and run it with the simulator:
 
 ```
-python3 fedavg_script_executor_hello-pt.py
+python3 fedavg_script_runner_hello-pt.py
 ```
 
 ### 3. Access the logs and results

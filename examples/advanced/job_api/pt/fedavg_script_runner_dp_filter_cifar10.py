@@ -12,24 +12,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from src.lit_net import LitNet
+from src.net import Net
 
+from nvflare import FilterType
+from nvflare.app_common.filters.percentile_privacy import PercentilePrivacy
 from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
-from nvflare.job_config.script_executor import ScriptExecutor
+from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
     n_clients = 2
     num_rounds = 2
-    train_script = "src/cifar10_lightning_fl.py"
+    train_script = "src/cifar10_fl.py"
 
-    job = FedAvgJob(name="cifar10_fedavg_lightning", num_rounds=num_rounds, n_clients=n_clients, initial_model=LitNet())
+    job = FedAvgJob(name="cifar10_fedavg_privacy", num_rounds=num_rounds, n_clients=n_clients, initial_model=Net())
 
-    # Add clients
     for i in range(n_clients):
-        executor = ScriptExecutor(
-            task_script_path=train_script, task_script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
-        )
-        job.to(executor, f"site-{i}")
+        executor = ScriptRunner(script=train_script, script_args="")
+        job.to(executor, f"site-{i}", tasks=["train"])
+
+        # add privacy filter.
+        pp_filter = PercentilePrivacy(percentile=10, gamma=0.01)
+        job.to(pp_filter, f"site-{i}", tasks=["train"], filter_type=FilterType.TASK_RESULT)
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")

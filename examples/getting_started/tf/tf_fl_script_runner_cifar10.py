@@ -22,7 +22,7 @@ from src.tf_net import ModerateTFNet
 
 from nvflare import FedJob
 from nvflare.app_opt.tf.job_config.model import TFModel
-from nvflare.job_config.script_executor import ScriptExecutor
+from nvflare.job_config.script_runner import ScriptRunner
 
 gpu_devices = tf.config.experimental.list_physical_devices("GPU")
 for device in gpu_devices:
@@ -156,7 +156,7 @@ if __name__ == "__main__":
     # Add clients
     for i, train_idx_path in enumerate(train_idx_paths):
         curr_task_script_args = task_script_args + f" --train_idx_path {train_idx_path}"
-        executor = ScriptExecutor(task_script_path=train_script, task_script_args=curr_task_script_args)
+        executor = ScriptRunner(script=train_script, script_args=curr_task_script_args)
         job.to(executor, f"site-{i+1}")
 
     # Can export current job to folder.

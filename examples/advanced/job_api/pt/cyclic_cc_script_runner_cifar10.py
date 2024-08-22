@@ -17,7 +17,7 @@ from src.net import Net
 from nvflare.app_common.ccwf.ccwf_job import CCWFJob, CyclicClientConfig, CyclicServerConfig
 from nvflare.app_common.ccwf.comps.simple_model_shareable_generator import SimpleModelShareableGenerator
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
-from nvflare.job_config.script_executor import ScriptExecutor
+from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
     n_clients = 2
@@ -29,7 +29,7 @@ if __name__ == "__main__":
     job.add_cyclic(
         server_config=CyclicServerConfig(num_rounds=num_rounds, max_status_report_interval=300),
         client_config=CyclicClientConfig(
-            executor=ScriptExecutor(task_script_path=train_script),
+            executor=ScriptRunner(script=train_script),
             persistor=PTFileModelPersistor(model=Net()),
             shareable_generator=SimpleModelShareableGenerator(),
         ),

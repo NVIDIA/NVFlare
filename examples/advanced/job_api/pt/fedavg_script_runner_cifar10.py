@@ -12,19 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from src.tf_net import TFNet
+from src.net import Net
 
-from nvflare import FedJob
 from nvflare.app_common.workflows.fedavg import FedAvg
-from nvflare.app_opt.tf.job_config.model import TFModel
-from nvflare.job_config.script_executor import ScriptExecutor
+from nvflare.app_opt.pt.job_config.model import PTModel
+
+# from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
+from nvflare.job_config.api import FedJob
+from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
     n_clients = 2
-    num_rounds = 3
-    train_script = "src/hello-tf_fl.py"
+    num_rounds = 2
+    train_script = "src/cifar10_fl.py"
 
-    job = FedJob(name="hello-tf_fedavg")
+    job = FedJob(name="cifar10_fedavg")
 
     # Define the controller workflow and send to server
     controller = FedAvg(
@@ -32,16 +34,21 @@ if __name__ == "__main__":
         num_rounds=num_rounds,
     )
     job.to(controller, "server")
+    # job.to_server(controller)
 
     # Define the initial global model and send to server
-    job.to(TFModel(TFNet()), "server")
+    job.to(PTModel(Net()), "server")
+
+    # Note: We can optionally replace the above code with the FedAvgJob, which is a pattern to simplify FedAvg job creations
+    # job = FedAvgJob(name="cifar10_fedavg", num_rounds=num_rounds, n_clients=n_clients, initial_model=Net())
 
     # Add clients
     for i in range(n_clients):
-        executor = ScriptExecutor(
-            task_script_path=train_script, task_script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
+        executor = ScriptRunner(
+            script=train_script, script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
         )
-        job.to(executor, f"site-{i+1}")
+        job.to(executor, target=f"site-{i}")
+    # job.to_clients(executor)
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")

@@ -12,21 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, List
+from typing import Dict
 
 import numpy as np
 import torch
 
 from nvflare.app_common.abstract.params_converter import ParamsConverter
-from nvflare.app_opt.pt.decomposers import TensorDecomposer
-from nvflare.fuel.utils import fobs
 
 
 class NumpyToPTParamsConverter(ParamsConverter):
-    def __init__(self, supported_tasks: List[str] = None):
-        super().__init__(supported_tasks=supported_tasks)
-        fobs.register(TensorDecomposer)
-
     def convert(self, params: Dict, fl_ctx) -> Dict:
         tensor_shapes = fl_ctx.get_prop("tensor_shapes")
         if tensor_shapes:
@@ -39,10 +33,6 @@ class NumpyToPTParamsConverter(ParamsConverter):
 
 
 class PTToNumpyParamsConverter(ParamsConverter):
-    def __init__(self, supported_tasks: List[str] = None):
-        super().__init__(supported_tasks=supported_tasks)
-        fobs.register(TensorDecomposer)
-
     def convert(self, params: Dict, fl_ctx) -> Dict:
         fl_ctx.set_prop("tensor_shapes", {k: v.shape for k, v in params.items()})
         return {k: v.cpu().numpy() for k, v in params.items()}

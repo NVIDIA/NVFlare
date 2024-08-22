@@ -21,7 +21,7 @@ and the new
 [`FedJob`](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/job_config/fed_job.py#L106)
 APIs were used to programmatically set up an
 `nvflare` job to be exported or ran by simulator (details in file
-[`tf_fl_script_executor_cifar10.py`](tf_fl_script_executor_cifar10.py)),
+[`tf_fl_script_runner_cifar10.py`](tf_fl_script_runner_cifar10.py)),
 alleviating the need of writing job config files, simplifying
 development process.
 
@@ -40,7 +40,7 @@ pip install -r ./requirements.txt
 ## 2. Run experiments
 
 This example uses simulator to run all experiments. The script
-[`tf_fl_script_executor_cifar10.py`](tf_fl_script_executor_cifar10.py)
+[`tf_fl_script_runner_cifar10.py`](tf_fl_script_runner_cifar10.py)
 is the main script to be used to launch different experiments with
 different arguments (see sections below for details). A script
 [`run_jobs.sh`](run_jobs.sh) is also provided to run all experiments
@@ -54,7 +54,7 @@ any experiment, and you can use `Tensorboard` to visualize the
 training and validation process as the experiment runs. Data split
 files, summary logs and results will be saved in a workspace
 directory, which defaults to `/tmp` and can be configured by setting
-`--workspace` argument of the `tf_fl_script_executor_cifar10.py`
+`--workspace` argument of the `tf_fl_script_runner_cifar10.py`
 script.
 
 > [!WARNING]
@@ -81,7 +81,7 @@ To simulate a centralized training baseline, we run FedAvg algorithm
 with 1 client for 25 rounds, where each round consists of one single epoch.
 
 ```
-python ./tf_fl_script_executor_cifar10.py \
+python ./tf_fl_script_runner_cifar10.py \
        --algo centralized \
        --n_clients 1 \
        --num_rounds 25 \
@@ -100,7 +100,7 @@ in the centralized baseline above (50*4 divided by 8 clients is 25):
 ```
 for alpha in 1.0 0.5 0.3 0.1; do
 
-    python ./tf_fl_script_executor_cifar10.py \
+    python ./tf_fl_script_runner_cifar10.py \
        --algo fedavg \
        --n_clients 8 \
        --num_rounds 50 \

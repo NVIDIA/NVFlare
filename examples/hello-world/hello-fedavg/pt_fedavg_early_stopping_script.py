@@ -16,7 +16,7 @@ from src.net import Net
 
 from nvflare import FedJob
 from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvgEarlyStopping
-from nvflare.job_config.script_executor import ScriptExecutor
+from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
     n_clients = 2
@@ -36,7 +36,7 @@ if __name__ == "__main__":
 
     # Add clients
     for i in range(n_clients):
-        executor = ScriptExecutor(task_script_path=train_script, task_script_args="")
+        executor = ScriptRunner(script=train_script, script_args="")
         job.to(executor, f"site-{i}")
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
