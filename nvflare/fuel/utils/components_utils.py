@@ -33,7 +33,7 @@ def create_classes_table_static():
 
 if __name__ == "__main__":
 
-    from nvflare.fuel.utils.class_utils import ModuleScanner, get_class
+    from nvflare.fuel.utils.class_utils import ModuleScanner
 
     module_scanner = ModuleScanner(["nvflare"], ["apis", "app_common", "app_opt", "widgets"], True)
     class_table = module_scanner.create_classes_table()
