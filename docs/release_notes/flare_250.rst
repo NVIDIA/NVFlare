@@ -151,6 +151,10 @@ Migration to 2.5.0: Notes and Tips
 FLARE 2.5.0 introduces some API and behavior changes. This migration guide will help you to migrate from the previous NVFlare version
 to the current version.
 
+For app_opt, "name" needs to be changed to "path"
+=================================================
+In 2.5.0, the "name" field in the app_opt configuration is deprecated. You need to change the "name" field to "path" and use the full path. For
+example, ``"name": "TBAnalyticsReceiver"`` needs to be updated to ``"path": "nvflare.app_opt.tracking.tb.tb_receiver.TBAnalyticsReceiver"``.
 
 XGBoost v1 - v2
 ===============
@@ -162,7 +166,7 @@ The main changes are:
 
   - The xgboost params have been moved from the client configuration to server.
   - New split_mode and secure_training parameters
-  - New :class:`SecureDataLoader<nvflare.app_opt.xgboost.histogram_based_v2.secure_data_loader.SecureDataLoader>`
+  - New :class:`CSVDataLoader<nvflare.app_opt.xgboost.histogram_based_v2.csv_data_loader.CSVDataLoader>`
 
 Sample configuration files for 2.5.0
 -------------------------------------
