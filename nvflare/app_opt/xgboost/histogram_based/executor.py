@@ -274,7 +274,7 @@ class FedXGBHistogramExecutor(Executor):
             communicator_env["federated_client_cert_path"] = self._client_cert_path
 
         try:
-            self._data_loader.initialize(
+            self.data_loader.initialize(
                 client_id=self.client_id,
                 rank=self.rank,
             )
