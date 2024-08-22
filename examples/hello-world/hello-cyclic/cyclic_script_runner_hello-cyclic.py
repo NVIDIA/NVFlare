@@ -16,9 +16,8 @@ from src.tf_net import Net
 
 from nvflare import FedJob
 from nvflare.app_common.workflows.cyclic import Cyclic
-from nvflare.app_opt.pt.job_config.model import PTModel
-from nvflare.client.config import ExchangeFormat
-from nvflare.job_config.script_runner import ScriptRunner
+from nvflare.app_opt.tf.job_config.model import TFModel
+from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 
 if __name__ == "__main__":
     n_clients = 2
@@ -35,14 +34,14 @@ if __name__ == "__main__":
     job.to(controller, "server")
 
     # Define the initial global model and send to server
-    job.to(PTModel(Net()), "server")
+    job.to(TFModel(Net()), "server")
 
     # Add clients
     for i in range(n_clients):
         executor = ScriptRunner(
             script=train_script,
             script_args="",  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
-            params_exchange_format=ExchangeFormat.NUMPY,
+            framework=FrameworkType.TENSORFLOW,
         )
         job.to(executor, f"site-{i+1}")
 
