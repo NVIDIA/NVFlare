@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from nvflare import FedJob
+from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.client.config import ExchangeFormat
 from nvflare.job_config.script_runner import ScriptRunner
@@ -30,6 +31,8 @@ if __name__ == "__main__":
         num_rounds=num_rounds,
     )
     job.to(controller, "server")
+
+    job.to(IntimeModelSelector(key_metric="accuracy"), "server")
 
     # Add clients
     for i in range(n_clients):

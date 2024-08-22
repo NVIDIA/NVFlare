@@ -22,11 +22,9 @@ from pt.networks.cifar10_nets import ModerateCNN
 from pt.utils.cifar10_data_splitter import Cifar10DataSplitter
 from pt.utils.cifar10_data_utils import load_cifar10_data
 
-from nvflare import FedJob
 from nvflare.app_common.executors.model_learner_executor import ModelLearnerExecutor
 from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
-from nvflare.app_common.workflows.fedavg import FedAvg
-from nvflare.app_opt.pt.job_config.model import PTModel
+from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
 
 if __name__ == "__main__":
     n_clients = 2
@@ -35,13 +33,9 @@ if __name__ == "__main__":
     alpha = 0.1
     train_split_root = f"/tmp/cifar10_splits/clients{n_clients}_alpha{alpha}"  # avoid overwriting results
 
-    job = FedJob(name="cifar10_fedavg")
+    job = FedAvgJob(name="cifar10_fedavg", n_clients=n_clients, num_rounds=num_rounds, initial_model=ModerateCNN())
 
-    ctrl1 = FedAvg(
-        num_clients=n_clients,
-        num_rounds=num_rounds,
-    )
-    ctrl2 = CrossSiteModelEval()
+    ctrl = CrossSiteModelEval()
 
     load_cifar10_data()  # preload CIFAR10 data
     data_splitter = Cifar10DataSplitter(
@@ -50,17 +44,18 @@ if __name__ == "__main__":
         alpha=alpha,
     )
 
-    job.to(ctrl1, "server")
-    job.to(ctrl2, "server")
+    job.to(ctrl, "server")
     job.to(data_splitter, "server")
 
-    # Define the initial global model and send to server
-    job.to(PTModel(ModerateCNN()), "server")
-
     for i in range(n_clients):
-        learner = CIFAR10ModelLearner(train_idx_root=train_split_root, aggregation_epochs=aggregation_epochs, lr=0.01)
-        executor = ModelLearnerExecutor(learner_id=job.as_id(learner))
-        job.to(executor, f"site-{i+1}")  # data splitter assumes client names start from 1
+        site_name = f"site-{i+1}"
+        learner_id = job.to(
+            CIFAR10ModelLearner(train_idx_root=train_split_root, aggregation_epochs=aggregation_epochs, lr=0.01),
+            site_name,
+            id="learner",
+        )
+        executor = ModelLearnerExecutor(learner_id=learner_id)
+        job.to(executor, site_name)  # data splitter assumes client names start from 1
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")

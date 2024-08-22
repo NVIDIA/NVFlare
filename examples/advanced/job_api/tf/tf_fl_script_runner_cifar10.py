@@ -21,6 +21,7 @@ from src.cifar10_data_split import cifar10_split
 from src.tf_net import ModerateTFNet
 
 from nvflare import FedJob
+from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_opt.tf.job_config.model import TFModel
 from nvflare.job_config.script_runner import ScriptRunner
 
@@ -152,6 +153,8 @@ if __name__ == "__main__":
 
     # Define the initial global model and send to server
     job.to(TFModel(ModerateTFNet(input_shape=(None, 32, 32, 3))), "server")
+
+    job.to(IntimeModelSelector(key_metric="accuracy"), "server")
 
     # Add clients
     for i, train_idx_path in enumerate(train_idx_paths):

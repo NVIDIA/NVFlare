@@ -14,6 +14,7 @@
 
 from src.net import Net
 
+from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt.job_config.model import PTModel
 
@@ -38,6 +39,8 @@ if __name__ == "__main__":
 
     # Define the initial global model and send to server
     job.to(PTModel(Net()), "server")
+
+    job.to(IntimeModelSelector(key_metric="accuracy"), "server")
 
     # Note: We can optionally replace the above code with the FedAvgJob, which is a pattern to simplify FedAvg job creations
     # job = FedAvgJob(name="cifar10_fedavg", num_rounds=num_rounds, n_clients=n_clients, initial_model=Net())

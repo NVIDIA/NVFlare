@@ -27,12 +27,13 @@ if __name__ == "__main__":
     job = FedAvgJob(name="cifar10_fedavg_privacy", num_rounds=num_rounds, n_clients=n_clients, initial_model=Net())
 
     for i in range(n_clients):
+        site_name = f"site-{i}"
         executor = ScriptRunner(script=train_script, script_args="")
-        job.to(executor, f"site-{i}", tasks=["train"])
+        job.to(executor, site_name, tasks=["train"])
 
         # add privacy filter.
         pp_filter = PercentilePrivacy(percentile=10, gamma=0.01)
-        job.to(pp_filter, f"site-{i}", tasks=["train"], filter_type=FilterType.TASK_RESULT)
+        job.to(pp_filter, site_name, tasks=["train"], filter_type=FilterType.TASK_RESULT)
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
