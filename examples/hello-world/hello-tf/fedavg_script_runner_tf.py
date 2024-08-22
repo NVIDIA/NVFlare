@@ -15,7 +15,7 @@
 from src.tf_net import TFNet
 
 from nvflare.app_opt.tf.job_config.fed_avg import FedAvgJob
-from nvflare.job_config.script_runner import ScriptRunner
+from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 
 if __name__ == "__main__":
     n_clients = 2
@@ -27,7 +27,9 @@ if __name__ == "__main__":
     # Add clients
     for i in range(n_clients):
         executor = ScriptRunner(
-            script=train_script, script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
+            script=train_script,
+            script_args="",  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
+            framework=FrameworkType.TENSORFLOW,
         )
         job.to(executor, f"site-{i+1}")
 
