@@ -13,7 +13,6 @@
 # limitations under the License.
 from typing import List, Optional
 
-from nvflare.apis.executor import Executor
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.metric_comparator import MetricComparator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
