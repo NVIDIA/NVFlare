@@ -12,24 +12,36 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from src.lit_net import LitNet
+from src.tf_net import TFNet
 
-from nvflare.app_common.executors.script_executor import ScriptExecutor
-from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
+from nvflare import FedJob
+from nvflare.app_common.workflows.fedavg import FedAvg
+from nvflare.app_opt.tf.job_config.model import TFModel
+from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
     n_clients = 2
-    num_rounds = 2
-    train_script = "src/cifar10_lightning_fl.py"
+    num_rounds = 3
+    train_script = "src/hello-tf_fl.py"
 
-    job = FedAvgJob(name="cifar10_fedavg_lightning", num_rounds=num_rounds, n_clients=n_clients, initial_model=LitNet())
+    job = FedJob(name="hello-tf_fedavg")
+
+    # Define the controller workflow and send to server
+    controller = FedAvg(
+        num_clients=n_clients,
+        num_rounds=num_rounds,
+    )
+    job.to(controller, "server")
+
+    # Define the initial global model and send to server
+    job.to(TFModel(TFNet()), "server")
 
     # Add clients
     for i in range(n_clients):
-        executor = ScriptExecutor(
-            task_script_path=train_script, task_script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
+        executor = ScriptRunner(
+            script=train_script, script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
         )
-        job.to(executor, f"site-{i}")
+        job.to(executor, f"site-{i+1}")
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")

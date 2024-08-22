@@ -9,7 +9,7 @@ and [PyTorch](https://pytorch.org/) as the deep learning training framework.
 You can follow the [Getting Started with NVFlare (PyTorch) notebook](../../getting_started/pt/nvflare_pt_getting_started.ipynb)
 for a detailed walkthrough of the basic concepts.
 
-See the [Hello PyTorch](https://nvflare.readthedocs.io/en/main/examples/hello_pt.html) example documentation page for details on this
+See the [Hello PyTorch](https://nvflare.readthedocs.io/en/main/examples/hello_pt_job_api.html#hello-pt-job-api) example documentation page for details on this
 example.
 
 To run this example with the FLARE API, you can follow the [hello_world notebook](../hello_world.ipynb), or you can quickly get
@@ -31,7 +31,7 @@ pip3 install -r requirements.txt
 Run the script using the job API to create the job and run it with the simulator:
 
 ```
-python3 fedavg_script_executor_hello-pt.py
+python3 fedavg_script_runner_hello-pt.py
 ```
 
 ### 3. Access the logs and results

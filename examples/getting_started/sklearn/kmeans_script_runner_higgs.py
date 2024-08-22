@@ -20,11 +20,11 @@ from src.split_csv import distribute_header_file, split_csv
 
 from nvflare import FedJob
 from nvflare.app_common.aggregators.collect_and_assemble_aggregator import CollectAndAssembleAggregator
-from nvflare.app_common.executors.script_executor import ScriptExecutor
 from nvflare.app_common.shareablegenerators.full_model_shareable_generator import FullModelShareableGenerator
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor
 from nvflare.client.config import ExchangeFormat
+from nvflare.job_config.script_runner import ScriptRunner
 
 preprocess = True  # if False, assume data is already preprocessed and split
 
@@ -137,9 +137,9 @@ if __name__ == "__main__":
 
     # Add clients
     for i in range(n_clients):
-        executor = ScriptExecutor(
-            task_script_path=train_script,
-            task_script_args=f"--data_root_dir {data_output_dir}",
+        executor = ScriptRunner(
+            script=train_script,
+            script_args=f"--data_root_dir {data_output_dir}",
             params_exchange_format=ExchangeFormat.RAW,  # kmeans requires raw values only rather than PyTorch Tensors (the default)
         )
         job.to(executor, f"site-{i+1}")  # HIGGs data splitter assumes site names start from 1

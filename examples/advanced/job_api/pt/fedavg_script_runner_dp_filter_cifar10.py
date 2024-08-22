@@ -15,9 +15,9 @@
 from src.net import Net
 
 from nvflare import FilterType
-from nvflare.app_common.executors.script_executor import ScriptExecutor
 from nvflare.app_common.filters.percentile_privacy import PercentilePrivacy
 from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
+from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
     n_clients = 2
@@ -27,7 +27,7 @@ if __name__ == "__main__":
     job = FedAvgJob(name="cifar10_fedavg_privacy", num_rounds=num_rounds, n_clients=n_clients, initial_model=Net())
 
     for i in range(n_clients):
-        executor = ScriptExecutor(task_script_path=train_script, task_script_args="")
+        executor = ScriptRunner(script=train_script, script_args="")
         job.to(executor, f"site-{i}", tasks=["train"])
 
         # add privacy filter.
