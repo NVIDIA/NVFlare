@@ -18,8 +18,8 @@ import logging
 import pkgutil
 from typing import Dict, List, Optional
 
-from nvflare.security.logging import secure_format_exception
 from nvflare.fuel.utils.components_utils import create_classes_table_static
+from nvflare.security.logging import secure_format_exception
 
 DEPRECATED_PACKAGES = ["nvflare.app_common.pt", "nvflare.app_common.homomorphic_encryption"]
 
@@ -88,7 +88,7 @@ class ModuleScanner:
         self._logger = logging.getLogger(self.__class__.__name__)
         self._class_table = create_classes_table_static()
 
-    def _create_classes_table(self):
+    def create_classes_table(self):
         class_table: Dict[str, str] = {}
         scan_result_table = {}
         for base in self.base_pkgs:

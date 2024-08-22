@@ -38,7 +38,7 @@ if __name__ == "__main__":
     from nvflare.fuel.utils.class_utils import ModuleScanner, get_class
 
     module_scanner = ModuleScanner(["nvflare"], ["apis", "app_common", "app_opt", "widgets"], True)
-    class_table = module_scanner._create_classes_table()
+    class_table = module_scanner.create_classes_table()
 
     file = os.path.join(os.path.dirname(__file__), COMPONENT_CLASS_FILE)
     with open(file, "w") as f:
