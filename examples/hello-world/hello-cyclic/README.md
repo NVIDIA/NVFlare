@@ -29,7 +29,7 @@ bash ./prepare_data.sh
 Run the script using the job API to create the job and run it with the simulator:
 
 ```
-python3 cyclic_script_runner_hello-cyclic.py
+python3 cyclic_script_runner.py
 ```
 
 ### 3. Access the logs and results

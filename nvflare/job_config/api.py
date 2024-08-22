@@ -29,6 +29,8 @@ from .defs import FilterType, JobTargetType
 
 SPECIAL_CHARACTERS = '"!@#$%^&*()+?=,<>/'
 
+_ADD_TO_JOB_METHOD_NAME = "add_to_fed_job"
+
 
 class FedApp:
     def __init__(self):
@@ -252,7 +254,7 @@ class FedJob:
                 else:
                     raise ValueError(f"this object can only be assigned to client, but tried to assign to {target}")
 
-        add_to_job_method = getattr(obj, "add_to_fed_job", None)
+        add_to_job_method = getattr(obj, _ADD_TO_JOB_METHOD_NAME, None)
         if add_to_job_method is not None:
             ctx = JobCtx(obj, target, id)
             result = add_to_job_method(self, ctx, **kwargs)
@@ -564,3 +566,8 @@ class FedJob:
             for k in args_to_check.keys():
                 if k not in args_expected:
                     raise ValueError(f"Received unexpected arg '{k}'. " f"Supported args: {args_info}")
+
+
+def has_add_to_job_method(obj: Any) -> bool:
+    add_to_job_method = getattr(obj, _ADD_TO_JOB_METHOD_NAME, None)
+    return add_to_job_method is not None and callable(add_to_job_method)

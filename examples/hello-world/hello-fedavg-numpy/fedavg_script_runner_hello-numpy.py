@@ -15,8 +15,7 @@
 from nvflare import FedJob
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.workflows.fedavg import FedAvg
-from nvflare.client.config import ExchangeFormat
-from nvflare.job_config.script_runner import ScriptRunner
+from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 
 if __name__ == "__main__":
     n_clients = 2
@@ -36,7 +35,7 @@ if __name__ == "__main__":
 
     # Add clients
     for i in range(n_clients):
-        executor = ScriptRunner(script=train_script, script_args="", params_exchange_format=ExchangeFormat.NUMPY)
+        executor = ScriptRunner(script=train_script, script_args="", framework=FrameworkType.NUMPY)
         job.to(executor, f"site-{i+1}")
 
     # job.export_job("/tmp/nvflare/jobs/job_config")

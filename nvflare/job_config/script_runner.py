@@ -88,6 +88,7 @@ class ScriptRunner:
         """
         job.check_kwargs(args_to_check=kwargs, args_expected={"tasks": False})
         tasks = kwargs.get("tasks", ["*"])
+        comp_ids = {}
 
         if self._launch_external_process:
             from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
@@ -104,11 +105,13 @@ class ScriptRunner:
                 workspace_dir="{WORKSPACE}",
             )
             pipe_id = job.add_component("pipe", component, ctx)
+            comp_ids["pipe_id"] = pipe_id
 
             component = SubprocessLauncher(
                 script=self._command + " custom/" + os.path.basename(self._script) + " " + self._script_args,
             )
             launcher_id = job.add_component("launcher", component, ctx)
+            comp_ids["launcher_id"] = launcher_id
 
             executor = self._get_ex_process_executor_cls(self._framework)(
                 pipe_id=pipe_id,
@@ -126,17 +129,19 @@ class ScriptRunner:
                 workspace_dir="{WORKSPACE}",
             )
             metric_pipe_id = job.add_component("metrics_pipe", component, ctx)
+            comp_ids["metric_pipe_id"] = metric_pipe_id
 
             component = MetricRelay(
                 pipe_id=metric_pipe_id,
                 event_type="fed.analytix_log_stats",
             )
             metric_relay_id = job.add_component("metric_relay", component, ctx)
+            comp_ids["metric_relay_id"] = metric_relay_id
 
             component = ExternalConfigurator(
                 component_ids=[metric_relay_id],
             )
-            job.add_component("config_preparer", component, ctx)
+            comp_ids["config_preparer_id"] = job.add_component("config_preparer", component, ctx)
         else:
             executor = self._get_in_process_executor_cls(self._framework)(
                 task_script_path=os.path.basename(self._script),
@@ -146,6 +151,7 @@ class ScriptRunner:
             job.add_executor(executor, tasks=tasks, ctx=ctx)
 
         job.add_resources(resources=[self._script], ctx=ctx)
+        return comp_ids
 
     def _get_ex_process_executor_cls(self, framework: FrameworkType) -> Type[ClientAPILauncherExecutor]:
         if framework == FrameworkType.PYTORCH:
