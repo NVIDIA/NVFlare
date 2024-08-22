@@ -6,7 +6,7 @@ and [TensorFlow](https://tensorflow.org/) as the deep learning training framewor
 
 > **_NOTE:_** This example uses the [MNIST](http://yann.lecun.com/exdb/mnist/) handwritten digits dataset and will load its data within the trainer code.
 
-See the [Hello TensorFlow](https://nvflare.readthedocs.io/en/main/examples/hello_tf.html) example documentation page for details on this
+See the [Hello TensorFlow](https://nvflare.readthedocs.io/en/main/examples/hello_tf_job_api.html#hello-tf-job-api) example documentation page for details on this
 example.
 
 To run this example with the FLARE API, you can follow the [hello_world notebook](../hello_world.ipynb), or you can quickly get

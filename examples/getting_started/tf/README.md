@@ -18,7 +18,7 @@ In this example, the latest Client APIs were used to implement
 client-side training logics (details in file
 [`cifar10_tf_fl_alpha_split.py`](src/cifar10_tf_fl_alpha_split.py)),
 and the new
-[`FedJob`](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/job_config/fed_job.py#L106)
+[`FedJob`](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/job_config/api.py)
 APIs were used to programmatically set up an
 `nvflare` job to be exported or ran by simulator (details in file
 [`tf_fl_script_runner_cifar10.py`](tf_fl_script_runner_cifar10.py)),
