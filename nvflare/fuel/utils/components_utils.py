@@ -38,6 +38,6 @@ if __name__ == "__main__":
     class_table = module_scanner.create_classes_table()
 
     file = os.path.join(os.path.dirname(__file__), COMPONENT_CLASS_FILE)
-    json_object = json.dumps(class_table)
+    json_object = json.dumps(class_table, indent=4)
     with open(file, "w") as f:
         f.write(json_object)
