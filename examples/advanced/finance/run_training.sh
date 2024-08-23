@@ -18,7 +18,8 @@ nvflare job create -j ./jobs/vertical_xgb_psi -w psi_csv -sd ./code/psi \
     -force
 nvflare simulator jobs/vertical_xgb_psi -w ${PWD}/workspaces/xgboost_workspace_vertical_psi -n 2 -t 2
 mkdir -p /tmp/xgboost_vertical_psi
-cp -r ${PWD}/workspaces/xgboost_workspace_vertical_psi/simulate_job/site-* /tmp/xgboost_vertical_psi
+cp -r ${PWD}/workspaces/xgboost_workspace_vertical_psi/site-1/simulate_job/site-1 /tmp/xgboost_vertical_psi
+cp -r ${PWD}/workspaces/xgboost_workspace_vertical_psi/site-2/simulate_job/site-2 /tmp/xgboost_vertical_psi
 
 echo "Running vertical_xgb"
 # Create the vertical xgb job
