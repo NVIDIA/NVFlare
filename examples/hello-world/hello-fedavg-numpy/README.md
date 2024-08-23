@@ -22,7 +22,7 @@ Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html
 Run the script using the job API to create the job and run it with the simulator:
 
 ```
-python3 fedavg_script_executor_hello-numpy.py
+python3 fedavg_script_runner_hello-numpy.py
 ```
 
 ### 3. Access the logs and results

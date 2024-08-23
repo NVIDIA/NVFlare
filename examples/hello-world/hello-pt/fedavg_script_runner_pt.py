@@ -14,32 +14,22 @@
 
 from src.simple_network import SimpleNetwork
 
-from nvflare import FedJob
-from nvflare.app_common.executors.script_executor import ScriptExecutor
-from nvflare.app_common.workflows.fedavg import FedAvg
-from nvflare.app_opt.pt.job_config.model import PTModel
+from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
+from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
     n_clients = 2
     num_rounds = 2
     train_script = "src/hello-pt_cifar10_fl.py"
 
-    job = FedJob(name="hello-pt_cifar10_fedavg")
-
-    # Define the controller workflow and send to server
-    controller = FedAvg(
-        num_clients=n_clients,
-        num_rounds=num_rounds,
+    job = FedAvgJob(
+        name="hello-pt_cifar10_fedavg", n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork()
     )
-    job.to(controller, "server")
-
-    # Define the initial global model and send to server
-    job.to(PTModel(SimpleNetwork()), "server")
 
     # Add clients
     for i in range(n_clients):
-        executor = ScriptExecutor(
-            task_script_path=train_script, task_script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
+        executor = ScriptRunner(
+            script=train_script, script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
         )
         job.to(executor, f"site-{i+1}")
 

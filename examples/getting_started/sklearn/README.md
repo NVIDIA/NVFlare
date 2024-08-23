@@ -15,10 +15,10 @@ You can also run any of the below scripts directly using
 ```commandline
 python "script_name.py"
 ```
-### 1. [Federated K-Means Clustering](./kmeans_script_executor_higgs.py)
+### 1. [Federated K-Means Clustering](./kmeans_script_runner_higgs.py)
 Implementation of [K-Means](https://arxiv.org/abs/1602.05629). For more details see this [example](../../advanced/sklearn-kmeans/README.md).
 ```commandline
-python kmeans_script_executor_higgs.py
+python kmeans_script_runner_higgs.py
 ```
 
 > [!NOTE]

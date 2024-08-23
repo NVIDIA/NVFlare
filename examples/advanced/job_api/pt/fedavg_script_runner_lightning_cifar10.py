@@ -14,8 +14,8 @@
 
 from src.lit_net import LitNet
 
-from nvflare.app_common.executors.script_executor import ScriptExecutor
 from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
+from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
     n_clients = 2
@@ -26,8 +26,8 @@ if __name__ == "__main__":
 
     # Add clients
     for i in range(n_clients):
-        executor = ScriptExecutor(
-            task_script_path=train_script, task_script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
+        executor = ScriptRunner(
+            script=train_script, script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
         )
         job.to(executor, f"site-{i}")
 

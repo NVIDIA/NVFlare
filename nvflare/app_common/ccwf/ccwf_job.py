@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from nvflare.apis.executor import Executor
 from nvflare.app_common.abstract.aggregator import Aggregator
@@ -21,7 +21,7 @@ from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.ccwf.common import Constant, CyclicOrder
 from nvflare.fuel.utils.validation_utils import check_object_type
-from nvflare.job_config.api import FedJob
+from nvflare.job_config.api import FedJob, has_add_to_job_method
 from nvflare.widgets.widget import Widget
 
 from .cse_client_ctl import CrossSiteEvalClientController
@@ -65,12 +65,12 @@ class SwarmServerConfig:
 class SwarmClientConfig:
     def __init__(
         self,
-        executor: Executor,
-        persistor: ModelPersistor,
-        shareable_generator: ShareableGenerator,
-        aggregator: Aggregator,
-        metric_comparator: MetricComparator = None,
-        model_selector: Widget = None,
+        executor: Any,
+        persistor: Any,
+        shareable_generator: Any,
+        aggregator: Any,
+        metric_comparator: Any = None,
+        model_selector: Any = None,
         learn_task_check_interval=Constant.LEARN_TASK_CHECK_INTERVAL,
         learn_task_abort_timeout=Constant.LEARN_TASK_ABORT_TIMEOUT,
         learn_task_ack_timeout=Constant.LEARN_TASK_ACK_TIMEOUT,
@@ -79,16 +79,17 @@ class SwarmClientConfig:
         min_responses_required: int = 1,
         wait_time_after_min_resps_received: float = 10.0,
     ):
-        check_object_type("executor", executor, Executor)
-        check_object_type("persistor", persistor, ModelPersistor)
-        check_object_type("shareable_generator", shareable_generator, ShareableGenerator)
-        check_object_type("aggregator", aggregator, Aggregator)
+        # the executor could be a wrapper object that adds real Executor when added to job!
+        validate_object_for_job("executor", executor, Executor)
+        validate_object_for_job("persistor", persistor, ModelPersistor)
+        validate_object_for_job("shareable_generator", shareable_generator, ShareableGenerator)
+        validate_object_for_job("aggregator", aggregator, Aggregator)
 
         if model_selector:
-            check_object_type("model_selector", model_selector, Widget)
+            validate_object_for_job("model_selector", model_selector, Widget)
 
         if metric_comparator:
-            check_object_type("metric_comparator", metric_comparator, MetricComparator)
+            validate_object_for_job("metric_comparator", metric_comparator, MetricComparator)
 
         self.executor = executor
         self.persistor = persistor
@@ -134,16 +135,16 @@ class CyclicServerConfig:
 class CyclicClientConfig:
     def __init__(
         self,
-        executor: Executor,
-        persistor: ModelPersistor,
-        shareable_generator: ShareableGenerator,
+        executor: Any,
+        persistor: Any,
+        shareable_generator: Any,
         learn_task_abort_timeout=Constant.LEARN_TASK_ABORT_TIMEOUT,
         learn_task_ack_timeout=Constant.LEARN_TASK_ACK_TIMEOUT,
         final_result_ack_timeout=Constant.FINAL_RESULT_ACK_TIMEOUT,
     ):
-        check_object_type("executor", executor, Executor)
-        check_object_type("persistor", persistor, ModelPersistor)
-        check_object_type("shareable_generator", shareable_generator, ShareableGenerator)
+        validate_object_for_job("executor", executor, Executor)
+        validate_object_for_job("persistor", persistor, ModelPersistor)
+        validate_object_for_job("shareable_generator", shareable_generator, ShareableGenerator)
 
         self.executor = executor
         self.persistor = persistor
@@ -317,3 +318,21 @@ class CCWFJob(FedJob):
             get_model_timeout=cse_config.get_model_timeout,
         )
         self.to_clients(client_controller, tasks=["cse_*"])
+
+
+def validate_object_for_job(name, obj, obj_type):
+    """Check whether the specified object is valid for job.
+    The object must either have the add_to_fed_job method or is valid object type.
+
+    Args:
+        name: name of the object
+        obj: the object to be checked
+        obj_type: the object type that the object should be, if it doesn't have the add_to_fed_job method.
+
+    Returns: None
+
+    """
+    if has_add_to_job_method(obj):
+        return
+
+    check_object_type(name, obj, obj_type)

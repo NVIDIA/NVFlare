@@ -18,6 +18,7 @@ import logging
 import pkgutil
 from typing import Dict, List, Optional
 
+from nvflare.fuel.utils.components_utils import create_classes_table_static
 from nvflare.security.logging import secure_format_exception
 
 DEPRECATED_PACKAGES = ["nvflare.app_common.pt", "nvflare.app_common.homomorphic_encryption"]
@@ -85,10 +86,10 @@ class ModuleScanner:
         self.exclude_libs = exclude_libs
 
         self._logger = logging.getLogger(self.__class__.__name__)
-        self._class_table: Dict[str, str] = {}
-        self._create_classes_table()
+        self._class_table = create_classes_table_static()
 
-    def _create_classes_table(self):
+    def create_classes_table(self):
+        class_table: Dict[str, str] = {}
         scan_result_table = {}
         for base in self.base_pkgs:
             package = importlib.import_module(base)
@@ -111,20 +112,21 @@ class ModuleScanner:
                                         # same class name exists in multiple modules
                                         if name in scan_result_table:
                                             scan_result = scan_result_table[name]
-                                            if name in self._class_table:
-                                                self._class_table.pop(name)
-                                                self._class_table[f"{scan_result.module_name}.{name}"] = module_name
-                                            self._class_table[f"{module_name}.{name}"] = module_name
+                                            if name in class_table:
+                                                class_table.pop(name)
+                                                class_table[f"{scan_result.module_name}.{name}"] = module_name
+                                            class_table[f"{module_name}.{name}"] = module_name
                                         else:
                                             scan_result = _ModuleScanResult(class_name=name, module_name=module_name)
                                             scan_result_table[name] = scan_result
-                                            self._class_table[name] = module_name
-                            except (ModuleNotFoundError, RuntimeError) as e:
+                                            class_table[name] = module_name
+                            except (ModuleNotFoundError, RuntimeError, AttributeError) as e:
                                 self._logger.debug(
                                     f"Try to import module {module_name}, but failed: {secure_format_exception(e)}. "
                                     f"Can't use name in config to refer to classes in module: {module_name}."
                                 )
                                 pass
+        return class_table
 
     def get_module_name(self, class_name) -> Optional[str]:
         """Gets the name of the module that contains this class.
