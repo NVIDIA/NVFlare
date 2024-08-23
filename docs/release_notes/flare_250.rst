@@ -256,12 +256,246 @@ config_fed_client.json
 Simulator workspace structure
 =============================
 
-In 2.4.0, the server and all the clients are sharing the same simulator workspace root ``simulate_job``. Server and each client has
-its own app_XXXX job definition, but the Workspace same root folder may result in conflicting model file location.
+In 2.4.0, the server and all the clients shared the same simulator workspace root of ``simulate_job``. The server and each client had
+their own app_XXXX job definition, but the same root folder for the workspace may result in conflicting model file locations.
 
-In 2.5.0, the server and all the clients will have its own workspace subfolder under the simulator workspace. The ``simulator_job``
-is within the workspace of each site. This results in total isolation of each site, with no model file conflicting. This workspace
+.. raw:: html
+
+   <details>
+   <summary><a>Example folder structure for 2.4.0</a></summary>
+
+.. code-block:: none
+
+  simulator/
+  ├── local
+  │   └── log.config
+  ├── simulate_job
+  │   ├── app_server
+  │   │   ├── FL_global_model.pt
+  │   │   ├── __init__.py
+  │   │   ├── config
+  │   │   │   ├── config_fed_client.json
+  │   │   │   ├── config_fed_server.json
+  │   │   │   ├── config_train.json
+  │   │   │   ├── config_validation.json
+  │   │   │   ├── dataset_0.json
+  │   │   │   └── environment.json
+  │   │   ├── custom
+  │   │   │   ├── __init__.py
+  │   │   │   ├── add_shareable_parameter.py
+  │   │   │   ├── client_aux_handler.py
+  │   │   │   ├── client_send_aux.py
+  │   │   │   ├── client_trainer.py
+  │   │   │   ├── fed_avg_responder.py
+  │   │   │   ├── model_shareable_manager.py
+  │   │   │   ├── print_shareable_parameter.py
+  │   │   │   ├── server_aux_handler.py
+  │   │   │   ├── server_send_aux.py
+  │   │   │   └── supervised_fitter.py
+  │   │   ├── docs
+  │   │   │   ├── Readme.md
+  │   │   │   └── license.txt
+  │   │   ├── eval
+  │   │   └── models
+  │   ├── app_site-1
+  │   │   ├── __init__.py
+  │   │   ├── config
+  │   │   │   ├── config_fed_client.json
+  │   │   │   ├── config_fed_server.json
+  │   │   │   ├── config_train.json
+  │   │   │   ├── config_validation.json
+  │   │   │   ├── dataset_0.json
+  │   │   │   └── environment.json
+  │   │   ├── custom
+  │   │   │   ├── __init__.py
+  │   │   │   ├── add_shareable_parameter.py
+  │   │   │   ├── client_aux_handler.py
+  │   │   │   ├── client_send_aux.py
+  │   │   │   ├── client_trainer.py
+  │   │   │   ├── fed_avg_responder.py
+  │   │   │   ├── model_shareable_manager.py
+  │   │   │   ├── print_shareable_parameter.py
+  │   │   │   ├── server_aux_handler.py
+  │   │   │   ├── server_send_aux.py
+  │   │   │   └── supervised_fitter.py
+  │   │   ├── docs
+  │   │   │   ├── Readme.md
+  │   │   │   └── license.txt
+  │   │   ├── eval
+  │   │   ├── log.txt
+  │   │   └── models
+  │   ├── app_site-2
+  │   │   ├── __init__.py
+  │   │   ├── config
+  │   │   │   ├── config_fed_client.json
+  │   │   │   ├── config_fed_server.json
+  │   │   │   ├── config_train.json
+  │   │   │   ├── config_validation.json
+  │   │   │   ├── dataset_0.json
+  │   │   │   └── environment.json
+  │   │   ├── custom
+  │   │   │   ├── __init__.py
+  │   │   │   ├── add_shareable_parameter.py
+  │   │   │   ├── client_aux_handler.py
+  │   │   │   ├── client_send_aux.py
+  │   │   │   ├── client_trainer.py
+  │   │   │   ├── fed_avg_responder.py
+  │   │   │   ├── model_shareable_manager.py
+  │   │   │   ├── print_shareable_parameter.py
+  │   │   │   ├── server_aux_handler.py
+  │   │   │   ├── server_send_aux.py
+  │   │   │   └── supervised_fitter.py
+  │   │   ├── docs
+  │   │   │   ├── Readme.md
+  │   │   │   └── license.txt
+  │   │   ├── eval
+  │   │   ├── log.txt
+  │   │   └── models
+  │   ├── log.txt
+  │   ├── meta.json
+  │   └── pool_stats
+  │       └── simulator_cell_stats.json
+  └── startup
+      ├── client_context.tenseal
+      └── server_context.tenseal
+
+.. raw:: html
+
+   </details>
+   <br />
+
+In 2.5.0, the server and all the clients will have their own workspace subfolder under the simulator workspace. The ``simulator_job``
+is within the workspace of each site. This results in the total isolation of each site, with no model files conflicting. This workspace
 structure is consistent with the format of the POC real world application.
+
+.. raw:: html
+
+   <details>
+   <summary><a>Example folder structure for 2.5.0</a></summary>
+
+.. code-block:: none
+
+  simulator/
+  ├── server
+  │   ├── local
+  │   │   └── log.config
+  │   ├── log.txt
+  │   ├── pool_stats
+  │   │   └── simulator_cell_stats.json
+  │   ├── simulate_job
+  │   │   ├── app_server
+  │   │   │   ├── FL_global_model.pt
+  │   │   │   └── config
+  │   │   │       ├── config_fed_client.conf
+  │   │   │       └── config_fed_server.conf
+  │   │   ├── artifacts
+  │   │   │   ├── 39d0b7edb17b437dbf77da2e402b2a4d
+  │   │   │   │   └── artifacts
+  │   │   │   │       └── running_loss_reset.txt
+  │   │   │   └── b10ff3e54b0d464c8aab8cf0b751f3cf
+  │   │   │       └── artifacts
+  │   │   │           └── running_loss_reset.txt
+  │   │   ├── cross_site_val
+  │   │   │   ├── cross_val_results.json
+  │   │   │   ├── model_shareables
+  │   │   │   │   ├── SRV_FL_global_model.pt
+  │   │   │   │   ├── site-1
+  │   │   │   │   └── site-2
+  │   │   │   └── result_shareables
+  │   │   │       ├── site-1_SRV_FL_global_model.pt
+  │   │   │       ├── site-1_site-1
+  │   │   │       ├── site-1_site-2
+  │   │   │       ├── site-2_SRV_FL_global_model.pt
+  │   │   │       ├── site-2_site-1
+  │   │   │       └── site-2_site-2
+  │   │   ├── meta.json
+  │   │   ├── mlruns
+  │   │   │   ├── 0
+  │   │   │   │   └── meta.yaml
+  │   │   │   └── 470289463842501388
+  │   │   │       ├── 39d0b7edb17b437dbf77da2e402b2a4d
+  │   │   │       │   ├── artifacts
+  │   │   │       │   ├── meta.yaml
+  │   │   │       │   ├── metrics
+  │   │   │       │   │   ├── running_loss
+  │   │   │       │   │   ├── train_loss
+  │   │   │       │   │   └── validation_accuracy
+  │   │   │       │   ├── params
+  │   │   │       │   │   ├── learning_rate
+  │   │   │       │   │   ├── loss
+  │   │   │       │   │   └── momentum
+  │   │   │       │   └── tags
+  │   │   │       │       ├── client
+  │   │   │       │       ├── job_id
+  │   │   │       │       ├── mlflow.note.content
+  │   │   │       │       ├── mlflow.runName
+  │   │   │       │       └── run_name
+  │   │   │       ├── b10ff3e54b0d464c8aab8cf0b751f3cf
+  │   │   │       │   ├── artifacts
+  │   │   │       │   ├── meta.yaml
+  │   │   │       │   ├── metrics
+  │   │   │       │   │   ├── running_loss
+  │   │   │       │   │   ├── train_loss
+  │   │   │       │   │   └── validation_accuracy
+  │   │   │       │   ├── params
+  │   │   │       │   │   ├── learning_rate
+  │   │   │       │   │   ├── loss
+  │   │   │       │   │   └── momentum
+  │   │   │       │   └── tags
+  │   │   │       │       ├── client
+  │   │   │       │       ├── job_id
+  │   │   │       │       ├── mlflow.note.content
+  │   │   │       │       ├── mlflow.runName
+  │   │   │       │       └── run_name
+  │   │   │       ├── meta.yaml
+  │   │   │       └── tags
+  │   │   │           └── mlflow.note.content
+  │   │   └── tb_events
+  │   │       ├── site-1
+  │   │       │   ├── events.out.tfevents.1724447288.yuhongw-mlt.86138.3
+  │   │       │   ├── metrics_running_loss
+  │   │       │   │   └── events.out.tfevents.1724447288.yuhongw-mlt.86138.5
+  │   │       │   └── metrics_train_loss
+  │   │       │       └── events.out.tfevents.1724447288.yuhongw-mlt.86138.4
+  │   │       └── site-2
+  │   │           ├── events.out.tfevents.1724447288.yuhongw-mlt.86138.0
+  │   │           ├── metrics_running_loss
+  │   │           │   └── events.out.tfevents.1724447288.yuhongw-mlt.86138.2
+  │   │           └── metrics_train_loss
+  │   │               └── events.out.tfevents.1724447288.yuhongw-mlt.86138.1
+  │   └── startup
+  ├── site-1
+  │   ├── local
+  │   │   └── log.config
+  │   ├── log.txt
+  │   ├── simulate_job
+  │   │   ├── app_site-1
+  │   │   │   └── config
+  │   │   │       ├── config_fed_client.conf
+  │   │   │       └── config_fed_server.conf
+  │   │   ├── meta.json
+  │   │   └── models
+  │   │       └── local_model.pt
+  │   └── startup
+  ├── site-2
+  │   ├── local
+  │   │   └── log.config
+  │   ├── log.txt
+  │   ├── simulate_job
+  │   │   ├── app_site-2
+  │   │   │   └── config
+  │   │   │       ├── config_fed_client.conf
+  │   │   │       └── config_fed_server.conf
+  │   │   ├── meta.json
+  │   │   └── models
+  │   │       └── local_model.pt
+  │   └── startup
+  └── startup
+
+.. raw:: html
+
+   </details>
+   <br />
 
 Allow Simulator local resources configuration
 ==============================================
