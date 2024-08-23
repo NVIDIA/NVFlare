@@ -11,51 +11,47 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare import FedJob
-from nvflare.apis.dxo import DataKind
-from nvflare.app_common.aggregators import InTimeAccumulateWeightedAggregator
-from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
-from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
+from pt.learner_with_mlflow import PTLearner
+from pt.simple_network import SimpleNetwork
+
+from nvflare.app_common.executors.learner_executor import LearnerExecutor
+from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
+from nvflare.app_opt.pt.job_config.ml_flow_job import MLFlowJob
 
 if __name__ == "__main__":
     n_clients = 2
-    num_rounds = 2
+    num_rounds = 1
 
-    job = FedJob(name="hello-pt-mlflow")
-
-    aggregator_id = job.to_server(InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS), id="aggregator")
-
-    persistor_id = job.to_server(JoblibModelParamPersistor(initial_params={"n_clusters": 2}), id="persistor")
-
-    # Define the controller workflow and send to server
-    controller = ScatterAndGather(
-        min_clients=n_clients,
+    job = MLFlowJob(
+        name="hello-pt-mlflow",
+        n_clients=n_clients,
         num_rounds=num_rounds,
-        wait_time_after_min_received=10,
-        aggregator_id=aggregator_id,
-        persistor_id=persistor_id,
-        # shareable_generator_id=shareable_generator_id,
-        train_task_name="train",  # Client will start training once received such task.
-        train_timeout=0,
+        initial_model=SimpleNetwork(),
+        tracking_uri="file:///{WORKSPACE}/{JOB_ID}/mlruns",
+        kwargs={
+            "experiment_name": "hello-pt-experiment",
+            "run_name": "hello-pt-with-mlflow",
+            "experiment_tags": {"mlflow.note.content": "## **Hello PyTorch experiment with MLflow**"},
+            "run_tags": {
+                "mlflow.note.content": "## Federated Experiment tracking with MLflow \n### Example of using **[NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html)** to train an image classifier using federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629)) and [PyTorch](https://pytorch.org/) as the deep learning training framework. This example also highlights the Flare streaming capability from the clients to the server for server delivery to MLflow.\n\n> **_NOTE:_** \n This example uses the *[CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html)* dataset and will load its data within the trainer code.\n"
+            },
+        },
+        artifact_location="artifacts",
     )
-    job.to(controller, "server")
-    # job.to_server(controller)
 
-    # Define the initial global model and send to server
-    job.to(PTModel(Net()), "server")
+    ctrl = CrossSiteModelEval()
 
-    job.to(IntimeModelSelector(key_metric="accuracy"), "server")
+    job.to(ctrl, "server")
 
-    # Note: We can optionally replace the above code with the FedAvgJob, which is a pattern to simplify FedAvg job creations
-    # job = FedAvgJob(name="cifar10_fedavg", num_rounds=num_rounds, n_clients=n_clients, initial_model=Net())
-
-    # Add clients
     for i in range(n_clients):
-        executor = ScriptRunner(
-            script=train_script, script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
+        site_name = f"site-{i+1}"
+        learner_id = job.to(
+            PTLearner(epochs=5, lr=0.01, analytic_sender_id="log_writer"),
+            site_name,
+            id="pt_learner",
         )
-        job.to(executor, target=f"site-{i}")
-    # job.to_clients(executor)
+        executor = LearnerExecutor(learner_id=learner_id)
+        job.to(executor, site_name, tasks=["train", "submit_model", "validate"])
 
-    # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
+    job.export_job("./jobs/job_config")
+    job.simulator_run("./jobs/workdir")

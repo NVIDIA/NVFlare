@@ -24,6 +24,8 @@ from nvflare.app_common.widgets.validation_json_generator import ValidationJsonG
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.app_opt.pt.job_config.model import PTModel
+from nvflare.app_opt.tracking.mlflow.mlflow_receiver import MLflowReceiver
+from nvflare.app_opt.tracking.mlflow.mlflow_writer import MLflowWriter
 from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.job_config.api import FedJob
 
@@ -38,6 +40,9 @@ class MLFlowJob(FedJob):
         min_clients: int = 1,
         mandatory_clients: Optional[List[str]] = None,
         key_metric: str = "accuracy",
+        tracking_uri=None,
+        kwargs=None,
+        artifact_location=None,
     ):
         """PyTorch FedAvg Job.
 
@@ -55,6 +60,7 @@ class MLFlowJob(FedJob):
             key_metric (str, optional): Metric used to determine if the model is globally best.
                 if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
                 Defaults to "accuracy".
+            kwargs:
         """
         super().__init__(name, min_clients, mandatory_clients)
         self.key_metric = key_metric
@@ -71,10 +77,15 @@ class MLFlowJob(FedJob):
 
         shareable_generator = FullModelShareableGenerator()
         shareable_generator_id = self.to_server(shareable_generator, id="shareable_generator")
-        aggregator_id = self.to_server(InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS), id="aggregator")
+        aggregator_id = self.to_server(
+            InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS), id="aggregator"
+        )
 
         component = TBAnalyticsReceiver()
         self.to_server(id="receiver", obj=component)
+
+        component = MLflowReceiver(tracking_uri=tracking_uri, kw_args=kwargs, artifact_location=artifact_location)
+        self.to_server(id="mlflow_receiver_with_tracking_uri", obj=component)
 
         comp_ids = self.to_server(PTModel(initial_model))
 
@@ -85,12 +96,12 @@ class MLFlowJob(FedJob):
             aggregator_id=aggregator_id,
             persistor_id=comp_ids["persistor_id"],
             shareable_generator_id=shareable_generator_id,
-
-            # train_task_name="train",  # Client will start training once received such task.
-            # train_timeout=0,
         )
         self.to_server(controller)
 
     def set_up_client(self, target: str):
         component = ConvertToFedEvent(events_to_convert=["analytix_log_stats"], fed_event_prefix="fed.")
         self.to(id="event_to_fed", obj=component, target=target)
+
+        ml_flow_writer = MLflowWriter(event_type="event_type")
+        self.to(id="log_writer", obj=ml_flow_writer, target=target)
