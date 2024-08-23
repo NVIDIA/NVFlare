@@ -1,0 +1,48 @@
+{
+    "format_version": 2,
+    "executors": [
+        {
+            "tasks": [
+                "config",
+                "start"
+            ],
+            "executor": {
+                "id": "Executor",
+                "path": "nvflare.app_opt.xgboost.histogram_based_v2.fed_executor.FedXGBHistogramExecutor",
+                "args": {
+                    "data_loader_id": "dataloader",
+                    "model_file_name": "test.model.json",
+                    "metrics_writer_id": "metrics_writer"
+                }
+            }
+        }
+    ],
+    "task_result_filters": [],
+    "task_data_filters": [],
+    "components": [
+        {
+            "id": "dataloader",
+            "path": "data_loader.DataLoader",
+            "args": {
+                "data_split_filename": "/tmp/dataset/horizontal_xgb_data/data_{SITE_NAME}.json"
+            }
+        },
+        {
+            "id": "metrics_writer",
+            "path": "nvflare.app_opt.tracking.tb.tb_writer.TBWriter",
+            "args": {
+                "event_type": "analytix_log_stats"
+            }
+        },
+        {
+            "id": "event_to_fed",
+            "path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent",
+            "args": {
+                "events_to_convert": [
+                    "analytix_log_stats"
+                ],
+                "fed_event_prefix": "fed."
+            }
+        }
+    ]
+}
