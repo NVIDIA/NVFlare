@@ -1,7 +1,9 @@
-nvflare~=2.4.0rc
+nvflare~=2.5.0rc
 openmined.psi==1.1.1
 pandas
-xgboost>=1.7.0
 scikit-learn
 torch
 tensorboard
+# require xgboost 2.2 version, for now need to install a nightly build
+--extra-index-url https://s3-us-west-2.amazonaws.com/xgboost-nightly-builds/list.html?prefix=federated-secure/
+xgboost
