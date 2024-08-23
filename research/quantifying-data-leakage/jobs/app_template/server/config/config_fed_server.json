@@ -49,7 +49,7 @@
         },
         {
             "id": "json_generator",
-            "path": "nvflare.app_common.widgets.validation_json_generator",
+            "path": "nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator",
             "args": {}
         }
     ],
