@@ -1,7 +1,7 @@
 nvflare~=2.4.0rc
 openmined.psi==1.1.1
 pandas
-xgboost==2.0.3
+xgboost==2.1.1
 scikit-learn
 torch
 tensorboard
