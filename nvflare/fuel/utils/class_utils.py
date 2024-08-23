@@ -122,11 +122,16 @@ class ModuleScanner:
             The module name if found.
         """
         if class_name not in self._class_table:
-            return None
+            raise ConfigError(
+                f"Cannot find class '{class_name}'. Please check its spelling. If the spelling is correct, specify the class using its full path."
+            )
 
         modules = self._class_table.get(class_name, None)
         if modules and len(modules) > 1:
-            raise ConfigError(f"There are multiple modules with the class_name:{class_name}, modules are: {modules}")
+            raise ConfigError(
+                f"Multiple modules have the class '{class_name}': {modules}. "
+                f"Please specify the class using its full path."
+            )
         else:
             return modules[0]
 
