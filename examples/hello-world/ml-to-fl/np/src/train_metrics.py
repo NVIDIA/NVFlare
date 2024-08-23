@@ -66,8 +66,6 @@ def main():
         # evaluation
         metrics = evaluate(input_numpy_array)
 
-        sys_info = flare.system_info()
-        print(f"system info is: {sys_info}")
         print(f"finish round: {input_model.current_round}")
 
         # send back the model

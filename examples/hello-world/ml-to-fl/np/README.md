@@ -29,6 +29,8 @@ And we send back the FLModel with "params_type"="FULL" in [./src/train_full.py](
 After we modify our training script, we can create a job using the ScriptRunner: [np_client_api_job.py](./np_client_api_job.py).
 (Please refer to [FedJob API](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html) for more details on formulating a job)
 
+Then we can run the job using the simulator with the Job API. (This is equivalent to using the CLI command `nvflare simulator <job_folder>`)
+
 ```bash
 python3 np_client_api_job.py --script src/train_full.py
 ```
@@ -54,8 +56,6 @@ We have several ways of doing that:
   - `SummaryWriter` mimics Tensorboard `SummaryWriter`'s `add_scalar`, `add_scalars` method
   - `WandBWriter` mimics Weights And Biases's `log` method
   - `MLflowWriter` mimics MLflow's tracking api
-  - `flare.log` is the underlying common pattern that can be directly used as well, you need to figure out the
-    corresponding `AnalyticsDataType` for your value
 
 In this example we use `MLflowWriter` in [./src/train_metrics.py](./src/train_metrics.py) and configure a corresponding `MLflowReceiver` in the job script [np_client_api_job.py](np_client_api_job.py)
 

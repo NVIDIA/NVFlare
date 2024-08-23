@@ -32,15 +32,15 @@ def main():
     # initializes NVFlare interface
     flare.init()
 
+    # get system information
+    sys_info = flare.system_info()
+    print(f"system info is: {sys_info}")
+
     while flare.is_running():
 
         # get model from NVFlare
         input_model = flare.receive()
         print(f"received weights is: {input_model.params}", flush=True)
-
-        # get system information
-        sys_info = flare.system_info()
-        print(f"system info is: {sys_info}")
 
         input_numpy_array = input_model.params["numpy_key"]
 
@@ -50,10 +50,17 @@ def main():
         # evaluation
         metrics = evaluate(input_numpy_array)
 
+        print(f"finish round: {input_model.current_round}", flush=True)
+
         # send back the model
         print(f"send back: {output_numpy_array}", flush=True)
         flare.send(
-            flare.FLModel(params={"numpy_key": output_numpy_array}, params_type="FULL", metrics={"accuracy": metrics})
+            flare.FLModel(
+                params={"numpy_key": output_numpy_array},
+                params_type="FULL",
+                metrics={"accuracy": metrics},
+                current_round=input_model.current_round,
+            )
         )
 
 
