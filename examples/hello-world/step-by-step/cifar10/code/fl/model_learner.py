@@ -25,6 +25,10 @@ from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.abstract.model_learner import ModelLearner
 from nvflare.app_common.app_constant import ModelName
 
+# (optional) We change to use GPU to speed things up.
+# if you want to use CPU, change DEVICE="cpu"
+DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+
 
 class CIFAR10ModelLearner(ModelLearner):
     def __init__(
@@ -36,7 +40,7 @@ class CIFAR10ModelLearner(ModelLearner):
         num_workers: int = 1,
         dataset_path: str = "/tmp/nvflare/data/cifar10",
         model_path: str = "/tmp/nvflare/data/cifar10/cifar_net.pth",
-        device: str = "cuda:0",
+        device: str = DEVICE,
     ):
         """CIFAR-10 Trainer.
 
