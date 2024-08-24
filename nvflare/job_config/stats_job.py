@@ -25,17 +25,17 @@ from nvflare.app_common.workflows.statistics_controller import StatisticsControl
 
 
 class StatsJob(FedJob):
-
-    def __init__(self,
-                 job_name: str,
-                 statistic_configs: dict,
-                 stats_generator: Statistics,
-                 output_path: str,
-                 min_count: int = 10,
-                 min_noise_level=0.1,
-                 max_noise_level=0.3,
-                 max_bins_percent=10,
-                 ):
+    def __init__(
+        self,
+        job_name: str,
+        statistic_configs: dict,
+        stats_generator: Statistics,
+        output_path: str,
+        min_count: int = 10,
+        min_noise_level=0.1,
+        max_noise_level=0.3,
+        max_bins_percent=10,
+    ):
         super().__init__()
         self.writer_id = "stats_writer"
         self.stats_generator_id = "stats_generator"
@@ -68,8 +68,9 @@ class StatsJob(FedJob):
             self.add_privacy_result_filters(site_id)
 
     def get_stats_controller(self) -> StatisticsController:
-        return StatisticsController(statistic_configs=self.statistic_configs, writer_id=self.writer_id,
-                                    enable_pre_run_task=False)
+        return StatisticsController(
+            statistic_configs=self.statistic_configs, writer_id=self.writer_id, enable_pre_run_task=False
+        )
 
     def get_stats_output_writer(self):
         json_encoder_path = "nvflare.app_common.utils.json_utils.ObjectEncoder"

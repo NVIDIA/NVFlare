@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import argparse
+
 from image_statistics import ImageStatistics
+
 from nvflare.job_config.stats_job import StatsJob
 
 
@@ -38,19 +40,16 @@ def main():
     work_dir = args.work_dir
     export_config = args.export_config
 
-    statistic_configs = {
-        "count": {},
-        "histogram": {
-            "*": {"bins": 20, "range": [0, 256]}
-        }
-    }
+    statistic_configs = {"count": {}, "histogram": {"*": {"bins": 20, "range": [0, 256]}}}
     # define local stats generator
     stats_generator = ImageStatistics(data_root_dir)
 
-    job = StatsJob(job_name="stats_image",
-                   statistic_configs=statistic_configs,
-                   stats_generator=stats_generator,
-                   output_path=output_path)
+    job = StatsJob(
+        job_name="stats_image",
+        statistic_configs=statistic_configs,
+        stats_generator=stats_generator,
+        output_path=output_path,
+    )
 
     sites = [f"site-{i + 1}" for i in range(n_clients)]
     job.setup_client(sites)

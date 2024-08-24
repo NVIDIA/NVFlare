@@ -14,6 +14,7 @@
 import argparse
 
 from df_stats import DFStatistics
+
 from nvflare.job_config.stats_job import StatsJob
 
 
@@ -50,10 +51,12 @@ def main():
     # define local stats generator
     df_stats_generator = DFStatistics(data_root_dir=data_root_dir)
 
-    job = StatsJob(job_name="stats_df",
-                   statistic_configs=statistic_configs,
-                   stats_generator=df_stats_generator,
-                   output_path=output_path)
+    job = StatsJob(
+        job_name="stats_df",
+        statistic_configs=statistic_configs,
+        stats_generator=df_stats_generator,
+        output_path=output_path,
+    )
 
     sites = [f"site-{i + 1}" for i in range(n_clients)]
     job.setup_client(sites)
