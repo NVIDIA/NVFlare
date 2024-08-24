@@ -26,7 +26,7 @@ def define_parser():
     parser.add_argument("--n_clients", type=int, default=2)
     parser.add_argument("--num_rounds", type=int, default=5)
     parser.add_argument("--script", type=str, default="src/train_full.py")
-    parser.add_argument("--launch", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--launch_process", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--export_config", action=argparse.BooleanOptionalAction, default=False)
 
     return parser.parse_args()
@@ -39,7 +39,7 @@ def main():
     n_clients = args.n_clients
     num_rounds = args.num_rounds
     script = args.script
-    launch = args.launch
+    launch_process = args.launch_process
     export_config = args.export_config
 
     job = FedJob(name="np_client_api")
@@ -67,7 +67,7 @@ def main():
 
     executor = ScriptRunner(
         script=script,
-        launch_external_process=launch,
+        launch_external_process=launch_process,
         framework=FrameworkType.NUMPY,
     )
     job.to_clients(executor)

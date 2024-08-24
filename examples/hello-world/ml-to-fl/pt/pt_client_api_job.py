@@ -27,7 +27,7 @@ def define_parser():
     parser.add_argument("--num_rounds", type=int, default=5)
     parser.add_argument("--script", type=str, default="src/cifar10_fl.py")
     parser.add_argument("--key_metric", type=str, default="accuracy")
-    parser.add_argument("--launch", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--launch_process", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--launch_command", type=str, default="python3 -u")
     parser.add_argument("--ports", type=str, default="7777,8888")
     parser.add_argument("--export_config", action=argparse.BooleanOptionalAction, default=False)
@@ -43,7 +43,7 @@ def main():
     num_rounds = args.num_rounds
     script = args.script
     key_metric = args.key_metric
-    launch = args.launch
+    launch_process = args.launch_process
     launch_command = args.launch_command
     ports = args.ports.split(",")
     export_config = args.export_config
@@ -59,7 +59,7 @@ def main():
     for i in range(n_clients):
         executor = ScriptRunner(
             script=script,
-            launch_external_process=launch,
+            launch_external_process=launch_process,
             command=launch_command.replace("{PORT}", ports[i]),
             framework=FrameworkType.PYTORCH,
         )

@@ -177,7 +177,7 @@ Then we run it using the NVFlare simulator with the ```torch.distributed.run``` 
 
 ```bash
 bash ./prepare_data.sh
-python3 pt_client_api_job.py --script src/cifar10_ddp_fl.py --launch --launch_command 'python3 -m torch.distributed.run --nnodes\=1 --nproc_per_node\=2 --master_port\={PORT}' --ports 7777,8888
+python3 pt_client_api_job.py --script src/cifar10_ddp_fl.py --launch_process --launch_command 'python3 -m torch.distributed.run --nnodes\=1 --nproc_per_node\=2 --master_port\={PORT}' --ports 7777,8888
 ```
 
 This will start 2 clients and each client will start 2 worker processes.
@@ -213,5 +213,5 @@ Then we run it using the NVFlare simulator:
 
 ```bash
 bash ./prepare_data.sh
-python3 pt_client_api_job.py --script src/cifar10_lightning_ddp_fl.py --key_metric val_acc_epoch --launch
+python3 pt_client_api_job.py --script src/cifar10_lightning_ddp_fl.py --key_metric val_acc_epoch --launch_process
 ```

@@ -98,5 +98,5 @@ Then we can run the job using the simulator:
 
 ```bash
 bash ./prepare_data.sh
-TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async python3 tf_client_api_job.py --script src/cifar10_tf_multi_gpu_fl.py --launch
+TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async python3 tf_client_api_job.py --script src/cifar10_tf_multi_gpu_fl.py --launch_process
 ```

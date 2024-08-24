@@ -85,7 +85,7 @@ We must ensure our training script [./src/train_full.py](./src/train_full.py) is
 Then we can run it using the NVFlare Simulator:
 
 ```bash
-python3 np_client_api_job.py --script src/train_full.py --launch
+python3 np_client_api_job.py --script src/train_full.py --launch_process
 ```
 
 ### Metrics streaming
@@ -95,5 +95,5 @@ In this example we use `MLflowWriter` in [./src/train_metrics.py](./src/train_me
 Then we can run it using the NVFlare Simulator:
 
 ```bash
-python3 np_client_api_job.py --script src/train_metrics.py --launch
+python3 np_client_api_job.py --script src/train_metrics.py --launch_process
 ```
