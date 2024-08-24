@@ -28,12 +28,12 @@ def train(input_arr, current_round, epochs=3):
     for i in range(epochs):
         for j in range(num_of_batches):
             global_step = current_round * num_of_batches * epochs + i * num_of_batches + j
-            print(f"logging record: {global_step}")
             writer.log_metric(
                 key="global_step",
                 value=global_step,
                 step=global_step,
             )
+        print(f"logged records from epoch: {i}")
         # mock training with plus 1
         output_arr += 1
         # assume each epoch takes 1 seconds
@@ -66,8 +66,6 @@ def main():
         # evaluation
         metrics = evaluate(input_numpy_array)
 
-        sys_info = flare.system_info()
-        print(f"system info is: {sys_info}")
         print(f"finish round: {input_model.current_round}")
 
         # send back the model

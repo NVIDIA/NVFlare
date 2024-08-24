@@ -32,27 +32,39 @@ def main():
     # initializes NVFlare interface
     flare.init()
 
-    # get model from NVFlare
-    input_model = flare.receive()
-    print(f"received weights is: {input_model.params}")
-
     # get system information
     sys_info = flare.system_info()
     print(f"system info is: {sys_info}")
 
-    input_numpy_array = input_model.params["numpy_key"]
+    while flare.is_running():
 
-    # training
-    output_numpy_array = train(input_numpy_array)
+        # get model from NVFlare
+        input_model = flare.receive()
+        print(f"received weights is: {input_model.params}")
 
-    # evaluation
-    metrics = evaluate(input_numpy_array)
+        input_numpy_array = input_model.params["numpy_key"]
 
-    # send back the model
-    print(f"send back: {output_numpy_array}")
-    flare.send(
-        flare.FLModel(params={"numpy_key": output_numpy_array}, params_type="FULL", metrics={"accuracy": metrics})
-    )
+        # training
+        output_numpy_array = train(input_numpy_array)
+
+        # evaluation
+        metrics = evaluate(input_numpy_array)
+
+        print(f"finish round: {input_model.current_round}")
+
+        # calculate difference here
+        diff = output_numpy_array - input_numpy_array
+
+        # send back the model difference
+        print(f"send back: {diff}")
+        flare.send(
+            flare.FLModel(
+                params={"numpy_key": diff},
+                params_type="DIFF",
+                metrics={"accuracy": metrics},
+                current_round=input_model.current_round,
+            )
+        )
 
 
 if __name__ == "__main__":

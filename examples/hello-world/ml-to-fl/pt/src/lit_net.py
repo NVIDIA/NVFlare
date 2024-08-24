@@ -16,8 +16,8 @@ from typing import Any
 
 import torch.nn as nn
 import torch.optim as optim
-from net import Net
 from pytorch_lightning import LightningModule
+from src.net import Net
 from torchmetrics import Accuracy
 
 NUM_CLASSES = 10

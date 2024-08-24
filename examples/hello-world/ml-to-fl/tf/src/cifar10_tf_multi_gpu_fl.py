@@ -34,6 +34,7 @@ def main():
 
     with strategy.scope():
         model = TFNet()
+        model.build(input_shape=(None, 32, 32, 3))
         model.compile(
             optimizer="adam", loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=["accuracy"]
         )
