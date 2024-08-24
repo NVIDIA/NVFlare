@@ -30,6 +30,7 @@ def define_parser():
     parser.add_argument("--launch", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--launch_command", type=str, default="python3 -u")
     parser.add_argument("--ports", type=str, default="7777,8888")
+    parser.add_argument("--export_config", action=argparse.BooleanOptionalAction, default=False)
 
     return parser.parse_args()
 
@@ -45,6 +46,7 @@ def main():
     launch = args.launch
     launch_command = args.launch_command
     ports = args.ports.split(",")
+    export_config = args.export_config
 
     job = FedAvgJob(
         name="pt_client_api",
@@ -63,8 +65,10 @@ def main():
         )
         job.to(executor, f"site-{i+1}")
 
-    # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
+    if export_config:
+        job.export_job("/tmp/nvflare/jobs/job_config")
+    else:
+        job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
 
 
 if __name__ == "__main__":

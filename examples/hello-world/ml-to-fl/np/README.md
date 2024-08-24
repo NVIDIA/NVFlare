@@ -35,6 +35,8 @@ Then we can run the job using the simulator with the Job API. (This is equivalen
 python3 np_client_api_job.py --script src/train_full.py
 ```
 
+Note: We can instead export the job configuration to use in other modes with the flag `--export_config`.
+
 ### Send model parameters differences back to the NVFlare server
 
 We can send model parameter differences back to the NVFlare server by calculating the parameters differences and sending it back: [./src/train_diff.py](./src/train_diff.py)

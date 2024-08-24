@@ -26,6 +26,7 @@ def define_parser():
     parser.add_argument("--num_rounds", type=int, default=5)
     parser.add_argument("--script", type=str, default="src/cifar10_tf_fl.py")
     parser.add_argument("--launch", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--export_config", action=argparse.BooleanOptionalAction, default=False)
 
     return parser.parse_args()
 
@@ -38,9 +39,10 @@ def main():
     num_rounds = args.num_rounds
     script = args.script
     launch = args.launch
+    export_config = args.export_config
 
     job = FedAvgJob(
-        name="tf_client_api_in_process",
+        name="tf_client_api",
         n_clients=n_clients,
         num_rounds=num_rounds,
         initial_model=TFNet(input_shape=(None, 32, 32, 3)),
@@ -53,8 +55,10 @@ def main():
     )
     job.to_clients(executor)
 
-    # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir", n_clients=n_clients, gpu="0")
+    if export_config:
+        job.export_job("/tmp/nvflare/jobs/job_config")
+    else:
+        job.simulator_run("/tmp/nvflare/jobs/workdir", n_clients=n_clients, gpu="0")
 
 
 if __name__ == "__main__":
