@@ -23,6 +23,7 @@ from torchvision.datasets import CIFAR10
 from torchvision.transforms import Compose, Normalize, ToTensor
 
 import nvflare.client as flare
+from nvflare.client.tracking import SummaryWriter
 
 DATASET_PATH = "/tmp/nvflare/data"
 
@@ -33,7 +34,6 @@ def main():
     lr = 0.01
     model = SimpleNetwork()
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    model.to(device)
     loss = nn.CrossEntropyLoss()
     optimizer = SGD(model.parameters(), lr=lr, momentum=0.9)
     transforms = Compose(
@@ -58,6 +58,7 @@ def main():
         print(f"current_round={input_model.current_round}")
 
         model.load_state_dict(input_model.params)
+        model.to(device)
 
         steps = epochs * len(train_loader)
         for epoch in range(epochs):

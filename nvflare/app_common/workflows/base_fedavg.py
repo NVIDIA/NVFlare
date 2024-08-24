@@ -83,6 +83,7 @@ class BaseFedAvg(ModelController):
 
         aggr_helper = WeightedAggregationHelper()
         aggr_metrics_helper = WeightedAggregationHelper()
+        all_metrics = True
         for _result in results:
             aggr_helper.add(
                 data=_result.params,
@@ -90,15 +91,18 @@ class BaseFedAvg(ModelController):
                 contributor_name=_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN),
                 contribution_round=_result.current_round,
             )
-            aggr_metrics_helper.add(
-                data=_result.metrics,
-                weight=_result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0),
-                contributor_name=_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN),
-                contribution_round=_result.current_round,
-            )
+            if not _result.metrics:
+                all_metrics = False
+            if all_metrics:
+                aggr_metrics_helper.add(
+                    data=_result.metrics,
+                    weight=_result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0),
+                    contributor_name=_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN),
+                    contribution_round=_result.current_round,
+                )
 
         aggr_params = aggr_helper.get_result()
-        aggr_metrics = aggr_metrics_helper.get_result()
+        aggr_metrics = aggr_metrics_helper.get_result() if all_metrics else None
 
         aggr_result = FLModel(
             params=aggr_params,
