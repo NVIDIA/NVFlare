@@ -18,6 +18,8 @@ import logging
 import pkgutil
 from typing import Dict, List, Optional
 
+from nvflare.apis.fl_component import FLComponent
+from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.components_utils import create_classes_table_static
 from nvflare.security.logging import secure_format_exception
 
@@ -61,17 +63,6 @@ def instantiate_class(class_path, init_params):
     return instance
 
 
-class _ModuleScanResult:
-    """Data class for ModuleScanner."""
-
-    def __init__(self, class_name: str, module_name: str):
-        self.class_name = class_name
-        self.module_name = module_name
-
-    def __str__(self):
-        return f"{self.class_name}:{self.module_name}"
-
-
 class ModuleScanner:
     def __init__(self, base_pkgs: List[str], module_names: List[str], exclude_libs=True):
         """Loads specified modules from base packages and then constructs a class to module name mapping.
@@ -90,7 +81,6 @@ class ModuleScanner:
 
     def create_classes_table(self):
         class_table: Dict[str, str] = {}
-        scan_result_table = {}
         for base in self.base_pkgs:
             package = importlib.import_module(base)
 
@@ -108,18 +98,12 @@ class ModuleScanner:
                                         not name.startswith("_")
                                         and inspect.isclass(obj)
                                         and obj.__module__ == module_name
+                                        and issubclass(obj, FLComponent)
                                     ):
-                                        # same class name exists in multiple modules
-                                        if name in scan_result_table:
-                                            scan_result = scan_result_table[name]
-                                            if name in class_table:
-                                                class_table.pop(name)
-                                                class_table[f"{scan_result.module_name}.{name}"] = module_name
-                                            class_table[f"{module_name}.{name}"] = module_name
+                                        if name in class_table:
+                                            class_table[name].append(module_name)
                                         else:
-                                            scan_result = _ModuleScanResult(class_name=name, module_name=module_name)
-                                            scan_result_table[name] = scan_result
-                                            class_table[name] = module_name
+                                            class_table[name] = [module_name]
                             except (ModuleNotFoundError, RuntimeError, AttributeError) as e:
                                 self._logger.debug(
                                     f"Try to import module {module_name}, but failed: {secure_format_exception(e)}. "
@@ -137,7 +121,19 @@ class ModuleScanner:
         Returns:
             The module name if found.
         """
-        return self._class_table.get(class_name, None)
+        if class_name not in self._class_table:
+            raise ConfigError(
+                f"Cannot find class '{class_name}'. Please check its spelling. If the spelling is correct, specify the class using its full path."
+            )
+
+        modules = self._class_table.get(class_name, None)
+        if modules and len(modules) > 1:
+            raise ConfigError(
+                f"Multiple modules have the class '{class_name}': {modules}. "
+                f"Please specify the class using its full path."
+            )
+        else:
+            return modules[0]
 
 
 def _retrieve_parameters(class__, parameters):
