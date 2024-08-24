@@ -56,7 +56,7 @@ class SAGMLFlowJob(BaseFedJob):
                 Defaults to "accuracy".
             kwargs: kwargs dict
         """
-        super().__init__(initial_model, n_clients, num_rounds, name, min_clients, mandatory_clients, key_metric)
+        super().__init__(initial_model, name, min_clients, mandatory_clients, key_metric)
 
         shareable_generator = FullModelShareableGenerator()
         shareable_generator_id = self.to_server(shareable_generator, id="shareable_generator")

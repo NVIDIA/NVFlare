@@ -47,7 +47,7 @@ class FedAvgJob(BaseFedJob):
                 if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
                 Defaults to "accuracy".
         """
-        super().__init__(initial_model, n_clients, num_rounds, name, min_clients, mandatory_clients, key_metric)
+        super().__init__(initial_model, name, min_clients, mandatory_clients, key_metric)
 
         controller = FedAvg(
             num_clients=n_clients,
