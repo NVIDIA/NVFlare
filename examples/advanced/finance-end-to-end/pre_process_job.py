@@ -15,8 +15,9 @@
 
 import argparse
 
-from nvflare import FedJob, ScriptExecutor
+from nvflare import FedJob
 from nvflare.app_common.workflows.etl_controller import ETLController
+from nvflare.job_config.script_runner import ScriptRunner
 
 
 def main():
@@ -35,8 +36,8 @@ def main():
 
     # Add clients
     for site_name in site_names:
-        executor = ScriptExecutor(task_script_path=task_script_path, task_script_args=task_script_args)
-        job.to(executor, site_name, tasks=["pre_process"], gpu=0)
+        executor = ScriptRunner(script=task_script_path, script_args=task_script_args)
+        job.to(executor, site_name, tasks=["pre_process"])
 
     if work_dir:
         print(f"{work_dir=}")

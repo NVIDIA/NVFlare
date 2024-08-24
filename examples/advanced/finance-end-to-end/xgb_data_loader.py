@@ -44,11 +44,15 @@ class CreditCardDataLoader(XGBDataLoader):
             "x3_y2",
         ]
 
-    def load_data(self, client_id: str, split_mode: int) -> Tuple[xgb.DMatrix, xgb.DMatrix]:
+    def initialize(self, client_id: str, rank: int,
+                   data_split_mode: xgb.core.DataSplitMode = xgb.core.DataSplitMode.ROW):
+        super().initialize(client_id, rank, data_split_mode)
+
+    def load_data(self) -> Tuple[xgb.DMatrix, xgb.DMatrix]:
         data = {}
         for ds_name in self.dataset_names:
-            print("\nloading for site = ", client_id, f"{ds_name} dataset \n")
-            file_name = os.path.join(self.root_dir, client_id, self.base_file_names[ds_name])
+            print("\nloading for site = ", self.client_id, f"{ds_name} dataset \n")
+            file_name = os.path.join(self.root_dir, self.client_id, self.base_file_names[ds_name])
             df = pd.read_csv(file_name)
             data_num = len(data)
 
@@ -59,11 +63,10 @@ class CreditCardDataLoader(XGBDataLoader):
 
         # training
         x_train, y_train, total_train_data_num = data["train"]
-        data_split_mode = DataSplitMode(split_mode)
-        dmat_train = xgb.DMatrix(x_train, label=y_train, data_split_mode=data_split_mode)
+        dmat_train = xgb.DMatrix(x_train, label=y_train, data_split_mode=self.data_split_mode)
 
         # validation
         x_valid, y_valid, total_valid_data_num = data["test"]
-        dmat_valid = xgb.DMatrix(x_valid, label=y_valid, data_split_mode=data_split_mode)
+        dmat_valid = xgb.DMatrix(x_valid, label=y_valid, data_split_mode=self.data_split_mode)
 
         return dmat_train, dmat_valid

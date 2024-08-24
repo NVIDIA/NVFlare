@@ -46,7 +46,7 @@ def main():
     # Define the controller workflow and send to server
     controller = XGBFedController(
         num_rounds=num_rounds,
-        split_mode=0,
+        data_split_mode=0,
         secure_training=False,
         xgb_params=xgb_params,
         xgb_options={"early_stopping_rounds": early_stopping_rounds},
@@ -56,7 +56,7 @@ def main():
     # Add clients
     for site_name in site_names:
         executor = FedXGBHistogramExecutor(data_loader_id="data_loader")
-        job.to(executor, site_name, gpu=0)
+        job.to(executor, site_name)
         data_loader = CreditCardDataLoader(root_dir=root_dir, file_postfix=file_postfix)
         job.to(data_loader, site_name, id="data_loader")
 
