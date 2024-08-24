@@ -18,7 +18,6 @@ from typing import Tuple
 
 import pandas as pd
 import xgboost as xgb
-from xgboost.core import DataSplitMode
 
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
 
@@ -44,8 +43,9 @@ class CreditCardDataLoader(XGBDataLoader):
             "x3_y2",
         ]
 
-    def initialize(self, client_id: str, rank: int,
-                   data_split_mode: xgb.core.DataSplitMode = xgb.core.DataSplitMode.ROW):
+    def initialize(
+        self, client_id: str, rank: int, data_split_mode: xgb.core.DataSplitMode = xgb.core.DataSplitMode.ROW
+    ):
         super().initialize(client_id, rank, data_split_mode)
 
     def load_data(self) -> Tuple[xgb.DMatrix, xgb.DMatrix]:
