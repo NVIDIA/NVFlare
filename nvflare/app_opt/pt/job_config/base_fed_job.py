@@ -11,15 +11,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import List, Optional
 
-import torch.nn as nn
+from typing import Optional, List
 
-from nvflare.app_common.workflows.fedavg import FedAvg
-from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
+from torch import nn as nn
+
+from nvflare import FedJob
+from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
+from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
+from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
+from nvflare.app_opt.pt.job_config.model import PTModel
+from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 
 
-class FedAvgJob(BaseFedJob):
+class BaseFedJob(FedJob):
     def __init__(
         self,
         initial_model: nn.Module,
@@ -47,11 +52,25 @@ class FedAvgJob(BaseFedJob):
                 if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
                 Defaults to "accuracy".
         """
-        super().__init__(initial_model, n_clients, num_rounds, name, min_clients, mandatory_clients, key_metric)
+        super().__init__(name, min_clients, mandatory_clients)
+        self.key_metric = key_metric
+        self.initial_model = initial_model
+        self.num_rounds = num_rounds
+        self.n_clients = n_clients
 
-        controller = FedAvg(
-            num_clients=n_clients,
-            num_rounds=num_rounds,
-            persistor_id=self.comp_ids["persistor_id"],
-        )
-        self.to_server(controller)
+        component = ValidationJsonGenerator()
+        self.to_server(id="json_generator", obj=component)
+
+        if self.key_metric:
+            component = IntimeModelSelector(key_metric=self.key_metric)
+            self.to_server(id="model_selector", obj=component)
+
+        # TODO: make different tracking receivers configurable
+        component = TBAnalyticsReceiver(events=["fed.analytix_log_stats"])
+        self.to_server(id="receiver", obj=component)
+
+        self.comp_ids = self.to_server(PTModel(initial_model))
+
+    def set_up_client(self, target: str):
+        component = ConvertToFedEvent(events_to_convert=["analytix_log_stats"], fed_event_prefix="fed.")
+        self.to(id="event_to_fed", obj=component, target=target)

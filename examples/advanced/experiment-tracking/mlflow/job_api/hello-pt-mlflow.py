@@ -16,13 +16,13 @@ from pt.simple_network import SimpleNetwork
 
 from nvflare.app_common.executors.learner_executor import LearnerExecutor
 from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
-from nvflare.app_opt.pt.job_config.ml_flow_job import MLFlowJob
+from nvflare.app_opt.pt.job_config.fed_sag_mlflow import SAGMLFlowJob
 
 if __name__ == "__main__":
     n_clients = 2
     num_rounds = 1
 
-    job = MLFlowJob(
+    job = SAGMLFlowJob(
         name="hello-pt-mlflow",
         n_clients=n_clients,
         num_rounds=num_rounds,
