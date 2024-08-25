@@ -14,7 +14,6 @@ In the following examples, we will show various Federated Learning workflows and
 * [stats](stats) - Federated statistics image intensity histogram calculation.
 * [sag](sag) - FedAvg with Client API
 * [sag_deploy_map](sag_deploy_map) - FedAvg with site-specific configs.
-* [sag_model_learner](sag_model_learner) - FedAvg with Model Learner API
 * [sag_executor](sag_executor) - FedAvg with Executor API
 * [sag_mlflow](sag_mlflow) - FedAvg with MLflow experiment tracking logs.
 * [sag_he](sag_he) - FedAvg with homomorphic encyption using POC -he mode.
