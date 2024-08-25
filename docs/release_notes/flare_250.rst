@@ -143,3 +143,364 @@ Developer Tutorial Page
 To let users quickly learn Federated Learning with FLARE, we developed a `tutorial web page <https://nvidia.github.io/NVFlare>`_ with
 both code and video to interactively learn how to convert and run FL in a few minutes. We also
 created a tutorial catalog to help you easily search and find the examples you are interested in.
+
+**********************************
+Migration to 2.5.0: Notes and Tips
+**********************************
+
+FLARE 2.5.0 introduces some API and behavior changes. This migration guide will help you to migrate from the previous NVFlare version
+to the current version.
+
+Deprecate "name" to only use "path"
+===================================
+In 2.5.0, the "name" field in configurations is deprecated. You need to change the "name" field to "path" and use the full path. For
+example,
+
+.. code-block:: json
+
+  "name": "TBAnalyticsReceiver"
+
+needs to be updated to:
+
+.. code-block:: json
+
+  "path": "nvflare.app_opt.tracking.tb.tb_receiver.TBAnalyticsReceiver"
+
+XGBoost v1 - v2
+===============
+
+XGBoost support is enhanced in 2.5.0 to support secure training using Homomorphic Encryption (HE). The user interface is also simplified by
+setting the XGBoost parameters in the controller so all clients get the same parameters. 
+
+The main changes are:
+
+  - The xgboost params have been moved from the client configuration to server.
+  - New split_mode and secure_training parameters
+  - New :class:`CSVDataLoader<nvflare.app_opt.xgboost.histogram_based_v2.csv_data_loader.CSVDataLoader>`
+
+Sample configuration files for 2.5.0
+-------------------------------------
+
+config_fed_server.json
+""""""""""""""""""""""
+
+.. code-block:: json
+
+  {
+      "format_version": 2,
+      "num_rounds": 3,
+      "workflows": [
+          {
+              "id": "xgb_controller",
+              "path": "nvflare.app_opt.xgboost.histogram_based_v2.fed_controller.XGBFedController",
+              "args": {
+                  "num_rounds": "{num_rounds}",
+                  "split_mode": 1,
+                  "secure_training": false,
+                  "xgb_options": {
+                      "early_stopping_rounds": 2
+                  },
+                  "xgb_params": {
+                      "max_depth": 3,
+                      "eta": 0.1,
+                      "objective": "binary:logistic",
+                      "eval_metric": "auc",
+                      "tree_method": "hist",
+                      "nthread": 1
+                  },
+                  "client_ranks": {
+                      "site-1": 0,
+                      "site-2": 1
+                  },
+                  "in_process": true 
+              }
+          }
+      ]
+  }
+
+config_fed_client.json
+""""""""""""""""""""""
+
+.. code-block:: json
+
+  {
+      "format_version": 2,
+      "executors": [
+          {
+              "tasks": [
+                  "config",
+                  "start"
+              ],
+              "executor": {
+                  "id": "Executor",
+                  "path": "nvflare.app_opt.xgboost.histogram_based_v2.fed_executor.FedXGBHistogramExecutor",
+                  "args": {
+                      "data_loader_id": "dataloader",
+                      "in_process": true
+                  }
+              }
+          }
+      ],
+      "components": [
+          {
+              "id": "dataloader",
+              "path": "nvflare.app_opt.xgboost.histogram_based_v2.secure_data_loader.SecureDataLoader",
+              "args": {
+                  "rank": 0,
+                  "folder": "/tmp/nvflare/dataset/vertical_xgb_data"
+              }
+          }
+      ]
+  }
+
+Simulator workspace structure
+=============================
+
+In 2.4.0, the server and all the clients shared the same simulator workspace root of ``simulate_job``. The server and each client had
+their own app_XXXX job definition, but the same root folder for the workspace may result in conflicting model file locations.
+
+.. raw:: html
+
+   <details>
+   <summary><a>Example folder structure for 2.4.0</a></summary>
+
+.. code-block:: none
+
+  simulator/
+  ├── local
+  │   └── log.config
+  ├── simulate_job
+  │   ├── app_server
+  │   │   ├── FL_global_model.pt
+  │   │   ├── __init__.py
+  │   │   ├── config
+  │   │   │   ├── config_fed_client.json
+  │   │   │   ├── config_fed_server.json
+  │   │   │   ├── config_train.json
+  │   │   │   ├── config_validation.json
+  │   │   │   ├── dataset_0.json
+  │   │   │   └── environment.json
+  │   │   ├── custom
+  │   │   │   ├── __init__.py
+  │   │   │   ├── add_shareable_parameter.py
+  │   │   │   ├── client_aux_handler.py
+  │   │   │   ├── client_send_aux.py
+  │   │   │   ├── client_trainer.py
+  │   │   │   ├── fed_avg_responder.py
+  │   │   │   ├── model_shareable_manager.py
+  │   │   │   ├── print_shareable_parameter.py
+  │   │   │   ├── server_aux_handler.py
+  │   │   │   ├── server_send_aux.py
+  │   │   │   └── supervised_fitter.py
+  │   │   ├── docs
+  │   │   │   ├── Readme.md
+  │   │   │   └── license.txt
+  │   │   ├── eval
+  │   │   └── models
+  │   ├── app_site-1
+  │   │   ├── __init__.py
+  │   │   ├── config
+  │   │   │   ├── config_fed_client.json
+  │   │   │   ├── config_fed_server.json
+  │   │   │   ├── config_train.json
+  │   │   │   ├── config_validation.json
+  │   │   │   ├── dataset_0.json
+  │   │   │   └── environment.json
+  │   │   ├── custom
+  │   │   │   ├── __init__.py
+  │   │   │   ├── add_shareable_parameter.py
+  │   │   │   ├── client_aux_handler.py
+  │   │   │   ├── client_send_aux.py
+  │   │   │   ├── client_trainer.py
+  │   │   │   ├── fed_avg_responder.py
+  │   │   │   ├── model_shareable_manager.py
+  │   │   │   ├── print_shareable_parameter.py
+  │   │   │   ├── server_aux_handler.py
+  │   │   │   ├── server_send_aux.py
+  │   │   │   └── supervised_fitter.py
+  │   │   ├── docs
+  │   │   │   ├── Readme.md
+  │   │   │   └── license.txt
+  │   │   ├── eval
+  │   │   ├── log.txt
+  │   │   └── models
+  │   ├── app_site-2
+  │   │   ├── __init__.py
+  │   │   ├── config
+  │   │   │   ├── config_fed_client.json
+  │   │   │   ├── config_fed_server.json
+  │   │   │   ├── config_train.json
+  │   │   │   ├── config_validation.json
+  │   │   │   ├── dataset_0.json
+  │   │   │   └── environment.json
+  │   │   ├── custom
+  │   │   │   ├── __init__.py
+  │   │   │   ├── add_shareable_parameter.py
+  │   │   │   ├── client_aux_handler.py
+  │   │   │   ├── client_send_aux.py
+  │   │   │   ├── client_trainer.py
+  │   │   │   ├── fed_avg_responder.py
+  │   │   │   ├── model_shareable_manager.py
+  │   │   │   ├── print_shareable_parameter.py
+  │   │   │   ├── server_aux_handler.py
+  │   │   │   ├── server_send_aux.py
+  │   │   │   └── supervised_fitter.py
+  │   │   ├── docs
+  │   │   │   ├── Readme.md
+  │   │   │   └── license.txt
+  │   │   ├── eval
+  │   │   ├── log.txt
+  │   │   └── models
+  │   ├── log.txt
+  │   ├── meta.json
+  │   └── pool_stats
+  │       └── simulator_cell_stats.json
+  └── startup
+      ├── client_context.tenseal
+      └── server_context.tenseal
+
+.. raw:: html
+
+   </details>
+   <br />
+
+In 2.5.0, the server and all the clients will have their own workspace subfolder under the simulator workspace. The ``simulator_job``
+is within the workspace of each site. This results in the total isolation of each site, with no model files conflicting. This workspace
+structure is consistent with the format of the POC real world application.
+
+.. raw:: html
+
+   <details>
+   <summary><a>Example folder structure for 2.5.0</a></summary>
+
+.. code-block:: none
+
+  simulator/
+  ├── server
+  │   ├── local
+  │   │   └── log.config
+  │   ├── log.txt
+  │   ├── pool_stats
+  │   │   └── simulator_cell_stats.json
+  │   ├── simulate_job
+  │   │   ├── app_server
+  │   │   │   ├── FL_global_model.pt
+  │   │   │   └── config
+  │   │   │       ├── config_fed_client.conf
+  │   │   │       └── config_fed_server.conf
+  │   │   ├── artifacts
+  │   │   │   ├── 39d0b7edb17b437dbf77da2e402b2a4d
+  │   │   │   │   └── artifacts
+  │   │   │   │       └── running_loss_reset.txt
+  │   │   │   └── b10ff3e54b0d464c8aab8cf0b751f3cf
+  │   │   │       └── artifacts
+  │   │   │           └── running_loss_reset.txt
+  │   │   ├── cross_site_val
+  │   │   │   ├── cross_val_results.json
+  │   │   │   ├── model_shareables
+  │   │   │   │   ├── SRV_FL_global_model.pt
+  │   │   │   │   ├── site-1
+  │   │   │   │   └── site-2
+  │   │   │   └── result_shareables
+  │   │   │       ├── site-1_SRV_FL_global_model.pt
+  │   │   │       ├── site-1_site-1
+  │   │   │       ├── site-1_site-2
+  │   │   │       ├── site-2_SRV_FL_global_model.pt
+  │   │   │       ├── site-2_site-1
+  │   │   │       └── site-2_site-2
+  │   │   ├── meta.json
+  │   │   ├── mlruns
+  │   │   │   ├── 0
+  │   │   │   │   └── meta.yaml
+  │   │   │   └── 470289463842501388
+  │   │   │       ├── 39d0b7edb17b437dbf77da2e402b2a4d
+  │   │   │       │   ├── artifacts
+  │   │   │       │   ├── meta.yaml
+  │   │   │       │   ├── metrics
+  │   │   │       │   │   ├── running_loss
+  │   │   │       │   │   ├── train_loss
+  │   │   │       │   │   └── validation_accuracy
+  │   │   │       │   ├── params
+  │   │   │       │   │   ├── learning_rate
+  │   │   │       │   │   ├── loss
+  │   │   │       │   │   └── momentum
+  │   │   │       │   └── tags
+  │   │   │       │       ├── client
+  │   │   │       │       ├── job_id
+  │   │   │       │       ├── mlflow.note.content
+  │   │   │       │       ├── mlflow.runName
+  │   │   │       │       └── run_name
+  │   │   │       ├── b10ff3e54b0d464c8aab8cf0b751f3cf
+  │   │   │       │   ├── artifacts
+  │   │   │       │   ├── meta.yaml
+  │   │   │       │   ├── metrics
+  │   │   │       │   │   ├── running_loss
+  │   │   │       │   │   ├── train_loss
+  │   │   │       │   │   └── validation_accuracy
+  │   │   │       │   ├── params
+  │   │   │       │   │   ├── learning_rate
+  │   │   │       │   │   ├── loss
+  │   │   │       │   │   └── momentum
+  │   │   │       │   └── tags
+  │   │   │       │       ├── client
+  │   │   │       │       ├── job_id
+  │   │   │       │       ├── mlflow.note.content
+  │   │   │       │       ├── mlflow.runName
+  │   │   │       │       └── run_name
+  │   │   │       ├── meta.yaml
+  │   │   │       └── tags
+  │   │   │           └── mlflow.note.content
+  │   │   └── tb_events
+  │   │       ├── site-1
+  │   │       │   ├── events.out.tfevents.1724447288.yuhongw-mlt.86138.3
+  │   │       │   ├── metrics_running_loss
+  │   │       │   │   └── events.out.tfevents.1724447288.yuhongw-mlt.86138.5
+  │   │       │   └── metrics_train_loss
+  │   │       │       └── events.out.tfevents.1724447288.yuhongw-mlt.86138.4
+  │   │       └── site-2
+  │   │           ├── events.out.tfevents.1724447288.yuhongw-mlt.86138.0
+  │   │           ├── metrics_running_loss
+  │   │           │   └── events.out.tfevents.1724447288.yuhongw-mlt.86138.2
+  │   │           └── metrics_train_loss
+  │   │               └── events.out.tfevents.1724447288.yuhongw-mlt.86138.1
+  │   └── startup
+  ├── site-1
+  │   ├── local
+  │   │   └── log.config
+  │   ├── log.txt
+  │   ├── simulate_job
+  │   │   ├── app_site-1
+  │   │   │   └── config
+  │   │   │       ├── config_fed_client.conf
+  │   │   │       └── config_fed_server.conf
+  │   │   ├── meta.json
+  │   │   └── models
+  │   │       └── local_model.pt
+  │   └── startup
+  ├── site-2
+  │   ├── local
+  │   │   └── log.config
+  │   ├── log.txt
+  │   ├── simulate_job
+  │   │   ├── app_site-2
+  │   │   │   └── config
+  │   │   │       ├── config_fed_client.conf
+  │   │   │       └── config_fed_server.conf
+  │   │   ├── meta.json
+  │   │   └── models
+  │   │       └── local_model.pt
+  │   └── startup
+  └── startup
+
+.. raw:: html
+
+   </details>
+   <br />
+
+Allow Simulator local resources configuration
+==============================================
+In 2.4.0, we only support the ``log.config`` setting file within the simulator workspace ``startup`` folder to be used to change the log format.
+
+In 2.5.0, we enable the full ``local`` and ``startup`` contents to be configured under the simulator workspace. All the POC real world application
+local settings can be placed within the ``workspace/local`` folder and be deployed to each site. The ``log.config`` file is also moved to
+this ``workspace/local`` folder.

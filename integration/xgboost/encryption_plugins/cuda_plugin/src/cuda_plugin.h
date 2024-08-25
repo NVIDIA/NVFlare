@@ -215,13 +215,9 @@ class CUDAPlugin: public LocalPlugin {
 
       Buffer result = createBuffer(true, h_ptr, key_size, rand_seed, rand_seed_size, d_ciphers_ptr, mem_size);
 
-      void* buffer = malloc(mem_size);
-      cudaMemcpy(buffer, d_ciphers_ptr, mem_size, cudaMemcpyDeviceToHost);
       cudaFree(d_plains_ptr);
       cudaFree(d_ciphers_ptr);
       free(h_ptr);
-
-      //Buffer result(buffer, mem_size, true);
 
       return result;
     }
