@@ -11,13 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from svm_assembler import SVMAssembler
+
 from nvflare import FedJob
 from nvflare.app_common.aggregators.collect_and_assemble_aggregator import CollectAndAssembleAggregator
 from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor
-from nvflare.job_config.script_runner import ScriptRunner, FrameworkType
-from svm_assembler import SVMAssembler
+from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 
 if __name__ == "__main__":
     n_clients = 3
@@ -35,19 +36,21 @@ if __name__ == "__main__":
     initial_params = dict(kernel="rbf")
     job.to(JoblibModelParamPersistor(initial_params=initial_params), "server", id=persistor_id)
     job.to(FullModelShareableGenerator(), "server", id=shareable_generator_id)
-    job.to(CollectAndAssembleAggregator(assembler_id=assembler_id),  "server", id=aggregator_id)
-    job.to(SVMAssembler(kernel= "rbf"), "server", id = assembler_id)
+    job.to(CollectAndAssembleAggregator(assembler_id=assembler_id), "server", id=aggregator_id)
+    job.to(SVMAssembler(kernel="rbf"), "server", id=assembler_id)
 
-    ctrl = ScatterAndGather(min_clients=n_clients,
-                            num_rounds=num_rounds,
-                            start_round=0,
-                            wait_time_after_min_received=0,
-                            aggregator_id=aggregator_id,
-                            persistor_id=persistor_id,
-                            shareable_generator_id=shareable_generator_id,
-                            train_task_name="train",
-                            train_timeout=0,
-                            allow_empty_global_weights=True)
+    ctrl = ScatterAndGather(
+        min_clients=n_clients,
+        num_rounds=num_rounds,
+        start_round=0,
+        wait_time_after_min_received=0,
+        aggregator_id=aggregator_id,
+        persistor_id=persistor_id,
+        shareable_generator_id=shareable_generator_id,
+        train_task_name="train",
+        train_timeout=0,
+        allow_empty_global_weights=True,
+    )
 
     job.to(ctrl, "server")
 

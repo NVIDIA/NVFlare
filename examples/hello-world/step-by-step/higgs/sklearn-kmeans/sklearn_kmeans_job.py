@@ -17,7 +17,7 @@ from nvflare.app_common.aggregators import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor
-from nvflare.job_config.script_runner import ScriptRunner, FrameworkType
+from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 
 if __name__ == "__main__":
     n_clients = 3
@@ -32,28 +32,24 @@ if __name__ == "__main__":
     job = FedJob("sklearn_svm")
 
     initial_params = dict(
-        n_classes=2,
-        learning_rate="constant",
-        eta0=1e-05,
-        loss="log_loss",
-        penalty="l2",
-        fit_intercept=True,
-        max_iter=1
+        n_classes=2, learning_rate="constant", eta0=1e-05, loss="log_loss", penalty="l2", fit_intercept=True, max_iter=1
     )
     job.to(JoblibModelParamPersistor(initial_params=initial_params), "server", id=persistor_id)
     job.to(FullModelShareableGenerator(), "server", id=shareable_generator_id)
     job.to(InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS), "server", id=aggregator_id)
 
-    ctrl = ScatterAndGather(min_clients=n_clients,
-                            num_rounds=num_rounds,
-                            start_round=0,
-                            wait_time_after_min_received=0,
-                            aggregator_id=aggregator_id,
-                            persistor_id=persistor_id,
-                            shareable_generator_id=shareable_generator_id,
-                            train_task_name="train",
-                            train_timeout=0,
-                            allow_empty_global_weights=True)
+    ctrl = ScatterAndGather(
+        min_clients=n_clients,
+        num_rounds=num_rounds,
+        start_round=0,
+        wait_time_after_min_received=0,
+        aggregator_id=aggregator_id,
+        persistor_id=persistor_id,
+        shareable_generator_id=shareable_generator_id,
+        train_task_name="train",
+        train_timeout=0,
+        allow_empty_global_weights=True,
+    )
 
     job.to(ctrl, "server")
 

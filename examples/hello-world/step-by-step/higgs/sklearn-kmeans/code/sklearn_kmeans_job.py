@@ -12,12 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from kmeans_assembler import KMeansAssembler
+
 from nvflare import FedJob
 from nvflare.app_common.aggregators.collect_and_assemble_aggregator import CollectAndAssembleAggregator
 from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor
-from nvflare.job_config.script_runner import ScriptRunner, FrameworkType
+from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 
 if __name__ == "__main__":
     n_clients = 3
@@ -38,16 +39,18 @@ if __name__ == "__main__":
     job.to(CollectAndAssembleAggregator(assembler_id=assembler_id), "server", id=aggregator_id)
     job.to(KMeansAssembler(), "server", id=assembler_id)
 
-    ctrl = ScatterAndGather(min_clients=n_clients,
-                            num_rounds=num_rounds,
-                            start_round=0,
-                            wait_time_after_min_received=0,
-                            aggregator_id=aggregator_id,
-                            persistor_id=persistor_id,
-                            shareable_generator_id=shareable_generator_id,
-                            train_task_name="train",
-                            train_timeout=0,
-                            allow_empty_global_weights=True)
+    ctrl = ScatterAndGather(
+        min_clients=n_clients,
+        num_rounds=num_rounds,
+        start_round=0,
+        wait_time_after_min_received=0,
+        aggregator_id=aggregator_id,
+        persistor_id=persistor_id,
+        shareable_generator_id=shareable_generator_id,
+        train_task_name="train",
+        train_timeout=0,
+        allow_empty_global_weights=True,
+    )
 
     job.to(ctrl, "server")
 
