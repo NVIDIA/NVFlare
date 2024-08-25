@@ -16,7 +16,7 @@ from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.app_opt.xgboost.tree_based.bagging_aggregator import XGBBaggingAggregator
 from nvflare.app_opt.xgboost.tree_based.model_persistor import XGBModelPersistor
 from nvflare.app_opt.xgboost.tree_based.shareable_generator import XGBModelShareableGenerator
-from nvflare.job_config.script_runner import ScriptRunner, FrameworkType
+from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 
 if __name__ == "__main__":
     n_clients = 3
@@ -33,16 +33,18 @@ if __name__ == "__main__":
     job.to(XGBModelShareableGenerator(), "server", id=shareable_generator_id)
     job.to(XGBBaggingAggregator(), "server", id=aggregator_id)
 
-    ctrl = ScatterAndGather(min_clients=n_clients,
-                            num_rounds=num_rounds,
-                            start_round=0,
-                            wait_time_after_min_received=0,
-                            aggregator_id=aggregator_id,
-                            persistor_id=persistor_id,
-                            shareable_generator_id=shareable_generator_id,
-                            train_task_name="train",
-                            train_timeout=0,
-                            allow_empty_global_weights=True)
+    ctrl = ScatterAndGather(
+        min_clients=n_clients,
+        num_rounds=num_rounds,
+        start_round=0,
+        wait_time_after_min_received=0,
+        aggregator_id=aggregator_id,
+        persistor_id=persistor_id,
+        shareable_generator_id=shareable_generator_id,
+        train_task_name="train",
+        train_timeout=0,
+        allow_empty_global_weights=True,
+    )
 
     job.to(ctrl, "server")
 
