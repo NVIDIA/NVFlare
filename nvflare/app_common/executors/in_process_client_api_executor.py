@@ -57,9 +57,9 @@ class InProcessClientAPIExecutor(Executor):
         from_nvflare_converter_id: Optional[str] = None,
         to_nvflare_converter_id: Optional[str] = None,
         train_with_evaluation: bool = True,
-        train_task_name: str = "train",
-        evaluate_task_name: str = "evaluate",
-        submit_model_task_name: str = "submit_model",
+        train_task_name: str = AppConstants.TASK_TRAIN,
+        evaluate_task_name: str = AppConstants.TASK_VALIDATION,
+        submit_model_task_name: str = AppConstants.TASK_SUBMIT_MODEL,
     ):
         super(InProcessClientAPIExecutor, self).__init__()
         self._abort = False

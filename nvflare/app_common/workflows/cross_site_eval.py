@@ -34,17 +34,27 @@ class CrossSiteEval(ModelController):
         validation_timeout: int = 6000,
         server_models=[DefaultCheckpointFileName.GLOBAL_MODEL],
         participating_clients=None,
-        num_clients: int = 2,
         **kwargs,
     ):
-        super().__init__(*args, **kwargs)
+        """Cross Site Evaluation Workflow.
 
+        # TODO: change validation to evaluation to reflect the real meaning
+
+        Args:
+            cross_val_dir (str, optional): Path to cross site validation directory relative to run directory.
+                Defaults to "cross_site_val".
+            submit_model_timeout (int, optional): Timeout of submit_model_task. Defaults to 600 secs.
+            validation_timeout (int, optional): Timeout for validate_model task. Defaults to 6000 secs.
+            participating_clients (list, optional): List of participating client names. If not provided, defaults
+                to all clients connected at start of controller.
+
+        """
+        super().__init__(*args, **kwargs)
         self._cross_val_dir = cross_val_dir
         self._submit_model_timeout = submit_model_timeout
         self._validation_timeout = validation_timeout
         self._server_models = server_models
         self._participating_clients = participating_clients
-        self.num_clients = num_clients
 
         self._val_results = {}
         self._client_models = {}
@@ -70,15 +80,15 @@ class CrossSiteEval(ModelController):
         if os.path.exists(self._cross_val_results_dir):
             shutil.rmtree(self._cross_val_results_dir)
 
-        # Recreate new directories.
         os.makedirs(self._cross_val_models_dir)
         os.makedirs(self._cross_val_results_dir)
 
-        self._participating_clients = self.sample_clients(self.num_clients)
+        if self._participating_clients is None:
+            self._participating_clients = self.sample_clients()
 
         for c_name in self._participating_clients:
-            self._client_models[c_name.name] = None
-            self._val_results[c_name.name] = {}
+            self._client_models[c_name] = None
+            self._val_results[c_name] = {}
 
     def run(self) -> None:
         self.info("Start Cross-Site Evaluation.")

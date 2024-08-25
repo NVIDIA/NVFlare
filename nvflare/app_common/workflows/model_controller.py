@@ -126,8 +126,10 @@ class ModelController(BaseModelController, ABC):
         """Returns a list of `num_clients` clients.
 
         Args:
-            num_clients: number of clients to return. If None or > number available clients, returns all available clients. Defaults to None.
+            num_clients: number of clients to return. If None or > number available clients,
+                returns all available clients. Defaults to None.
 
-        Returns: list of clients names.
+        Returns:
+            A list of clients names.
         """
         return super().sample_clients(num_clients)
