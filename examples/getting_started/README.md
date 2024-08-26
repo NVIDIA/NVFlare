@@ -26,5 +26,7 @@ such as [FedOpt](https://arxiv.org/abs/2003.00295), or [SCAFFOLD](https://arxiv.
 ### 2. [Tensorflow Examples](./tf/README.md)
 ### 3. [Scikit-Learn Examples](./sklearn/README.md)
 
-Once you finished above examples, 
-you can look at the ["hello-world"](../hello-world) examples or look at more examples at tutorial catelog https://nvidia.github.io/NVFlare/.
+Once you finished above examples, you also read about [getting started documentation](https://nvflare.readthedocs.io/en/main/getting_started.html), 
+look at the ["hello-world"](../hello-world) examples or checkout more examples at tutorial catelog https://nvidia.github.io/NVFlare/.
+
+
