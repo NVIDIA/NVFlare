@@ -31,7 +31,7 @@ if __name__ == "__main__":
     job.add_swarm(
         server_config=SwarmServerConfig(num_rounds=num_rounds),
         client_config=SwarmClientConfig(
-            executor=ScriptRunner(script=train_script, evaluate_task_name="validate"),
+            executor=ScriptRunner(script=train_script),
             aggregator=aggregator,
             persistor=PTFileModelPersistor(model=Net()),
             shareable_generator=SimpleModelShareableGenerator(),
