@@ -202,35 +202,30 @@ class FedAvg(BaseFedAvg):
 
 const jobCode_pt = `
 from .cifar10_pt_fl import Net
-from nvflare import FedAvg, FedJob, ScriptExecutor
+
+from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
+from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
     n_clients = 2
     num_rounds = 2
     train_script = "cifar10_pt_fl.py"
 
-    job = FedJob(name="cifar10_pt_fedavg")
-
-    # Define the controller workflow and send to server
-    controller = FedAvg(
-        num_clients=n_clients,
+    # Create FedAvg Job with initial model
+    job = FedAvgJob(
+        name="cifar10_pt_fedavg",
         num_rounds=num_rounds,
+        n_clients=n_clients,
+        initial_model=Net(),
     )
-    job.to(controller, "server")
-
-    # Define the initial global model and send to server
-    job.to(Net(), "server")
 
     # Add clients
     for i in range(n_clients):
-        executor = ScriptExecutor(
-            task_script_path=train_script, task_script_args=""
-            # f"--batch_size 32 --data_path /tmp/data/site-{i}"
-        )
-        job.to(executor, f"site-{i}", gpu=0)
+        executor = ScriptRunner(script=train_script)
+        job.to(executor, f"site-{i}")
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir")
+    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
 `;
 
 const runCode_pt = `
@@ -421,35 +416,29 @@ class FedAvg(BaseFedAvg):
 const jobCode_lt = `
 from .cifar10_lightning_fl import LitNet
 
-from nvflare import FedAvg, FedJob, ScriptExecutor
+from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
+from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
     n_clients = 2
     num_rounds = 2
     train_script = "cifar10_lightning_fl.py"
 
-    job = FedJob(name="cifar10_lightning_fedavg")
-
-    # Define the controller workflow and send to server
-    controller = FedAvg(
-        num_clients=n_clients,
+    # Create FedAvg Job with initial model
+    job = FedAvgJob(
+        name="cifar10_lightning_fedavg",
         num_rounds=num_rounds,
+        n_clients=n_clients,
+        initial_model=LitNet(),
     )
-    job.to(controller, "server")
-
-    # Define the initial global model and send to server
-    job.to(LitNet(), "server")
 
     # Add clients
     for i in range(n_clients):
-        executor = ScriptExecutor(
-            task_script_path=train_script, task_script_args=""
-            # f"--batch_size 32 --data_path /tmp/data/site-{i}"
-        )
-        job.to(executor, f"site-{i}", gpu=0)
+        executor = ScriptRunner(script=train_script)
+        job.to(executor, f"site-{i}")
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir")
+    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
 `;
 
 const runCode_lt = `
@@ -583,35 +572,29 @@ class FedAvg(BaseFedAvg):
 const jobCode_tf = `
 from .cifar10_tf_fl import TFNet
 
-from nvflare import FedAvg, FedJob, ScriptExecutor
+from nvflare.app_opt.tf.job_config.fed_avg import FedAvgJob
+from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
     n_clients = 2
     num_rounds = 2
     train_script = "cifar10_tf_fl.py"
 
-    job = FedJob(name="cifar10_tf_fedavg")
-
-    # Define the controller workflow and send to server
-    controller = FedAvg(
-        num_clients=n_clients,
+    # Create FedAvg Job with initial model
+    job = FedAvgJob(
+        name="cifar10_tf_fedavg",
         num_rounds=num_rounds,
+        n_clients=n_clients,
+        initial_model=TFNet(input_shape=(None, 32, 32, 3)),
     )
-    job.to(controller, "server")
-
-    # Define the initial global model and send to server
-    job.to(TFNet(input_shape=(None, 32, 32, 3)), "server")
 
     # Add clients
     for i in range(n_clients):
-        executor = ScriptExecutor(
-            task_script_path=train_script, task_script_args=""
-            # f"--batch_size 32 --data_path /tmp/data/site-{i}"
-        )
-        job.to(executor, f"site-{i}", gpu=0)
+        executor = ScriptRunner(script=train_script)
+        job.to(executor, f"site-{i}")
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir")
+    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
 `;
 
 const runCode_tf = `
@@ -622,7 +605,7 @@ const frameworks = [
   {
     id: "pytorch",
     colab_link: "https://colab.research.google.com/github/NVIDIA/NVFlare/blob/main/examples/getting_started/pt/nvflare_pt_getting_started.ipynb",
-    github_link: "https://github.com/NVIDIA/NVFlare/blob/main/examples/getting_started/pt/fedavg_script_executor_cifar10.py",
+    github_link: "https://github.com/NVIDIA/NVFlare/blob/main/examples/getting_started/pt/nvflare_pt_getting_started.ipynb",
     sections: [
       {
         id: "install-pytorch",
@@ -676,7 +659,7 @@ const frameworks = [
   {
     id: "lightning",
     colab_link: "https://colab.research.google.com/github/NVIDIA/NVFlare/blob/main/examples/getting_started/pt/nvflare_lightning_getting_started.ipynb",
-    github_link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/getting_started/pt/fedavg_script_executor_lightning_cifar10.py",
+    github_link: "https://github.com/NVIDIA/NVFlare/blob/main/examples/getting_started/pt/nvflare_lightning_getting_started.ipynb",
     sections: [
       {
         id: "install-lightning",
@@ -730,7 +713,7 @@ const frameworks = [
   {
     id: "tensorflow",
     colab_link: "https://colab.research.google.com/github/NVIDIA/NVFlare/blob/main/examples/getting_started/tf/nvflare_tf_getting_started.ipynb",
-    github_link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/getting_started/tf/tf_fedavg_script_executor_cifar10.py",
+    github_link: "https://github.com/NVIDIA/NVFlare/blob/main/examples/getting_started/tf/nvflare_tf_getting_started.ipynb",
     sections: [
       {
         id: "install-tensorflow",
