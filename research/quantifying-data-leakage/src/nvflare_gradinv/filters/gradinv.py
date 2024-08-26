@@ -167,11 +167,7 @@ class GradInversionInverter(Inverter):
         for n in updates.keys():
             val = updates[n]
             update_sum += np.sum(np.abs(val))
-            new_state_dict[n] += torch.tensor(
-                val,
-                dtype=new_state_dict[n].dtype,
-                device=new_state_dict[n].device,
-            )
+            new_state_dict[n] = new_state_dict[n] + torch.tensor(val, device=new_state_dict[n].device)
         model_bn.load_state_dict(new_state_dict)
         assert update_sum > 0.0, "All updates are zero!"
         n_bn_updated = 0
@@ -235,7 +231,6 @@ class GradInversionInverter(Inverter):
         return best_inputs, targets
 
     def __call__(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext):
-
         app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)
         if not self.cfg:
             self.cfg_file = os.path.join(app_root, self.cfg_file)
