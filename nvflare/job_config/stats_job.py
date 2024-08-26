@@ -81,9 +81,11 @@ class StatsJob(FedJob):
         min_count_cleanser = MinCountCleanser(min_count=self.min_count)
         min_max_cleanser = AddNoiseToMinMax(min_noise_level=self.min_noise_level, max_noise_level=self.max_noise_level)
         hist_bins_cleanser = HistogramBinsCleanser(max_bins_percent=self.max_bins_percent)
-        result_cleanser_ids = [self.to(min_count_cleanser, site_id, id="min_count_cleanser"),
-                               self.to(min_max_cleanser, site_id, id="min_max_noise_cleanser"),
-                               self.to(hist_bins_cleanser, site_id, id="hist_bins_cleanser")]
+        result_cleanser_ids = [
+            self.to(min_count_cleanser, site_id, id="min_count_cleanser"),
+            self.to(min_max_cleanser, site_id, id="min_max_noise_cleanser"),
+            self.to(hist_bins_cleanser, site_id, id="hist_bins_cleanser"),
+        ]
 
         result_filter = StatisticsPrivacyFilter(result_cleanser_ids=result_cleanser_ids)
         self.to(result_filter, site_id, filter_type=FilterType.TASK_RESULT, tasks=["fed_stats"])
