@@ -221,8 +221,8 @@ if __name__ == "__main__":
 
     # Add clients
     for i in range(n_clients):
-        executor = ScriptRunner(script=train_script)
-        job.to(executor, f"site-{i}")
+        runner = ScriptRunner(script=train_script)
+        job.to(runner, f"site-{i}")
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
@@ -434,8 +434,8 @@ if __name__ == "__main__":
 
     # Add clients
     for i in range(n_clients):
-        executor = ScriptRunner(script=train_script)
-        job.to(executor, f"site-{i}")
+        runner = ScriptRunner(script=train_script)
+        job.to(runner, f"site-{i}")
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
@@ -590,8 +590,8 @@ if __name__ == "__main__":
 
     # Add clients
     for i in range(n_clients):
-        executor = ScriptRunner(script=train_script)
-        job.to(executor, f"site-{i}")
+        runner = ScriptRunner(script=train_script)
+        job.to(runner, f"site-{i}")
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
