@@ -55,8 +55,8 @@ if __name__ == "__main__":
 
     # Add clients
     for i in range(n_clients):
-        executor = ScriptRunner(script=train_script, script_args=script_args, framework=FrameworkType.RAW)
-        job.to(executor, f"site-{i + 1}")
+        runner = ScriptRunner(script=train_script, script_args=script_args, framework=FrameworkType.RAW)
+        job.to(runner, f"site-{i + 1}")
 
     job.export_job("/tmp/nvflare/jobs")
     job.simulator_run("/tmp/nvflare/sklearn_sgd", gpu="0")
