@@ -1,0 +1,10 @@
+{
+  "name": "hello-swarm_cse_numpy",
+  "resource_spec": {},
+  "min_clients" : 2,
+  "deploy_map": {
+    "app": [
+      "@ALL"
+    ]
+  }
+}
