@@ -16,6 +16,7 @@ from abc import ABC, abstractmethod
 from typing import Callable, List, Union
 
 from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.workflows.base_model_controller import BaseModelController
 
 
@@ -23,13 +24,13 @@ class ModelController(BaseModelController, ABC):
     def __init__(
         self,
         *args,
-        persistor_id: str = "persistor",
+        persistor_id: str = AppConstants.DEFAULT_PERSISTOR_ID,
         **kwargs,
     ):
         """Model Controller API for FLModel-based Controller.
 
         Args:
-            persistor_id (str, optional): ID of the persistor component. Defaults to "".
+            persistor_id (str, optional): ID of the persistor component. Defaults to AppConstants.DEFAULT_PERSISTOR_ID ("persistor").
         """
         super().__init__(*args, persistor_id, **kwargs)
 
