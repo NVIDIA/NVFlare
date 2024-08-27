@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import os.path
 from typing import Type
 
 from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
@@ -35,6 +35,7 @@ class ScriptRunner:
         launch_external_process: bool = False,
         command: str = "python3",
         framework: FrameworkType = FrameworkType.PYTORCH,
+        script_dir: str = None,
     ):
         """ScriptRunner is used with FedJob API to run or launch a script.
 
@@ -45,14 +46,23 @@ class ScriptRunner:
             script (str): Script to run. For in-process must be a python script path. For ex-process can be any script support by `command`.
             script_args (str): Optional arguments for script (appended to script).
             launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
-            command (str): If launch_external_process=True, command to run script (preprended to script). Defaults to "python3".
-            framework (str): Framework type to connfigure converter and params exchange formats. Defaults to FrameworkType.PYTORCH.
+            command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3".
+            framework (str): Framework type to configure converter and params exchange formats. Defaults to FrameworkType.PYTORCH.
+            script_dir (str): directory that contains the script
         """
         self._script = script
         self._script_args = script_args
         self._command = command
         self._launch_external_process = launch_external_process
         self._framework = framework
+        self._script_dir = script_dir
+
+        if script_dir:
+            if not os.path.exists(script_dir):
+                raise ValueError(f"script_dir '{script_dir}' does not exist")
+
+            if not os.path.isdir(script_dir):
+                raise ValueError(f"script_dir '{script_dir}' is not a valid dir")
 
         self._params_exchange_format = None
 
@@ -149,7 +159,9 @@ class ScriptRunner:
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
 
-        job.add_resources(resources=[self._script], ctx=ctx)
+        if self._script_dir:
+            job.add_resources(resources=[self._script_dir], ctx=ctx)
+
         return comp_ids
 
     def _get_ex_process_executor_cls(self, framework: FrameworkType) -> Type[ClientAPILauncherExecutor]:
