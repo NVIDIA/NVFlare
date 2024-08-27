@@ -50,7 +50,6 @@ class FlowerClient(NumPyClient):
         return int(context.state.metrics_records["step"]["step"])
 
     def fit(self, parameters, config):
-        print(f"GGGGG {flare.system_info()} GGGGG")
         step = self.get_step()
         set_weights(net, parameters)
         results = train(net, trainloader, testloader, epochs=1, device=DEVICE)
