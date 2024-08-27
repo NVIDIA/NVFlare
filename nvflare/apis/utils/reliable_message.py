@@ -53,7 +53,7 @@ TOPIC_RELIABLE_REPLY = "RM.RELIABLE_REPLY"
 PROP_KEY_TX_ID = "RM.TX_ID"
 PROP_KEY_TOPIC = "RM.TOPIC"
 PROP_KEY_OP = "RM.OP"
-PROP_KEY_DEBUG = "RM.DEBUG"
+PROP_KEY_DEBUG_INFO = "RM.DEBUG_INFO"
 
 
 def _extract_result(reply: dict, target: str):
@@ -422,7 +422,7 @@ class ReliableMessage:
         if topic:
             props.append(f"rm_topic={topic}")
 
-        debug_info = fl_ctx.get_prop(PROP_KEY_DEBUG)
+        debug_info = fl_ctx.get_prop(PROP_KEY_DEBUG_INFO)
         if debug_info:
             for k, v in debug_info.items():
                 props.append(f"{k}={v}")
