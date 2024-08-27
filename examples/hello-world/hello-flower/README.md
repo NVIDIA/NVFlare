@@ -33,7 +33,7 @@ pip install ./jobs/hello-flwr-pt/app/custom
 
 Next, we run 2 Flower clients and Flower Server in parallel using NVFlare's simulator.
 ```bash
-nvflare simulator jobs/hello-flwr-pt -n 2 -t 2 -w /tmp/nvflare/flwr
+CLIENT_API_TYPE="EX_PROCESS_API" nvflare simulator jobs/hello-flwr-pt -n 2 -t 2 -w /tmp/nvflare/flwr
 ```
 
 ## 2.2 Run a simulation with TensorBoard streaming
