@@ -96,7 +96,7 @@ class ClientConfig:
                 "exchange_format": "numpy",
                 "transfer_type": "DIFF",
                 "train_task_name": "train",
-                "eval_task_name": "evaluate",
+                "eval_task_name": "validate",
                 "submit_model_task_name": "submit_model",
                 "pipe_channel_name": "task",
                 "pipe": {

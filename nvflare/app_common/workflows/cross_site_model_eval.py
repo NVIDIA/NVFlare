@@ -49,7 +49,9 @@ class CrossSiteModelEval(Controller):
         participating_clients=None,
         wait_for_clients_timeout=300,
     ):
-        """Cross Site Model Validation workflow.
+        """Cross Site Model Evaluation workflow.
+
+        # TODO: change validation to evaluation to reflect the real meaning
 
         Args:
             task_check_period (float, optional): How often to check for new tasks or tasks being finished.

@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 from typing import Optional
 
 from nvflare.app_common.app_constant import AppConstants
@@ -31,9 +32,9 @@ class TFInProcessClientAPIExecutor(InProcessClientAPIExecutor):
         from_nvflare_converter_id: Optional[str] = None,
         to_nvflare_converter_id: Optional[str] = None,
         train_with_evaluation: bool = True,
-        train_task_name: str = "train",
-        evaluate_task_name: str = "evaluate",
-        submit_model_task_name: str = "submit_model",
+        train_task_name: str = AppConstants.TASK_TRAIN,
+        evaluate_task_name: str = AppConstants.TASK_VALIDATION,
+        submit_model_task_name: str = AppConstants.TASK_SUBMIT_MODEL,
         params_exchange_format=ExchangeFormat.NUMPY,
     ):
         super(TFInProcessClientAPIExecutor, self).__init__(
