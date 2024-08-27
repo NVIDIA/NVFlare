@@ -120,7 +120,7 @@ class GrpcServerAdaptor(XGBServerAdaptor):
             else:
                 raise RuntimeError(f"bad result from XGB server: expect AllgatherReply but got {type(result)}")
         except Exception as ex:
-            self._handle_error(ex, "all_gather", rank, seq, send_buf)
+            return self._handle_error(ex, "all_gather", rank, seq, send_buf)
 
     def all_gather_v(self, rank: int, seq: int, send_buf: bytes, fl_ctx: FLContext) -> bytes:
         try:
@@ -130,7 +130,7 @@ class GrpcServerAdaptor(XGBServerAdaptor):
             else:
                 raise RuntimeError(f"bad result from XGB server: expect AllgatherVReply but got {type(result)}")
         except Exception as ex:
-            self._handle_error(ex, "all_gather_v", rank, seq, send_buf)
+            return self._handle_error(ex, "all_gather_v", rank, seq, send_buf)
 
     def all_reduce(
         self,
@@ -154,7 +154,7 @@ class GrpcServerAdaptor(XGBServerAdaptor):
             else:
                 raise RuntimeError(f"bad result from XGB server: expect AllreduceReply but got {type(result)}")
         except Exception as ex:
-            self._handle_error(ex, "all_reduce", rank, seq, send_buf)
+            return self._handle_error(ex, "all_reduce", rank, seq, send_buf)
 
     def broadcast(self, rank: int, seq: int, root: int, send_buf: bytes, fl_ctx: FLContext) -> bytes:
         self.logger.debug(f"Sending broadcast: {rank=} {seq=} {root=} {len(send_buf)=}")
@@ -165,9 +165,9 @@ class GrpcServerAdaptor(XGBServerAdaptor):
             else:
                 raise RuntimeError(f"bad result from XGB server: expect BroadcastReply but got {type(result)}")
         except Exception as ex:
-            self._handle_error(ex, "broadcast", rank, seq, send_buf)
+            return self._handle_error(ex, "broadcast", rank, seq, send_buf)
 
-    def _handle_error(self, ex: Exception, op: str, rank: int, seq: int, send_buf: bytes):
+    def _handle_error(self, ex: Exception, op: str, rank: int, seq: int, send_buf: bytes) -> bytes:
         if self._stopping:
             self.logger.warning(f"Error while stopping ignored, " f"op={op} {rank=} {seq=} {len(send_buf)=}: {ex}")
             return bytes(0)
