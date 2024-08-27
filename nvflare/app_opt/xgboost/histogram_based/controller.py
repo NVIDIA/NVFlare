@@ -113,7 +113,8 @@ class XGBFedController(Controller):
             )
         else:
             self._xgb_fl_server = multiprocessing.Process(
-                target=xgb_federated.run_federated_server, args=(len(clients), self._port),
+                target=xgb_federated.run_federated_server,
+                args=(len(clients), self._port),
             )
         self._xgb_fl_server.start()
         self._started = True
