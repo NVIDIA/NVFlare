@@ -109,11 +109,11 @@ class XGBFedController(Controller):
                 return
             self._xgb_fl_server = multiprocessing.Process(
                 target=xgb_federated.run_federated_server,
-                args=(self._port, len(clients), self._server_key_path, self._server_cert_path, self._ca_cert_path),
+                args=(len(clients), self._port, self._server_key_path, self._server_cert_path, self._ca_cert_path),
             )
         else:
             self._xgb_fl_server = multiprocessing.Process(
-                target=xgb_federated.run_federated_server, args=(self._port, len(clients))
+                target=xgb_federated.run_federated_server, args=(len(clients), self._port),
             )
         self._xgb_fl_server.start()
         self._started = True
