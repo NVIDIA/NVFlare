@@ -12,7 +12,7 @@ Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html
 Run the script using the job API to create the job and run it with the simulator:
 
 ```
-python3 swarm_cse_script_runner_pt.py
+python3 swarm_script_runner_np.py
 ```
 
 ### 3. Access the logs and results
