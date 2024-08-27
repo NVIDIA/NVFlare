@@ -28,7 +28,7 @@ from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey, new_cell_message
-from nvflare.private.fed.utils.fed_utils import get_return_code
+from nvflare.private.fed.utils.fed_utils import add_custom_dir_to_path, get_return_code
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .client_status import ClientStatus, get_status_message
@@ -172,7 +172,7 @@ class ProcessExecutor(ClientExecutor):
         """
         new_env = os.environ.copy()
         if app_custom_folder != "":
-            new_env["PYTHONPATH"] = new_env.get("PYTHONPATH", "") + os.pathsep + app_custom_folder
+            add_custom_dir_to_path(app_custom_folder, new_env)
 
         command_options = ""
         for t in args.set:

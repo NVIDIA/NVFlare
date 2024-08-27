@@ -494,6 +494,7 @@ class SystemVarName:
     ROOT_URL = "ROOT_URL"  # the URL of the Service Provider (server)
     SECURE_MODE = "SECURE_MODE"  # whether the system is running in secure mode
     JOB_CUSTOM_DIR = "JOB_CUSTOM_DIR"  # custom dir of the job
+    PYTHONPATH = "PYTHONPATH"
 
 
 class RunnerTask:
