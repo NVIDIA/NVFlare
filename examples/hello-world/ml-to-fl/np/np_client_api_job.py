@@ -54,7 +54,7 @@ def main():
     if script == "src/train_metrics.py":
         receiver = MLflowReceiver(
             tracking_uri="file:///tmp/nvflare/jobs/workdir/server/simulate_job/mlruns",
-            kwargs={
+            kw_args={
                 "experiment_name": "nvflare-fedavg-np-experiment",
                 "run_name": "nvflare-fedavg-np-with-mlflow",
                 "experiment_tags": {"mlflow.note.content": "## **NVFlare FedAvg Numpy experiment with MLflow**"},
