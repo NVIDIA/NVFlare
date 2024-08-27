@@ -36,5 +36,5 @@ if __name__ == "__main__":
         ),
     )
 
-    # job.export_job("/tmp/nvflare/jobs/job_config")
+    job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir", n_clients=n_clients, gpu="0")
