@@ -62,6 +62,7 @@ from nvflare.private.fed.simulator.simulator_app_runner import SimulatorServerAp
 from nvflare.private.fed.simulator.simulator_audit import SimulatorAuditor
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 from nvflare.private.fed.utils.fed_utils import (
+    add_custom_dir_to_path,
     add_logfile_handler,
     custom_fobs_initialize,
     get_simulator_app_root,
@@ -702,7 +703,7 @@ class SimulatorClientRunner(FLComponent):
         if gpu:
             command += " --gpu " + str(gpu)
         new_env = os.environ.copy()
-        new_env["PYTHONPATH"] = os.pathsep.join(self._get_new_sys_path()) + os.pathsep + app_custom_folder
+        add_custom_dir_to_path(app_custom_folder, new_env)
 
         _ = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
 
