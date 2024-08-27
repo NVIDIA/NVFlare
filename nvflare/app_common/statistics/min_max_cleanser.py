@@ -44,6 +44,8 @@ class AddNoiseToMinMax(FLComponent, StatisticsPrivacyCleanser):
 
         """
         super().__init__()
+        self.min_noise_level = min_noise_level
+        self.max_noise_level = max_noise_level
         self.noise_level = (min_noise_level, max_noise_level)
         self.noise_generators = {
             StC.STATS_MIN: AddNoiseToMinMax._get_min_value,

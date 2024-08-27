@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 from typing import Type
 
 from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
@@ -108,7 +107,7 @@ class ScriptRunner:
             comp_ids["pipe_id"] = pipe_id
 
             component = SubprocessLauncher(
-                script=self._command + " custom/" + os.path.basename(self._script) + " " + self._script_args,
+                script=self._command + " custom/" + self._script + " " + self._script_args,
             )
             launcher_id = job.add_component("launcher", component, ctx)
             comp_ids["launcher_id"] = launcher_id
@@ -144,7 +143,7 @@ class ScriptRunner:
             comp_ids["config_preparer_id"] = job.add_component("config_preparer", component, ctx)
         else:
             executor = self._get_in_process_executor_cls(self._framework)(
-                task_script_path=os.path.basename(self._script),
+                task_script_path=self._script,
                 task_script_args=self._script_args,
                 params_exchange_format=self._params_exchange_format,
             )
