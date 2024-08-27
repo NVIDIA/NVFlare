@@ -17,6 +17,7 @@ from typing import Optional
 
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType, write_config_to_file
 from nvflare.client.constants import CLIENT_API_CONFIG
@@ -39,9 +40,9 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         heartbeat_timeout: float = 60.0,
         workers: int = 4,
         train_with_evaluation: bool = True,
-        train_task_name: str = "train",
-        evaluate_task_name: str = "evaluate",
-        submit_model_task_name: str = "submit_model",
+        train_task_name: str = AppConstants.TASK_TRAIN,
+        evaluate_task_name: str = AppConstants.TASK_VALIDATION,
+        submit_model_task_name: str = AppConstants.TASK_SUBMIT_MODEL,
         from_nvflare_converter_id: Optional[str] = None,
         to_nvflare_converter_id: Optional[str] = None,
         params_exchange_format: str = ExchangeFormat.NUMPY,

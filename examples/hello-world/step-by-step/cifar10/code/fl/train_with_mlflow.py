@@ -30,7 +30,7 @@ from nvflare.client.tracking import MLflowWriter
 CIFAR10_ROOT = "/tmp/nvflare/data/cifar10"
 # (optional) We change to use GPU to speed things up.
 # if you want to use CPU, change DEVICE="cpu"
-DEVICE = "cuda:0"
+DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
 def define_parser():
