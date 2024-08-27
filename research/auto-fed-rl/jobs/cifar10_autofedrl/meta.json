@@ -1,5 +1,5 @@
 {
-    "name": "cifar10_autofedrl_alpha0.1",
+    "name": "cifar10_autofedrl",
     "deploy_map": {
         "cifar10_autofedrl": [
             "@ALL"
