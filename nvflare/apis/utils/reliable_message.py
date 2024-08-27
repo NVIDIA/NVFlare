@@ -45,6 +45,7 @@ STATUS_IN_REPLY = "in_reply"
 STATUS_NOT_RECEIVED = "not_received"
 STATUS_REPLIED = "replied"
 STATUS_ABORTED = "aborted"
+STATUS_DUP_REQUEST = "dup_request"
 
 # Topics for Reliable Message
 TOPIC_RELIABLE_REQUEST = "RM.RELIABLE_REQUEST"
@@ -227,6 +228,7 @@ class ReliableMessage:
 
     _topic_to_handle = {}
     _req_receivers = {}  # tx id => receiver
+    _req_completed = {}  # tx id => expiration
     _enabled = False
     _executor = None
     _query_interval = 1.0
@@ -293,6 +295,9 @@ class ReliableMessage:
                 # no handler registered for this topic!
                 cls.error(fl_ctx, f"no handler registered for request {rm_topic=}")
                 return make_reply(ReturnCode.TOPIC_UNKNOWN)
+            if cls._req_completed.get(tx_id):
+                cls.debug(fl_ctx, "Completed tx_id received")
+                return _status_reply(STATUS_DUP_REQUEST)
             receiver = cls._get_or_create_receiver(rm_topic, request, handler_f)
             cls.debug(fl_ctx, f"received request {rm_topic=}")
             return receiver.process(request, fl_ctx)
@@ -337,6 +342,7 @@ class ReliableMessage:
         """
         with cls._tx_lock:
             cls._req_receivers.pop(receiver.tx_id, None)
+            cls._register_completed_req(receiver.tx_id, receiver.tx_timeout)
             cls.debug(fl_ctx, f"released request receiver of TX {receiver.tx_id}")
 
     @classmethod
@@ -580,6 +586,10 @@ class ReliableMessage:
                 # the ack is a status report - check status
                 status = ack.get_header(HEADER_STATUS)
                 if status and status != STATUS_NOT_RECEIVED:
+                    if status == STATUS_DUP_REQUEST:
+                        cls.debug(fl_ctx, "Duplicate req status received")
+                        return ack
+
                     # status should never be STATUS_NOT_RECEIVED, unless there is a bug in the receiving logic
                     # STATUS_NOT_RECEIVED is only possible during "query" phase.
                     cls.debug(fl_ctx, f"received status ack: {rc=} {status=}")
@@ -679,3 +689,15 @@ class ReliableMessage:
                 cls.debug(fl_ctx, f"will retry query in {cls._query_interval} secs: {rc=} {status=} {op=}")
             else:
                 cls.debug(fl_ctx, f"will retry query in {cls._query_interval} secs: {rc=}")
+
+    @classmethod
+    def _register_completed_req(cls, tx_id, tx_timeout):
+        # Remove expired entries, need to use a copy of the keys
+        now = time.time()
+        for key in list(cls._req_completed.keys()):
+            expiration = cls._req_completed.get(key)
+            if expiration and expiration < now:
+                cls._req_completed.pop(key, None)
+
+        # Expire in 2 x tx_timeout
+        cls._req_completed[tx_id] = now + 2 * tx_timeout
