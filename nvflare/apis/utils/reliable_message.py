@@ -341,8 +341,8 @@ class ReliableMessage:
 
         """
         with cls._tx_lock:
-            cls._req_receivers.pop(receiver.tx_id, None)
             cls._register_completed_req(receiver.tx_id, receiver.tx_timeout)
+            cls._req_receivers.pop(receiver.tx_id, None)
             cls.debug(fl_ctx, f"released request receiver of TX {receiver.tx_id}")
 
     @classmethod
@@ -586,10 +586,6 @@ class ReliableMessage:
                 # the ack is a status report - check status
                 status = ack.get_header(HEADER_STATUS)
                 if status and status != STATUS_NOT_RECEIVED:
-                    if status == STATUS_DUP_REQUEST:
-                        cls.debug(fl_ctx, "Duplicate req status received")
-                        return ack
-
                     # status should never be STATUS_NOT_RECEIVED, unless there is a bug in the receiving logic
                     # STATUS_NOT_RECEIVED is only possible during "query" phase.
                     cls.debug(fl_ctx, f"received status ack: {rc=} {status=}")
