@@ -13,8 +13,8 @@
 # limitations under the License.
 from typing import List, Tuple
 
-from flwr.common import Context, Metrics, ndarrays_to_parameters
-from flwr.server import ServerApp, ServerAppComponents, ServerConfig
+from flwr.common import Metrics, ndarrays_to_parameters
+from flwr.server import ServerApp, ServerConfig
 from flwr.server.strategy import FedAvg
 
 from .task import Net, get_weights
@@ -54,16 +54,12 @@ strategy = FedAvg(
 )
 
 
+# Define config
+config = ServerConfig(num_rounds=3)
+
+
 # Flower ServerApp
-def server_fn(context: Context):
-    # Read from config
-    num_rounds = context.run_config["num-server-rounds"]
-
-    # Define config
-    config = ServerConfig(num_rounds=num_rounds)
-
-    return ServerAppComponents(strategy=strategy, config=config)
-
-
-# Create ServerApp
-app = ServerApp(server_fn=server_fn)
+app = ServerApp(
+    config=config,
+    strategy=strategy,
+)

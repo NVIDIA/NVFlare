@@ -12,9 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
 from flwr.client import ClientApp, NumPyClient
 from flwr.common import Context
 from flwr.common.record import MetricsRecord, RecordSet
+
 from .task import DEVICE, Net, get_weights, load_data, set_weights, test, train
 
 # Load model and data (simple CNN, CIFAR-10)
@@ -35,20 +37,20 @@ class FlowerClient(NumPyClient):
         super().__init__()
         self.writer = SummaryWriter()
         self.set_context(context)
-        self.step_name = "step"
-        if self.step_name not in context.state.metrics_records:
+        if "step" not in context.state.metrics_records:
             self.set_step(0)
 
     def set_step(self, step: int):
         context = self.get_context()
-        context.state = RecordSet(metrics_records={self.step_name: MetricsRecord({self.step_name: step})})
+        context.state = RecordSet(metrics_records={"step": MetricsRecord({"step": step})})
         self.set_context(context)
 
     def get_step(self):
         context = self.get_context()
-        return int(context.state.metrics_records[self.step_name][self.step_name])
+        return int(context.state.metrics_records["step"]["step"])
 
     def fit(self, parameters, config):
+        print(f"GGGGG {flare.system_info()} GGGGG")
         step = self.get_step()
         set_weights(net, parameters)
         results = train(net, trainloader, testloader, epochs=1, device=DEVICE)
