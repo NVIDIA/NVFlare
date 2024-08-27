@@ -26,26 +26,26 @@ source nvflare_flwr/bin/activate
 
 ## 2.1 Run a simulation
 
-To run hello-flwr-pt job with NVFlare, we first need to install its dependencies.
+To run flwr-pt job with NVFlare, we first need to install its dependencies.
 ```bash
-pip install ./jobs/hello-flwr-pt/app/custom
+pip install ./flwr-pt/
 ```
 
 Next, we run 2 Flower clients and Flower Server in parallel using NVFlare's simulator.
 ```bash
-CLIENT_API_TYPE="EX_PROCESS_API" nvflare simulator jobs/hello-flwr-pt -n 2 -t 2 -w /tmp/nvflare/flwr
+CLIENT_API_TYPE="EX_PROCESS_API" python job.py 
 ```
 
 ## 2.2 Run a simulation with TensorBoard streaming
 
-To run hello-flwr-pt_tb_streaming job with NVFlare, we first need to install its dependencies.
+To run flwr-pt_tb_streaming job with NVFlare, we first need to install its dependencies.
 ```bash
-pip install ./jobs/hello-flwr-pt_tb_streaming/app/custom
+pip install ./flwr-pt-metrics/
 ```
 
 Next, we run 2 Flower clients and Flower Server in parallel using NVFlare while streaming 
 the TensorBoard metrics to the server at each iteration using NVFlare's metric streaming.
 
 ```bash
-CLIENT_API_TYPE="EX_PROCESS_API" nvflare simulator jobs/hello-flwr-pt_tb_streaming -n 2 -t 2 -w /tmp/nvflare/flwr_tb_streaming
+CLIENT_API_TYPE="EX_PROCESS_API" python job_with_metric.py 
 ```
