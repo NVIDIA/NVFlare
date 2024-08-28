@@ -341,7 +341,7 @@ class ReliableMessage:
         cls.debug(fl_ctx, f"received aux msg ({topic=}) for RM reply")
         receiver = cls._reply_receivers.get(tx_id)
         if not receiver:
-            cls.error(fl_ctx, "received reply but we are no longer waiting for it")
+            cls.warning(fl_ctx, "received reply but we are no longer waiting for it")
         else:
             assert isinstance(receiver, _ReplyReceiver)
             cls.debug(fl_ctx, f"received reply in {time.time()-receiver.tx_start_time} secs - set waiter")
