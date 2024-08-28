@@ -47,7 +47,7 @@ class FlowerJob(FedJob):
         client_shutdown_timeout=5.0,
         stream_metrics=False,
         analytics_receiver=None,
-        client_api_type: str = "EX_PROCESS_API",
+        extra_env: dict = None,
     ):
         """
         Flower Job.
@@ -69,16 +69,12 @@ class FlowerJob(FedJob):
             client_shutdown_timeout (float, optional): Timeout for client shutdown. Defaults to 5.0 seconds.
             stream_metrics (bool, optional): Whether to stream metrics from Flower client to Flare
             analytics_receiver (AnalyticsReceiver, optional): the AnalyticsReceiver to use to process received metrics.
-            client_api_type (str, optional): Client API type, can choose from EX_PROCESS_API and IN_PROCESS_API
+            extra_env (dict, optional): optional extra env variables to be passed to Flower client
         """
         if not os.path.isdir(flower_content):
             raise ValueError(f"{flower_content} is not a valid directory")
 
         super().__init__(name=name, min_clients=min_clients, mandatory_clients=mandatory_clients)
-
-        if client_api_type not in ["EX_PROCESS_API", "IN_PROCESS_API"]:
-            raise ValueError("Invalid client api type.")
-        os.environ["CLIENT_API_TYPE"] = client_api_type
 
         controller = FlowerController(
             database=database,
@@ -96,6 +92,7 @@ class FlowerJob(FedJob):
             per_msg_timeout=per_msg_timeout,
             tx_timeout=tx_timeout,
             client_shutdown_timeout=client_shutdown_timeout,
+            extra_env=extra_env,
         )
         self.to_clients(executor)
         self.to_clients(obj=flower_content)
