@@ -15,8 +15,8 @@
 from argparse import ArgumentParser
 
 from nvflare.app_opt.flower.flower_job import FlowerJob
-from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
 from nvflare.client.api import ClientAPIType
+from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
 
 
 def main():
