@@ -17,7 +17,7 @@
   "components": [
     {
       "id": "dh_psi",
-      "path": "nvflare.app_common.psi.dh_psi.dh_psi_task_handler.DhPSITaskHandler",
+      "path": "nvflare.app_opt.psi.dh_psi.dh_psi_task_handler.DhPSITaskHandler",
       "args": {
         "local_psi_id": "local_psi"
       }
