@@ -31,7 +31,7 @@ def main():
 
     env = {}
     if args.use_client_api:
-        env = {CLIENT_API_TYPE_KEY: ClientAPIType.EX_PROCESS_API}
+        env = {CLIENT_API_TYPE_KEY: ClientAPIType.EX_PROCESS_API.value}
 
     job = FlowerJob(
         name=args.job_name,
