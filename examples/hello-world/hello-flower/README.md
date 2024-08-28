@@ -33,7 +33,7 @@ pip install ./flwr-pt/
 
 Next, we run 2 Flower clients and Flower Server in parallel using NVFlare's simulator.
 ```bash
-CLIENT_API_TYPE="EX_PROCESS_API" python job.py 
+python job.py
 ```
 
 ## 2.2 Run a simulation with TensorBoard streaming
@@ -47,5 +47,5 @@ Next, we run 2 Flower clients and Flower Server in parallel using NVFlare while 
 the TensorBoard metrics to the server at each iteration using NVFlare's metric streaming.
 
 ```bash
-CLIENT_API_TYPE="EX_PROCESS_API" python job_with_metric.py 
+python job_with_metric.py
 ```
