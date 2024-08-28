@@ -26,9 +26,10 @@ from nvflare.security.logging import secure_format_exception
 
 
 class FlowerClientApplet(CLIApplet):
-    def __init__(self):
+    def __init__(self, extra_env: dict = None):
         """Constructor of FlowerClientApplet, which extends CLIApplet."""
         CLIApplet.__init__(self)
+        self.extra_env = extra_env
 
     def get_command(self, ctx: dict) -> CommandDescriptor:
         """Implementation of the get_command method required by the super class CLIApplet.
@@ -62,7 +63,9 @@ class FlowerClientApplet(CLIApplet):
         # this is necessary for client_api to be used with the flower client app for metrics logging
         # client_api expects config info from the "config" folder in the cwd!
         self.logger.info(f"starting flower client app: {cmd}")
-        return CommandDescriptor(cmd=cmd, cwd=app_dir, log_file_name="client_app_log.txt", stdout_msg_prefix="FLWR-CA")
+        return CommandDescriptor(
+            cmd=cmd, cwd=app_dir, env=self.extra_env, log_file_name="client_app_log.txt", stdout_msg_prefix="FLWR-CA"
+        )
 
 
 class FlowerServerApplet(Applet):
