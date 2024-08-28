@@ -238,7 +238,6 @@ class XGBClientAdaptor(AppAdaptor, ABC):
                 "op": op,
                 "rank": req[Constant.PARAM_KEY_RANK],
                 "seq": req[Constant.PARAM_KEY_SEQ],
-                "size": len(req[Constant.PARAM_KEY_SEND_BUF]),
             }
             fl_ctx.set_prop(key=PROP_KEY_DEBUG_INFO, value=debug_info, private=True, sticky=False)
             reply = ReliableMessage.send_request(
