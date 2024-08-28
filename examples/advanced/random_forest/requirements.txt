@@ -5,4 +5,4 @@ torch
 tensorboard
 # require xgboost 2.2 version, for now need to install a nightly build
 --extra-index-url https://s3-us-west-2.amazonaws.com/xgboost-nightly-builds/list.html?prefix=federated-secure/
-xgboost
+xgboost>=2.1.1
