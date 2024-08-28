@@ -1,10 +1,13 @@
+.. _reliable_xgboost_timeout:
+
 ############################################
 Reliable Federated XGBoost Timeout Mechanism
 ############################################
 
 NVFlare introduces a tightly-coupled integration between XGBoost and NVFlare.
-NVFlare implements the ReliableMessage mechanism to make XGBoost’s server/client
-interactions more robust over unstable internet connections.
+NVFlare implements the :class:`ReliableMessage<nvflare.apis.utils.reliable_message.ReliableMessage>`
+mechanism to make XGBoost's server/client interactions more robust over
+unstable internet connections.
 
 Unstable internet connection is the situation where the connections between
 the communication endpoints have random disconnects/reconnects and unstable speed.
