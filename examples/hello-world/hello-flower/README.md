@@ -33,19 +33,19 @@ pip install ./flwr-pt/
 
 Next, we run 2 Flower clients and Flower Server in parallel using NVFlare's simulator.
 ```bash
-python job.py
+python job.py --job_name "flwr-pt" --content_dir "./flwr-pt"
 ```
 
 ## 2.2 Run a simulation with TensorBoard streaming
 
 To run flwr-pt_tb_streaming job with NVFlare, we first need to install its dependencies.
 ```bash
-pip install ./flwr-pt-metrics/
+pip install ./flwr-pt-tb/
 ```
 
 Next, we run 2 Flower clients and Flower Server in parallel using NVFlare while streaming 
 the TensorBoard metrics to the server at each iteration using NVFlare's metric streaming.
 
 ```bash
-python job_with_metric.py
+python job.py --job_name "flwr-pt-tb" --content_dir "./flwr-pt-tb" --stream_metrics --use_client_api
 ```

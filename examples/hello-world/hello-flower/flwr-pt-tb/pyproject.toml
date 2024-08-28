@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "flwr_pt_tb_streaming"
+name = "flwr_pt_tb"
 version = "1.0.0"
 description = ""
 license = "Apache-2.0"
@@ -12,6 +12,7 @@ dependencies = [
     "nvflare~=2.5.0rc",
     "torch==2.2.1",
     "torchvision==0.17.1",
+    "tensorboard"
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -21,8 +22,8 @@ packages = ["."]
 publisher = "nvidia"
 
 [tool.flwr.app.components]
-serverapp = "flwr_pt_tb_streaming.server:app"
-clientapp = "flwr_pt_tb_streaming.client:app"
+serverapp = "flwr_pt_tb.server:app"
+clientapp = "flwr_pt_tb.client:app"
 
 [tool.flwr.app.config]
 num-server-rounds = 3
