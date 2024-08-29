@@ -44,7 +44,7 @@ or if XGBoost 2.2 is not released yet, use
 
 .. code-block:: bash
 
-    pip install https://s3-us-west-2.amazonaws.com/xgboost-nightly-builds/federated-secure/`curl -s https://s3-us-west-2.amazonaws.com/xgboost-nightly-builds/federated-secure/meta.json | grep -o 'xgboost-2\.2.*whl'|sed -e 's/+/%2B/'`
+    pip install https://s3-us-west-2.amazonaws.com/xgboost-nightly-builds/federated-secure/xgboost-2.2.0.dev0%2B4601688195708f7c31fcceeb0e0ac735e7311e61-py3-none-manylinux_2_28_x86_64.whl
 
 ``TenSEAL`` package is needed for horizontal secure training,
 
