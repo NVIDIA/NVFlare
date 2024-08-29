@@ -230,7 +230,15 @@ class FedJobConfig:
 
             import_source_file = os.path.join(source_dir, import_source.replace(".", os.sep) + ".py")
             if os.path.exists(import_source_file):
+                # Handle the import from within the same module
                 self._get_custom_file(custom_dir, import_module, import_source_file)
+            else:
+                # Handle the import from outside the module
+                size = len(module.split(".")) - 1
+                source_root = os.sep.join(source_dir.split(os.sep)[0:-size])
+                import_source_file = os.path.join(source_root, import_source.replace(".", os.sep) + ".py")
+                if os.path.exists(import_source_file):
+                    self._get_custom_file(custom_dir, import_module, import_source_file)
 
     def _get_client_app(self, config_dir, custom_dir, fed_app):
         client_app = {"format_version": 2, "executors": []}
