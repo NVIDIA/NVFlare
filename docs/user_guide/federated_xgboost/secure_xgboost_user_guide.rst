@@ -13,12 +13,13 @@ NVFlare supports federated training with XGBoost. It provides the following adva
 
 It supports federated training in the following 4 modes:
 
-1. **horizontal(h)**: Row split without encryption
-2. **vertical(v)**: Column split without encryption
-3. **horizontal_secure(hs)**: Row split with HE (Requires at least 3 clients. With 2 clients, the other client's histogram can be deduced.)
-4. **vertical_secure(vs)**: Column split with HE
+1. Row split without encryption
+2. Column split without encryption
+3. Row split with HE (Requires at least 3 clients. With 2 clients, the other client's histogram can be deduced.)
+4. Column split with HE
 
-When running with NVFlare, all the GRPC connections in XGBoost are local and the messages are forwarded to other clients through NVFlare's CellNet communication. The local GRPC ports are selected automatically by NVFlare.
+When running with NVFlare, all the GRPC connections in XGBoost are local and the messages are forwarded to other clients through NVFlare's CellNet communication.
+The local GRPC ports are selected automatically by NVFlare.
 
 The encryption is handled in XGBoost by encryption plugins, which are external components that can be installed at runtime. The plugins are bundled with NVFlare.
 
@@ -43,7 +44,7 @@ or if XGBoost 2.2 is not released yet, use
 
 .. code-block:: bash
 
-    pip install xgboost --extra-index-url https://s3-us-west-2.amazonaws.com/xgboost-nightly-builds/list.html?prefix=federated-secure/
+    pip install https://s3-us-west-2.amazonaws.com/xgboost-nightly-builds/federated-secure/xgboost-2.2.0.dev0%2B4601688195708f7c31fcceeb0e0ac735e7311e61-py3-none-manylinux_2_28_x86_64.whl
 
 ``TenSEAL`` package is needed for horizontal secure training,
 
@@ -120,11 +121,11 @@ This is a snippet of the ``secure_project.yml`` file with the HEBuilder:
 
 Data Preparation
 ================
-Data must be properly formatted for federated XGBoost training based on split mode (horizontal or vertical).
+Data must be properly formatted for federated XGBoost training based on split mode (row or column).
 
-For horizontal training, the datasets on all clients must share the same columns.
+For horizontal (row-split) training, the datasets on all clients must share the same columns.
 
-For vertical training, the datasets on all clients contain different columns, but must share overlapping rows. For more details on vertical split preprocessing, refer to the :github_nvflare_link:`Vertical XGBoost Example <examples/advanced/vertical_xgboost>`.
+For vertical (column-split) training, the datasets on all clients contain different columns, but must share overlapping rows. For more details on vertical split preprocessing, refer to the :github_nvflare_link:`Vertical XGBoost Example <examples/advanced/vertical_xgboost>`.
 
 XGBoost Plugin Configuration
 ============================
@@ -206,8 +207,9 @@ On the server side, following controller must be configured in workflows,
 Even though the XGBoost training is performed on clients, the parameters are configured on the server so all clients share the same configuration. 
 XGBoost parameters are defined here, https://xgboost.readthedocs.io/en/stable/python/python_intro.html#setting-parameters
 
-- **num_rounds**: Number of training rounds
-- **training_mode**: Training mode, must be one of the following: horizontal, vertical, horizontal_secure, vertical_secure.
+- **num_rounds**: Number of training rounds.
+- **data_split_mode**: Same as XGBoost data_split_mode parameter, 0 for row-split, 1 for column-split.
+- **secure_training**:If true, XGBoost will train in secure mode using the plugin.
 - **xgb_params**: The training parameters defined in this dict are passed to XGBoost as **params**, the boost paramter.
 - **xgb_options**: This dict contains other optional parameters passed to XGBoost. Currently, only **early_stopping_rounds** is supported.
 - **client_ranks**: A dict that maps client name to rank.
@@ -226,15 +228,14 @@ Only one parameter is required for executor,
 Data Loader
 -----------
 
-On the client side, a data loader must be configured in the components. The SecureDataLoader can be used if the data is pre-processed. For example,
+On the client side, a data loader must be configured in the components. The CSVDataLoader can be used if the data is pre-processed. For example,
 
 .. code-block:: json
 
     {
         "id": "dataloader",
-        "path": "nvflare.app_opt.xgboost.histogram_based_v2.secure_data_loader.SecureDataLoader",
+        "path": "nvflare.app_opt.xgboost.histogram_based_v2.csv_data_loader.CSVDataLoader",
         "args": {
-            "rank": 0,
             "folder": "/opt/dataset/vertical_xgb_data"
         }
     }
@@ -249,7 +250,7 @@ Job Example
 Vertical Training
 -----------------
 
-Here are the configuration files for a vertical secure training job. If encryption is not needed, just change the training_mode to vertical.
+Here are the configuration files for a vertical secure training job. If encryption is not needed, just change the secure_training to false.
 
 config_fed_server.json
 
@@ -264,7 +265,8 @@ config_fed_server.json
                 "path": "nvflare.app_opt.xgboost.histogram_based_v2.fed_controller.XGBFedController",
                 "args": {
                     "num_rounds": "{num_rounds}",
-                    "training_mode": "vertical_secure",
+                    "data_split_mode": 1,
+                    "secure_training": true,
                     "xgb_options": {
                         "early_stopping_rounds": 2
                     },
@@ -310,9 +312,8 @@ config_fed_client.json
         "components": [
             {
                 "id": "dataloader",
-                "path": "nvflare.app_opt.xgboost.histogram_based_v2.secure_data_loader.SecureDataLoader",
+                "path": "nvflare.app_opt.xgboost.histogram_based_v2.csv_data_loader.CSVDataLoader",
                 "args": {
-                    "rank": 0,
                     "folder": "/opt/dataset/vertical_xgb_data"
                 }
             }
@@ -323,7 +324,7 @@ config_fed_client.json
 Horizontal Training
 -------------------
 
-The configuration for horizontal training is the same as vertical except training_mode and the data loader must point to horizontal split data.
+The configuration for horizontal training is the same as vertical except data_split_mode is 0 and the data loader must point to horizontal split data.
 
 config_fed_server.json
 
@@ -338,7 +339,8 @@ config_fed_server.json
                 "path": "nvflare.app_opt.xgboost.histogram_based_v2.fed_controller.XGBFedController",
                 "args": {
                     "num_rounds": "{num_rounds}",
-                    "training_mode": "horizontal_secure",
+                    "data_split_mode": 0,
+                    "secure_training": true,
                     "xgb_options": {
                         "early_stopping_rounds": 2
                     },
@@ -388,9 +390,8 @@ config_fed_client.json
         "components": [
             {
                 "id": "dataloader",
-                "path": "nvflare.app_opt.xgboost.histogram_based_v2.secure_data_loader.SecureDataLoader",
+                "path": "nvflare.app_opt.xgboost.histogram_based_v2.csv_data_loader.CSVDataLoader",
                 "args": {
-                    "rank": 0,
                     "folder": "/data/xgboost_secure/dataset/horizontal_xgb_data"
                 }
             }
