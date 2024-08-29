@@ -28,8 +28,8 @@ In each example folder, install required packages for training:
 (nvflare_example)$ pip install -r requirements.txt
 ```
 
-For more detailed installation instructions including cloning the repository and checking out the examples in the code,
-virtual environment setup, or how to use Docker, see the installation section of the [documentation](https://nvflare.readthedocs.io/en/main/quickstart.html).
+For more detailed installation instructions including virtual environment setup, cloning the repository and checking out the examples,
+or how to use Docker, see the installation section of the [documentation](https://nvflare.readthedocs.io/en/main/quickstart.html).
 
 ### Examples
 We provide several examples to quickly get you started using NVFlare's Job API. 
@@ -41,7 +41,5 @@ such as [FedOpt](https://arxiv.org/abs/2003.00295), or [SCAFFOLD](https://arxiv.
 ### 2. [Tensorflow Examples](./tf/README.md)
 ### 3. [Scikit-Learn Examples](./sklearn/README.md)
 
-Once you finished above examples, you also read about [getting started documentation](https://nvflare.readthedocs.io/en/main/getting_started.html), 
-look at the ["hello-world"](../hello-world) examples or checkout more examples at tutorial catelog https://nvidia.github.io/NVFlare/.
-
-
+Once you have finished the above examples, you can also look at the
+["hello-world"](../hello-world) examples or check out more examples at tutorial catalog: https://nvidia.github.io/NVFlare/.
