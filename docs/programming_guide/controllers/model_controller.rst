@@ -7,13 +7,13 @@ ModelController API
 The FLARE :mod:`ModelController<nvflare.app_common.workflows.model_controller>` API provides an easy way for users to write and customize FLModel-based controller workflows.
 
 * Highly flexible with a simple API (run routine and basic communication and utility functions)
-* :ref:`fl_model`for the communication data structure, everything else is pure Python
+* :ref:`fl_model` for the communication data structure, everything else is pure Python
 * Option to support pre-existing components and FLARE-specific functionalities
 
 .. note::
 
     The ModelController API is a high-level API meant to simplify writing workflows.
-    If users prefer or need the full flexibility of the Controller with all the capabilites of FLARE functions, refer to the :ref:`controllers`.
+    If users prefer or need the full flexibility of the Controller with all the capabilities of FLARE functions, refer to the :ref:`controllers`.
 
 
 Core Concepts
@@ -70,7 +70,7 @@ Here is an example of the FedAvg workflow using the :class:`BaseFedAvg<nvflare.a
                   results, aggregate_fn=self.aggregate_fn
               )  # using default aggregate_fn with `WeightedAggregationHelper`. Can overwrite self.aggregate_fn with signature Callable[List[FLModel], FLModel]
 
-              # update global model with agggregation results
+              # update global model with aggregation results
               model = self.update_model(model, aggregate_results)
 
               # save model (by default uses persistor, can provide custom method)
@@ -119,7 +119,7 @@ The :ref:`fl_model` is standardized data structure object that is sent along wit
 
     The :ref:`fl_model` object can be any type of data depending on the specific task.
     For example, in the "train" and "validate" tasks we send the model parameters along with the task so the target clients can train and validate the model.
-    However in many other tasks that do not involve sending the model (e.g. "submit_model"), the :ref:`fl_model` can contain any type of data (e.g. metadata, metrics etc.) or may be not be needed at all.
+    However in many other tasks that do not involve sending the model (e.g. "submit_model"), the :ref:`fl_model` can contain any type of data (e.g. metadata, metrics etc.) or may not be needed at all.
 
 
 send_model_and_wait
@@ -141,6 +141,50 @@ A callback with the signature ``Callable[[FLModel], None]`` can be passed in, wh
 
 The task is standing until either ``min_responses`` have been received, or ``timeout`` time has passed.
 Since this call is asynchronous, the Controller :func:`get_num_standing_tasks<nvflare.apis.impl.controller.Controller.get_num_standing_tasks>` method can be used to get the number of standing tasks for synchronization purposes.
+
+For example, in the :github_nvflare_link:`CrossSiteEval <app_common/workflows/cross_site_eval.py>` workflow, the tasks are asynchronously sent with :func:`send_model<nvflare.app_common.workflows.model_controller.ModelController.send_model>` to get each client's model.
+Then through a callback, the clients' models are sent to the other clients for validation.
+Finally, the workflow waits for all standing tasks to complete with :func:`get_num_standing_tasks<nvflare.apis.impl.controller.Controller.get_num_standing_tasks>`.
+Below is an example of how these functions can be used. For more details view the implementation of :github_nvflare_link:`CrossSiteEval <app_common/workflows/cross_site_eval.py>`.
+
+
+.. code-block:: python
+
+    class CrossSiteEval(ModelController):
+        ...
+        def run(self) -> None:
+            ...
+            # Create submit_model task and broadcast to all participating clients
+            self.send_model(
+                task_name=AppConstants.TASK_SUBMIT_MODEL,
+                data=data,
+                targets=self._participating_clients,
+                timeout=self._submit_model_timeout,
+                callback=self._receive_local_model_cb,
+            )
+            ...
+            # Wait for all standing tasks to complete, since we used non-blocking `send_model()`
+            while self.get_num_standing_tasks():
+                if self.abort_signal.triggered:
+                    self.info("Abort signal triggered. Finishing cross site validation.")
+                    return
+                self.debug("Checking standing tasks to see if cross site validation finished.")
+                time.sleep(self._task_check_period)
+
+            self.save_results()
+            self.info("Stop Cross-Site Evaluation.")
+
+        def _receive_local_model_cb(self, model: FLModel):
+            # Send this model to all clients to validate
+            model.meta[AppConstants.MODEL_OWNER] = model_name
+            self.send_model(
+                task_name=AppConstants.TASK_VALIDATION,
+                data=model,
+                targets=self._participating_clients,
+                timeout=self._validation_timeout,
+                callback=self._receive_val_result_cb,
+            )
+        ...
 
 
 Saving & Loading
