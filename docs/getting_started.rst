@@ -16,33 +16,6 @@ Install NVFLARE
 
   $ python3 -m pip install nvflare
 
-Clone NVFLARE repo to get examples, switch main branch (latest stable branch)
-
-.. code-block:: shell
-
-  $ git clone https://github.com/NVIDIA/NVFlare.git
-  $ cd NVFlare
-  $ git switch 2.4
-
-
-Note on branches:
-
-* The `main <https://github.com/NVIDIA/NVFlare/tree/main>`_ branch is the default (unstable) development branch
-
-* The 2.1, 2.2, 2.3, and 2.4 etc. branches are the branches for each major release and minor patches
-
-
-Quick Start with Simulator
---------------------------
-Making sure the NVFLARE environment is set up correctly following :ref:`installation`, you can run an example application with :ref:`starting_fl_simulator`
-using the following script:
-
-.. code-block:: shell
-
-   nvflare simulator -w /tmp/nvflare/hello-numpy-sag -n 2 -t 2 examples/hello-world/hello-numpy-sag/jobs/hello-numpy-sag
-
-Now you can watch the simulator run two clients (n=2) with two threads (t=2)
-and logs are saved in the `/tmp/nvflare/hello-numpy-sag` workspace.
 
 Getting Started Guide
 =====================
@@ -91,8 +64,7 @@ You can find more information there.  We only describe a few necessary steps for
 
 
 Depending on your OS and the Python distribution, you may need to install the Python's venv package separately.  For example, in Ubuntu
-20.04, you need to run the following commands to continue creating a virtual environment with venv. Note that in newer versions of Ubuntu,
-you may need to make sure you are using Python 3.8 and not a newer version.
+20.04, you need to run the following commands to continue creating a virtual environment with venv.
 
 .. code-block:: shell
 
@@ -139,6 +111,24 @@ Stable releases are available on `NVIDIA FLARE PyPI <https://pypi.org/project/nv
     In addition to the dependencies included when installing nvflare, many of our example applications have additional packages that must be installed.
     Make sure to install from any requirement.txt files before running the examples.
     See :github_nvflare_link:`nvflare/app_opt <nvflare/app_opt>` for modules and components with optional dependencies.
+
+Cloning the NVFlare Repository and Checking Out a Branch
+---------------------------------------------------------
+
+Clone NVFlare repo to get examples, and switch to either the main branch or the latest stable branch:
+
+.. code-block:: shell
+
+  $ git clone https://github.com/NVIDIA/NVFlare.git
+  $ cd NVFlare
+  $ git switch 2.4
+
+Note on branches:
+
+* The `main <https://github.com/NVIDIA/NVFlare/tree/main>`_ branch is the default (unstable) development branch
+
+* The 2.1, 2.2, 2.3, 2.4, 2.5, etc. branches are the branches for each major release and there are tags based on these with a third digit for minor patches
+
 
 .. _containerized_deployment:
 
@@ -212,12 +202,15 @@ FL Simulator (described in the next section), you can simply mount in any direct
 your FLARE application code, and run the Simulator within the Docker container with
 all dependencies installed.
 
-Ways to Run NVFLARE
+Ways to Run NVFlare
 ===================
-NVFLARE can currently support running with the FL Simulator, POC mode, or Production mode.
+NVFlare can currently support running with the FL Simulator, POC mode, or Production mode.
 
 FL Simulator is lightweight and uses threads to simulate different clients.
 The code used for the simulator can be directly used in production mode.
+
+Starting in 2.5, NVFlare supports running the FL Simulator with the Job API. The :ref:`Job API <fed_job_api>` allows
+you to build jobs programatically and then export them or directly run them with the simulator.
 
 POC mode is a quick way to get set up to run locally on one machine. The FL server and each client
 run on different processes or dockers.
@@ -312,52 +305,64 @@ we can install these in the Python virtual environment by running:
 
 If using the Dockerfile above to run in a container, these dependencies have already been installed.
 
-Next, we can create a workspace for the Simulator to use for outputs of the application run, and launch
-the simulator using ``simulator-example/hello-pt/jobs/hello-pt`` as the input job directory.  In this example, we'll
-run on two clients using two threads:
+Next, we can directly run the ``fedavg_script_runner_pt.py`` script which is configured to build a job
+with the Job API and then run it with the FL Simulator.
 
 .. code-block:: shell
 
-  mkdir simulator-example/workspace
-  nvflare simulator -w simulator-example/workspace -n 2 -t 2 simulator-example/hello-pt/jobs/hello-pt
+  cd simulator-example/hello-pt
+  python3 fedavg_script_runner_pt.py
 
 Now you will see output streaming from the server and client processes as they execute the federated
-application.  Once the run completes, your workspace directory will contain the input application configuration
+application.  Once the run completes, your workspace directory (by default ``/tmp/nvflare/jobs/workdir``),
+will contain the input application configuration
 and codes, logs of the output, site and global models, cross-site validation results.
 
 .. code-block:: shell
-  
-  $ tree -L 3 simulator-example/workspace/
-  simulator-example/workspace/
-  ├── audit.log
-  ├── local
-      │  └── log.config
-      ├── simulate_job
-      │  ├── app_server
-      │  │   ├── config
-      │  │   ├── custom
-      │  │   └── FL_global_model.pt
-      │  ├── app_site-1
-      │  │   ├── audit.log
-      │  │   ├── config
-      │  │   ├── custom
-      │  │   └── log.txt
-      │  ├── app_site-2
-      │  │   ├── audit.log
-      │  │   ├── config
-      │  │   ├── custom
-      │  │   └── log.txt
-      │  ├── cross_site_val
-      │  │   ├── cross_val_results.json
-      │  │   ├── model_shareables
-      │  │   └── result_shareables
-      │  ├── log.txt
-      │  ├── models
-      │  │   └── local_model.pt
-      │  └── tb_events
-      │      ├── site-1
-      │      └── site-2
-      └── startup
+
+  $ tree -L 4 /tmp/nvflare/jobs/workdir
+  /tmp/nvflare/jobs/workdir
+  ├── server
+  │   ├── local
+  │   │   └── log.config
+  │   ├── log.txt
+  │   ├── pool_stats
+  │   │   └── simulator_cell_stats.json
+  │   ├── simulate_job
+  │   │   ├── app_server
+  │   │   │   ├── FL_global_model.pt
+  │   │   │   ├── config
+  │   │   │   └── custom
+  │   │   ├── cross_site_val
+  │   │   │   └── cross_val_results.json
+  │   │   ├── meta.json
+  │   │   └── tb_events
+  │   │       ├── site-1
+  │   │       └── site-2
+  │   └── startup
+  ├── site-1
+  │   ├── cifar_net.pth
+  │   ├── local
+  │   │   └── log.config
+  │   ├── log.txt
+  │   ├── simulate_job
+  │   │   ├── app_site-1
+  │   │   │   ├── config
+  │   │   │   └── custom
+  │   │   └── meta.json
+  │   └── startup
+  ├── site-2
+  │   ├── cifar_net.pth
+  │   ├── local
+  │   │   └── log.config
+  │   ├── log.txt
+  │   ├── simulate_job
+  │   │   ├── app_site-2
+  │   │   │   ├── config
+  │   │   │   └── custom
+  │   │   └── meta.json
+  │   └── startup
+  └── startup
 
 
 Now that we've explored an example application with the FL Simulator, we can look at what it takes to bring
