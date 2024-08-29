@@ -38,7 +38,7 @@ from nvflare.security.logging import secure_format_exception
 class BaseModelController(Controller, FLComponentWrapper, ABC):
     def __init__(
         self,
-        persistor_id="persistor",
+        persistor_id: str = AppConstants.DEFAULT_PERSISTOR_ID,
         ignore_result_error: bool = False,
         allow_empty_global_weights: bool = False,
         task_check_period: float = 0.5,
@@ -46,7 +46,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         """FLModel based controller.
 
         Args:
-            persistor_id (str, optional): ID of the persistor component. Defaults to "persistor".
+            persistor_id (str, optional): ID of the persistor component. Defaults to AppConstants.DEFAULT_PERSISTOR_ID ("persistor").
             ignore_result_error (bool, optional): whether this controller can proceed if client result has errors.
                 Defaults to False.
             allow_empty_global_weights (bool, optional): whether to allow empty global weights. Some pipelines can have

@@ -195,6 +195,8 @@ See :ref:`provisioning` for details.
 
 Job Configuration
 =================
+.. _secure_xgboost_controller:
+
 Controller
 ----------
 

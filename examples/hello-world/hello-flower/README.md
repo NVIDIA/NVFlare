@@ -17,20 +17,35 @@ $ tree jobs/hello-flwr-pt/app/custom
 ```
 Note, this code is adapted from Flower's [app-pytorch](https://github.com/adap/flower/tree/main/examples/app-pytorch) example.
 
-## Install dependencies
+## 1. Install dependencies
 If you haven't already, we recommend creating a virtual environment.
 ```bash
 python3 -m venv nvflare_flwr
 source nvflare_flwr/bin/activate
 ```
-To run a job with NVFlare, we first need to install its dependencies.
-```bash
-pip install ./jobs/hello-flwr-pt/app/custom
-```
 
-## Run a simulation
+## 2.1 Run a simulation
+
+To run flwr-pt job with NVFlare, we first need to install its dependencies.
+```bash
+pip install ./flwr-pt/
+```
 
 Next, we run 2 Flower clients and Flower Server in parallel using NVFlare's simulator.
 ```bash
-nvflare simulator jobs/hello-flwr-pt -n 2 -t 2 -w /tmp/nvflare/flwr
+python job.py
+```
+
+## 2.2 Run a simulation with TensorBoard streaming
+
+To run flwr-pt_tb_streaming job with NVFlare, we first need to install its dependencies.
+```bash
+pip install ./flwr-pt-metrics/
+```
+
+Next, we run 2 Flower clients and Flower Server in parallel using NVFlare while streaming 
+the TensorBoard metrics to the server at each iteration using NVFlare's metric streaming.
+
+```bash
+python job_with_metric.py
 ```
