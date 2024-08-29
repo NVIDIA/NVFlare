@@ -24,7 +24,7 @@ Since the inductive learning mode is being used, the locally learnt model (a rep
 
 ###  Experiments
 ####  Install NVIDIA FLARE
-Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions.
+Follow the [Installation](https://nvflare.readthedocs.io/en/main/getting_started.html) instructions.
 Install additional requirements:
 ```
 python3 -m pip install -r requirements.txt

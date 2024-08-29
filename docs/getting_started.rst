@@ -4,33 +4,6 @@
 Getting Started
 ###############
 
-.. _quickstart:
-
-Getting Started: Quick Start
-============================
-
-Install NVFLARE
----------------
-
-.. code-block:: shell
-
-  $ python3 -m pip install nvflare
-
-
-Getting Started Guide
-=====================
-
-This Getting Started guide is geared towards new users of NVIDIA FLARE and walks through installation, the FL Simulator,
-and a simple "hello world" application.
-
-Once you're familiar with the platform, the :ref:`Example Applications <example_applications>` are a great next step.
-These examples introduce some of the key concepts of the platform and showcase the integration of popular libraries
-and frameworks like Numpy, Pytorch, Tensorflow, and MONAI.
-
-Any FLARE application used with the FL Simulator can also be run in a real-world, distributed FL deployment.
-The :ref:`Real-World FL <real_world_fl>` section describes some of the considerations and tools used for
-establishing a secure, distributed FL workflow.
-
 .. _installation:
 
 Installation
@@ -97,8 +70,8 @@ You may find that the pip and setuptools versions in the venv need updating:
   (nvflare-env) $ python3 -m pip install -U pip
   (nvflare-env) $ python3 -m pip install -U setuptools
 
-Install Stable Release
-----------------------
+Install Stable Release of NVFlare
+---------------------------------
 
 Stable releases are available on `NVIDIA FLARE PyPI <https://pypi.org/project/nvflare>`_:
 

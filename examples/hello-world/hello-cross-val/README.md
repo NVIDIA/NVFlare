@@ -4,7 +4,7 @@ The cross-site model evaluation workflow uses the data from clients to run evalu
 
 ### 1. Install NVIDIA FLARE
 
-Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions.
+Follow the [Installation](https://nvflare.readthedocs.io/en/main/getting_started.html) instructions.
 
 ### 2. Run the experiment
 
