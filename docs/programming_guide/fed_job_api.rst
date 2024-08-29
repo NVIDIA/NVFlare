@@ -205,8 +205,8 @@ Resource (str)
 
 If the object is a str, it is treated as an external resource and will be included in the custom directory.
 
-* If the path is a script, it will be copied to the custom directory.
-* If the path is a directory, the directory will be copied flat to the custom directory.
+* If the object is a script, it will be copied to the custom directory.
+* If the object is a directory, the directory will be copied flat to the custom directory.
 
 Example:
 
