@@ -103,6 +103,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         self._params_exchange_format = params_exchange_format
         self._params_transfer_type = params_transfer_type
         self._config_file_name = config_file_name
+        self._heartbeat_timeout = heartbeat_timeout
 
     def initialize(self, fl_ctx: FLContext) -> None:
         self.prepare_config_for_launch(fl_ctx)
@@ -122,6 +123,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 ConfigKey.CLASS_NAME: pipe_export_class,
                 ConfigKey.ARG: pipe_export_args,
             },
+            ConfigKey.HEARTBEAT_TIMEOUT: self._heartbeat_timeout,
         }
 
         config_data = {
