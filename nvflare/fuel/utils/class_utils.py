@@ -105,7 +105,7 @@ class ModuleScanner:
                                         else:
                                             class_table[name] = [module_name]
                             except (ModuleNotFoundError, RuntimeError, AttributeError) as e:
-                                self._logger.debug(
+                                self._logger.error(
                                     f"Try to import module {module_name}, but failed: {secure_format_exception(e)}. "
                                     f"Can't use name in config to refer to classes in module: {module_name}."
                                 )
