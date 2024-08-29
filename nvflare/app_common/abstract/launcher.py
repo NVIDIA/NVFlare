@@ -15,6 +15,7 @@
 import os
 from abc import ABC, abstractmethod
 
+from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
@@ -28,7 +29,7 @@ class LauncherRunStatus:
     NOT_RUNNING = "not_running"
 
 
-class Launcher(ABC):
+class Launcher(FLComponent, ABC):
     def initialize(self, fl_ctx: FLContext) -> None:
         pass
 

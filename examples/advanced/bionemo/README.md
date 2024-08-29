@@ -10,14 +10,15 @@ The model is trained with NVIDIA's BioNeMo framework for Large Language Model tr
 
 ## Requirements
 
-Download and run the latest [BioNeMo docker container](https://catalog.ngc.nvidia.com/orgs/nvidia/teams/clara/containers/bionemo-framework).
+Download and run the [BioNeMo docker container](https://catalog.ngc.nvidia.com/orgs/nvidia/teams/clara/containers/bionemo-framework).
+Note, we tested this example with `nvcr.io/nvidia/clara/bionemo-framework:1.0`.
 
 We recommend following the [Quickstart Guide](https://docs.nvidia.com/bionemo-framework/latest/quickstart-fw.html#docker-container-access) 
 on how to get the BioNeMo container. 
 
 First, copy the NeMo code to a local directory and configure the launch script so that downloaded models can be reused 
 ```commandline
-CONTAINER="nvcr.io/nvidia/clara/bionemo-framework:latest"
+CONTAINER="nvcr.io/nvidia/clara/bionemo-framework:1.0"
 DEST_PATH="."
 CONTAINER_NAME=bionemo
 docker run --name $CONTAINER_NAME -itd --rm $CONTAINER bash
