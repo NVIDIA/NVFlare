@@ -14,7 +14,7 @@ started with the following:
 
 ### 1. Install NVIDIA FLARE
 
-Follow the [Installation](https://nvflare.readthedocs.io/en/main/getting_started.html) instructions to install NVFlare.
+Follow the [Installation](../../getting_started/README.md) instructions to install NVFlare.
 
 Install additional requirements:
 

@@ -15,6 +15,21 @@ or results received or produced by the server or clients.
 
 ![NVIDIA FLARE Overview](../../docs/resources/controller_executor_no_filter.png)
 
+### Installation
+
+Install nvflare
+```shell
+(nvflare_example)$ pip install nvflare
+```
+
+In each example folder, install required packages for training:
+```shell
+(nvflare_example)$ pip install --upgrade pip
+(nvflare_example)$ pip install -r requirements.txt
+```
+
+For more detailed installation instructions including cloning the repository and checking out the examples in the code,
+virtual environment setup, or how to use Docker, see the installation section of the [documentation](https://nvflare.readthedocs.io/en/main/quickstart.html).
 
 ### Examples
 We provide several examples to quickly get you started using NVFlare's Job API. 
