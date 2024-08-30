@@ -140,7 +140,7 @@ NVIDIA FLARE Server & Application
 ---------------------------------
 In this example, the server runs :class:`FedAvg<nvflare.app_common.workflows.fedavg.FedAvg>` with the default settings.
 
-If you export the job with the :func:`export<nvflare.job_config.fed_job.FedJob.export>` function, you will see the
+If you export the job with the :func:`export<nvflare.job_config.api.FedJob.export>` function, you will see the
 configurations for the server and each client. The server configuration is ``config_fed_server.json`` in the config folder
 in app_server:
 
@@ -206,7 +206,7 @@ in app_server:
 This is automatically created by the Job API. The server application configuration leverages NVIDIA FLARE built-in components.
 
 Note that ``persistor`` points to ``PTFileModelPersistor``. This is automatically configured when the model SimpleNetwork is added
-to the server with the :func:`to<nvflare.job_config.fed_job.FedJob.to>` function. The Job API detects that the model is a PyTorch model
+to the server with the :func:`to<nvflare.job_config.api.FedJob.to>` function. The Job API detects that the model is a PyTorch model
 and automatically configures :class:`PTFileModelPersistor<nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor>`
 and :class:`PTFileModelLocator<nvflare.app_opt.pt.file_model_locator.PTFileModelLocator>`.
 
