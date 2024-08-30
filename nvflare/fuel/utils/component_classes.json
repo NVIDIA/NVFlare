@@ -520,6 +520,9 @@
     "TFModelPersistor": [
         "nvflare.app_opt.tf.model_persistor"
     ],
+    "MLflowReceiver": [
+        "nvflare.app_opt.tracking.mlflow.mlflow_receiver"
+    ],
     "MLflowWriter": [
         "nvflare.app_opt.tracking.mlflow.mlflow_writer"
     ],
