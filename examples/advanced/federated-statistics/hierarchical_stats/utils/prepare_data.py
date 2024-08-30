@@ -67,3 +67,17 @@ def prepare_data():
         )
 
     print("\nDone preparing data.")
+
+
+def main():
+    prog_name = "data_utils"
+    parser, args = parse_args(prog_name)
+
+    if args.prepare_data:
+        prepare_data()
+    else:
+        parser.print_help()
+
+
+if __name__ == "__main__":
+    main()
