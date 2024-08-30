@@ -124,7 +124,11 @@ class NPTrainer(Executor):
             return make_reply(ReturnCode.TASK_ABORTED)
 
         # Prepare a DXO for our updated model. Create shareable and return
-        outgoing_dxo = DXO(data_kind=incoming_dxo.data_kind, data=np_data, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1})
+        outgoing_dxo = DXO(
+            data_kind=incoming_dxo.data_kind,
+            data=np_data,
+            meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
         return outgoing_dxo.to_shareable()
 
     def _submit_model(self, fl_ctx: FLContext, abort_signal: Signal):
