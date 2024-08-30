@@ -38,6 +38,16 @@ def _get_run_dir(fl_ctx: FLContext):
 
 class NPModelPersistor(ModelPersistor):
     def __init__(self, model_dir="models", model_name="server.npy"):
+        """Model persistor for numpy arrays.
+
+        Note:
+            If the specified model can't be found using "model_dir"/"model_name"
+            Then default array of [[1, 2, 3], [4, 5, 6], [7, 8, 9]] is used.
+
+        Args:
+            model_dir (str, optional): model directory. Defaults to "models".
+            model_name (str, optional): model name. Defaults to "server.npy".
+        """
         super().__init__()
 
         self.model_dir = model_dir
