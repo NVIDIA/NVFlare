@@ -67,8 +67,6 @@ tests:
           "data": { "run_finished": True }
     setup:
       - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
-    teardown:
-      - rm -rf /tmp/nvflare/data
   - test_name: "run pt-client-api-launch-once"
     event_sequence:
       - "trigger":
@@ -86,8 +84,6 @@ tests:
           "data": { "run_finished": True }
     setup:
       - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
-    teardown:
-      - rm -rf /tmp/nvflare/data
   - test_name: "run pt-client-api-cyclic"
     event_sequence:
       - "trigger":
@@ -105,8 +101,6 @@ tests:
           "data": { "run_finished": True }
     setup:
       - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
-    teardown:
-      - rm -rf /tmp/nvflare/data
   - test_name: "run decorator"
     event_sequence:
       - "trigger":
@@ -124,8 +118,6 @@ tests:
           "data": { "run_finished": True }
     setup:
       - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
-    teardown:
-      - rm -rf /tmp/nvflare/data
   - test_name: "run lightning-client-api"
     event_sequence:
       - "trigger":
@@ -144,8 +136,6 @@ tests:
     setup:
       - python -m pip install pytorch_lightning
       - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
-    teardown:
-      - rm -rf /tmp/nvflare/data
   - test_name: "run pt-client-api-in-process"
     event_sequence:
       - "trigger":
@@ -163,8 +153,6 @@ tests:
           "data": { "run_finished": True }
     setup:
       - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
-    teardown:
-      - rm -rf /tmp/nvflare/data
   - test_name: "run decorator-in-process"
     event_sequence:
       - "trigger":
@@ -182,8 +170,6 @@ tests:
           "data": { "run_finished": True }
     setup:
       - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
-    teardown:
-      - rm -rf /tmp/nvflare/data
   - test_name: "run lightning-client-api-in-process"
     event_sequence:
       - "trigger":
