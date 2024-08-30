@@ -9,10 +9,10 @@ Follow the [Installation](../../getting_started/README.md) instructions.
 
 # Run training and cross site validation right after training
 
-This example uses a Numpy-based mock trainer to simulate the training
+This example uses a Numpy-based trainer to simulate the training
 steps.
 
-We first do FedAvg and after training we do cross-site validation.
+We first perform FedAvg training and then conduct cross-site validation.
 
 So you will see two workflows (ScatterAndGather and CrossSiteModelEval) are configured.
 

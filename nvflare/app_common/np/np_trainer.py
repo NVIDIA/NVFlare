@@ -93,7 +93,7 @@ class NPTrainer(Executor):
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
 
-        # Doing some dummy training.
+        # Doing some mock training.
         if np_data:
             if NPConstants.NUMPY_KEY in np_data:
                 np_data[NPConstants.NUMPY_KEY] += self._delta
