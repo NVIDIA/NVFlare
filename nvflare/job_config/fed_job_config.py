@@ -203,7 +203,7 @@ class FedJobConfig:
             if package not in FL_PACKAGES and module not in self.custom_modules:
                 module_path = module.replace(".", os.sep)
                 if module_path in source_file:
-                    index = source_file.index(module_path)
+                    index = source_file.rindex(module_path)
                     dest = source_file[index:]
 
                     self.custom_modules.append(module)
