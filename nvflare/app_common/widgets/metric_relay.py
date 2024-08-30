@@ -94,5 +94,6 @@ class MetricRelay(Widget, AttributesExportable):
                 ConfigKey.CLASS_NAME: pipe_export_class,
                 ConfigKey.ARG: pipe_export_args,
             },
+            ConfigKey.HEARTBEAT_TIMEOUT: self._heartbeat_timeout,
         }
         return ConfigKey.METRICS_EXCHANGE, config_dict

@@ -111,7 +111,7 @@ class ExProcessClientAPI(APISpec):
                     task_channel_name=task_channel_name,
                     metric_pipe=metric_pipe,
                     metric_channel_name=metric_channel_name,
-                    heartbeat_timeout=client_config.config.get(ConfigKey.HEARTBEAT_TIMEOUT, 60),
+                    heartbeat_timeout=client_config.get_heartbeat_timeout(),
                 )
                 flare_agent.start()
 
