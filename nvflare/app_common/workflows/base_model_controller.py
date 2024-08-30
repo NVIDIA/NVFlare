@@ -83,7 +83,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             self.persistor = self.engine.get_component(self._persistor_id)
             if not isinstance(self.persistor, LearnablePersistor):
                 self.warning(
-                    f"Model Persistor {self._persistor_id} must be a LearnablePersistor type object, "
+                    f"Persistor {self._persistor_id} must be a LearnablePersistor type object, "
                     f"but got {type(self.persistor)}"
                 )
                 self.persistor = None

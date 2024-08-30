@@ -259,11 +259,10 @@ class PTFileModelPersistor(ModelPersistor):
             return None
 
         location = desc.location
-        return self.get_model_from_location(location, fl_ctx)
+        return self._get_model_from_location(location, fl_ctx)
 
-    def get_model_from_location(self, location, fl_ctx):
+    def _get_model_from_location(self, location, fl_ctx):
         try:
-            # device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
             # Use the "cpu" to load the global model weights, avoid GPU out of memory
             device = "cpu"
             data = torch.load(location, map_location=device)
@@ -271,7 +270,7 @@ class PTFileModelPersistor(ModelPersistor):
             return persistence_manager.to_model_learnable(self.exclude_vars)
         except Exception:
             self.log_exception(fl_ctx, "error loading checkpoint from {}".format(location))
-            return {}
+            return None
 
     def get_model_inventory(self, fl_ctx: FLContext) -> Dict[str, ModelDescriptor]:
         model_inventory = {}

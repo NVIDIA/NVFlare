@@ -94,7 +94,7 @@ def main():
     # (5) decorates with flare.evaluate and load model from the first argument
     @flare.evaluate
     def fl_evaluate(input_model=None):
-        return evaluate(input_weights=input_model.params)
+        return {"accuracy": evaluate(input_weights=input_model.params)}
 
     # wraps evaluate logic into a method
     def evaluate(input_weights):
