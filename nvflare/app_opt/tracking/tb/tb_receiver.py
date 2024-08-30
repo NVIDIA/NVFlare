@@ -79,6 +79,10 @@ class TBAnalyticsReceiver(AnalyticsReceiver):
         root_log_dir = os.path.join(run_dir, self.tb_folder)
         os.makedirs(root_log_dir, exist_ok=True)
         self.root_log_dir = root_log_dir
+        self.log_info(
+            fl_ctx,
+            f"Tensorboard records can be found in {self.root_log_dir} you can view it using `tensorboard --logdir={self.root_log_dir}`",
+        )
 
     def _convert_to_records(self, analytic_data: AnalyticsData, fl_ctx: FLContext) -> List[AnalyticsData]:
         # break dict of stuff to smaller items to support
