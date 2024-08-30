@@ -80,7 +80,8 @@ Stable releases are available on `NVIDIA FLARE PyPI <https://pypi.org/project/nv
 .. note::
 
     In addition to the dependencies included when installing nvflare, many of our example applications have additional packages that must be installed.
-    Make sure to install from any requirement.txt files before running the examples.
+    Make sure to install from any requirement.txt files before running the examples. If you already have a specific version of nvflare installed in your
+    environment, you may want to remove nvflare in the requirements to avoid reinstalling nvflare.
     See :github_nvflare_link:`nvflare/app_opt <nvflare/app_opt>` for modules and components with optional dependencies.
 
 Cloning the NVFlare Repository and Checking Out a Branch
