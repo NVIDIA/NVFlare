@@ -33,7 +33,7 @@ class ScriptRunner:
         script: str,
         script_args: str = "",
         launch_external_process: bool = False,
-        command: str = "python3",
+        command: str = "python3 -u",
         framework: FrameworkType = FrameworkType.PYTORCH,
     ):
         """ScriptRunner is used with FedJob API to run or launch a script.
@@ -116,6 +116,7 @@ class ScriptRunner:
                 pipe_id=pipe_id,
                 launcher_id=launcher_id,
                 params_exchange_format=self._params_exchange_format,
+                heartbeat_timeout=0,
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
 
@@ -133,6 +134,7 @@ class ScriptRunner:
             component = MetricRelay(
                 pipe_id=metric_pipe_id,
                 event_type="fed.analytix_log_stats",
+                heartbeat_timeout=0,
             )
             metric_relay_id = job.add_component("metric_relay", component, ctx)
             comp_ids["metric_relay_id"] = metric_relay_id

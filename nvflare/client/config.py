@@ -148,6 +148,13 @@ class ClientConfig:
     def get_submit_model_task(self):
         return self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.SUBMIT_MODEL_TASK_NAME, "")
 
+    def get_heartbeat_timeout(self):
+        # TODO decouple task and metric heartbeat timeouts
+        return self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(
+            ConfigKey.HEARTBEAT_TIMEOUT,
+            self.config.get(ConfigKey.METRICS_EXCHANGE, {}).get(ConfigKey.HEARTBEAT_TIMEOUT, 60),
+        )
+
     def to_json(self, config_file: str):
         with open(config_file, "w") as f:
             json.dump(self.config, f, indent=2)
