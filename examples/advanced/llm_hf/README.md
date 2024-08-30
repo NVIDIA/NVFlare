@@ -16,7 +16,7 @@ We conducted these experiments on two 80GB A100 GPUs, PEFT only needs 1 GPU, whi
 
 ## Setup
 Please make sure you set up virtual environment following [example root readme](../../README.md).
-Install additional requirements (if you alredy have a specific version of nvflare installed in your environment, you may want to remove nvflare in the requirements to avoid reinstalling nvflare):
+Install additional requirements (if you already have a specific version of nvflare installed in your environment, you may want to remove nvflare in the requirements to avoid reinstalling nvflare):
 ```
 python3 -m pip install -r requirements.txt
 ```
