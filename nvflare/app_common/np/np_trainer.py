@@ -93,7 +93,7 @@ class NPTrainer(Executor):
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
 
-        # Doing some dummy training.
+        # Doing some mock training.
         if np_data:
             if NPConstants.NUMPY_KEY in np_data:
                 np_data[NPConstants.NUMPY_KEY] += self._delta
@@ -124,7 +124,11 @@ class NPTrainer(Executor):
             return make_reply(ReturnCode.TASK_ABORTED)
 
         # Prepare a DXO for our updated model. Create shareable and return
-        outgoing_dxo = DXO(data_kind=incoming_dxo.data_kind, data=np_data, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1})
+        outgoing_dxo = DXO(
+            data_kind=incoming_dxo.data_kind,
+            data=np_data,
+            meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
         return outgoing_dxo.to_shareable()
 
     def _submit_model(self, fl_ctx: FLContext, abort_signal: Signal):
