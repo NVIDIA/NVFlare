@@ -41,6 +41,9 @@
     "InitFinalComponent": [
         "nvflare.app_common.abstract.init_final_component"
     ],
+    "Launcher": [
+        "nvflare.app_common.abstract.launcher"
+    ],
     "LearnablePersistor": [
         "nvflare.app_common.abstract.learnable_persistor"
     ],
@@ -219,6 +222,9 @@
     "DefaultJobScheduler": [
         "nvflare.app_common.job_schedulers.job_scheduler"
     ],
+    "SubprocessLauncher": [
+        "nvflare.app_common.launchers.subprocess_launcher"
+    ],
     "MetricsSender": [
         "nvflare.app_common.metrics_exchange.metrics_sender"
     ],
@@ -357,6 +363,9 @@
     "BroadcastAndWait": [
         "nvflare.app_common.workflows.broadcast_operator"
     ],
+    "CmdTaskController": [
+        "nvflare.app_common.workflows.cmd_task_controller"
+    ],
     "CrossSiteEval": [
         "nvflare.app_common.workflows.cross_site_eval"
     ],
@@ -371,6 +380,9 @@
     ],
     "ErrorHandlingController": [
         "nvflare.app_common.workflows.error_handling_controller"
+    ],
+    "ETLController": [
+        "nvflare.app_common.workflows.etl_controller"
     ],
     "FedAvg": [
         "nvflare.app_common.workflows.fedavg"
@@ -417,6 +429,36 @@
     "FlowerServerConnector": [
         "nvflare.app_opt.flower.connectors.flower_connector"
     ],
+    "GrpcClientConnector": [
+        "nvflare.app_opt.flower.connectors.grpc_client_connector"
+    ],
+    "GrpcServerConnector": [
+        "nvflare.app_opt.flower.connectors.grpc_server_connector"
+    ],
+    "FlowerController": [
+        "nvflare.app_opt.flower.controller"
+    ],
+    "FlowerExecutor": [
+        "nvflare.app_opt.flower.executor"
+    ],
+    "MockClientApplet": [
+        "nvflare.app_opt.flower.mock.applet"
+    ],
+    "MockClientPyApplet": [
+        "nvflare.app_opt.flower.mock.applet"
+    ],
+    "MockServerApplet": [
+        "nvflare.app_opt.flower.mock.applet"
+    ],
+    "MockController": [
+        "nvflare.app_opt.flower.mock.controller"
+    ],
+    "MockExecutor": [
+        "nvflare.app_opt.flower.mock.executor"
+    ],
+    "MockPyExecutor": [
+        "nvflare.app_opt.flower.mock.executor"
+    ],
     "HECrossSiteModelEval": [
         "nvflare.app_opt.he.cross_site_model_eval"
     ],
@@ -434,6 +476,9 @@
     ],
     "HEModelShareableGenerator": [
         "nvflare.app_opt.he.model_shareable_generator"
+    ],
+    "DhPSITaskHandler": [
+        "nvflare.app_opt.psi.dh_psi.dh_psi_task_handler"
     ],
     "PTClientAPILauncherExecutor": [
         "nvflare.app_opt.pt.client_api_launcher_executor"
@@ -474,9 +519,6 @@
     ],
     "TFModelPersistor": [
         "nvflare.app_opt.tf.model_persistor"
-    ],
-    "MLflowReceiver": [
-        "nvflare.app_opt.tracking.mlflow.mlflow_receiver"
     ],
     "MLflowWriter": [
         "nvflare.app_opt.tracking.mlflow.mlflow_writer"
