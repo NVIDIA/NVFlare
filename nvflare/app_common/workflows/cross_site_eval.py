@@ -177,7 +177,6 @@ class CrossSiteEval(ModelController):
         self.info(f"Saved validation result from client '{client_name}' on model '{model_owner}' in {file_path}")
 
     def track_results(self, model_owner, data_client, val_results: FLModel):
-        self.info(f"track_results is called with {model_owner=} {data_client=} {val_results.metrics=}")
         if not model_owner:
             self.error("model_owner unknown. Validation result will not be saved to json")
         if not data_client:
@@ -188,7 +187,6 @@ class CrossSiteEval(ModelController):
                 if data_client not in self._json_val_results:
                     self._json_val_results[data_client] = {}
                 self._json_val_results[data_client][model_owner] = val_results.metrics
-                self.info(f"track_results {self._json_val_results=}")
 
             except Exception:
                 self.exception("Exception in handling validation result.")
@@ -203,6 +201,4 @@ class CrossSiteEval(ModelController):
         res_file_path = os.path.join(cross_val_res_dir, self._json_file_name)
         self.info(f"saving validation result {self._json_val_results} to {res_file_path}")
         with open(res_file_path, "w") as f:
-            f.write(json.dumps(self._json_val_results, indent=2))
-        with open("/tmp/nvflare/ppopamp.json", "w") as f:
             f.write(json.dumps(self._json_val_results, indent=2))
