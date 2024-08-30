@@ -12,7 +12,7 @@ started with the following:
 
 Follow the [Installation](../../getting_started/README.md) instructions to install NVFlare.
 
-Install additional requirements:
+Install additional requirements (if you alredy have a specific version of nvflare installed in your environment, you may want to remove nvflare in the requirements to avoid reinstalling nvflare):
 
 ```
 pip3 install tensorflow

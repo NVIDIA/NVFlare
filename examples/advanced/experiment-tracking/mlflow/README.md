@@ -10,7 +10,7 @@ This example also highlights the MLflow streaming capability from the clients to
 
 ### 1. Install requirements and configure PYTHONPATH
 
-Install additional requirements:
+Install additional requirements (if you alredy have a specific version of nvflare installed in your environment, you may want to remove nvflare in the requirements to avoid reinstalling nvflare):
 
 ```
 python -m pip install -r requirements.txt
