@@ -14,6 +14,12 @@ To be able to run all the examples, please install the requirements first.
 ```
 pip install -r requirements.txt
 ```
+## Encryption Plugins
+The secure XGBoost requires encryption plugins to work. The plugins are distributed with NVFlare package. If you build NVFlare from source, you need
+to build the plugins following the instructions in this [README](https://github.com/NVIDIA/NVFlare/blob/main/integration/xgboost/encryption_plugins/README.md)
+
+The build process will generate 2 .so files: libcuda_paillier.so and libnvflare.so. Configure the path accordingly following the instructions in 
+[XGBoost User Guide](https://nvflare.readthedocs.io/en/main/user_guide/federated_xgboost/secure_xgboost_user_guide.html)
 
 ## Data Preparation
 ### Download and Store Data
