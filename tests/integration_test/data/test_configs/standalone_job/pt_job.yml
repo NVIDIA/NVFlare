@@ -28,7 +28,7 @@ tests:
       - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='~/data', download=True)"
     teardown:
       - rm -rf ~/data
-- test_name: "run hello-pt-cross-val"
+  - test_name: "run hello-pt-cse"
     event_sequence:
       - "trigger":
           "type": "server_log"
