@@ -72,7 +72,7 @@ class FlowerExecutor(TieExecutor):
 
     def get_connector_config(self, fl_ctx: FLContext) -> dict:
         return {Constant.CONF_KEY_NUM_ROUNDS: self.num_rounds}
-    
+
     def _log_states(self, fl_ctx: FLContext):
         self.log_info(fl_ctx, "States are:")
         self.log_info(fl_ctx, f"    {self.int_server_grpc_options=}")
