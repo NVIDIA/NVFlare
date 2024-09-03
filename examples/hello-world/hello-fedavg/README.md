@@ -8,6 +8,11 @@ In this example we highlight the flexibility of the ModelController API, and sho
 pip install nvflare~=2.5.0rc torch torchvision tensorboard
 ```
 
+Download the dataset:
+```
+./prepare_data.sh
+```
+
 ### 2. PTFedAvgEarlyStopping using ModelController API
 
 The ModelController API enables the option to easily customize a workflow with Python code.
