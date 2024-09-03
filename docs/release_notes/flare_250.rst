@@ -93,14 +93,6 @@ Federated Logistic Regression with NR optimization
 The :github_nvflare_link:`Federated Logistic Regression with Second-Order Newton-Raphson optimization example <examples/advanced/lr-newton-raphson>`
 shows how to implement a federated binary classification via logistic regression with second-order Newton-Raphson optimization.
 
-BioNemo example for Drug Discovery
-----------------------------------
-`BioNeMo <https://www.nvidia.com/en-us/clara/bionemo/>`_ is NVIDIA's generative AI platform for drug discovery.
-We included several examples of running BioNeMo in a federated learning environment using NVFlare:
-
-  - The :github_nvflare_link:`task fitting example <examples/advanced/bionemo/task_fitting/README.md>` includes a notebook that shows how to obtain protein-learned representations in the form of embeddings using the ESM-1nv pre-trained model. The model is trained with NVIDIA's BioNeMo framework for Large Language Model training and inference.
-  - The :github_nvflare_link:`downstream example <examples/advanced/bionemo/downstream/README.md>` shows three different downstream tasks for fine-tuning a BioNeMo ESM-style model.
-
 Hearchical Federated Statistics
 --------------------------------
 :github_nvflare_link:`Hierarchical Federated Statistics <examples/advanced/federated-statistics/hierarchical_stats>` is helpful when there
