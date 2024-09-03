@@ -14,7 +14,7 @@ In this example we showcase a binary classification task based on the [HIGGS dat
 
 ### Download and Store Dataset
 First download the dataset from the HIGGS link above, which is a single zipped `.csv` file.
-By default, we assume the dataset is downloaded, uncompressed, and stored in `~/dataset/HIGGS.csv`.
+By default, we assume the dataset is downloaded, uncompressed, and stored in `DATASET_ROOT/HIGGS.csv`.
 
 ### Vertical Data Splits
 In vertical federated learning, sites share overlapping data samples (rows), but contain different features (columns).
@@ -24,8 +24,9 @@ In order to achieve this, we split the HIGGS dataset both horizontally and verti
 
 Run the following command to prepare the data splits:
 ```
-./prepare_data.sh
+./prepare_data.sh DATASET_ROOT
 ```
+> **_NOTE:_** make sure to put the correct path for `DATASET_ROOT`.
 
 ### Private Set Intersection (PSI)
 Since not every site will have the same set of data samples (rows), we can use PSI to compare encrypted versions of the sites' datasets in order to jointly compute the intersection based on common IDs. In this example, the HIGGS dataset does not contain unique identifiers so we add a temporary `uid_{idx}` to each instance and give each site a portion of the HIGGS dataset that includes a common overlap. Afterwards the identifiers are dropped since they are only used for matching, and training is then done on the intersected data. To learn more about our PSI protocol implementation, see our [psi example](../psi/README.md).
