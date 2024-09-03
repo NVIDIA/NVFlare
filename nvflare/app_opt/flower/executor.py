@@ -68,6 +68,15 @@ class FlowerExecutor(TieExecutor):
 
     def configure(self, config: dict, fl_ctx: FLContext):
         self.num_rounds = config.get(Constant.CONF_KEY_NUM_ROUNDS)
+        self._log_states(fl_ctx)
 
     def get_connector_config(self, fl_ctx: FLContext) -> dict:
         return {Constant.CONF_KEY_NUM_ROUNDS: self.num_rounds}
+    
+    def _log_states(self, fl_ctx: FLContext):
+        self.log_info(fl_ctx, "States are:")
+        self.log_info(fl_ctx, f"    {self.int_server_grpc_options=}")
+        self.log_info(fl_ctx, f"    {self.per_msg_timeout=}")
+        self.log_info(fl_ctx, f"    {self.tx_timeout=}")
+        self.log_info(fl_ctx, f"    {self.client_shutdown_timeout=}")
+        self.log_info(fl_ctx, f"    {self.extra_env=}")
