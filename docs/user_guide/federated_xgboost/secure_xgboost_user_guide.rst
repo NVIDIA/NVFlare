@@ -28,23 +28,23 @@ Prerequisites
 Required Python Packages
 ------------------------
 
-NVFlare 2.5.1 or above,
+NVFlare 2.5.0 or above,
 
 .. code-block:: bash
 
-    pip install nvflare~=2.5.1
+    pip install nvflare~=2.5.0
 
-It requires XGBoost 2.2 or above, which can be installed using this command,
-
-.. code-block:: bash
-
-	pip install "xgboost>=2.2"
-
-or if XGBoost 2.2 is not released yet, use
+XGBoost 2.2 or above, which can be installed from the binary build using this command,
 
 .. code-block:: bash
 
     pip install https://s3-us-west-2.amazonaws.com/xgboost-nightly-builds/federated-secure/xgboost-2.2.0.dev0%2B4601688195708f7c31fcceeb0e0ac735e7311e61-py3-none-manylinux_2_28_x86_64.whl
+
+or in case you need to get the most current build of XGBoost,
+
+.. code-block:: bash
+
+    pip install https://s3-us-west-2.amazonaws.com/xgboost-nightly-builds/federated-secure/`curl -s https://s3-us-west-2.amazonaws.com/xgboost-nightly-builds/federated-secure/meta.json | grep -o 'xgboost-2\.2.*whl'|sed -e 's/+/%2B/'`
 
 ``TenSEAL`` package is needed for horizontal secure training,
 
@@ -75,8 +75,6 @@ The following docker image is recommended for GPU training:
 ::
 
     nvcr.io/nvidia/pytorch:24.03-py3
-
-Most Linux distributions are supported, as long as they have a recent glibc. The oldest glibc version tested is 2.35. Systems with older glibc may run into issues.
 
 .. _xgb_provisioning:
 
@@ -137,13 +135,21 @@ Two plugins are initially shipped with NVFlare,
 - **cuda_paillier**: The default plugin. This plugin uses GPU for cryptographic operations.
 - **nvflare**: This plugin forwards data locally to NVFlare process for encryption.
 
+The **cuda_paillier** plugin requires NVIDIA GPUs that support compute capability 7.0 or higher. Also, CUDA
+12.2 or 12.4 must be installed. Please refer to https://developer.nvidia.com/cuda-gpus for more information.
+
+The two included plugins are only different in vertical secure training. For horizontal secure training, both
+plugins work exactly the same by forwarding the data to NVFlare for encryption.
+
+Here are plugin configurations needed for each training mode.
+
 Vertical (Non-secure)
 ---------------------
-No plugin is needed. Make sure no **federated_plugin** is configured in the communicator environment.
+No plugin is needed.
 
 Horizontal (Non-secure)
 -----------------------
-No plugin is needed. Make sure no **federated_plugin** is configured in the communicator environment.
+No plugin is needed.
 
 Vertical Secure
 ---------------
@@ -171,8 +177,7 @@ The plugin can be configured in the ``local/resources.json`` file on clients:
     {
         "federated_plugin": {
             "name": "nvflare",
-            "path": "/tmp/libnvflare.so",
-            "debug": "false"
+            "path": "/tmp/libnvflare.so"
         }
     }
 
@@ -206,6 +211,15 @@ For example,
     mkdir -p /tmp/simulator_workspace/startup
     cp /tmp/poc_workspace/example_project/prod_00/site-1/startup/client_context.tenseal /tmp/simulator_workspace/startup
 
+The server_context.tenseal file is not needed.
+
+Building Encryption Plugins
+===========================
+
+In case the included plugin files don't work for your environment, the plugins can be built from the source code.
+
+To build the plugins, check out the NVFlare source code from https://github.com/NVIDIA/NVFlare and following the
+instructions in this document: https://github.com/NVIDIA/NVFlare/blob/main/integration/xgboost/encryption_plugins/README.md.
 
 Job Configuration
 =================
@@ -214,7 +228,7 @@ Job Configuration
 Controller
 ----------
 
-On the server side, following controller must be configured in workflows,
+On the server side, the following controller must be configured in workflows,
 
 ``nvflare.app_opt.xgboost.histogram_based_v2.fed_controller.XGBFedController``
 
@@ -223,7 +237,7 @@ XGBoost parameters are defined here, https://xgboost.readthedocs.io/en/stable/py
 
 - **num_rounds**: Number of training rounds.
 - **data_split_mode**: Same as XGBoost data_split_mode parameter, 0 for row-split, 1 for column-split.
-- **secure_training**:If true, XGBoost will train in secure mode using the plugin.
+- **secure_training**: If true, XGBoost will train in secure mode using the plugin.
 - **xgb_params**: The training parameters defined in this dict are passed to XGBoost as **params**, the boost paramter.
 - **xgb_options**: This dict contains other optional parameters passed to XGBoost. Currently, only **early_stopping_rounds** is supported.
 - **client_ranks**: A dict that maps client name to rank.
@@ -231,7 +245,7 @@ XGBoost parameters are defined here, https://xgboost.readthedocs.io/en/stable/py
 Executor
 --------
 
-On the client side, following executor must be configured in executors,
+On the client side, the following executor must be configured in executors,
 
 ``nvflare.app_opt.xgboost.histogram_based_v2.fed_executor.FedXGBHistogramExecutor``
 
@@ -264,11 +278,10 @@ Job Example
 Vertical Training
 -----------------
 
-Here are the configuration files for a vertical secure training job. If encryption is not needed, just change the secure_training to false.
-
-config_fed_server.json
+Here are the configuration files for a vertical secure training job. If encryption is not needed, just change the ``secure_training`` arg to false.
 
 .. code-block:: json
+   :caption: config_fed_server.json
 
     {
         "format_version": 2,
@@ -302,9 +315,9 @@ config_fed_server.json
     }
 
 
-config_fed_client.json
 
 .. code-block:: json
+   :caption: config_fed_client.json
 
     {
         "format_version": 2,
@@ -338,11 +351,10 @@ config_fed_client.json
 Horizontal Training
 -------------------
 
-The configuration for horizontal training is the same as vertical except data_split_mode is 0 and the data loader must point to horizontal split data.
-
-config_fed_server.json
+The configuration for horizontal training is the same as vertical except ``data_split_mode`` is 0 and the data loader must point to horizontal split data.
 
 .. code-block:: json
+   :caption: config_fed_server.json
 
     {
         "format_version": 2,
@@ -379,9 +391,8 @@ config_fed_server.json
 
 
 
-config_fed_client.json
-
 .. code-block:: json
+   :caption: config_fed_client.json
 
     {
         "format_version": 2,
@@ -411,3 +422,72 @@ config_fed_client.json
             }
         ]
     }
+
+Pre-Trained Models
+==================
+To continue training using a pre-trained model, the model can be placed in the job folder with the path and name
+of ``custom/model.json``.
+
+Every site should share the same ``model.json``. The result of previous training with the same dataset can be used as the input model.
+
+When a pre-trained model is detected, NVFlare prints following line in the log:
+
+::
+
+    INFO - Pre-trained model is used: /tmp/nvflare/poc/example_project/prod_00/site-1/startup/../996ac44f-e784-4117-b365-24548f1c490d/app_site-1/custom/model.json
+
+
+Performance Tuning
+==================
+Timeouts
+--------
+For secure training, the HE operations are very slow. If a large dataset is used, several timeout values need
+to be adjusted.
+
+The XGBoost messages are transferred between client and server using
+Reliable Messages (:class:`ReliableMessage<nvflare.apis.utils.reliable_message.ReliableMessage>`). The following parameters
+in executor arguments control the timeout behavior:
+
+    - **per_msg_timeout**: Timeout in seconds for each message.
+    - **tx_timeout**: Timeout for the whole transaction in seconds. This is the total time to wait for a response, accounting for all retry attempts.
+
+.. code-block:: json
+   :caption: config_fed_client.json
+
+    {
+        "format_version": 2,
+        "executors": [
+            {
+                "tasks": [
+                    "config",
+                    "start"
+                ],
+                "executor": {
+                    "id": "Executor",
+                    "path": "nvflare.app_opt.xgboost.histogram_based_v2.fed_executor.FedXGBHistogramExecutor",
+                    "args": {
+                        "data_loader_id": "dataloader",
+                        "per_msg_timeout": 300.0,
+                        "tx_timeout": 900.0,
+                        "in_process": true
+                    }
+                }
+            }
+        ],
+        ...
+    }
+
+Number of Clients
+-----------------
+The default configuration can only handle 20 clients. This parameter needs to be adjusted if more clients are involved in the training:
+
+.. code-block:: json
+   :caption: config_fed_client.json
+
+    {
+        "format_version": 2,
+        "num_rounds": 3,
+        "rm_max_request_workers": 100,
+        ...
+    }
+
