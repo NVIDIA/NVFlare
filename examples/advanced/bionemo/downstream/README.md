@@ -4,7 +4,7 @@
 
 Follow the instructions provide [here](../README.md#requirements) on how to start the BioNeMo container.
 
-Inside the container, install nvflare: `pip install nvflare~=2.4.0 PyTDC`
+Inside the container, install nvflare: `pip install nvflare~=2.5.0rc PyTDC`
 
 ## 2. Run examples
 

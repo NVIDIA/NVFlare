@@ -11,7 +11,7 @@ The model is trained with NVIDIA's BioNeMo framework for Large Language Model tr
 ## Requirements
 
 Download and run the [BioNeMo docker container](https://catalog.ngc.nvidia.com/orgs/nvidia/teams/clara/containers/bionemo-framework).
-Note, we tested this example with `nvcr.io/nvidia/clara/bionemo-framework:1.0`.
+> **Note:** The examples here were tested with `nvcr.io/nvidia/clara/bionemo-framework:1.0`
 
 We recommend following the [Quickstart Guide](https://docs.nvidia.com/bionemo-framework/latest/quickstart-fw.html#docker-container-access) 
 on how to get the BioNeMo container. 
@@ -37,7 +37,6 @@ Then, start the container and Jupyter Lab to run the NVFlare experiments with NV
 ```commandline
 ./start_bionemo.sh
 ```
-
-**Note:** The examples here were tested with `nvcr.io/nvidia/clara/bionemo-framework:1.0`
+It will start Jupyter Lab at [http://hostname:8888](http://hostname:8888).
 
 For information about how to get started with BioNeMo refer to the [documentation](https://docs.nvidia.com/bionemo-framework/latest).
