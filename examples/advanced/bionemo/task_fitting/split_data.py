@@ -75,7 +75,7 @@ def partition_data(train_labels, label_names, num_sites, alpha, seed):
     return site_idx, class_sum
 
 
-def split(proteins, num_sites, split_dir=".", alpha=1.0, seed=0, concat=True):
+def split(proteins, num_sites, split_dir=".", alpha=1.0, seed=0, concat=False):
     train_proteins = []
     train_labels = []
     test_proteins = []

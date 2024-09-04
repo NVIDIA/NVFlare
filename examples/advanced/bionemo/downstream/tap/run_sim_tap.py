@@ -17,9 +17,9 @@ from nvflare import SimulatorRunner
 n_clients = 4
 
 # Choose from one of the available jobs
-job_name = "central_tap_esm1nv"
+#job_name = "central_tap_esm1nv"
 # job_name = "local_tap_esm1nv"
-# job_name = "fedavg_tap_esm1nv"
+job_name = "fedavg_tap_esm1nv"
 
 simulator = SimulatorRunner(
     job_folder=f"jobs/{job_name}", workspace=f"/tmp/nvflare/results/{job_name}", n_clients=n_clients, threads=n_clients
