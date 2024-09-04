@@ -7,8 +7,6 @@ Before starting please make sure you set up a [virtual environment](../../README
 python3 -m pip install -r requirements.txt
 ```
 
-> **_NOTE:_** If vertical federated learning support or GPU support is not available in the XGBoost PyPI release yet, either reinstall XGBoost from a [wheel](https://xgboost.readthedocs.io/en/stable/install.html#nightly-build) with a recent commit from the master branch, or build from [source](https://github.com/dmlc/xgboost/blob/master/plugin/federated/README.md). When building XGBoost from source, ensure that gRPC, CUDA, and NCCL are installed with sufficient versions and use the cmake options `-DPLUGIN_FEDERATED -DUSE_CUDA -DUSE_NCCL` (`-DNCCL_LIBRARY -DUSE_NCCL_LIB_PATH` might also be needed depending on the location of NCCL). Lastly, we recommend using a [cuda image](https://hub.docker.com/r/nvidia/cuda/tags) if you prefer working with docker.
-
 ## Preparing HIGGS Data
 In this example we showcase a binary classification task based on the [HIGGS dataset](https://archive.ics.uci.edu/dataset/280/higgs), which contains 11 million instances, each with 28 features and 1 class label.
 
@@ -66,8 +64,8 @@ If using multiple GPUs, we can map each rank to a different GPU device, however 
 We can create a GPU enabled job using the job CLI:
 ```
 nvflare job create -j ./jobs/vertical_xgb_gpu -w vertical_xgb \
--f config_fed_client.conf use_gpus=true tree_method=hist \
--f config_fed_server.conf \
+-f config_fed_client.conf \
+-f config_fed_server.conf use_gpus=true \
 -sd ./code/vertical_xgb \
 -force
 ```
