@@ -1,4 +1,4 @@
-nvflare~=2.4.0
+nvflare~=2.5.0rc
 biopython
 scikit-learn
 matplotlib

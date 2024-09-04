@@ -14,6 +14,7 @@ Install required packages for training inside the BioNeMo container (normally us
 ```
 pip install --upgrade pip
 pip install -r ./requirements.txt
+pip install protobuf==3.20
 ```
 
 ## 2. Run experiments
