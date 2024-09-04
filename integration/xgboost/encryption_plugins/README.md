@@ -1,35 +1,34 @@
 # XGBoost Encryption Plugins
 
+## Install required dependencies for building encryption plugins
 
-## Install required dependencies for building CUDA plugin
-If you want to build the CUDA plugin, you need to install the following libraries:
-Require `libgmp3-dev`, CMake>=3.19, CUDA Driver and runtime 12.2 or 12.4, NVIDIA GPU Driver >= 535
-Compute Compatibility >= 7.0.
+Following libraries are required:
+* gcc
+* CMake>=3.19
+* libgmp3-dev
+* CUDA Driver and runtime 12.2 or 12.4
+* NVIDIA GPU Driver >= 535 Compute Capability >= 7.0.
 
-On the building site:
-1. Install GPU Driver >= 535, CUDA Driver and runtime 12.2 or 12.4
-2. Install `libgmp3-dev`, gcc, CMake
-3. Clone the NVFlare main branch and update the submodule
-    ```
-    git clone https://github.com/NVIDIA/NVFlare.git \
-    && cd NVFlare/integration/xgboost/encryption_plugins \
-    && git submodule update --init --recursive
-    ```
+On the building site:    
+```bash
+    git clone https://github.com/NVIDIA/NVFlare.git
+    cd NVFlare/integration/xgboost/encryption_plugins
+    git submodule update --init --recursive
+```
 
 ## Building Plugins
-Under integration/xgboost/encryption_plugins, run the build commands
-    ```
+Under `integration/xgboost/encryption_plugins`, run the build commands
+```bash
     mkdir build
     cd build
     cmake ..
     make
-    ```
+```
 The generated plugin files under build folder are,
-    ```
+```
     cuda_pluign/libcuda_paillier.so
     nvflare_plugin/libnvflare.so
-    ```
-
+```
 
 > **_NOTE:_**  You can pass option to cmake to disable the build of CUDA plugin
 > if you don't have the environment: ```cmake -DBUILD_CUDA_PLUGIN=OFF ..```
