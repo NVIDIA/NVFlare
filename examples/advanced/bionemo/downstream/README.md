@@ -4,11 +4,25 @@
 
 Follow the instructions provide [here](../README.md#requirements) on how to start the BioNeMo container.
 
-Inside the container, install nvflare: `pip install nvflare~=2.4.0 PyTDC`
+Inside the container, install nvflare and install some BioNeMo dependency versions: 
+```
+pip install nvflare~=2.5.0rc PyTDC
+pip install protobuf==3.20
+pip install huggingface-hub==0.22.0
+```
 
 ## 2. Run examples
 
 The example datasets used here are made available by [Therapeutics Data Commons](https://tdcommons.ai/) through PyTDC.
+
+This example shows three different downstream tasks for fine-tuning a BioNeMo ESM-style model on different datasets.
+We separate the scripts and job configurations into three folders based on the dataset names:
+
+
+1. `tap`: "therapeutic antibody profiling"
+2. `sabdab`: "SAbDab: the structural antibody database"
+3. `scl`: "subcellular location prediction"
+
 
 ### 2.1. Cross-endpoint multi-task fitting
 
@@ -28,6 +42,7 @@ Includes five metrics measuring developability of an antibody:
 
 #### Download and prepare the data
 ```commandline
+cd tap
 python prepare_tap_data.py
 ```
 In the data preparation script, one can choose between uniform sampling of the data among clients and
@@ -60,6 +75,7 @@ Given the antibody's heavy chain and light chain sequence, predict its developab
 
 #### Download and prepare the data
 ```commandline
+cd sabdab
 python prepare_sabdab_data.py
 ```
 Again, we are using the Dirichlet sampling strategy to generate heterogeneous data distributions among clients.
@@ -95,6 +111,7 @@ Here, we use a heterogeneous sampling with `alpha=1.0`.
 
 #### Run training (local FL)
 ```commandline
+cd scl
 python run_sim_scl.py
 ```
 
