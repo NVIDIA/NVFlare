@@ -37,6 +37,6 @@ Then, start the container and Jupyter Lab to run the NVFlare experiments with NV
 ```commandline
 ./start_bionemo.sh
 ```
-It will start Jupyter Lab at [http://hostname:8888](http://hostname:8888).
+It will start Jupyter Lab at `http://hostname:8888`.
 
 For information about how to get started with BioNeMo refer to the [documentation](https://docs.nvidia.com/bionemo-framework/latest).
