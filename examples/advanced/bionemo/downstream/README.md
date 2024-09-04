@@ -15,6 +15,15 @@ pip install huggingface-hub==0.22.0
 
 The example datasets used here are made available by [Therapeutics Data Commons](https://tdcommons.ai/) through PyTDC.
 
+This example shows three different downstream tasks for fine-tuning a BioNeMo ESM-style model on different datasets.
+We separate the scripts and job configurations into three folders based on the dataset names:
+
+
+1. `tap`: "therapeutic antibody profiling"
+2. `sabdab`: "SAbDab: the structural antibody database"
+3. `scl`: "subcellular location prediction"
+
+
 ### 2.1. Cross-endpoint multi-task fitting
 
 #### Data: “Five computational developability guidelines for therapeutic antibody profiling”
