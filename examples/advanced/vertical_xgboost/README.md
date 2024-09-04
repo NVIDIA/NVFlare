@@ -53,23 +53,6 @@ Lastly, we must subclass `XGBDataLoader` and implement the `load_data()` method.
 
 > **_NOTE:_** For secure mode, make sure to provide the required certificates for the federated communicator.
 
-### GPU Support
-By default, CPU based training is used.
-
-In order to enable GPU accelerated training, first ensure that your machine has CUDA installed and has at least one GPU.
-In `config_fed_client.json` set `"use_gpus": true` and  `"tree_method": "hist"` in `xgb_params`.
-Then, in `FedXGBHistogramExecutor` we use the `device` parameter to map each rank to a GPU device ordinal in `xgb_params`.
-If using multiple GPUs, we can map each rank to a different GPU device, however you can also map each rank to the same GPU device if using a single GPU.
-
-We can create a GPU enabled job using the job CLI:
-```
-nvflare job create -j ./jobs/vertical_xgb_gpu -w vertical_xgb \
--f config_fed_client.conf \
--f config_fed_server.conf use_gpus=true \
--sd ./code/vertical_xgb \
--force
-```
-
 ## Run the Example
 Create the vertical xgboost job using the predefined vertical_xgb template:
 ```
@@ -84,6 +67,28 @@ nvflare simulator ./jobs/vertical_xgb -w /tmp/nvflare/vertical_xgb -n 2 -t 2
 The model will be saved to `test.model.json`.
 
 (Feel free to modify the scripts and jobs as desired to change arguments such as number of clients, dataset sizes, training params, etc.)
+
+### GPU Support
+By default, CPU based training is used.
+
+In order to enable GPU accelerated training, first ensure that your machine has CUDA installed and has at least one GPU.
+In `config_fed_client.json` set `"use_gpus": true` and  `"tree_method": "hist"` in `xgb_params`.
+Then, in `FedXGBHistogramExecutor` we can use the `device` parameter to map each rank to a GPU device ordinal in `xgb_params`.
+If using multiple GPUs, we can map each rank to a different GPU device, however you can also map each rank to the same GPU device if using a single GPU.
+
+We can create a GPU enabled job using the job CLI:
+```
+nvflare job create -j ./jobs/vertical_xgb_gpu -w vertical_xgb \
+-f config_fed_client.conf \
+-f config_fed_server.conf use_gpus=true \
+-sd ./code/vertical_xgb \
+-force
+```
+
+This job can be run:
+```
+nvflare simulator ./jobs/vertical_xgb_gpu -w /tmp/nvflare/vertical_xgb_gpu -n 2 -t 2
+```
 
 ## Results
 Model accuracy can be visualized in tensorboard:
