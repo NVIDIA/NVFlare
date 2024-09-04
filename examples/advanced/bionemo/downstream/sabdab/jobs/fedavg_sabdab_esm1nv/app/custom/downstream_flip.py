@@ -65,7 +65,7 @@ def main(cfg) -> None:
     fl_sys_info = flare.system_info()
     print("--- fl_sys_info ---")
     print(fl_sys_info)
-    site_name = fl_sys_info["SITE_NAME"]
+    site_name = fl_sys_info["site_name"]
     cfg.model.data.dataset.train = f"sabdab_chen_{site_name}_train"
     cfg.trainer.val_check_interval = val_check_intervals[site_name]
     print(f"Running client {site_name} with train data: {cfg.model.data.dataset.train}")
