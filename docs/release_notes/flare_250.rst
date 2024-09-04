@@ -9,7 +9,7 @@ scientists' experience working with FLARE. The new API covers client, server and
 
 Model Controller API
 --------------------
-The new Model Controller API greatly simplifies the experience of developing new federated learning workflows. Users can simply subclass
+The new :ref:`model_controller` greatly simplifies the experience of developing new federated learning workflows. Users can simply subclass
 the ModelController to develop new workflows. The new API doesn't require users to know the details of NVFlare constructs except for FLModel
 class, where it is simply a data structure that contains model weights, optimization parameters and metadata. 
 
@@ -104,7 +104,7 @@ federated stats will be very helpful.
 
 FedAvg Early Stopping Example
 ------------------------------
-The `FedAvg Early Stopping example <https://github.com/NVIDIA/NVFlare/pull/2648>`_ tries to demonstrate that with the new server-side model
+The :github_nvflare_link:`FedAvg Early Stopping example <examples/hello-world/hello-fedavg>` tries to demonstrate that with the new server-side model
 controller API, it is very easy to change the control conditions and adjust workflows with a few lines of python code.
 
 Tensorflow Algorithms & Examples

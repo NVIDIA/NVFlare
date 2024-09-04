@@ -71,10 +71,7 @@ class CIFAR10DataModule(LightningDataModule):
 def main():
     model = LitNet()
     cifar10_dm = CIFAR10DataModule()
-    if torch.cuda.is_available():
-        trainer = Trainer(max_epochs=1, accelerator="gpu", devices=1 if torch.cuda.is_available() else None)
-    else:
-        trainer = Trainer(max_epochs=1, devices=None)
+    trainer = Trainer(max_epochs=1, devices=1, accelerator="gpu" if torch.cuda.is_available() else "cpu")
 
     # (2) patch the lightning trainer
     flare.patch(trainer)
