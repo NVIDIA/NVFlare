@@ -16,11 +16,7 @@ import argparse
 import copy
 
 from datasets import load_dataset
-from sentence_transformers import (
-    SentenceTransformer,
-    SentenceTransformerTrainer,
-    SentenceTransformerTrainingArguments,
-)
+from sentence_transformers import SentenceTransformer, SentenceTransformerTrainer, SentenceTransformerTrainingArguments
 from sentence_transformers.losses import MultipleNegativesRankingLoss
 from sentence_transformers.training_args import BatchSamplers
 from transformers import trainer_utils
@@ -121,7 +117,7 @@ def main():
         # evaluate on received global model
         trainer.model.load_state_dict(global_model)
         eval_loss_dict = trainer.evaluate()
-        eval_loss = float(eval_loss_dict['eval_loss'])
+        eval_loss = float(eval_loss_dict["eval_loss"])
         print(f"Evaluation loss: {eval_loss}")
         # Save the global model
         model.save_pretrained(f"{output_dir}/global")

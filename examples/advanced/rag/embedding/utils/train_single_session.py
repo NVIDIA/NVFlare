@@ -15,11 +15,7 @@
 import argparse
 
 from datasets import load_dataset
-from sentence_transformers import (
-    SentenceTransformer,
-    SentenceTransformerTrainer,
-    SentenceTransformerTrainingArguments,
-)
+from sentence_transformers import SentenceTransformer, SentenceTransformerTrainer, SentenceTransformerTrainingArguments
 from sentence_transformers.losses import MultipleNegativesRankingLoss
 from sentence_transformers.training_args import BatchSamplers
 

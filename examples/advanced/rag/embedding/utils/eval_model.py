@@ -15,14 +15,8 @@
 import argparse
 
 from datasets import load_dataset
-from sentence_transformers import (
-    SentenceTransformer,
-)
-from sentence_transformers.evaluation import (
-    EmbeddingSimilarityEvaluator,
-    SimilarityFunction,
-    TripletEvaluator,
-)
+from sentence_transformers import SentenceTransformer
+from sentence_transformers.evaluation import EmbeddingSimilarityEvaluator, SimilarityFunction, TripletEvaluator
 
 
 def main():
@@ -58,6 +52,7 @@ def main():
     )
     metric_score = test_evaluator(model)
     print(f"Test set evaluation on NLI: {metric_score}")
+
 
 if __name__ == "__main__":
     main()

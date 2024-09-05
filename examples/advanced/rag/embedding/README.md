@@ -12,7 +12,7 @@ One major application is to embed the text in vector space for later clustering 
 This example illustrates a supervised fine-tuning (SFT) scheme for an embedding model with various training datasets.
 
 ## Setup
-Please make sure you set up virtual environment following [example root readme](../../README.md).
+Please make sure you set up virtual environment following [example root readme](../../../README.md).
 Install additional requirements (if you already have a specific version of nvflare installed in your environment, you may want to remove nvflare in the requirements to avoid reinstalling nvflare):
 ```
 python3 -m pip install -r requirements.txt
@@ -35,7 +35,7 @@ If it is true, the SubprocessLauncher will reuse the same process for all rounds
 
 Turning `launch_once` to `false` can be useful in some scenarios like quick prototyping, but for the application of LLM where setup stage can take significant resources, we would want to only setup once. Hence, the below steps are for `launch_once = true` scenario.
 
-See [Client API](../../hello-world/ml-to-fl/pt/README.md) for more details.
+See [Client API](../../../hello-world/ml-to-fl/pt/README.md) for more details.
 
 ### Adaptation Step 1: iterative training
 To adapt the centralized training script to federated application, under `launch_once = true` setting, we first need to "break" the single call to `trainer.train()` into iterative calls, one for each round of training.
