@@ -18,7 +18,7 @@
       "path": "pt.utils.cifar10_data_splitter.Cifar10DataSplitter",
       "args": {
           "split_dir": "{TRAIN_SPLIT_ROOT}",
-          "num_sites": "{min_clients}",
+          "num_sites": "{num_clients}",
           "alpha": "{alpha}"
         }
     },

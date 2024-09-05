@@ -27,9 +27,8 @@ import nvflare.client as flare
 from nvflare.app_common.app_constant import ModelName
 
 # (optional) set a fixed location so we don't need to download everytime
-CIFAR10_ROOT = "/tmp/nvflare/data"
-
-MODEL_SAVE_PATH_ROOT = "/tmp/nvflare/workdir/cifar10"
+CIFAR10_ROOT = "~/data"
+MODEL_SAVE_PATH_ROOT = "~/data"
 
 # (optional) We change to use GPU to speed things up.
 # if you want to use CPU, change DEVICE="cpu"
