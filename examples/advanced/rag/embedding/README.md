@@ -25,17 +25,6 @@ Centralized trainings, as the baseline for comparison with FL results, are done 
 ```
 bash train_single_session.sh
 ```
-### Pre: Launch Modes
-Before we start adapting the local training script to federated application, we first need to understand the launch modes of NVFlare client API.
-In our [client settings](../../../job_templates/sag_pt/config_fed_client.conf), we have two launch modes by switching the `--launch_once` flag:
-* If launch_once is true, the SubprocessLauncher will launch an external process once for the whole job
-* If launch_once is false, the SubprocessLauncher will launch an external process everytime it receives a task from server
-So if it is false, the SubprocessLauncher will create new processes every round.
-If it is true, the SubprocessLauncher will reuse the same process for all rounds.
-
-Turning `launch_once` to `false` can be useful in some scenarios like quick prototyping, but for the application of LLM where setup stage can take significant resources, we would want to only setup once. Hence, the below steps are for `launch_once = true` scenario.
-
-See [Client API](../../../hello-world/ml-to-fl/pt/README.md) for more details.
 
 ### Adaptation Step 1: iterative training
 To adapt the centralized training script to federated application, under `launch_once = true` setting, we first need to "break" the single call to `trainer.train()` into iterative calls, one for each round of training.
@@ -56,7 +45,7 @@ The training loss curves are shown below, single session and iterative scripts a
 ![iter_single](./figs/iter_single.png)
 
 ### Adaptation Step 2: federated with NVFlare
-Once we have the iterative training script ready with "starting model" loading capability, it can be easily adapted to a NVFlare trainer by using [Client API](../../hello-world/ml-to-fl/pt/README.md).
+Once we have the iterative training script ready with "starting model" loading capability, it can be easily adapted to a NVFlare trainer by using [Client API](../../../hello-world/ml-to-fl/pt/README.md).
 
 The major code modifications are for receiving the global model, set it as the starting point for each round's training, and returning the trained model after each local training round.
 
