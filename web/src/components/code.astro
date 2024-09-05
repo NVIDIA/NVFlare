@@ -203,7 +203,8 @@ class FedAvg(BaseFedAvg):
 const jobCode_pt = `
 from cifar10_pt_fl import Net
 
-from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
+from nvflare.app_common.workflows.fedavg import FedAvg
+from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
 from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
@@ -211,13 +212,18 @@ if __name__ == "__main__":
     num_rounds = 2
     train_script = "cifar10_pt_fl.py"
 
-    # Create FedAvg Job with initial model
-    job = FedAvgJob(
-        name="cifar10_pt_fedavg",
-        num_rounds=num_rounds,
-        n_clients=n_clients,
-        initial_model=Net(),
+    # Create BaseFedJob with initial model
+    job = BaseFedJob(
+      name="cifar10_pt_fedavg",
+      initial_model=Net(),
     )
+
+    # Define the controller and send to server
+    controller = FedAvg(
+        num_clients=n_clients,
+        num_rounds=num_rounds,
+    )
+    job.to_server(controller)
 
     # Add clients
     for i in range(n_clients):
@@ -416,7 +422,8 @@ class FedAvg(BaseFedAvg):
 const jobCode_lt = `
 from cifar10_lightning_fl import LitNet
 
-from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
+from nvflare.app_common.workflows.fedavg import FedAvg
+from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
 from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
@@ -424,13 +431,18 @@ if __name__ == "__main__":
     num_rounds = 2
     train_script = "cifar10_lightning_fl.py"
 
-    # Create FedAvg Job with initial model
-    job = FedAvgJob(
-        name="cifar10_lightning_fedavg",
-        num_rounds=num_rounds,
-        n_clients=n_clients,
-        initial_model=LitNet(),
+    # Create BaseFedJob with initial model
+    job = BaseFedJob(
+      name="cifar10_lightning_fedavg",
+      initial_model=LitNet(),
     )
+
+    # Define the controller and send to server
+    controller = FedAvg(
+        num_clients=n_clients,
+        num_rounds=num_rounds,
+    )
+    job.to_server(controller)
 
     # Add clients
     for i in range(n_clients):
@@ -572,7 +584,8 @@ class FedAvg(BaseFedAvg):
 const jobCode_tf = `
 from cifar10_tf_fl import TFNet
 
-from nvflare.app_opt.tf.job_config.fed_avg import FedAvgJob
+from nvflare.app_common.workflows.fedavg import FedAvg
+from nvflare.app_opt.tf.job_config.base_fed_job import BaseFedJob
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 
 if __name__ == "__main__":
@@ -580,13 +593,18 @@ if __name__ == "__main__":
     num_rounds = 2
     train_script = "cifar10_tf_fl.py"
 
-    # Create FedAvg Job with initial model
-    job = FedAvgJob(
-        name="cifar10_tf_fedavg",
-        num_rounds=num_rounds,
-        n_clients=n_clients,
-        initial_model=TFNet(input_shape=(None, 32, 32, 3)),
+    # Create BaseFedJob with initial model
+    job = BaseFedJob(
+      name="cifar10_tf_fedavg",
+      initial_model=TFNet(input_shape=(None, 32, 32, 3)),
     )
+
+    # Define the controller and send to server
+    controller = FedAvg(
+        num_clients=n_clients,
+        num_rounds=num_rounds,
+    )
+    job.to_server(controller)
 
     # Add clients
     for i in range(n_clients):
@@ -645,7 +663,7 @@ const frameworks = [
         framework: "pytorch",
         title: "Job Code (fedavg_cifar10_pt_job.py)",
         description:
-          "Lastly we construct the job with our 'cifar10_pt_fl.py' client script and FedAvgJob. The FedAvgJob configures our 'FedAvg' server controller, along with other useful components for model persistance, model selection, and  TensorBoard streaming. We then run the job with the FL simulator.",
+          "Lastly we construct the job with our 'cifar10_pt_fl.py' client script and 'FedAvg' server controller. The BaseFedJob automatically configures components for model persistence, model selection, and TensorBoard streaming. We then run the job with the FL simulator.",
         code: jobCode_pt,
       },
       {
@@ -699,7 +717,7 @@ const frameworks = [
         framework: "lightning",
         title: "Job Code (fedavg_cifar10_lightning_job.py)",
         description:
-          "Lastly we construct the job with our 'cifar10_lightning_fl.py' client script and FedAvgJob. The FedAvgJob configures our 'FedAvg' server controller, along with other useful components for model persistance, model selection, and  TensorBoard streaming. We then run the job with the FL simulator.",
+          "Lastly we construct the job with our 'cifar10_lightning_fl.py' client script and 'FedAvg' server controller. The BaseFedJob automatically configures components for model persistence, model selection, and TensorBoard streaming. We then run the job with the FL simulator.",
         code: jobCode_lt,
       },
       {
@@ -753,7 +771,7 @@ const frameworks = [
         framework: "tensorflow",
         title: "Job Code (fedavg_cifar10_tf_job.py)",
         description:
-          "Lastly we construct the job with our 'cifar10_tf_fl.py' client script and FedAvgJob. The FedAvgJob configures our 'FedAvg' server controller, along with other useful components for model persistance, model selection, and  TensorBoard streaming. We then run the job with the FL simulator.",
+          "Lastly we construct the job with our 'cifar10_tf_fl.py' client script and 'FedAvg' server controller. The BaseFedJob automatically configures components for model persistence, model selection, and TensorBoard streaming. We then run the job with the FL simulator.",
         code: jobCode_tf,
       },
       {

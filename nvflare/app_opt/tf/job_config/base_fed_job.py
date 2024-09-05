@@ -14,33 +14,33 @@
 
 from typing import List, Optional
 
-from torch import nn as nn
+import tensorflow as tf
 
 from nvflare import FedJob
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
-from nvflare.app_opt.pt.job_config.model import PTModel
+from nvflare.app_opt.tf.job_config.model import TFModel
 from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 
 
 class BaseFedJob(FedJob):
     def __init__(
         self,
-        initial_model: nn.Module = None,
+        initial_model: tf.keras.Model = None,
         name: str = "fed_job",
         min_clients: int = 1,
         mandatory_clients: Optional[List[str]] = None,
         key_metric: str = "accuracy",
     ):
-        """PyTorch BaseFedJob.
+        """TensorFlow BaseFedJob.
 
         Configures server side FedAvg controller, persistor with initial model, and widgets.
 
         User must add executors.
 
         Args:
-            initial_model (nn.Module): initial PyTorch Model. Defaults to None.
+            initial_model (tf.keras.Model): initial TensorFlow Model. Defaults to None.
             name (name, optional): name of the job. Defaults to "fed_job".
             min_clients (int, optional): the minimum number of clients for the job. Defaults to 1.
             mandatory_clients (List[str], optional): mandatory clients to run the job. Default None.
@@ -65,7 +65,7 @@ class BaseFedJob(FedJob):
         self.to_server(id="receiver", obj=component)
 
         if initial_model:
-            self.comp_ids.update(self.to_server(PTModel(initial_model)))
+            self.comp_ids["persistor_id"] = self.to_server(TFModel(initial_model))
 
     def set_up_client(self, target: str):
         component = ConvertToFedEvent(events_to_convert=["analytix_log_stats"], fed_event_prefix="fed.")
