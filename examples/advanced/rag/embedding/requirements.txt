@@ -1,0 +1,6 @@
+nvflare~=2.5.0rc
+torch
+datasets
+tensorboard
+transformers
+sentence-transformers
