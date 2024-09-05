@@ -109,10 +109,17 @@ class BlobHandler:
                     break
 
                 length = len(buf)
-                if blob_task.pre_allocated:
-                    blob_task.buffer[buf_size : buf_size + length] = buf
-                else:
-                    blob_task.buffer.append(buf)
+                try:
+                    if blob_task.pre_allocated:
+                        blob_task.buffer[buf_size : buf_size + length] = buf
+                    else:
+                        blob_task.buffer.append(buf)
+                except Exception as ex:
+                    log.error(
+                        f"memory view error: {ex} "
+                        f"Debug info: {length=} {buf_size=} {len(blob_task.pre_allocated)=} {type(buf)=}"
+                    )
+                    raise ex
 
                 buf_size += length
 
@@ -129,7 +136,7 @@ class BlobHandler:
             blob_task.future.set_result(result)
         except Exception as ex:
             log.error(f"Stream {blob_task.future.get_stream_id()} read error: {ex}")
-            log.debug(secure_format_traceback())
+            log.error(secure_format_traceback())
             blob_task.future.set_exception(ex)
 
 
