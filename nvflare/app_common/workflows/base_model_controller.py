@@ -377,9 +377,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         return clients
 
     def set_fl_context(self, data: FLModel):
-        """Set up the fl_ctx information based on the passed in FLModel data.
-
-        """
+        """Set up the fl_ctx information based on the passed in FLModel data."""
         if data and data.current_round is not None:
             self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, data.current_round, private=True, sticky=True)
         else:
