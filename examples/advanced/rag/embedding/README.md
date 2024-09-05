@@ -61,7 +61,7 @@ Once we have the iterative training script ready with "starting model" loading c
 The major code modifications are for receiving the global model, set it as the starting point for each round's training, and returning the trained model after each local training round.
 
 ## Job for NVFlare FL Training
-With the local training script ready, we can go ahead to generate the NVFlare job configs by reusing the job templates from [sag_pt](../../../job_templates/sag_pt/).
+With the local training script ready, we can go ahead to generate the NVFlare job configs by reusing the job templates.
 
 Let's set the job template path with the following command.
 ```bash
