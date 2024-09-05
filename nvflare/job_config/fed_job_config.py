@@ -145,7 +145,8 @@ class FedJobConfig:
                 command = (
                     f"{sys.executable} -m nvflare.private.fed.app.simulator.simulator "
                     + os.path.join(job_root, self.job_name)
-                    + " -w " + workspace
+                    + " -w "
+                    + workspace
                 )
                 if clients:
                     command += " -c " + str(clients)
