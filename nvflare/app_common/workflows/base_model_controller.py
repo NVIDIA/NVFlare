@@ -381,7 +381,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         if data and data.current_round is not None:
             self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, data.current_round, private=True, sticky=True)
         else:
-            self.warning(f"The FLModel data does not contain the current_round information.")
+            self.warning("The FLModel data does not contain the current_round information.")
 
     def get_component(self, component_id: str):
         return self.engine.get_component(component_id)
