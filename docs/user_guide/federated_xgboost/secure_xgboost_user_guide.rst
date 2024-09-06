@@ -192,7 +192,8 @@ The following environment variables can be used to override the values in the JS
     export NVFLARE_XGB_PLUGIN_PATH=/tmp/libnvflare.so
 
 .. note::
-   The plugin must be configured using environment variables for the simulator as it does not support resources.json.
+   When running with the NVFlare simulator, the plugin must be configured using environment variables,
+   as it does not support resources.json.
 
 Horizontal Secure
 -----------------
