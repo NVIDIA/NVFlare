@@ -269,9 +269,9 @@ class FedXGBHistogramExecutor(Executor):
             if not self._get_certificates(fl_ctx):
                 return make_reply(ReturnCode.ERROR)
 
-            communicator_env["federated_server_cert"] = self._ca_cert_path
-            communicator_env["federated_client_key"] = self._client_key_path
-            communicator_env["federated_client_cert"] = self._client_cert_path
+            communicator_env["federated_server_cert_path"] = self._ca_cert_path
+            communicator_env["federated_client_key_path"] = self._client_key_path
+            communicator_env["federated_client_cert_path"] = self._client_cert_path
 
         try:
             with xgb.collective.CommunicatorContext(**communicator_env):
