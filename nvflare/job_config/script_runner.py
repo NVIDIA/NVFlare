@@ -16,7 +16,7 @@ from typing import Type
 
 from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
 from nvflare.app_common.executors.in_process_client_api_executor import InProcessClientAPIExecutor
-from nvflare.client.config import ExchangeFormat
+from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.import_utils import optional_import
 
 
@@ -35,6 +35,7 @@ class ScriptRunner:
         launch_external_process: bool = False,
         command: str = "python3 -u",
         framework: FrameworkType = FrameworkType.PYTORCH,
+        params_transfer_type: str = TransferType.FULL,
     ):
         """ScriptRunner is used with FedJob API to run or launch a script.
 
@@ -47,12 +48,15 @@ class ScriptRunner:
             launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
             command (str): If launch_external_process=True, command to run script (preprended to script). Defaults to "python3".
             framework (str): Framework type to connfigure converter and params exchange formats. Defaults to FrameworkType.PYTORCH.
+            params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
+                DIFF means that only the difference is sent. Defaults to TransferType.FULL.
         """
         self._script = script
         self._script_args = script_args
         self._command = command
         self._launch_external_process = launch_external_process
         self._framework = framework
+        self._params_transfer_type = params_transfer_type
 
         self._params_exchange_format = None
 
@@ -116,6 +120,7 @@ class ScriptRunner:
                 pipe_id=pipe_id,
                 launcher_id=launcher_id,
                 params_exchange_format=self._params_exchange_format,
+                params_transfer_type=self._params_transfer_type,
                 heartbeat_timeout=0,
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
@@ -148,6 +153,7 @@ class ScriptRunner:
                 task_script_path=self._script,
                 task_script_args=self._script_args,
                 params_exchange_format=self._params_exchange_format,
+                params_transfer_type=self._params_transfer_type,
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
 
