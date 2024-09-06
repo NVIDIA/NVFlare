@@ -148,12 +148,14 @@ class FedJobConfig:
                     + workspace
                 )
                 if clients:
+                    clients = self._trim_whitespace(clients)
                     command += " -c " + str(clients)
                 if n_clients:
                     command += " -n " + str(n_clients)
                 if threads:
                     command += " -t " + str(threads)
                 if gpu:
+                    gpu = self._trim_whitespace(gpu)
                     command += " -gpu " + str(gpu)
 
                 new_env = os.environ.copy()
@@ -385,3 +387,9 @@ class FedJobConfig:
             deploy_map[app_name] = deploy_map.get(app_name, [])
             deploy_map[app_name].append(site)
         return deploy_map
+
+    def _trim_whitespace(self, string: str):
+        strings = string.split(",")
+        for i in range(len(strings)):
+            strings[i] = strings[i].strip()
+        return ",".join(strings)

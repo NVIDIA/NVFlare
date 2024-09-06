@@ -32,3 +32,11 @@ class TestFedJobConfig:
             with tempfile.NamedTemporaryFile(dir=cwd, suffix=".py") as dest_file:
                 imports = list(job_config.locate_imports(sf, dest_file=dest_file.name))
         assert imports == expected
+
+    def test_trim_whitespace(self):
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        expected = "site-0,site-1"
+        assert expected == job_config._trim_whitespace("site-0,site-1")
+        assert expected == job_config._trim_whitespace("site-0, site-1")
+        assert expected == job_config._trim_whitespace(" site-0,site-1 ")
+        assert expected == job_config._trim_whitespace(" site-0, site-1 ")
