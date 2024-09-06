@@ -112,19 +112,16 @@ class BlobHandler:
                 try:
                     if blob_task.pre_allocated:
                         remaining = len(blob_task.buffer) - buf_size
-                        log.info(f"DEBUG ====== : {remaining=} {length=} {buf_size=}")
                         if length > remaining:
                             log.error(f"Buffer overrun: {remaining=} {length=} {buf_size=}")
-                            blob_task.buffer[buf_size: buf_size + remaining] = buf[0:remaining]
+                            if remaining > 0:
+                                blob_task.buffer[buf_size : buf_size + remaining] = buf[0:remaining]
                         else:
                             blob_task.buffer[buf_size : buf_size + length] = buf
                     else:
                         blob_task.buffer.append(buf)
                 except Exception as ex:
-                    log.error(
-                        f"memory view error: {ex} "
-                        f"Debug info: {length=} {buf_size=} {type(buf)=}"
-                    )
+                    log.error(f"memory view error: {ex} " f"Debug info: {length=} {buf_size=} {type(buf)=}")
                     raise ex
 
                 buf_size += length
