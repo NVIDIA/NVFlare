@@ -15,7 +15,6 @@ import argparse
 import csv
 import os
 import random
-import shutil
 
 
 def parse_args(prog_name: str):
