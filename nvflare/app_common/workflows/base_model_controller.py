@@ -128,11 +128,9 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         """
 
         if not isinstance(task_name, str):
-            raise TypeError("task_name must be a string but got {}".format(type(task_name)))
-        if not data:
-            raise TypeError("data must be a FLModel but got None")
+            raise TypeError(f"task_name must be a string but got {type(task_name)}")
         if not isinstance(data, FLModel):
-            raise TypeError("data must be a FLModel but got {}".format(type(data)))
+            raise TypeError(f"data must be a FLModel but got {type(data)}")
         if min_responses is None:
             min_responses = 0  # this is internally used by controller's broadcast to represent all targets
         check_non_negative_int("min_responses", min_responses)
