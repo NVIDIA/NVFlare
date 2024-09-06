@@ -95,7 +95,7 @@ class GlobalES(FedAvg):
 
             clients = self.sample_clients(self.num_clients)
 
-            global_model = FLModel(params={"global_es": global_es})
+            global_model = FLModel(params={"global_es": global_es}, current_round=self.current_round)
             results = self.send_model_and_wait(targets=clients, data=global_model)
 
             # get solutions from clients
