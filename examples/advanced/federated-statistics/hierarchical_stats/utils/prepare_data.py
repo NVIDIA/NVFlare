@@ -42,7 +42,12 @@ def prepare_data():
 
     # Generate the entries for 7 different universities and copy it to each client data directory
     for n in range(1, num_universities + 1):
-        output_file = f"university-{n}.csv"
+        client_path = os.path.join(dataset_path, f"university-{n}")
+        if not os.path.exists(client_path):
+            os.makedirs(client_path)
+        file_name = f"university-{n}.csv"
+        output_file = os.path.join(client_path, file_name)
+
         with open(output_file, "w", newline="") as csvfile:
             csvwriter = csv.writer(csvfile)
             # Create and write the header to the CSV file
@@ -58,13 +63,8 @@ def prepare_data():
                     fail = 1
                     percentage = round(random.uniform(20.00, 49.99), 2)
                 csvwriter.writerow([pass_, fail, percentage])
-
-        client_path = os.path.join(dataset_path, f"university-{n}")
-        if not os.path.exists(client_path):
-            os.makedirs(client_path)
-        shutil.move(output_file, os.path.join(client_path, output_file))
         print(
-            f"CSV file `{output_file}` is generated with {num_entries} entries for client `university-{n}` at {client_path}."
+            f"CSV file `{file_name}` is generated with {num_entries} entries for client `university-{n}` at {client_path}."
         )
 
     print("\nDone preparing data.")
