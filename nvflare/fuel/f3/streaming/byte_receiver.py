@@ -88,6 +88,7 @@ class RxStream(Stream):
         if self.closed:
             raise StreamError("Read from closed stream")
 
+        count = 0
         while True:
             result_code, result = self._read_chunk(chunk_size)
             if result_code == RESULT_EOS:
@@ -96,19 +97,17 @@ class RxStream(Stream):
                 return result
 
             # Block if buffers are empty
-            count = 0
-            while not self.task.buffers:
-                if count > 0:
-                    log.warning(f"Read block is unblocked multiple times: {count}")
+            if count > 0:
+                log.warning(f"Read block is unblocked multiple times: {count}")
 
-                self.task.waiter.clear()
+            self.task.waiter.clear()
 
-                if not self.task.waiter.wait(self.timeout):
-                    error = StreamError(f"{self.task} read timed out after {self.timeout} seconds")
-                    self.byte_receiver.stop_task(self.task, error)
-                    raise error
+            if not self.task.waiter.wait(self.timeout):
+                error = StreamError(f"{self.task} read timed out after {self.timeout} seconds")
+                self.byte_receiver.stop_task(self.task, error)
+                raise error
 
-                count += 1
+            count += 1
 
     def _read_chunk(self, chunk_size: int) -> Tuple[int, Optional[BytesAlike]]:
 
