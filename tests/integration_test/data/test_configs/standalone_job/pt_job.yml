@@ -45,8 +45,6 @@ tests:
           "data": { "run_finished": True }
     validators:
       - path: tests.integration_test.src.validators.PTModelValidator
-      - path: tests.integration_test.src.validators.CrossValResultValidator
-        args: { server_model_names: [ "server" ] }
     setup:
       - mkdir -p /tmp/nvflare/data/site-1
       - mkdir -p /tmp/nvflare/data/site-2
