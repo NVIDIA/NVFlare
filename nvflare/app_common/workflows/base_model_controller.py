@@ -129,8 +129,10 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
 
         if not isinstance(task_name, str):
             raise TypeError("task_name must be a string but got {}".format(type(task_name)))
-        if data and not isinstance(data, FLModel):
-            raise TypeError("data must be a FLModel or None but got {}".format(type(data)))
+        if not data:
+            raise TypeError("data must be a FLModel but got None")
+        if not isinstance(data, FLModel):
+            raise TypeError("data must be a FLModel but got {}".format(type(data)))
         if min_responses is None:
             min_responses = 0  # this is internally used by controller's broadcast to represent all targets
         check_non_negative_int("min_responses", min_responses)
@@ -138,11 +140,6 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         check_non_negative_int("wait_time_after_min_received", wait_time_after_min_received)
         if not blocking and not isinstance(callback, Callable):
             raise TypeError("callback must be defined if blocking is False, but got {}".format(type(callback)))
-
-        # This will never happen. We don't need to have this logic to create a dummy FLModel object.
-        # if not data:
-        #     self.warning("data is None. Sending empty FLModel.")
-        #     data = FLModel(params_type=ParamsType.FULL, params={})
 
         self.set_fl_context(data)
 
