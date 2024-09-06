@@ -112,8 +112,8 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         """Send a task with data to a list of targets.
 
         Args:
+            data: FLModel to be sent to clients. It must be a FLModel object. It will raise an exception if None.
             task_name (str, optional): name of the task. Defaults to "train".
-            data (FLModel, optional): FLModel to be sent to clients. If no data is given, send empty FLModel.
             targets (List[str], optional): the list of target client names or None (all clients). Defaults to None.
             min_responses (int, optional): the minimum number of responses expected. If None, must receive responses from
               all clients that the task has been sent to. Defaults to None.
