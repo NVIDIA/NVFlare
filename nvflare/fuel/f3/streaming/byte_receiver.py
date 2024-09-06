@@ -314,7 +314,10 @@ class ByteReceiver:
         if not buf:
             return
 
-        task.buffers.append(buf)
+        if task.eos:
+            log.error(f"{task} Data after EOS is ignored")
+        else:
+            task.buffers.append(buf)
 
         # Wake up blocking read()
         if not task.waiter.is_set():
