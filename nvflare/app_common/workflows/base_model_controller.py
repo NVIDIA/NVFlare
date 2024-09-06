@@ -139,9 +139,12 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         if not blocking and not isinstance(callback, Callable):
             raise TypeError("callback must be defined if blocking is False, but got {}".format(type(callback)))
 
-        if not data:
-            self.warning("data is None. Sending empty FLModel.")
-            data = FLModel(params_type=ParamsType.FULL, params={})
+        # This will never happen. We don't need to have this logic to create a dummy FLModel object.
+        # if not data:
+        #     self.warning("data is None. Sending empty FLModel.")
+        #     data = FLModel(params_type=ParamsType.FULL, params={})
+
+        self.set_fl_context(data)
 
         task = self._prepare_task(data=data, task_name=task_name, timeout=timeout, callback=callback)
 

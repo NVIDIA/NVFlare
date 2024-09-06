@@ -63,7 +63,6 @@ class ModelController(BaseModelController, ABC):
         Returns:
             List[FLModel]
         """
-        self.set_fl_context(data)
         return super().broadcast_model(
             task_name=task_name,
             data=data,
@@ -95,7 +94,6 @@ class ModelController(BaseModelController, ABC):
         Returns:
             None
         """
-        self.set_fl_context(data)
         super().broadcast_model(
             task_name=task_name,
             data=data,
