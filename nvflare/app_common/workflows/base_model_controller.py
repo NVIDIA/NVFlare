@@ -100,8 +100,8 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
 
     def broadcast_model(
         self,
+        data,
         task_name: str = AppConstants.TASK_TRAIN,
-        data: FLModel = None,
         targets: Union[List[Client], List[str], None] = None,
         min_responses: int = None,
         timeout: int = 0,
@@ -381,7 +381,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         if data and data.current_round is not None:
             self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, data.current_round, private=True, sticky=True)
         else:
-            self.warning("The FLModel data does not contain the current_round information.")
+            self.debug("The FLModel data does not contain the current_round information.")
 
     def get_component(self, component_id: str):
         return self.engine.get_component(component_id)
