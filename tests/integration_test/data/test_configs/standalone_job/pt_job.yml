@@ -48,6 +48,8 @@ tests:
       - path: tests.integration_test.src.validators.CrossValResultValidator
         args: { server_model_names: [ "server" ] }
     setup:
+      - mkdir -p ~/data/site-1
+      - mkdir -p ~/data/site-2
       - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='~/data/', download=True)"
     teardown:
       - rm -rf ~/data
