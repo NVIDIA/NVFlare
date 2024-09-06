@@ -135,6 +135,10 @@ Two plugins are initially shipped with NVFlare,
 - **cuda_paillier**: The default plugin. This plugin uses GPU for cryptographic operations.
 - **nvflare**: This plugin forwards data locally to NVFlare process for encryption.
 
+.. note::
+   All clients must use the same plugin. When different plugins are used,
+   the XGBoost’s behavior is undetermined. It may cause the client to crash.
+
 The **cuda_paillier** plugin requires NVIDIA GPUs that support compute capability 7.0 or higher. Also, CUDA
 12.2 or 12.4 must be installed. Please refer to https://developer.nvidia.com/cuda-gpus for more information.
 
