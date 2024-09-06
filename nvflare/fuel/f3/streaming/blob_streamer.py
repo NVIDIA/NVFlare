@@ -121,7 +121,7 @@ class BlobHandler:
                     else:
                         blob_task.buffer.append(buf)
                 except Exception as ex:
-                    log.error(f"memory view error: {ex} " f"Debug info: {length=} {buf_size=} {type(buf)=}")
+                    log.error(f"memory view error: {ex} Debug info: {length=} {buf_size=} {type(buf)=}")
                     raise ex
 
                 buf_size += length
