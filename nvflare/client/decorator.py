@@ -16,6 +16,7 @@ import functools
 from inspect import signature
 
 from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.fuel.utils.deprecated import deprecated
 
 from .api import is_train, receive, send
 
@@ -34,6 +35,7 @@ class ObjectHolder:
 object_holder = ObjectHolder()
 
 
+@deprecated("@flare.train is deprecated and will be removed in a future version." "Use flare send/receive instead.")
 def train(
     _func=None,
     **root_kwargs,
@@ -86,6 +88,7 @@ def train(
         return decorator(_func)
 
 
+@deprecated("@flare.evaluate is deprecated and will be removed in a future version." "Use flare send/receive instead.")
 def evaluate(
     _func=None,
     **root_kwargs,

@@ -27,7 +27,7 @@ from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 class BaseFedJob(FedJob):
     def __init__(
         self,
-        initial_model: nn.Module,
+        initial_model: nn.Module = None,
         name: str = "fed_job",
         min_clients: int = 1,
         mandatory_clients: Optional[List[str]] = None,
@@ -40,8 +40,8 @@ class BaseFedJob(FedJob):
         User must add executors.
 
         Args:
-            initial_model (nn.Module): initial PyTorch Model
-            name (name, optional): name of the job. Defaults to "fed_job"
+            initial_model (nn.Module): initial PyTorch Model. Defaults to None.
+            name (name, optional): name of the job. Defaults to "fed_job".
             min_clients (int, optional): the minimum number of clients for the job. Defaults to 1.
             mandatory_clients (List[str], optional): mandatory clients to run the job. Default None.
             key_metric (str, optional): Metric used to determine if the model is globally best.
@@ -51,6 +51,7 @@ class BaseFedJob(FedJob):
         super().__init__(name, min_clients, mandatory_clients)
         self.key_metric = key_metric
         self.initial_model = initial_model
+        self.comp_ids = {}
 
         component = ValidationJsonGenerator()
         self.to_server(id="json_generator", obj=component)
@@ -63,7 +64,8 @@ class BaseFedJob(FedJob):
         component = TBAnalyticsReceiver(events=["fed.analytix_log_stats"])
         self.to_server(id="receiver", obj=component)
 
-        self.comp_ids = self.to_server(PTModel(initial_model))
+        if initial_model:
+            self.comp_ids.update(self.to_server(PTModel(initial_model)))
 
     def set_up_client(self, target: str):
         component = ConvertToFedEvent(events_to_convert=["analytix_log_stats"], fed_event_prefix="fed.")

@@ -23,6 +23,7 @@
           "max_depth": 8,
           "eval_metric": "auc",
           "tree_method": "hist",
+          "use_gpus": false,
           "nthread": 16
         }
       }

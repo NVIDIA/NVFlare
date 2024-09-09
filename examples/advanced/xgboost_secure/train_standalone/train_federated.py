@@ -63,7 +63,7 @@ def load_test_data(data_path: str):
 
 
 def run_server(port: int, world_size: int) -> None:
-    xgboost.federated.run_federated_server(port, world_size)
+    xgboost.federated.run_federated_server(n_workers=world_size, port=port)
 
 
 def run_worker(port: int, world_size: int, rank: int, args) -> None:

@@ -38,7 +38,7 @@ from nvflare.security.logging import secure_format_exception
 class BaseModelController(Controller, FLComponentWrapper, ABC):
     def __init__(
         self,
-        persistor_id="persistor",
+        persistor_id: str = AppConstants.DEFAULT_PERSISTOR_ID,
         ignore_result_error: bool = False,
         allow_empty_global_weights: bool = False,
         task_check_period: float = 0.5,
@@ -46,7 +46,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         """FLModel based controller.
 
         Args:
-            persistor_id (str, optional): ID of the persistor component. Defaults to "persistor".
+            persistor_id (str, optional): ID of the persistor component. Defaults to AppConstants.DEFAULT_PERSISTOR_ID ("persistor").
             ignore_result_error (bool, optional): whether this controller can proceed if client result has errors.
                 Defaults to False.
             allow_empty_global_weights (bool, optional): whether to allow empty global weights. Some pipelines can have
@@ -83,7 +83,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             self.persistor = self.engine.get_component(self._persistor_id)
             if not isinstance(self.persistor, LearnablePersistor):
                 self.warning(
-                    f"Model Persistor {self._persistor_id} must be a LearnablePersistor type object, "
+                    f"Persistor {self._persistor_id} must be a LearnablePersistor type object, "
                     f"but got {type(self.persistor)}"
                 )
                 self.persistor = None
@@ -100,8 +100,8 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
 
     def broadcast_model(
         self,
+        data,
         task_name: str = AppConstants.TASK_TRAIN,
-        data: FLModel = None,
         targets: Union[List[Client], List[str], None] = None,
         min_responses: int = None,
         timeout: int = 0,
@@ -112,8 +112,8 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         """Send a task with data to a list of targets.
 
         Args:
+            data: FLModel to be sent to clients. It must be a FLModel object. It will raise an exception if None.
             task_name (str, optional): name of the task. Defaults to "train".
-            data (FLModel, optional): FLModel to be sent to clients. If no data is given, send empty FLModel.
             targets (List[str], optional): the list of target client names or None (all clients). Defaults to None.
             min_responses (int, optional): the minimum number of responses expected. If None, must receive responses from
               all clients that the task has been sent to. Defaults to None.
@@ -128,9 +128,9 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         """
 
         if not isinstance(task_name, str):
-            raise TypeError("task_name must be a string but got {}".format(type(task_name)))
-        if data and not isinstance(data, FLModel):
-            raise TypeError("data must be a FLModel or None but got {}".format(type(data)))
+            raise TypeError(f"task_name must be a string but got {type(task_name)}")
+        if not isinstance(data, FLModel):
+            raise TypeError(f"data must be a FLModel but got {type(data)}")
         if min_responses is None:
             min_responses = 0  # this is internally used by controller's broadcast to represent all targets
         check_non_negative_int("min_responses", min_responses)
@@ -139,9 +139,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         if not blocking and not isinstance(callback, Callable):
             raise TypeError("callback must be defined if blocking is False, but got {}".format(type(callback)))
 
-        if not data:
-            self.warning("data is None. Sending empty FLModel.")
-            data = FLModel(params_type=ParamsType.FULL, params={})
+        self.set_fl_context(data)
 
         task = self._prepare_task(data=data, task_name=task_name, timeout=timeout, callback=callback)
 
@@ -223,9 +221,6 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         result_model = FLModelUtils.from_shareable(result)
         result_model.meta["props"] = client_task.task.props[AppConstants.META_DATA]
         result_model.meta["client_name"] = client_name
-
-        if result_model.current_round is not None:
-            self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, result_model.current_round, private=True, sticky=True)
 
         self.event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT)
         self._accept_train_result(client_name=client_name, result=result, fl_ctx=fl_ctx)
@@ -378,6 +373,13 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         self.info(f"Sampled clients: {clients}")
 
         return clients
+
+    def set_fl_context(self, data: FLModel):
+        """Set up the fl_ctx information based on the passed in FLModel data."""
+        if data and data.current_round is not None:
+            self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, data.current_round, private=True, sticky=True)
+        else:
+            self.debug("The FLModel data does not contain the current_round information.")
 
     def get_component(self, component_id: str):
         return self.engine.get_component(component_id)

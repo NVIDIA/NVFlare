@@ -10,9 +10,9 @@ started with the following:
 
 ### 1. Install NVIDIA FLARE
 
-Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions to install NVFlare.
+Follow the [Installation](../../getting_started/README.md) instructions to install NVFlare.
 
-Install additional requirements:
+Install additional requirements (if you already have a specific version of nvflare installed in your environment, you may want to remove nvflare in the requirements to avoid reinstalling nvflare):
 
 ```
 pip3 install tensorflow

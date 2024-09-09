@@ -33,6 +33,7 @@ class MetricRelay(Widget, AttributesExportable):
         pipe_id: str,
         read_interval=0.1,
         heartbeat_interval=5.0,
+        heartbeat_timeout=60.0,
         pipe_channel_name=PipeChannelName.METRIC,
         event_type: str = ANALYTIC_EVENT_TYPE,
         fed_event: bool = True,
@@ -41,6 +42,7 @@ class MetricRelay(Widget, AttributesExportable):
         self.pipe_id = pipe_id
         self._read_interval = read_interval
         self._heartbeat_interval = heartbeat_interval
+        self._heartbeat_timeout = heartbeat_timeout
         self.pipe_channel_name = pipe_channel_name
         self.pipe = None
         self.pipe_handler = None
@@ -62,7 +64,7 @@ class MetricRelay(Widget, AttributesExportable):
                 pipe=self.pipe,
                 read_interval=self._read_interval,
                 heartbeat_interval=self._heartbeat_interval,
-                heartbeat_timeout=0,
+                heartbeat_timeout=self._heartbeat_timeout,
             )
             self.pipe_handler.set_status_cb(self._pipe_status_cb)
             self.pipe_handler.set_message_cb(self._pipe_msg_cb)
@@ -92,5 +94,6 @@ class MetricRelay(Widget, AttributesExportable):
                 ConfigKey.CLASS_NAME: pipe_export_class,
                 ConfigKey.ARG: pipe_export_args,
             },
+            ConfigKey.HEARTBEAT_TIMEOUT: self._heartbeat_timeout,
         }
         return ConfigKey.METRICS_EXCHANGE, config_dict

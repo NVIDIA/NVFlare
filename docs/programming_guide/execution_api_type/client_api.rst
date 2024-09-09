@@ -110,20 +110,6 @@ Below is a table overview of key Client APIs.
      - Returns whether the current task is a submit_model task.
      - :func:`is_submit_model<nvflare.client.api.is_submit_model>`
 
-.. list-table:: Decorator APIs
-   :widths: 25 25 50
-   :header-rows: 1
-
-   * - API
-     - Description
-     - API Doc Link
-   * - train
-     - A decorator to wraps the training logic.
-     - :func:`train<nvflare.client.decorator.train>`
-   * - evaluate
-     - A decorator to wraps the evaluate logic.
-     - :func:`evaluate<nvflare.client.decorator.evaluate>`
-
 .. list-table:: Lightning APIs
    :widths: 25 25 50
    :header-rows: 1
@@ -157,6 +143,10 @@ information about all of the Client API functionalities.
 
 If you are using PyTorch Lightning in your training code, you can check the
 Lightning API Module :mod:`nvflare.app_opt.lightning.api`.
+
+.. note::
+  The decorator API has been deprecated since release 2.5.0.
+  Please use the Client API instead.
 
 
 Client API communication patterns

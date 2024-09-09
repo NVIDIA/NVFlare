@@ -45,6 +45,7 @@ STATUS_IN_REPLY = "in_reply"
 STATUS_NOT_RECEIVED = "not_received"
 STATUS_REPLIED = "replied"
 STATUS_ABORTED = "aborted"
+STATUS_DUP_REQUEST = "dup_request"
 
 # Topics for Reliable Message
 TOPIC_RELIABLE_REQUEST = "RM.RELIABLE_REQUEST"
@@ -227,6 +228,7 @@ class ReliableMessage:
 
     _topic_to_handle = {}
     _req_receivers = {}  # tx id => receiver
+    _req_completed = {}  # tx id => expiration
     _enabled = False
     _executor = None
     _query_interval = 1.0
@@ -293,12 +295,35 @@ class ReliableMessage:
                 # no handler registered for this topic!
                 cls.error(fl_ctx, f"no handler registered for request {rm_topic=}")
                 return make_reply(ReturnCode.TOPIC_UNKNOWN)
-            receiver = cls._get_or_create_receiver(rm_topic, request, handler_f)
+
+            # check whether the request is still standing or completed
+            # we should check to get the receiver first, and check req_completed next:
+            # if the receiver does not exist in _req_receivers and already completed,
+            # then it must exist in _req_completed (since we put it in _req_completed before removing it
+            # from _req_receivers).
+            receiver = cls._req_receivers.get(tx_id)
+            if not receiver:
+                # no standing process for this request
+                # further check whether this request was already completed
+                if cls._req_completed.get(tx_id):
+                    # this request was already completed!
+                    cls.debug(fl_ctx, "Completed tx_id received")
+                    return _status_reply(STATUS_DUP_REQUEST)
+
+            if not receiver:
+                # this is a valid new request
+                receiver = cls._get_or_create_receiver(rm_topic, request, handler_f)
+
             cls.debug(fl_ctx, f"received request {rm_topic=}")
             return receiver.process(request, fl_ctx)
         elif op == OP_QUERY:
             receiver = cls._req_receivers.get(tx_id)
             if not receiver:
+                # no standing process for this request - is it already completed?
+                if cls._req_completed.get(tx_id):
+                    # the request is already completed
+                    return _status_reply(STATUS_REPLIED)
+
                 cls.warning(
                     fl_ctx, f"received query but the request ({rm_topic=} {tx_id=}) is not received or already done!"
                 )
@@ -316,7 +341,7 @@ class ReliableMessage:
         cls.debug(fl_ctx, f"received aux msg ({topic=}) for RM reply")
         receiver = cls._reply_receivers.get(tx_id)
         if not receiver:
-            cls.error(fl_ctx, "received reply but we are no longer waiting for it")
+            cls.warning(fl_ctx, "received reply but we are no longer waiting for it")
         else:
             assert isinstance(receiver, _ReplyReceiver)
             cls.debug(fl_ctx, f"received reply in {time.time()-receiver.tx_start_time} secs - set waiter")
@@ -336,6 +361,7 @@ class ReliableMessage:
 
         """
         with cls._tx_lock:
+            cls._register_completed_req(receiver.tx_id, receiver.tx_timeout)
             cls._req_receivers.pop(receiver.tx_id, None)
             cls.debug(fl_ctx, f"released request receiver of TX {receiver.tx_id}")
 
@@ -556,6 +582,11 @@ class ReliableMessage:
                 cls.error(fl_ctx, f"aborting send_request since exceeded {tx_timeout=}")
                 return make_reply(ReturnCode.COMMUNICATION_ERROR)
 
+            # it is possible that a reply is already received while we are still trying to send!
+            if receiver.result_ready.is_set():
+                cls.debug(fl_ctx, "result received while in the send loop")
+                break
+
             if num_tries > 0:
                 cls.debug(fl_ctx, f"retry #{num_tries} sending request: {per_msg_timeout=}")
 
@@ -566,6 +597,12 @@ class ReliableMessage:
                 timeout=per_msg_timeout,
                 fl_ctx=fl_ctx,
             )
+
+            # it is possible that a reply is already received while we are waiting for the ack!
+            if receiver.result_ready.is_set():
+                cls.debug(fl_ctx, "result received while waiting for ack")
+                break
+
             ack, rc = _extract_result(ack, target)
             if ack and rc not in [ReturnCode.COMMUNICATION_ERROR]:
                 # is this result?
@@ -679,3 +716,15 @@ class ReliableMessage:
                 cls.debug(fl_ctx, f"will retry query in {cls._query_interval} secs: {rc=} {status=} {op=}")
             else:
                 cls.debug(fl_ctx, f"will retry query in {cls._query_interval} secs: {rc=}")
+
+    @classmethod
+    def _register_completed_req(cls, tx_id, tx_timeout):
+        # Remove expired entries, need to use a copy of the keys
+        now = time.time()
+        for key in list(cls._req_completed.keys()):
+            expiration = cls._req_completed.get(key)
+            if expiration and expiration < now:
+                cls._req_completed.pop(key, None)
+
+        # Expire in 2 x tx_timeout
+        cls._req_completed[tx_id] = now + 2 * tx_timeout

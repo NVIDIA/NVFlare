@@ -119,7 +119,7 @@
             "id": "model_locator",
             "path": "nvflare.app_opt.pt.file_model_locator.PTFileModelLocator",
             "args": {
-                "model": "model"
+                "pt_persistor_id": "persistor"
             }
         },
         {
