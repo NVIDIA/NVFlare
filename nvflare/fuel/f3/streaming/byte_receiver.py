@@ -262,7 +262,7 @@ class ByteReceiver:
 
                 self.received_stream_counter_pool.increment(
                     category=stream_stats_category(task.channel, task.topic, "stream"),
-                    counter_name=COUNTER_NAME_RECEIVED
+                    counter_name=COUNTER_NAME_RECEIVED,
                 )
 
                 self.received_stream_size_pool.record_value(

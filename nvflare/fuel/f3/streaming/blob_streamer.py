@@ -131,9 +131,7 @@ class BlobHandler:
                 buf_size += length
 
             if blob_task.size and blob_task.size != buf_size:
-                log.warning(
-                    f"Stream {blob_task} Size doesn't match: " f"{blob_task.size} <> {buf_size}"
-                )
+                log.warning(f"Stream {blob_task} Size doesn't match: " f"{blob_task.size} <> {buf_size}")
 
             if blob_task.pre_allocated:
                 result = blob_task.buffer
