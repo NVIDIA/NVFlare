@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import List
 
 import pathspec
+import shutil
 from flwr.cli.config_utils import get_fab_metadata
 from flwr.cli.install import install_from_fab
 from flwr.common.logger import log
@@ -25,10 +26,8 @@ from flwr.common.typing import UserConfig
 from flwr.superexec.executor import Executor as FlowerSuperExecExecutor
 from flwr.superexec.executor import RunTracker
 from typing_extensions import Optional, override
+from nvflare.app_opt.flower.flower_job import FlowerJob
 
-from nvflare import FedJob
-from nvflare.app_opt.flower.controller import FlowerController
-from nvflare.app_opt.flower.executor import FlowerExecutor
 from nvflare.fuel.flare_api.flare_api import Session, new_secure_session
 
 SESSION_ARGS = {"username", "startup_kit_location", "debug", "timeout"}
@@ -53,23 +52,36 @@ def _load_gitignore(directory: Path) -> pathspec.PathSpec:
     return pathspec.PathSpec.from_lines("gitwildmatch", patterns)
 
 
-def _locate_all_files(directory: Path) -> List[Path]:
-    """Locate all allowed files in the directory."""
+def _copy_to_tmp_dir(directory: Path) -> Path:
+    """Copy all allowed files in the directory to a temporary directory."""
     # Allowed extensions
     allowed_exts = ["py", "toml", "md"]
 
     # Load gitignore
     gitignore = _load_gitignore(directory)
 
-    # Walk through the directory
-    files = []
-    for entry in (_ for ext in allowed_exts for _ in directory.rglob(f"*.{ext}")):
-        if not gitignore.match_file(entry.relative_to(directory)):
-            files.append(entry)
-    return files
+    # Make temporary directory
+    tmp_dir = Path(tempfile.mkdtemp())
+
+    # Walk through the directory and copy all allowed files
+    for file in (_ for ext in allowed_exts for _ in directory.rglob(f"*.{ext}")):
+        relative_path = file.relative_to(directory)
+        # Check gitignore
+        if not gitignore.match_file(relative_path):
+            # Create the same sub-directory structure in the temp directory
+            dst_path = tmp_dir / relative_path
+            print(f"dst parent: {dst_path.parent}")
+            dst_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Copy the file to the destination
+            shutil.copy2(file, dst_path)
+            print(f"Copied file {file} to {dst_path}")
+    
+    # Return the created temporary directory
+    return tmp_dir
 
 
-def _export_and_submit_job(session: Session, job: FedJob, export_to: str) -> None:
+def _export_and_submit_job(session: Session, job: FlowerJob, export_to: str) -> None:
     """Export and submit a job via the secure session."""
     # Export job
     job_path = Path(export_to) / job.name
@@ -135,26 +147,11 @@ class FlowerSuperExecPlugin(FlowerSuperExecExecutor):
             publisher, app_name = fab_id.split("/")
             job_name = _get_job_name(publisher, app_name, fab_version)
 
-            # Create FedJob
-            job = FedJob(name=job_name)
-
             # Locate all allowed files in the FAB directory
-            files = _locate_all_files(Path(fab_path))
-
-            # TODO: send override_config to Server Job and then to the SuperLink
-            # Define the controller workflow and send to server
-            controller = FlowerController()
-            job.to_server(controller)
-
-            # Add flwr server code
-            for file in files:
-                job.to_server(str(file.absolute()))
-
-            # Add clients
-            executor = FlowerExecutor()
-            job.to_clients(executor)
-            for file in files:
-                job.to_clients(str(file.absolute()))
+            tmp_dir = _copy_to_tmp_dir(Path(fab_path))
+            
+            # Create FedJob
+            job = FlowerJob(job_name, tmp_dir)
 
             # Export & submit the job
             if self.job_dir is not None:
