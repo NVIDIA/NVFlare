@@ -71,7 +71,7 @@ class RxTask:
         self.last_chunk_received = False
 
     def __str__(self):
-        return f"Rx[SID:{self.sid} from {self.origin} for {self.channel}/{self.topic}]"
+        return f"Rx[SID:{self.sid} from {self.origin} for {self.channel}/{self.topic} Size: {self.size}]"
 
 
 class RxStream(Stream):
@@ -98,9 +98,7 @@ class RxStream(Stream):
 
             # Block if buffers are empty
             if count > 0:
-                log.warning(f"Read block is unblocked multiple times: {count}")
-
-            self.task.waiter.clear()
+                log.warning(f"{self.task} Read block is unblocked multiple times: {count}")
 
             if not self.task.waiter.wait(self.timeout):
                 error = StreamError(f"{self.task} read timed out after {self.timeout} seconds")
@@ -117,6 +115,7 @@ class RxStream(Stream):
                 if self.task.eos:
                     return RESULT_EOS, None
                 else:
+                    self.task.waiter.clear()
                     return RESULT_WAIT, None
 
             last_chunk, buf = self.task.buffers.popleft()
@@ -239,33 +238,39 @@ class ByteReceiver:
             self.stop_task(task, StreamError(f"Received error from {origin}: {error}"), notify=False)
             return
 
-        if seq == 0:
-            # Handle new stream
-            task.channel = message.get_header(StreamHeaderKey.CHANNEL)
-            task.topic = message.get_header(StreamHeaderKey.TOPIC)
-            task.headers = message.headers
-
-            task.stream_future = StreamFuture(sid, message.headers)
-            task.size = message.get_header(StreamHeaderKey.SIZE, 0)
-            task.stream_future.set_size(task.size)
-
-            # Invoke callback
-            callback = self.registry.find(task.channel, task.topic)
-            if not callback:
-                self.stop_task(task, StreamError(f"No callback is registered for {task.channel}/{task.topic}"))
-                return
-
-            self.received_stream_counter_pool.increment(
-                category=stream_stats_category(task.channel, task.topic, "stream"), counter_name=COUNTER_NAME_RECEIVED
-            )
-
-            self.received_stream_size_pool.record_value(
-                category=stream_stats_category(task.channel, task.topic, "stream"), value=task.size / ONE_MB
-            )
-
-            stream_thread_pool.submit(self._callback_wrapper, task, callback)
-
         with task.task_lock:
+            if seq == 0:
+                # Handle new stream
+                task.channel = message.get_header(StreamHeaderKey.CHANNEL)
+                task.topic = message.get_header(StreamHeaderKey.TOPIC)
+                task.headers = message.headers
+
+                # GRPC may re-send the same request, causing seq 0 delivered more than once
+                if task.stream_future:
+                    log.warning(f"{task} Received duplicate chunk 0, ignored")
+                    return
+
+                task.stream_future = StreamFuture(sid, message.headers)
+                task.size = message.get_header(StreamHeaderKey.SIZE, 0)
+                task.stream_future.set_size(task.size)
+
+                # Invoke callback
+                callback = self.registry.find(task.channel, task.topic)
+                if not callback:
+                    self.stop_task(task, StreamError(f"No callback is registered for {task.channel}/{task.topic}"))
+                    return
+
+                self.received_stream_counter_pool.increment(
+                    category=stream_stats_category(task.channel, task.topic, "stream"),
+                    counter_name=COUNTER_NAME_RECEIVED,
+                )
+
+                self.received_stream_size_pool.record_value(
+                    category=stream_stats_category(task.channel, task.topic, "stream"), value=task.size / ONE_MB
+                )
+
+                stream_thread_pool.submit(self._callback_wrapper, task, callback)
+
             data_type = message.get_header(StreamHeaderKey.DATA_TYPE)
             last_chunk = data_type == StreamDataType.FINAL
             if last_chunk:
