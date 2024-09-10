@@ -16,27 +16,13 @@ from typing import Optional
 
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 
-from .config import ClientConfig
-from .flare_agent import FlareAgent
+from .config import TransferType
 from .task_registry import TaskRegistry
 from .utils import DIFF_FUNCS
 
 
 class ModelRegistry(TaskRegistry):
-    """This class is used to remember attributes that need to be shared for a user code.
-
-    For example, after "global_evaluate" we should remember the "metrics" value.
-    And set that into the model that we want to submit after "train".
-
-    For each user file:
-        - we only need 1 model exchanger.
-        - we only need to pull global model once
-
-    """
-
-    def __init__(self, config: ClientConfig, rank: Optional[str] = None, flare_agent: Optional[FlareAgent] = None):
-        super().__init__(config, rank, flare_agent)
-        self.metrics = None
+    """Gets and submits FLModel."""
 
     def get_model(self, timeout: Optional[float] = None) -> Optional[FLModel]:
         """Gets a model from FLARE client.
@@ -50,11 +36,11 @@ class ModelRegistry(TaskRegistry):
         Returns:
             None if flare agent is None; or an FLModel object if a task is available within timeout.
         """
-        task = self.get_task(timeout)
-        if task is not None and task.data is not None:
-            if not isinstance(task.data, FLModel):
-                raise RuntimeError("task.data is not FLModel.")
-            return task.data
+        self.get_task(timeout)
+        if self.received_task is not None and self.received_task.data is not None:
+            if not isinstance(self.received_task.data, FLModel):
+                raise RuntimeError("self.received_task.data is not FLModel.")
+            return self.received_task.data
         return None
 
     def submit_model(self, model: FLModel) -> None:
@@ -65,31 +51,31 @@ class ModelRegistry(TaskRegistry):
         """
         if not self.flare_agent:
             return None
-        if self.config.get_transfer_type() == "DIFF":
-            exchange_format = self.config.get_exchange_format()
-            diff_func = DIFF_FUNCS.get(exchange_format, None)
-            if diff_func is None:
-                raise RuntimeError(f"no default params diff function for {exchange_format}")
-            elif self.received_task is None:
-                raise RuntimeError("no received task")
-            elif self.received_task.data is None:
-                raise RuntimeError("no received model")
-            elif not isinstance(self.received_task.data, FLModel):
-                raise RuntimeError("received_task.data is not FLModel.")
-            elif model.params is not None:
-                if model.params_type == ParamsType.FULL:
-                    try:
-                        model.params = diff_func(original=self.received_task.data.params, new=model.params)
-                        model.params_type = ParamsType.DIFF
-                    except Exception as e:
-                        raise RuntimeError(f"params diff function failed: {e}")
+        if self.config.get_transfer_type() == TransferType.DIFF:
+            model = self._prepare_param_diff(model)
 
         if model.params is None and model.metrics is None:
             raise RuntimeError("the model to send does not have either params or metrics")
 
         self.submit_task(model)
 
-    def clear(self):
-        """Clears the model registry cache."""
-        super().clear()
-        self.metrics = None
+    def _prepare_param_diff(self, model: FLModel) -> FLModel:
+        exchange_format = self.config.get_exchange_format()
+        diff_func = DIFF_FUNCS.get(exchange_format, None)
+        if diff_func is None:
+            raise RuntimeError(f"no default params diff function for {exchange_format}")
+        elif self.received_task is None:
+            raise RuntimeError("no received task")
+        elif self.received_task.data is None:
+            raise RuntimeError("no received model")
+        elif not isinstance(self.received_task.data, FLModel):
+            raise RuntimeError("received_task.data is not FLModel.")
+        elif model.params is not None:
+            if model.params_type == ParamsType.FULL:
+                try:
+                    model.params = diff_func(original=self.received_task.data.params, new=model.params)
+                    model.params_type = ParamsType.DIFF
+                except Exception as e:
+                    raise RuntimeError(f"params diff function failed: {e}")
+
+        return model
