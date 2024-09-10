@@ -70,18 +70,19 @@ Let's add the ``ConvertToFedEvent`` to convert these metrics events to federated
 
 Add this component to config_fed_client.json:
 
-.. code-block:: yaml
+.. code-block:: json
 
-  {
-    "id": "event_to_fed",
-    "name": "ConvertToFedEvent",
-    "args": {"events_to_convert": ["analytix_log_stats"], "fed_event_prefix": "fed."}
-  }
+    {
+        "id": "event_to_fed",
+        "name": "ConvertToFedEvent",
+        "args": {"events_to_convert": ["analytix_log_stats"], "fed_event_prefix": "fed."}
+    }
 
 If using the subprocess Client API with the ClientAPILauncherExecutor (rather than the in-process Client API with the InProcessClientAPIExecutor),
-we need to add the ``MetricRelay`` to fire fed events, a ``CellPipe`` for metrics, and an ``ExternalConfiguator`` for client api initialization.
+we need to add the ``MetricRelay`` to fire fed events, a ``CellPipe`` for metrics, and an ``ExternalConfigurator`` for client api initialization.
 
 .. code-block:: yaml
+
     {
       id = "metric_relay"
       path = "nvflare.app_common.widgets.metric_relay.MetricRelay"
@@ -206,6 +207,6 @@ We then must set the ``MetricRelay`` argument ``fed_event`` to ``false`` to fire
       read_interval = 0.1
       fed_event = false
     }
-  },
+  }
 
 Then, the metrics will stream to the client.

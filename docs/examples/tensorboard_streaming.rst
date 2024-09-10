@@ -10,13 +10,13 @@ In this exercise, you will learn how to stream TensorBoard events from the clien
 to the server in order to visualize live training metrics from a central place on the server.
 
 This exercise will be working with the ``tensorboard`` example in the advanced examples folder under experiment-tracking,
-which builds upon :doc:`hello_pt` by adding TensorBoard streaming.
+which builds upon :doc:`hello_pt_job_api` by adding TensorBoard streaming.
 
 The setup of this exercise consists of one **server** and two **clients**.
 
 .. note::
 
-  This exercise differs from :doc:`hello_pt`, as it uses the ``Learner`` API along with the ``LearnerExecutor``.
+  This exercise differs from :doc:`hello_pt_job_api`, as it uses the ``Learner`` API along with the ``LearnerExecutor``.
   In short, the execution flow is abstracted away into the ``LearnerExecutor``, allowing you to only need to implement the required methods in the ``Learner`` class.
   This will not be the focus of this guide, however you can learn more at :class:`Learner<nvflare.app_common.abstract.learner_spec.Learner>`
   and :class:`LearnerExecutor<nvflare.app_common.executors.learner_executor.LearnerExecutor>`.

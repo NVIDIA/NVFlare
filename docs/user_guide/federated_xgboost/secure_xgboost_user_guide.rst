@@ -136,6 +136,7 @@ Two plugins are initially shipped with NVFlare,
 - **nvflare**: This plugin forwards data locally to NVFlare process for encryption.
 
 .. note::
+
    All clients must use the same plugin. When different plugins are used,
    the XGBoost’s behavior is undetermined. It may cause the client to crash.
 
@@ -196,6 +197,7 @@ The following environment variables can be used to override the values in the JS
     export NVFLARE_XGB_PLUGIN_PATH=/tmp/libnvflare.so
 
 .. note::
+
    When running with the NVFlare simulator, the plugin must be configured using environment variables,
    as it does not support resources.json.
 
@@ -289,7 +291,8 @@ Vertical Training
 Here are the configuration files for a vertical secure training job. If encryption is not needed, just change the ``secure_training`` arg to false.
 
 .. code-block:: json
-   :caption: config_fed_server.json
+
+    :caption: config_fed_server.json
 
     {
         "format_version": 2,
@@ -325,7 +328,8 @@ Here are the configuration files for a vertical secure training job. If encrypti
 
 
 .. code-block:: json
-   :caption: config_fed_client.json
+
+    :caption: config_fed_client.json
 
     {
         "format_version": 2,

@@ -130,6 +130,7 @@ class HierarchicalStatisticsController(StatisticsController):
         'Manufacturers' being the top most hierarchical level and "Devices" being the lowest hierarchical level:
 
         .. code-block:: text
+
            {
                 "Manufacturers": [
                     {
