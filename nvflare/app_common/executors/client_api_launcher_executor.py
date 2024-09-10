@@ -122,6 +122,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 ConfigKey.CLASS_NAME: pipe_export_class,
                 ConfigKey.ARG: pipe_export_args,
             },
+            ConfigKey.HEARTBEAT_TIMEOUT: self.heartbeat_timeout,
         }
 
         config_data = {

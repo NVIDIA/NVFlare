@@ -56,7 +56,8 @@ Run the FedBN simulation with the following command:
 ```
 
 ## Visualizing Results
-With tensorboard, below is an example of the loss for the two sites:
+The training record will be stored under the job workspace `/tmp/nvflare/fed_bn/workspace/server/simulate_job/tb_events/`.
+With tensorboard, we can visualize the loss for the two sites, example run as below:
 ![FedBN Loss Results](./figs/loss.png)
 
 

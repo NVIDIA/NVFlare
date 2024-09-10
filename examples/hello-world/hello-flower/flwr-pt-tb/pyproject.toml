@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "flwr_pt_tb"
+version = "1.0.0"
+description = ""
+license = "Apache-2.0"
+dependencies = [
+    "flwr[simulation]>=1.11.0,<2.0",
+    "nvflare~=2.5.0rc",
+    "torch==2.2.1",
+    "torchvision==0.17.1",
+    "tensorboard"
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[tool.flwr.app]
+publisher = "nvidia"
+
+[tool.flwr.app.components]
+serverapp = "flwr_pt_tb.server:app"
+clientapp = "flwr_pt_tb.client:app"
+
+[tool.flwr.app.config]
+num-server-rounds = 3
+
+[tool.flwr.federations]
+default = "local-simulation"
+
+[tool.flwr.federations.local-simulation]
+options.num-supernodes = 2

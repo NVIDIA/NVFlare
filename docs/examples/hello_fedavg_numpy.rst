@@ -61,7 +61,7 @@ The ``fedavg_script_executor_hello-numpy.py`` script builds the job with the Job
 
 Define a FedJob
 ^^^^^^^^^^^^^^^^
-:class:`FedJob<nvflare.job_config.fed_job.FedJob>` allows you to generate job configurations in a Pythonic way. It is initialized with the
+:class:`FedJob<nvflare.job_config.api.FedJob>` allows you to generate job configurations in a Pythonic way. It is initialized with the
 name for the job, which will also be used as the directory name if the job is exported.
 
 .. code-block:: python
@@ -73,7 +73,7 @@ name for the job, which will also be used as the directory name if the job is ex
 Define the Controller Workflow
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Define the controller workflow and send to server. We use :class:`FedAvg<nvflare.app_common.workflows.fedavg.FedAvg>` and specify the number of
-clients and rounds, then use the :func:`to<nvflare.job_config.fed_job.FedJob.to>` routine to send the component to the server for the job.
+clients and rounds, then use the :func:`to<nvflare.job_config.api.FedJob.to>` routine to send the component to the server for the job.
 
 .. code-block:: python
 
@@ -91,7 +91,7 @@ Add Clients
 Next, we can use the :class:`ScriptExecutor<nvflare.app_common.executors.script_executor.ScriptExecutor>` and send it to each of the
 clients to run our training script. We will examine the training script ``hello-numpy_fl.py`` in the next main section.
 
-The :func:`to<nvflare.job_config.fed_job.FedJob.to>` routine sends the component to the specified client for the job. Here, our clients
+The :func:`to<nvflare.job_config.api.FedJob.to>` routine sends the component to the specified client for the job. Here, our clients
 are named "site-0" and "site-1" and we are using the same training script for both.
 
 .. code-block:: python
@@ -109,7 +109,7 @@ are named "site-0" and "site-1" and we are using the same training script for bo
 
 Optionally Export the Job or Run in Simulator
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-With all the components needed for the job, you can export the job to a directory with :func:`export<nvflare.job_config.fed_job.FedJob.export>`
+With all the components needed for the job, you can export the job to a directory with :func:`export<nvflare.job_config.api.FedJob.export>`
 if you want to look at what is built and configured for each client. You can use the exported job to submit it to a real NVFlare deployment
 using the :ref:`FLARE Console <operating_nvflare>` or :ref:`flare_api`.
 
@@ -117,14 +117,14 @@ using the :ref:`FLARE Console <operating_nvflare>` or :ref:`flare_api`.
 
    job.export_job("/tmp/nvflare/jobs/job_config")
 
-This is optional if you just want to run the job in a simulator environment directly, as :class:`FedJob<nvflare.job_config.fed_job.FedJob>` has
-a :func:`simulator_run<nvflare.job_config.fed_job.FedJob.simulator_run>` function.
+This is optional if you just want to run the job in a simulator environment directly, as :class:`FedJob<nvflare.job_config.api.FedJob>` has
+a :func:`simulator_run<nvflare.job_config.api.FedJob.simulator_run>` function.
 
 .. code-block:: python
 
    job.simulator_run("/tmp/nvflare/jobs/workdir")
 
-The results are saved in the specified directory provided as an argument to the :func:`simulator_run<nvflare.job_config.fed_job.FedJob.simulator_run>` function.
+The results are saved in the specified directory provided as an argument to the :func:`simulator_run<nvflare.job_config.api.FedJob.simulator_run>` function.
 
 
 NVIDIA FLARE Client Training Script

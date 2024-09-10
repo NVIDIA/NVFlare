@@ -1,7 +1,7 @@
 {
     "format_version": 2,
     "DATASET_ROOT": "/tmp/cifar10",
-    "INTERSECTION_FILE": "/tmp/nvflare/cifar10_psi/simulate_job/site-2/psi/intersection.txt",
+    "INTERSECTION_FILE": "/tmp/nvflare/cifar10_psi/site-2/simulate_job/site-2/psi/intersection.txt",
     "executors": [
         {
             "tasks": [

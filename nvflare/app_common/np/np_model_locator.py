@@ -42,11 +42,11 @@ class NPModelLocator(ModelLocator):
 
         self.model_dir = model_dir
         if model_name is None:
-            self.model_file_name = {NPModelLocator.SERVER_MODEL_NAME: "server.npy"}
+            self.model_name = {NPModelLocator.SERVER_MODEL_NAME: "server.npy"}
         elif isinstance(model_name, str):
-            self.model_file_name = {NPModelLocator.SERVER_MODEL_NAME: model_name}
+            self.model_name = {NPModelLocator.SERVER_MODEL_NAME: model_name}
         elif isinstance(model_name, dict):
-            self.model_file_name = model_name
+            self.model_name = model_name
         else:
             raise ValueError(f"model_name must be a str, or a Dict[str, str]. But got: {type(model_name)}")
 
@@ -59,19 +59,19 @@ class NPModelLocator(ModelLocator):
         Returns:
             List[str]: List of model names.
         """
-        return list(self.model_file_name.keys())
+        return list(self.model_name.keys())
 
     def locate_model(self, model_name, fl_ctx: FLContext) -> DXO:
         dxo = None
         engine = fl_ctx.get_engine()
 
-        if model_name in list(self.model_file_name.keys()):
+        if model_name in list(self.model_name.keys()):
             try:
                 job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
                 run_dir = engine.get_workspace().get_run_dir(job_id)
                 model_path = os.path.join(run_dir, self.model_dir)
 
-                model_load_path = os.path.join(model_path, self.model_file_name[model_name])
+                model_load_path = os.path.join(model_path, self.model_name[model_name])
                 np_data = None
                 try:
                     np_data = np.load(model_load_path, allow_pickle=False)

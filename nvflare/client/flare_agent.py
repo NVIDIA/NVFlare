@@ -64,14 +64,14 @@ class _TaskContext:
 class FlareAgent:
     def __init__(
         self,
-        pipe: Pipe,
+        pipe: Optional[Pipe] = None,
         read_interval=0.1,
         heartbeat_interval=5.0,
-        heartbeat_timeout=30.0,
+        heartbeat_timeout=60.0,
         resend_interval=2.0,
         max_resends=None,
-        submit_result_timeout=30.0,
-        metric_pipe=None,
+        submit_result_timeout=60.0,
+        metric_pipe: Optional[Pipe] = None,
         task_channel_name: str = PipeChannelName.TASK,
         metric_channel_name: str = PipeChannelName.METRIC,
         close_pipe: bool = True,
@@ -103,6 +103,10 @@ class FlareAgent:
                 Usually for ``FilePipe`` we set to False, for ``CellPipe`` we set to True.
             decomposer_module (str): the module name which contains the external decomposers.
         """
+        if pipe is None and metric_pipe is None:
+            raise RuntimeError(
+                "Please configure at least one pipe. Both the task pipe and the metric pipe are set to None."
+            )
         flare_decomposers.register()
         common_decomposers.register()
         if decomposer_module:
@@ -110,14 +114,16 @@ class FlareAgent:
 
         self.logger = logging.getLogger(self.__class__.__name__)
         self.pipe = pipe
-        self.pipe_handler = PipeHandler(
-            pipe=self.pipe,
-            read_interval=read_interval,
-            heartbeat_interval=heartbeat_interval,
-            heartbeat_timeout=heartbeat_timeout,
-            resend_interval=resend_interval,
-            max_resends=max_resends,
-        )
+        self.pipe_handler = None
+        if self.pipe:
+            self.pipe_handler = PipeHandler(
+                pipe=self.pipe,
+                read_interval=read_interval,
+                heartbeat_interval=heartbeat_interval,
+                heartbeat_timeout=heartbeat_timeout,
+                resend_interval=resend_interval,
+                max_resends=max_resends,
+            )
         self.submit_result_timeout = submit_result_timeout
         self.task_channel_name = task_channel_name
         self.metric_channel_name = metric_channel_name
@@ -148,14 +154,17 @@ class FlareAgent:
         Returns: None
 
         """
-        self.pipe.open(self.task_channel_name)
-        self.pipe_handler.set_status_cb(self._status_cb, pipe_handler=self.pipe_handler, channel=self.task_channel_name)
-        self.pipe_handler.start()
+        if self.pipe:
+            self.pipe.open(self.task_channel_name)
+            self.pipe_handler.set_status_cb(
+                self._status_cb, pipe_handler=self.pipe_handler, channel=self.task_channel_name
+            )
+            self.pipe_handler.start()
 
         if self.metric_pipe:
             self.metric_pipe.open(self.metric_channel_name)
             self.metric_pipe_handler.set_status_cb(
-                self._status_cb, pipe_handler=self.metric_pipe_handler, channel=self.metric_channel_name
+                self._metrics_status_cb, pipe_handler=self.metric_pipe_handler, channel=self.metric_channel_name
             )
             self.metric_pipe_handler.start()
 
@@ -163,6 +172,11 @@ class FlareAgent:
         self.logger.info(f"{channel} pipe status changed to {msg.topic}: {msg.data}")
         self.asked_to_stop = True
         pipe_handler.stop(self._close_pipe)
+
+    def _metrics_status_cb(self, msg: Message, pipe_handler: PipeHandler, channel):
+        self.logger.info(f"{channel} pipe status changed to {msg.topic}: {msg.data}")
+        self.asked_to_stop = True
+        pipe_handler.stop(self._close_metric_pipe)
 
     def stop(self):
         """Stop the agent.
@@ -172,9 +186,9 @@ class FlareAgent:
         Returns: None
 
         """
-        self.logger.info("Calling flare agent stop")
         self.asked_to_stop = True
-        self.pipe_handler.stop(self._close_pipe)
+        if self.pipe_handler:
+            self.pipe_handler.stop(self._close_pipe)
         if self.metric_pipe_handler:
             self.metric_pipe_handler.stop(self._close_metric_pipe)
 
@@ -226,6 +240,8 @@ class FlareAgent:
         has been submitted.
 
         """
+        if not self.pipe_handler:
+            raise RuntimeError("task pipe is not available")
         start_time = time.time()
         while True:
             if self.asked_to_stop:
@@ -278,6 +294,8 @@ class FlareAgent:
         made a single time regardless whether the submission is successful.
 
         """
+        if not self.pipe_handler:
+            raise RuntimeError("task pipe is not available")
         with self.task_lock:
             current_task = self.current_task
             if not current_task:

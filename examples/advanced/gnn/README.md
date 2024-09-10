@@ -24,8 +24,8 @@ Since the inductive learning mode is being used, the locally learnt model (a rep
 
 ###  Experiments
 ####  Install NVIDIA FLARE
-Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions.
-Install additional requirements:
+Follow the [Installation](../../getting_started/README.md) instructions.
+Install additional requirements (if you already have a specific version of nvflare installed in your environment, you may want to remove nvflare in the requirements to avoid reinstalling nvflare):
 ```
 python3 -m pip install -r requirements.txt
 ```

@@ -15,16 +15,11 @@ from typing import List, Optional
 
 import tensorflow as tf
 
-from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
-from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
-from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 from nvflare.app_common.workflows.fedavg import FedAvg
-from nvflare.app_opt.tf.job_config.model import TFModel
-from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
-from nvflare.job_config.api import FedJob
+from nvflare.app_opt.tf.job_config.base_fed_job import BaseFedJob
 
 
-class FedAvgJob(FedJob):
+class FedAvgJob(BaseFedJob):
     def __init__(
         self,
         initial_model: tf.keras.Model,
@@ -42,7 +37,7 @@ class FedAvgJob(FedJob):
         User must add executors.
 
         Args:
-            initial_model (nn.Module): initial TensorFlow Model
+            initial_model (tf.keras.Model): initial TensorFlow Model
             n_clients (int): number of clients for this job
             num_rounds (int): number of rounds for FedAvg
             name (name, optional): name of the job. Defaults to "fed_job"
@@ -52,32 +47,14 @@ class FedAvgJob(FedJob):
                 if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
                 Defaults to "accuracy".
         """
-        super().__init__(name, min_clients, mandatory_clients)
-        self.key_metric = key_metric
-        self.initial_model = initial_model
-        self.num_rounds = num_rounds
-        self.n_clients = n_clients
+        if not isinstance(initial_model, tf.keras.Model):
+            raise ValueError(f"Expected initial model to be tf.keras.Model, but got type f{type(initial_model)}.")
 
-        component = ValidationJsonGenerator()
-        self.to_server(id="json_generator", obj=component)
-
-        if self.key_metric:
-            component = IntimeModelSelector(key_metric=self.key_metric)
-            self.to_server(id="model_selector", obj=component)
-
-        # TODO: make different tracking receivers configurable
-        component = TBAnalyticsReceiver(events=["fed.analytix_log_stats"])
-        self.to_server(id="receiver", obj=component)
-
-        persistor_id = self.to_server(TFModel(initial_model))
+        super().__init__(initial_model, name, min_clients, mandatory_clients, key_metric)
 
         controller = FedAvg(
             num_clients=n_clients,
             num_rounds=num_rounds,
-            persistor_id=persistor_id,
+            persistor_id=self.comp_ids["persistor_id"],
         )
         self.to_server(controller)
-
-    def set_up_client(self, target: str):
-        component = ConvertToFedEvent(events_to_convert=["analytix_log_stats"], fed_event_prefix="fed.")
-        self.to(id="event_to_fed", obj=component, target=target)

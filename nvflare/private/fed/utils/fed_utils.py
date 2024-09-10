@@ -26,7 +26,7 @@ from nvflare.apis.app_validation import AppValidator
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLContext
-from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, FLMetaKey, SiteType, WorkspaceConstants
+from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, FLMetaKey, SiteType, SystemVarName, WorkspaceConstants
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.utils.decomposers import flare_decomposers
@@ -391,3 +391,11 @@ def get_return_code(process, job_id, workspace, logger):
 
 def get_simulator_app_root(simulator_root, site_name):
     return os.path.join(simulator_root, site_name, SimulatorConstants.JOB_NAME, "app_" + site_name)
+
+
+def add_custom_dir_to_path(app_custom_folder, new_env):
+    path = new_env.get(SystemVarName.PYTHONPATH, "")
+    if path:
+        new_env[SystemVarName.PYTHONPATH] = path + os.pathsep + app_custom_folder
+    else:
+        new_env[SystemVarName.PYTHONPATH] = app_custom_folder

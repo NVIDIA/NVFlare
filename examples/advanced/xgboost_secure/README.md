@@ -14,6 +14,12 @@ To be able to run all the examples, please install the requirements first.
 ```
 pip install -r requirements.txt
 ```
+## Encryption Plugins
+The secure XGBoost requires encryption plugins to work. The plugins are distributed with NVFlare package. If you build NVFlare from source, you need
+to build the plugins following the instructions in this [README](https://github.com/NVIDIA/NVFlare/blob/main/integration/xgboost/encryption_plugins/README.md)
+
+The build process will generate 2 .so files: libcuda_paillier.so and libnvflare.so. Configure the path accordingly following the instructions in 
+[XGBoost User Guide](https://nvflare.readthedocs.io/en/main/user_guide/federated_xgboost/secure_xgboost_user_guide.html)
 
 ## Data Preparation
 ### Download and Store Data
@@ -72,22 +78,22 @@ nvflare config -jt ../../../job_templates/
 
 # create horizontal job
 nvflare job create -force -w xgboost -j ./jobs/xgb_hori \
-    -f config_fed_server.conf secure_training=false split_mode=0 \
+    -f config_fed_server.conf secure_training=false data_split_mode=0 \
     -f config_fed_client.conf folder="/tmp/nvflare/xgb_dataset/horizontal_xgb_data"
 
 # create horizontal secure job
 nvflare job create -force -w xgboost -j ./jobs/xgb_hori_secure \
-    -f config_fed_server.conf secure_training=true split_mode=0 \
+    -f config_fed_server.conf secure_training=true data_split_mode=0 \
     -f config_fed_client.conf folder="/tmp/nvflare/xgb_dataset/horizontal_xgb_data"
 
 # create vertical job
 nvflare job create -force -w xgboost -j ./jobs/xgb_vert \
-    -f config_fed_server.conf secure_training=false split_mode=1 \
+    -f config_fed_server.conf secure_training=false data_split_mode=1 \
     -f config_fed_client.conf folder="/tmp/nvflare/xgb_dataset/vertical_xgb_data"
 
 # create vertical secure job
 nvflare job create -force -w xgboost -j ./jobs/xgb_vert_secure \
-    -f config_fed_server.conf secure_training=true split_mode=1 \
+    -f config_fed_server.conf secure_training=true data_split_mode=1 \
     -f config_fed_client.conf folder="/tmp/nvflare/xgb_dataset/vertical_xgb_data"
 
 ```

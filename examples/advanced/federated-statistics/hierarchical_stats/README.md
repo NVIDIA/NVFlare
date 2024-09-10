@@ -29,7 +29,7 @@ In this example, we are using synthetic anonymous students scores datasets gener
 Run the script `prepare_data.sh` that generates 7 different datasets each having random number of entries between 1000 to 2000. Each entry in the datasets has three columns - `Pass`, `Fail` and `Percentage`. `Pass`/`Fail` represents whether the particular student passed or failed the exam and `Percentage` represents the overall percentage marks scored by the student.
 
 ```shell
-prepare_data.sh
+./prepare_data.sh
 ```
 it should show something like
 ```
@@ -53,7 +53,7 @@ With FL simulator, we can just run the example with CLI command
 
 
 ```
-cd NVFlare/examples/advanced/hierarchical_stats
+cd NVFlare/examples/advanced/federated-statistics
 nvflare simulator hierarchical_stats/jobs/hierarchical_stats -w /tmp/nvflare/hierarchical_stats/ -n 7 -t 7 -c university-1,university-2,university-3,university-4,university-5,university-6,university-7
 ```
 

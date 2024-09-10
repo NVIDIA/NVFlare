@@ -44,6 +44,7 @@ class ConfigKey:
     TASK_NAME = "TASK_NAME"
     TASK_EXCHANGE = "TASK_EXCHANGE"
     METRICS_EXCHANGE = "METRICS_EXCHANGE"
+    HEARTBEAT_TIMEOUT = "HEARTBEAT_TIMEOUT"
 
 
 class ClientConfig:
@@ -133,19 +134,26 @@ class ClientConfig:
         return self.config[section][ConfigKey.PIPE][ConfigKey.CLASS_NAME]
 
     def get_exchange_format(self) -> str:
-        return self.config[ConfigKey.TASK_EXCHANGE][ConfigKey.EXCHANGE_FORMAT]
+        return self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.EXCHANGE_FORMAT, "")
 
     def get_transfer_type(self) -> str:
         return self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.TRANSFER_TYPE, "FULL")
 
     def get_train_task(self):
-        return self.config[ConfigKey.TASK_EXCHANGE][ConfigKey.TRAIN_TASK_NAME]
+        return self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.TRAIN_TASK_NAME, "")
 
     def get_eval_task(self):
-        return self.config[ConfigKey.TASK_EXCHANGE][ConfigKey.EVAL_TASK_NAME]
+        return self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.EVAL_TASK_NAME, "")
 
     def get_submit_model_task(self):
-        return self.config[ConfigKey.TASK_EXCHANGE][ConfigKey.SUBMIT_MODEL_TASK_NAME]
+        return self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.SUBMIT_MODEL_TASK_NAME, "")
+
+    def get_heartbeat_timeout(self):
+        # TODO decouple task and metric heartbeat timeouts
+        return self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(
+            ConfigKey.HEARTBEAT_TIMEOUT,
+            self.config.get(ConfigKey.METRICS_EXCHANGE, {}).get(ConfigKey.HEARTBEAT_TIMEOUT, 60),
+        )
 
     def to_json(self, config_file: str):
         with open(config_file, "w") as f:

@@ -9,7 +9,7 @@ scientists' experience working with FLARE. The new API covers client, server and
 
 Model Controller API
 --------------------
-The new Model Controller API greatly simplifies the experience of developing new federated learning workflows. Users can simply subclass
+The new :ref:`model_controller` greatly simplifies the experience of developing new federated learning workflows. Users can simply subclass
 the ModelController to develop new workflows. The new API doesn't require users to know the details of NVFlare constructs except for FLModel
 class, where it is simply a data structure that contains model weights, optimization parameters and metadata. 
 
@@ -87,22 +87,18 @@ illustrates two features:
   - How to perform Kaplan-Meier survival analysis in a federated setting without and with secure features via time-binning and Homomorphic Encryption (HE).
   - How to use the Flare ModelController API to contract a workflow to facilitate HE under simulator mode.
 
-
-Federated Logistic Regression with NR optimization
---------------------------------------------------
-The :github_nvflare_link:`Federated Logistic Regression with Second-Order Newton-Raphson optimization example <examples/advanced/lr-newton-raphson>`
-shows how to implement a federated binary classification via logistic regression with second-order Newton-Raphson optimization.
-
 BioNemo example for Drug Discovery
 ----------------------------------
 `BioNeMo <https://www.nvidia.com/en-us/clara/bionemo/>`_ is NVIDIA's generative AI platform for drug discovery.
 We included several examples of running BioNeMo in a federated learning environment using NVFlare:
 
-  - The :github_nvflare_link:`task fitting example <examples/advanced/bionemo/task_fitting/README.md>` includes a notebook that
-  shows how to obtain protein-learned representations in the form of embeddings using the ESM-1nv pre-trained model. The
-  model is trained with NVIDIA's BioNeMo framework for Large Language Model training and inference.
-  - The :github_nvflare_link:`downstream example <examples/advanced/bionemo/downstream/README.md>` shows three different downstream
-  tasks for fine-tuning a BioNeMo ESM-style model.
+  - The :github_nvflare_link:`task fitting example <examples/advanced/bionemo/task_fitting/README.md>` includes a notebook that shows how to obtain protein-learned representations in the form of embeddings using the ESM-1nv pre-trained model.
+  - The :github_nvflare_link:`downstream example <examples/advanced/bionemo/downstream/README.md>` shows three different downstream tasks for fine-tuning a BioNeMo ESM-style model.
+
+Federated Logistic Regression with NR optimization
+--------------------------------------------------
+The :github_nvflare_link:`Federated Logistic Regression with Second-Order Newton-Raphson optimization example <examples/advanced/lr-newton-raphson>`
+shows how to implement a federated binary classification via logistic regression with second-order Newton-Raphson optimization.
 
 Hearchical Federated Statistics
 --------------------------------
@@ -115,7 +111,7 @@ federated stats will be very helpful.
 
 FedAvg Early Stopping Example
 ------------------------------
-The `FedAvg Early Stopping example <https://github.com/NVIDIA/NVFlare/pull/2648>`_ tries to demonstrate that with the new server-side model
+The :github_nvflare_link:`FedAvg Early Stopping example <examples/hello-world/hello-fedavg>` tries to demonstrate that with the new server-side model
 controller API, it is very easy to change the control conditions and adjust workflows with a few lines of python code.
 
 Tensorflow Algorithms & Examples

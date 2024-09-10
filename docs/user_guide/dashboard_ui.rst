@@ -24,7 +24,7 @@ for the server(s) and overseer (if :ref:`HA mode <high_availability>` is enabled
 
 Member and Lead User Experience
 ===============================
-The website should alredy be set up when ``Member`` or ``Lead`` users are invited to sign up by the project admin.
+The website should already be set up when ``Member`` or ``Lead`` users are invited to sign up by the project admin.
 
 .. _dashboard_homepage:
 
