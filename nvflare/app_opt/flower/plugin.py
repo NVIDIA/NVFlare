@@ -12,13 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import shutil
 import tempfile
 from logging import ERROR
 from pathlib import Path
-from typing import List
 
 import pathspec
-import shutil
 from flwr.cli.config_utils import get_fab_metadata
 from flwr.cli.install import install_from_fab
 from flwr.common.logger import log
@@ -26,8 +25,8 @@ from flwr.common.typing import UserConfig
 from flwr.superexec.executor import Executor as FlowerSuperExecExecutor
 from flwr.superexec.executor import RunTracker
 from typing_extensions import Optional, override
-from nvflare.app_opt.flower.flower_job import FlowerJob
 
+from nvflare.app_opt.flower.flower_job import FlowerJob
 from nvflare.fuel.flare_api.flare_api import Session, new_secure_session
 
 SESSION_ARGS = {"username", "startup_kit_location", "debug", "timeout"}
@@ -72,11 +71,11 @@ def _copy_to_tmp_dir(directory: Path) -> Path:
             dst_path = tmp_dir / relative_path
             print(f"dst parent: {dst_path.parent}")
             dst_path.parent.mkdir(parents=True, exist_ok=True)
-            
+
             # Copy the file to the destination
             shutil.copy2(file, dst_path)
             print(f"Copied file {file} to {dst_path}")
-    
+
     # Return the created temporary directory
     return tmp_dir
 
@@ -148,8 +147,8 @@ class FlowerSuperExecPlugin(FlowerSuperExecExecutor):
             job_name = _get_job_name(publisher, app_name, fab_version)
 
             # Locate all allowed files in the FAB directory
-            tmp_dir = _copy_to_tmp_dir(Path(fab_path))
-            
+            tmp_dir = str(_copy_to_tmp_dir(Path(fab_path)))
+
             # Create FedJob
             job = FlowerJob(job_name, tmp_dir)
 
