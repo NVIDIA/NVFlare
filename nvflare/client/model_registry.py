@@ -36,11 +36,11 @@ class ModelRegistry(TaskRegistry):
         Returns:
             None if flare agent is None; or an FLModel object if a task is available within timeout.
         """
-        self.get_task(timeout)
-        if self.received_task is not None and self.received_task.data is not None:
-            if not isinstance(self.received_task.data, FLModel):
-                raise RuntimeError("self.received_task.data is not FLModel.")
-            return self.received_task.data
+        task = self.get_task(timeout)
+        if task is not None and task.data is not None:
+            if not isinstance(task.data, FLModel):
+                raise RuntimeError("task.data is not FLModel.")
+            return task.data
         return None
 
     def submit_model(self, model: FLModel) -> None:

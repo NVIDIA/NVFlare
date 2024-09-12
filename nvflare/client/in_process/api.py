@@ -61,7 +61,7 @@ class InProcessClientAPI(APISpec):
         self.abort = False
         self.stop = False
         self.rank = None
-        self.call_receive = False  # to check if users have call received for a new model
+        self.receive_called = False  # to check if users have call received for a new model
 
     def init(self, rank: Optional[str] = None, config: Optional[Dict] = None):
         """Initializes NVFlare Client API environment.
@@ -99,8 +99,9 @@ class InProcessClientAPI(APISpec):
         self.meta = meta
 
     def receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
-        self.call_receive = True
-        return self.__receive()
+        result = self.__receive()
+        self.receive_called = True
+        return result
 
     def __receive(self) -> Optional[FLModel]:
         if self.fl_model:
@@ -122,7 +123,7 @@ class InProcessClientAPI(APISpec):
         if self.__continue_job():
             self.logger.info("Try to send local model back to peer ")
 
-        if not self.call_receive:
+        if not self.receive_called:
             raise RuntimeError('"receive" needs to be called before sending model!')
 
         if self.client_config.get_transfer_type() == TransferType.DIFF:
@@ -136,7 +137,7 @@ class InProcessClientAPI(APISpec):
 
         if clear_cache:
             self.fl_model = None
-            self.call_receive = False
+            self.receive_called = False
 
     def system_info(self) -> Dict:
         return self.sys_info

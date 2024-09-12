@@ -64,7 +64,7 @@ class ExProcessClientAPI(APISpec):
     def __init__(self):
         self.process_model_registry = None
         self.logger = get_logger(self)
-        self.call_receive = False
+        self.receive_called = False
 
     def get_model_registry(self) -> ModelRegistry:
         """Gets the ModelRegistry."""
@@ -122,8 +122,9 @@ class ExProcessClientAPI(APISpec):
             raise e
 
     def receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
-        self.call_receive = True
-        return self.__receive(timeout)
+        result = self.__receive()
+        self.receive_called = True
+        return result
 
     def __receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
         model_registry = self.get_model_registry()
@@ -131,7 +132,7 @@ class ExProcessClientAPI(APISpec):
 
     def send(self, model: FLModel, clear_cache: bool = True) -> None:
         model_registry = self.get_model_registry()
-        if not self.call_receive:
+        if not self.receive_called:
             raise RuntimeError('"receive" needs to be called before sending model!')
         model_registry.submit_model(model=model)
         if clear_cache:
@@ -196,4 +197,4 @@ class ExProcessClientAPI(APISpec):
     def clear(self):
         model_registry = self.get_model_registry()
         model_registry.clear()
-        self.call_receive = False
+        self.receive_called = False
