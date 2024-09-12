@@ -115,9 +115,10 @@ Cross site validation!
 
 We can run it using NVFlare simulator
 
-```bash
-python3 job_train_and_cse.py
-```
+.. code-block:: bash
+
+  python3 job_train_and_cse.py
+
 
 During the first phase, the model will be trained.
 
@@ -134,16 +135,16 @@ Understanding the Output
 
 You can find the running logs and results inside the simulator's workspace:
 
-```bash
-$ ls /tmp/nvflare/jobs/workdir/
-server/  site-1/  site-2/  startup/
-```
+.. code-block:: bash
+
+  ls /tmp/nvflare/jobs/workdir/
+  server/  site-1/  site-2/  startup/
+
 
 The cross site validation results:
 
-```bash
-$ cat /tmp/nvflare/jobs/workdir/server/simulate_job/cross_site_val/cross_val_results.json
-```
+.. code-block:: bash
+  cat /tmp/nvflare/jobs/workdir/server/simulate_job/cross_site_val/cross_val_results.json
 
 Congratulations!
 
