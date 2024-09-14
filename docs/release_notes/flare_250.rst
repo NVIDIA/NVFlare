@@ -100,7 +100,7 @@ Federated Logistic Regression with NR optimization
 The :github_nvflare_link:`Federated Logistic Regression with Second-Order Newton-Raphson optimization example <examples/advanced/lr-newton-raphson>`
 shows how to implement a federated binary classification via logistic regression with second-order Newton-Raphson optimization.
 
-Hearchical Federated Statistics
+Hierarchical Federated Statistics
 --------------------------------
 :github_nvflare_link:`Hierarchical Federated Statistics <examples/advanced/federated-statistics/hierarchical_stats>` is helpful when there
 are multiple organizations involved.  For example, in the medical device applications, the medical devices usage statistics can be
