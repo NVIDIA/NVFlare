@@ -18,14 +18,18 @@ import warnings
 
 
 def experimental(reason):
-    """
-    This is a decorator which can be used to mark classes and functions
-    as experimental. It will result in a warning being emitted
+    """Marks classes and functionsas experimental.
+
+    It will result in a warning being emitted
     when the class is used.
 
-    # Example of usage:
+    Example of usage:
 
-    # Example 1: Use with class inheritance
+    # Example 1: Use with class inheritance:
+
+
+    .. code-block:
+
         @experimental("Because it's experimental")
         class ExperimentalBaseClass:
             def __init__(self):
@@ -41,6 +45,9 @@ def experimental(reason):
         experimental_instance = ExperimentalClass()  # This should emit two experimental warnings for base and derived class.
 
     # Example 2: Use with functions
+
+    .. code-block:
+
         @experimental("Experimental function")
         def test_f(a, b):
             print(f"hello {a} and {b}")
