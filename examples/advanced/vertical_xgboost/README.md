@@ -12,7 +12,7 @@ python3 -m pip install -r requirements.txt
 ```
 
 ## Preparing HIGGS Data
-In this example we showcase a binary classification task based on the [HIGGS dataset](https://archive.ics.uci.edu/dataset/280/higgs), which contains 11 million instances, each with 28 features and 1 class label.
+In this example we showcase a binary classification task based on the [HIGGS dataset](https://mlphysics.ics.uci.edu/data/higgs/), which contains 11 million instances, each with 28 features and 1 class label.
 
 ### Download and Store Dataset
 First download the dataset from the HIGGS link above, which is a single zipped `.csv` file.
