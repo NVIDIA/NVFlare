@@ -35,7 +35,8 @@ class StreamCell:
 
     @staticmethod
     def get_chunk_size():
-        """Get the default chunk size used by StreamCell
+        """Gets the default chunk size used by StreamCell.
+
         Byte stream are broken into chunks of this size before sending over Cellnet
         """
         return ByteStreamer.get_chunk_size()
@@ -43,8 +44,8 @@ class StreamCell:
     def send_stream(
         self, channel: str, topic: str, target: str, message: Message, secure=False, optional=False
     ) -> StreamFuture:
-        """
-        Send a byte-stream over a channel/topic asynchronously. The streaming is performed in a different thread.
+        """Sends a byte-stream over a channel/topic asynchronously. The streaming is performed in a different thread.
+
         The streamer will read from stream and send the data in chunks till the stream reaches EOF.
 
         Args:
@@ -55,7 +56,8 @@ class StreamCell:
             secure: Send the message with end-end encryption if True
             optional: Optional message, error maybe suppressed
 
-        Returns: StreamFuture that can be used to check status/progress, or register callbacks.
+        Returns:
+            A StreamFuture that can be used to check status/progress, or register callbacks.
             The future result is the number of bytes sent
 
         """
@@ -68,18 +70,17 @@ class StreamCell:
         )
 
     def register_stream_cb(self, channel: str, topic: str, stream_cb: Callable, *args, **kwargs):
-        """
-        Register a callback for reading stream. The stream_cb must have the following signature,
+        """Registers a callback for reading stream.
+
+        The stream_cb must have the following signature:
+
+        .. code-block: python
+
             stream_cb(future: StreamFuture, stream: Stream, resume: bool, *args, **kwargs) -> int
                 future: The future represents the ongoing streaming. It's done when streaming is complete.
                 stream: The stream to read the receiving data from
                 resume: True if this is a restarted stream
-                It returns the offset to resume from if this is a restarted stream
-
-        The resume_cb returns the offset to resume from:
-            resume_cb(stream_id: str, *args, **kwargs) -> int
-
-        If None, the stream is not resumable.
+                    It returns the offset to resume from if this is a restarted stream
 
         Args:
             channel: the channel of the request
@@ -96,8 +97,9 @@ class StreamCell:
     def send_blob(
         self, channel: str, topic: str, target: str, message: Message, secure=False, optional=False
     ) -> StreamFuture:
-        """
-        Send a BLOB (Binary Large Object) to the target. The payload of message is the BLOB. The BLOB must fit in
+        """Sends a BLOB (Binary Large Object) to the target.
+
+        The payload of message is the BLOB. The BLOB must fit in
         memory on the receiving end.
 
         Args:
@@ -108,7 +110,8 @@ class StreamCell:
             secure: Send the message with end-end encryption if True
             optional: Optional message, error maybe suppressed
 
-        Returns: StreamFuture that can be used to check status/progress and get result
+        Returns:
+            StreamFuture that can be used to check status/progress and get result
             The future result is the total number of bytes sent
 
         """
@@ -122,12 +125,16 @@ class StreamCell:
         return self.blob_streamer.send(channel, topic, target, message, secure, optional)
 
     def register_blob_cb(self, channel: str, topic: str, blob_cb, *args, **kwargs):
-        """
-        Register a callback for receiving the blob. This callback is invoked when the whole
-        blob is received. If streaming fails, the streamer will try again. The failed streaming
+        """Registers a callback for receiving the blob.
+
+        This callback is invoked when the whole blob is received.
+        If streaming fails, the streamer will try again. The failed streaming
         is ignored.
 
-        The callback must have the following signature,
+        The callback must have the following signature:
+
+        .. code-block: python
+
             blob_cb(future: StreamFuture, *args, **kwargs)
 
         The future's result is the final BLOB received
@@ -142,8 +149,7 @@ class StreamCell:
     def send_file(
         self, channel: str, topic: str, target: str, message: Message, secure=False, optional=False
     ) -> StreamFuture:
-        """
-        Send a file to target using stream API.
+        """Sends a file to target using stream API.
 
         Args:
             channel: channel for the message
@@ -153,7 +159,8 @@ class StreamCell:
             secure: Send the message with end-end encryption if True
             optional: Optional message, error maybe suppressed
 
-        Returns: StreamFuture that can be used to check status/progress and get the total bytes sent
+        Returns:
+            StreamFuture that can be used to check status/progress and get the total bytes sent
 
         """
         if not isinstance(message.payload, str):
@@ -166,8 +173,12 @@ class StreamCell:
         return self.file_streamer.send(channel, topic, target, message, secure, optional)
 
     def register_file_cb(self, channel: str, topic: str, file_cb, *args, **kwargs):
-        """
-        Register callbacks for file receiving. The callbacks must have the following signatures,
+        """Registers callbacks for file receiving.
+
+        The callbacks must have the following signatures:
+
+        .. code-block: python
+
             file_cb(future: StreamFuture, file_name: str, *args, **kwargs) -> str
                 The future represents the file receiving task and the result is the final file path
                 It returns the full path where the file will be written to
@@ -182,8 +193,9 @@ class StreamCell:
     def send_objects(
         self, channel: str, topic: str, target: str, message: Message, secure=False, optional=False
     ) -> ObjectStreamFuture:
-        """
-        Send a list of objects to the destination. Each object is sent as BLOB, so it must fit in memory
+        """Sends a list of objects to the destination.
+
+        Each object is sent as BLOB, so it must fit in memory
 
         Args:
             channel: channel for the message
@@ -193,7 +205,8 @@ class StreamCell:
             secure: Send the message with end-end encryption if True
             optional: Optional message, error maybe suppressed
 
-        Returns: ObjectStreamFuture that can be used to check status/progress, or register callbacks
+        Returns:
+            ObjectStreamFuture that can be used to check status/progress, or register callbacks
         """
         if not isinstance(message.payload, ObjectIterator):
             raise StreamError(f"Message payload is not an object iterator: {type(message.payload)}")
@@ -205,8 +218,12 @@ class StreamCell:
     def register_objects_cb(
         self, channel: str, topic: str, object_stream_cb: Callable, object_cb: Callable, *args, **kwargs
     ):
-        """
-        Register callback for receiving the object. The callback signature is,
+        """Registers callback for receiving the object.
+
+        The callback signature is:
+
+        .. code-block: python
+
             objects_stream_cb(future: ObjectStreamFuture, resume: bool, *args, **kwargs) -> int
                 future: It represents the streaming of all objects. An object CB can be registered with the future
                 to receive each object.
@@ -217,11 +234,6 @@ class StreamCell:
                 obj_sid: Object Stream ID
                 index: The index of the object
                 message: The header and payload is the object
-
-            resume_cb(stream_id: str, *args, **kwargs) -> int
-        is received. The index starts from 0. The callback must have the following signature,
-            objects_cb(future: ObjectStreamFuture, index: int, object: Any, headers: Optional[dict], *args, **kwargs)
-            resume_cb(stream_id: str, *args, **kwargs) -> int
 
         Args:
             channel: the channel of the request

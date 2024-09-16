@@ -372,6 +372,11 @@ For more examples of job patterns, see:
 * :class:`CCWFJob<nvflare.app_common.ccwf.ccwf_job.CCWFJob>`
 * :class:`FlowerJob<nvflare.app_opt.flower.flower_job.FlowerJob>`
 
+.. note::
+
+  Some of the default components included in these patterns are different, always refer to the
+  exported job configs for a full list of components used at every site.
+
 
 Running the Job
 ===============

@@ -69,11 +69,15 @@ class CyclicController(Controller):
             snapshot_every_n_rounds (int, optional): persist the server state every n rounds. Defaults to 1.
                 If n is 0 then no persist.
             order (Union[str, List[str]], optional): The order of relay.
+
                 - If a string is provided:
+
                     - "FIXED": Same order for every round.
                     - "RANDOM": Random order for every round.
                     - "RANDOM_WITHOUT_SAME_IN_A_ROW": Shuffled order, no repetition in consecutive rounds.
+
                 - If a list of strings is provided, it represents a custom order for relay.
+
             allow_early_termination: whether to allow early workflow termination from clients
 
         Raises:
