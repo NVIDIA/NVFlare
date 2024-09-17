@@ -23,7 +23,7 @@ Once the component is loaded, you can find it by ``component_id``, which is spec
 Component configuration and lookup
 ==================================
 To understand component configuration, we can look at the job configuration and see how the components are defined and
-used. Below is the server side configuration for :ref:`hello_pt`.
+used. Below is the server side configuration for :ref:`hello_pt_job_api`.
 
 .. code-block:: json
 

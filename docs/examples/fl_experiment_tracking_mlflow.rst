@@ -54,8 +54,6 @@ Adding MLflow Logging to Configurations
 Inside the config folder there are two files, ``config_fed_client.conf`` and ``config_fed_server.conf``.
 
 .. literalinclude:: ../../examples/advanced/experiment-tracking/mlflow/jobs/hello-pt-mlflow/app/config/config_fed_client.conf
-   :language:
-   :linenos:
    :caption: config_fed_client.conf
 
 Take a look at the components section of the client config at line 24.
@@ -70,8 +68,6 @@ Finally, :class:`ConvertToFedEvent<nvflare.app_common.widgets.convert_to_fed_eve
 This changes the event ``analytix_log_stats`` into a fed event ``fed.analytix_log_stats``, which will then be streamed from the clients to the server.
 
 .. literalinclude:: ../../examples/advanced/experiment-tracking/mlflow/jobs/hello-pt-mlflow/app/config/config_fed_server.conf
-   :language:
-   :linenos:
    :caption: config_fed_server.conf
 
 Under the component section in the server config, we have the

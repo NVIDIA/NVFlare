@@ -54,7 +54,7 @@ Getting Started
 ===============
 For first-time users and FL researchers, FLARE provides the :ref:`FL Simulator <fl_simulator>` that allows you to build, test, and deploy applications locally.
 The :ref:`Getting Started <getting_started>` guide covers installation and walks through an example application using the FL Simulator.
-Additional examples can be found at the :ref:`Examples Applications <example_applications_algorithms>`, which showcase different federated learning workflows and algorithms on various machine learning and deep learning tasks.
+Additional examples can be found at the :ref:`Examples Applications <example_applications>`, which showcase different federated learning workflows and algorithms on various machine learning and deep learning tasks.
 
 FLARE for Users
 ===============

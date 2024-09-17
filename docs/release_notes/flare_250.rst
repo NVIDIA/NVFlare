@@ -71,10 +71,11 @@ FOBS, the secure mechanism NVFlare uses for message serialization and deserializ
 These changes will reduce the number of decomposers that users have to register. The changes are:
 
   - Auto registering of decomposers on deserialization. The decomposer class is stored in the serialized data and the decomposers are
-  registered automatically when deserializing. If a component only receives serialized data but it doesn't perform serialization,
-  decomposer registering is not needed anymore.
+    registered automatically when deserializing. If a component only receives serialized data but it doesn't perform serialization,
+    decomposer registering is not needed anymore.
+
   - Data Class decomposer auto registering on serialization. If a decomposer is not found for a class, FOBS will try to treat the class
-  as a Data Class and register DataClassDecomposer for it. This works in most cases but not all.
+    as a Data Class and register DataClassDecomposer for it. This works in most cases but not all.
 
 
 New Examples
@@ -100,7 +101,7 @@ Federated Logistic Regression with NR optimization
 The :github_nvflare_link:`Federated Logistic Regression with Second-Order Newton-Raphson optimization example <examples/advanced/lr-newton-raphson>`
 shows how to implement a federated binary classification via logistic regression with second-order Newton-Raphson optimization.
 
-Hearchical Federated Statistics
+Hierarchical Federated Statistics
 --------------------------------
 :github_nvflare_link:`Hierarchical Federated Statistics <examples/advanced/federated-statistics/hierarchical_stats>` is helpful when there
 are multiple organizations involved.  For example, in the medical device applications, the medical devices usage statistics can be

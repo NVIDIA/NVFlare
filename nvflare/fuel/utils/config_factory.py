@@ -45,12 +45,12 @@ class ConfigFactory:
     def search_config_format(
         init_file_path: str, search_dirs: Optional[List[str]] = None, target_fmt: Optional[ConfigFormat] = None
     ) -> Tuple[Optional[ConfigFormat], Optional[str]]:
+        """Finds the configuration format and the location (file_path) for given initial init_file_path and search directories.
 
-        """find the configuration format and the location (file_path) for given initial init_file_path and search directories.
-            for example, the initial config file path given is config_client.json
-            the search function will ignore the .json extension and search "config_client.xxx" in the given directory in
-            specified extension search order. The first found file_path will be used as configuration.
-            the ".xxx" is one of the extensions defined in the configuration format.
+        For example, the initial config file path given is `config_client.json`
+        the search function will ignore the .json extension and search "config_client.xxx" in the given directory in
+        specified extension search order. The first found file_path will be used as configuration.
+        the ".xxx" is one of the extensions defined in the configuration format.
 
         Args:
             init_file_path: initial file_path for the configuration
@@ -98,11 +98,13 @@ class ConfigFactory:
         file_path: str, search_dirs: Optional[List[str]] = None, target_fmt: Optional[ConfigFormat] = None
     ) -> Optional[Config]:
 
-        """Find the configuration for given initial init_file_path and search directories.
-            for example, the initial config file path given is config_client.json
-            the search function will ignore the .json extension and search "config_client.xxx" in the given directory in
-            specified extension search order. The first found file_path will be used as configuration.
-            the ".xxx" is one of the extensions defined in the configuration format.
+        """Finds the configuration for given initial init_file_path and search directories.
+
+        For example, the initial config file path given is `config_client.json`
+        the search function will ignore the .json extension and search "config_client.xxx" in the given directory in
+        specified extension search order. The first found file_path will be used as configuration.
+        the ".xxx" is one of the extensions defined in the configuration format.
+
         Args:
             file_path: initial file path
             search_dirs: search directory. If none, the parent directory of init_file_path will be used as search dir
@@ -124,8 +126,7 @@ class ConfigFactory:
 
     @staticmethod
     def get_config_loader(config_format: ConfigFormat) -> Optional[ConfigLoader]:
-
-        """return ConfigLoader for given config_format
+        """Returns ConfigLoader for given config_format
 
         Args:
             config_format: ConfigFormat
