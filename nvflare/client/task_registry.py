@@ -35,7 +35,7 @@ class TaskRegistry:
                 self.sys_info[k] = v
         self.rank = rank
 
-    def _receive(self, timeout: Optional[float] = None):
+    def _receive(self, timeout: Optional[float] = None) -> Task:
         if not self.flare_agent:
             return
 
@@ -47,6 +47,9 @@ class TaskRegistry:
         if task.data is None:
             raise RuntimeError("no received task.data")
 
+        return task
+
+    def _set_task(self, task: Task):
         self.received_task = task
         self.task_name = task.task_name
         self.cache_loaded = True
@@ -75,7 +78,8 @@ class TaskRegistry:
             None if flare agent is None; or a Task object if task is available within timeout.
         """
         if not self.cache_loaded:
-            self._receive(timeout)
+            task = self._receive(timeout)
+            self._set_task(task)
         return self.received_task
 
     def get_sys_info(self) -> Dict:
@@ -104,6 +108,7 @@ class TaskRegistry:
     def clear(self) -> None:
         """Clears the cached received task."""
         self.received_task = None
+        self.task_name = ""
         self.cache_loaded = False
 
     def __str__(self):

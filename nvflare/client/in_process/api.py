@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import logging
 import os
 import time
@@ -22,7 +23,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.client.api_spec import APISpec
-from nvflare.client.config import ClientConfig, ConfigKey
+from nvflare.client.config import ClientConfig, ConfigKey, TransferType
 from nvflare.client.constants import SYS_ATTRS
 from nvflare.client.utils import DIFF_FUNCS
 from nvflare.fuel.data_event.data_bus import DataBus
@@ -41,7 +42,7 @@ class InProcessClientAPI(APISpec):
 
         Args:
             task_metadata (dict): task metadata, added to client_config.
-            result_check_interval (float): how often to check if result is availabe.
+            result_check_interval (float): how often to check if result is available.
         """
         self.data_bus = DataBus()
         self.data_bus.subscribe([TOPIC_GLOBAL_RESULT], self.__receive_callback)
@@ -60,6 +61,7 @@ class InProcessClientAPI(APISpec):
         self.abort = False
         self.stop = False
         self.rank = None
+        self.receive_called = False  # to check if users have call received for a new model
 
     def init(self, rank: Optional[str] = None, config: Optional[Dict] = None):
         """Initializes NVFlare Client API environment.
@@ -97,6 +99,11 @@ class InProcessClientAPI(APISpec):
         self.meta = meta
 
     def receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
+        result = self.__receive()
+        self.receive_called = True
+        return result
+
+    def __receive(self) -> Optional[FLModel]:
         if self.fl_model:
             return self.fl_model
 
@@ -114,16 +121,23 @@ class InProcessClientAPI(APISpec):
 
     def send(self, model: FLModel, clear_cache: bool = True) -> None:
         if self.__continue_job():
-            self.logger.info("send local model back to peer ")
+            self.logger.info("Try to send local model back to peer ")
 
-        if self.client_config.get_transfer_type() == "DIFF":
+        if not self.receive_called:
+            raise RuntimeError('"receive" needs to be called before sending model!')
+
+        if self.client_config.get_transfer_type() == TransferType.DIFF:
             model = self._prepare_param_diff(model)
+
+        if model.params is None and model.metrics is None:
+            raise RuntimeError("the model to send does not have either params or metrics")
 
         shareable = FLModelUtils.to_shareable(model)
         self.event_manager.fire_event(TOPIC_LOCAL_RESULT, shareable)
 
         if clear_cache:
             self.fl_model = None
+            self.receive_called = False
 
     def system_info(self) -> Dict:
         return self.sys_info
@@ -147,7 +161,7 @@ class InProcessClientAPI(APISpec):
         if not self.__continue_job():
             return False
         else:
-            self.receive()
+            self.__receive()
 
         return self.fl_model is not None
 
@@ -190,9 +204,6 @@ class InProcessClientAPI(APISpec):
                     model.params_type = ParamsType.DIFF
                 except Exception as e:
                     raise RuntimeError(f"params diff function failed: {e}")
-
-        if model.params is None and model.metrics is None:
-            raise RuntimeError("the model to send does not have either params or metrics")
 
         return model
 

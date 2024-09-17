@@ -64,8 +64,8 @@ class APISpec(ABC):
         """Sends the model to NVFlare side.
 
         Args:
-            fl_model (FLModel): Sends a FLModel object.
-            clear_cache (bool): clear cache after send.
+            model (FLModel): The FLModel object to be sent.
+            clear_cache (bool): Whether to clear the cache after send.
 
         Example:
 
@@ -87,7 +87,7 @@ class APISpec(ABC):
             system information includes job id and site name.
 
         Returns:
-        A dict of system information.
+            A dict of system information.
 
         Example:
 
