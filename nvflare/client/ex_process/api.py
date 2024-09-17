@@ -64,6 +64,7 @@ class ExProcessClientAPI(APISpec):
     def __init__(self):
         self.process_model_registry = None
         self.logger = get_logger(self)
+        self.receive_called = False
 
     def get_model_registry(self) -> ModelRegistry:
         """Gets the ModelRegistry."""
@@ -121,34 +122,23 @@ class ExProcessClientAPI(APISpec):
             raise e
 
     def receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
-        """Receives model from NVFlare side.
+        result = self.__receive()
+        self.receive_called = True
+        return result
 
-        Returns:
-            An FLModel received.
-        """
+    def __receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
         model_registry = self.get_model_registry()
         return model_registry.get_model(timeout)
 
     def send(self, model: FLModel, clear_cache: bool = True) -> None:
-        """Sends the model to Controller side.
-        Args:
-            model (FLModel): Sends a FLModel object.
-            clear_cache (bool): To clear the cache or not.
-        """
         model_registry = self.get_model_registry()
+        if not self.receive_called:
+            raise RuntimeError('"receive" needs to be called before sending model!')
         model_registry.submit_model(model=model)
         if clear_cache:
             self.clear()
 
     def system_info(self) -> Dict:
-        """Gets NVFlare system information.
-
-        System information will be available after a valid FLModel is received.
-        It does not retrieve information actively.
-
-        Returns:
-           A dict of system information.
-        """
         model_registry = self.get_model_registry()
         return model_registry.get_sys_info()
 
@@ -172,7 +162,7 @@ class ExProcessClientAPI(APISpec):
 
     def is_running(self) -> bool:
         try:
-            self.receive()
+            self.__receive()
             return True
         except FlareAgentException:
             return False
@@ -205,6 +195,6 @@ class ExProcessClientAPI(APISpec):
         flare_agent.log(dxo)
 
     def clear(self):
-        """Clears the model registry."""
         model_registry = self.get_model_registry()
         model_registry.clear()
+        self.receive_called = False
