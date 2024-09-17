@@ -24,20 +24,25 @@ operator_mapping = {
 
 
 def parse_compare_criteria(compare_expr: Optional[str] = None) -> Tuple[str, float, Callable]:
-    """
-        Parse the compare expression into individual component
-        compare expression is in the format of string literal : "<key> <op> <value"
+    """Parses the compare expression into individual component.
+
+        The compare expression is in the format of string literal : "<key> <op> <value>"
         such as
-            accuracy >= 0.5
-            loss > 2.4
+
+        .. code-block::
+            "accuracy >= 0.5"
+            "loss > 2.4"
+
     Args:
         compare_expr: string literal in the format of  "<key> <op> <value>"
-    Returns: Tuple key, value, operator
+
+    Returns:
+        A Tuple of (key, value, operator)
     """
     tokens = compare_expr.split(" ")
     if len(tokens) != 3:
         raise ValueError(
-            f"Invalid early_stop_condition, expecting form of '<metric> <op> value' but got '{compare_expr}'"
+            f"Invalid early_stop_condition, expecting form of '<key> <op> <value>' but got '{compare_expr}'"
         )
 
     key = tokens[0]

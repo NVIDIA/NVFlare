@@ -1,4 +1,4 @@
-.. _hello_fedavg_w_numpy:
+.. _hello_fedavg_numpy:
 
 Hello FedAvg with NumPy
 =======================
@@ -35,7 +35,7 @@ The following steps compose one cycle of weight updates, called a **round**:
  #. These updates are then sent to the server which will aggregate them to produce a model with new weights.
  #. Finally, the server sends this updated version of the model back to each client, so the clients can continue to calculate the next model weights in future rounds.
 
-For this exercise, we will be working with the ``hello-fedavg-numpy`` application in the examples folder.
+For this exercise, we will be working with the ``hello-fedavg-numpy`` in the examples folder.
 
 Let's get started. First clone the repo, if you haven't already:
 
