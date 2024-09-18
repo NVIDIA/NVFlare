@@ -71,8 +71,8 @@ def send(model: FLModel, clear_cache: bool = True) -> None:
     """Sends the model to NVFlare side.
 
     Args:
-        model (FLModel): Sends a FLModel object.
-        clear_cache: clear cache after send
+        model (FLModel): The FLModel object to be sent.
+        clear_cache (bool): Whether to clear the cache after send.
     """
     if not isinstance(model, FLModel):
         raise TypeError("model needs to be an instance of FLModel")
