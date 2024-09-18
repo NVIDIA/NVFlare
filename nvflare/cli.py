@@ -46,10 +46,8 @@ CMD_CONFIG = "config"
 
 
 def check_python_version():
-    if sys.version_info >= (3, 11):
-        raise RuntimeError("Python versions 3.11 and above are not yet supported. Please use Python 3.8, 3.9 or 3.10.")
-    if sys.version_info < (3, 8):
-        raise RuntimeError("Python versions 3.7 and below are not supported. Please use Python 3.8, 3.9 or 3.10")
+    if sys.version_info < (3, 9):
+        raise RuntimeError("Python versions 3.8 and below are not supported. Please use Python >= 3.9")
 
 
 def def_provision_parser(sub_cmd):
