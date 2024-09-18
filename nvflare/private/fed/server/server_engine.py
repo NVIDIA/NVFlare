@@ -56,7 +56,12 @@ from nvflare.private.admin_defs import Message, MsgHeader
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, RequestHeader, TrainingTopic, new_cell_message
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.private.fed.server.server_state import ServerState
-from nvflare.private.fed.utils.fed_utils import get_return_code, security_close, set_message_security_data
+from nvflare.private.fed.utils.fed_utils import (
+    add_custom_dir_to_path,
+    get_return_code,
+    security_close,
+    set_message_security_data,
+)
 from nvflare.private.scheduler_constants import ShareableHeader
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import InfoCollector
@@ -237,7 +242,7 @@ class ServerEngine(ServerEngineInternalSpec):
     ):
         new_env = os.environ.copy()
         if app_custom_folder != "":
-            new_env["PYTHONPATH"] = new_env.get("PYTHONPATH", "") + os.pathsep + app_custom_folder
+            add_custom_dir_to_path(app_custom_folder, new_env)
 
         listen_port = open_ports[1]
         if snapshot:

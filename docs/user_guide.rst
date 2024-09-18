@@ -23,3 +23,5 @@ please refer to the :ref:`programming_guide`.
    user_guide/helm_chart
    user_guide/confidential_computing
    user_guide/hierarchy_unification_bridge
+   user_guide/federated_xgboost
+   user_guide/flower_integration

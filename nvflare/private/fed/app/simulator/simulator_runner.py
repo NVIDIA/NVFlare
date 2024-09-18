@@ -62,6 +62,7 @@ from nvflare.private.fed.simulator.simulator_app_runner import SimulatorServerAp
 from nvflare.private.fed.simulator.simulator_audit import SimulatorAuditor
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 from nvflare.private.fed.utils.fed_utils import (
+    add_custom_dir_to_path,
     add_logfile_handler,
     custom_fobs_initialize,
     get_simulator_app_root,
@@ -173,6 +174,10 @@ class SimulatorRunner(FLComponent):
         self.simulator_root = self.args.workspace
         self._cleanup_workspace()
         init_security_content_service(self.args.workspace)
+
+        os.makedirs(os.path.join(self.simulator_root, "server"))
+        log_file = os.path.join(self.simulator_root, "server", WorkspaceConstants.LOG_FILE_NAME)
+        add_logfile_handler(log_file)
 
         try:
             data_bytes, job_name, meta = self.validate_job_data()
@@ -351,9 +356,11 @@ class SimulatorRunner(FLComponent):
                         app = os.path.join(temp_job_folder, app_name)
                         shutil.copytree(app, app_root)
 
-            job_meta_file = os.path.join(self.simulator_root, "server", WorkspaceConstants.JOB_META_FILE)
-            with open(job_meta_file, "w") as f:
-                json.dump(meta, f, indent=4)
+                        job_meta_file = os.path.join(
+                            self.simulator_root, p, SimulatorConstants.JOB_NAME, WorkspaceConstants.JOB_META_FILE
+                        )
+                        with open(job_meta_file, "w") as f:
+                            json.dump(meta, f, indent=4)
 
     def split_clients(self, clients: [], gpus: []):
         split_clients = []
@@ -500,9 +507,6 @@ class SimulatorRunner(FLComponent):
         app_server_root = os.path.join(self.simulator_root, "server", SimulatorConstants.JOB_NAME, "app_server")
         args.workspace = os.path.join(self.simulator_root, "server")
         os.chdir(args.workspace)
-
-        log_file = os.path.join(self.simulator_root, "server", WorkspaceConstants.LOG_FILE_NAME)
-        add_logfile_handler(log_file)
 
         args.server_config = os.path.join("config", JobConstants.SERVER_JOB_CONFIG)
         app_custom_folder = os.path.join(app_server_root, "custom")
@@ -667,6 +671,10 @@ class SimulatorClientRunner(FLComponent):
             name=ConfigVarName.DECOMPOSER_MODULE, conf=SystemConfigs.RESOURCES_CONF
         )
 
+        app_custom_folder = Workspace(root_dir=client_workspace, site_name="mgh").get_app_custom_dir(
+            SimulatorConstants.JOB_NAME
+        )
+
         command = (
             sys.executable
             + " -m nvflare.private.fed.app.simulator.simulator_worker -o "
@@ -695,7 +703,7 @@ class SimulatorClientRunner(FLComponent):
         if gpu:
             command += " --gpu " + str(gpu)
         new_env = os.environ.copy()
-        new_env["PYTHONPATH"] = os.pathsep.join(self._get_new_sys_path())
+        add_custom_dir_to_path(app_custom_folder, new_env)
 
         _ = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
 

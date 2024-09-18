@@ -16,6 +16,7 @@ from abc import ABC, abstractmethod
 from typing import Callable, List, Union
 
 from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.workflows.base_model_controller import BaseModelController
 
 
@@ -23,13 +24,13 @@ class ModelController(BaseModelController, ABC):
     def __init__(
         self,
         *args,
-        persistor_id: str = "persistor",
+        persistor_id: str = AppConstants.DEFAULT_PERSISTOR_ID,
         **kwargs,
     ):
         """Model Controller API for FLModel-based Controller.
 
         Args:
-            persistor_id (str, optional): ID of the persistor component. Defaults to "".
+            persistor_id (str, optional): ID of the persistor component. Defaults to AppConstants.DEFAULT_PERSISTOR_ID ("persistor").
         """
         super().__init__(*args, persistor_id, **kwargs)
 
@@ -103,7 +104,7 @@ class ModelController(BaseModelController, ABC):
             callback=callback,
         )
 
-    def load_model(self):
+    def load_model(self) -> FLModel:
         """Load initial model from persistor. If persistor is not configured, returns empty FLModel.
 
         Returns:
@@ -111,7 +112,7 @@ class ModelController(BaseModelController, ABC):
         """
         return super().load_model()
 
-    def save_model(self, model: FLModel):
+    def save_model(self, model: FLModel) -> None:
         """Saves model with persistor. If persistor is not configured, does not save.
 
         Args:
@@ -122,12 +123,14 @@ class ModelController(BaseModelController, ABC):
         """
         super().save_model(model)
 
-    def sample_clients(self, num_clients=None):
+    def sample_clients(self, num_clients: int = None) -> List[str]:
         """Returns a list of `num_clients` clients.
 
         Args:
-            num_clients: number of clients to return. If None or > number available clients, returns all available clients. Defaults to None.
+            num_clients: number of clients to return. If None or > number available clients,
+                returns all available clients. Defaults to None.
 
-        Returns: list of clients.
+        Returns:
+            A list of clients names.
         """
         return super().sample_clients(num_clients)

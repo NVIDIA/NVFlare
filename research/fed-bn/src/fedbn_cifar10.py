@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# (optional) metrics
-import comet_ml
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -24,13 +22,16 @@ from net import Net
 # (1) import nvflare client API
 import nvflare.client as flare
 
-# (optional) set a fix place so we don't need to download everytime
+# (optional) metrics
+from nvflare.client.tracking import SummaryWriter
+
+# (optional) set a fix place for data storage
+# so we don't need to download everytime
 DATASET_PATH = "/tmp/nvflare/data"
+
 # (optional) We change to use GPU to speed things up.
 # if you want to use CPU, change DEVICE="cpu"
 DEVICE = "cuda:0"
-# input your own comet ml account API key
-COMET_API_KEY = ""
 
 
 # key function for FedBN
@@ -56,9 +57,7 @@ def main():
     # (2) initializes NVFlare client API
     flare.init()
 
-    comet_ml.init()
-    exp = comet_ml.Experiment(project_name="fedbn_cifar10", api_key=COMET_API_KEY)
-
+    summary_writer = SummaryWriter()
     while flare.is_running():
         # (3) receives FLModel from NVFlare
         input_model = flare.receive()
@@ -75,6 +74,7 @@ def main():
         # (optional) calculate total steps
         steps = epochs * len(trainloader)
         for epoch in range(epochs):  # loop over the dataset multiple times
+
             running_loss = 0.0
             for i, data in enumerate(trainloader, 0):
                 # get the inputs; data is a list of [inputs, labels]
@@ -96,7 +96,7 @@ def main():
                     print(f"[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
                     global_step = input_model.current_round * steps + epoch * len(trainloader) + i
 
-                    exp.log_metrics({"loss": running_loss}, step=global_step)
+                    summary_writer.add_scalar(tag="loss", scalar=running_loss, global_step=global_step)
                     running_loss = 0.0
 
         print("Finished Training")
@@ -131,6 +131,7 @@ def main():
 
         # (6) evaluate on received model for model selection
         accuracy = evaluate(input_model.params)
+        summary_writer.add_scalar(tag="global_model_accuracy", scalar=accuracy, global_step=input_model.current_round)
         # (7) construct trained FL model
         output_model = flare.FLModel(
             params=net.cpu().state_dict(),

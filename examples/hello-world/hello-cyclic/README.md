@@ -1,17 +1,18 @@
 # Hello Cyclic Weight Transfer
 
 ["Cyclic Weight Transfer"](https://pubmed.ncbi.nlm.nih.gov/29617797/
-) (CWT) is an alternative to the scatter-and-gather approach used in [FedAvg](https://arxiv.org/abs/1602.05629). CWT uses the [CyclicController](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.cyclic_ctl.html) to pass the model weights from one site to the next for repeated fine-tuning.
+) (CWT) is an alternative to [FedAvg](https://arxiv.org/abs/1602.05629). CWT uses the [Cyclic Controller](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.cyclic.html) to pass the model weights from one site to the next for repeated fine-tuning.
 
 > **_NOTE:_** This example uses the [MNIST](http://yann.lecun.com/exdb/mnist/) handwritten digits dataset and will load its data within the trainer code.
 
-You can follow the [hello_world notebook](../hello_world.ipynb) or the following:
+To run this example with the FLARE API, you can follow the [hello_world notebook](../hello_world.ipynb), or you can quickly get
+started with the following:
 
 ### 1. Install NVIDIA FLARE
 
-Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions to install NVFlare.
+Follow the [Installation](../../getting_started/README.md) instructions to install NVFlare.
 
-Install additional requirements:
+Install additional requirements (if you already have a specific version of nvflare installed in your environment, you may want to remove nvflare in the requirements to avoid reinstalling nvflare):
 
 ```
 pip3 install tensorflow
@@ -25,42 +26,31 @@ Prepare the data first:
 bash ./prepare_data.sh
 ```
 
-Use nvflare simulator to run the hello-examples:
+Run the script using the job API to create the job and run it with the simulator:
 
-```bash
-nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 ./jobs/hello-cyclic
+```
+python3 cyclic_script_runner.py
 ```
 
 ### 3. Access the logs and results
 
-You can find the running logs and results inside the simulator's workspace/simulate_job
+You can find the running logs and results inside the simulator's workspace:
 
 ```bash
-$ ls /tmp/nvflare/simulate_job/
-app_server  app_site-1  app_site-2  log.txt
-
+$ ls /tmp/nvflare/jobs/workdir
 ```
 
 ### 4. Notes on running with GPUs
 
-For running with GPUs, we recommend using
+For running with GPUs, we recommend using the
 [NVIDIA TensorFlow docker](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow)
 
-If you choose to run the example using GPUs, it is important to note that,
-by default, TensorFlow will attempt to allocate all available GPU memory at the start.
+If you choose to run the example using GPUs, it is important to note that by default, TensorFlow will attempt to allocate all available GPU memory at the start.
 In scenarios where multiple clients are involved, you have a couple of options to address this.
 
 One approach is to include specific flags to prevent TensorFlow from allocating all GPU memory.
 For instance:
 
 ```bash
-TF_FORCE_GPU_ALLOW_GROWTH=true nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 ./jobs/hello-cyclic
-```
-
-If you possess more GPUs than clients,
-an alternative strategy is to run one client on each GPU.
-This can be achieved as illustrated below:
-
-```bash
-TF_FORCE_GPU_ALLOW_GROWTH=true nvflare simulator -w /tmp/nvflare/ -n 2 -gpu 0,1 ./jobs/hello-cyclic
+TF_FORCE_GPU_ALLOW_GROWTH=true python3 cyclic_script-executor-hello-cyclic.py
 ```

@@ -23,7 +23,7 @@
       "tasks": ["train"],
       "filters":[
           {
-          "name": "HEModelEncryptor",
+          "path": "nvflare.app_opt.he.model_encryptor.HEModelEncryptor",
           "args": {
             "weigh_by_local_iter": true
           }
@@ -34,7 +34,7 @@
       "tasks": ["submit_model"],
       "filters":[
           {
-          "name": "HEModelEncryptor",
+          "path": "nvflare.app_opt.he.model_encryptor.HEModelEncryptor",
           "args": {
             "weigh_by_local_iter": false
           }
@@ -47,7 +47,7 @@
       "tasks": ["train", "validate"],
       "filters":[
           {
-          "name": "HEModelDecryptor",
+          "path": "nvflare.app_opt.he.model_decryptor.HEModelDecryptor",
           "args": {
           }
         }

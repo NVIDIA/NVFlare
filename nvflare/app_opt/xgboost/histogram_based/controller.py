@@ -107,13 +107,14 @@ class XGBFedController(Controller):
             if not self._get_certificates(fl_ctx):
                 self.log_error(fl_ctx, "Can't get required certificates for XGB FL server in secure mode.")
                 return
+            self.log_info(fl_ctx, "Running XGB FL server in secure mode.")
             self._xgb_fl_server = multiprocessing.Process(
                 target=xgb_federated.run_federated_server,
-                args=(self._port, len(clients), self._server_key_path, self._server_cert_path, self._ca_cert_path),
+                args=(len(clients), self._port, self._server_key_path, self._server_cert_path, self._ca_cert_path),
             )
         else:
             self._xgb_fl_server = multiprocessing.Process(
-                target=xgb_federated.run_federated_server, args=(self._port, len(clients))
+                target=xgb_federated.run_federated_server, args=(len(clients), self._port)
             )
         self._xgb_fl_server.start()
         self._started = True

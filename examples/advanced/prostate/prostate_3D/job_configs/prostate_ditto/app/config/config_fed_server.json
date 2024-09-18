@@ -10,7 +10,7 @@
   "components": [
     {
       "id": "persistor",
-      "name": "PTFileModelPersistor",
+      "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
       "args": {
       "model": {
             "path": "monai.networks.nets.unet.UNet",
@@ -27,17 +27,17 @@
     },
     {
       "id": "shareable_generator",
-      "name": "FullModelShareableGenerator",
+      "path": "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator",
       "args": {}
     },
     {
       "id": "aggregator",
-      "name": "InTimeAccumulateWeightedAggregator",
+      "path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
       "args": {}
     },
     {
       "id": "model_selector",
-      "name": "IntimeModelSelector",
+      "path": "nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector",
       "args": {
         "weigh_by_local_iter": true
       }
@@ -46,7 +46,7 @@
   "workflows": [
     {
       "id": "scatter_and_gather",
-      "name": "ScatterAndGather",
+      "path": "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
       "args": {
         "min_clients": "{min_clients}",
         "num_rounds": "{num_rounds}",

@@ -23,15 +23,16 @@ class Constant:
 
     # keys of adaptor config parameters
     CONF_KEY_CLIENT_RANKS = "client_ranks"
-    CONF_KEY_RANK = "rank"
     CONF_KEY_WORLD_SIZE = "world_size"
     CONF_KEY_NUM_ROUNDS = "num_rounds"
-    CONF_KEY_TRAINING_MODE = "training_mode"
+    CONF_KEY_DATA_SPLIT_MODE = "data_split_mode"
+    CONF_KEY_SECURE_TRAINING = "secure_training"
     CONF_KEY_XGB_PARAMS = "xgb_params"
     CONF_KEY_XGB_OPTIONS = "xgb_options"
+    CONF_KEY_DISABLE_VERSION_CHECK = "xgb_disable_version_check"
 
     # default component config values
-    CONFIG_TASK_TIMEOUT = 20
+    CONFIG_TASK_TIMEOUT = 60
     START_TASK_TIMEOUT = 10
     XGB_SERVER_READY_TIMEOUT = 10.0
 
@@ -73,6 +74,7 @@ class Constant:
     ERR_TARGET_ERROR = -4
 
     EXIT_CODE_CANT_START = 101
+    EXIT_CODE_JOB_ABORT = 102
 
     # XGB operation parameter keys
     PARAM_KEY_RANK = "xgb.rank"
@@ -86,29 +88,37 @@ class Constant:
     PARAM_KEY_REPLY = "xgb.reply"
     PARAM_KEY_REQUEST = "xgb.request"
     PARAM_KEY_EVENT = "xgb.event"
+    PARAM_KEY_DATA_SPLIT_MODE = "xgb.data_split_mode"
+    PARAM_KEY_SECURE_TRAINING = "xgb.secure_training"
+    PARAM_KEY_CONFIG_ERROR = "xgb.config_error"
+    PARAM_KEY_DISABLE_VERSION_CHECK = "xgb.disable_version_check"
 
     RUNNER_CTX_SERVER_ADDR = "server_addr"
     RUNNER_CTX_PORT = "port"
     RUNNER_CTX_CLIENT_NAME = "client_name"
     RUNNER_CTX_NUM_ROUNDS = "num_rounds"
-    RUNNER_CTX_TRAINING_MODE = "training_mode"
+    RUNNER_CTX_DATA_SPLIT_MODE = "data_split_mode"
+    RUNNER_CTX_SECURE_TRAINING = "secure_training"
     RUNNER_CTX_XGB_PARAMS = "xgb_params"
     RUNNER_CTX_XGB_OPTIONS = "xgb_options"
+    RUNNER_CTX_XGB_DISABLE_VERSION_CHECK = "xgb_disable_version_check"
     RUNNER_CTX_WORLD_SIZE = "world_size"
     RUNNER_CTX_RANK = "rank"
-    RUNNER_CTX_DATA_LOADER = "data_loader"
-    RUNNER_CTX_TB_DIR = "tb_dir"
     RUNNER_CTX_MODEL_DIR = "model_dir"
 
     EVENT_BEFORE_BROADCAST = "xgb.before_broadcast"
     EVENT_AFTER_BROADCAST = "xgb.after_broadcast"
     EVENT_BEFORE_ALL_GATHER_V = "xgb.before_all_gather_v"
     EVENT_AFTER_ALL_GATHER_V = "xgb.after_all_gather_v"
+    EVENT_XGB_JOB_CONFIGURED = "xgb.job_configured"
+    EVENT_XGB_ABORTED = "xgb.aborted"
 
     HEADER_KEY_ENCRYPTED_DATA = "xgb.encrypted_data"
     HEADER_KEY_HORIZONTAL = "xgb.horizontal"
     HEADER_KEY_ORIGINAL_BUF_SIZE = "xgb.original_buf_size"
     HEADER_KEY_IN_AGGR = "xgb.in_aggr"
+    HEADER_KEY_WORLD_SIZE = "xgb.world_size"
+    HEADER_KEY_SIZE_DICT = "xgb.size_dict"
 
     DUMMY_BUFFER_SIZE = 4
 
@@ -117,25 +127,3 @@ GRPC_DEFAULT_OPTIONS = [
     ("grpc.max_send_message_length", MAX_FRAME_SIZE),
     ("grpc.max_receive_message_length", MAX_FRAME_SIZE),
 ]
-
-
-class SplitMode:
-    ROW = 0
-    COL = 1
-    COL_SECURE = 2
-    ROW_SECURE = 3
-
-
-# Mapping of text training mode to split mode
-TRAINING_MODE_MAPPING = {
-    "h": SplitMode.ROW,
-    "horizontal": SplitMode.ROW,
-    "v": SplitMode.COL,
-    "vertical": SplitMode.COL,
-    "hs": SplitMode.ROW_SECURE,
-    "horizontal_secure": SplitMode.ROW_SECURE,
-    "vs": SplitMode.COL_SECURE,
-    "vertical_secure": SplitMode.COL_SECURE,
-}
-
-SECURE_TRAINING_MODES = {"hs", "horizontal_secure", "vs", "vertical_secure"}

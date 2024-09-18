@@ -45,6 +45,7 @@ STATUS_IN_REPLY = "in_reply"
 STATUS_NOT_RECEIVED = "not_received"
 STATUS_REPLIED = "replied"
 STATUS_ABORTED = "aborted"
+STATUS_DUP_REQUEST = "dup_request"
 
 # Topics for Reliable Message
 TOPIC_RELIABLE_REQUEST = "RM.RELIABLE_REQUEST"
@@ -53,6 +54,7 @@ TOPIC_RELIABLE_REPLY = "RM.RELIABLE_REPLY"
 PROP_KEY_TX_ID = "RM.TX_ID"
 PROP_KEY_TOPIC = "RM.TOPIC"
 PROP_KEY_OP = "RM.OP"
+PROP_KEY_DEBUG_INFO = "RM.DEBUG_INFO"
 
 
 def _extract_result(reply: dict, target: str):
@@ -96,55 +98,67 @@ class _RequestReceiver:
         self.tx_id = None
         self.reply_time = None
         self.replying = False
+        self.lock = threading.Lock()
 
     def process(self, request: Shareable, fl_ctx: FLContext) -> Shareable:
-        self.tx_id = request.get_header(HEADER_TX_ID)
-        op = request.get_header(HEADER_OP)
-        peer_ctx = fl_ctx.get_peer_context()
-        assert isinstance(peer_ctx, FLContext)
-        self.source = peer_ctx.get_identity_name()
-        if op == OP_REQUEST:
-            # it is possible that a new request for the same tx is received while we are processing the previous one
-            if not self.rcv_time:
-                self.rcv_time = time.time()
-                self.per_msg_timeout = request.get_header(HEADER_PER_MSG_TIMEOUT)
-                self.tx_timeout = request.get_header(HEADER_TX_TIMEOUT)
+        if not ReliableMessage.is_available():
+            return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
 
-                # start processing
-                ReliableMessage.debug(fl_ctx, f"started processing request of topic {self.topic}")
-                self.executor.submit(self._do_request, request, fl_ctx)
-                return _status_reply(STATUS_IN_PROCESS)  # ack
-            elif self.result:
-                # we already finished processing - send the result back
-                ReliableMessage.info(fl_ctx, "resend result back to requester")
-                return self.result
-            else:
-                # we are still processing
-                ReliableMessage.info(fl_ctx, "got request - the request is being processed")
-                return _status_reply(STATUS_IN_PROCESS)
-        elif op == OP_QUERY:
-            if self.result:
-                if self.reply_time:
-                    # result already sent back successfully
-                    ReliableMessage.info(fl_ctx, "got query: we already replied successfully")
-                    return _status_reply(STATUS_REPLIED)
-                elif self.replying:
-                    # result is being sent
-                    ReliableMessage.info(fl_ctx, "got query: reply is being sent")
-                    return _status_reply(STATUS_IN_REPLY)
-                else:
-                    # try to send the result again
-                    ReliableMessage.info(fl_ctx, "got query: sending reply again")
+        with self.lock:
+            self.tx_id = request.get_header(HEADER_TX_ID)
+            op = request.get_header(HEADER_OP)
+            peer_ctx = fl_ctx.get_peer_context()
+            assert isinstance(peer_ctx, FLContext)
+            self.source = peer_ctx.get_identity_name()
+            if op == OP_REQUEST:
+                # it is possible that a new request for the same tx is received while we are processing the previous one
+                if not self.rcv_time:
+                    self.rcv_time = time.time()
+                    self.per_msg_timeout = request.get_header(HEADER_PER_MSG_TIMEOUT)
+                    self.tx_timeout = request.get_header(HEADER_TX_TIMEOUT)
+
+                    # start processing
+                    ReliableMessage.info(fl_ctx, f"started processing request of topic {self.topic}")
+                    try:
+                        self.executor.submit(self._do_request, request, fl_ctx)
+                        return _status_reply(STATUS_IN_PROCESS)  # ack
+                    except Exception as ex:
+                        # it is possible that the RM is already closed (self.executor is shut down)
+                        ReliableMessage.error(fl_ctx, f"failed to submit request: {secure_format_exception(ex)}")
+                        return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
+                elif self.result:
+                    # we already finished processing - send the result back
+                    ReliableMessage.info(fl_ctx, "resend result back to requester")
                     return self.result
-            else:
-                # still in process
-                if time.time() - self.rcv_time > self.tx_timeout:
-                    # the process is taking too much time
-                    ReliableMessage.error(fl_ctx, f"aborting processing since exceeded max tx time {self.tx_timeout}")
-                    return _status_reply(STATUS_ABORTED)
                 else:
-                    ReliableMessage.debug(fl_ctx, "got query: request is in-process")
+                    # we are still processing
+                    ReliableMessage.info(fl_ctx, "got request - the request is being processed")
                     return _status_reply(STATUS_IN_PROCESS)
+            elif op == OP_QUERY:
+                if self.result:
+                    if self.reply_time:
+                        # result already sent back successfully
+                        ReliableMessage.info(fl_ctx, "got query: we already replied successfully")
+                        return _status_reply(STATUS_REPLIED)
+                    elif self.replying:
+                        # result is being sent
+                        ReliableMessage.info(fl_ctx, "got query: reply is being sent")
+                        return _status_reply(STATUS_IN_REPLY)
+                    else:
+                        # try to send the result again
+                        ReliableMessage.info(fl_ctx, "got query: sending reply again")
+                        return self.result
+                else:
+                    # still in process
+                    if time.time() - self.rcv_time > self.tx_timeout:
+                        # the process is taking too much time
+                        ReliableMessage.error(
+                            fl_ctx, f"aborting processing since exceeded max tx time {self.tx_timeout}"
+                        )
+                        return _status_reply(STATUS_ABORTED)
+                    else:
+                        ReliableMessage.debug(fl_ctx, "got query: request is in-process")
+                        return _status_reply(STATUS_IN_PROCESS)
 
     def _try_reply(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
@@ -169,6 +183,8 @@ class _RequestReceiver:
             # release the receiver kept by the ReliableMessage!
             ReliableMessage.release_request_receiver(self, fl_ctx)
         else:
+            # unsure whether the reply was sent successfully
+            # do not release the request receiver in case the requester asks for result in a query
             ReliableMessage.error(
                 fl_ctx, f"failed to send reply in {time_spent} secs: {rc=}; will wait for requester to query"
             )
@@ -192,6 +208,8 @@ class _RequestReceiver:
 
 
 class _ReplyReceiver:
+    """This class handles reliable message replies on the sending end"""
+
     def __init__(self, tx_id: str, per_msg_timeout: float, tx_timeout: float):
         self.tx_id = tx_id
         self.tx_start_time = time.time()
@@ -210,6 +228,7 @@ class ReliableMessage:
 
     _topic_to_handle = {}
     _req_receivers = {}  # tx id => receiver
+    _req_completed = {}  # tx id => expiration
     _enabled = False
     _executor = None
     _query_interval = 1.0
@@ -276,12 +295,35 @@ class ReliableMessage:
                 # no handler registered for this topic!
                 cls.error(fl_ctx, f"no handler registered for request {rm_topic=}")
                 return make_reply(ReturnCode.TOPIC_UNKNOWN)
-            receiver = cls._get_or_create_receiver(rm_topic, request, handler_f)
+
+            # check whether the request is still standing or completed
+            # we should check to get the receiver first, and check req_completed next:
+            # if the receiver does not exist in _req_receivers and already completed,
+            # then it must exist in _req_completed (since we put it in _req_completed before removing it
+            # from _req_receivers).
+            receiver = cls._req_receivers.get(tx_id)
+            if not receiver:
+                # no standing process for this request
+                # further check whether this request was already completed
+                if cls._req_completed.get(tx_id):
+                    # this request was already completed!
+                    cls.debug(fl_ctx, "Completed tx_id received")
+                    return _status_reply(STATUS_DUP_REQUEST)
+
+            if not receiver:
+                # this is a valid new request
+                receiver = cls._get_or_create_receiver(rm_topic, request, handler_f)
+
             cls.debug(fl_ctx, f"received request {rm_topic=}")
             return receiver.process(request, fl_ctx)
         elif op == OP_QUERY:
             receiver = cls._req_receivers.get(tx_id)
             if not receiver:
+                # no standing process for this request - is it already completed?
+                if cls._req_completed.get(tx_id):
+                    # the request is already completed
+                    return _status_reply(STATUS_REPLIED)
+
                 cls.warning(
                     fl_ctx, f"received query but the request ({rm_topic=} {tx_id=}) is not received or already done!"
                 )
@@ -299,7 +341,7 @@ class ReliableMessage:
         cls.debug(fl_ctx, f"received aux msg ({topic=}) for RM reply")
         receiver = cls._reply_receivers.get(tx_id)
         if not receiver:
-            cls.error(fl_ctx, "received reply but we are no longer waiting for it")
+            cls.warning(fl_ctx, "received reply but we are no longer waiting for it")
         else:
             assert isinstance(receiver, _ReplyReceiver)
             cls.debug(fl_ctx, f"received reply in {time.time()-receiver.tx_start_time} secs - set waiter")
@@ -319,6 +361,7 @@ class ReliableMessage:
 
         """
         with cls._tx_lock:
+            cls._register_completed_req(receiver.tx_id, receiver.tx_timeout)
             cls._req_receivers.pop(receiver.tx_id, None)
             cls.debug(fl_ctx, f"released request receiver of TX {receiver.tx_id}")
 
@@ -405,6 +448,11 @@ class ReliableMessage:
         if topic:
             props.append(f"rm_topic={topic}")
 
+        debug_info = fl_ctx.get_prop(PROP_KEY_DEBUG_INFO)
+        if debug_info:
+            for k, v in debug_info.items():
+                props.append(f"{k}={v}")
+
         rm_ctx = ""
         if props:
             rm_ctx = " ".join(props)
@@ -426,6 +474,21 @@ class ReliableMessage:
         cls._logger.error(cls._log_msg(fl_ctx, msg))
 
     @classmethod
+    def is_available(cls):
+        """Return whether the ReliableMessage service is available
+
+        Returns:
+
+        """
+        if cls._shutdown_asked:
+            return False
+
+        if not cls._enabled:
+            return False
+
+        return True
+
+    @classmethod
     def debug(cls, fl_ctx: FLContext, msg: str):
         cls._logger.debug(cls._log_msg(fl_ctx, msg))
 
@@ -440,20 +503,23 @@ class ReliableMessage:
         abort_signal: Signal,
         fl_ctx: FLContext,
     ) -> Shareable:
-        """Send a reliable request.
+        """Send a request reliably.
 
         Args:
-            target: the target cell of this request
-            topic: topic of the request;
-            request: the request to be sent
-            per_msg_timeout: timeout when sending a message
-            tx_timeout: the timeout of the whole transaction
-            abort_signal: abort signal
-            fl_ctx: the FL context
+            target: The target cell of this request.
+            topic: The topic of the request.
+            request: The request to be sent.
+            per_msg_timeout (float): Number of seconds to wait for each message before timing out.
+            tx_timeout (float): Timeout for the entire transaction.
+            abort_signal (Signal): Signal to abort the request.
+            fl_ctx (FLContext): Context for federated learning.
 
-        Returns: reply from the peer.
+        Returns:
+            The reply from the peer.
 
-        If tx_timeout is not specified or <= per_msg_timeout, the request will be sent only once without retrying.
+        Note:
+            If `tx_timeout` is not specified or is less than or equal to `per_msg_timeout`,
+            the request will be sent only once without retrying.
 
         """
         check_positive_number("per_msg_timeout", per_msg_timeout)
@@ -516,6 +582,11 @@ class ReliableMessage:
                 cls.error(fl_ctx, f"aborting send_request since exceeded {tx_timeout=}")
                 return make_reply(ReturnCode.COMMUNICATION_ERROR)
 
+            # it is possible that a reply is already received while we are still trying to send!
+            if receiver.result_ready.is_set():
+                cls.debug(fl_ctx, "result received while in the send loop")
+                break
+
             if num_tries > 0:
                 cls.debug(fl_ctx, f"retry #{num_tries} sending request: {per_msg_timeout=}")
 
@@ -526,6 +597,12 @@ class ReliableMessage:
                 timeout=per_msg_timeout,
                 fl_ctx=fl_ctx,
             )
+
+            # it is possible that a reply is already received while we are waiting for the ack!
+            if receiver.result_ready.is_set():
+                cls.debug(fl_ctx, "result received while waiting for ack")
+                break
+
             ack, rc = _extract_result(ack, target)
             if ack and rc not in [ReturnCode.COMMUNICATION_ERROR]:
                 # is this result?
@@ -614,7 +691,7 @@ class ReliableMessage:
                 fl_ctx=fl_ctx,
             )
 
-            # Ignore query result if result is already received
+            # Ignore query result if reply result is already received
             if receiver.result_ready.is_set():
                 return receiver.result
 
@@ -639,3 +716,15 @@ class ReliableMessage:
                 cls.debug(fl_ctx, f"will retry query in {cls._query_interval} secs: {rc=} {status=} {op=}")
             else:
                 cls.debug(fl_ctx, f"will retry query in {cls._query_interval} secs: {rc=}")
+
+    @classmethod
+    def _register_completed_req(cls, tx_id, tx_timeout):
+        # Remove expired entries, need to use a copy of the keys
+        now = time.time()
+        for key in list(cls._req_completed.keys()):
+            expiration = cls._req_completed.get(key)
+            if expiration and expiration < now:
+                cls._req_completed.pop(key, None)
+
+        # Expire in 2 x tx_timeout
+        cls._req_completed[tx_id] = now + 2 * tx_timeout

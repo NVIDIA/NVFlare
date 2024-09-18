@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-DATASET_PATH="$HOME/dataset/HIGGS.csv"
+DATASET_PATH="${1}/HIGGS.csv"
 OUTPUT_PATH="/tmp/nvflare/vertical_xgb_data"
 OUTPUT_FILE="higgs.data.csv"
 

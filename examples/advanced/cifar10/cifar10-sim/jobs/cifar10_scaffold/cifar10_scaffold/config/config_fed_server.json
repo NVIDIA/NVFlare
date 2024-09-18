@@ -21,7 +21,7 @@
         },
         {
             "id": "persistor",
-            "name": "PTFileModelPersistor",
+            "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
             "args": {
                 "model": {
                     "path": "pt.networks.cifar10_nets.ModerateCNN",
@@ -31,26 +31,26 @@
         },
         {
             "id": "model_selector",
-            "name": "IntimeModelSelector",
+            "path": "nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector",
             "args": {}
         },
         {
             "id": "model_locator",
-            "name": "PTFileModelLocator",
+            "path": "nvflare.app_opt.pt.file_model_locator.PTFileModelLocator",
             "args": {
                 "pt_persistor_id": "persistor"
             }
         },
         {
             "id": "json_generator",
-            "name": "ValidationJsonGenerator",
+            "path": "nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator",
             "args": {}
         }
     ],
     "workflows": [
         {
             "id": "scaffold_ctl",
-            "name": "Scaffold",
+            "path": "nvflare.app_common.workflows.scaffold.Scaffold",
             "args": {
                 "num_clients": "{num_clients}",
                 "num_rounds": "{num_rounds}",
@@ -60,7 +60,7 @@
         },
         {
             "id": "cross_site_model_eval",
-            "name": "CrossSiteModelEval",
+            "path": "nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval",
             "args": {
                 "model_locator_id": "model_locator",
                 "submit_model_timeout": 600,

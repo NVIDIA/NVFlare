@@ -110,20 +110,6 @@ Below is a table overview of key Client APIs.
      - Returns whether the current task is a submit_model task.
      - :func:`is_submit_model<nvflare.client.api.is_submit_model>`
 
-.. list-table:: Decorator APIs
-   :widths: 25 25 50
-   :header-rows: 1
-
-   * - API
-     - Description
-     - API Doc Link
-   * - train
-     - A decorator to wraps the training logic.
-     - :func:`train<nvflare.client.decorator.train>`
-   * - evaluate
-     - A decorator to wraps the evaluate logic.
-     - :func:`evaluate<nvflare.client.decorator.evaluate>`
-
 .. list-table:: Lightning APIs
    :widths: 25 25 50
    :header-rows: 1
@@ -158,6 +144,10 @@ information about all of the Client API functionalities.
 If you are using PyTorch Lightning in your training code, you can check the
 Lightning API Module :mod:`nvflare.app_opt.lightning.api`.
 
+.. note::
+  The decorator API has been deprecated since release 2.5.0.
+  Please use the Client API instead.
+
 
 Client API communication patterns
 =================================
@@ -167,20 +157,26 @@ Client API communication patterns
 
 We offer various implementations of Client APIs tailored to different scenarios, each linked with distinct communication patterns.
 
-Broadly, we present in-process and sub-process executors. The in-process executor, slated for release in NVFlare 2.5.0,
-entails both training scripts and client executor operating within the same process. The training scripts will be launched once
-at the event of START_RUN. The training scripts keep on running till the END_RUN event. Communication between them occurs
-through an in-memory databus.
+In-process Client API
+---------------------
 
-On the other hand, the LauncherExecutor employs a sub-process to execute training scripts, leading to the client executor
-and training scripts residing in separate processes. The "launch_once" option is provided to the SubprocessLauncher to control
+The in-process executor entails both the training script and client executor operating within the same process.
+The training script will be launched once at the event of START_RUN and will keep on running till the END_RUN event.
+Communication between them occurs through an efficient in-memory databus.
+
+When the training process involves either a single GPU or no GPUs, and the training script doesn't integrate third-party
+training systems, the in-process executor is preferable (when available).
+
+Sub-process Client API
+----------------------
+
+On the other hand, the LauncherExecutor employs the SubprocessLauncher to use a sub-process to execute the training script. This results in the client executor
+and training script residing in separate processes. The "launch_once" option is provided to the SubprocessLauncher to control
 whether to launch the external script everytime when getting the task from server, or just launch the script once at the event
 of START_RUN and keeps running till the END_RUN event. Communication between them is facilitated by either CellPipe
 (default) or FilePipe.
 
-When the training process involves either a single GPU or no GPUs, and the training script doesn't integrate third-party
-training systems, the in-process executor is preferable (when available). For scenarios involving multi-GPU training or
-the utilization of external training infrastructure, opting for the Launcher executor might be more suitable.
+For scenarios involving multi-GPU training or the utilization of external training infrastructure, opting for the Launcher executor might be more suitable.
 
 
 Choice of different Pipes
@@ -203,34 +199,35 @@ Configuration
 
 Different configurations are available for each type of executor.
 
-Definition lists:
-
 in-process executor configuration
-    .. literalinclude:: ../../../job_templates/sag_pt_in_proc/config_fed_client.conf
+---------------------------------
+This configuration specifically caters to PyTorch applications, providing serialization and deserialization
+(aka Decomposers) for commonly used PyTorch objects. For non-PyTorch applications, the generic
+:class:`InProcessClientAPIExecutor<nvflare.app_common.executors.in_process_client_api_executor.InProcessClientAPIExecutor>` can be employed.
 
-    This configuration specifically caters to PyTorch applications, providing serialization and deserialization
-    (aka Decomposers) for commonly used PyTorch objects. For non-PyTorch applications, the generic
-    ``InProcessClientAPIExecutor`` can be employed.
+.. literalinclude:: ../../../job_templates/sag_pt_in_proc/config_fed_client.conf
+
 
 subprocess launcher Executor configuration
-    In the config_fed_client in the FLARE app, in order to launch the training script we use the
-    :class:`SubprocessLauncher<nvflare.app_common.launchers.subprocess_launcher.SubprocessLauncher>` component.
-    The defined ``script`` is invoked, and ``launch_once`` can be set to either
-    launch once for the whole job (launch_once = True), or launch a process for each task received from the server (launch_once = False)
+------------------------------------------
+In the config_fed_client in the FLARE app, in order to launch the training script we use the
+:class:`SubprocessLauncher<nvflare.app_common.launchers.subprocess_launcher.SubprocessLauncher>` component.
+The defined ``script`` is invoked, and ``launch_once`` can be set to either
+launch once for the whole job (launch_once = True), or launch a process for each task received from the server (launch_once = False)
 
-   ``launch_once`` dictates how many times the training scripts are invoked during the overall training process.
-    When set to False, the executor essentially invokes ``python <training scripts>.py`` every round of training.
-    Typically, launch_once is set to True.
+``launch_once`` dictates how many times the training scripts are invoked during the overall training process.
+When set to False, the executor essentially invokes ``python <training scripts>.py`` every round of training.
+Typically, launch_once is set to True.
 
-    A corresponding :class:`LauncherExecutor<nvflare.app_common.executors.launcher_executor.LauncherExecutor>`
-    is used as the executor to handle the tasks and perform the data exchange using the pipe.
-    For the Pipe component we provide implementations of :class:`FilePipe<nvflare.fuel.utils.pipe.file_pipe>`
-    and :class:`CellPipe<nvflare.fuel.utils.pipe.cell_pipe>`.
+A corresponding :class:`ClientAPILauncherExecutor<nvflare.app_common.executors.client_api_launcher_executor.ClientAPILauncherExecutor>`
+is used as the executor to handle the tasks and perform the data exchange using the pipe.
+For the Pipe component we provide implementations of :class:`FilePipe<nvflare.fuel.utils.pipe.file_pipe>`
+and :class:`CellPipe<nvflare.fuel.utils.pipe.cell_pipe>`.
 
-    .. literalinclude:: ../../../job_templates/sag_pt/config_fed_client.conf
+.. literalinclude:: ../../../job_templates/sag_pt/config_fed_client.conf
 
-    For example configurations, take a look at the :github_nvflare_link:`job_templates <job_templates>`
-    directory for templates using the launcher and Client API.
+For example configurations, take a look at the :github_nvflare_link:`job_templates <job_templates>`
+directory for templates using the launcher and Client API.
 
 .. note::
    In that case that the user does not need to launch the process and instead

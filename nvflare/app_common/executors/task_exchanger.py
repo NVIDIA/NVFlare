@@ -25,7 +25,12 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.fuel.utils.constants import PipeChannelName
 from nvflare.fuel.utils.pipe.pipe import Message, Pipe
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler, Topic
-from nvflare.fuel.utils.validation_utils import check_non_negative_int, check_positive_number, check_str
+from nvflare.fuel.utils.validation_utils import (
+    check_non_negative_int,
+    check_non_negative_number,
+    check_positive_number,
+    check_str,
+)
 from nvflare.security.logging import secure_format_exception
 
 
@@ -70,7 +75,7 @@ class TaskExchanger(Executor):
         check_positive_number("read_interval", read_interval)
         check_positive_number("heartbeat_interval", heartbeat_interval)
         if heartbeat_timeout is not None:
-            check_positive_number("heartbeat_timeout", heartbeat_timeout)
+            check_non_negative_number("heartbeat_timeout", heartbeat_timeout)
         check_positive_number("resend_interval", resend_interval)
         if max_resends is not None:
             check_non_negative_int("max_resends", max_resends)
@@ -111,6 +116,7 @@ class TaskExchanger(Executor):
             )
             self.pipe_handler.set_status_cb(self._pipe_status_cb)
             self.pipe.open(self.pipe_channel_name)
+        elif event_type == EventType.BEFORE_TASK_EXECUTION:
             self.pipe_handler.start()
         elif event_type == EventType.ABOUT_TO_END_RUN:
             self.log_info(fl_ctx, "Stopping pipe handler")

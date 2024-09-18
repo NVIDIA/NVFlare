@@ -118,8 +118,12 @@ class FedXGBTreeExecutor(Executor):
         data_loader = engine.get_component(self.data_loader_id)
         if not isinstance(data_loader, XGBDataLoader):
             self.system_panic("data_loader should be type XGBDataLoader", fl_ctx)
+        data_loader.initialize(
+            client_id=self.client_id,
+            rank=self.rank,
+        )
         try:
-            self.train_data, self.val_data = data_loader.load_data(self.client_id)
+            self.train_data, self.val_data = data_loader.load_data()
         except Exception as e:
             self.system_panic(f"load_data failed: {secure_format_exception(e)}", fl_ctx)
         self.lr = self._get_effective_learning_rate()

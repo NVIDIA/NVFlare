@@ -11,56 +11,76 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import os
+from typing import Tuple
 
 import xgboost as xgb
 from xgboost import callback
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import SystemConfigs
+from nvflare.apis.fl_constant import FLContextKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.tracking.log_writer import LogWriter
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
-from nvflare.app_opt.xgboost.histogram_based_v2.defs import SECURE_TRAINING_MODES, Constant
+from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.runners.xgb_runner import AppRunner
-from nvflare.app_opt.xgboost.histogram_based_v2.tb import TensorBoardCallback
 from nvflare.app_opt.xgboost.metrics_cb import MetricsCallback
 from nvflare.fuel.utils.config_service import ConfigService
-from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.obj_utils import get_logger
 from nvflare.utils.cli_utils import get_package_root
 
-LOADER_PARAMS_LIBRARY_PATH = "LIBRARY_PATH"
+PLUGIN_PARAM_KEY = "federated_plugin"
+PLUGIN_KEY_NAME = "name"
+PLUGIN_KEY_PATH = "path"
+MODEL_FILE_NAME = "model.json"
+
+
+def _check_ctx(ctx: dict):
+    required_ctx_keys = [
+        Constant.RUNNER_CTX_CLIENT_NAME,
+        Constant.RUNNER_CTX_RANK,
+        Constant.RUNNER_CTX_WORLD_SIZE,
+        Constant.RUNNER_CTX_NUM_ROUNDS,
+        Constant.RUNNER_CTX_XGB_PARAMS,
+        Constant.RUNNER_CTX_SERVER_ADDR,
+        Constant.RUNNER_CTX_MODEL_DIR,
+    ]
+    for k in required_ctx_keys:
+        if k not in ctx:
+            raise RuntimeError(f"Missing {k} in context.")
 
 
 class XGBClientRunner(AppRunner, FLComponent):
     def __init__(
         self,
         data_loader_id: str,
-        model_file_name,
+        model_file_name: str,
         metrics_writer_id: str = None,
     ):
         FLComponent.__init__(self)
         self.model_file_name = model_file_name
         self.data_loader_id = data_loader_id
         self.logger = get_logger(self)
+        self.fl_ctx = None
 
         self._client_name = None
         self._rank = None
         self._world_size = None
         self._num_rounds = None
-        self._training_mode = None
+        self._data_split_mode = None
+        self._secure_training = None
         self._xgb_params = None
         self._xgb_options = None
         self._server_addr = None
         self._data_loader = None
-        self._tb_dir = None
         self._model_dir = None
         self._stopped = False
         self._metrics_writer_id = metrics_writer_id
         self._metrics_writer = None
 
     def initialize(self, fl_ctx: FLContext):
+        self.fl_ctx = fl_ctx
         engine = fl_ctx.get_engine()
         self._data_loader = engine.get_component(self.data_loader_id)
         if not isinstance(self._data_loader, XGBDataLoader):
@@ -91,12 +111,19 @@ class XGBClientRunner(AppRunner, FLComponent):
         if self._metrics_writer:
             callbacks.append(MetricsCallback(self._metrics_writer))
 
-        tensorboard, flag = optional_import(module="torch.utils.tensorboard")
-        if flag and self._tb_dir:
-            callbacks.append(TensorBoardCallback(self._tb_dir, tensorboard))
-
         early_stopping_rounds = xgb_options.get("early_stopping_rounds", 0)
         verbose_eval = xgb_options.get("verbose_eval", False)
+
+        # Check for pre-trained model
+        job_id = self.fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
+        workspace = self.fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        custom_dir = workspace.get_app_custom_dir(job_id)
+        model_file = os.path.join(custom_dir, MODEL_FILE_NAME)
+        if os.path.isfile(model_file):
+            self.logger.info(f"Pre-trained model is used: {model_file}")
+            xgb_model = model_file
+        else:
+            xgb_model = None
 
         # Run training, all the features in training API is available.
         bst = xgb.train(
@@ -107,80 +134,87 @@ class XGBClientRunner(AppRunner, FLComponent):
             early_stopping_rounds=early_stopping_rounds,
             verbose_eval=verbose_eval,
             callbacks=callbacks,
+            xgb_model=xgb_model,
         )
         return bst
 
     def run(self, ctx: dict):
-        self._client_name = ctx.get(Constant.RUNNER_CTX_CLIENT_NAME)
-        self._rank = ctx.get(Constant.RUNNER_CTX_RANK)
-        self._world_size = ctx.get(Constant.RUNNER_CTX_WORLD_SIZE)
-        self._num_rounds = ctx.get(Constant.RUNNER_CTX_NUM_ROUNDS)
-        self._training_mode = ctx.get(Constant.RUNNER_CTX_TRAINING_MODE)
-        self._xgb_params = ctx.get(Constant.RUNNER_CTX_XGB_PARAMS)
-        self._xgb_options = ctx.get(Constant.RUNNER_CTX_XGB_OPTIONS)
-        self._server_addr = ctx.get(Constant.RUNNER_CTX_SERVER_ADDR)
-        # self._data_loader = ctx.get(Constant.RUNNER_CTX_DATA_LOADER)
-        self._tb_dir = ctx.get(Constant.RUNNER_CTX_TB_DIR)
-        self._model_dir = ctx.get(Constant.RUNNER_CTX_MODEL_DIR)
+        _check_ctx(ctx)
+        self._client_name = ctx[Constant.RUNNER_CTX_CLIENT_NAME]
+        self._rank = ctx[Constant.RUNNER_CTX_RANK]
+        self._world_size = ctx[Constant.RUNNER_CTX_WORLD_SIZE]
+        self._num_rounds = ctx[Constant.RUNNER_CTX_NUM_ROUNDS]
+        self._data_split_mode = ctx.get(Constant.RUNNER_CTX_DATA_SPLIT_MODE, 0)
+        self._secure_training = ctx.get(Constant.RUNNER_CTX_SECURE_TRAINING, False)
+        self._xgb_params = ctx[Constant.RUNNER_CTX_XGB_PARAMS]
+        self._xgb_options = ctx.get(Constant.RUNNER_CTX_XGB_OPTIONS, {})
+        self._server_addr = ctx[Constant.RUNNER_CTX_SERVER_ADDR]
+        self._model_dir = ctx[Constant.RUNNER_CTX_MODEL_DIR]
 
         use_gpus = self._xgb_options.get("use_gpus", False)
         if use_gpus:
-            # mapping each rank to a GPU (can set to cuda:0 if simulating with only one gpu)
-            self.logger.info(f"Training with GPU {self._rank}")
-            self._xgb_params["device"] = f"cuda:{self._rank}"
+            # mapping each rank to the first GPU if not set
+            device = self._xgb_params.get("device", "cuda")
+            self.logger.info(f"Training with GPU {device}")
+            self._xgb_params["device"] = device
 
         self.logger.info(
-            f"XGB trainging_mode: {self._training_mode} " f"params: {self._xgb_params} XGB options: {self._xgb_options}"
+            f"XGB data_split_mode: {self._data_split_mode} secure_training: {self._secure_training} "
+            f"params: {self._xgb_params} XGB options: {self._xgb_options}"
         )
+
         self.logger.info(f"server address is {self._server_addr}")
 
         communicator_env = {
-            "xgboost_communicator": "federated",
+            "dmlc_communicator": "federated",
             "federated_server_address": f"{self._server_addr}",
             "federated_world_size": self._world_size,
             "federated_rank": self._rank,
         }
 
-        if self._training_mode not in SECURE_TRAINING_MODES:
+        if not self._secure_training:
             self.logger.info("XGBoost non-secure training")
         else:
             xgb_plugin_name = ConfigService.get_str_var(
-                name="xgb_plugin_name", conf=SystemConfigs.RESOURCES_CONF, default="nvflare"
+                name="xgb_plugin_name", conf=SystemConfigs.RESOURCES_CONF, default=None
+            )
+            xgb_plugin_path = ConfigService.get_str_var(
+                name="xgb_plugin_path", conf=SystemConfigs.RESOURCES_CONF, default=None
+            )
+            xgb_plugin_params: dict = ConfigService.get_dict_var(
+                name=PLUGIN_PARAM_KEY, conf=SystemConfigs.RESOURCES_CONF, default={}
             )
 
-            xgb_loader_params = ConfigService.get_dict_var(
-                name="xgb_loader_params", conf=SystemConfigs.RESOURCES_CONF, default={}
-            )
+            # path and name can be overwritten by scalar configuration
+            if xgb_plugin_name:
+                xgb_plugin_params[PLUGIN_KEY_NAME] = xgb_plugin_name
 
-            # Library path is frequently used, add a scalar config var and overwrite what's in the dict
-            xgb_library_path = ConfigService.get_str_var(name="xgb_library_path", conf=SystemConfigs.RESOURCES_CONF)
-            if xgb_library_path:
-                xgb_loader_params[LOADER_PARAMS_LIBRARY_PATH] = xgb_library_path
+            if xgb_plugin_path:
+                xgb_plugin_params[PLUGIN_KEY_PATH] = xgb_plugin_path
 
-            lib_path = xgb_loader_params.get(LOADER_PARAMS_LIBRARY_PATH, None)
-            if not lib_path:
-                xgb_loader_params[LOADER_PARAMS_LIBRARY_PATH] = str(get_package_root() / "libs")
+            # Set default plugin name
+            if not xgb_plugin_params.get(PLUGIN_KEY_NAME):
+                xgb_plugin_params[PLUGIN_KEY_NAME] = "cuda_paillier"
 
-            xgb_proc_params = ConfigService.get_dict_var(
-                name="xgb_proc_params", conf=SystemConfigs.RESOURCES_CONF, default={}
-            )
+            if not xgb_plugin_params.get(PLUGIN_KEY_PATH):
+                # This only works on Linux. Need to support other platforms
+                lib_ext = "so"
+                lib_name = f"lib{xgb_plugin_params[PLUGIN_KEY_NAME]}.{lib_ext}"
+                xgb_plugin_params[PLUGIN_KEY_PATH] = str(get_package_root() / "libs" / lib_name)
+
+            communicator_env[PLUGIN_PARAM_KEY] = xgb_plugin_params
 
             self.logger.info(
-                f"XGBoost secure mode: {self._training_mode} plugin_name: {xgb_plugin_name} "
-                f"proc_params: {xgb_proc_params} loader_params: {xgb_loader_params}"
+                f"XGBoost secure training with plugin name: {xgb_plugin_params.get(PLUGIN_KEY_NAME)} "
+                f"path: {xgb_plugin_params.get(PLUGIN_KEY_PATH)}"
             )
 
-            communicator_env.update(
-                {
-                    "plugin_name": xgb_plugin_name,
-                    "proc_params": xgb_proc_params,
-                    "loader_params": xgb_loader_params,
-                }
-            )
-
+        self._data_loader.initialize(
+            client_id=self._client_name, rank=self._rank, data_split_mode=self._data_split_mode
+        )
         with xgb.collective.CommunicatorContext(**communicator_env):
             # Load the data. Dmatrix must be created with column split mode in CommunicatorContext for vertical FL
-            train_data, val_data = self._data_loader.load_data(self._client_name, self._training_mode)
+            train_data, val_data = self._data_loader.load_data()
 
             bst = self._xgb_train(self._num_rounds, self._xgb_params, self._xgb_options, train_data, val_data)
 
@@ -194,5 +228,5 @@ class XGBClientRunner(AppRunner, FLComponent):
         # currently no way to stop the runner
         pass
 
-    def is_stopped(self) -> (bool, int):
+    def is_stopped(self) -> Tuple[bool, int]:
         return self._stopped, 0

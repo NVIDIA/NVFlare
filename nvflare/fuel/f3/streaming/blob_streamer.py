@@ -77,6 +77,9 @@ class BlobTask:
         else:
             self.buffer = FastBuffer()
 
+    def __str__(self):
+        return f"Blob[SID:{self.future.get_stream_id()} Size：{self.size}]"
+
 
 class BlobHandler:
     def __init__(self, blob_cb: Callable):
@@ -109,17 +112,26 @@ class BlobHandler:
                     break
 
                 length = len(buf)
-                if blob_task.pre_allocated:
-                    blob_task.buffer[buf_size : buf_size + length] = buf
-                else:
-                    blob_task.buffer.append(buf)
+                try:
+                    if blob_task.pre_allocated:
+                        remaining = len(blob_task.buffer) - buf_size
+                        if length > remaining:
+                            log.error(f"{blob_task} Buffer overrun: {remaining=} {length=} {buf_size=}")
+                            if remaining > 0:
+                                blob_task.buffer[buf_size : buf_size + remaining] = buf[0:remaining]
+                            break
+                        else:
+                            blob_task.buffer[buf_size : buf_size + length] = buf
+                    else:
+                        blob_task.buffer.append(buf)
+                except Exception as ex:
+                    log.error(f"{blob_task} memoryview error: {ex} Debug info: {length=} {buf_size=} {type(buf)=}")
+                    raise ex
 
                 buf_size += length
 
             if blob_task.size and blob_task.size != buf_size:
-                log.warning(
-                    f"Stream {blob_task.future.get_stream_id()} size doesn't match: " f"{blob_task.size} <> {buf_size}"
-                )
+                log.warning(f"Stream {blob_task} Size doesn't match: " f"{blob_task.size} <> {buf_size}")
 
             if blob_task.pre_allocated:
                 result = blob_task.buffer
@@ -128,8 +140,8 @@ class BlobHandler:
 
             blob_task.future.set_result(result)
         except Exception as ex:
-            log.error(f"Stream {blob_task.future.get_stream_id()} read error: {ex}")
-            log.debug(secure_format_traceback())
+            log.error(f"Stream {blob_task} Read error: {ex}")
+            log.error(secure_format_traceback())
             blob_task.future.set_exception(ex)
 
 

@@ -37,6 +37,10 @@ class MockXGBController(XGBController):
     ):
         XGBController.__init__(
             self,
+            data_split_mode=0,
+            secure_training=False,
+            xgb_params={"max_depth": 3},
+            disable_version_check=False,
             adaptor_component_id="",
             num_rounds=num_rounds,
             configure_task_name=configure_task_name,

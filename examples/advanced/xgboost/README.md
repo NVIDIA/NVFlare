@@ -12,7 +12,7 @@ They use [XGBoost](https://github.com/dmlc/xgboost),
 which is an optimized distributed gradient boosting library.
 
 ### HIGGS
-The examples illustrate a binary classification task based on [HIGGS dataset](https://archive.ics.uci.edu/dataset/280/higgs).
+The examples illustrate a binary classification task based on [HIGGS dataset](https://mlphysics.ics.uci.edu/data/higgs/).
 This dataset contains 11 million instances, each with 28 attributes.
 
 Please note that the UCI's website may experience occasional downtime.
@@ -93,7 +93,7 @@ If you want to customize for your experiments, please check `utils/prepare_data_
 
 ## HIGGS job configs preparation under various training schemes
 
-Please follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions to install NVFlare.
+Please follow the [Installation](../../getting_started/README.md) instructions to install NVFlare.
 
 We then prepare the NVFlare job configs for different settings by running
 ```
@@ -139,7 +139,9 @@ By default, CPU based training is used.
 If the CUDA is installed on the site, tree construction and prediction can be
 accelerated using GPUs.
 
-To enable GPU accelerated training, in `config_fed_client.json` set `"use_gpus": true` and  `"tree_method": "hist"`. Then, in `FedXGBHistogramExecutor` we use the `device` parameter to map each rank to a GPU device ordinal in `xgb_params`. For a single GPU, assuming it has enough memory, we can map each rank to the same device with `params["device"] = f"cuda:0"`.
+To enable GPU accelerated training, in `config_fed_client.json` set `"use_gpus": true` and  `"tree_method": "hist"`.
+Then, in `FedXGBHistogramExecutor` we use the `device` parameter to map each rank to a GPU device ordinal in `xgb_params`.
+For a single GPU, assuming it has enough memory, we can map each rank to the same device with `params["device"] = f"cuda:0"`.
 
 ### Multi GPU support
 

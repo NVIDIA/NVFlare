@@ -14,7 +14,7 @@
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
-from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
@@ -85,6 +85,8 @@ class XGBExecutor(Executor):
             adaptor.set_abort_signal(self.abort_signal)
             adaptor.initialize(fl_ctx)
             self.adaptor = adaptor
+        elif event_type == Constant.EVENT_XGB_ABORTED:
+            self._notify_client_done(Constant.EXIT_CODE_JOB_ABORT, fl_ctx)
         elif event_type == EventType.END_RUN:
             self.abort_signal.trigger(True)
 
@@ -120,7 +122,13 @@ class XGBExecutor(Executor):
                 shareable,
                 fl_ctx,
             )
-            return make_reply(ReturnCode.OK)
+            self.fire_event(Constant.EVENT_XGB_JOB_CONFIGURED, fl_ctx)
+            config_error = fl_ctx.get_prop(Constant.PARAM_KEY_CONFIG_ERROR, None)
+            if not config_error:
+                return make_reply(ReturnCode.OK)
+            else:
+                self.log_error(fl_ctx, f"Config error: {config_error}")
+                return make_reply(ReturnCode.SERVICE_UNAVAILABLE, {ReservedKey.EXCEPTIONS: config_error})
         elif task_name == self.start_task_name:
             # start adaptor
             try:
@@ -149,6 +157,9 @@ class XGBExecutor(Executor):
         """
         if rc != 0:
             self.log_error(fl_ctx, f"XGB Client stopped with RC {rc}")
+            error = fl_ctx.get_prop(FLContextKey.FATAL_SYSTEM_ERROR)
+            error_msg = f", error: {error}" if error else ""
+            self.system_panic(f"XGB Client stopped with non zero RC {rc}{error_msg}", fl_ctx)
         else:
             self.log_info(fl_ctx, "XGB Client Stopped")
 

@@ -14,17 +14,21 @@
 import builtins
 import inspect
 import json
+import logging
 import os
+import shlex
 import shutil
+import subprocess
 import sys
 from enum import Enum
 from tempfile import TemporaryDirectory
 from typing import Dict
 
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
+from nvflare.job_config.base_app_config import BaseAppConfig
 from nvflare.job_config.fed_app_config import FedAppConfig
 from nvflare.private.fed.app.fl_conf import FL_PACKAGES
-from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
+from nvflare.private.fed.app.utils import kill_child_processes
 
 CONFIG = "config"
 CUSTOM = "custom"
@@ -57,6 +61,7 @@ class FedJobConfig:
         self.resource_specs: Dict[str, Dict] = {}
 
         self.custom_modules = []
+        self.logger = logging.getLogger(self.__class__.__name__)
 
     def add_fed_app(self, app_name: str, fed_app: FedAppConfig):
         if not isinstance(fed_app, FedAppConfig):
@@ -135,15 +140,33 @@ class FedJobConfig:
         with TemporaryDirectory() as job_root:
             self.generate_job_config(job_root)
 
-            simulator = SimulatorRunner(
-                job_folder=os.path.join(job_root, self.job_name),
-                workspace=workspace,
-                clients=clients,
-                n_clients=n_clients,
-                threads=threads,
-                gpu=gpu,
-            )
-            simulator.run()
+            try:
+                command = (
+                    f"{sys.executable} -m nvflare.private.fed.app.simulator.simulator "
+                    + os.path.join(job_root, self.job_name)
+                    + " -w "
+                    + workspace
+                )
+                if clients:
+                    clients = self._trim_whitespace(clients)
+                    command += " -c " + str(clients)
+                if n_clients:
+                    command += " -n " + str(n_clients)
+                if threads:
+                    command += " -t " + str(threads)
+                if gpu:
+                    gpu = self._trim_whitespace(gpu)
+                    command += " -gpu " + str(gpu)
+
+                new_env = os.environ.copy()
+                process = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
+
+                process.wait()
+
+            except KeyboardInterrupt:
+                self.logger.info("KeyboardInterrupt, terminate all the child processes.")
+                kill_child_processes(os.getpid())
+                return -9
 
     def _get_server_app(self, config_dir, custom_dir, fed_app):
         server_app = {"format_version": 2, "workflows": []}
@@ -162,6 +185,7 @@ class FedJobConfig:
             outfile.write(json_dump)
 
         self._copy_ext_scripts(custom_dir, fed_app.server_app.ext_scripts)
+        self._copy_ext_dirs(custom_dir, fed_app.server_app)
 
     def _copy_ext_scripts(self, custom_dir, ext_scripts):
         for script in ext_scripts:
@@ -173,6 +197,10 @@ class FedJobConfig:
                 dest_file = os.path.join(custom_dir, relative_script)
                 module = "".join(relative_script.rsplit(".py", 1)).replace(os.sep, ".")
                 self._copy_source_file(custom_dir, module, script, dest_file)
+
+    def _copy_ext_dirs(self, custom_dir, app_config: BaseAppConfig):
+        for dir in app_config.ext_dirs:
+            shutil.copytree(dir, custom_dir, dirs_exist_ok=True)
 
     def _get_relative_script(self, script):
         package_path = ""
@@ -197,7 +225,7 @@ class FedJobConfig:
             if package not in FL_PACKAGES and module not in self.custom_modules:
                 module_path = module.replace(".", os.sep)
                 if module_path in source_file:
-                    index = source_file.index(module_path)
+                    index = source_file.rindex(module_path)
                     dest = source_file[index:]
 
                     self.custom_modules.append(module)
@@ -224,7 +252,15 @@ class FedJobConfig:
 
             import_source_file = os.path.join(source_dir, import_source.replace(".", os.sep) + ".py")
             if os.path.exists(import_source_file):
+                # Handle the import from within the same module
                 self._get_custom_file(custom_dir, import_module, import_source_file)
+            else:
+                # Handle the import from outside the module
+                size = len(module.split(".")) - 1
+                source_root = os.sep.join(source_dir.split(os.sep)[0:-size])
+                import_source_file = os.path.join(source_root, import_source.replace(".", os.sep) + ".py")
+                if os.path.exists(import_source_file):
+                    self._get_custom_file(custom_dir, import_module, import_source_file)
 
     def _get_client_app(self, config_dir, custom_dir, fed_app):
         client_app = {"format_version": 2, "executors": []}
@@ -245,6 +281,7 @@ class FedJobConfig:
             outfile.write(json_dump)
 
         self._copy_ext_scripts(custom_dir, fed_app.client_app.ext_scripts)
+        self._copy_ext_dirs(custom_dir, fed_app.client_app)
 
     def _get_base_app(self, custom_dir, app, app_config):
         app_config["components"] = []
@@ -350,3 +387,9 @@ class FedJobConfig:
             deploy_map[app_name] = deploy_map.get(app_name, [])
             deploy_map[app_name].append(site)
         return deploy_map
+
+    def _trim_whitespace(self, string: str):
+        strings = string.split(",")
+        for i in range(len(strings)):
+            strings[i] = strings[i].strip()
+        return ",".join(strings)

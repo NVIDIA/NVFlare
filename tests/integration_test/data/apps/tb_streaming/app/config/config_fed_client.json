@@ -18,17 +18,17 @@
   "components": [
     {
       "id": "event_recorder",
-      "name": "ClientEventRecorder",
+      "path": "nvflare.app_common.widgets.event_recorder.ClientEventRecorder",
       "args": {}
     },
     {
       "id": "tb_analytics_receive",
-      "name": "TBAnalyticsReceiver",
+      "path": "nvflare.app_opt.tracking.tb.tb_receiver.TBAnalyticsReceiver",
       "args": {"events": ["analytix_log_stats"]}
     },
     {
       "id": "event_to_fed",
-      "name": "ConvertToFedEvent",
+      "path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent",
       "args": {"events_to_convert": ["analytix_log_stats"], "fed_event_prefix": "fed."}
     }
   ]

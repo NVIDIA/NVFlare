@@ -132,6 +132,11 @@ class AuxRunner(FLComponent):
         Returns: reply message
 
         """
+
+        if not isinstance(request, Shareable):
+            self.log_error(fl_ctx, f"received invalid aux request: expects a Shareable but got {type(request)}")
+            return make_reply(ReturnCode.BAD_REQUEST_DATA)
+
         peer_props = request.get_peer_props()
         if peer_props:
             peer_ctx = FLContext()
@@ -152,7 +157,7 @@ class AuxRunner(FLComponent):
             )
 
         start = time.time()
-        self.logger.info(f"waiting for cell for {self.cell_wait_timeout} seconds")
+        self.logger.debug(f"waiting for cell for {self.cell_wait_timeout} seconds")
         while True:
             cell = self.engine.get_cell()
             if cell:

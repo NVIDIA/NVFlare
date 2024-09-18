@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
+from typing import Dict
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.model_desc import ModelDescriptor
@@ -56,7 +57,7 @@ class ModelPersistor(LearnablePersistor, ABC):
         if self.filter_id:
             _filter.process_post_save(learnable=learnable, fl_ctx=fl_ctx)
 
-    def get(self, model_file, fl_ctx: FLContext) -> object:
+    def get(self, model_file: str, fl_ctx: FLContext) -> object:
         learnable = self.get_model(model_file, fl_ctx)
 
         if self.filter_id:
@@ -90,13 +91,14 @@ class ModelPersistor(LearnablePersistor, ABC):
         """
         pass
 
-    def get_model_inventory(self, fl_ctx: FLContext) -> {str: ModelDescriptor}:
+    def get_model_inventory(self, fl_ctx: FLContext) -> Dict[str, ModelDescriptor]:
         """Get the model inventory of the ModelPersister.
 
         Args:
             fl_ctx: FLContext
 
-        Returns: { model_kind: ModelDescriptor }
+        Returns:
+            A dict of model_name: ModelDescriptor
 
         """
         pass

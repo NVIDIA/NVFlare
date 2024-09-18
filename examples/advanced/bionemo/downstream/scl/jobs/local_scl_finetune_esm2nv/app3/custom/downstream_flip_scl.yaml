@@ -11,7 +11,7 @@ target: bionemo.model.protein.esm1nv.ESM2nvModel # target class for protein mode
 infer_target: bionemo.model.protein.esm1nv.infer.ESM1nvInference # target inference class for protein model
 
 trainer:
-  devices: 2 # number of GPUs or CPUs
+  devices: 1 # number of GPUs or CPUs
   num_nodes: 1 
   max_epochs: 100
   val_check_interval: 20
@@ -37,7 +37,7 @@ model:
     task_name: scl # options: aav, bind, conservation, gb1, meltome, sav, scl, secondary_structure
     task_type: classification #'token-level-classification'  # alternative: classification, regression
     preprocessed_data_path: /tmp/fasta # path where all preprocessed FLIP datasets are saved
-    dataset_path: ${model.data.preprocessed_data_path}/mixed_soft3 # path to a training data
+    dataset_path: ${model.data.preprocessed_data_path}/mixed_soft # path to a training data
     dataset:
       train: data_train_site-3
       val: data_val_site-3

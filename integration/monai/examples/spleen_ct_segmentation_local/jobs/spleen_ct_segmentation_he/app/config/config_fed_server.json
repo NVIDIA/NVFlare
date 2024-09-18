@@ -9,7 +9,7 @@
   "components": [
     {
       "id": "serialize_filter",
-      "name": "HEModelSerializeFilter",
+      "path": "nvflare.app_opt.he.model_serialize_filter.HEModelSerializeFilter",
       "args": {}
     },
     {
@@ -22,38 +22,38 @@
     },
     {
       "id": "shareable_generator",
-      "name": "HEModelShareableGenerator",
+      "path": "nvflare.app_opt.he.model_sharable_generator.HEModelShareableGenerator",
       "args": {}
     },
     {
       "id": "aggregator",
-      "name": "HEInTimeAccumulateWeightedAggregator",
+      "path": "nvflare.app_opt.he.intime_accumulate_model_aggregator.HEInTimeAccumulateWeightedAggregator",
       "args": {
         "weigh_by_local_iter": false
       }
     },
     {
       "id": "model_selector",
-      "name": "IntimeModelSelector",
+      "path": "nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector",
       "args": {}
     },
     {
       "id": "model_locator",
-      "name": "PTFileModelLocator",
+      "path": "nvflare.app_opt.pt.file_model_locator.PTFileModelLocator",
       "args": {
         "pt_persistor_id": "persistor"
       }
     },
     {
       "id": "json_generator",
-      "name": "ValidationJsonGenerator",
+      "path": "nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator",
       "args": {}
     }
   ],
   "workflows": [
       {
         "id": "scatter_gather_ctl",
-        "name": "ScatterAndGather",
+        "path": "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
         "args": {
             "min_clients" : "{min_clients}",
             "num_rounds" : "{num_rounds}",
@@ -68,7 +68,7 @@
       },
       {
         "id": "cross_site_model_eval",
-        "name": "HECrossSiteModelEval",
+        "path": "nvflare.app_opt.he.cross_site_model_eval.HECrossSiteModelEval",
         "args": {
           "model_locator_id": "model_locator",
           "submit_model_timeout": 600,
