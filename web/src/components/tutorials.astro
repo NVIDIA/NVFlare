@@ -1,4 +1,7 @@
 ---
+import GoogleColab from '../images/google_colab.svg.png'
+
+
 const highlights = [
   {
     title: "LLM Tuning via HuggingFace SFT Trainer",
@@ -26,12 +29,11 @@ const highlights = [
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/finance"
   },
   {
-    title: "Swarm Learning",
-    tags: ["int.", "algorithm", "pytorch", "learner", "dl"],
-    description:
-      "Example using Swarm Learning and Client-Controlled Cross-site Evaluation workflows.",
-    link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/swarm_learning",
-  }
+    title: "Parameter Efficient Fine Turning",
+    tags: ["adv.", "algorithm", "nemo", "llm"],
+    description: "Example utilizing NeMo's PEFT methods to adapt a LLM to a downstream task.",
+    link: "https://github.com/NVIDIA/NVFlare/tree/main/integration/nemo/examples/peft"
+  },
 ]
 
 const tutorials = [
@@ -39,7 +41,8 @@ const tutorials = [
     title: "Intro to the FL Simulator",
     tags: ["beg.", "tools"],
     description: "Use the NVIDIA FLARE Simulator to run a local simulation with multi-process settings within a single computer, offering quick response and debugging.",
-    link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/flare_simulator.ipynb"
+    link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/flare_simulator.ipynb",
+    colab_link: "https://colab.research.google.com/github/NVIDIA/NVFlare/blob/main/examples/tutorials/flare_simulator.ipynb"
   },
   {
     title: "POC Mode",
@@ -48,23 +51,18 @@ const tutorials = [
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/setup_poc.ipynb"
   },
   {
-    title: "Containerized Deployment with Docker",
-    tags: ["beg.", "deployment"],
-    description:
-      "Run NVIDIA FLARE in a Docker container.",
-    link: "https://nvflare.readthedocs.io/en/main/getting_started.html#containerized-deployment-with-docker",
-  },
-  {
     title: "FLARE API",
     tags: ["beg.", "tools"],
     description: "Manage system and jobs programmatically with the python FLARE API.",
-    link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/flare_api.ipynb"
+    link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/flare_api.ipynb",
+    colab_link: "https://colab.research.google.com/github/NVIDIA/NVFlare/blob/main/examples/tutorials/flare_api.ipynb"
   },
   {
     title: "Job CLI",
     tags: ["beg.", "tools"],
     description: "Job CLI for options to create and submit jobs from a command line interface in POC or production environments.",
-    link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/job_cli.ipynb"
+    link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/job_cli.ipynb",
+    colab_link: "https://colab.research.google.com/github/NVIDIA/NVFlare/blob/main/examples/tutorials/job_cli.ipynb"
   },
   {
     title: "Operating NVIDIA FLARE: Admin Client, Commands, FLARE API",
@@ -90,6 +88,13 @@ const tutorials = [
     tags: ["int.", "tools", "pytorch"],
     description: "Example integrating NVIDIA FLARE with Weights and Biases streaming capability from clients to the server.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/experiment-tracking/wandb/README.md"
+  },
+  {
+    title: "Containerized Deployment with Docker",
+    tags: ["beg.", "deployment"],
+    description:
+      "Run NVIDIA FLARE in a Docker container.",
+    link: "https://nvflare.readthedocs.io/en/main/quickstart.html#containerized-deployment-with-docker",
   },
   {
     title: "Cloud Deployment",
@@ -182,8 +187,8 @@ const tutorials = [
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/ml-to-fl"
   },
   {
-    title: "Hello FedAvg Numpy",
-    tags: ["beg.", "algorithm", "numpy", "model-controller"],
+    title: "Hello FedAvg",
+    tags: ["beg.", "algorithm", "pytorch", "model-controller"],
     description: "Example using the FedAvg workflow to implement Federated Averaging.",
     link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-fedavg/README.md"
   },
@@ -464,7 +469,7 @@ const tutorials = [
 
 const level = ["beg.", "int.", "adv."];
 const tutorial_category = ["algorithm", "tools", "deployment", "research"]
-const flare_api = ["client-api", "model-controller", "learner", "executor", "controller"];
+const flare_api = ["client-api", "model-controller", "learner"];
 const framework = ["pytorch", "tensorflow", "lightning", "xgboost", "sklearn", "numpy", "nemo", "monai", "huggingface"];
 const application_type = ["ml", "dl", "llm", "analytics"];
 const industry_domain = ["healthcare", "finance"];
@@ -704,8 +709,8 @@ const tag_list = [
 </script>
 
 
-<script define:vars={{highlights, tutorials, tag_list}} is:inline>
-  
+<script define:vars={{highlights, tutorials, tag_list, GoogleColab}} is:inline>
+
   const checkboxes = document.querySelectorAll('.check');
   const filtersContainer = document.getElementById('filter-categories');
   const searchInput = document.getElementById('search-bar');
@@ -735,6 +740,20 @@ const tag_list = [
         </div>`
     )).join(" ")
 
+    let colab_button = ``;
+    if (tutorial.colab_link) {
+      colab_button = `
+      <span class="h-full w-px bg-gray-200"></span>
+        <a href="${tutorial.colab_link}" target="_blank" rel="noopener noreferrer" class="flex-1 border border-transparent h-full flex items-center justify-center text-sm font-semibold text-gray-900">
+          <div class="flex items-center">
+            <svg class="pb-1 w-6 h-6 me-1.5" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 18 20">
+              <image class="w-6 h-6" href="${GoogleColab.src}" alt="Google Colab logo"></image>
+            </svg>
+            <span>Google Colab</span>
+          </div>
+        </a>`;
+    }
+
     tutorialElement.innerHTML = `
     <div class="flex flex-col gap-1 divide-gray-200 rounded-lg bg-white shadow-md h-80">
       <div>
@@ -751,9 +770,10 @@ const tag_list = [
         </p>
       </div>
       <div class="h-14 flex-shrink-0 flex justify-center items-center border-t border-gray-200">
-        <a href="${tutorial.link}" target="_blank" rel="noopener noreferrer" class="rounded-bl-lg border border-transparent py-2 px-4 text-sm font-semibold text-gray-900">
+        <a href="${tutorial.link}" target="_blank" rel="noopener noreferrer" class="flex-1 border-gray-200 h-full flex items-center justify-center text-sm font-semibold text-gray-900">
           Go to Tutorial
         </a>
+        ${colab_button}
       </div>
     </div>`;
 
@@ -767,10 +787,10 @@ const tag_list = [
 
       // Check to see if tutorial matches the search or checked items
       const matchesSearchTerm = (
-        tutorial.title.toLowerCase().includes(searchTerm) 
+        tutorial.title.toLowerCase().includes(searchTerm)
         || tutorial.description.toLowerCase().includes(searchTerm)
       );
-      
+
       var isInCheckedCategory = true;
 
       checkedCategories.forEach((tag) => {
