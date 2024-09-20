@@ -67,7 +67,6 @@ We listed two similarity metrics for each of the two testing datasets:
 ```commandline
 bash eval_all.sh
 ```
- 
 
  TrainData | STSB_pearson_cos | STSB_spearman_euc | NLI_cos_acc | NLI_euc_acc
 --- |------------------|-------------------|-------------| ---

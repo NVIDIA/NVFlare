@@ -13,13 +13,11 @@
 # limitations under the License.
 
 
-from src.st_model import SenTransModel
-
 from nvflare import FedJob
-from nvflare.job_config.script_runner import ScriptRunner
-from nvflare.app_common.workflows.fedavg import FedAvg
-from nvflare.app_opt.pt.job_config.model import PTModel
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
+from nvflare.app_common.workflows.fedavg import FedAvg
+from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
     n_clients = 3
@@ -34,13 +32,17 @@ if __name__ == "__main__":
         num_clients=n_clients,
         num_rounds=num_rounds,
     )
-    job.to_server(controller)
+    job.to(controller, "server")
 
-    # Define the initial global model with PTModel wrapper and send to server
-    job.to(PTModel(SenTransModel(), args='model_name="microsoft/mpnet-base"'), "server")
+    # Define the model persistor and send to server
+    # First send the model to the server
+    job.to("src/st_model.py", "server")
+    # Then send the model persistor to the server
+    model_args = {"path": "src.st_model.SenTransModel", "args": {"model_name": "microsoft/mpnet-base"}}
+    job.to(PTFileModelPersistor(model=model_args), "server", id="persistor")
 
     # Add model selection widget and send to server
-    job.to(IntimeModelSelector(key_metric="eval_loss", negate_key_metric=True), "server")
+    job.to(IntimeModelSelector(key_metric="eval_loss", negate_key_metric=True), "server", id="model_selector")
 
     # Send ScriptRunner to all clients
     runner = ScriptRunner(script=train_script, script_args="--dataset_name nli")
