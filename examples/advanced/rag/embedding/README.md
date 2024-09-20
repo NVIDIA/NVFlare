@@ -49,8 +49,9 @@ Once we have the iterative training script ready with "starting model" loading c
 
 The major code modifications are for receiving the global model, set it as the starting point for each round's training, and returning the trained model after each local training round.
 
-## Job for NVFlare FL Training
-With the local training script ready, we can go ahead to generate the NVFlare job configs by reusing the job templates.
+## Federated Training
+### With Job Template
+With the local training script ready, we can go ahead to generate the NVFlare job configs by using the job templates.
 
 Let's set the job template path with the following command.
 ```bash
@@ -63,7 +64,7 @@ nvflare job list_templates
 We can see the "sag_pt_deploy_map" template is available, with which we further generate job configs for embedding model training as:
 ```
 nvflare job create -force \
-  -j "/tmp/embed/nvflare/job" -w "sag_pt_deploy_map" -sd "code" \
+  -j "/tmp/embed/nvflare/job" -w "sag_pt_deploy_map" -sd "src" \
   -f meta.conf min_clients=3 \
   -f app_1/config_fed_client.conf app_script="train_fl.py" app_config="--dataset_name nli" \
   -f app_2/config_fed_client.conf app_script="train_fl.py" app_config="--dataset_name squad" \
@@ -71,13 +72,17 @@ nvflare job create -force \
   -f app_server/config_fed_server.conf model_class_path="st_model.SenTransModel" components[0].args.model.args.model_name="microsoft/mpnet-base" min_clients=3 num_rounds=7 key_metric="eval_loss" negate_key_metric=True 
 ```
 
-
 For both client and server configs, we only set the necessary task-related parameters tasks, and leave the rest to the default values.
 
-## Federated Training
 With the produced job, we run the federated training on a single client using NVFlare Simulator.
 ```
 nvflare simulator -w /tmp/embed/nvflare/workspace -n 3 -t 3 /tmp/embed/nvflare/job
+```
+
+### With Python API
+Alternatively, we can use the Python API to create and run the federated training job.
+```
+python3 train_fed.py
 ```
 
 ## Results
