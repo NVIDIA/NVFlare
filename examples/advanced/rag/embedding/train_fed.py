@@ -37,25 +37,18 @@ if __name__ == "__main__":
     job.to_server(controller)
 
     # Define the initial global model with PTModel wrapper and send to server
-    job.to(PTModel(SenTransModel(), args="model_name=\"microsoft/mpnet-base\""), "server")
+    job.to(PTModel(SenTransModel(), args='model_name="microsoft/mpnet-base"'), "server")
 
     # Add model selection widget and send to server
     job.to(IntimeModelSelector(key_metric="eval_loss", negate_key_metric=True), "server")
 
     # Send ScriptRunner to all clients
-    runner = ScriptRunner(
-        script=train_script, script_args="--dataset_name nli"
-    )
+    runner = ScriptRunner(script=train_script, script_args="--dataset_name nli")
     job.to(runner, "site-1")
-    runner = ScriptRunner(
-        script=train_script, script_args="--dataset_name squad"
-    )
+    runner = ScriptRunner(script=train_script, script_args="--dataset_name squad")
     job.to(runner, "site-2")
-    runner = ScriptRunner(
-        script=train_script, script_args="--dataset_name quora"
-    )
+    runner = ScriptRunner(script=train_script, script_args="--dataset_name quora")
     job.to(runner, "site-3")
-
 
     job.export_job("/tmp/embed/nvflare/job_api")
     job.simulator_run("/tmp/embed/nvflare/workspace_api")

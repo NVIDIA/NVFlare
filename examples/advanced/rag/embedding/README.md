@@ -50,43 +50,24 @@ Once we have the iterative training script ready with "starting model" loading c
 The major code modifications are for receiving the global model, set it as the starting point for each round's training, and returning the trained model after each local training round.
 
 ## Federated Training
-### With Job Template
-With the local training script ready, we can go ahead to generate the NVFlare job configs by using the job templates.
-
-Let's set the job template path with the following command.
-```bash
-nvflare config -jt ./job_template/
-```
-Then we can check the available templates with the following command.
-```bash
-nvflare job list_templates
-```
-We can see the "sag_pt_deploy_map" template is available, with which we further generate job configs for embedding model training as:
-```
-nvflare job create -force \
-  -j "/tmp/embed/nvflare/job" -w "sag_pt_deploy_map" -sd "src" \
-  -f meta.conf min_clients=3 \
-  -f app_1/config_fed_client.conf app_script="train_fl.py" app_config="--dataset_name nli" \
-  -f app_2/config_fed_client.conf app_script="train_fl.py" app_config="--dataset_name squad" \
-  -f app_3/config_fed_client.conf app_script="train_fl.py" app_config="--dataset_name quora" \
-  -f app_server/config_fed_server.conf model_class_path="st_model.SenTransModel" components[0].args.model.args.model_name="microsoft/mpnet-base" min_clients=3 num_rounds=7 key_metric="eval_loss" negate_key_metric=True 
-```
-
-For both client and server configs, we only set the necessary task-related parameters tasks, and leave the rest to the default values.
-
-With the produced job, we run the federated training on a single client using NVFlare Simulator.
-```
-nvflare simulator -w /tmp/embed/nvflare/workspace -n 3 -t 3 /tmp/embed/nvflare/job
-```
-
-### With Python API
-Alternatively, we can use the Python API to create and run the federated training job.
+We can use the Python JobAPI to create and run the federated training job.
 ```
 python3 train_fed.py
 ```
 
 ## Results
-The evaluation on two test datasets - [stsb](https://huggingface.co/datasets/sentence-transformers/stsb) with embedding similarity evaluation, and [NLI](https://huggingface.co/datasets/sentence-transformers/all-nli) with triplet accuracy evaluation, are shown below.
+Below are the evaluation results on two test datasets - [stsb](https://huggingface.co/datasets/sentence-transformers/stsb) with embedding similarity evaluation, and [NLI](https://huggingface.co/datasets/sentence-transformers/all-nli) with triplet accuracy evaluation. The candidate models are:
+- NLI: single site training using NLI data
+- Squad: single site training using Squad data
+- Quora: single site training using Quora data
+- All: centralized training using the combined data (see `utils/train_single_session.py`)
+- Federated: three sites federated learning, each site contains its own data of NLI, Squad or Quora
+
+We listed two similarity metrics for each of the two testing datasets:
+```commandline
+bash eval_all.sh
+```
+ 
 
  TrainData | STSB_pearson_cos | STSB_spearman_euc | NLI_cos_acc | NLI_euc_acc
 --- |------------------|-------------------|-------------| ---
