@@ -1,6 +1,9 @@
 ---
 import NvidiaLogo from '../images/nvidia_eye.png'
 import NvflareAnimation from '../images/nvflare_graphic_animation.mp4'
+
+const gh_branch = import.meta.env.PUBLIC_GH_BRANCH;
+const base_url = import.meta.env.BASE_URL;
 ---
 <div class="bg-white">
   <div class="relative isolate overflow-hidden bg-black">
@@ -9,6 +12,29 @@ import NvflareAnimation from '../images/nvflare_graphic_animation.mp4'
         <div class="mx-auto max-w-2xl">
           <div class="max-w-lg">
             <div class="mt-24 sm:mt-32 lg:mt-16">
+
+              <!-- Version Dropdown -->
+              <button id="dropdownVersionButton" data-dropdown-toggle="version-dropdown" class="text-gray-900 dark:text-gray-400 m-0.5 hover:bg-gray-300 dark:bg-gray-800 dark:border-gray-600 dark:hover:bg-gray-700 rounded-lg py-1 px-2.5 inline-flex items-center justify-center bg-gray-200 border-gray-200 border">
+                <span class="inline-flex items-center text-left">
+                    <span class="text-sm font-semibold w-14">v: {gh_branch}</span>
+                    <svg class="w-2.5 h-2.5" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 10 6">
+                      <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m1 1 4 4 4-4"/>
+                    </svg>
+                </span>
+              </button>
+
+              <!-- Version Dropdown Options -->
+              <div id="version-dropdown" class="z-10 hidden bg-gray-200 divide-y divide-gray-100 rounded-lg shadow-lg dark:bg-gray-700 m-0.5 px-2.5 text-left">
+                <ul id="version-tabs" class="flex-column h-fit space-y -mb-px py-2 text-sm text-gray-500 w-full">
+                  <li>
+                      <a href="/NVFlare" class=`rounded-lg block px-4 py-2 dark:hover:text-white hover:text-gray-900 ${gh_branch == "main" ? "bg-gray-300 text-gray-900" : ""}`>main</a>
+                  </li>
+                  <li >
+                      <a href="/NVFlare/version/2.5" class=`rounded-lg block px-4 py-2 dark:hover:text-white hover:text-gray-900 ${gh_branch == "2.5" ? "bg-gray-300 text-gray-900" : ""}`>2.5</a>
+                  </li>
+                </ul>
+              </div>
+
               <a
                 href="https://nvflare.readthedocs.io/en/main/whats_new.html"
                 class="inline-flex space-x-6">
@@ -22,7 +48,7 @@ import NvflareAnimation from '../images/nvflare_graphic_animation.mp4'
                 class="inline-flex space-x-6">
                 <span
                   class="inline-flex items-center space-x-2 text-sm font-medium leading-6 text-gray-200 hover:text-gray-100">
-                  <span>Just shipped v2.5.0</span>
+                  <span>Just Released</span>
                   <svg
                     class="h-5 w-5 text-gray-400"
                     viewBox="0 0 20 20"
@@ -58,12 +84,12 @@ import NvflareAnimation from '../images/nvflare_graphic_animation.mp4'
                 >Documentation</a
               >
               <a
-                href="/NVFlare/catalog"
+                href="catalog"
                 class="rounded-md bg-clear ring-inset ring-2 ring-gray-300 px-3.5 py-2.5 text-sm font-semibold text-gray-200 shadow-sm hover:bg-gray-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-nvidia"
                 >Tutorial Catalog</a
               >
               <a
-                href="https://github.com/NVIDIA/NVFlare"
+                href=`https://github.com/NVIDIA/NVFlare/tree/${gh_branch}`
                 class="text-sm font-semibold leading-6 text-gray-200 hover:text-neutral-100"
                 >
                 <span id="default-message" class="inline-flex px-3.5 py-2.5">
