@@ -12,9 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from src.simple_network import Resnet18
+
 from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
 from nvflare.job_config.script_runner import ScriptRunner
-from src.simple_network import Resnet18
 
 if __name__ == "__main__":
     n_clients = 2
@@ -22,8 +23,10 @@ if __name__ == "__main__":
     train_script = "src/hello-pt_cifar10_fl.py"
 
     job = FedAvgJob(
-        name="hello-pt_cifar10_fedavg", n_clients=n_clients, num_rounds=num_rounds,
-        initial_model=Resnet18(num_classes=10)
+        name="hello-pt_cifar10_fedavg",
+        n_clients=n_clients,
+        num_rounds=num_rounds,
+        initial_model=Resnet18(num_classes=10),
     )
 
     # Add clients
