@@ -5,4 +5,4 @@ do
 done
 
 echo "Evaluation on model federated"
-python utils/eval_model.py --model_path /tmp/embed/nvflare/workspace/site-1/simulate_job/app_site-1/models/mpnet-base-nli/global
+python utils/eval_model.py --model_path /tmp/embed/nvflare/workspace_api/site-1/models/mpnet-base-nli/global

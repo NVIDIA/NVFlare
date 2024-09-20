@@ -74,6 +74,6 @@ NLI | 0.7586           | 0.7895            | 0.8033      | 0.8045
 Squad | 0.8206           | 0.8154            | 0.8051      | 0.8042
 Quora | 0.8161           | 0.8121            | 0.7891      | 0.7854
 All | 0.8497           | 0.8523            | 0.8426      | 0.8384
-Federated | 0.8444           | 0.8368            | 0.8269      |  0.8246
+Federated | 0.8443           | 0.8367            | 0.8261      |  0.8249
 
 As shown, the federated training results are better than individual site's, and can be close to the centralized training results, demonstrating the effectiveness of NVFlare in embedding model tuning tasks.
