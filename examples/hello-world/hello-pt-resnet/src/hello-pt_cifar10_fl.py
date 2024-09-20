@@ -15,6 +15,7 @@
 import os
 
 import torch
+from simple_network import Resnet18
 from torch import nn
 from torch.optim import SGD
 from torch.utils.data.dataloader import DataLoader
@@ -23,7 +24,6 @@ from torchvision.transforms import Compose, Normalize, ToTensor
 
 import nvflare.client as flare
 from nvflare.client.tracking import SummaryWriter
-from simple_network import Resnet18
 
 DATASET_PATH = "/tmp/nvflare/data"
 

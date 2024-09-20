@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Optional, Any
+from typing import Any, Optional
 
 from torchvision.models import ResNet
 from torchvision.models._utils import _ovewrite_named_param
@@ -19,7 +19,6 @@ from torchvision.models.resnet import BasicBlock, ResNet18_Weights
 
 
 class Resnet18(ResNet):
-
     def __init__(self, num_classes, weights: Optional[ResNet18_Weights] = None, progress: bool = True, **kwargs: Any):
         self.num_classes = num_classes
 
