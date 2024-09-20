@@ -30,27 +30,33 @@ from nvflare.security.logging import secure_format_exception
 
 
 class PipeHandler(object):
-    """
-    PipeHandler monitors a pipe for messages from the peer. It reads the pipe periodically and puts received data
+    """Monitors a pipe for messages from the peer.
+
+    PipeHandler reads the pipe periodically and puts received data
     in a message queue in the order the data is received.
 
-    If the received data indicates a peer status change (END, ABORT, GONE), the data is added the message queue if the
-    status_cb is not registered. If the status_cb is registered, the data is NOT added the message queue. Instead,
-    the status_cb is called with the status data.
+    If the received data indicates a peer status change (END, ABORT, GONE):
+
+        - The data will be added to the message queue if the status callback is not registered.
+        - Otherwise, the data will NOT be added to the message queue, the status callback will
+          be called with the data.
 
     The PipeHandler should be used as follows:
-      - The app creates a pipe and then creates the PipeHandler object for the pipe;
-      - The app starts the PipeHandler. This step must be performed, or data in the pipe won't be read.
-      - The app should call handler.get_next() periodically to process the message in the queue. This method may return
-        None if there is no message in the queue. The app also must handle the status change event from the peer if it
-        does not set the status_cb. The status change event has the special topic value of Topic.END or Topic.ABORT.
-      - Optionally, the app can set a status_cb and handle the peer's status change immediately.
-      - Stop the handler when the app is finished.
+        - The app creates a pipe and then creates the PipeHandler object for the pipe;
+        - The app starts the PipeHandler. This step must be performed, or data in the pipe won't be read.
+        - The app should call handler.get_next() periodically to process the message in the queue. This method may return
+          None if there is no message in the queue. The app also must handle the status change event from the peer if it
+          does not set the status callback. The status change event has the special topic value of Topic.END or Topic.ABORT.
+        - Optionally, the app can set a status callback and handle the peer's status change immediately.
+        - Stop the handler when the app is finished.
 
-    NOTE: the handler uses a heartbeat mechanism to detect that the peer may be disconnected (gone). It sends
-    a heartbeat message to the peer based on configured interval. It also expects heartbeats from the peer. If peer's
-    heartbeat is not received for configured time, it will be treated as disconnected, and a GONE status is generated
-    for the app to handle.
+    .. note::
+
+        The handler uses a heartbeat mechanism to detect that the peer may be disconnected (gone).
+        It sends a heartbeat message to the peer based on configured interval.
+        It also expects heartbeats from the peer.
+        If peer's heartbeat is not received for configured time, it will be treated as disconnected,
+        and a GONE status is generated for the app to handle.
 
     """
 
@@ -112,19 +118,23 @@ class PipeHandler(object):
         self.heartbeat_sender.daemon = True
 
     def set_status_cb(self, cb, *args, **kwargs):
-        """Set CB for status handling. When the peer status is changed (ABORT, END, GONE), this CB is called.
-        If status CB is not set, the handler simply adds the status change event (topic) to the message queue.
+        """Sets a callback function for status handling.
 
-        The status_cb must conform to this signature:
+        When the peer status is changed (ABORT, END, GONE), this callback is called.
+        If callback is not set, the handler simply adds the status change event (topic) to the message queue.
+
+        The callback function must conform to this signature:
+
+        .. code-block: python
 
             cb(msg, *args, **kwargs)
 
         where the *args and *kwargs are ones passed to this call.
-        The status_cb is called from the thread that reads from the pipe, hence it should be short-lived.
-        Do not put heavy processing logic in the status_cb.
+        The cb is called from the thread that reads from the pipe, hence it should be short-lived.
+        Do not put heavy processing logic in the cb.
 
         Args:
-            cb: the callback func
+            cb: the callback function.
             *args: the args to be passed to the cb
             **kwargs: the kwargs to be passed to the cb
 
@@ -137,17 +147,21 @@ class PipeHandler(object):
         self.cb_kwargs = kwargs
 
     def set_message_cb(self, cb, *args, **kwargs):
-        """Set CB for message handling. When a regular message is received, this CB is called.
-        If the msg CB is not set, the handler simply adds the received msg to the message queue.
-        If the msg CB is set, the received msg will NOT be added to the message queue.
+        """Sets a callback function for message handling.
 
-        The CB must conform to this signature:
+        When a regular message is received, this cb is called.
+        If the cb is not set, the handler simply adds the received msg to the message queue.
+        If the cb is set, the received msg will NOT be added to the message queue.
+
+        The cb must conform to this signature:
+
+        .. code-block: python
 
             cb(msg, *args, **kwargs)
 
         where the *args and *kwargs are ones passed to this call.
 
-        The CB is called from the thread that reads from the pipe, hence it should be short-lived.
+        The cb is called from the thread that reads from the pipe, hence it should be short-lived.
         Do not put heavy processing logic in the CB.
 
         Args:
@@ -208,7 +222,9 @@ class PipeHandler(object):
 
     def start(self):
         """Starts the PipeHandler.
-        Note: before calling this method, the pipe managed by this PipeHandler must have been opened.
+
+        Note:
+            Before calling this method, the pipe managed by this PipeHandler must have been opened.
         """
         if self.reader and not self.reader.is_alive():
             self.reader.start()

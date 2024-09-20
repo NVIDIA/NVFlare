@@ -8,6 +8,11 @@ The NVIDIA FLARE :mod:`Job CLI<nvflare.tool.job.job_cli>` provides options to cr
 jobs from a command line interface. See the :github_nvflare_link:`NVFlare Job CLI Notebook <examples/tutorials/setup_poc.ipynb>`
 for a tutorial on how to use the Job CLI.
 
+.. note::
+    
+    We have introduced a new Pythonic Job API experience, please
+    check :ref:`fed_job_api`.
+
 ***********************
 Command Usage
 ***********************
