@@ -145,7 +145,7 @@ class ProcessorDataConverter(DataConverter):
     @staticmethod
     def to_float_array(result: FeatureAggregationResult) -> List[float]:
         float_array = []
-        for (g, h) in result.aggregated_hist:
+        for g, h in result.aggregated_hist:
             float_array.append(ProcessorDataConverter.int_to_float(g))
             float_array.append(ProcessorDataConverter.int_to_float(h))
 

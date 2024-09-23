@@ -27,7 +27,6 @@ from .defs import Constant
 
 
 class PyRunner(ABC):
-
     """
     A PyApplet must return a light-weight PyRunner object to run the Python code of the external app.
     Since the runner could be running in a separate subprocess, the runner object must be pickleable!
