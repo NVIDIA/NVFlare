@@ -31,7 +31,7 @@ def main():
     output_dir = args.output_dir
 
     site_name = flare.get_site_name()
-    print(f"\n {site_name =} \n ")
+    print(f"\n {site_name=} \n ")
 
     # receives global message from NVFlare
     etl_task = flare.receive()

@@ -137,7 +137,7 @@ class HEModelEncryptor(DXOFilter):
                 values = values * np.float64(self.n_iter)
 
             if param_name in self.encrypt_layers or self.encrypt_layers[0] is True:
-                self.log_info(fl_ctx, f"Encrypting vars {i+1} of {n_params}: {param_name} with {_n} values")
+                self.log_info(fl_ctx, f"Encrypting vars {i + 1} of {n_params}: {param_name} with {_n} values")
                 vmin = np.min(params[param_name])
                 vmax = np.max(params[param_name])
                 vmins.append(vmin)

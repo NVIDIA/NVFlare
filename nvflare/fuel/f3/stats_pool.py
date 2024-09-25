@@ -162,7 +162,7 @@ class HistPool(StatsPool):
         self.range_names = [f"<{marks[0]}"]
         for i in range(len(marks) - 1):
             self.ranges.append((marks[i], marks[i + 1]))
-            self.range_names.append(f"{marks[i]}-{marks[i+1]}")
+            self.range_names.append(f"{marks[i]}-{marks[i + 1]}")
         self.ranges.append((marks[-1], m))
         self.range_names.append(f">={marks[-1]}")
 

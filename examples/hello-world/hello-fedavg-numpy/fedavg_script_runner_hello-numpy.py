@@ -40,7 +40,7 @@ if __name__ == "__main__":
     # Add clients
     for i in range(n_clients):
         executor = ScriptRunner(script=train_script, script_args="", framework=FrameworkType.NUMPY)
-        job.to(executor, f"site-{i+1}")
+        job.to(executor, f"site-{i + 1}")
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")

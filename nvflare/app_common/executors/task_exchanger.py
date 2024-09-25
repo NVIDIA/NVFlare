@@ -155,11 +155,11 @@ class TaskExchanger(Executor):
         if self.peer_read_timeout and not has_been_read:
             self.log_error(
                 fl_ctx,
-                f"peer does not accept task '{task_name}' in {time.time()-start_time} secs - aborting task!",
+                f"peer does not accept task '{task_name}' in {time.time() - start_time} secs - aborting task!",
             )
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-        self.log_info(fl_ctx, f"task {task_name} sent to peer in {time.time()-start_time} secs")
+        self.log_info(fl_ctx, f"task {task_name} sent to peer in {time.time() - start_time} secs")
 
         # wait for result
         self.log_debug(fl_ctx, "Waiting for result from peer")
@@ -219,7 +219,7 @@ class TaskExchanger(Executor):
                         self.log_error(fl_ctx, "bad task result from peer")
                         return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-                    self.log_info(fl_ctx, f"received result of {task_name} from peer in {time.time()-start} secs")
+                    self.log_info(fl_ctx, f"received result of {task_name} from peer in {time.time() - start} secs")
                     return result
                 except Exception as ex:
                     self.log_error(fl_ctx, f"Failed to convert result: {secure_format_exception(ex)}")

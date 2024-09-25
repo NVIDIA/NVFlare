@@ -106,8 +106,8 @@ def main():
             ]
         )
         df_split = df_split.sample(frac=1)
-        print(f"site-{site+1} split rows [{row_start}:{row_end}],[{rows_total - rows_overlap}:{rows_total}]")
-        print(f"site-{site+1} split cols [{col_start}:{col_end}]")
+        print(f"site-{site + 1} split rows [{row_start}:{row_end}],[{rows_total - rows_overlap}:{rows_total}]")
+        print(f"site-{site + 1} split cols [{col_start}:{col_end}]")
 
         data_path = os.path.join(args.out_path, f"site-{site + 1}")
         if not os.path.exists(data_path):
