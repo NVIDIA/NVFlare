@@ -71,7 +71,6 @@ def _from_cell_message(cm: CellMessage) -> Message:
 
 
 class _CellInfo:
-
     """
     A cell could be used by multiple pipes (e.g. one pipe for task interaction, another for metrics logging).
     """

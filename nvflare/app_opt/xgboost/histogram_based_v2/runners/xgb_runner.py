@@ -17,7 +17,6 @@ from nvflare.apis.fl_context import FLContext
 
 
 class AppRunner(ABC):
-
     """An AppRunner implements App (server or client) processing logic."""
 
     def initialize(self, fl_ctx: FLContext):

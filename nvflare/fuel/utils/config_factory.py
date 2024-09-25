@@ -97,7 +97,6 @@ class ConfigFactory:
     def load_config(
         file_path: str, search_dirs: Optional[List[str]] = None, target_fmt: Optional[ConfigFormat] = None
     ) -> Optional[Config]:
-
         """Finds the configuration for given initial init_file_path and search directories.
 
         For example, the initial config file path given is `config_client.json`

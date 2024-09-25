@@ -55,7 +55,7 @@ class BinaryTransfer:
 
         # return list of the files
         files = []
-        for (dir_path, dir_names, file_names) in os.walk(tx_path):
+        for dir_path, dir_names, file_names in os.walk(tx_path):
             for f in file_names:
                 p = os.path.join(dir_path, f)
                 p = os.path.relpath(p, tx_path)
