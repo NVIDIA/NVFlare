@@ -49,7 +49,6 @@ class ConnectorData:
 
 
 class ConnectorManager:
-
     """
     Manages creation of connectors
     """
