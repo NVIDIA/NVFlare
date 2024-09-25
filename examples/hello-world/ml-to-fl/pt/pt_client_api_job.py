@@ -63,7 +63,7 @@ def main():
             command=launch_command.replace("{PORT}", ports[i]),
             framework=FrameworkType.PYTORCH,
         )
-        job.to(executor, f"site-{i+1}")
+        job.to(executor, f"site-{i + 1}")
 
     if export_config:
         job.export_job("/tmp/nvflare/jobs/job_config")

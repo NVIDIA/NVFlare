@@ -48,7 +48,7 @@ if __name__ == "__main__":
     job.to(data_splitter, "server")
 
     for i in range(n_clients):
-        site_name = f"site-{i+1}"
+        site_name = f"site-{i + 1}"
         learner_id = job.to(
             CIFAR10ModelLearner(train_idx_root=train_split_root, aggregation_epochs=aggregation_epochs, lr=0.01),
             site_name,

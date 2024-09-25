@@ -148,7 +148,7 @@ def main():
                 # add record
                 running_loss += float(loss.item()) * link_pred.numel()
                 instance_count += link_pred.numel()
-            print(f"Epoch: {epoch:02d}, Loss: {running_loss/instance_count:.4f}")
+            print(f"Epoch: {epoch:02d}, Loss: {running_loss / instance_count:.4f}")
             # (optional) add loss to tensorboard
             writer.add_scalar(
                 "train_loss", running_loss / instance_count, input_model.current_round * args.epochs + epoch
