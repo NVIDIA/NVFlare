@@ -66,7 +66,7 @@ if __name__ == "__main__":
             script=train_script,
             script_args="",
         )
-        job.to(executor, f"site-{i+1}")
+        job.to(executor, f"site-{i + 1}")
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")

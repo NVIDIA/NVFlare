@@ -478,7 +478,6 @@ class FederatedServer(BaseServer):
             return return_message
 
     def register_client(self, request: Message) -> Message:
-
         """Register new clients on the fly.
 
         Each client must get registered before getting the global model.

@@ -14,9 +14,9 @@
 import ctypes
 import os
 from contextlib import contextmanager
+from typing import Generator, Tuple
 
 import numpy as np
-from typing import Generator, Tuple
 
 
 def _check_call(rc: int) -> None:
@@ -74,6 +74,7 @@ def test_grad() -> None:
             )
         )
 
+
 def test_hori() -> None:
     array = np.arange(16, dtype=np.float32)
     # This is a DAM, we might use the Python DAM class to verify its content
@@ -95,12 +96,12 @@ def test_hori() -> None:
         out_len1 = ctypes.c_size_t()
 
         nvflare.FederatedPluginSyncEnrcyptedHistHori(
-                handle,
-                out,
-                out_len,
-                ctypes.byref(out1),
-                ctypes.byref(out_len1),
-            )
+            handle,
+            out,
+            out_len,
+            ctypes.byref(out1),
+            ctypes.byref(out_len1),
+        )
         # Needs the GRPC server to process the message.
         msg = nvflare.FederatedPluginErrorMsg().decode("utf-8")
         assert msg.find("Invalid dataset") != -1
