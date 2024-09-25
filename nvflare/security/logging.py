@@ -74,7 +74,7 @@ def _format_exc_securely() -> str:
     for f in frames:
         result.append(f.line_text)
         if f.count > 1:
-            result.append(f"[Previous line repeated {f.count-1} more times]")
+            result.append(f"[Previous line repeated {f.count - 1} more times]")
 
     text = "\r\n  ".join(result)
     return "{}\r\n{}".format(text, f"Exception Type: {exc_type}")

@@ -19,7 +19,6 @@ SYMBOL_NONE = "@none"
 
 
 class DefaultValuePolicy:
-
     """
     Defines policy for how to determine default value
     """

@@ -79,7 +79,7 @@ def main():
         row_end = sum(site_row_size[: site + 1])
 
         df_split = df_train.iloc[row_start:row_end, :]
-        print(f"site-{site+1} split rows [{row_start}:{row_end}]")
+        print(f"site-{site + 1} split rows [{row_start}:{row_end}]")
 
         data_path = os.path.join(args.out_path, f"site-{site + 1}")
         if not os.path.exists(data_path):

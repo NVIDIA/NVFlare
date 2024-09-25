@@ -31,8 +31,8 @@ def main():
     if num_jobs <= 0:
         print(f"invalid num_jobs {num_jobs}: must be > 0")
 
-    clients = [f"c{i+1}" for i in range(num_clients)]
-    jobs = [f"j{i+1}" for i in range(num_jobs)]
+    clients = [f"c{i + 1}" for i in range(num_clients)]
+    jobs = [f"j{i + 1}" for i in range(num_jobs)]
     server_jobs = [f"s_{j}" for j in jobs]
 
     config = {

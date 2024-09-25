@@ -23,7 +23,6 @@ from nvflare.fuel.utils.config_service import ConfigService
 
 
 class TBI(FLComponent):
-
     """(TBI) Task Based Interaction is the base class for ServerRunner and ClientRunner that implement details of
     task based interactions.
 

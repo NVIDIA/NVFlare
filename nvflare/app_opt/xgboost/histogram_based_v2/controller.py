@@ -456,7 +456,9 @@ class XGBController(Controller):
                     return False
 
                 if r < 0 or r >= num_clients:
-                    self.system_panic(f"bad rank assignment {r} for client '{c}': must be 0 to {num_clients-1}", fl_ctx)
+                    self.system_panic(
+                        f"bad rank assignment {r} for client '{c}': must be 0 to {num_clients - 1}", fl_ctx
+                    )
                     return False
 
                 assigned_client = assigned_ranks.get(r)

@@ -52,6 +52,10 @@ def is_python_greater_than_309():
         version_value = 309
     elif version.startswith("3.10."):
         version_value = 310
+    elif version.startswith("3.11."):
+        version_value = 311
+    elif version.startswith("3.12."):
+        version_value = 312
     else:
         raise ValueError("unknown version")
     return version_value > 309
