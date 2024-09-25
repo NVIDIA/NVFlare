@@ -15,6 +15,7 @@
 
 import logging
 import os
+
 import torch
 
 from nvflare.apis.event_type import EventType
@@ -55,8 +56,8 @@ class PEFTmodel(torch.nn.Module, FLComponent):
         from nemo.collections.nlp.models.language_modeling.megatron_gpt_sft_model import MegatronGPTSFTModel
         from nemo.collections.nlp.parts.megatron_trainer_builder import MegatronLMPPTrainerBuilder
         from nemo.collections.nlp.parts.peft_config import PEFT_CONFIG_MAP
-        from omegaconf import OmegaConf        
-        
+        from omegaconf import OmegaConf
+
         # get app root
         app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)
 

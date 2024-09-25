@@ -147,7 +147,7 @@ if __name__ == "__main__":
             script_args=f"--data_root_dir {data_output_dir}",
             framework=FrameworkType.RAW,  # kmeans requires raw values only rather than PyTorch Tensors (the default)
         )
-        job.to(executor, f"site-{i+1}")  # HIGGs data splitter assumes site names start from 1
+        job.to(executor, f"site-{i + 1}")  # HIGGs data splitter assumes site names start from 1
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir")

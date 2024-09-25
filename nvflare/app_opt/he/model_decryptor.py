@@ -75,7 +75,7 @@ class HEModelDecryptor(DXOFilter):
                 _n = values.size()
                 n_total += _n
                 if isinstance(values, CKKSVector):
-                    self.log_info(fl_ctx, f"Decrypting vars {i+1} of {n_params}: {param_name} with {_n} values")
+                    self.log_info(fl_ctx, f"Decrypting vars {i + 1} of {n_params}: {param_name} with {_n} values")
                     params[param_name] = values.decrypt(secret_key=self.tenseal_context.secret_key())
                     n_decrypted += _n
                 else:
