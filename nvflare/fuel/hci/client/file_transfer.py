@@ -379,7 +379,7 @@ class FileTransferModule(CommandModule):
         download_end = time.time()
         api.fire_session_event(
             EventType.AFTER_DOWNLOAD_FILE,
-            f"downloaded {file_name} ({receiver.num_bytes_received} bytes) in {download_end-download_start} seconds",
+            f"downloaded {file_name} ({receiver.num_bytes_received} bytes) in {download_end - download_start} seconds",
         )
         dir_name, ext = os.path.splitext(file_path)
         if ext == ".zip":

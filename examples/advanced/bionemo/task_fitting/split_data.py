@@ -39,7 +39,7 @@ def get_site_class_summary(train_labels, site_idx):
     for site, data_idx in site_idx.items():
         unq, unq_cnt = np.unique(train_labels[data_idx], return_counts=True)
         tmp = {unq[i]: int(unq_cnt[i]) for i in range(len(unq))}
-        class_sum[f"site-{site+1}"] = tmp
+        class_sum[f"site-{site + 1}"] = tmp
     return class_sum
 
 
@@ -106,7 +106,7 @@ def split(proteins, num_sites, split_dir=".", alpha=1.0, seed=0, concat=False):
     # write split data
     train_proteins = np.asarray(train_proteins)
     for site in range(num_sites):
-        client_name = f"site-{site+1}"
+        client_name = f"site-{site + 1}"
 
         train_indices = site_idx[site]
         split_train_proteins = train_proteins[train_indices]

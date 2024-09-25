@@ -31,4 +31,3 @@ def convert_global_to_ckpt(global_model_filepath: str, ckpt_path: str):
     torch.save({"state_dict": global_weights}, ckpt_path)
 
     print(f"Saved NeMo ckpt with {len(global_weights)} entries to {ckpt_path}")
-
