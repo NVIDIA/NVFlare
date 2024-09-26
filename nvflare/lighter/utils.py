@@ -280,8 +280,10 @@ def _write_local(type, dest_dir, template, capacity=""):
         template["default_authz"],
         "t",
     )
-    resources = json.loads(template["local_client_resources"])
-    if type == "client":
+    if type == "server":
+        resources = json.loads(template["local_server_resources"])
+    elif type == "client":
+        resources = json.loads(template["local_client_resources"])
         for component in resources["components"]:
             if "nvflare.app_common.resource_managers.gpu_resource_manager.GPUResourceManager" == component["path"]:
                 component["args"] = json.loads(capacity)
