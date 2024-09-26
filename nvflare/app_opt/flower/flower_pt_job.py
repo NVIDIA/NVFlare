@@ -12,22 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os.path
 from typing import List, Optional
 
 from nvflare.app_common.tie.defs import Constant
-from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
-from nvflare.app_common.widgets.metric_relay import MetricRelay
-from nvflare.app_common.widgets.streaming import AnalyticsReceiver
-from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
-from nvflare.fuel.utils.validation_utils import check_object_type
-from nvflare.job_config.api import FedJob
+from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 
-from .controller import FlowerController
-from .executor import FlowerExecutor
+from .flower_job import FlowerJob
 
 
-class FlowerJob(FedJob):
+class FlowerPyTorchJob(FlowerJob):
     def __init__(
         self,
         name: str,
@@ -70,12 +63,15 @@ class FlowerJob(FedJob):
             analytics_receiver (AnalyticsReceiver, optional): the AnalyticsReceiver to use to process received metrics.
             extra_env (dict, optional): optional extra env variables to be passed to Flower client
         """
-        if not os.path.isdir(flower_content):
-            raise ValueError(f"{flower_content} is not a valid directory")
+        analytics_receiver = (
+            analytics_receiver if analytics_receiver else TBAnalyticsReceiver(events=["fed.analytix_log_stats"])
+        )
 
-        super().__init__(name=name, min_clients=min_clients, mandatory_clients=mandatory_clients)
-
-        controller = FlowerController(
+        super().__init__(
+            name=name,
+            flower_content=flower_content,
+            min_clients=min_clients,
+            mandatory_clients=mandatory_clients,
             database=database,
             server_app_args=server_app_args,
             superlink_ready_timeout=superlink_ready_timeout,
@@ -83,50 +79,10 @@ class FlowerJob(FedJob):
             start_task_timeout=start_task_timeout,
             max_client_op_interval=max_client_op_interval,
             progress_timeout=progress_timeout,
-        )
-        self.to_server(controller)
-        self.to_server(obj=flower_content)
-
-        executor = FlowerExecutor(
             per_msg_timeout=per_msg_timeout,
             tx_timeout=tx_timeout,
             client_shutdown_timeout=client_shutdown_timeout,
+            stream_metrics=stream_metrics,
+            analytics_receiver=analytics_receiver,
             extra_env=extra_env,
         )
-        self.to_clients(executor)
-        self.to_clients(obj=flower_content)
-
-        if not stream_metrics:
-            return
-
-        # add required components for metrics streaming
-        # server side - need analytics_receiver
-        if analytics_receiver:
-            check_object_type("analytics_receiver", analytics_receiver, AnalyticsReceiver)
-            self.to_server(analytics_receiver, "analytics_receiver")
-        else:
-            raise ValueError("Missing analytics receiver on the server side.")
-
-        # client side
-        # cell pipe
-        cell_pipe = CellPipe(
-            mode="PASSIVE",
-            site_name="{SITE_NAME}",
-            token="{JOB_ID}",
-            root_url="{ROOT_URL}",
-            secure_mode="{SECURE_MODE}",
-            workspace_dir="{WORKSPACE}",
-        )
-        pipe_id = self.to_clients(cell_pipe, "metrics_pipe")
-
-        metric_relay = MetricRelay(
-            pipe_id=pipe_id,
-            event_type="fed.analytix_log_stats",
-            read_interval=0.1,
-            heartbeat_timeout=0,
-            fed_event=True,
-        )
-
-        relay_id = self.to_clients(metric_relay, "metric_relay")
-        conf = ExternalConfigurator(component_ids=[relay_id])
-        self.to_clients(conf, "client_api_config_preparer")
