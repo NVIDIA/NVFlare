@@ -18,7 +18,6 @@ from nvflare.apis.fl_context import FLContext
 
 
 class Applet(ABC, FLComponent):
-
     """An Applet implements App (server or client) processing logic."""
 
     def __init__(self):

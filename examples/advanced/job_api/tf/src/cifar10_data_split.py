@@ -73,7 +73,7 @@ def cifar10_split(split_dir: str = None, num_sites: int = 8, alpha: float = 0.5,
     site_file_path = os.path.join(split_dir, "site-")
     for site in range(num_sites):
         site_file_name = site_file_path + str(site + 1) + ".npy"
-        print(f"Save split index {site+1} of {num_sites} to {site_file_name}")
+        print(f"Save split index {site + 1} of {num_sites} to {site_file_name}")
         np.save(site_file_name, np.array(site_idx[site]))
         train_idx_paths.append(site_file_name)
 

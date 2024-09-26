@@ -114,7 +114,7 @@ class ClientSecurityHandler(SecurityHandler):
 
         t = time.time()
         encoded = encode_encrypted_data(self.public_key, encrypted_values)
-        self.info(fl_ctx, f"encoded msg: size={len(encoded)}, type={type(encoded)} time={time.time()-t} secs")
+        self.info(fl_ctx, f"encoded msg: size={len(encoded)}, type={type(encoded)} time={time.time() - t} secs")
 
         # Remember the original buffer size, so we could send a dummy buffer of this size to other clients
         # This is important since all XGB clients already prepared a buffer of this size and expect the data
@@ -218,10 +218,10 @@ class ClientSecurityHandler(SecurityHandler):
         )
         start = time.time()
         aggr_result = self.adder.add(self.encrypted_ghs, self.feature_masks, groups, encode_sum=True)
-        self.info(fl_ctx, f"got aggr result for {len(aggr_result)} features in {time.time()-start} secs")
+        self.info(fl_ctx, f"got aggr result for {len(aggr_result)} features in {time.time() - start} secs")
         start = time.time()
         encoded_str = encode_feature_aggregations(aggr_result)
-        self.info(fl_ctx, f"encoded aggr result len {len(encoded_str)} in {time.time()-start} secs")
+        self.info(fl_ctx, f"encoded aggr result len {len(encoded_str)} in {time.time() - start} secs")
         headers = {Constant.HEADER_KEY_ENCRYPTED_DATA: True, Constant.HEADER_KEY_ORIGINAL_BUF_SIZE: len(buffer)}
         fl_ctx.set_prop(key=Constant.PARAM_KEY_SEND_BUF, value=encoded_str, private=True, sticky=False)
         fl_ctx.set_prop(key=Constant.PARAM_KEY_HEADERS, value=headers, private=True, sticky=False)
@@ -240,7 +240,7 @@ class ClientSecurityHandler(SecurityHandler):
         self.info(
             fl_ctx,
             f"_process_before_all_gather_v: Histograms with {len(histograms)} entries "
-            f"encrypted in {time.time()-start} secs",
+            f"encrypted in {time.time() - start} secs",
         )
         headers = {
             Constant.HEADER_KEY_ENCRYPTED_DATA: True,
@@ -268,7 +268,7 @@ class ClientSecurityHandler(SecurityHandler):
                     gid, sample_ids = grp
                     gh_list = self.aggregator.aggregate(self.clear_ghs, masks, num_bins, sample_ids)
                     aggr_result.append((fid, gid, gh_list))
-        self.info(fl_ctx, f"aggregated clear-text in {time.time()-t} secs")
+        self.info(fl_ctx, f"aggregated clear-text in {time.time() - t} secs")
         self.aggr_result = aggr_result
 
     def _decrypt_aggr_result(self, encoded, fl_ctx: FLContext):
@@ -280,12 +280,12 @@ class ClientSecurityHandler(SecurityHandler):
         encoded_str = encoded
         t = time.time()
         decoded_aggrs = decode_feature_aggregations(self.public_key, encoded_str)
-        self.info(fl_ctx, f"decode_feature_aggregations took {time.time()-t} secs")
+        self.info(fl_ctx, f"decode_feature_aggregations took {time.time() - t} secs")
 
         t = time.time()
         aggrs_to_decrypt = [decoded_aggrs[i][2] for i in range(len(decoded_aggrs))]
         decrypted_aggrs = self.decrypter.decrypt(aggrs_to_decrypt)  # this is a list of clear-text GH numbers
-        self.info(fl_ctx, f"decrypted {len(aggrs_to_decrypt)} numbers in {time.time()-t} secs")
+        self.info(fl_ctx, f"decrypted {len(aggrs_to_decrypt)} numbers in {time.time() - t} secs")
 
         aggr_result = []
         for i in range(len(decoded_aggrs)):
