@@ -243,7 +243,7 @@ def register_folder(folder: str, package: str):
                     # classes who are abstract or take extra args in __init__ can't be auto-registered
                     if issubclass(cls_obj, Decomposer) and not inspect.isabstract(cls_obj) and len(spec.args) == 1:
                         register(cls_obj)
-            except (ModuleNotFoundError, RuntimeError) as e:
+            except (ModuleNotFoundError, RuntimeError, ValueError) as e:
                 log.debug(
                     f"Try to import module {decomposers}, but failed: {secure_format_exception(e)}. "
                     f"Can't use name in config to refer to classes in module: {decomposers}."
@@ -275,7 +275,7 @@ def register_custom_folder(folder: str):
                                 log.warning(
                                     f"Invalid Decomposer from {module}: can't have argument in Decomposer's constructor"
                                 )
-                except (ModuleNotFoundError, RuntimeError):
+                except (ModuleNotFoundError, RuntimeError, ValueError):
                     pass
 
 
