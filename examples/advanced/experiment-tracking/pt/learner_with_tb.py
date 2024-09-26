@@ -171,7 +171,7 @@ class PTLearner(Learner):
                 running_loss += cost.cpu().detach().numpy() / images.size()[0]
                 if i % 3000 == 0:
                     self.log_info(
-                        fl_ctx, f"Epoch: {epoch}/{self.epochs}, Iteration: {i}, " f"Loss: {running_loss/3000}"
+                        fl_ctx, f"Epoch: {epoch}/{self.epochs}, Iteration: {i}, " f"Loss: {running_loss / 3000}"
                     )
                     running_loss = 0.0
 

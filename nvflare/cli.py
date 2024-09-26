@@ -23,6 +23,7 @@ from nvflare.dashboard.cli import define_dashboard_parser, handle_dashboard
 from nvflare.fuel.hci.tools.authz_preview import define_authz_preview_parser, run_command
 from nvflare.lighter.provision import define_provision_parser, handle_provision
 from nvflare.private.fed.app.simulator.simulator import define_simulator_parser, run_simulator
+from nvflare.private.fed.app.utils import version_check
 from nvflare.tool.job.job_cli import def_job_cli_parser, handle_job_cli_cmd
 from nvflare.tool.poc.poc_commands import def_poc_parser, handle_poc_cmd
 from nvflare.tool.preflight_check import check_packages, define_preflight_check_parser
@@ -43,13 +44,6 @@ CMD_DASHBOARD = "dashboard"
 CMD_AUTHZ_PREVIEW = "authz_preview"
 CMD_JOB = "job"
 CMD_CONFIG = "config"
-
-
-def check_python_version():
-    if sys.version_info >= (3, 11):
-        raise RuntimeError("Python versions 3.11 and above are not yet supported. Please use Python 3.8, 3.9 or 3.10.")
-    if sys.version_info < (3, 8):
-        raise RuntimeError("Python versions 3.7 and below are not supported. Please use Python 3.8, 3.9 or 3.10")
 
 
 def def_provision_parser(sub_cmd):
@@ -218,7 +212,7 @@ def print_nvflare_version():
 
 
 def main():
-    check_python_version()
+    version_check()
     run("nvflare")
 
 

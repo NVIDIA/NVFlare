@@ -44,7 +44,7 @@ if __name__ == "__main__":
     job.to(ctrl, "server")
 
     for i in range(n_clients):
-        site_name = f"site-{i+1}"
+        site_name = f"site-{i + 1}"
         learner_id = job.to(
             PTLearner(epochs=5, lr=0.01, analytic_sender_id="log_writer"),
             site_name,

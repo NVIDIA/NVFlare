@@ -251,7 +251,7 @@ def register_decomposer_module(decomposer_module):
                 package_name = module_info.name
                 folder = os.path.join(folder_name, package_name.split(".")[-1])
                 fobs.register_folder(folder, package_name)
-    except (ModuleNotFoundError, RuntimeError) as e:
+    except (ModuleNotFoundError, RuntimeError, ValueError) as e:
         # logger.warning(f"Could not register decomposers from: {decomposer_module}")
         pass
 

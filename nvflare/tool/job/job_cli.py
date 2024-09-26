@@ -105,7 +105,7 @@ def get_template_info_config(template_dir):
 
 def get_app_dirs_from_template(template_dir):
     app_dirs = []
-    for root, dirs, files in os.walk(template_dir):
+    for root, _dirs, files in os.walk(template_dir):
         if root != template_dir and (CONFIG_FED_SERVER_CONF in files or CONFIG_FED_CLIENT_CONF in files):
             app_dirs.append(root)
 
@@ -114,7 +114,7 @@ def get_app_dirs_from_template(template_dir):
 
 def get_app_dirs_from_job_folder(job_folder):
     app_dirs = []
-    for root, dirs, files in os.walk(job_folder):
+    for root, _dirs, _files in os.walk(job_folder):
         if root != job_folder and (root.endswith("config") or root.endswith("custom")):
             dir_name = os.path.dirname(os.path.relpath(root, job_folder))
             if dir_name:
@@ -192,7 +192,7 @@ def get_src_template(cmd_args) -> Optional[str]:
 
 
 def remove_pycache_files(custom_dir):
-    for root, dirs, files in os.walk(custom_dir):
+    for root, dirs, _files in os.walk(custom_dir):
         # remove pycache and pyc files
         for d in dirs:
             if d == "__pycache__" or d.endswith(".pyc"):
