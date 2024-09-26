@@ -203,7 +203,7 @@ class _RequestReceiver:
         result.set_header(HEADER_OP, OP_REPLY)
         result.set_header(HEADER_TOPIC, self.topic)
         self.result = result
-        ReliableMessage.debug(fl_ctx, f"finished request handler in {time.time()-start_time} secs")
+        ReliableMessage.debug(fl_ctx, f"finished request handler in {time.time() - start_time} secs")
         self._try_reply(fl_ctx)
 
 
@@ -344,7 +344,7 @@ class ReliableMessage:
             cls.warning(fl_ctx, "received reply but we are no longer waiting for it")
         else:
             assert isinstance(receiver, _ReplyReceiver)
-            cls.debug(fl_ctx, f"received reply in {time.time()-receiver.tx_start_time} secs - set waiter")
+            cls.debug(fl_ctx, f"received reply in {time.time() - receiver.tx_start_time} secs - set waiter")
             receiver.process(request)
         return make_reply(ReturnCode.OK)
 
@@ -611,7 +611,7 @@ class ReliableMessage:
                     # the reply is already the result - we are done!
                     # this could happen when we didn't get positive ack for our first request, and the result was
                     # already produced when we did the 2nd request (this request).
-                    cls.debug(fl_ctx, f"C1: received result in {time.time()-receiver.tx_start_time} seconds; {rc=}")
+                    cls.debug(fl_ctx, f"C1: received result in {time.time() - receiver.tx_start_time} seconds; {rc=}")
                     return ack
 
                 # the ack is a status report - check status
@@ -668,7 +668,7 @@ class ReliableMessage:
                 # we already received result sent by the target.
                 # Note that we don't wait forever here - we only wait for _query_interval, so we could
                 # check other condition and/or send query to ask for result.
-                cls.debug(fl_ctx, f"C2: received result in {time.time()-receiver.tx_start_time} seconds")
+                cls.debug(fl_ctx, f"C2: received result in {time.time() - receiver.tx_start_time} seconds")
                 return receiver.result
 
             if abort_signal and abort_signal.triggered:
@@ -701,7 +701,7 @@ class ReliableMessage:
                 op = ack.get_header(HEADER_OP)
                 if op == OP_REPLY:
                     # the ack is result itself!
-                    cls.debug(fl_ctx, f"C3: received result in {time.time()-receiver.tx_start_time} seconds")
+                    cls.debug(fl_ctx, f"C3: received result in {time.time() - receiver.tx_start_time} seconds")
                     return ack
 
                 status = ack.get_header(HEADER_STATUS)

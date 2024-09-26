@@ -24,9 +24,9 @@ A clear and concise description of what you expected to happen.
 If applicable, add screenshots to help explain your problem.
 
 **Desktop (please complete the following information):**
- - OS: [e.g. ubuntu 16.04]
- - Python Version [e.g. 3.8]
- - NVFlare Version [e.g. 2.1]
+ - OS: [e.g. ubuntu 22.04]
+ - Python Version [e.g. 3.10]
+ - NVFlare Version [e.g. 2.5]
 
 **Additional context**
 Add any other context about the problem here.

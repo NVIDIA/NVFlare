@@ -190,7 +190,7 @@ class GetTaskCommand(CommandProcessor, ServerStateCheck):
                 f"return task to client.  client_name: {client.name}  task_name: {taskname}   task_id: {task_id}  "
                 f"sharable_header_task_id: {shareable.get_header(key=FLContextKey.TASK_ID)}"
             )
-        self.logger.debug(f"Get_task processing time: {time.time()-start_time} for client: {client.name}")
+        self.logger.debug(f"Get_task processing time: {time.time() - start_time} for client: {client.name}")
         return shareable
 
     def get_state_check(self, fl_ctx: FLContext) -> dict:
@@ -234,7 +234,7 @@ class SubmitUpdateCommand(CommandProcessor, ServerStateCheck):
         server_runner.process_submission(client, contribution_task_name, task_id, data, fl_ctx)
         self.logger.info(f"submit_update process. client_name:{client.name}   task_id:{task_id}")
 
-        self.logger.debug(f"Submit_result processing time: {time.time()-start_time} for client: {client.name}")
+        self.logger.debug(f"Submit_result processing time: {time.time() - start_time} for client: {client.name}")
         return ""
 
     def get_state_check(self, fl_ctx: FLContext) -> dict:

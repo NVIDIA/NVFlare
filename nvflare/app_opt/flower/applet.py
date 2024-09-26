@@ -160,7 +160,7 @@ class FlowerServerApplet(Applet):
             ready_timeout=self.superlink_ready_timeout,
             test_only=True,
         )
-        self.logger.info(f"superlink is ready for server app in {time.time()-start_time} seconds")
+        self.logger.info(f"superlink is ready for server app in {time.time() - start_time} seconds")
 
         # start the server app
         args_str = ""

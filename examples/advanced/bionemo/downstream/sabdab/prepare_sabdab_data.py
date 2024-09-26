@@ -90,7 +90,7 @@ def main():
         proportions = n_clients * [1 / n_clients]
 
     for client_id in range(n_clients):
-        client_name = f"site-{client_id+1}"
+        client_name = f"site-{client_id + 1}"
         client_train_df = train_df.sample(frac=proportions[client_id], replace=False, random_state=seed + client_id)
 
         if do_break_chains:
@@ -132,8 +132,8 @@ def main():
         n_pos = np.sum(_df["Y"] == 0)
         n_neg = np.sum(_df["Y"] == 1)
         n = len(_df)
-        print(f"  {_set} Pos/Neg ratio: neg={n_neg}, pos={n_pos}: {n_pos/n_neg:0.3f}")
-        print(f"  {_set} Trivial accuracy: {n_pos/n:0.3f}")
+        print(f"  {_set} Pos/Neg ratio: neg={n_neg}, pos={n_pos}: {n_pos / n_neg:0.3f}")
+        print(f"  {_set} Trivial accuracy: {n_pos / n:0.3f}")
 
     # measure overlap
     d = np.nan * np.zeros((n_clients, n_clients))
@@ -149,7 +149,7 @@ def main():
 
     print(d)
     overlap = np.mean(d[~np.isnan(d)])
-    print(f"Avg. overlap: {100*overlap:0.2f}%")
+    print(f"Avg. overlap: {100 * overlap:0.2f}%")
 
 
 if __name__ == "__main__":

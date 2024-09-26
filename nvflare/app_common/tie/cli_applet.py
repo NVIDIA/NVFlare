@@ -83,7 +83,7 @@ class CLIApplet(Applet, ABC):
                 rc = mgr.poll()
                 if rc is not None:
                     # already stopped
-                    self.logger.info(f"applet stopped ({rc=}) after {time.time()-start} seconds")
+                    self.logger.info(f"applet stopped ({rc=}) after {time.time() - start} seconds")
                     break
                 time.sleep(0.1)
 
