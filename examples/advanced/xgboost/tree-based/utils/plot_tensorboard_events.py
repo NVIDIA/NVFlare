@@ -20,10 +20,9 @@ import seaborn as sns
 import tensorflow as tf
 
 # simulator workspace
-client_results_root = "./workspaces/xgboost_workspace_"
-client_num_list = [5, 20]
-client_pre = "app_site-"
-centralized_path = "./workspaces/centralized_1_1/events.*"
+CLIENT_RESULTS_ROOT = "./workspaces/xgboost_workspace_"
+CLIENT_NUM_LIST = [5, 20]
+CENTRAL_EVENT_PATH = "./workspaces/centralized_1_1/events.*"
 
 # bagging and cyclic need different handle
 experiments_bagging = {
@@ -75,6 +74,7 @@ def read_eventfile(filepath, tags=["AUC"]):
 
 
 def add_eventdata(data, config, filepath, tag="AUC"):
+    print(f"adding {filepath}")
     event_data = read_eventfile(filepath, tags=[tag])
     assert len(event_data[tag]) > 0, f"No data for key {tag}"
 
@@ -92,40 +92,41 @@ def add_eventdata(data, config, filepath, tag="AUC"):
     print(f"added {len(event_data[tag])} entries for {tag}")
 
 
+def _get_record_path(config: str, site: str) -> str:
+    return os.path.join(CLIENT_RESULTS_ROOT + config, f"site-{site}", "simulate_job", f"app_site-{site}", "events.*")
+
+
+def _find_tb_event_file(record_path: str):
+    eventfile = glob.glob(record_path, recursive=True)
+    assert len(eventfile) == 1, f"No unique event file found using {record_path=} {eventfile=}!"
+    eventfile = eventfile[0]
+    return eventfile
+
+
 def main():
     plt.figure()
 
-    for client_num in client_num_list:
+    for client_num in CLIENT_NUM_LIST:
         plt.figure
         plt.title(f"{client_num} client experiments")
         # add event files
         data = {"Config": [], "Round": [], "AUC": []}
         # add centralized result
-        eventfile = glob.glob(centralized_path, recursive=True)
-        assert len(eventfile) == 1, "No unique event file found!" + eventfile
-        eventfile = eventfile[0]
-        print("adding", eventfile)
+        eventfile = _find_tb_event_file(CENTRAL_EVENT_PATH)
         add_eventdata(data, "centralized", eventfile, tag="AUC")
+
         # pick first client for bagging experiments
         site = 1
         for config, exp in experiments_bagging[client_num].items():
-            record_path = os.path.join(client_results_root + config, "simulate_job", client_pre + str(site), "events.*")
-            eventfile = glob.glob(record_path, recursive=True)
-            assert len(eventfile) == 1, "No unique event file found!"
-            eventfile = eventfile[0]
-            print("adding", eventfile)
+            record_path = _get_record_path(config, str(site))
+            eventfile = _find_tb_event_file(record_path)
             add_eventdata(data, config, eventfile, tag=exp["tag"])
 
         # Combine all clients' records for cyclic experiments
         for site in range(1, client_num + 1):
             for config, exp in experiments_cyclic[client_num].items():
-                record_path = os.path.join(
-                    client_results_root + config, "simulate_job", client_pre + str(site), "events.*"
-                )
-                eventfile = glob.glob(record_path, recursive=True)
-                assert len(eventfile) == 1, f"No unique event file found under {record_path}!"
-                eventfile = eventfile[0]
-                print("adding", eventfile)
+                record_path = _get_record_path(config, str(site))
+                eventfile = _find_tb_event_file(record_path)
                 add_eventdata(data, config, eventfile, tag=exp["tag"])
 
         sns.lineplot(x="Round", y="AUC", hue="Config", data=data)
