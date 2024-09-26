@@ -15,7 +15,7 @@
 import os
 
 import torch
-from simple_network import Resnet18
+from resnet_18 import Resnet18
 from torch import nn
 from torch.optim import SGD
 from torch.utils.data.dataloader import DataLoader

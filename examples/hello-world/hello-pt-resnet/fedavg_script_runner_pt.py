@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from src.simple_network import Resnet18
+from src.resnet_18 import Resnet18
 
 from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
 from nvflare.job_config.script_runner import ScriptRunner
