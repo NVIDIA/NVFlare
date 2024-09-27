@@ -47,10 +47,11 @@ To collaborate efficiently, please read through this section and follow them.
 #### Checking the coding style
 We check code style using flake8 and isort.
 A bash script (`runtest.sh`) is provided to run all tests locally.
+You can use `runtest.sh -f` to use black to fix your code style automatically as well.
 
 License information: all source code files should start with this paragraph:
 ```
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
