@@ -13,15 +13,14 @@
 # limitations under the License.
 
 
-from nemo.collections.nlp.parts.nlp_overrides import NLPSaveRestoreConnector
-from nemo.core.config import hydra_runner
-from nemo.utils import logging
-from omegaconf.omegaconf import OmegaConf, open_dict
-
 from bionemo.data import FLIPPreprocess
 from bionemo.data.metrics import accuracy, mse, per_token_accuracy
 from bionemo.model.protein.downstream import FineTuneProteinModel
 from bionemo.model.utils import setup_trainer
+from nemo.collections.nlp.parts.nlp_overrides import NLPSaveRestoreConnector
+from nemo.core.config import hydra_runner
+from nemo.utils import logging
+from omegaconf.omegaconf import OmegaConf, open_dict
 
 # Import nvflare lightning API for federated learning
 import nvflare.client.lightning as flare
