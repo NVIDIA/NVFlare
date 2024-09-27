@@ -7,25 +7,24 @@ trainer:
   devices: 1 # number of GPUs or CPUs
   num_nodes: 1 
   accelerator: gpu #gpu or cpu
-  precision: 16 #16 or 32
+  precision: 16-mixed #16 or 32
   logger: False # logger is provided by NeMo exp_manager
   enable_checkpointing: False # checkpointing is done by NeMo exp_manager
-  replace_sampler_ddp: False # use NeMo Megatron samplers
   max_epochs: null # # use max_steps instead with NeMo Megatron model
-  log_every_n_steps: 10  # number of interations between logging
+  max_steps: 5000000 # consumed_samples = global_step * micro_batch_size * data_parallel_size * accumulate_grad_batches
+  log_every_n_steps: 10  # number of iterations between logging
   val_check_interval: 1500
-  limit_val_batches: 1.0 # number of batches in validation step, use fraction for fraction of data, 0 to disable, 1 to use the full set.
-  limit_test_batches: 1.0 # number of batches in test step, use fraction for fraction of data, 0 to disable, 1 to use the full set.
+  limit_val_batches: 1.0 # number of batches in validation step, use fraction for fraction of data, 0 to disable
+  limit_test_batches: 1.0 # number of batches in test step, use fraction for fraction of data, 0 to disable
   accumulate_grad_batches: 1
   gradient_clip_val: 1.0
   benchmark: False
-  max_steps: 5000000
 
 exp_manager:
   name: ${name}
   exp_dir: ${.name}/${.wandb_logger_kwargs.name}
   explicit_log_dir: ${.exp_dir}
-  create_wandb_logger: True 
+  create_wandb_logger: False
   create_tensorboard_logger: True
   wandb_logger_kwargs:
     project: ${name}_pretraining
@@ -35,10 +34,10 @@ exp_manager:
     notes: "date: ${now:%y%m%d-%H%M%S}"
     tags:
       - ${name}
-    offline: True # set to True if there are issues uploading to WandB during training
+    offline: False # set to True if there are issues uploading to WandB during training
   resume_if_exists: False # automatically resume if checkpoint exists
   resume_ignore_no_checkpoint: True # leave as True, will start new training if resume_if_exists is True but no checkpoint exists
-  create_checkpoint_callback: False # leave as True, use exp_manger for for checkpoints
+  create_checkpoint_callback: False  # Setting this to False so to avoid overwriting the model sent and received to the server
   checkpoint_callback_params:
     monitor: val_TARGET_accuracy
     save_top_k: 1 # number of checkpoints to save
@@ -49,14 +48,14 @@ exp_manager:
 
 
 model:
-  precision: 16
+  precision: 16-mixed
   # ESM2-specific parameters
   micro_batch_size: 2
   seq_length: 1024
   num_layers: 6
   hidden_size: 320
   ffn_hidden_size: ${multiply:${model.hidden_size}, 4} # Transformer FFN hidden size. Usually 4 * hidden_size.
-  num_attention_heads: 20
+  num_attention_heads: 16
   megatron_legacy: false 
   position_embedding_type: rope # ESM2 uses relative positional encoding 'ROPE' to extrapolate to longer sequences unseen during training
   hidden_dropout: 0 # ESM2 removes dropout from hidden layers and attention

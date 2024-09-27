@@ -13,7 +13,7 @@
       "id": "bionemo_inference",
       "path": "bionemo_inference.BioNeMoInference",
       "args": {
-        "base_config_path": "config/base_infer_config.yaml",
+        "base_config_path": "/workspace/bionemo/examples/conf/base_infer_config.yaml",
         "infer_config_path": "config/infer.yaml",
         "min_responses_required": "{min_clients}"
       }

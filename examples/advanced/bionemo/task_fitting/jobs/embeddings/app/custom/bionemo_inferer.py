@@ -19,7 +19,7 @@ import uuid
 
 import torch
 from bionemo.data.mapped_dataset import FilteredMappedDataset
-from bionemo.data.memmap_csv_fields_dataset import CSVFieldsMemmapDataset
+from nemo.collections.nlp.data.language_modeling.text_memmap_dataset import CSVFieldsMemmapDataset
 from bionemo.data.memmap_fasta_fields_dataset import FASTAFieldsMemmapDataset
 from bionemo.data.utils import expand_dataset_paths
 from bionemo_constants import BioNeMoConstants

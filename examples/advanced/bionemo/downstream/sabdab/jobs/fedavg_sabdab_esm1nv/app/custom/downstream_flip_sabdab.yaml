@@ -3,7 +3,7 @@ defaults:
   - pretrain_small
 do_training: True # set to false if data preprocessing steps must be completed
 do_testing: False # set to true to run evaluation on test data after training
-restore_from_path: /bionemo_nvflare_examples/bionemo/models/esm1nv.nemo # path to nemo checkpoint of the protein model
+restore_from_path: /workspace/bionemo/models/protein/esm1nv/esm1nv.nemo # path to nemo checkpoint of the protein model
 target: bionemo.model.protein.esm1nv.ESM1nvModel # target class for protein model
 infer_target: bionemo.model.protein.esm1nv.infer.ESM1nvInference # target inference class for protein model
 
