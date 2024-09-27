@@ -42,6 +42,7 @@ def get_site_class_summary(train_labels, site_idx):
         class_sum[f"site-{site+1}"] = tmp
     return class_sum
 
+
 def partition_data(train_labels, label_names, num_sites, alpha, seed):
     min_size = 0
     N = len(train_labels)
@@ -58,18 +59,18 @@ def partition_data(train_labels, label_names, num_sites, alpha, seed):
             proportions = dirichlet.rvs(np.repeat(alpha, num_sites), random_state=seed)
             # Balance
             proportions = np.array([p * (len(idx_j) < N / num_sites) for p, idx_j in zip(proportions, idx_batch)])
-            
+
             # Fix for "invalid value encountered in divide"
             proportions_sum = proportions.sum()
             if proportions_sum > 0:
                 proportions = proportions / proportions_sum
             else:
                 proportions = np.ones_like(proportions) / len(proportions)
-            
+
             # Fix for "invalid value encountered in cast"
             cumsum = np.cumsum(proportions) * len(idx_k)
             proportions = np.where(np.isnan(cumsum), 0, cumsum.astype(int))[:-1]
-            
+
             idx_batch = [idx_j + idx.tolist() for idx_j, idx in zip(idx_batch, np.split(idx_k, proportions))]
             min_size = min([len(idx_j) for idx_j in idx_batch])
 
@@ -82,6 +83,7 @@ def partition_data(train_labels, label_names, num_sites, alpha, seed):
     class_sum = get_site_class_summary(train_labels, site_idx)
 
     return site_idx, class_sum
+
 
 def split(proteins, num_sites, split_dir=".", alpha=1.0, seed=0, concat=False):
     train_proteins = []

@@ -36,6 +36,7 @@ val_check_intervals = {
     "site-6": min(int(157 / micro_batch_size), 3),
 }
 
+
 @hydra_runner(config_path=".", config_name="downstream_flip_sabdab")  # ESM1
 def main(cfg) -> None:
     logging.info("\n\n************* Finetune config ****************")

@@ -13,7 +13,6 @@
 # limitations under the License.
 
 
-
 from nemo.collections.nlp.parts.nlp_overrides import NLPSaveRestoreConnector
 from nemo.core.config import hydra_runner
 from nemo.utils import logging
@@ -26,6 +25,7 @@ from bionemo.model.utils import setup_trainer
 
 # Import nvflare lightning API for federated learning
 import nvflare.client.lightning as flare
+
 
 @hydra_runner(config_path=".", config_name="downstream_flip_scl")  # ESM1
 def main(cfg) -> None:
