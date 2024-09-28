@@ -16,7 +16,7 @@ from pt.simple_network import SimpleNetwork
 
 from nvflare.app_common.executors.learner_executor import LearnerExecutor
 from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
-from nvflare.app_opt.pt.job_config.fed_sag_mlflow import SAGMLFlowJob
+from nvflare.app_opt.pt.job_config.sag_mlflow import SAGMLFlowJob, MLflowReceiverArgs
 
 if __name__ == "__main__":
     n_clients = 2
@@ -24,19 +24,21 @@ if __name__ == "__main__":
 
     job = SAGMLFlowJob(
         name="hello-pt-mlflow",
-        n_clients=n_clients,
+        min_clients=n_clients,
         num_rounds=num_rounds,
         initial_model=SimpleNetwork(),
-        tracking_uri="file:///{WORKSPACE}/{JOB_ID}/mlruns",
-        kwargs={
-            "experiment_name": "hello-pt-experiment",
-            "run_name": "hello-pt-with-mlflow",
-            "experiment_tags": {"mlflow.note.content": "## **Hello PyTorch experiment with MLflow**"},
-            "run_tags": {
-                "mlflow.note.content": "## Federated Experiment tracking with MLflow \n### Example of using **[NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html)** to train an image classifier using federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629)) and [PyTorch](https://pytorch.org/) as the deep learning training framework. This example also highlights the Flare streaming capability from the clients to the server for server delivery to MLflow.\n\n> **_NOTE:_** \n This example uses the *[CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html)* dataset and will load its data within the trainer code.\n"
+        mlflow_receiver_args=MLflowReceiverArgs(
+            tracking_uri="file:///{WORKSPACE}/{JOB_ID}/mlruns",
+            kw_args={
+                "experiment_name": "hello-pt-experiment",
+                "run_name": "hello-pt-with-mlflow",
+                "experiment_tags": {"mlflow.note.content": "## **Hello PyTorch experiment with MLflow**"},
+                "run_tags": {
+                    "mlflow.note.content": "## Federated Experiment tracking with MLflow \n### Example of using **[NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html)** to train an image classifier using federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629)) and [PyTorch](https://pytorch.org/) as the deep learning training framework. This example also highlights the Flare streaming capability from the clients to the server for server delivery to MLflow.\n\n> **_NOTE:_** \n This example uses the *[CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html)* dataset and will load its data within the trainer code.\n"
+                },
             },
-        },
-        artifact_location="artifacts",
+            artifact_location="artifacts",   
+        )
     )
 
     ctrl = CrossSiteModelEval()

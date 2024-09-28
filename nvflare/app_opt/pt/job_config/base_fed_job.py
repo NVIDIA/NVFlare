@@ -16,15 +16,23 @@ from typing import List, Optional
 
 from torch import nn as nn
 
-from nvflare import FedJob
-from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
-from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
-from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
-from nvflare.app_opt.pt.job_config.model import PTModel
+from nvflare.app_opt.pt.job_config.model import PTFileModelPersistorArgs, PTModel
 from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
+from nvflare.job_config.common_components_job import (
+    CommonComponentsJob,
+    ConvertToFedEventArgs,
+    IntimeModelSelectorArgs,
+    ValidationJsonGeneratorArgs,
+)
 
 
-class BaseFedJob(FedJob):
+class TBAnalyticsReceiverArgs:
+    def __init__(self, tb_folder="tb_events", events: Optional[List[str]] = ["fed.analytix_log_stats"]):
+        self.tb_folder = tb_folder
+        self.events = events
+
+
+class BaseFedJob(CommonComponentsJob):
     def __init__(
         self,
         initial_model: nn.Module = None,
@@ -32,12 +40,17 @@ class BaseFedJob(FedJob):
         min_clients: int = 1,
         mandatory_clients: Optional[List[str]] = None,
         key_metric: str = "accuracy",
+        validation_json_generator_args: Optional[ValidationJsonGeneratorArgs] = None,
+        intime_model_selector_args: Optional[IntimeModelSelectorArgs] = None,
+        tb_analytic_receiver_args: Optional[TBAnalyticsReceiverArgs] = None,
+        convert_to_fed_event_args: Optional[ConvertToFedEventArgs] = None,
+        model_persistor_args: Optional[PTFileModelPersistorArgs] = None,
     ):
         """PyTorch BaseFedJob.
 
-        Configures server side FedAvg controller, persistor with initial model, and widgets.
+        Configures ValidationJsonGenerator, IntimeModelSelector, TBAnalyticsReceiver, ConvertToFedEvent.
 
-        User must add executors.
+        User must add controllers and executors.
 
         Args:
             initial_model (nn.Module): initial PyTorch Model. Defaults to None.
@@ -48,25 +61,30 @@ class BaseFedJob(FedJob):
                 if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
                 Defaults to "accuracy".
         """
-        super().__init__(name, min_clients, mandatory_clients)
+        super().__init__(
+            name=name,
+            min_clients=min_clients,
+            mandatory_clients=mandatory_clients,
+            validation_json_generator_args=validation_json_generator_args,
+            intime_model_selector_args=intime_model_selector_args,
+            convert_to_fed_event_args=convert_to_fed_event_args,
+        )
         self.key_metric = key_metric
         self.initial_model = initial_model
         self.comp_ids = {}
 
-        component = ValidationJsonGenerator()
-        self.to_server(id="json_generator", obj=component)
+        # Initialize arguments
+        self.tb_analytic_receiver_args = tb_analytic_receiver_args or TBAnalyticsReceiverArgs()
 
-        if self.key_metric:
-            component = IntimeModelSelector(key_metric=self.key_metric)
-            self.to_server(id="model_selector", obj=component)
-
-        # TODO: make different tracking receivers configurable
-        component = TBAnalyticsReceiver(events=["fed.analytix_log_stats"])
-        self.to_server(id="receiver", obj=component)
+        self.to_server(
+            id="receiver",
+            obj=TBAnalyticsReceiver(
+                tb_folder=self.tb_analytic_receiver_args.tb_folder,
+                events=self.tb_analytic_receiver_args.events,
+            ),
+        )
 
         if initial_model:
-            self.comp_ids.update(self.to_server(PTModel(initial_model)))
-
-    def set_up_client(self, target: str):
-        component = ConvertToFedEvent(events_to_convert=["analytix_log_stats"], fed_event_prefix="fed.")
-        self.to(id="event_to_fed", obj=component, target=target)
+            self.comp_ids.update(
+                self.to_server(PTModel(model=initial_model, model_persistor_args=model_persistor_args))
+            )

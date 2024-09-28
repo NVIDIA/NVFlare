@@ -29,6 +29,7 @@ class FedAvgJob(BaseFedJob):
         min_clients: int = 1,
         mandatory_clients: Optional[List[str]] = None,
         key_metric: str = "accuracy",
+        start_round: int = 0,
     ):
         """TensorFlow FedAvg Job.
 
@@ -46,6 +47,7 @@ class FedAvgJob(BaseFedJob):
             key_metric (str, optional): Metric used to determine if the model is globally best.
                 if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
                 Defaults to "accuracy".
+            start_round (int, optional): The starting round number.
         """
         if not isinstance(initial_model, tf.keras.Model):
             raise ValueError(f"Expected initial model to be tf.keras.Model, but got type f{type(initial_model)}.")
@@ -55,6 +57,7 @@ class FedAvgJob(BaseFedJob):
         controller = FedAvg(
             num_clients=n_clients,
             num_rounds=num_rounds,
+            start_round=start_round,
             persistor_id=self.comp_ids["persistor_id"],
         )
         self.to_server(controller)
