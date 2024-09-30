@@ -81,6 +81,7 @@ def define_parser():
         nargs="?",
         help="task script",
     )
+
     parser.add_argument(
         "-a",
         "--task_script_args",

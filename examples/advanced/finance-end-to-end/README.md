@@ -53,7 +53,7 @@ Towards this goal, there are two options:
 1. **Feature Enrichment**: This process involves adding new features based on the existing data. For example, we can calculate the average transaction amount for each currency and add this as a new feature. 
 2. **Feature Encoding**: This process involves encoding the current features and transforming them to embedding space via machine learning models. In this example, we use federated graph neural network (GNN).
 
-### Step 2, Option 1: Feature Enrichment 
+### Step 2, Option 1: Rule-based Feature Enrichment 
 In this process, we will enrich the data and add a few new derived features to illustrate the process. 
 Whether such enrichment makes sense or not is task and data dependent, essentially, this process is adding hand-crafted features to the classifier inputs.
 
@@ -196,7 +196,7 @@ Here we define a ETLController for server, and ScriptExecutor for client side ET
 
 Similarly, we can write the normalization job code [pre_process_job.py](./nvflare/pre_process_job.py) for the server-side.
 
-### Step 2, Option 2: Feature Encoding
+### Step 2, Option 2: GNN-based Feature Encoding
 Rather than hand-crafting the derived features as Option 1, we can use machine learning models to encode the features. In this example, we use federated graph neural network (GNN) to learn and generate the feature embeddings.
 We construct a graph based on the transaction data. Each node represents a transaction, and the edges represent the relationships between transactions. We then use the GNN to learn the embeddings of the nodes, which represent the transaction features.
 
@@ -297,6 +297,13 @@ cd ..
 ```
 cd nvflare
 python pre_process_job.py -c 'YSYCESMM_Bank_7' 'FBSFCHZH_Bank_6' 'YXRXGB22_Bank_3' 'XITXUS33_Bank_10' 'HCBHSGSG_Bank_9' 'YMNYFRPP_Bank_5' 'ZHSZUS33_Bank_1' 'ZNZZAU3M_Bank_8' 'SHSHKHH1_Bank_2' 'WPUWDEFF_Bank_4' -p pre_process.py -a "-i /tmp/nvflare/xgb/credit_card  -o /tmp/nvflare/xgb/credit_card/"
+cd ..
+```
+
+* construct graph
+```
+cd nvflare
+python graph_construct_job.py -c 'YSYCESMM_Bank_7' 'FBSFCHZH_Bank_6' 'YXRXGB22_Bank_3' 'XITXUS33_Bank_10' 'HCBHSGSG_Bank_9' 'YMNYFRPP_Bank_5' 'ZHSZUS33_Bank_1' 'ZNZZAU3M_Bank_8' 'SHSHKHH1_Bank_2' 'WPUWDEFF_Bank_4' -p graph_construct.py -a "-i /tmp/nvflare/xgb/credit_card  -o /tmp/nvflare/xgb/credit_card/"
 cd ..
 ```
 

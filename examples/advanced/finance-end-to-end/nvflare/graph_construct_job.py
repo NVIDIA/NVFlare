@@ -31,13 +31,13 @@ def main():
 
     job = FedJob(name=job_name)
 
-    enrich_ctrl = ETLController(task_name="enrich")
-    job.to(enrich_ctrl, "server", id="enrich")
+    graph_construct_ctrl = ETLController(task_name="graph_construct")
+    job.to(graph_construct_ctrl, "server", id="graph_construct")
 
     # Add clients
     for site_name in site_names:
         executor = ScriptRunner(script=task_script_path, script_args=task_script_args)
-        job.to(executor, site_name, tasks=["enrich"])
+        job.to(executor, site_name, tasks=["graph_construct"])
 
     if work_dir:
         print(f"{work_dir=}")
@@ -62,7 +62,7 @@ def define_parser():
         "--job_name",
         type=str,
         nargs="?",
-        default="credit_card_enrich_job",
+        default="credit_card_graph_construct_job",
         help="job name, default to xgb_job",
     )
     parser.add_argument(
