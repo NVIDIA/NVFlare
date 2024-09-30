@@ -19,7 +19,7 @@ thus serving as one site (client) for federated learning.
 
 We illustrate this step in the notebook [prepare_data] (./prepare_data.ipynb). The resulting dataset looks like the following:
 
-![data](images/generated_data.png)
+![data](./figures/generated_data.png)
 
 Once we have this synthetic data, we like to split the data into 
 * historical data ( oldest data) -- 55%
@@ -41,9 +41,9 @@ For this site, we will have three files.
 /tmp/dataset/horizontal_credit_fraud_data/ZHSZUS33_Bank_1/test.csv
 /tmp/dataset/horizontal_credit_fraud_data/ZHSZUS33_Bank_1/train.csv
 ```
-![split_data](images/split_data.png)
+![split_data](./figures/split_data.png)
 
-The python code for data generation is located at [prepare_data.py](./prepare_data.py)
+The python code for data generation is located at [prepare_data.py](./utils/prepare_data.py)
 
 ## Step 2: Feature Analysis
 
@@ -70,7 +70,7 @@ The data enrichment process involves the following steps:
 The resulting dataset looks like this:
 
 The resulting Dataset looks like this. 
-![enrich_data](images/enrichment.png)
+![enrich_data](./figures/enrichment.png)
 
 We save the enriched data into new csv files. 
 ```
@@ -105,7 +105,7 @@ the file is then saved to "_normalized.csv"
 We can easily convert the notebook code into the python code for federated execution on each site.
 
 ##### Client-side code
-Convert the enrichment code for one-site to the federated learning, refer to [enrich.py](enrich.py)
+Convert the enrichment code for one-site to the federated learning, refer to [enrich.py](./nvflare/enrich.py)
 
 The main execution flow is the following:
 ```
@@ -157,12 +157,12 @@ def main():
     flare.send(end_task)
 ```
 
-Similar adaptation is required for the normalization code, refer to [pre_process.py](pre_process.py) for details.
+Similar adaptation is required for the normalization code, refer to [pre_process.py](./nvflare/pre_process.py) for details.
 
 ##### Server-side code
 Federated ETL requires both server-side and client-side code. The above ETL script is the client-side code.
 To complete the setup, we need server-side code to configure and specify the federated job. 
-For this purpose, we wrote the following script: [enrich_job.py](enrich.py)
+For this purpose, we wrote the following script: [enrich_job.py](./nvflare/enrich_job.py)
 
 ```
 def main():
@@ -194,12 +194,20 @@ def main():
 ```
 Here we define a ETLController for server, and ScriptExecutor for client side ETL script. 
 
-Similarly, we can write the normalization job code [pre_process_job.py](pre_process_job.py) for the server-side.
+Similarly, we can write the normalization job code [pre_process_job.py](./nvflare/pre_process_job.py) for the server-side.
 
 ### Step 2, Option 2: Feature Encoding
-Rather than hand-carfting the features, we can use machine learning models to encode the features.
+Rather than hand-crafting the derived features as Option 1, we can use machine learning models to encode the features. In this example, we use federated graph neural network (GNN) to learn and generate the feature embeddings.
+We construct a graph based on the transaction data. Each node represents a transaction, and the edges represent the relationships between transactions. We then use the GNN to learn the embeddings of the nodes, which represent the transaction features.
 
-In this example, we use federated graph neural network (GNN) to learn and generate the feature embeddings.
+#### Single-site operation example: graph construction
+Since each site consists of the same Sender_BIC, to define the graph edge, we use the following rules:
+1. The two transactions are with the same Receiver_BIC.
+2. The two transactions are with the same Currency.
+3. The two transactions time difference are smaller than 6000.
+
+
+
 
 ## Step 3: Federated Training of XGBoost
 Now we have enriched / encoded features, the last step is to run federated XGBoost over them. 
@@ -263,7 +271,7 @@ Assuming you have already downloaded the credit card dataset and the creditcard.
 
 * prepare data
 ```
-python prepare_data.py -i ./creditcard.csv -o /tmp/nvflare/xgb/credit_card
+python ./utils/prepare_data.py -i ./creditcard.csv -o /tmp/nvflare/xgb/credit_card
 ```
 >Note: All Sender SICs are considered clients: they are 
 > * 'ZHSZUS33_Bank_1'
@@ -280,18 +288,24 @@ python prepare_data.py -i ./creditcard.csv -o /tmp/nvflare/xgb/credit_card
 
 * enrich data
 ```
+cd nvflare
 python enrich_job.py -c 'ZNZZAU3M_Bank_8' 'SHSHKHH1_Bank_2' 'FBSFCHZH_Bank_6' 'YMNYFRPP_Bank_5' 'WPUWDEFF_Bank_4' 'YXRXGB22_Bank_3' 'XITXUS33_Bank_10' 'YSYCESMM_Bank_7' 'ZHSZUS33_Bank_1' 'HCBHSGSG_Bank_9' -p enrich.py  -a "-i /tmp/nvflare/xgb/credit_card/ -o /tmp/nvflare/xgb/credit_card/"
+cd ..
 ```
 
 * pre-process data
 ```
+cd nvflare
 python pre_process_job.py -c 'YSYCESMM_Bank_7' 'FBSFCHZH_Bank_6' 'YXRXGB22_Bank_3' 'XITXUS33_Bank_10' 'HCBHSGSG_Bank_9' 'YMNYFRPP_Bank_5' 'ZHSZUS33_Bank_1' 'ZNZZAU3M_Bank_8' 'SHSHKHH1_Bank_2' 'WPUWDEFF_Bank_4' -p pre_process.py -a "-i /tmp/nvflare/xgb/credit_card  -o /tmp/nvflare/xgb/credit_card/"
+cd ..
 ```
 
 * XGBoost Job 
 Finally we take the resulting data and run XGBoost Job
 ```
+cd nvflare
 python xgb_job.py -c 'YSYCESMM_Bank_7' 'FBSFCHZH_Bank_6' 'YXRXGB22_Bank_3' 'XITXUS33_Bank_10' 'HCBHSGSG_Bank_9' 'YMNYFRPP_Bank_5' 'ZHSZUS33_Bank_1' 'ZNZZAU3M_Bank_8' 'SHSHKHH1_Bank_2' 'WPUWDEFF_Bank_4' -i /tmp/nvflare/xgb/credit_card  -w /tmp/nvflare/workspace/xgb/credit_card/
+cd ..
 ```
 Below is the output of last 9th and 10th round of training (starting round = 0) 
 ```
