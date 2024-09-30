@@ -63,11 +63,7 @@ def save_edge_map(output_dir, edge_maps, site_name):
 
 def edge_map_gen(input_dir, site_name):
     edge_maps = {}
-    info_columns = [
-        "Time",
-        "Receiver_BIC",
-        "UETR"
-    ]
+    info_columns = ["Time", "Receiver_BIC", "UETR"]
     time_threshold = 6000
     for ds_name in dataset_names:
 
@@ -88,13 +84,14 @@ def edge_map_gen(input_dir, site_name):
             # - within the time threshold
             # - has the same Receiver_BIC
             j = 1
-            while (i + j < len(df) and
-                   df["Time"].values[i + j] < df["Time"].values[i] + time_threshold):
-                if (df["Receiver_BIC"].values[i + j] == df["Receiver_BIC"].values[i]):
+            while i + j < len(df) and df["Time"].values[i + j] < df["Time"].values[i] + time_threshold:
+                if df["Receiver_BIC"].values[i + j] == df["Receiver_BIC"].values[i]:
                     graph_edge_map.append([df["UETR"].values[i], df["UETR"].values[i + j]])
                 j += 1
 
-        print(f"Generated edge map for {ds_name}, in total {len(graph_edge_map)} valid edges for {len(df)} transactions")
+        print(
+            f"Generated edge map for {ds_name}, in total {len(graph_edge_map)} valid edges for {len(df)} transactions"
+        )
 
         edge_maps[ds_name] = pd.DataFrame(graph_edge_map)
 
