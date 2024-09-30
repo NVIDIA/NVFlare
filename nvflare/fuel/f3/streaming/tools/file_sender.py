@@ -74,7 +74,7 @@ if __name__ == "__main__":
 
     start = time.time()
     sender.send(file_name)
-    print(f"Time elapsed: {(time.time()-start):.3f} seconds")
+    print(f"Time elapsed: {(time.time() - start):.3f} seconds")
 
     sender.stop()
     print("Done")

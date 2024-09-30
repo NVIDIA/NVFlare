@@ -71,7 +71,7 @@ def main():
         col_end = sum(site_col_size[: site + 1])
 
         df_split = df.iloc[:, col_start:col_end]
-        print(f"site-{site+1} split cols [{col_start}:{col_end}]")
+        print(f"site-{site + 1} split cols [{col_start}:{col_end}]")
 
         data_path = os.path.join(args.out_path, f"site-{site + 1}")
         if not os.path.exists(data_path):

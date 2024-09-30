@@ -183,7 +183,7 @@ class AuxRunner(FLComponent):
                 if rc == CellReturnCode.OK:
                     result = v.payload
                     if not isinstance(result, Shareable):
-                        self.logger.error(f"reply of {channel}:{topic} must be Shareable but got {type(result)}")
+                        self.logger.error(f"reply of {channel}: {topic} must be Shareable but got {type(result)}")
                         result = make_reply(ReturnCode.ERROR)
                     replies[target_name] = result
                 else:

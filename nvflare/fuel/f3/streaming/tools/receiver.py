@@ -63,7 +63,7 @@ if __name__ == "__main__":
     print("Recreating buffer ...")
     start = time.time()
     buffer = make_buffer(BUF_SIZE)
-    print(f"Buffer done, took {time.time()-start} seconds")
+    print(f"Buffer done, took {time.time() - start} seconds")
     if buffer == result:
         print("Result is correct")
     else:

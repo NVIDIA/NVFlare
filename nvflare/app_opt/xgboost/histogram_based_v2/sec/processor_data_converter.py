@@ -125,7 +125,7 @@ class ProcessorDataConverter(DataConverter):
     @staticmethod
     def slot_to_bin(cuts: [int], slot: int) -> Tuple[int, int]:
         if slot < 0 or slot >= cuts[-1]:
-            raise RuntimeError(f"Invalid slot {slot}, out of range [0-{cuts[-1]-1}]")
+            raise RuntimeError(f"Invalid slot {slot}, out of range [0-{cuts[-1] - 1}]")
 
         for i in range(len(cuts) - 1):
             if cuts[i] <= slot < cuts[i + 1]:
@@ -145,7 +145,7 @@ class ProcessorDataConverter(DataConverter):
     @staticmethod
     def to_float_array(result: FeatureAggregationResult) -> List[float]:
         float_array = []
-        for (g, h) in result.aggregated_hist:
+        for g, h in result.aggregated_hist:
             float_array.append(ProcessorDataConverter.int_to_float(g))
             float_array.append(ProcessorDataConverter.int_to_float(h))
 
