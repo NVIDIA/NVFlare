@@ -33,22 +33,59 @@ def generate_password(passlen=16):
     return p
 
 
-def sign_one(content, signing_pri_key):
+def sign_content(content, signing_pri_key, return_str=True):
+    if isinstance(content, str):
+        content = content.encode("utf-8")  # to bytes
     signature = signing_pri_key.sign(
         data=content,
-        padding=padding.PSS(
-            mgf=padding.MGF1(hashes.SHA256()),
-            salt_length=padding.PSS.MAX_LENGTH,
-        ),
-        algorithm=hashes.SHA256(),
+        padding=_content_padding(),
+        algorithm=_content_hash_algo(),
     )
-    return b64encode(signature).decode("utf-8")
+
+    # signature is bytes
+    if return_str:
+        return b64encode(signature).decode("utf-8")
+    else:
+        return signature
+
+
+def _content_padding():
+    return padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH)
+
+
+def _content_hash_algo():
+    return hashes.SHA256()
+
+
+def verify_content(content, signature, public_key):
+    if isinstance(content, str):
+        content = content.encode("utf-8")  # to bytes
+    if isinstance(signature, str):
+        signature = b64decode(signature.encode("utf-8"))  # decode to bytes
+    public_key.verify(
+        signature=signature,
+        data=content,
+        padding=_content_padding(),
+        algorithm=_content_hash_algo(),
+    )
+
+
+def verify_cert(cert_to_be_verified, root_ca_public_key):
+    root_ca_public_key.verify(
+        cert_to_be_verified.signature,
+        cert_to_be_verified.tbs_certificate_bytes,
+        padding.PKCS1v15(),
+        cert_to_be_verified.signature_hash_algorithm,
+    )
+
+
+def load_private_key(data: str):
+    return serialization.load_pem_private_key(data.encode("ascii"), password=None, backend=default_backend())
 
 
 def load_private_key_file(file_path):
     with open(file_path, "rt") as f:
-        pri_key = serialization.load_pem_private_key(f.read().encode("ascii"), password=None, backend=default_backend())
-    return pri_key
+        return load_private_key(f.read())
 
 
 def sign_folders(folder, signing_pri_key, crt_path, max_depth=9999):
@@ -59,25 +96,15 @@ def sign_folders(folder, signing_pri_key, crt_path, max_depth=9999):
         for file in files:
             if file == NVFLARE_SIG_FILE or file == NVFLARE_SUBMITTER_CRT_FILE:
                 continue
-            signature = signing_pri_key.sign(
-                data=open(os.path.join(root, file), "rb").read(),
-                padding=padding.PSS(
-                    mgf=padding.MGF1(hashes.SHA256()),
-                    salt_length=padding.PSS.MAX_LENGTH,
-                ),
-                algorithm=hashes.SHA256(),
+            signatures[file] = sign_content(
+                content=open(os.path.join(root, file), "rb").read(),
+                signing_pri_key=signing_pri_key,
             )
-            signatures[file] = b64encode(signature).decode("utf-8")
         for folder in folders:
-            signature = signing_pri_key.sign(
-                data=folder.encode("utf-8"),
-                padding=padding.PSS(
-                    mgf=padding.MGF1(hashes.SHA256()),
-                    salt_length=padding.PSS.MAX_LENGTH,
-                ),
-                algorithm=hashes.SHA256(),
+            signatures[folder] = sign_content(
+                content=folder,
+                signing_pri_key=signing_pri_key,
             )
-            signatures[folder] = b64encode(signature).decode("utf-8")
 
         json.dump(signatures, open(os.path.join(root, NVFLARE_SIG_FILE), "wt"))
         shutil.copyfile(crt_path, os.path.join(root, NVFLARE_SUBMITTER_CRT_FILE))
@@ -96,30 +123,25 @@ def verify_folder_signature(src_folder, root_ca_path):
                 public_key = cert.public_key()
             except:
                 continue  # TODO: shall return False
-            root_ca_public_key.verify(
-                cert.signature, cert.tbs_certificate_bytes, padding.PKCS1v15(), cert.signature_hash_algorithm
-            )
-            for k in signatures:
-                signatures[k] = b64decode(signatures[k].encode("utf-8"))
+
+            verify_cert(cert_to_be_verified=cert, root_ca_public_key=root_ca_public_key)
             for file in files:
                 if file == NVFLARE_SIG_FILE or file == NVFLARE_SUBMITTER_CRT_FILE:
                     continue
                 signature = signatures.get(file)
                 if signature:
-                    public_key.verify(
+                    verify_content(
+                        content=open(os.path.join(root, file), "rb").read(),
                         signature=signature,
-                        data=open(os.path.join(root, file), "rb").read(),
-                        padding=padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
-                        algorithm=hashes.SHA256(),
+                        public_key=public_key,
                     )
             for folder in folders:
                 signature = signatures.get(folder)
                 if signature:
-                    public_key.verify(
+                    verify_content(
+                        content=folder,
                         signature=signature,
-                        data=folder.encode("utf-8"),
-                        padding=padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
-                        algorithm=hashes.SHA256(),
+                        public_key=public_key,
                     )
         return True
     except Exception as e:
@@ -131,15 +153,10 @@ def sign_all(content_folder, signing_pri_key):
     for f in os.listdir(content_folder):
         path = os.path.join(content_folder, f)
         if os.path.isfile(path):
-            signature = signing_pri_key.sign(
-                data=open(path, "rb").read(),
-                padding=padding.PSS(
-                    mgf=padding.MGF1(hashes.SHA256()),
-                    salt_length=padding.PSS.MAX_LENGTH,
-                ),
-                algorithm=hashes.SHA256(),
+            signatures[f] = sign_content(
+                content=open(path, "rb").read(),
+                signing_pri_key=signing_pri_key,
             )
-            signatures[f] = b64encode(signature).decode("utf-8")
     return signatures
 
 

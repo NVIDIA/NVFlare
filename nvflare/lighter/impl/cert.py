@@ -38,8 +38,11 @@ def serialize_cert(cert):
 
 
 def load_crt(path):
-    serialized_cert = open(path, "rb").read()
-    return x509.load_pem_x509_certificate(serialized_cert, default_backend())
+    return load_crt_bytes(open(path, "rb").read())
+
+
+def load_crt_bytes(data: bytes):
+    return x509.load_pem_x509_certificate(data, default_backend())
 
 
 class CertBuilder(Builder):

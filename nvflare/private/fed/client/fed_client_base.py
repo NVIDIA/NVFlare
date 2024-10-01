@@ -82,7 +82,7 @@ class FederatedClientBase:
         self.cell = cell
         self.net_agent = None
         self.args = args
-        self.engine_create_timeout = client_args.get("engine_create_timeout", 15.0)
+        self.engine_create_timeout = client_args.get("engine_create_timeout", 30.0)
         self.cell_check_frequency = client_args.get("cell_check_frequency", 0.005)
 
         self.communicator = Communicator(
@@ -169,14 +169,44 @@ class FederatedClientBase:
                 thread.start()
 
     def _create_cell(self, location, scheme):
+        """Create my cell.
+
+        Args:
+            location: the location of the Server
+            scheme: communication protocol (grpc, http, tcp, etc).
+
+        Returns: None
+
+        Note that the client can be connected to the server either directly or via bridge nodes.
+        The client's FQCN is different, depending on how the connection is made.
+
+        """
+        # Determine the CP's fqcn
+        root_url = scheme + "://" + location
+
+        # bridge_fqcn and bridge_url are set in the client's local/resources.json.
+        # If they are set, then connect via the specified bridge; if not, try to connect the Server directly
+        bridge_fqcn = self.client_args.get("bridge_fqcn")
+        bridge_url = self.client_args.get("bridge_url")
+        if bridge_fqcn:
+            cp_fqcn = FQCN.join([bridge_fqcn, self.client_name])
+            root_url = None  # do not connect to server if bridge is used
+        else:
+            cp_fqcn = self.client_name
+
         if self.args.job_id:
-            fqcn = FQCN.join([self.client_name, self.args.job_id])
+            # I am CJ
+            me = "CJ"
+            my_fqcn = FQCN.join([cp_fqcn, self.args.job_id])
             parent_url = self.args.parent_url
             create_internal_listener = False
         else:
-            fqcn = self.client_name
-            parent_url = None
+            # I am CP
+            me = "CP"
+            my_fqcn = cp_fqcn
+            parent_url = bridge_url
             create_internal_listener = True
+
         if self.secure_train:
             root_cert = self.client_args[SecureTrainConst.SSL_ROOT_CERT]
             ssl_cert = self.client_args[SecureTrainConst.SSL_CERT]
@@ -189,9 +219,11 @@ class FederatedClientBase:
             }
         else:
             credentials = {}
+
+        self.logger.info(f"{me=}: {my_fqcn=} {root_url=} {parent_url=}")
         self.cell = Cell(
-            fqcn=fqcn,
-            root_url=scheme + "://" + location,
+            fqcn=my_fqcn,
+            root_url=root_url,
             secure=self.secure_train,
             credentials=credentials,
             create_internal_listener=create_internal_listener,

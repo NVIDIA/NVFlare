@@ -64,9 +64,10 @@ def new_message(conn: Connection, topic, body, require_authz: bool) -> Message:
 
 
 class _Client(object):
-    def __init__(self, token, name):
+    def __init__(self, token, name, fqcn):
         self.token = token
         self.name = name
+        self.fqcn = fqcn
         self.last_heard_time = None
 
 
@@ -191,12 +192,13 @@ class FedAdminServer(AdminServer):
         self.clients = {}  # token => _Client
         self.timeout = 10.0
 
-    def client_heartbeat(self, token, name: str):
+    def client_heartbeat(self, token, name: str, fqcn: str):
         """Receive client heartbeat.
 
         Args:
             token: the session token of the client
             name: client name
+            fqcn: the FQCN of the client
 
         Returns:
             Client.
@@ -204,7 +206,7 @@ class FedAdminServer(AdminServer):
         with self.client_lock:
             client = self.clients.get(token)
             if not client:
-                client = _Client(token, name)
+                client = _Client(token, name, fqcn)
                 self.clients[token] = client
             client.last_heard_time = time.time()
             return client
