@@ -18,7 +18,6 @@ import os
 
 import pandas as pd
 
-
 # (1) import nvflare client API
 import nvflare.client as flare
 
