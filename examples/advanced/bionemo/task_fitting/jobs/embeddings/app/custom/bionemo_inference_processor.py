@@ -29,7 +29,7 @@ from nvflare.app_common.abstract.response_processor import ResponseProcessor
 class BioNeMoInferenceProcessor(ResponseProcessor):
     def __init__(
         self,
-        base_config_path: str = "/workspace/bionemo/examples/protein/esm1nv/conf/base_config.yaml.yaml",
+        base_config_path: str = "/workspace/bionemo/examples/protein/esm1nv/conf/base_config.yaml",
         infer_config_path: str = "config/infer.yaml",
     ):
         """Run BioNeMo model inference.

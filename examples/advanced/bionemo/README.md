@@ -4,9 +4,12 @@
 
 This directory contains examples of running BioNeMo in a federated learning environment using [NVFlare](https://github.com/NVIDIA/NVFlare).
 
-1. The task_fitting folder example includes a notebook that shows how to obtain protein learned representations in the form of embeddings using the ESM-1nv pre-trained model. 
+## Notebooks
+
+In this repo you will find two notebooks under the `task_fitting` and `downstream` folders respectively: 
+1. The [task_fitting](./task_fitting/task_fitting.ipynb) notebook example includes a notebook that shows how to obtain protein learned representations in the form of embeddings using the ESM-1nv pre-trained model. 
 The model is trained with NVIDIA's BioNeMo framework for Large Language Model training and inference.
-2. The downstream folder example shows three different downstream tasks for fine-tuning a BioNeMo ESM-style model.
+2. The [downstream](./downstream/downstream_nvflare.ipynb) notebook example shows three different downstream tasks for fine-tuning a BioNeMo ESM-style model.
 
 ## Requirements
 
