@@ -14,14 +14,14 @@
 import os.path
 import re
 import uuid
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Union
 
 from nvflare.apis.executor import Executor
 from nvflare.apis.filter import Filter
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
-from nvflare.fuel.utils.validation_utils import check_positive_int
+from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_int
 from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig, ServerAppConfig
 from nvflare.job_config.fed_job_config import FedJobConfig
 
@@ -33,25 +33,40 @@ _ADD_TO_JOB_METHOD_NAME = "add_to_fed_job"
 
 
 class FedApp:
-    def __init__(self):
-        """FedApp handles `ClientAppConfig` and `ServerAppConfig` and allows setting task result or task data filters."""
-        self.app = None  # Union[ClientAppConfig, ServerAppConfig]
+    def __init__(self, app_config: Union[ClientAppConfig, ServerAppConfig]):
+        """FedApp handles `ClientAppConfig` and `ServerAppConfig` and allows setting task result or task data filters.
+        """
+        self.app_config = app_config
         self._used_ids = []
 
+        # obj_id => comp_id
+        # obj_id is the Python's object ID; comp_id is the component ID for job config
+        # _oid_to_cid keeps the mapping between obj_id and comp_id.
+        # this is to make sure that when the same object is used, it is configured only once in the job.
+        self._oid_to_cid = {}
+
     def get_app_config(self):
-        return self.app
+        return self.app_config
 
     def add_task_result_filter(self, tasks: List[str], task_filter: Filter):
-        self.app.add_task_result_filter(tasks, task_filter)
+        self.app_config.add_task_result_filter(tasks, task_filter)
 
     def add_task_data_filter(self, tasks: List[str], task_filter: Filter):
-        self.app.add_task_data_filter(tasks, task_filter)
+        self.app_config.add_task_data_filter(tasks, task_filter)
 
-    def add_component(self, component, id=None):
-        if id is None:
-            id = "component"
-        final_id = self.generate_tracked_id(id)
-        self.app.add_component(final_id, component)
+    def add_component(self, component, comp_id=None):
+        # is the component already configured?
+        oid = id(component)
+        cid = self._oid_to_cid.get(oid)
+        if cid:
+            # the component is already configured
+            return cid
+
+        if comp_id is None:
+            comp_id = "component"
+        final_id = self.generate_tracked_id(comp_id)
+        self.app_config.add_component(final_id, component)
+        self._oid_to_cid[oid] = final_id
         return final_id
 
     def _generate_id(self, id: str = "") -> str:
@@ -79,7 +94,7 @@ class FedApp:
         Args:
             ext_script: List of external scripts that need to be deployed to the client/server.
         """
-        self.app.add_ext_script(ext_script)
+        self.app_config.add_ext_script(ext_script)
 
     def add_external_dir(self, ext_dir: str):
         """Register external folder to include them in custom directory.
@@ -87,7 +102,7 @@ class FedApp:
         Args:
             ext_dir: external folder that need to be deployed to the client/server.
         """
-        self.app.add_ext_dir(ext_dir)
+        self.app_config.add_ext_dir(ext_dir)
 
     def _add_resource(self, resource: str):
         if not isinstance(resource, str):
@@ -122,26 +137,24 @@ class JobCtx:
 class ClientApp(FedApp):
     def __init__(self):
         """Wrapper around `ClientAppConfig`."""
-        super().__init__()
-        self.app = ClientAppConfig()
+        super().__init__(ClientAppConfig())
 
     def add_executor(self, executor: Executor, tasks=None):
         if not tasks:
             tasks = ["*"]  # Add executor for any task by default
-        self.app.add_executor(tasks, executor)
+        self.app_config.add_executor(tasks, executor)
 
 
 class ServerApp(FedApp):
     """Wrapper around `ServerAppConfig`."""
 
     def __init__(self):
-        super().__init__()
-        self.app: ServerAppConfig = ServerAppConfig()
+        super().__init__(ServerAppConfig())
 
     def add_controller(self, controller: Controller, id=None):
         if not id:
             id = "controller"
-        self.app.add_workflow(self.generate_tracked_id(id), controller)
+        self.app_config.add_workflow(self.generate_tracked_id(id), controller)
 
 
 class FedJob:
@@ -571,3 +584,21 @@ class FedJob:
 def has_add_to_job_method(obj: Any) -> bool:
     add_to_job_method = getattr(obj, _ADD_TO_JOB_METHOD_NAME, None)
     return add_to_job_method is not None and callable(add_to_job_method)
+
+
+def validate_object_for_job(name, obj, obj_type):
+    """Check whether the specified object is valid for job.
+    The object must either have the add_to_fed_job method or is valid object type.
+
+    Args:
+        name: name of the object
+        obj: the object to be checked
+        obj_type: the object type that the object should be, if it doesn't have the add_to_fed_job method.
+
+    Returns: None
+
+    """
+    if has_add_to_job_method(obj):
+        return
+
+    check_object_type(name, obj, obj_type)
