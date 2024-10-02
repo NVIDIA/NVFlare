@@ -30,6 +30,8 @@ from .cyclic_server_ctl import CyclicServerController
 from .swarm_client_ctl import SwarmClientController
 from .swarm_server_ctl import SwarmServerController
 
+_EXECUTOR_TASKS = ["train", "validate", "submit_model"]
+
 
 class SwarmServerConfig:
     def __init__(
@@ -202,6 +204,7 @@ class CCWFJob(FedJob):
             external_resources (str, optional): External resources directory or filename. Defaults to None.
         """
         super().__init__(name, min_clients, mandatory_clients)
+        self.executor = None
         if external_resources:
             self.to_server(external_resources)
             self.to_clients(external_resources)
@@ -249,7 +252,9 @@ class CCWFJob(FedJob):
             wait_time_after_min_resps_received=client_config.wait_time_after_min_resps_received,
         )
         self.to_clients(client_controller, tasks=["swarm_*"])
-        self.to_clients(client_config.executor, tasks=["train", "validate", "submit_model"])
+        if not self.executor and client_config.executor:
+            self.to_clients(client_config.executor, tasks=_EXECUTOR_TASKS)
+            self.executor = client_config.executor
 
         if client_config.model_selector:
             self.to_clients(client_config.model_selector, id="model_selector")
@@ -287,7 +292,10 @@ class CCWFJob(FedJob):
             final_result_ack_timeout=client_config.final_result_ack_timeout,
         )
         self.to_clients(client_controller, tasks=["cyclic_*"])
-        self.to_clients(client_config.executor, tasks=["train", "validate", "submit_model"])
+
+        if not self.executor and client_config.executor:
+            self.to_clients(client_config.executor, tasks=_EXECUTOR_TASKS)
+            self.executor = client_config.executor
 
         if cse_config:
             self.add_cross_site_eval(cse_config, persistor_id)
