@@ -1,4 +1,4 @@
-name: esm1nv_flip
+name: esm2nv_flip
 defaults:
   - pretrain_esm2_650M
 do_preprocessing: False
@@ -40,9 +40,9 @@ model:
     preprocessed_data_path: /tmp/data # path where all preprocessed FLIP datasets are saved
     dataset_path: ${model.data.preprocessed_data_path}/mixed_soft # path to a training data
     dataset:
-      train: data_train_site-2
-      val: data_val_site-2
-      test: data_test_site-2
+      train: data_train_site-3
+      val: data_val_site-3
+      test: data_test_site-3
     sequence_column: "sequence" # name of column with protein sequence in csv file
     target_column: ["TARGET"] #["3state", "resolved"] # names of label columns in csv file
     target_sizes: [10] # number of classes in each label for classifications or 1 for regression

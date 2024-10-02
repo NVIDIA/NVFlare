@@ -1,4 +1,4 @@
-name: esm1nv_flip
+name: esm2nv_flip
 defaults:
   - pretrain_esm2_650M
 do_preprocessing: False

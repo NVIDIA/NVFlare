@@ -88,7 +88,7 @@ model:
 
 
   # miscellaneous
-  seed: 1
+  seed: 4
   use_cpu_initialization: False # Init weights on the CPU (slow for large model)
   onnx_safe: False # Use work-arounds for known problems with Torch ONNX exporter.
 
@@ -127,6 +127,8 @@ model:
     use_upsampling: True # if the data should be upsampled to max number of steps in the training
     seed: ${model.seed} # Random seed
     max_seq_length: ${model.seq_length} # Maximum input sequence length. Longer sequences are truncated
+    dynamic_padding: False # If True, each batch is padded to the maximum sequence length within that batch.
+              #    Set it to False when model.pipeline_model_parallel_size > 1, as pipeline parallelism requires fixed-length padding.
 
   optim:
     name: fused_adam # fused optimizers used by Megatron model
@@ -144,7 +146,7 @@ model:
   dwnstr_task_validation:
     enabled: False
     dataset:
-      class: PerTokenPredictionCallback
+      class: bionemo.model.core.dwnstr_task_callbacks.PerTokenPredictionCallback
       task_type: token-level-classification
       infer_target: bionemo.model.protein.esm1nv.infer.ESM1nvInference
       max_seq_length: ${model.seq_length}
