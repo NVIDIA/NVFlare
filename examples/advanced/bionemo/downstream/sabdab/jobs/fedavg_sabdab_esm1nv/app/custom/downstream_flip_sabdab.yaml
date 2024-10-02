@@ -47,7 +47,7 @@ model:
     preprocessed_data_path: /tmp/data # path where all preprocessed FLIP datasets are saved
     dataset_path: ${model.data.preprocessed_data_path}/sabdab_chen # path to a training data
     dataset:
-      train: sabdab_chen_full_train
+      train: ??? # sabdab_chen_site-1_train
       val: sabdab_chen_valid
       test: sabdab_chen_test
     sequence_column: "Antibody" # name of column with protein sequence in csv file

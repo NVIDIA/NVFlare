@@ -65,7 +65,7 @@ model:
     preprocessed_data_path: /tmp/data # path where all preprocessed FLIP datasets are saved
     dataset_path: ${model.data.preprocessed_data_path}/tap # path to a training data
     dataset:
-      train: tap_full_train
+      train: tap_site-2_train
       val: tap_valid
       test: tap_test
     sequence_column: "Antibody" # name of column with protein sequence in csv file
