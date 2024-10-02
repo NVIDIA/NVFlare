@@ -261,6 +261,9 @@ class DhPSIWorkFlow(PSIWorkflow):
         other_sites = [site for site in ordered_clients if site.name != intersect_site.name]
         other_sites = self.get_updated_site_sizes(other_sites)
 
+        # todo: we might be able to skip these steps, simply broadcast the final intersection result directly
+        # todo: to all other sites, this avoid the backward pass of the intersection calculation
+
         s = intersect_site
         other_site_sizes = set([site.size for site in other_sites])
         setup_msgs: Dict[str, str] = self.prepare_setup_messages(s, other_site_sizes)

@@ -113,18 +113,22 @@ copy NVFlare/examples/advanced/psi/user_email_match/data to /tmp/nvflare/psi dir
 
 **run job** 
 ```
-nvflare simulator -w /tmp/nvflare/psi -n 3 -t 3 user_email_match/jobs/user_email_match
+nvflare simulator -w /tmp/nvflare/psi/job -n 3 -t 3 user_email_match/jobs/user_email_match
 ```
 Once job completed and succeed, you should be able to find the intersection for different sites at
 
 ```
-/tmp/nvflare/psi/simulate_job/site-1/psi/intersection.txt 
-/tmp/nvflare/psi/simulate_job/site-2/psi/intersection.txt 
-/tmp/nvflare/psi/simulate_job/site-3/psi/intersection.txt  
+/tmp/nvflare/psi/job/simulate_job/site-1/psi/intersection.txt 
+/tmp/nvflare/psi/job/simulate_job/site-2/psi/intersection.txt 
+/tmp/nvflare/psi/job/simulate_job/site-3/psi/intersection.txt  
 ```
 to compare these intersections, you can check with the followings:
 
 ```bash
-diff <(sort /tmp/nvflare/psi/simulate_job/site-1/psi/intersection.txt) <(sort /tmp/nvflare/psi/simulate_job/site-2/psi/intersection.txt)
-diff <(sort /tmp/nvflare/psi/simulate_job/site-2/psi/intersection.txt) <(sort /tmp/nvflare/psi/simulate_job/site-3/psi/intersection.txt)
+diff <(sort /tmp/nvflare/psi/job/simulate_job/site-1/psi/intersection.txt) <(sort /tmp/nvflare/psi/job/simulate_job/site-2/psi/intersection.txt)
+diff <(sort /tmp/nvflare/psi/job/simulate_job/site-2/psi/intersection.txt) <(sort /tmp/nvflare/psi/job/simulate_job/site-3/psi/intersection.txt)
 ```
+
+**NOTE**
+>>The PSI operator depends on openmind-psi. It now supports up-to-python 3.11
+python 3.12 is still working in progress
