@@ -15,12 +15,8 @@
 from typing import Optional, Type, Union
 
 from nvflare.app_common.abstract.launcher import Launcher
-from nvflare.app_common.executors.client_api_launcher_executor import (
-    ClientAPILauncherExecutor,
-)
-from nvflare.app_common.executors.in_process_client_api_executor import (
-    InProcessClientAPIExecutor,
-)
+from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
+from nvflare.app_common.executors.in_process_client_api_executor import InProcessClientAPIExecutor
 from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
 from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
 from nvflare.app_common.widgets.metric_relay import MetricRelay
@@ -244,15 +240,11 @@ class BaseScriptRunner:
 
     def _get_ex_process_executor_cls(self, framework: FrameworkType) -> Type[ClientAPILauncherExecutor]:
         if framework == FrameworkType.PYTORCH:
-            from nvflare.app_opt.pt.client_api_launcher_executor import (
-                PTClientAPILauncherExecutor,
-            )
+            from nvflare.app_opt.pt.client_api_launcher_executor import PTClientAPILauncherExecutor
 
             return PTClientAPILauncherExecutor
         elif framework == FrameworkType.TENSORFLOW:
-            from nvflare.app_opt.tf.client_api_launcher_executor import (
-                TFClientAPILauncherExecutor,
-            )
+            from nvflare.app_opt.tf.client_api_launcher_executor import TFClientAPILauncherExecutor
 
             return TFClientAPILauncherExecutor
         else:
@@ -260,15 +252,11 @@ class BaseScriptRunner:
 
     def _get_in_process_executor_cls(self, framework: FrameworkType) -> Type[InProcessClientAPIExecutor]:
         if framework == FrameworkType.PYTORCH:
-            from nvflare.app_opt.pt.in_process_client_api_executor import (
-                PTInProcessClientAPIExecutor,
-            )
+            from nvflare.app_opt.pt.in_process_client_api_executor import PTInProcessClientAPIExecutor
 
             return PTInProcessClientAPIExecutor
         elif framework == FrameworkType.TENSORFLOW:
-            from nvflare.app_opt.tf.in_process_client_api_executor import (
-                TFInProcessClientAPIExecutor,
-            )
+            from nvflare.app_opt.tf.in_process_client_api_executor import TFInProcessClientAPIExecutor
 
             return TFInProcessClientAPIExecutor
         else:
