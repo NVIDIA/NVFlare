@@ -13,7 +13,7 @@ encoder_frozen: False
 trainer:
   devices: 1 # number of GPUs or CPUs
   num_nodes: 1 
-  max_epochs: 200
+  max_epochs: 1
   val_check_interval: 0.0
   limit_val_batches: 0.0 # number of batches in validation step, use fraction for fraction of data, 0 to disable
   limit_test_batches: 0.0 # number of batches in test step, use fraction for fraction of data, 0 to disable
