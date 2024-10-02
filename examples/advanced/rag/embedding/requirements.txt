@@ -1,0 +1,7 @@
+nvflare~=2.5.0
+torch
+datasets
+scikit-learn
+tensorboard
+transformers
+sentence-transformers

@@ -20,8 +20,7 @@ from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.ccwf.common import Constant, CyclicOrder
-from nvflare.fuel.utils.validation_utils import check_object_type
-from nvflare.job_config.api import FedJob, has_add_to_job_method
+from nvflare.job_config.api import FedJob, validate_object_for_job
 from nvflare.widgets.widget import Widget
 
 from .cse_client_ctl import CrossSiteEvalClientController
@@ -30,6 +29,8 @@ from .cyclic_client_ctl import CyclicClientController
 from .cyclic_server_ctl import CyclicServerController
 from .swarm_client_ctl import SwarmClientController
 from .swarm_server_ctl import SwarmServerController
+
+_EXECUTOR_TASKS = ["train", "validate", "submit_model"]
 
 
 class SwarmServerConfig:
@@ -190,6 +191,7 @@ class CCWFJob(FedJob):
         name: str = "fed_job",
         min_clients: int = 1,
         mandatory_clients: Optional[List[str]] = None,
+        executor_tasks: Optional[List[str]] = None,
         external_resources: Optional[str] = None,
     ):
         """Client-Controlled Workflow Job.
@@ -200,9 +202,19 @@ class CCWFJob(FedJob):
             name (name, optional): name of the job. Defaults to "fed_job"
             min_clients (int, optional): the minimum number of clients for the job. Defaults to 1.
             mandatory_clients (List[str], optional): mandatory clients to run the job. Default None.
+            executor_tasks (List[str], optional): tasks for the executor
             external_resources (str, optional): External resources directory or filename. Defaults to None.
         """
         super().__init__(name, min_clients, mandatory_clients)
+
+        # A CCWF job can have multiple workflows (swarm, cyclic, etc.), but can only have one executor for training!
+        # This executor can be added by any workflow.
+        self.executor = None
+
+        self.executor_tasks = executor_tasks
+        if not executor_tasks:
+            self.executor_tasks = _EXECUTOR_TASKS
+
         if external_resources:
             self.to_server(external_resources)
             self.to_clients(external_resources)
@@ -250,7 +262,10 @@ class CCWFJob(FedJob):
             wait_time_after_min_resps_received=client_config.wait_time_after_min_resps_received,
         )
         self.to_clients(client_controller, tasks=["swarm_*"])
-        self.to_clients(client_config.executor, tasks=["train", "validate", "submit_model"])
+        if not self.executor:
+            # We add the executor only if it's not added yet.
+            self.to_clients(client_config.executor, tasks=self.executor_tasks)
+            self.executor = client_config.executor
 
         if client_config.model_selector:
             self.to_clients(client_config.model_selector, id="model_selector")
@@ -288,7 +303,11 @@ class CCWFJob(FedJob):
             final_result_ack_timeout=client_config.final_result_ack_timeout,
         )
         self.to_clients(client_controller, tasks=["cyclic_*"])
-        self.to_clients(client_config.executor, tasks=["train", "validate", "submit_model"])
+
+        if not self.executor:
+            # We add the executor only if it's not added yet.
+            self.to_clients(client_config.executor, tasks=self.executor_tasks)
+            self.executor = client_config.executor
 
         if cse_config:
             self.add_cross_site_eval(cse_config, persistor_id)
@@ -318,21 +337,3 @@ class CCWFJob(FedJob):
             get_model_timeout=cse_config.get_model_timeout,
         )
         self.to_clients(client_controller, tasks=["cse_*"])
-
-
-def validate_object_for_job(name, obj, obj_type):
-    """Check whether the specified object is valid for job.
-    The object must either have the add_to_fed_job method or is valid object type.
-
-    Args:
-        name: name of the object
-        obj: the object to be checked
-        obj_type: the object type that the object should be, if it doesn't have the add_to_fed_job method.
-
-    Returns: None
-
-    """
-    if has_add_to_job_method(obj):
-        return
-
-    check_object_type(name, obj, obj_type)

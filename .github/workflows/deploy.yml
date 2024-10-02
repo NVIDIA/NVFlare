@@ -1,19 +1,22 @@
-name: Deploy to GitHub Pages
+name: Deploy to gh-pages
 
 on:
-  # Trigger the workflow every time you push to the `main` branch
-  # Using a different branch name? Replace `main` with your branch’s name
+  # Trigger the workflow if any web/** files are modified
   push:
-    branches: [ main ]
-  # Allows you to run this workflow manually from the Actions tab on GitHub.
+    branches:
+      - "main"
+      - "2.5"
+    paths:
+      - 'web/**'
   workflow_dispatch:
 
 env:
   site_path: ./web
+  version_path: /
 
 # Allow this job to clone the repo and create a page deployment
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -21,7 +24,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout your repository using git
+      - name: Update version_path for non-main branches
+        if: ${{ github.ref_type == 'branch' && github.ref_name != 'main'}}
+        run: echo version_path=/version/${{ github.ref_name }}/ >> $GITHUB_ENV
+
+      - name: Checkout your repository
         uses: actions/checkout@v4
 
       - name: Setup Node
@@ -31,28 +38,20 @@ jobs:
           cache: npm
           cache-dependency-path: "${{ env.site_path }}/package-lock.json"
 
-      - name: Install
-        shell: "bash"
-        working-directory: ${{ env.site_path }}
+      - name: Install dependencies
         run: npm install
-
-      - name: Build
-        shell: "bash"
         working-directory: ${{ env.site_path }}
+
+      - name: Build project
         run: npm run build
+        env:
+          PUBLIC_GH_BRANCH: ${{ github.ref_name }}
+        working-directory: ${{ env.site_path }}
 
-      - name: Upload Pages Artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Deploy
+        uses: JamesIves/github-pages-deploy-action@v4.6.4
         with:
-          path: "${{ env.site_path }}/dist/"
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          branch: gh-pages
+          folder: ${{ env.site_path }}/dist
+          target-folder: ${{ env.version_path }}
+          clean-exclude: version
