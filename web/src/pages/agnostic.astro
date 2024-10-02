@@ -2,6 +2,7 @@
 import Layout from "@layouts/Layout.astro";
 import FrameworkAgnostic from '../images/framework_agnostic.png'
 
+const base_url = import.meta.env.BASE_URL;
 ---
 
 <Layout title="">
@@ -11,7 +12,7 @@ import FrameworkAgnostic from '../images/framework_agnostic.png'
     <div class="bg-white py-16 sm:py-16">
       <div class="mx-auto max-w-[1600px] px-6 lg:px-8">
         <div class="mx-auto max-w-5xl mt-10 flex justify-left">
-          <a href="/NVFlare" class="text-sm font-semibold leading-6 text-nvidia">
+          <a href={base_url} class="text-sm font-semibold leading-6 text-nvidia">
             <span aria-hidden="true">&larr;</span>
             Back to home
           </a>
@@ -22,7 +23,7 @@ import FrameworkAgnostic from '../images/framework_agnostic.png'
           </h2>
           <p class="text-lg mt-4 text-slate-600 w-3/4 m-auto">
             NVIDIA FLARE is designed as a federated computing platform that is agnostic to frameworks, workloads, datasets, and domains.
-            View the <a class="text-nvidia" href="/NVFlare/catalog">Tutorial Catalog</a> to see different examples in these categories.
+            View the <a class="text-nvidia" href=`${base_url}/catalog`>Tutorial Catalog</a> to see different examples in these categories.
           </p>
 
           <img class="mt-10 flex items-center w-full" src={FrameworkAgnostic.src} alt="framework agnostic">
