@@ -20,8 +20,7 @@ from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.ccwf.common import Constant, CyclicOrder
-from nvflare.fuel.utils.validation_utils import check_object_type
-from nvflare.job_config.api import FedJob, has_add_to_job_method
+from nvflare.job_config.api import FedJob, validate_object_for_job
 from nvflare.widgets.widget import Widget
 
 from .cse_client_ctl import CrossSiteEvalClientController
@@ -318,21 +317,3 @@ class CCWFJob(FedJob):
             get_model_timeout=cse_config.get_model_timeout,
         )
         self.to_clients(client_controller, tasks=["cse_*"])
-
-
-def validate_object_for_job(name, obj, obj_type):
-    """Check whether the specified object is valid for job.
-    The object must either have the add_to_fed_job method or is valid object type.
-
-    Args:
-        name: name of the object
-        obj: the object to be checked
-        obj_type: the object type that the object should be, if it doesn't have the add_to_fed_job method.
-
-    Returns: None
-
-    """
-    if has_add_to_job_method(obj):
-        return
-
-    check_object_type(name, obj, obj_type)
