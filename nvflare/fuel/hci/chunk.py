@@ -169,7 +169,7 @@ def chunk_it(c: ChunkState, data, cursor: int, process_chunk_func) -> ChunkState
         return c
 
     if cursor < 0 or cursor >= data_len:
-        raise ValueError(f"cursor {cursor} is out of data range [0, {data_len-1}]")
+        raise ValueError(f"cursor {cursor} is out of data range [0, {data_len - 1}]")
     data_len -= cursor
 
     header_bytes_len = len(c.header_bytes)

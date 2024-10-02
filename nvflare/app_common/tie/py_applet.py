@@ -27,7 +27,6 @@ from .defs import Constant
 
 
 class PyRunner(ABC):
-
     """
     A PyApplet must return a light-weight PyRunner object to run the Python code of the external app.
     Since the runner could be running in a separate subprocess, the runner object must be pickleable!
@@ -211,7 +210,7 @@ class PyApplet(Applet, ABC):
                         while time.time() - start < timeout:
                             if p.exitcode is not None:
                                 # already stopped
-                                self.logger.info(f"applet stopped (rc={p.exitcode}) after {time.time()-start} secs")
+                                self.logger.info(f"applet stopped (rc={p.exitcode}) after {time.time() - start} secs")
                                 return p.exitcode
                             time.sleep(0.1)
                     self.logger.info("stopped applet by killing the process")

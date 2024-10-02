@@ -39,7 +39,7 @@ class TestTaskScriptRunner(unittest.TestCase):
 
     def test_app_scripts_and_args2(self):
         # curr_dir = os.getcwd()
-        script_path = "cli.py"
+        script_path = "nvflare/cli.py"
         script_args = "--batch_size 4"
         wrapper = TaskScriptRunner(custom_dir=self.nvflare_root, script_path=script_path, script_args=script_args)
 

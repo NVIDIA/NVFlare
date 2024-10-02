@@ -145,7 +145,10 @@ class TestFlareDecomposers:
         assert dd.data_kind == d.data_kind
 
     def test_dxo_shareable(self):
-        dxo = DXO(data_kind=DataKind.WEIGHTS, data={"x": 1, "y": os.urandom(200), "z": "中文字母测试两岸猿声啼不住轻舟已过万重山"})
+        dxo = DXO(
+            data_kind=DataKind.WEIGHTS,
+            data={"x": 1, "y": os.urandom(200), "z": "中文字母测试两岸猿声啼不住轻舟已过万重山"},
+        )
         s1 = dxo.to_shareable()
         ds = fobs.dumps(s1, max_value_size=15)
         s2 = fobs.loads(ds)

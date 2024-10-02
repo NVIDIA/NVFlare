@@ -7,6 +7,8 @@ import MammographyGraphs from '../images/research/mammography_graphs.jpg'
 import Pancreas from '../images/research/pancreas.jpg'
 import Sun from '../images/research/sun.jpg'
 
+const gh_branch = import.meta.env.PUBLIC_GH_BRANCH;
+const base_url = import.meta.env.BASE_URL;
 
 const case_studies = [
   {
@@ -72,7 +74,7 @@ const case_studies = [
   <div class="bg-white py-16 sm:py-16">
     <div class="mx-auto max-w-[1600px] px-6 lg:px-8">
       <div class="mx-auto max-w-5xl mt-10 flex justify-left">
-        <a href="/NVFlare" class="text-sm font-semibold leading-6 text-nvidia">
+        <a href={base_url} class="text-sm font-semibold leading-6 text-nvidia">
           <span aria-hidden="true">&larr;</span>
           Back to home
         </a>
@@ -149,7 +151,7 @@ const case_studies = [
 
           <p class="text-lg mt-4 text-slate-600 m-auto">
             NVIDIA FLARE offers a lot of state of art research work, here is a quick view of the recent work.
-            Learn more in the research directory in our <a class="text-nvidia" href="https://github.com/NVIDIA/NVFlare/tree/main/research">GitHub</a> and view our list of <a class="text-nvidia" href="https://nvflare.readthedocs.io/en/main/publications_and_talks.html">Publications</a>.
+            Learn more in the research directory in our <a class="text-nvidia" href=`https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research`>GitHub</a> and view our list of <a class="text-nvidia" href="https://nvflare.readthedocs.io/en/main/publications_and_talks.html">Publications</a>.
           </p>
 
           <img class="mt-10 flex items-center w-full" src={NvflareResearch.src} alt="NVFLARE research">

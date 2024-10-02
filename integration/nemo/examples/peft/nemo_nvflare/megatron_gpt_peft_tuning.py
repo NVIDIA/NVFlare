@@ -13,15 +13,13 @@
 # limitations under the License.
 
 import torch.multiprocessing as mp
-from omegaconf.omegaconf import OmegaConf
-
 from nemo.collections.nlp.models.language_modeling.megatron_gpt_sft_model import MegatronGPTSFTModel
 from nemo.collections.nlp.parts.megatron_trainer_builder import MegatronLMPPTrainerBuilder
 from nemo.collections.nlp.parts.peft_config import PEFT_CONFIG_MAP
-
 from nemo.core.config import hydra_runner
 from nemo.utils import logging
 from nemo.utils.exp_manager import exp_manager
+from omegaconf.omegaconf import OmegaConf
 
 mp.set_start_method("spawn", force=True)
 
@@ -57,7 +55,7 @@ Please see lora.ipynb for a step-by-step guide.
 @hydra_runner(config_path="../custom", config_name="megatron_gpt_peft_tuning_config")
 def main(cfg) -> None:
     logging.info("\n\n************** Experiment configuration ***********")
-    logging.info(f'\n{OmegaConf.to_yaml(cfg)}')
+    logging.info(f"\n{OmegaConf.to_yaml(cfg)}")
 
     trainer = MegatronLMPPTrainerBuilder(cfg).create_trainer()
     exp_manager(trainer, cfg.exp_manager)
@@ -87,16 +85,16 @@ def main(cfg) -> None:
         # (optional): get the FL system info
         fl_sys_info = flare.system_info()
         print("--- fl_sys_info ---")
-        print(fl_sys_info)            
+        print(fl_sys_info)
 
         # (3) evaluate the current global model to allow server-side model selection.
         print("--- validate global model ---")
         trainer.validate(model)
 
         # (4) Perform local training starting with the received global model.
-        print("--- train new model ---")      
+        print("--- train new model ---")
         trainer.fit(model)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -67,7 +67,7 @@ def split_to_jsonl(data, output_dir, validation_ratio, testing_ratio):
                 g.write(json.dumps({"input": input, "output": output}) + "\n")
             else:
                 i.write(json.dumps({"input": input, "output": output}) + "\n")
-    print(f"{index+1} out of {data_ct} Data was successfully preprocessed and saved.")
+    print(f"{index + 1} out of {data_ct} Data was successfully preprocessed and saved.")
 
 
 def main():

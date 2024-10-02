@@ -162,7 +162,7 @@ if __name__ == "__main__":
         executor = ScriptRunner(
             script=train_script, script_args=curr_task_script_args, framework=FrameworkType.TENSORFLOW
         )
-        job.to(executor, f"site-{i+1}")
+        job.to(executor, f"site-{i + 1}")
 
     # Can export current job to folder.
     # job.export_job(f"{args.workspace}/nvflare/jobs/job_config")

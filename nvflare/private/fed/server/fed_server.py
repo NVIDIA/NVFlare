@@ -585,7 +585,6 @@ class FederatedServer(BaseServer):
             return make_cellnet_reply(rc=F3ReturnCode.OK, body=reply)
 
     def register_client(self, request: Message) -> Message:
-
         """Register new clients on the fly.
 
         Each client must get registered before getting the global model.

@@ -630,7 +630,7 @@ class ClientRunner(TBI):
             if not synced:
                 raise RuntimeError(f"cannot sync with Server Runner after {max_sync_timeout} seconds")
 
-            self.log_info(fl_ctx, f"synced to Server Runner in {time.time()-sync_start} seconds")
+            self.log_info(fl_ctx, f"synced to Server Runner in {time.time() - sync_start} seconds")
             ReliableMessage.enable(fl_ctx)
             self.fire_event(EventType.ABOUT_TO_START_RUN, fl_ctx)
             fl_ctx.set_prop(FLContextKey.APP_ROOT, app_root, sticky=True)

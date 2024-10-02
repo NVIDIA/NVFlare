@@ -84,7 +84,6 @@ class _ReviewerFilter(_JobFilter):
 
 
 class _ScheduleJobFilter(_JobFilter):
-
     """
     This filter is optimized for selecting jobs to schedule since it is used so frequently (every 1 sec).
     """
