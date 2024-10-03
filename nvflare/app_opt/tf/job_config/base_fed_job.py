@@ -24,10 +24,10 @@ from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 from nvflare.app_opt.tf.job_config.model import TFModel
 from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
-from nvflare.job_config.common_components_job import CommonComponentsJob
+from nvflare.job_config.api import FedJob, validate_object_for_job
 
 
-class BaseFedJob(CommonComponentsJob):
+class BaseFedJob(FedJob):
     def __init__(
         self,
         initial_model: tf.keras.Model = None,
@@ -35,6 +35,9 @@ class BaseFedJob(CommonComponentsJob):
         min_clients: int = 1,
         mandatory_clients: Optional[List[str]] = None,
         key_metric: str = "accuracy",
+        validation_json_generator: Optional[ValidationJsonGenerator] = None,
+        intime_model_selector: Optional[IntimeModelSelector] = None,
+        convert_to_fed_event: Optional[ConvertToFedEvent] = None,
         analytics_receiver: Optional[AnalyticsReceiver] = None,
         model_persistor: Optional[ModelPersistor] = None,
     ):
@@ -52,6 +55,12 @@ class BaseFedJob(CommonComponentsJob):
             key_metric (str, optional): Metric used to determine if the model is globally best.
                 if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
                 Defaults to "accuracy".
+            validation_json_generator (ValidationJsonGenerator, optional): A component for generating validation results.
+                if not provided, a ValidationJsonGenerator will be configured.
+            intime_model_selector: (IntimeModelSelector, optional): A component for select the model.
+                if not provided, an IntimeModelSelector will be configured.
+            convert_to_fed_event: (ConvertToFedEvent, optional): A component to covert certain events to fed events.
+                if not provided, a ConvertToFedEvent object will be created.
             analytics_receiver (AnlyticsReceiver, optional): Receive analytics.
                 If not provided, a TBAnalyticsReceiver will be configured.
             model_persistor (optional, ModelPersistor): how to persistor the model.
@@ -60,15 +69,33 @@ class BaseFedJob(CommonComponentsJob):
             name=name,
             min_clients=min_clients,
             mandatory_clients=mandatory_clients,
-            validation_json_generator=ValidationJsonGenerator(),
-            intime_model_selector=IntimeModelSelector(key_metric=key_metric) if key_metric else None,
-            convert_to_fed_event=ConvertToFedEvent(events_to_convert=[ANALYTIC_EVENT_TYPE]),
         )
 
         self.initial_model = initial_model
         self.comp_ids = {}
 
-        analytics_receiver = analytics_receiver if analytics_receiver else TBAnalyticsReceiver()
+        if validation_json_generator:
+            validate_object_for_job("validation_json_generator", validation_json_generator, ValidationJsonGenerator)
+        else:
+            validation_json_generator = ValidationJsonGenerator()
+        self.to_server(id="json_generator", obj=validation_json_generator)
+
+        if intime_model_selector:
+            validate_object_for_job("intime_model_selector", intime_model_selector, IntimeModelSelector)
+            self.to_server(id="model_selector", obj=intime_model_selector)
+        elif key_metric:
+            self.to_server(id="model_selector", obj=IntimeModelSelector(key_metric=key_metric))
+
+        if convert_to_fed_event:
+            validate_object_for_job("convert_to_fed_event", convert_to_fed_event, ConvertToFedEvent)
+        else:
+            convert_to_fed_event = ConvertToFedEvent(events_to_convert=[ANALYTIC_EVENT_TYPE])
+        self.convert_to_fed_event = convert_to_fed_event
+
+        if analytics_receiver:
+            validate_object_for_job("analytics_receiver", analytics_receiver, AnalyticsReceiver)
+        else:
+            analytics_receiver = TBAnalyticsReceiver()
 
         self.to_server(
             id="receiver",
@@ -77,3 +104,6 @@ class BaseFedJob(CommonComponentsJob):
 
         if initial_model:
             self.comp_ids.update(self.to_server(TFModel(model=initial_model, persistor=model_persistor)))
+
+    def set_up_client(self, target: str):
+        self.to(id="event_to_fed", obj=self.convert_to_fed_event, target=target)
