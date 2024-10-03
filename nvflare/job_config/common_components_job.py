@@ -14,7 +14,6 @@
 
 from typing import List, Optional
 
-from nvflare.app_common.tracking.tracker_types import ANALYTIC_EVENT_TYPE
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
