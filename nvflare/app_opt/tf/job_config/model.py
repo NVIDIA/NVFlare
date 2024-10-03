@@ -35,7 +35,7 @@ class TFModel:
         """
         self.model = model
 
-        if self.persistor:
+        if persistor:
             validate_object_for_job("persistor", persistor, ModelPersistor)
         self.persistor = persistor
 

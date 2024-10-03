@@ -103,7 +103,7 @@ class BaseFedJob(FedJob):
         )
 
         if initial_model:
-            self.comp_ids.update(self.to_server(TFModel(model=initial_model, persistor=model_persistor)))
+            self.comp_ids["persistor_id"] = self.to_server(TFModel(model=initial_model, persistor=model_persistor))
 
     def set_up_client(self, target: str):
         self.to(id="event_to_fed", obj=self.convert_to_fed_event, target=target)
