@@ -16,24 +16,27 @@ from typing import Optional
 
 import tensorflow as tf
 
+from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_opt.tf.model_persistor import TFModelPersistor
 from nvflare.job_config.api import validate_object_for_job
 
 
 class TFModel:
-    def __init__(self, model, persistor: Optional[TFModelPersistor] = None):
+    def __init__(self, model, persistor: Optional[ModelPersistor] = None):
         """TensorFlow model wrapper.
 
-        If model is a tf.keras.Model, add a TFModelPersistor with the model.
+        If persistor is provided, use it.
+        Else if model is a tf.keras.Model, add a TFModelPersistor with the model.
 
         Args:
             model (any): model
-            persistor (Optional[TFModelPersistor]): A TFModelPersistor,
-            if provided will ignore argument `model`, defaults to None.
+            persistor (Optional[ModelPersistor]): A ModelPersistor,
+                if provided will ignore argument `model`, defaults to None.
         """
         self.model = model
 
-        validate_object_for_job("persistor", persistor, TFModelPersistor)
+        if self.persistor:
+            validate_object_for_job("persistor", persistor, ModelPersistor)
         self.persistor = persistor
 
     def add_to_fed_job(self, job, ctx):
