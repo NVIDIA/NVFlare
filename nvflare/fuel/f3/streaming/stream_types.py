@@ -60,15 +60,15 @@ class Stream(ABC):
         return self.headers
 
     @abstractmethod
-    def read(self, chunk_size: int) -> BytesAlike:
-        """Read and return up to chunk_size bytes. It can return less but not more than the chunk_size.
+    def read(self, size: int) -> BytesAlike:
+        """Read and return up to size bytes. It can return less but not more than the size.
         An empty bytes object is returned if the stream reaches the end.
 
         Args:
-            chunk_size: Up to (but maybe less) this many bytes will be returned
+            size: Up to (but maybe less) this many bytes will be returned
 
         Returns:
-            Binary data. If empty, it means the stream is depleted (EOF)
+            Binary data. If empty, it means the stream is depleted (EOS)
         """
         pass
 
