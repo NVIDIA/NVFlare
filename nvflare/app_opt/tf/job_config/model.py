@@ -12,21 +12,32 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Optional
+
 import tensorflow as tf
 
+from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_opt.tf.model_persistor import TFModelPersistor
+from nvflare.job_config.api import validate_object_for_job
 
 
 class TFModel:
-    def __init__(self, model):
-        """TensorFLow model wrapper.
+    def __init__(self, model, persistor: Optional[ModelPersistor] = None):
+        """TensorFlow model wrapper.
 
-        If model is a tf.keras.Model, add a TFModelPersistor with the model.
+        If persistor is provided, use it.
+        Else if model is a tf.keras.Model, add a TFModelPersistor with the model.
 
         Args:
             model (any): model
+            persistor (Optional[ModelPersistor]): A ModelPersistor,
+                if provided will ignore argument `model`, defaults to None.
         """
         self.model = model
+
+        if self.persistor:
+            validate_object_for_job("persistor", persistor, ModelPersistor)
+        self.persistor = persistor
 
     def add_to_fed_job(self, job, ctx):
         """This method is used by Job API.
@@ -38,11 +49,12 @@ class TFModel:
         Returns:
             dictionary of ids of component added
         """
-        if isinstance(self.model, tf.keras.Model):  # if model, create a TF persistor
+        if self.persistor:
+            persistor = self.persistor
+        elif isinstance(self.model, tf.keras.Model):
+            # if model is a tf.keras.Model, creates a TFModelPersistor
             persistor = TFModelPersistor(model=self.model)
-            persistor_id = job.add_component(comp_id="persistor", obj=persistor, ctx=ctx)
-            return persistor_id
         else:
-            raise ValueError(
-                f"Unable to add {self.model} to job with TFModelPersistor. Expected tf.keras.Model but got {type(self.model)}."
-            )
+            raise ValueError(f"Unsupported type for model: {type(self.model)}.")
+        persistor_id = job.add_component(comp_id="persistor", obj=persistor, ctx=ctx)
+        return persistor_id
