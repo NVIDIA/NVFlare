@@ -15,7 +15,6 @@
 import os
 import shutil
 import traceback
-from distutils.dir_util import copy_tree
 from tempfile import mkdtemp
 from typing import List, Optional, Tuple
 
@@ -157,7 +156,7 @@ def create_job(cmd_args):
         for app_name in template_srcs:
             src = template_srcs[app_name]
             app_config_dir = get_config_dir(job_folder, app_name)
-            copy_tree(src=src, dst=app_config_dir)
+            shutil.copytree(src=src, dst=app_config_dir, dirs_exist_ok=True)
             remove_extra_files(app_config_dir)
         prepare_meta_config(cmd_args, template_src, app_names)
         app_variable_values = prepare_job_config(cmd_args, app_names)
@@ -352,7 +351,7 @@ def submit_job(cmd_args):
             raise ValueError(f"invalid job folder: {cmd_args.job_folder}")
 
         temp_job_dir = mkdtemp()
-        copy_tree(cmd_args.job_folder, temp_job_dir)
+        shutil.copytree(cmd_args.job_folder, temp_job_dir, dirs_exist_ok=True)
 
         app_dirs = get_app_dirs_from_job_folder(cmd_args.job_folder)
         app_names = [os.path.basename(f) for f in app_dirs]
@@ -704,7 +703,7 @@ def prepare_app_scripts(job_folder, app_custom_dirs, cmd_args):
             if os.path.exists(script_dir):
                 if script_dir == job_folder or is_subdir(job_folder, script_dir):
                     raise ValueError("job_folder must not be the same or sub directory of script_dir")
-                copy_tree(cmd_args.script_dir, app_custom_dir)
+                shutil.copytree(cmd_args.script_dir, app_custom_dir, dirs_exist_ok=True)
                 remove_pycache_files(app_custom_dir)
             else:
                 raise ValueError(f"{cmd_args.script_dir} doesn't exists")
