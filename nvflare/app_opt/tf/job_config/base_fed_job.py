@@ -16,15 +16,18 @@ from typing import List, Optional
 
 import tensorflow as tf
 
-from nvflare import FedJob
+from nvflare.app_common.abstract.model_persistor import ModelPersistor
+from nvflare.app_common.tracking.tracker_types import ANALYTIC_EVENT_TYPE
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
+from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 from nvflare.app_opt.tf.job_config.model import TFModel
 from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
+from nvflare.job_config.common_components_job import CommonComponentsJob
 
 
-class BaseFedJob(FedJob):
+class BaseFedJob(CommonComponentsJob):
     def __init__(
         self,
         initial_model: tf.keras.Model = None,
@@ -32,12 +35,14 @@ class BaseFedJob(FedJob):
         min_clients: int = 1,
         mandatory_clients: Optional[List[str]] = None,
         key_metric: str = "accuracy",
+        analytics_receiver: Optional[AnalyticsReceiver] = None,
+        model_persistor: Optional[ModelPersistor] = None,
     ):
         """TensorFlow BaseFedJob.
 
-        Configures server side FedAvg controller, persistor with initial model, and widgets.
+        Configures ValidationJsonGenerator, IntimeModelSelector, TBAnalyticsReceiver, ConvertToFedEvent.
 
-        User must add executors.
+        User must add controllers and executors.
 
         Args:
             initial_model (tf.keras.Model): initial TensorFlow Model. Defaults to None.
@@ -47,26 +52,28 @@ class BaseFedJob(FedJob):
             key_metric (str, optional): Metric used to determine if the model is globally best.
                 if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
                 Defaults to "accuracy".
+            analytics_receiver (AnlyticsReceiver, optional): Receive analytics.
+                If not provided, a TBAnalyticsReceiver will be configured.
+            model_persistor (optional, ModelPersistor): how to persistor the model.
         """
-        super().__init__(name, min_clients, mandatory_clients)
-        self.key_metric = key_metric
+        super().__init__(
+            name=name,
+            min_clients=min_clients,
+            mandatory_clients=mandatory_clients,
+            validation_json_generator=ValidationJsonGenerator(),
+            intime_model_selector=IntimeModelSelector(key_metric=key_metric) if key_metric else None,
+            convert_to_fed_event=ConvertToFedEvent(events_to_convert=[ANALYTIC_EVENT_TYPE]),
+        )
+
         self.initial_model = initial_model
         self.comp_ids = {}
 
-        component = ValidationJsonGenerator()
-        self.to_server(id="json_generator", obj=component)
+        analytics_receiver = analytics_receiver if analytics_receiver else TBAnalyticsReceiver()
 
-        if self.key_metric:
-            component = IntimeModelSelector(key_metric=self.key_metric)
-            self.to_server(id="model_selector", obj=component)
-
-        # TODO: make different tracking receivers configurable
-        component = TBAnalyticsReceiver(events=["fed.analytix_log_stats"])
-        self.to_server(id="receiver", obj=component)
+        self.to_server(
+            id="receiver",
+            obj=analytics_receiver,
+        )
 
         if initial_model:
-            self.comp_ids["persistor_id"] = self.to_server(TFModel(initial_model))
-
-    def set_up_client(self, target: str):
-        component = ConvertToFedEvent(events_to_convert=["analytix_log_stats"], fed_event_prefix="fed.")
-        self.to(id="event_to_fed", obj=component, target=target)
+            self.comp_ids.update(self.to_server(TFModel(model=initial_model, persistor=model_persistor)))
