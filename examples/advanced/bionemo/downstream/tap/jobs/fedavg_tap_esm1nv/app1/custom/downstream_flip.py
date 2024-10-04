@@ -70,7 +70,7 @@ def main(cfg) -> None:
     model.add_metrics(metrics=metrics, metrics_args=metrics_args)
 
     # Patch trainer for NVFlare federated learning
-    flare.patch(trainer)
+    flare.patch(trainer, load_state_dict_strict=False)
 
     # Federated learning loop
     while flare.is_running():
