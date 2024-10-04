@@ -1,11 +1,13 @@
 ---
 import NvidiaLogo from '../images/nvidia_eye.png'
 import NvflareAnimation from '../images/nvflare_graphic_animation.mp4'
+import ClickTracker from './clickTracker.astro';
 
 const gh_branch = import.meta.env.PUBLIC_GH_BRANCH;
 const base_url = import.meta.env.BASE_URL;
 ---
-<div class="bg-white">
+<ClickTracker div_id="hero_div" eventLabel="Hero"/>
+<div id="hero_div" class="bg-white">
   <div class="relative isolate overflow-hidden bg-black">
     <div class="mx-auto max-w-7xl pb-24 pt-10 sm:pb-32 lg:grid lg:grid-cols-2 lg:gap-x-8 lg:px-8 lg:py-12">
       <div class="px-6 lg:px-0 lg:pt-4">
