@@ -26,7 +26,7 @@ Under `integration/xgboost/encryption_plugins`, run the build commands
 ```
 The generated plugin files under build folder are,
 ```
-    cuda_pluign/libcuda_paillier.so
+    cuda_plugin/libcuda_paillier.so
     nvflare_plugin/libnvflare.so
 ```
 
