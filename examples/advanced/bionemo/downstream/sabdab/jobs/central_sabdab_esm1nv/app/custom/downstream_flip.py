@@ -26,14 +26,6 @@ import nvflare.client.lightning as flare
 from nvflare.client.api import init
 
 micro_batch_size = 32
-val_check_intervals = {
-    "site-1": min(int(416 / micro_batch_size), 3),  # Use min to ensure it's <= 3
-    "site-2": min(int(238 / micro_batch_size), 3),
-    "site-3": min(int(282 / micro_batch_size), 3),
-    "site-4": min(int(472 / micro_batch_size), 3),
-    "site-5": min(int(361 / micro_batch_size), 3),
-    "site-6": min(int(157 / micro_batch_size), 3),
-}
 
 
 @hydra_runner(config_path=".", config_name="downstream_flip_sabdab")  # ESM1
@@ -44,8 +36,6 @@ def main(cfg) -> None:
     # Get FL system info and set site-specific parameters
     fl_sys_info = flare.system_info()
     site_name = fl_sys_info["site_name"]
-    cfg.model.data.dataset.train = f"sabdab_chen_{site_name}_train"
-    cfg.trainer.val_check_interval = val_check_intervals[site_name]
     print(f"Running client {site_name} with train data: {cfg.model.data.dataset.train}")
     print(f"Validation check interval: {cfg.trainer.val_check_interval}")
 
