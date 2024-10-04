@@ -224,7 +224,7 @@ The results of the GNN training are:
 Similar to Step 2.1, we can easily convert the notebook code into the python code for federated execution on each site. For simplicity, we will skip the code examples for this step.
 Please refer to the scripts:
 - [graph_construct.py](./nvflare/graph_construct.py) and [graph_construct_job.py](./nvflare/graph_construct_job.py) for graph construction
-- [gnn_train_encode.py](./nvflare/gnn_train_encode.py) and [gnn_train_encode_job.py](./nvflare/gnn_train_job.py) for GNN training and encoding
+- [gnn_train_encode.py](./nvflare/gnn_train_encode.py) and [gnn_train_encode_job.py](./nvflare/gnn_train_encode_job.py) for GNN training and encoding
 
 ## Step 3: Federated Training of XGBoost
 Now we have enriched / encoded features, the last step is to run federated XGBoost over them. 
@@ -324,40 +324,38 @@ python graph_construct_job.py -c 'YSYCESMM_Bank_7' 'FBSFCHZH_Bank_6' 'YXRXGB22_B
 cd ..
 ```
 
+* GNN Training and Encoding
+```
+cd nvflare
+python gnn_train_encode_job.py -c 'YSYCESMM_Bank_7' 'FBSFCHZH_Bank_6' 'YXRXGB22_Bank_3' 'XITXUS33_Bank_10' 'HCBHSGSG_Bank_9' 'YMNYFRPP_Bank_5' 'ZHSZUS33_Bank_1' 'ZNZZAU3M_Bank_8' 'SHSHKHH1_Bank_2' 'WPUWDEFF_Bank_4' -p gnn_train_encode.py -a "-i /tmp/nvflare/xgb/credit_card  -o /tmp/nvflare/xgb/credit_card/"
+cd ..
+```
+
+
 * XGBoost Job 
-Finally we take the resulting data and run XGBoost Job
+
+We run XGBoost Job on two types of data: normalized, and GNN embeddings
+For normalized data, we run the following command
 ```
 cd nvflare
 python xgb_job.py -c 'YSYCESMM_Bank_7' 'FBSFCHZH_Bank_6' 'YXRXGB22_Bank_3' 'XITXUS33_Bank_10' 'HCBHSGSG_Bank_9' 'YMNYFRPP_Bank_5' 'ZHSZUS33_Bank_1' 'ZNZZAU3M_Bank_8' 'SHSHKHH1_Bank_2' 'WPUWDEFF_Bank_4' -i /tmp/nvflare/xgb/credit_card  -w /tmp/nvflare/workspace/xgb/credit_card/
 cd ..
 ```
-Below is the output of last 9th and 10th round of training (starting round = 0) 
+Below is the output of last round of training (starting round = 0) 
 ```
 ...
-
-[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
-[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
-[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
-[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
-[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
-[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
-[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
-[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
-[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
-[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
-
-[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
-[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
-[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
-[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
-[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
-[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
-[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
-[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
-[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
-[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
-[07:33:54] Finished training
+[9]	eval-auc:0.67596	train-auc:0.70582
 ```
-
-
+For GNN embeddings, we run the following command
+```
+cd nvflare
+python xgb_job_embed.py -c 'YSYCESMM_Bank_7' 'FBSFCHZH_Bank_6' 'YXRXGB22_Bank_3' 'XITXUS33_Bank_10' 'HCBHSGSG_Bank_9' 'YMNYFRPP_Bank_5' 'ZHSZUS33_Bank_1' 'ZNZZAU3M_Bank_8' 'SHSHKHH1_Bank_2' 'WPUWDEFF_Bank_4' -i /tmp/nvflare/xgb/credit_card  -w /tmp/nvflare/workspace/xgb/credit_card_embed/
+cd ..
+```
+Below is the output of last round of training (starting round = 0) 
+```
+...
+[9]	eval-auc:0.53788	train-auc:0.61659
+```
+For this example, the normalized data performs better than the GNN embeddings. This is expected as the GNN embeddings are produced with randomly generated transactional information, which adds noise to the data.
 
