@@ -38,6 +38,8 @@ class NumpyToPTParamsConverter(ParamsConverter):
             for k, v in exclude_vars.items():
                 return_params[k] = v
 
+        return return_params
+
 
 class PTToNumpyParamsConverter(ParamsConverter):
     def convert(self, params: Dict, fl_ctx) -> Dict:
