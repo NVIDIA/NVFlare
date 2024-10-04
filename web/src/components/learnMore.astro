@@ -1,4 +1,5 @@
 ---
+import ClickTracker from './clickTracker.astro';
 
 const learnMore = [
   {
@@ -22,7 +23,8 @@ const learnMore = [
 ];
 ---
 
-<div class="bg-white py-24 sm:py-24">
+<ClickTracker div_id="learn_more_div" eventLabel="Learn More"/>
+<div id="learn_more_div" class="bg-white py-24 sm:py-24">
   <div class="mx-auto max-w-7xl px-6 lg:px-8">
     <div class="mx-auto lg:mx-0 text-center">
       <h2 class="text-4xl lg:text-5xl font-bold lg:tracking-tight text-gray-900">

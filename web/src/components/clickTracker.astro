@@ -1,0 +1,34 @@
+---
+// Track if div clicked, then send umami event once per page view
+interface Props {
+  div_id: string;
+  eventLabel: string;
+}
+
+const { div_id, eventLabel }: Props = Astro.props;
+---
+
+<script define:vars={{ div_id, eventLabel }}>
+  document.addEventListener('DOMContentLoaded', function() {
+    setTimeout(() => {
+      const section_div = document.getElementById(div_id);
+
+      if (section_div) {
+        let hasTracked = false;
+
+        section_div.onclick = () => {
+          if (!hasTracked) {
+            if (typeof umami !== 'undefined') {
+              umami.track(eventLabel);
+            } else {
+              console.error('umami is not defined.');
+            }
+            hasTracked = true;
+          }
+        };
+      } else {
+        console.warn(`Element with id "${div_id}" not found.`);
+      }
+    }, 0);
+  });
+</script>
