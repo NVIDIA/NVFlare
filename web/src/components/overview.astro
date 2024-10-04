@@ -1,4 +1,6 @@
 ---
+import ClickTracker from './clickTracker.astro';
+
 const features = [
   {
     id: "research",
@@ -9,7 +11,7 @@ const features = [
     `,
     description:
       "Provides user-friendly APIs for client and server programming. Use the Simulator and POC modes to quickly simulate a federated learning application.",
-    link:"/NVFlare/research",
+    link:"research",
   },
   {
     id: "framework-agnostic",
@@ -20,7 +22,7 @@ const features = [
     `,
     description:
       "Designed as a federated computing platform agnostic to frameworks, workloads, datasets, and domains. Federated learning apps are built on this foundation.",
-    link: "/NVFlare/agnostic",
+    link: "agnostic",
   },
   {
     id: "open-arch",
@@ -42,7 +44,7 @@ const features = [
     `,
     description:
       "Prioritizes security with secure provisioning, event-based security plugins, authorization control, data filtering, audit logs, and advanced privacy-preserving algorithms.",
-    link: "/NVFlare/security",
+    link: "security",
   },
   {
     id: "integration",
@@ -70,7 +72,8 @@ const features = [
 
 ---
 
-<div class="bg-white py-20 sm:py-24">
+<ClickTracker div_id="overview_div" eventLabel="Why FLARE"/>
+<div id="overview_div" class="bg-white py-20 sm:py-24">
   <div class="mx-auto max-w-7xl px-6 lg:px-8">
     <div class="mx-auto lg:mx-0 text-center">
       <h2 class="text-4xl lg:text-5xl font-bold lg:tracking-tight text-gray-900">

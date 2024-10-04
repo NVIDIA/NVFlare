@@ -1,4 +1,8 @@
 ---
+import ClickTracker from './clickTracker.astro';
+
+const gh_branch = import.meta.env.PUBLIC_GH_BRANCH;
+
 const walkthrough = [
   {
     id: "step1",
@@ -17,7 +21,7 @@ const walkthrough = [
     description:
       "Use the ModelController API to write a federated control flow for FedAvg.",
     button_text: "View Source",
-    link: "https://github.com/NVIDIA/NVFlare/blob/main/nvflare/app_common/workflows/fedavg.py",
+    link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/nvflare/app_common/workflows/fedavg.py`,
     video: "https://developer.download.nvidia.com/assets/Clara/flare/Flare%202.5.0%20Getting%20Started%20-%20Part%202%20-%20Server.mp4",
   },
   {
@@ -27,7 +31,7 @@ const walkthrough = [
     description:
       "Use the Client API to write local training code for a PyTorch CIFAR-10 trainer.",
     button_text: "View Source",
-    link: "https://github.com/NVIDIA/NVFlare/blob/main/examples/getting_started/pt/src/cifar10_fl.py",
+    link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/getting_started/pt/src/cifar10_fl.py`,
     video: "https://developer.download.nvidia.com/assets/Clara/flare/Flare%202.5.0%20Getting%20Started%20-%20Part%203%20-%20Client.mp4",
   },
   {
@@ -37,7 +41,7 @@ const walkthrough = [
     description:
       "Formulate the NVIDIA FLARE job and simulate a federated run with the multi-process simulator.",
     button_text: "View Notebook",
-    link: "https://colab.research.google.com/github/NVIDIA/NVFlare/blob/main/examples/getting_started/pt/nvflare_pt_getting_started.ipynb",
+    link: `https://colab.research.google.com/github/NVIDIA/NVFlare/blob/${gh_branch}/examples/getting_started/pt/nvflare_pt_getting_started.ipynb`,
     video: "https://developer.download.nvidia.com/assets/Clara/flare/Flare%202.5.0%20Getting%20Started%20-%20Part%204%20-%20Job.mp4",
   },
   {
@@ -47,7 +51,7 @@ const walkthrough = [
     description:
       "Learn more about NVIDIA FLARE and taking federated learning from simulation to the real world.",
     button_text: "Tutorial Catalog",
-    link: "/NVFlare/catalog",
+    link: "catalog",
     video: "https://developer.download.nvidia.com/assets/Clara/flare/Flare%202.5.0%20Getting%20Started%20-%20Part%205%20-%20Next%20Steps.mp4",
   },
 ];
@@ -70,7 +74,7 @@ const km = [
     description:
       "What is Kaplan-Meier Analysis and how can we adapt it to a federated setting?",
     button_text: "View Source",
-    link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/kaplan-meier-he",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/kaplan-meier-he`,
     video: "https://developer.download.nvidia.com/assets/Clara/flare/Flare%202.5.0%20KM%20-%20Part%202%20-%20Kaplan%20Meier.mp4",
   },
   {
@@ -80,7 +84,7 @@ const km = [
     description:
       "Dive into an end-to-end implementation of federated Kaplan-Meier.",
     button_text: "View Source",
-    link: "https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/kaplan-meier-he/src",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/kaplan-meier-he/src`,
     video: "https://developer.download.nvidia.com/assets/Clara/flare/Flare%202.5.0%20KM%20-%20Part%203%20-%20Implementation.mp4",
   },
 ];
@@ -91,7 +95,8 @@ const series = [
 ]
 ---
 
-<div class="bg-gray-50 py-24 sm:py-24">
+<ClickTracker div_id="getting_started_div" eventLabel="Getting Started"/>
+<div id="getting_started_div" class="bg-gray-50 py-24 sm:py-24">
   <div class="mx-auto max-w-7xl px-6 lg:px-8">
     <div class="mt-16 md:mt-0 text-center">
       <h2 class="text-4xl lg:text-5xl font-bold lg:tracking-tight">

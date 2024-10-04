@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, List
 
@@ -23,6 +24,7 @@ from nvflare.apis.shareable import Shareable
 class ParamsConverter(ABC):
     def __init__(self, supported_tasks: List[str] = None):
         self.supported_tasks = supported_tasks
+        self.logger = logging.getLogger(self.__class__.__name__)
 
     def process(self, task_name: str, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
         if not self.supported_tasks or task_name in self.supported_tasks:
