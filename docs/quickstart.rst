@@ -93,7 +93,7 @@ Clone NVFlare repo to get examples, and switch to either the main branch or the 
 
   $ git clone https://github.com/NVIDIA/NVFlare.git
   $ cd NVFlare
-  $ git switch 2.4
+  $ git switch 2.5
 
 Note on branches:
 
