@@ -12,7 +12,7 @@ import "prismjs/plugins/line-highlight/prism-line-highlight.js";
 import 'prismjs/plugins/line-numbers/prism-line-numbers.js'
 import 'prismjs/plugins/line-numbers/prism-line-numbers.css'
 
-
+import ClickTracker from './clickTracker.astro';
 import GoogleColab from '../images/google_colab.svg.png'
 
 const gh_branch = import.meta.env.PUBLIC_GH_BRANCH;
@@ -791,7 +791,8 @@ const frameworks = [
 
 ---
 
-<div class="bg-white py-24 sm:py-24">
+<ClickTracker div_id="code_div" eventLabel="Example Code"/>
+<div id="code_div" class="bg-white py-24 sm:py-24">
   <div class="mx-auto max-w-[1500px] px-6 lg:px-8">
     <!-- Example Code Title & Description -->
     <div class="mx-auto max-w-5xl text-center">

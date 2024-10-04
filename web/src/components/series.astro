@@ -1,4 +1,6 @@
 ---
+import ClickTracker from './clickTracker.astro';
+
 const gh_branch = import.meta.env.PUBLIC_GH_BRANCH;
 
 const series_100 = {
@@ -304,7 +306,8 @@ const series_list = [
 
 ---
 
-<div class="bg-white py-20 sm:py-24">
+<ClickTracker div_id="series_div" eventLabel="Series"/>
+<div id="series_div" class="bg-white py-20 sm:py-24">
   <div class="mx-auto max-w-[1500px] px-6 lg:px-8">
     <div class="mx-auto lg:mx-0 text-center">
       <h2 class="text-4xl lg:text-5xl font-bold lg:tracking-tight text-gray-900">
