@@ -10,24 +10,6 @@ target: bionemo.model.protein.esm1nv.ESM1nvModel # target class for protein mode
 infer_target: bionemo.model.protein.esm1nv.infer.ESM1nvInference # target inference class for protein model
 encoder_frozen: False
 
-data:
-  task_name: tap # options: aav, bind, conservation, gb1, meltome, sav, scl, secondary_structure
-  task_type: regression #'token-level-classification'  # alternative: classification, regression
-  preprocessed_data_path: /tmp/data # path where all preprocessed FLIP datasets are saved
-  dataset_path: ${model.data.preprocessed_data_path}/tap # path to a training data
-  dataset:
-    train: tap_site-1_train
-    val: tap_valid
-    test: tap_test
-  sequence_column: "Antibody" # name of column with protein sequence in csv file
-  target_column: ["PPC"] #["3state", "resolved"] # names of label columns in csv file
-  target_sizes: [1] # number of classes in each label for classifications or 1 for regression
-  num_workers: 8
-  shuffle: True # shuffle training dataset
-  max_seq_length: ${model.seq_length}
-  emb_batch_size: ${model.micro_batch_size}
-  batch_size: 128
-
 trainer:
   devices: 1 # number of GPUs or CPUs
   num_nodes: 1 
@@ -65,11 +47,11 @@ model:
     preprocessed_data_path: /tmp/data # path where all preprocessed FLIP datasets are saved
     dataset_path: ${model.data.preprocessed_data_path}/tap # path to a training data
     dataset:
-      train: tap_full_train
+      train: tap_site-1_train
       val: tap_valid
       test: tap_test
     sequence_column: "Antibody" # name of column with protein sequence in csv file
-    target_column: ["SFvCSP"] #["3state", "resolved"] # names of label columns in csv file
+    target_column: ["PSH"] #["3state", "resolved"] # names of label columns in csv file
     target_sizes: [1] # number of classes in each label for classifications or 1 for regression
     num_workers: 8
     shuffle: True # shuffle training dataset
