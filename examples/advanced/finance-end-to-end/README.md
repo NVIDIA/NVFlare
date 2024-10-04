@@ -47,13 +47,15 @@ The python code for data generation is located at [prepare_data.py](./utils/prep
 
 ## Step 2: Feature Analysis
 
-For this stage, we would like to analyze the data, understand the features, and derive secondary features that can be more useful for building the model.
+For this stage, we would like to analyze the data, understand the features, and derive (and encode) secondary features that can be more useful for building the model.
 
 Towards this goal, there are two options:
 1. **Feature Enrichment**: This process involves adding new features based on the existing data. For example, we can calculate the average transaction amount for each currency and add this as a new feature. 
-2. **Feature Encoding**: This process involves encoding the current features and transforming them to embedding space via machine learning models. In this example, we use federated graph neural network (GNN).
+2. **Feature Encoding**: This process involves encoding the current features and transforming them to embedding space via machine learning models. This model can be either pre-trained, or trained with the candidate dataset.
 
-### Step 2, Option 1: Rule-based Feature Enrichment 
+Considering the fact that the only two numerical features in the dataset are "Amount" and "Time", we will perform feature enrichment first. Optionally, we can also perform feature encoding. In this example, we use graph neural network (GNN): we will train the GNN model in a federated unsupervised fashion, and then use the model to encode the features for all sites.
+
+### Step 2.1: Rule-based Feature Enrichment 
 In this process, we will enrich the data and add a few new derived features to illustrate the process. 
 Whether such enrichment makes sense or not is task and data dependent, essentially, this process is adding hand-crafted features to the classifier inputs.
 
@@ -67,7 +69,6 @@ The data enrichment process involves the following steps:
 2. **Aggregation for Training and Test Data**: Aggregate the data in 1-hour intervals, grouped by currency. The aggregated value is then divided by hist_trans_volume, and this new column is named x2_y1.
 3. **Repeating for Beneficiary BIC**: Perform the same process for Beneficiary_BIC to generate another feature called x3_y2.
 4. **Merging Features**: Merge the two enriched features based on Time and Beneficiary_BIC.
-The resulting dataset looks like this:
 
 The resulting Dataset looks like this. 
 ![enrich_data](./figures/enrichment.png)
@@ -196,18 +197,34 @@ Here we define a ETLController for server, and ScriptExecutor for client side ET
 
 Similarly, we can write the normalization job code [pre_process_job.py](./nvflare/pre_process_job.py) for the server-side.
 
-### Step 2, Option 2: GNN-based Feature Encoding
-Rather than hand-crafting the derived features as Option 1, we can use machine learning models to encode the features. In this example, we use federated graph neural network (GNN) to learn and generate the feature embeddings.
-We construct a graph based on the transaction data. Each node represents a transaction, and the edges represent the relationships between transactions. We then use the GNN to learn the embeddings of the nodes, which represent the transaction features.
+### (Optional) Step 2.2: GNN Training & Feature Encoding
+Based on raw features, or combining the derived features from **Step 2.1**, we can use machine learning models to encode the features. 
+In this example, we use federated GNN to learn and generate the feature embeddings.
+
+First, we construct a graph based on the transaction data. Each node represents a transaction, and the edges represent the relationships between transactions. We then use the GNN to learn the embeddings of the nodes, which represent the transaction features.
 
 #### Single-site operation example: graph construction
 Since each site consists of the same Sender_BIC, to define the graph edge, we use the following rules:
 1. The two transactions are with the same Receiver_BIC.
-2. The two transactions are with the same Currency.
-3. The two transactions time difference are smaller than 6000.
+2. The two transactions time difference are smaller than 6000.
 
+The resulting graph looks like below, essentially an undirected graph with transactions (identified by `UETR`) as nodes and edges connecting two nodes that satisfy the above two rules.
+![edge_map](./figures/edge_map.png)
 
+#### Single-site operation example: GNN training and encoding
+We use the graph constructed in the previous step to train the GNN model. The GNN model is trained in a federated unsupervised fashion, and the embeddings are generated for each transaction.
+The GNN training procedure is similar to the unsupervised Protein Classification task in our [GNN example](../gnn/README.md) with customized data preparation steps.
 
+The results of the GNN training are:
+- a GNN model 
+- the embeddings of the transactions, in this example, they are of dimension 64
+![embedding](./figures/embeddings.png)
+
+#### Federated GNN Training and Encoding for All Sites
+Similar to Step 2.1, we can easily convert the notebook code into the python code for federated execution on each site. For simplicity, we will skip the code examples for this step.
+Please refer to the scripts:
+- [graph_construct.py](./nvflare/graph_construct.py) and [graph_construct_job.py](./nvflare/graph_construct_job.py) for graph construction
+- [gnn_train_encode.py](./nvflare/gnn_train_encode.py) and [gnn_train_encode_job.py](./nvflare/gnn_train_job.py) for GNN training and encoding
 
 ## Step 3: Federated Training of XGBoost
 Now we have enriched / encoded features, the last step is to run federated XGBoost over them. 
