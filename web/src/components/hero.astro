@@ -13,7 +13,7 @@ const base_url = import.meta.env.BASE_URL;
       <div class="px-6 lg:px-0 lg:pt-4">
         <div class="mx-auto max-w-2xl">
           <div class="max-w-lg">
-            <div class="mt-24 sm:mt-32 lg:mt-16">
+            <div class="mt-24 sm:mt-32 lg:mt-16 space-x-1">
 
               <!-- Version Dropdown -->
               <button id="dropdownVersionButton" data-dropdown-toggle="version-dropdown" class="text-gray-900 dark:text-gray-400 m-0.5 hover:bg-gray-300 dark:bg-gray-800 dark:border-gray-600 dark:hover:bg-gray-700 rounded-lg py-1 px-2.5 inline-flex items-center justify-center bg-gray-200 border-gray-200 border">
@@ -46,13 +46,13 @@ const base_url = import.meta.env.BASE_URL;
                 >
               </a>
               <a
-                href="https://pypi.org/project/nvflare/"
+                href="flareDay"
                 class="inline-flex space-x-6">
                 <span
-                  class="inline-flex items-center space-x-2 text-sm font-medium leading-6 text-gray-200 hover:text-gray-100">
-                  <span>Just Released</span>
+                  class="inline-flex items-center space-x-1 text-base font-medium text-gray-200 hover:text-gray-100">
+                  <span class="border-b-2 border-nvidia">NVIDIA FLARE DAY 2024</span>
                   <svg
-                    class="h-5 w-5 text-gray-400"
+                    class="h-8 w-8 text-gray-400"
                     viewBox="0 0 20 20"
                     fill="currentColor"
                     aria-hidden="true">
@@ -63,7 +63,6 @@ const base_url = import.meta.env.BASE_URL;
                   </svg>
                 </span>
               </a>
-
             </div>
             <img class="mt-6 flex items-center w-1/2" src={NvidiaLogo.src} alt="NVIDIA logo">
             <h1
@@ -101,26 +100,6 @@ const base_url = import.meta.env.BASE_URL;
                 GitHub <span aria-hidden="true">→</span>
                 </span></a
               >
-            </div>
-            <div class="mb-10 flex items-center gap-x-4">
-              <a
-                href="flareDay"
-                class="inline-flex space-x-6">
-                <span
-                  class="inline-flex items-center space-x-2 text-2xl font-medium text-gray-200 hover:text-gray-100">
-                  <span class="border-b-2 border-nvidia">NVIDIA FLARE DAY 2024</span>
-                  <svg
-                    class="h-8 w-8 text-gray-400"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                    aria-hidden="true">
-                    <path
-                      fill-rule="evenodd"
-                      d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z"
-                      clip-rule="evenodd"></path>
-                  </svg>
-                </span>
-              </a>
             </div>
           </div>
         </div>
