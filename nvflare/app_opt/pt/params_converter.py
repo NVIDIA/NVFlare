@@ -55,5 +55,8 @@ class PTToNumpyParamsConverter(ParamsConverter):
             fl_ctx.set_prop("tensor_shapes", tensor_shapes)
         if exclude_vars:
             fl_ctx.set_prop("exclude_vars", exclude_vars)
+            self.logger.warning(
+                f"{len(exclude_vars)} vars excluded as they were non-tensor type: " f"{list(exclude_vars.keys())}"
+            )
 
         return return_tensors
