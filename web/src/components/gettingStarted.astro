@@ -1,4 +1,6 @@
 ---
+import ClickTracker from './clickTracker.astro';
+
 const gh_branch = import.meta.env.PUBLIC_GH_BRANCH;
 
 const walkthrough = [
@@ -93,7 +95,8 @@ const series = [
 ]
 ---
 
-<div class="bg-gray-50 py-24 sm:py-24">
+<ClickTracker div_id="getting_started_div" eventLabel="Getting Started"/>
+<div id="getting_started_div" class="bg-gray-50 py-24 sm:py-24">
   <div class="mx-auto max-w-7xl px-6 lg:px-8">
     <div class="mt-16 md:mt-0 text-center">
       <h2 class="text-4xl lg:text-5xl font-bold lg:tracking-tight">

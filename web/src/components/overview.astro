@@ -1,4 +1,6 @@
 ---
+import ClickTracker from './clickTracker.astro';
+
 const features = [
   {
     id: "research",
@@ -70,7 +72,8 @@ const features = [
 
 ---
 
-<div class="bg-white py-20 sm:py-24">
+<ClickTracker div_id="overview_div" eventLabel="Why FLARE"/>
+<div id="overview_div" class="bg-white py-20 sm:py-24">
   <div class="mx-auto max-w-7xl px-6 lg:px-8">
     <div class="mx-auto lg:mx-0 text-center">
       <h2 class="text-4xl lg:text-5xl font-bold lg:tracking-tight text-gray-900">
