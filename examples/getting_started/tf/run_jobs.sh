@@ -25,7 +25,7 @@ GPU_INDX=0
 WORKSPACE=/tmp
 
 # Run centralized training job
-python ./tf_fl_script_executor_cifar10.py \
+python ./tf_fl_script_runner_cifar10.py \
        --algo centralized \
        --n_clients 1 \
        --num_rounds 25 \
@@ -39,7 +39,7 @@ python ./tf_fl_script_executor_cifar10.py \
 # Run FedAvg with different alpha values
 for alpha in 1.0 0.5 0.3 0.1; do
 
-    python ./tf_fl_script_executor_cifar10.py \
+    python ./tf_fl_script_runner_cifar10.py \
        --algo fedavg \
        --n_clients 8 \
        --num_rounds 50 \
@@ -53,7 +53,7 @@ done
 
 
 # Run FedOpt job
-python ./tf_fl_script_executor_cifar10.py \
+python ./tf_fl_script_runner_cifar10.py \
        --algo fedopt \
        --n_clients 8 \
        --num_rounds 50 \
@@ -65,7 +65,7 @@ python ./tf_fl_script_executor_cifar10.py \
 
 
 # Run FedProx job.
-python ./tf_fl_script_executor_cifar10.py \
+python ./tf_fl_script_runner_cifar10.py \
        --algo fedprox \
        --n_clients 8 \
        --num_rounds 50 \
@@ -77,7 +77,7 @@ python ./tf_fl_script_executor_cifar10.py \
 
 
 # Run scaffold job
-python ./tf_fl_script_executor_cifar10.py \
+python ./tf_fl_script_runner_cifar10.py \
        --algo scaffold \
        --n_clients 8 \
        --num_rounds 50 \
