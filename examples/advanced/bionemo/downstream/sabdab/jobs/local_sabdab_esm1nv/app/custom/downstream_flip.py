@@ -16,117 +16,107 @@ from bionemo.data import FLIPPreprocess
 from bionemo.data.metrics import accuracy, mse, per_token_accuracy
 from bionemo.model.protein.downstream import FineTuneProteinModel
 from bionemo.model.utils import setup_trainer
+from nemo.collections.nlp.parts.nlp_overrides import NLPSaveRestoreConnector
 from nemo.core.config import hydra_runner
 from nemo.utils import logging
-from omegaconf.omegaconf import OmegaConf
+from omegaconf.omegaconf import OmegaConf, open_dict
 
-# (0): import nvflare lightning api
+# Import nvflare lightning API for federated learning
 import nvflare.client.lightning as flare
 from nvflare.client.api import init
 
 micro_batch_size = 32
-
-# alpha 100.0
 val_check_intervals = {
-    "site-1": int(351 / micro_batch_size),
-    "site-2": int(297 / micro_batch_size),
-    "site-3": int(312 / micro_batch_size),
-    "site-4": int(366 / micro_batch_size),
-    "site-5": int(336 / micro_batch_size),
-    "site-6": int(265 / micro_batch_size),
+    "site-1": min(int(416 / micro_batch_size), 3),  # Use min to ensure it's <= 3
+    "site-2": min(int(238 / micro_batch_size), 3),
+    "site-3": min(int(282 / micro_batch_size), 3),
+    "site-4": min(int(472 / micro_batch_size), 3),
+    "site-5": min(int(361 / micro_batch_size), 3),
+    "site-6": min(int(157 / micro_batch_size), 3),
 }
 
-# alpha 10.0
-# val_check_intervals = {
-#     "site-1": int(416/micro_batch_size),
-#     "site-2": int(238/micro_batch_size),
-#     "site-3": int(282/micro_batch_size),
-#     "site-4": int(472/micro_batch_size),
-#     "site-5": int(361/micro_batch_size),
-#     "site-6": int(157/micro_batch_size)
-# }
 
-# # alpha 1.0
-# val_check_intervals = {
-#     "site-1": int(80/micro_batch_size),
-#     "site-2": int(365/micro_batch_size),
-#     "site-3": int(216/micro_batch_size),
-#     "site-4": int(578/micro_batch_size),
-#     "site-5": int(568/micro_batch_size),
-#     "site-6": int(119/micro_batch_size)
-# }
-
-
-@hydra_runner(config_path=".", config_name="downstream_flip_sabdab")  # ESM
-# @hydra_runner(config_path="../prott5nv/conf", config_name="downstream_flip_sec_str") # ProtT5
+@hydra_runner(config_path=".", config_name="downstream_flip_sabdab")  # ESM1
 def main(cfg) -> None:
-    # set data path
+    logging.info("\n\n************* Finetune config ****************")
+    logging.info(f"\n{OmegaConf.to_yaml(cfg)}")
     init()
+    # Get FL system info and set site-specific parameters
     fl_sys_info = flare.system_info()
-    print("--- fl_sys_info ---")
-    print(fl_sys_info)
     site_name = fl_sys_info["site_name"]
     cfg.model.data.dataset.train = f"sabdab_chen_{site_name}_train"
     cfg.trainer.val_check_interval = val_check_intervals[site_name]
     print(f"Running client {site_name} with train data: {cfg.model.data.dataset.train}")
+    print(f"Validation check interval: {cfg.trainer.val_check_interval}")
 
-    logging.info("\n\n************* Finetune config ****************")
-    logging.info(f"\n{OmegaConf.to_yaml(cfg)}")
-
-    if cfg.do_training:
-        logging.info("************** Starting Training ***********")
-        trainer = setup_trainer(cfg, builder=None)
-        model = FineTuneProteinModel(cfg, trainer)
-        metrics = {}
-        metrics_args = {}
-        for idx, name in enumerate(cfg.model.data.target_column):
-            if cfg.model.data.task_type == "token-level-classification":
-                metrics[name + "_accuracy"] = per_token_accuracy
-                metrics_args[name + "_accuracy"] = {"label_id": idx}
-            elif cfg.model.data.task_type == "classification":
-                metrics[name + "_accuracy"] = accuracy
-                metrics_args[name + "_accuracy"] = {}
-            elif cfg.model.data.task_type == "regression":
-                metrics[name + "_MSE"] = mse
-                metrics_args[name + "_MSE"] = {}
-
-        model.add_metrics(metrics=metrics, metrics_args=metrics_args)
-
-        # (1): flare patch
-        flare.patch(trainer)
-
-        # (2): Add while loop to keep receiving the FLModel in each FL round.
-        # Note, after flare.patch the trainer.fit/validate will get the
-        # global model internally at each round.
-        while flare.is_running():
-            # (optional): get the FL system info
-            fl_sys_info = flare.system_info()
-            print("--- fl_sys_info ---")
-            print(fl_sys_info)
-
-            # (3) evaluate the current global model to allow server-side model selection.
-            print("--- validate global model ---")
-            trainer.validate(model)
-
-            # (4) Perform local training starting with the received global model.
-            print("--- train new model ---")
-
-            trainer.fit(model)
-            logging.info("************** Finished Training ***********")
-
-        if cfg.do_testing:
-            logging.info("************** Starting Testing ***********")
-            if "test" in cfg.model.data.dataset:
-                trainer.test(model)
-            else:
-                raise UserWarning(
-                    "Skipping testing, test dataset file was not provided. Please specify 'dataset.test' in yaml config"
-                )
-            logging.info("************** Finished Testing ***********")
-    else:
+    # Do preprocessing if specified in config
+    if cfg.do_preprocessing:
         logging.info("************** Starting Preprocessing ***********")
         preprocessor = FLIPPreprocess()
         preprocessor.prepare_all_datasets(output_dir=cfg.model.data.preprocessed_data_path)
+
+    if not cfg.do_training and not cfg.do_testing:
+        return
+
+    trainer = setup_trainer(cfg, builder=None, reset_accumulate_grad_batches=False)
+
+    # Load model
+    with open_dict(cfg):
+        cfg.model.encoder_cfg = cfg
+
+    if cfg.restore_from_path:
+        logging.info("\nRestoring model from .nemo file " + cfg.restore_from_path)
+        model = FineTuneProteinModel.restore_from(
+            cfg.restore_from_path, cfg.model, trainer=trainer, save_restore_connector=NLPSaveRestoreConnector()
+        )
+    else:
+        model = FineTuneProteinModel(cfg.model, trainer)
+
+    metrics = {}
+    metrics_args = {}
+    for idx, name in enumerate(cfg.model.data.target_column):
+        if cfg.model.data.task_type == "token-level-classification":
+            metrics[name + "_accuracy"] = per_token_accuracy
+            metrics_args[name + "_accuracy"] = {"label_id": idx}
+        elif cfg.model.data.task_type == "classification":
+            metrics[name + "_accuracy"] = accuracy
+            metrics_args[name + "_accuracy"] = {}
+        elif cfg.model.data.task_type == "regression":
+            metrics[name + "_MSE"] = mse
+            metrics_args[name + "_MSE"] = {}
+
+    model.add_metrics(metrics=metrics, metrics_args=metrics_args)
+
+    # Patch trainer for NVFlare federated learning
+    flare.patch(trainer)
+
+    # Federated learning loop
+    while flare.is_running():
+        fl_sys_info = flare.system_info()
+        print("--- fl_sys_info ---")
+        print(fl_sys_info)
+
+        # Validate current global model
+        print("--- validate global model ---")
+        trainer.validate(model)
+
+        # Perform local training with received global model
+        print("--- train new model ---")
+        trainer.fit(model)
+        logging.info("************** Finished Training ***********")
+
+    if cfg.do_testing:
+        logging.info("************** Starting Testing ***********")
+        if "test" in cfg.model.data.dataset:
+            trainer.limit_train_batches = 0
+            trainer.limit_val_batches = 0
+            trainer.fit(model)
+            trainer.test(model, ckpt_path=None)
+        else:
+            raise UserWarning(
+                "Skipping testing, test dataset file was not provided. Please specify 'dataset.test' in yaml config"
+            )
+        logging.info("************** Finished Testing ***********")
 
 
 if __name__ == "__main__":
