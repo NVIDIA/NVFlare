@@ -21,7 +21,7 @@ job_name = "local_scl_finetune_esm2nv"
 # job_name = "fedavg_scl_finetune_esm2nv"
 
 simulator = SimulatorRunner(
-    job_folder=f"jobs/{job_name}", workspace=f"/tmp/nvflare/results/{job_name}", n_clients=n_clients, threads=1
+    job_folder=f"jobs/{job_name}", workspace=f"/tmp/nvflare/results/{job_name}", n_clients=n_clients, threads=n_clients
 )
 run_status = simulator.run()
 print("Simulator finished with run_status", run_status)
