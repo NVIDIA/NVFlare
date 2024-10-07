@@ -36,7 +36,7 @@ from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 class BioNeMoMLPLearner(ModelLearner):  # does not support CIFAR10ScaffoldLearner
     def __init__(
         self,
-        data_root: str = "/tmp/fasta/mixed_soft",
+        data_root: str = "/tmp/data/mixed_soft",
         aggregation_epochs: int = 1,
         lr: float = 1e-3,
         central: bool = False,
