@@ -1,7 +1,7 @@
 ARG PYTORCH_IMAGE=nvcr.io/nvidia/pytorch:24.07-py3
 FROM ${PYTORCH_IMAGE}
 
-ARG NVF_VERSION=main
+ARG NVF_VERSION=2.5
 ENV NVF_BRANCH=${NVF_VERSION}
 
 RUN python3 -m pip install -U pip
