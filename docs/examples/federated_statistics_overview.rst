@@ -177,7 +177,3 @@ Summary
 We provided federated statistics operators that can easily aggregate and visualize the local statistics for different data site and features.
 We hope this feature will make it easier to perform federated data analysis. For more details, please look at :github_nvflare_link:`Federated Statistics (Github) <examples/advanced/federated-statistics/README.md>`
 
-Previous Versions of Federated XGBoost
---------------------------------------
-
-   - `Federated XGBoost for 2.2 <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/xgboost>`_

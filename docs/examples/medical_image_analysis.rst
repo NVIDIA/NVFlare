@@ -4,6 +4,6 @@ Medical Image Analysis
 
 .. toctree::
 
-   Hello MONAI Bundle (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/integration/monai/examples/spleen_ct_segmentation_sim>
-   Differential Privacy for BraTS18 Segmentation (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/brats18>
-   Prostate Segmentation from Multi-source Data (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/prostate>
+   github_nvflare_link:`Hello MONAI Bundle (GitHub) <integration/monai/examples/spleen_ct_segmentation_sim>`
+   github_nvflare_link:`Differential Privacy for BraTS18 Segmentation (GitHub) <examples/advanced/brats18>`
+   github_nvflare_link:`Prostate Segmentation from Multi-source Data (GitHub) <examples/advanced/prostate>`
