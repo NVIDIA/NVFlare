@@ -105,7 +105,7 @@ the file is then saved to "_normalized.csv"
 #### Federated Enrichment and Normalization for All Sites
 We can easily convert the notebook code into the python code for federated execution on each site.
 
-##### Client-side code
+##### Task code
 Convert the enrichment code for one-site to the federated learning, refer to [enrich.py](./nvflare/enrich.py)
 
 The main execution flow is the following:
@@ -160,9 +160,8 @@ def main():
 
 Similar adaptation is required for the normalization code, refer to [pre_process.py](./nvflare/pre_process.py) for details.
 
-##### Server-side code
-Federated ETL requires both server-side and client-side code. The above ETL script is the client-side code.
-To complete the setup, we need server-side code to configure and specify the federated job. 
+##### Job code
+Job code is executed to trigger and dispatch the ETL tasks from the previous step. 
 For this purpose, we wrote the following script: [enrich_job.py](./nvflare/enrich_job.py)
 
 ```
