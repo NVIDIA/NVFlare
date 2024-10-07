@@ -15,7 +15,8 @@
 from nvflare import SimulatorRunner
 
 # Choose from one of the available jobs
-job_name = "central_sabdab_esm1nv"; n_clients = 1
+job_name = "central_sabdab_esm1nv"
+n_clients = 1
 # job_name = "local_sabdab_esm1nv"; n_clients = 6
 # job_name = "fedavg_sabdab_esm1nv"; n_clients = 6
 
