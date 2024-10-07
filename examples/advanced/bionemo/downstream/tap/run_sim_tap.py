@@ -22,7 +22,7 @@ job_name = "central_tap_esm1nv"
 # job_name = "fedavg_tap_esm1nv"
 
 simulator = SimulatorRunner(
-    job_folder=f"jobs/{job_name}", workspace=f"/tmp/nvflare/results/{job_name}", n_clients=n_clients, threads=n_clients
+    job_folder=f"jobs/{job_name}", workspace=f"/tmp/nvflare/results/{job_name}", n_clients=n_clients, threads=1
 )
 run_status = simulator.run()
 print("Simulator finished with run_status", run_status)

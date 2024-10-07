@@ -23,16 +23,42 @@ from nvflare.app_common.abstract.params_converter import ParamsConverter
 class NumpyToPTParamsConverter(ParamsConverter):
     def convert(self, params: Dict, fl_ctx) -> Dict:
         tensor_shapes = fl_ctx.get_prop("tensor_shapes")
+        exclude_vars = fl_ctx.get_prop("exclude_vars")
+
+        return_params = {}
         if tensor_shapes:
-            return {
+            return_params = {
                 k: torch.as_tensor(np.reshape(v, tensor_shapes[k])) if k in tensor_shapes else torch.as_tensor(v)
                 for k, v in params.items()
             }
         else:
-            return {k: torch.as_tensor(v) for k, v in params.items()}
+            return_params = {k: torch.as_tensor(v) for k, v in params.items()}
+
+        if exclude_vars:
+            for k, v in exclude_vars.items():
+                return_params[k] = v
+
+        return return_params
 
 
 class PTToNumpyParamsConverter(ParamsConverter):
     def convert(self, params: Dict, fl_ctx) -> Dict:
-        fl_ctx.set_prop("tensor_shapes", {k: v.shape for k, v in params.items()})
-        return {k: v.cpu().numpy() for k, v in params.items()}
+        return_tensors = {}
+        tensor_shapes = {}
+        exclude_vars = {}
+        for k, v in params.items():
+            if isinstance(v, torch.Tensor):
+                return_tensors[k] = v.cpu().numpy()
+                tensor_shapes[k] = v.shape
+            else:
+                exclude_vars[k] = v
+
+        if tensor_shapes:
+            fl_ctx.set_prop("tensor_shapes", tensor_shapes)
+        if exclude_vars:
+            fl_ctx.set_prop("exclude_vars", exclude_vars)
+            self.logger.warning(
+                f"{len(exclude_vars)} vars excluded as they were non-tensor type: " f"{list(exclude_vars.keys())}"
+            )
+
+        return return_tensors
