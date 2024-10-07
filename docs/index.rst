@@ -10,7 +10,7 @@ NVIDIA FLARE
    fl_introduction
    flare_overview
    whats_new
-   getting_started
+   getting_started <quickstart>
 
 .. toctree::
    :maxdepth: -1
