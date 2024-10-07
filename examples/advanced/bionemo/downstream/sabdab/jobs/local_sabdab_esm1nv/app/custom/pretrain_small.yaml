@@ -15,7 +15,7 @@ model:
       test: x[000..049]
       val: x[000..049]
     micro_batch_size: ${model.micro_batch_size}
-    num_workers: 10
+    num_workers: 2
 
     # Supported kwargs (with default values):
     #     text_mmap (newline_int=10, header_lines=0, workers=None, sort_dataset_paths=True)
