@@ -53,7 +53,7 @@ model:
     sequence_column: "Antibody" # name of column with protein sequence in csv file
     target_column: ["PNC"] #["3state", "resolved"] # names of label columns in csv file
     target_sizes: [1] # number of classes in each label for classifications or 1 for regression
-    num_workers: 8
+    num_workers: 2
     shuffle: True # shuffle training dataset
     max_seq_length: ${model.seq_length}
     emb_batch_size: ${model.micro_batch_size}

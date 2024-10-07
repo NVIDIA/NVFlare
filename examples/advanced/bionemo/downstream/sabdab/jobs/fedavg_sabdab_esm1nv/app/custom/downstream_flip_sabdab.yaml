@@ -54,7 +54,7 @@ model:
     target_column: ["Y"] #["3state"np.sum(test_df['Y']==0), "resolved"] # names of label columns in csv file
     target_sizes: [2] # number of classes in each label for classifications or 1 for regression
     num_classes: 2
-    num_workers: 8
+    num_workers: 2
     shuffle: True # shuffle training dataset
     max_seq_length: ${model.seq_length}
     emb_batch_size: ${model.micro_batch_size}

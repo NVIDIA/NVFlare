@@ -100,7 +100,7 @@ model:
     ngc_registry_target: uniref50_2022_05
     ngc_registry_version: v23.06
     data_prefix: "" # must be null or ""
-    num_workers: 8
+    num_workers: 2
     dataloader_type: single # cyclic
     reset_position_ids: False # Reset position ids after end-of-document token
     reset_attention_mask: False # Reset attention mask after end-of-document token
@@ -154,7 +154,7 @@ model:
       batch_size: 128
       num_epochs: 10
       shuffle: True
-      num_workers: 8
+      num_workers: 2
       task_name: secondary_structure
       dataset_path: /data/FLIP/${model.dwnstr_task_validation.dataset.task_name}
       dataset:
