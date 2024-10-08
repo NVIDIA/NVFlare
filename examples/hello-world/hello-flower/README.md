@@ -47,5 +47,5 @@ Next, we run 2 Flower clients and Flower Server in parallel using NVFlare while 
 the TensorBoard metrics to the server at each iteration using NVFlare's metric streaming.
 
 ```bash
-python job.py --job_name "flwr-pt-tb" --content_dir "./flwr-pt-tb" --stream_metrics --use_client_api
+python job.py --job_name "flwr-pt-tb" --content_dir "./flwr-pt-tb" --stream_metrics
 ```
