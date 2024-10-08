@@ -95,8 +95,8 @@ class FastBuffer:
         return self.size
 
 
-def stream_stats_category(channel: str, topic: str, stream_type: str = "byte"):
-    return f"{stream_type}:{channel}:{topic}"
+def stream_stats_category(fqcn: str, channel: str, topic: str, stream_type: str = "byte"):
+    return f"{fqcn}:{stream_type}:{channel}:{topic}"
 
 
 def stream_shutdown():
