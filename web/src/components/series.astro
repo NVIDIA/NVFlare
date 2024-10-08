@@ -322,7 +322,7 @@ const series_list = [
     <div class="mt-20 max-w-[1500px] mx-auto py-4 text-left flex flex-col md:flex-row">
 
       <!-- Series Glider -->
-      <div id="series-glide" class="w-[400px] glide px-2 pb-8 rounded-3xl mt-12">
+      <div id="series-glide" class="lg:w-[400px] glide px-2 lg:pb-8 rounded-3xl mt-12">
 
         <div class="glide__track" data-glide-el="track">
           <ul id="series-slides" class="glide__slides">
@@ -369,7 +369,7 @@ const series_list = [
       {series_list.map((series, series_index) => (
         <div id={"series"+series.id+"-content"} class="hidden">
             {series.subseries_list.map((subseries, index) => (
-              <div id={"subseries-content"+subseries.id} class="flex flex-col m-auto p-auto w-[925px] mt-12">
+              <div id={"subseries-content"+subseries.id} class="flex flex-col m-auto p-auto lg:w-[925px] lg:mt-12">
                 <div class="flex overflow-x-auto pb-4 hide-scroll-bar">
                   <div class="flex flex-nowrap ml-4 ">
                     {
