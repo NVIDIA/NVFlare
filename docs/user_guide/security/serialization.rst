@@ -24,6 +24,10 @@ pre-registered with the module.
 FOBS supports enum types by registering decomposers automatically for all classes that
 are subclasses of :code:`Enum`.
 
+FOBS treats all other classes as dataclass by registering a generic decomposer for dataclasses.
+Dataclass is a class whose constructor only changes the state of the object without side-effects.
+Side-effects include changing global variables, creating network connection, files etc.
+
 FOBS throws :code:`TypeError` exception when it encounters an object with no decomposer
 registered. For example,
 ::
