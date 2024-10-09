@@ -50,6 +50,57 @@ class Participant(object):
         self.enable_byoc = enable_byoc
         self.props = kwargs
 
+        # check validity of properties
+        host_names = self.get_host_names()
+        if host_names:
+            for n in host_names:
+                err, reason = name_check(n, "host_name")
+                if err:
+                    raise ValueError(f"bad host name '{n}' in {self.name}: {reason}")
+
+        host_name = self.get_connect_to()
+        if host_name:
+            err, reason = name_check(host_name, "host_name")
+            if err:
+                raise ValueError(f"bad connect_to '{host_name}' in {self.name}: {reason}")
+
+        host_name = self.get_listening_host()
+        if host_name:
+            err, reason = name_check(host_name, "host_name")
+            if err:
+                raise ValueError(f"bad listening_host '{host_name}' in {self.name}: {reason}")
+
+    def get_host_names(self):
+        host_names = self.props.get("host_names")
+        if not host_names:
+            return None
+
+        if isinstance(host_names, str):
+            return [host_names]
+
+        if not isinstance(host_names, list):
+            raise ValueError(
+                f"bad host_names in {self.subject}: must be a str or list of str, but got {type(host_names)}"
+            )
+
+        return host_names
+
+    def get_connect_to(self):
+        host_name = self.props.get("connect_to")
+        if not host_name:
+            return None
+        if not isinstance(host_name, str):
+            raise ValueError(f"bad connect_to in {self.subject}: must be str but got {type(host_name)}")
+        return host_name
+
+    def get_listening_host(self):
+        host_name = self.props.get("listening_host")
+        if not host_name:
+            return None
+        if not isinstance(host_name, str):
+            raise ValueError(f"bad listening_host in {self.subject}: must be str but got {type(host_name)}")
+        return host_name
+
 
 class Project(object):
     def __init__(self, name: str, description: str, participants: List[Participant]):

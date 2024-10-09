@@ -78,7 +78,30 @@ class CertBuilder(Builder):
             self.persistent_state["root_cert"] = self.serialized_cert.decode("ascii")
             self.persistent_state["root_pri_key"] = serialize_pri_key(self.pri_key).decode("ascii")
 
+    def _check_host_name(self, host_name: str, ctx: dict) -> str:
+        server = ctx.get("server")
+        if not server:
+            return ""
+
+        assert isinstance(server, Participant)
+        if host_name == server.name:
+            # Use the default host - OK
+            return ""
+
+        available_host_names = server.get_host_names()
+        if available_host_names and host_name in available_host_names:
+            # use alternative host name - OK
+            return ""
+
+        return f"unknown host name '{host_name}'"
+
     def _build_write_cert_pair(self, participant, base_name, ctx):
+        connect_to = participant.get_connect_to()
+        if connect_to:
+            err = self._check_host_name(connect_to, ctx)
+            if err:
+                raise ValueError(f"bad connect_to in {participant.subject}: {err}")
+
         subject = self.get_subject(participant)
         if self.persistent_state and subject in self.persistent_state:
             cert = x509.load_pem_x509_certificate(
@@ -108,7 +131,7 @@ class CertBuilder(Builder):
             f.write(serialize_cert(cert))
         with open(os.path.join(dest_dir, f"{base_name}.key"), "wb") as f:
             f.write(serialize_pri_key(pri_key))
-        if base_name == "client" and (listening_host := participant.props.get("listening_host")):
+        if base_name == "client" and (listening_host := participant.get_listening_host()):
             tmp_participant = Participant("server", listening_host, participant.org)
             tmp_pri_key, tmp_cert = self.get_pri_key_cert(tmp_participant)
             with open(os.path.join(dest_dir, "server.crt"), "wb") as f:
@@ -131,6 +154,9 @@ class CertBuilder(Builder):
         for server in servers:
             self._build_write_cert_pair(server, "server", ctx)
 
+            # put the server in the ctx, so we can check client's connect_to
+            ctx["server"] = server
+
         for client in project.get_participants_by_type("client", first_only=False):
             self._build_write_cert_pair(client, "client", ctx)
 
@@ -145,7 +171,15 @@ class CertBuilder(Builder):
             role = participant.props.get("role")
         else:
             role = None
-        cert = self._generate_cert(subject, subject_org, self.issuer, self.pri_key, pub_key, role=role)
+        cert = self._generate_cert(
+            subject,
+            subject_org,
+            self.issuer,
+            self.pri_key,
+            pub_key,
+            role=role,
+            host_names=participant.get_host_names(),
+        )
         return pri_key, cert
 
     def get_subject(self, participant):
@@ -157,10 +191,24 @@ class CertBuilder(Builder):
         return pri_key, pub_key
 
     def _generate_cert(
-        self, subject, subject_org, issuer, signing_pri_key, subject_pub_key, valid_days=360, ca=False, role=None
+        self,
+        subject,
+        subject_org,
+        issuer,
+        signing_pri_key,
+        subject_pub_key,
+        valid_days=360,
+        ca=False,
+        role=None,
+        host_names=None,
     ):
         x509_subject = self._x509_name(subject, subject_org, role)
         x509_issuer = self._x509_name(issuer)
+        sans = [x509.DNSName(subject)]
+        if host_names:
+            for h in host_names:
+                sans.append(x509.DNSName(h))
+
         builder = (
             x509.CertificateBuilder()
             .subject_name(x509_subject)
@@ -174,7 +222,7 @@ class CertBuilder(Builder):
                 + datetime.timedelta(days=valid_days)
                 # Sign our certificate with our private key
             )
-            .add_extension(x509.SubjectAlternativeName([x509.DNSName(subject)]), critical=False)
+            .add_extension(x509.SubjectAlternativeName(sans), critical=False)
         )
         if ca:
             builder = (

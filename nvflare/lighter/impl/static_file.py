@@ -214,12 +214,8 @@ class StaticFileBuilder(Builder):
     def _build_client(self, client, ctx):
         config = json.loads(self.template["fed_client"])
         dest_dir = self.get_kit_dir(client, ctx)
-        fed_learn_port = ctx.get("fed_learn_port")
-        server_name = ctx.get("server_name")
-        # config["servers"][0]["service"]["target"] = f"{server_name}:{fed_learn_port}"
         config["servers"][0]["service"]["scheme"] = self.scheme
         config["servers"][0]["name"] = self.project_name
-        # config["enable_byoc"] = client.enable_byoc
         replacement_dict = {
             "client_name": f"{client.subject}",
             "config_folder": self.config_folder,
@@ -228,23 +224,8 @@ class StaticFileBuilder(Builder):
             "type": "client",
             "cln_uid": f"uid={client.subject}",
         }
-        if self.overseer_agent:
-            overseer_agent = copy.deepcopy(self.overseer_agent)
-            if overseer_agent.get("overseer_exists", True):
-                overseer_agent["args"] = {
-                    "role": "client",
-                    "overseer_end_point": ctx.get("overseer_end_point", ""),
-                    "project": self.project_name,
-                    "name": client.subject,
-                }
-            overseer_agent.pop("overseer_exists", None)
-            config["overseer_agent"] = overseer_agent
-        # components = client.props.get("components", [])
-        # config["components"] = list()
-        # for comp in components:
-        #     temp_dict = {"id": comp}
-        #     temp_dict.update(components[comp])
-        #     config["components"].append(temp_dict)
+
+        self._prepare_overseer_agent(client, config, "client", ctx)
 
         utils._write(os.path.join(dest_dir, "fed_client.json"), json.dumps(config, indent=2), "t")
         if self.docker_image:
@@ -302,6 +283,37 @@ class StaticFileBuilder(Builder):
             "t",
         )
 
+    def _prepare_overseer_agent(self, participate, config, role, ctx):
+        if self.overseer_agent:
+            overseer_agent = copy.deepcopy(self.overseer_agent)
+            if overseer_agent.get("overseer_exists", True):
+                overseer_agent["args"] = {
+                    "role": role,
+                    "overseer_end_point": ctx.get("overseer_end_point", ""),
+                    "project": self.project_name,
+                    "name": participate.subject,
+                }
+            else:
+                # do not use overseer system
+                # Dummy overseer agent is used here
+                connect_to = participate.get_connect_to()
+                if connect_to:
+                    # change the sp_end_point to use connect_to
+                    agent_args = overseer_agent.get("args")
+                    if agent_args:
+                        sp_end_point = agent_args.get("sp_end_point")
+                        if sp_end_point:
+                            # format of the sp_end_point:  server_host_name:fl_port:admin_port
+                            # we replace server_host_name part with connect_to
+                            assert isinstance(sp_end_point, str)
+                            parts = sp_end_point.split(":")
+                            assert len(parts) == 3
+                            parts[0] = connect_to
+                            agent_args["sp_end_point"] = ":".join(parts)
+
+            overseer_agent.pop("overseer_exists", None)
+            config["overseer_agent"] = overseer_agent
+
     def _build_admin(self, admin, ctx):
         dest_dir = self.get_kit_dir(admin, ctx)
         admin_port = ctx.get("admin_port")
@@ -338,17 +350,7 @@ class StaticFileBuilder(Builder):
     def prepare_admin_config(self, admin, ctx):
         config = json.loads(self.template["fed_admin"])
         agent_config = dict()
-        if self.overseer_agent:
-            overseer_agent = copy.deepcopy(self.overseer_agent)
-            if overseer_agent.get("overseer_exists", True):
-                overseer_agent["args"] = {
-                    "role": "admin",
-                    "overseer_end_point": ctx.get("overseer_end_point", ""),
-                    "project": self.project_name,
-                    "name": admin.subject,
-                }
-            overseer_agent.pop("overseer_exists", None)
-            agent_config["overseer_agent"] = overseer_agent
+        self._prepare_overseer_agent(admin, agent_config, "admin", ctx)
         config["admin"].update(agent_config)
         return config
 
