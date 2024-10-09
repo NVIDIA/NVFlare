@@ -228,8 +228,9 @@ For example we can use PyTorch's save and load functions for the model parameter
             return model
 
 
-Note: for non-primitive data types such as ``torch.nn.Module`` (used for the initial PyTorch model), we must configure a corresponding FOBS decomposer for serialization and deserialization.
-Read more at :github_nvflare_link:`Flare Object Serializer (FOBS) <nvflare/fuel/utils/fobs/README.rst>`.
+Note: for non-primitive data types such as ``torch.nn.Module`` (used for the initial PyTorch model),
+we must configure a corresponding FOBS decomposer for serialization and deserialization.
+Read more at :ref:`serialization`.
 
 .. code-block:: python
 
