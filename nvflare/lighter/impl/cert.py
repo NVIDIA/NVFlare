@@ -148,7 +148,8 @@ class CertBuilder(Builder):
             role = participant.props.get("role")
         else:
             role = None
-        cert = self._generate_cert(subject, subject_org, self.issuer, self.pri_key, pub_key, role=role)
+        san = participant.props.get("san")
+        cert = self._generate_cert(subject, subject_org, self.issuer, self.pri_key, pub_key, role=role, san=san)
         return pri_key, cert
 
     def get_subject(self, participant):
@@ -160,8 +161,13 @@ class CertBuilder(Builder):
         return pri_key, pub_key
 
     def _generate_cert(
-        self, subject, subject_org, issuer, signing_pri_key, subject_pub_key, valid_days=360, ca=False, role=None
+            self,
+            subject,
+            subject_org, issuer, signing_pri_key, subject_pub_key, valid_days=360, ca=False, role=None,
+            san=None,
     ):
+        print(f"building cert: {subject=} {subject_org=} {issuer=} {san=}")
+
         x509_subject = self._x509_name(subject, subject_org, role)
         x509_issuer = self._x509_name(issuer)
         builder = (
@@ -177,7 +183,6 @@ class CertBuilder(Builder):
                 + datetime.timedelta(days=valid_days)
                 # Sign our certificate with our private key
             )
-            .add_extension(x509.SubjectAlternativeName([x509.DNSName(subject)]), critical=False)
         )
         if ca:
             builder = (
@@ -191,6 +196,12 @@ class CertBuilder(Builder):
                 )
                 .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=False)
             )
+        sans = [x509.DNSName(subject)]
+        if san:
+            for s in san:
+                sans.append(x509.DNSName(s))
+        print(f"adding SANs: {sans}")
+        builder = builder.add_extension(x509.SubjectAlternativeName(sans), critical=False)
         return builder.sign(signing_pri_key, hashes.SHA256(), default_backend())
 
     def _x509_name(self, cn_name, org_name=None, role=None):
