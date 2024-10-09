@@ -205,10 +205,10 @@ def register_enum_types(*enum_types: Type[Enum]) -> None:
 
 
 def auto_register_enum_types(enabled=True) -> None:
-    """Enable or disable auto registering of enum types
+    """Enable or disable the auto-registration of enum types.
 
     Args:
-        enabled: Auto-registering of enum classes is enabled if True
+        enabled: Auto-registration of enum classes is enabled if True.
     """
     global _enum_auto_registration
 
@@ -216,14 +216,14 @@ def auto_register_enum_types(enabled=True) -> None:
 
 
 def auto_register_data_classes(enabled=True) -> None:
-    """Enable or disable auto registering of data classes
+    """Enable or disable the auto-registration of data classes.
 
     Args:
-        enabled: Auto-registering of data classes is enabled if True
+        enabled: Auto-registration of data classes is enabled if True.
     """
     global _data_auto_registration
 
-    _enum_data_registration = enabled
+    _data_auto_registration = enabled
 
 
 def register_folder(folder: str, package: str):
