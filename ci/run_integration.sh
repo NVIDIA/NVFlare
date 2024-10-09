@@ -45,8 +45,14 @@ remove_pipenv() {
 
 integration_test_tf() {
     echo "Run TF integration test..."
-    # not using pipenv because we need tensorflow package from the container
-    python -m pip install -e .[dev]
+    # since running directly in container, point python to python3.12
+    ln -sfn /usr/bin/python3.12 /usr/bin/python
+    ln -sfn /usr/bin/python3.12 /usr/bin/python3
+    # somehow the base container has blinker which should be removed
+    apt remove -y python3-blinker python-blinker-doc || true
+    # pipenv does not work with TensorFlow so using pip
+    python3.12 -m pip install -e .[dev]
+    python3.12 -m pip install tensorflow[and-cuda]
     export PYTHONPATH=$PWD
     testFolder="tests/integration_test"
     clean_up_snapshot_and_job

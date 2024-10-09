@@ -14,7 +14,7 @@
 
 from argparse import ArgumentParser
 
-from nvflare.app_opt.flower.flower_job import FlowerJob
+from nvflare.app_opt.flower.flower_pt_job import FlowerPyTorchJob
 from nvflare.client.api import ClientAPIType
 from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
 
@@ -30,10 +30,12 @@ def main():
     args = parser.parse_args()
 
     env = {}
-    if args.use_client_api:
+    if args.stream_metrics or args.use_client_api:
+        # needs to init client api to stream metrics
+        # only external client api works with the current flower integration
         env = {CLIENT_API_TYPE_KEY: ClientAPIType.EX_PROCESS_API.value}
 
-    job = FlowerJob(
+    job = FlowerPyTorchJob(
         name=args.job_name,
         flower_content=args.content_dir,
         stream_metrics=args.stream_metrics,
