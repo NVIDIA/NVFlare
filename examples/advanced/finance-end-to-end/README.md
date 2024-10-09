@@ -4,11 +4,11 @@ This example demonstrates the use of an end-to-end process for credit card fraud
 
 The original dataset is based on the [kaggle credit card fraud dataset](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud).
 
-To illustrate the end-to-end process, we manually duplicated the records to extend the data time span from 2 days to over 2 years. Don't focus too much on the data itself, as our primary goal is to showcase the process.
+To illustrate the end-to-end process that is more realistic for financial applications, we manually duplicated the records to extend the data time span from 2 days to over 2 years, and added random transactional information. As our primary goal is to showcase the process, there is no need to focus too much on the data itself.
 
 The overall steps of the end-to-end process include the following:
 
-## Prepare Data
+## Step 1: Data Preparation
 
 In a real-world application, this step is not necessary.
 
@@ -19,9 +19,9 @@ thus serving as one site (client) for federated learning.
 
 We illustrate this step in the notebook [prepare_data] (./prepare_data.ipynb). The resulting dataset looks like the following:
 
-![data](images/generated_data.png)
+![data](./figures/generated_data.png)
 
-Once we have the this synthetic data, we like to split the data into 
+Once we have this synthetic data, we like to split the data into 
 * historical data ( oldest data) -- 55%
 * training data 35 % 
 * test data remaining 10%
@@ -37,22 +37,30 @@ the client directory is **ZHSZUS33_Bank_1**
 
 For this site, we will have three files. 
 ```
-5343086 Jul 29 08:31 history.csv
-977888  Jul 29 08:31 test.csv
-3409228 Jul 29 08:31 train.csv
+/tmp/dataset/horizontal_credit_fraud_data/ZHSZUS33_Bank_1/history.csv
+/tmp/dataset/horizontal_credit_fraud_data/ZHSZUS33_Bank_1/test.csv
+/tmp/dataset/horizontal_credit_fraud_data/ZHSZUS33_Bank_1/train.csv
 ```
-![split_data](images/split_data.png)
-The python code for data generation is located at [prepare_data.py] (./prepare_data.py)
 
-## Initial Analysis
+![split_data](./figures/split_data.png)
 
-We choose one site data for analysis
+The python code for data generation is located at [prepare_data.py](./utils/prepare_data.py)
 
-### Feature Engineering 
+## Step 2: Feature Analysis
+
+For this stage, we would like to analyze the data, understand the features, and derive (and encode) secondary features that can be more useful for building the model.
+
+Towards this goal, there are two options:
+1. **Feature Enrichment**: This process involves adding new features based on the existing data. For example, we can calculate the average transaction amount for each currency and add this as a new feature. 
+2. **Feature Encoding**: This process involves encoding the current features and transforming them to embedding space via machine learning models. This model can be either pre-trained, or trained with the candidate dataset.
+
+Considering the fact that the only two numerical features in the dataset are "Amount" and "Time", we will perform feature enrichment first. Optionally, we can also perform feature encoding. In this example, we use graph neural network (GNN): we will train the GNN model in a federated unsupervised fashion, and then use the model to encode the features for all sites.
+
+### Step 2.1: Rule-based Feature Enrichment 
 In this process, we will enrich the data and add a few new derived features to illustrate the process. 
-Whether this enrichment makes sense or not is not important, as you can always replace these steps with procedures that
-make sense to you.
+Whether such enrichment makes sense or not is task and data dependent, essentially, this process is adding hand-crafted features to the classifier inputs.
 
+#### Single-site operation example: enrichiment
 Since all sites follow the same procedures, we only need to look at one site. For example, we will look at the site with 
 the name "ZHSZUS33_Bank_1."
 
@@ -62,19 +70,19 @@ The data enrichment process involves the following steps:
 2. **Aggregation for Training and Test Data**: Aggregate the data in 1-hour intervals, grouped by currency. The aggregated value is then divided by hist_trans_volume, and this new column is named x2_y1.
 3. **Repeating for Beneficiary BIC**: Perform the same process for Beneficiary_BIC to generate another feature called x3_y2.
 4. **Merging Features**: Merge the two enriched features based on Time and Beneficiary_BIC.
-The resulting dataset looks like this:
 
-The resulting Dataset looks like this. 
-![enrich_data](images/enrichment.png)
+The resulting Dataset looks like this.
 
-We save the enriched data into a new csv file. 
+![enrich_data](./figures/enrichment.png)
+
+We save the enriched data into new csv files. 
 ```
-ZHSZUS33_Bank_1/train_enrichment.csv
-ZHSZUS33_Bank_1/test_enrichment.csv
+/tmp/dataset/horizontal_credit_fraud_data/ZHSZUS33_Bank_1/train_enrichment.csv
+/tmp/dataset/horizontal_credit_fraud_data/ZHSZUS33_Bank_1/test_enrichment.csv
 ```
-### Pre-processing 
-Once we enrich the features, we need to normalize the numerical features and perform one-hot encoding for the categorical
-features. However, we will skip the categorical feature encoding in this example to avoid significantly increasing
+#### Single-site operation example: additional processing 
+After feature enrichment, we can normalize the numerical features and perform one-hot encoding for the categorical
+features. Without loss of generality, we will skip the categorical feature encoding in this example to avoid significantly increasing
 the file size (from 11 MB to over 2 GB).
 
 Similar to the feature enrichment process, we will consider only one site for now. The steps are straightforward: 
@@ -92,26 +100,18 @@ we apply the scaler transformation to the numerical features and then merge them
 the file is then saved to "_normalized.csv"
 
 ```
-ZHSZUS33_Bank_1/train_normalized.csv
-ZHSZUS33_Bank_1/test_normalized.csv
+/tmp/dataset/horizontal_credit_fraud_data/ZHSZUS33_Bank_1/train_normalized.csv
+/tmp/dataset/horizontal_credit_fraud_data/ZHSZUS33_Bank_1/test_normalized.csv
 ```
-## Federated ETL 
 
-We can easily convert the notebook code into the python code
-### Feature Enrichment
+#### Federated Enrichment and Normalization for All Sites
+We can easily convert the notebook code into the python code for federated execution on each site.
 
-#### ETL Script
-convert the enrichment code for one-site to the federated learning is easy
-look at the [enrich.py](enrich.py)
-we capture the logic of enrichment in 
+##### Task code
+Convert the enrichment code for one-site to the federated learning, refer to [enrich.py](./nvflare/enrich.py)
 
-```python
-def enrichment(input_dir, site_name) -> dict:
-    # code skipped 
+The main execution flow is the following:
 ```
-the main function will be similar to the following. 
-
-```python
 def main():
     print("\n enrichment starts \n ")
 
@@ -131,16 +131,11 @@ def main():
 ```
 change this code to Federated ETL code, we just add few lines of code
 
-flare.init()
+`flare.init()` to initialize the flare library,
+`etl_task = flare.receive()` to receive the global message from NVFlare,
+and `end_task = GenericTask()` `flare.send(end_task)` to send the message back to the controller.
 
-etl_task = flare.receive()
-
-end_task = GenericTask()
-
-flare.send(end_task)
-
-```python
-
+```
 def main():
     print("\n enrichment starts \n ")
 
@@ -164,16 +159,14 @@ def main():
     end_task = GenericTask()
     flare.send(end_task)
 ```
-This is the feature enrichment script. 
 
-#### ETL Job
+Similar adaptation is required for the normalization code, refer to [pre_process.py](./nvflare/pre_process.py) for details.
 
-Federated ETL requires both server-side and client-side code. The above ETL script is the client-side code.
-To complete the setup, we need server-side code to configure and specify the federated job. 
-For this purpose, we wrote the following script: [enrich_job.py](enrich.py)
+##### Job code
+Job code is executed to trigger and dispatch the ETL tasks from the previous step. 
+For this purpose, we wrote the following script: [enrich_job.py](./nvflare/enrich_job.py)
 
-```python
-
+```
 def main():
     args = define_parser()
 
@@ -203,69 +196,46 @@ def main():
 ```
 Here we define a ETLController for server, and ScriptExecutor for client side ETL script. 
 
-### Pre-process
+Similarly, we can write the normalization job code [pre_process_job.py](./nvflare/pre_process_job.py) for the server-side.
 
-#### ETL Script
+### (Optional) Step 2.2: GNN Training & Feature Encoding
+Based on raw features, or combining the derived features from **Step 2.1**, we can use machine learning models to encode the features. 
+In this example, we use federated GNN to learn and generate the feature embeddings.
 
-Converting the pre-processing code for one site to federated learning is straightforward. 
-Refer to the  [pre_process.py](pre_process.py) script for details.
+First, we construct a graph based on the transaction data. Each node represents a transaction, and the edges represent the relationships between transactions. We then use the GNN to learn the embeddings of the nodes, which represent the transaction features.
 
-```python
+#### Single-site operation example: graph construction
+Since each site consists of the same Sender_BIC, to define the graph edge, we use the following rules:
+1. The two transactions are with the same Receiver_BIC.
+2. The two transactions time difference are smaller than 6000.
 
-dataset_names = ["train", "test"]
-datasets = {}
+The resulting graph looks like below, essentially an undirected graph with transactions (identified by `UETR`) as nodes and edges connecting two nodes that satisfy the above two rules.
 
-def main():
-    args = define_parser()
-    input_dir = args.input_dir
-    output_dir = args.output_dir
+![edge_map](./figures/edge_map.png)
 
-    flare.init()
-    site_name = flare.get_site_name()
-    etl_task = flare.receive()
-    processed_dfs = process_dataset(input_dir, site_name)
-    save_normalized_files(output_dir, processed_dfs, site_name)
+#### Single-site operation example: GNN training and encoding
+We use the graph constructed in the previous step to train the GNN model. The GNN model is trained in a federated unsupervised fashion, and the embeddings are generated for each transaction.
+The GNN training procedure is similar to the unsupervised Protein Classification task in our [GNN example](../gnn/README.md) with customized data preparation steps.
 
-    end_task = GenericTask()
-    flare.send(end_task)
+The results of the GNN training are:
+- a GNN model 
+- the embeddings of the transactions, in this example, they are of dimension 64
+
+![embedding](./figures/embeddings.png)
+
+#### Federated GNN Training and Encoding for All Sites
+Similar to Step 2.1, we can easily convert the notebook code into the python code for federated execution on each site. For simplicity, we will skip the code examples for this step.
+Please refer to the scripts:
+- [graph_construct.py](./nvflare/graph_construct.py) and [graph_construct_job.py](./nvflare/graph_construct_job.py) for graph construction
+- [gnn_train_encode.py](./nvflare/gnn_train_encode.py) and [gnn_train_encode_job.py](./nvflare/gnn_train_encode_job.py) for GNN training and encoding
+
+The resulting GNN encodings will be merged with the normalized data for enhancing the feature.
+
+## Step 3: Federated Training of XGBoost
+Now we have enriched / encoded features, the last step is to run federated XGBoost over them. 
+Below is the xgboost job code
 
 ```
-#### ETL Job
-
-This is almost identical to the Enrichment job, besides the task name
-
-```python
-def main():
-    args = define_parser()
-
-    site_names = args.sites
-    work_dir = args.work_dir
-    job_name = args.job_name
-    task_script_path = args.task_script_path
-    task_script_args = args.task_script_args
-
-    job = FedJob(name=job_name)
-
-    pre_process_ctrl = ETLController(task_name="pre_process")
-    job.to(pre_process_ctrl, "server", id="pre_process")
-
-    # Add clients
-    for site_name in site_names:
-        executor = ScriptExecutor(task_script_path=task_script_path, task_script_args=task_script_args)
-        job.to(executor, site_name, tasks=["pre_process"], gpu=0)
-
-    if work_dir:
-        job.export_job(work_dir)
-
-    if not args.config_only:
-        job.simulator_run(work_dir)
-```
-## Federated Training of XGBoost
-
-Now we have enriched and normalized features, we can directly run XGBoost. 
-Here is the xgboost job code
-
-```python
 def main():
     args = define_parser()
 
@@ -311,28 +281,21 @@ def main():
         job.simulator_run(work_dir)
 ```
 
-In this code, all we need to write is ```CreditCardDataLoader```, which is XGBDataLoader,
-the rest of code is handled by XGBoost Controller and Executor. 
+In this code, all we need to write is a customized `CreditCardDataLoader`, which is XGBDataLoader,
+the rest of code is handled by XGBoost Controller and Executor. For simplicity, we only loaded the numerical feature in this example.
 
-in 
-```
-class CreditCardDataLoader(XGBDataLoader):
-```
-we only loaded the numerical feature in this example, in your case, you might to chagne that. 
-
-## Running end-by-end code
+## End-to-end Experiment
 You can run this from the command line interface (CLI) or orchestrate it using a workflow tool such as Airflow. 
 Here, we will demonstrate how to run this from a simulator. You can always export the job configuration and run
 it anywhere in a real deployment.
 
 Assuming you have already downloaded the credit card dataset and the creditcard.csv file is located in the current directory:
 
-* prepare data
+* Prepare data
 ```
-python prepare_data.py -i ./creditcard.csv -o /tmp/nvflare/xgb/credit_card
+python ./utils/prepare_data.py -i ./creditcard.csv -o /tmp/nvflare/xgb/credit_card
 ```
-
-> Note: All Sender SICs are considered clients: they are 
+>Note: All Sender SICs are considered clients: they are 
 > * 'ZHSZUS33_Bank_1'
 > * 'SHSHKHH1_Bank_2'
 > * 'YXRXGB22_Bank_3'
@@ -345,50 +308,73 @@ python prepare_data.py -i ./creditcard.csv -o /tmp/nvflare/xgb/credit_card
 > * 'XITXUS33_Bank_10' 
 > Total 10 banks
 
-* enrich data
-
-
+* Enrich data
 ```
-python enrich_job.py -c 'ZNZZAU3M_Bank_8' 'SHSHKHH1_Bank_2' 'FBSFCHZH_Bank_6' 'YMNYFRPP_Bank_5' 'WPUWDEFF_Bank_4' 'YXRXGB22_Bank_3' 'XITXUS33_Bank_10' 'YSYCESMM_Bank_7' 'ZHSZUS33_Bank_1' 'HCBHSGSG_Bank_9' -p enrich.py -a "-i /tmp/nvflare/xgb/credit_card/ -o /tmp/nvflare/xgb/credit_card/"
+cd nvflare
+python enrich_job.py -c 'ZNZZAU3M_Bank_8' 'SHSHKHH1_Bank_2' 'FBSFCHZH_Bank_6' 'YMNYFRPP_Bank_5' 'WPUWDEFF_Bank_4' 'YXRXGB22_Bank_3' 'XITXUS33_Bank_10' 'YSYCESMM_Bank_7' 'ZHSZUS33_Bank_1' 'HCBHSGSG_Bank_9' -p enrich.py  -a "-i /tmp/nvflare/xgb/credit_card/ -o /tmp/nvflare/xgb/credit_card/"
+cd ..
 ```
 
-* pre-process data
-
+* Pre-process data
 ```
-python pre_process_job.py -c 'YSYCESMM_Bank_7' 'FBSFCHZH_Bank_6' 'YXRXGB22_Bank_3' 'XITXUS33_Bank_10' 'HCBHSGSG_Bank_9' 'YMNYFRPP_Bank_5' 'ZHSZUS33_Bank_1' 'ZNZZAU3M_Bank_8' 'SHSHKHH1_Bank_2' 'WPUWDEFF_Bank_4' -p pre_process.py -a "-i /tmp/nvflare/xgb/credit_card -o /tmp/nvflare/xgb/credit_card/"
+cd nvflare
+python pre_process_job.py -c 'YSYCESMM_Bank_7' 'FBSFCHZH_Bank_6' 'YXRXGB22_Bank_3' 'XITXUS33_Bank_10' 'HCBHSGSG_Bank_9' 'YMNYFRPP_Bank_5' 'ZHSZUS33_Bank_1' 'ZNZZAU3M_Bank_8' 'SHSHKHH1_Bank_2' 'WPUWDEFF_Bank_4' -p pre_process.py -a "-i /tmp/nvflare/xgb/credit_card  -o /tmp/nvflare/xgb/credit_card/"
+cd ..
+```
 
+* Construct graph
+```
+cd nvflare
+python graph_construct_job.py -c 'YSYCESMM_Bank_7' 'FBSFCHZH_Bank_6' 'YXRXGB22_Bank_3' 'XITXUS33_Bank_10' 'HCBHSGSG_Bank_9' 'YMNYFRPP_Bank_5' 'ZHSZUS33_Bank_1' 'ZNZZAU3M_Bank_8' 'SHSHKHH1_Bank_2' 'WPUWDEFF_Bank_4' -p graph_construct.py -a "-i /tmp/nvflare/xgb/credit_card  -o /tmp/nvflare/xgb/credit_card/"
+cd ..
+```
+
+* GNN Training and Encoding
+```
+cd nvflare
+python gnn_train_encode_job.py -c 'YSYCESMM_Bank_7' 'FBSFCHZH_Bank_6' 'YXRXGB22_Bank_3' 'XITXUS33_Bank_10' 'HCBHSGSG_Bank_9' 'YMNYFRPP_Bank_5' 'ZHSZUS33_Bank_1' 'ZNZZAU3M_Bank_8' 'SHSHKHH1_Bank_2' 'WPUWDEFF_Bank_4' -p gnn_train_encode.py -a "-i /tmp/nvflare/xgb/credit_card  -o /tmp/nvflare/xgb/credit_card/"
+cd ..
+```
+
+* Add GNN embeddings to the normalized data
+```
+python3 utils/merge_feat.py
 ```
 
 * XGBoost Job 
-Finally we take the normalized data and run XGboost Job
 
+We run XGBoost Job on two types of data: normalized, and GNN embeddings
+For normalized data, we run the following command
 ```
-python xgb_job.py -c 'YSYCESMM_Bank_7' 'FBSFCHZH_Bank_6' 'YXRXGB22_Bank_3' 'XITXUS33_Bank_10' 'HCBHSGSG_Bank_9' 'YMNYFRPP_Bank_5' 'ZHSZUS33_Bank_1' 'ZNZZAU3M_Bank_8' 'SHSHKHH1_Bank_2' 'WPUWDEFF_Bank_4' -i /tmp/nvflare/xgb/credit_card -w /tmp/nvflare/workspace/xgb/credit_card/
+cd nvflare
+python xgb_job.py -c 'YSYCESMM_Bank_7' 'FBSFCHZH_Bank_6' 'YXRXGB22_Bank_3' 'XITXUS33_Bank_10' 'HCBHSGSG_Bank_9' 'YMNYFRPP_Bank_5' 'ZHSZUS33_Bank_1' 'ZNZZAU3M_Bank_8' 'SHSHKHH1_Bank_2' 'WPUWDEFF_Bank_4' -i /tmp/nvflare/xgb/credit_card  -w /tmp/nvflare/workspace/xgb/credit_card/
+cd ..
 ```
-Here is the output of last 2 rounds of training (starting round = 0) 
+Below is the output of last round of training (starting round = 0) 
 ```
 ...
-
-[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
-[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
-[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
-[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
-[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
-[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
-[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
-[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
-[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
-[19:58:27] [8]	eval-auc:0.67126	train-auc:0.71717
-
-[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
-[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
-[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
-[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
-[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
-[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
-[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
-[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
-[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
-[19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
-[07:33:54] Finished training
+[9]	eval-auc:0.69383	train-auc:0.71165
 ```
+For GNN embeddings, we run the following command
+```
+cd nvflare
+python xgb_job_embed.py -c 'YSYCESMM_Bank_7' 'FBSFCHZH_Bank_6' 'YXRXGB22_Bank_3' 'XITXUS33_Bank_10' 'HCBHSGSG_Bank_9' 'YMNYFRPP_Bank_5' 'ZHSZUS33_Bank_1' 'ZNZZAU3M_Bank_8' 'SHSHKHH1_Bank_2' 'WPUWDEFF_Bank_4' -i /tmp/nvflare/xgb/credit_card  -w /tmp/nvflare/workspace/xgb/credit_card_embed/
+cd ..
+```
+Below is the output of last round of training (starting round = 0) 
+```
+...
+[9]	eval-auc:0.72318	train-auc:0.72241
+```
+As shown, GNN embeddings help to promote the model performance by providing extra features beyond the hand-crafted ones.
+
+For model explainability, our XGBoost training code will generate the feature importance plot of the XGBoost model with regard to validation data:
+For normalized data without GNN features, the feature importance plot is shown below:
+
+![feature_importance](./figures/shap_beeswarm_base.png)
+
+For normalized data with GNN embeddings, the feature importance plot is shown below:
+
+![feature_importance](./figures/shap_beeswarm_gnn.png)
+
+As shown, the GNN embeddings provide additional features that are important for the model.

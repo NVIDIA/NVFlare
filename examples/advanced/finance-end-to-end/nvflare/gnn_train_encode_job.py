@@ -15,8 +15,11 @@
 
 import argparse
 
+from torch_geometric.nn import GraphSAGE
+
 from nvflare import FedJob
-from nvflare.app_common.workflows.etl_controller import ETLController
+from nvflare.app_common.workflows.fedavg import FedAvg
+from nvflare.app_opt.pt.job_config.model import PTModel
 from nvflare.job_config.script_runner import ScriptRunner
 
 
@@ -24,21 +27,34 @@ def main():
     args = define_parser()
 
     site_names = args.sites
+    n_clients = len(site_names)
+
     work_dir = args.work_dir
-    job_name = args.job_name
     task_script_path = args.task_script_path
     task_script_args = args.task_script_args
 
-    job = FedJob(name=job_name)
+    job = FedJob(name="gnn_train_encode_job")
 
-    # Define the enrich_ctrl workflow and send to server
-    enrich_ctrl = ETLController(task_name="enrich")
-    job.to(enrich_ctrl, "server", id="enrich")
+    # Define the controller workflow and send to server
+    controller = FedAvg(
+        num_clients=n_clients,
+        num_rounds=args.num_rounds,
+    )
+    job.to(controller, "server")
+
+    # Define the model
+    model = GraphSAGE(
+        in_channels=10,
+        hidden_channels=64,
+        num_layers=2,
+        out_channels=64,
+    )
+    job.to(PTModel(model), "server")
 
     # Add clients
     for site_name in site_names:
         executor = ScriptRunner(script=task_script_path, script_args=task_script_args)
-        job.to(executor, site_name, tasks=["enrich"])
+        job.to(executor, site_name)
 
     if work_dir:
         print(f"{work_dir=}")
@@ -60,11 +76,10 @@ def define_parser():
     )
     parser.add_argument(
         "-n",
-        "--job_name",
-        type=str,
-        nargs="?",
-        default="credit_card_enrich_job",
-        help="job name, default to xgb_job",
+        "--num_rounds",
+        type=int,
+        default=100,
+        help="number of FL rounds",
     )
     parser.add_argument(
         "-w",
