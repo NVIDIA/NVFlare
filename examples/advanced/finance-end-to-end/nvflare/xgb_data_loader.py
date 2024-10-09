@@ -30,6 +30,7 @@ class CreditCardDataLoader(XGBDataLoader):
         self.file_postfix = file_postfix
         for name in self.dataset_names:
             self.base_file_names[name] = name + file_postfix
+
         self.numerical_columns = [
             "Timestamp",
             "Amount",
@@ -53,6 +54,8 @@ class CreditCardDataLoader(XGBDataLoader):
         for ds_name in self.dataset_names:
             print("\nloading for site = ", self.client_id, f"{ds_name} dataset \n")
             file_name = os.path.join(self.root_dir, self.client_id, self.base_file_names[ds_name])
+            print(file_name)
+            print(self.numerical_columns)
             df = pd.read_csv(file_name)
             data_num = len(data)
 
