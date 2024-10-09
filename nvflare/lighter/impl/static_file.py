@@ -19,7 +19,7 @@ import os
 import yaml
 
 from nvflare.lighter import utils
-from nvflare.lighter.spec import Builder
+from nvflare.lighter.spec import Builder, Participant
 
 
 class StaticFileBuilder(Builder):
@@ -283,7 +283,19 @@ class StaticFileBuilder(Builder):
             "t",
         )
 
-    def _prepare_overseer_agent(self, participate, config, role, ctx):
+    def _check_host_name(self, host_name: str, server: Participant) -> str:
+        if host_name == server.name:
+            # Use the default host - OK
+            return ""
+
+        available_host_names = server.get_host_names()
+        if available_host_names and host_name in available_host_names:
+            # use alternative host name - OK
+            return ""
+
+        return f"unknown host name '{host_name}'"
+
+    def _prepare_overseer_agent(self, participant, config, role, ctx):
         if self.overseer_agent:
             overseer_agent = copy.deepcopy(self.overseer_agent)
             if overseer_agent.get("overseer_exists", True):
@@ -291,25 +303,39 @@ class StaticFileBuilder(Builder):
                     "role": role,
                     "overseer_end_point": ctx.get("overseer_end_point", ""),
                     "project": self.project_name,
-                    "name": participate.subject,
+                    "name": participant.subject,
                 }
             else:
                 # do not use overseer system
                 # Dummy overseer agent is used here
-                connect_to = participate.get_connect_to()
+                project = ctx["project"]
+                server = project.get_server()
+                if not server:
+                    raise ValueError(f"Missing server definition in project {project.name}")
+
+                connect_to = participant.get_connect_to()
                 if connect_to:
-                    # change the sp_end_point to use connect_to
-                    agent_args = overseer_agent.get("args")
-                    if agent_args:
-                        sp_end_point = agent_args.get("sp_end_point")
-                        if sp_end_point:
-                            # format of the sp_end_point:  server_host_name:fl_port:admin_port
-                            # we replace server_host_name part with connect_to
-                            assert isinstance(sp_end_point, str)
-                            parts = sp_end_point.split(":")
-                            assert len(parts) == 3
-                            parts[0] = connect_to
-                            agent_args["sp_end_point"] = ":".join(parts)
+                    err = self._check_host_name(connect_to, server)
+                    if err:
+                        raise ValueError(f"bad connect_to in {participant.subject}: {err}")
+                else:
+                    # connect_to is not explicitly specified: use the server's name by default
+                    # Note: by doing this dynamically, we guarantee the sp_end_point to be correct, even if the
+                    # project.yaml does not specify the default server host correctly!
+                    connect_to = server.name
+
+                # change the sp_end_point to use connect_to
+                agent_args = overseer_agent.get("args")
+                if agent_args:
+                    sp_end_point = agent_args.get("sp_end_point")
+                    if sp_end_point:
+                        # format of the sp_end_point:  server_host_name:fl_port:admin_port
+                        # we replace server_host_name part with connect_to
+                        assert isinstance(sp_end_point, str)
+                        parts = sp_end_point.split(":")
+                        assert len(parts) == 3
+                        parts[0] = connect_to
+                        agent_args["sp_end_point"] = ":".join(parts)
 
             overseer_agent.pop("overseer_exists", None)
             config["overseer_agent"] = overseer_agent

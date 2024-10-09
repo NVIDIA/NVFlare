@@ -78,30 +78,7 @@ class CertBuilder(Builder):
             self.persistent_state["root_cert"] = self.serialized_cert.decode("ascii")
             self.persistent_state["root_pri_key"] = serialize_pri_key(self.pri_key).decode("ascii")
 
-    def _check_host_name(self, host_name: str, ctx: dict) -> str:
-        server = ctx.get("server")
-        if not server:
-            return ""
-
-        assert isinstance(server, Participant)
-        if host_name == server.name:
-            # Use the default host - OK
-            return ""
-
-        available_host_names = server.get_host_names()
-        if available_host_names and host_name in available_host_names:
-            # use alternative host name - OK
-            return ""
-
-        return f"unknown host name '{host_name}'"
-
     def _build_write_cert_pair(self, participant, base_name, ctx):
-        connect_to = participant.get_connect_to()
-        if connect_to:
-            err = self._check_host_name(connect_to, ctx)
-            if err:
-                raise ValueError(f"bad connect_to in {participant.subject}: {err}")
-
         subject = self.get_subject(participant)
         if self.persistent_state and subject in self.persistent_state:
             cert = x509.load_pem_x509_certificate(
@@ -154,9 +131,6 @@ class CertBuilder(Builder):
         for server in servers:
             self._build_write_cert_pair(server, "server", ctx)
 
-            # put the server in the ctx, so we can check client's connect_to
-            ctx["server"] = server
-
         for client in project.get_participants_by_type("client", first_only=False):
             self._build_write_cert_pair(client, "client", ctx)
 
@@ -204,10 +178,6 @@ class CertBuilder(Builder):
     ):
         x509_subject = self._x509_name(subject, subject_org, role)
         x509_issuer = self._x509_name(issuer)
-        sans = [x509.DNSName(subject)]
-        if host_names:
-            for h in host_names:
-                sans.append(x509.DNSName(h))
 
         builder = (
             x509.CertificateBuilder()
@@ -222,7 +192,6 @@ class CertBuilder(Builder):
                 + datetime.timedelta(days=valid_days)
                 # Sign our certificate with our private key
             )
-            .add_extension(x509.SubjectAlternativeName(sans), critical=False)
         )
         if ca:
             builder = (
@@ -236,6 +205,14 @@ class CertBuilder(Builder):
                 )
                 .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=False)
             )
+
+        # Use SubjectAlternativeName for host names
+        sans = [x509.DNSName(subject)]
+        if host_names:
+            for h in host_names:
+                if h != subject:
+                    sans.append(x509.DNSName(h))
+        builder = builder.add_extension(x509.SubjectAlternativeName(sans), critical=False)
         return builder.sign(signing_pri_key, hashes.SHA256(), default_backend())
 
     def _x509_name(self, cn_name, org_name=None, role=None):

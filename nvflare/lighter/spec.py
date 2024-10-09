@@ -136,6 +136,14 @@ class Project(object):
                     found.append(p)
         return found
 
+    def get_server(self):
+        """Get the server definition. Only one server is supported!
+
+        Returns: server participant
+
+        """
+        return self.get_participants_by_type("server", first_only=True)
+
 
 class Builder(ABC):
     def initialize(self, ctx: dict):
@@ -216,6 +224,7 @@ class Provisioner(object):
         workspace = os.path.join(self.root_dir, project.name)
         ctx = {"workspace": workspace}  # project is more static information while ctx is dynamic
         self._prepare_workspace(ctx)
+        ctx["project"] = project
         try:
             for b in self.builders:
                 b.initialize(ctx)
