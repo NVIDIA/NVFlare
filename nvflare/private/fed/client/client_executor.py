@@ -122,7 +122,7 @@ class ClientExecutor(ABC):
         """
 
 
-class ProcessExecutor(ClientExecutor):
+class JobExecutor(ClientExecutor):
     """Run the Client executor in a child process."""
 
     def __init__(self, client, startup):

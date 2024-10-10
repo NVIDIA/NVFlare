@@ -32,7 +32,7 @@ from nvflare.private.fed.utils.fed_utils import security_close
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .client_engine_internal_spec import ClientEngineInternalSpec
-from .client_executor import ProcessExecutor
+from .client_executor import JobExecutor
 from .client_run_manager import ClientRunInfo
 from .client_status import ClientStatus
 from .fed_client import FederatedClient
@@ -62,7 +62,7 @@ class ClientEngine(ClientEngineInternalSpec):
         self.client_name = client.client_name
         self.args = args
         self.rank = rank
-        self.client_executor = ProcessExecutor(client, os.path.join(args.workspace, "startup"))
+        self.client_executor = JobExecutor(client, os.path.join(args.workspace, "startup"))
         self.admin_agent = None
 
         self.fl_ctx_mgr = FLContextManager(
