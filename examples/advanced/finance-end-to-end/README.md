@@ -32,8 +32,8 @@ Training DataFrame size: 398729
 Testing DataFrame size: 113924
 ```
 Next we will split the data among different clients, i.e. different Sender_BICs. 
-For example: Sender = JPMorgan_Case, BIC =CHASUS33
-the client directory is **CHASUS33_JPMorgan_Chase**
+For example: Sender = Bank_1, BIC =ZHSZUS33
+the client directory is **ZHSZUS33_Bank_1**
 
 For this site, we will have three files. 
 ```
@@ -54,7 +54,7 @@ Whether this enrichment makes sense or not is not important, as you can always r
 make sense to you.
 
 Since all sites follow the same procedures, we only need to look at one site. For example, we will look at the site with 
-the name "CHASUS33_JPMorgan_Chase."
+the name "ZHSZUS33_Bank_1."
 
 The data enrichment process involves the following steps:
 
@@ -69,8 +69,8 @@ The resulting Dataset looks like this.
 
 We save the enriched data into a new csv file. 
 ```
-CHASUS33_JPMorgan_Chase/train_enrichment.csv
-CHASUS33_JPMorgan_Chase/test_enrichment.csv
+ZHSZUS33_Bank_1/train_enrichment.csv
+ZHSZUS33_Bank_1/test_enrichment.csv
 ```
 ### Pre-processing 
 Once we enrich the features, we need to normalize the numerical features and perform one-hot encoding for the categorical
@@ -92,8 +92,8 @@ we apply the scaler transformation to the numerical features and then merge them
 the file is then saved to "_normalized.csv"
 
 ```
-CHASUS33_JPMorgan_Chase/train_normalized.csv
-CHASUS33_JPMorgan_Chase/test_normalized.csv
+ZHSZUS33_Bank_1/train_normalized.csv
+ZHSZUS33_Bank_1/test_normalized.csv
 ```
 ## Federated ETL 
 
@@ -111,7 +111,7 @@ def enrichment(input_dir, site_name) -> dict:
 ```
 the main function will be similar to the following. 
 
-```
+```python
 def main():
     print("\n enrichment starts \n ")
 
@@ -139,7 +139,7 @@ end_task = GenericTask()
 
 flare.send(end_task)
 
-```
+```python
 
 def main():
     print("\n enrichment starts \n ")
@@ -172,7 +172,7 @@ Federated ETL requires both server-side and client-side code. The above ETL scri
 To complete the setup, we need server-side code to configure and specify the federated job. 
 For this purpose, we wrote the following script: [enrich_job.py](enrich.py)
 
-```
+```python
 
 def main():
     args = define_parser()
@@ -210,7 +210,7 @@ Here we define a ETLController for server, and ScriptExecutor for client side ET
 Converting the pre-processing code for one site to federated learning is straightforward. 
 Refer to the  [pre_process.py](pre_process.py) script for details.
 
-```
+```python
 
 dataset_names = ["train", "test"]
 datasets = {}
@@ -234,7 +234,7 @@ def main():
 
 This is almost identical to the Enrichment job, besides the task name
 
-```
+```python
 def main():
     args = define_parser()
 
@@ -265,7 +265,7 @@ def main():
 Now we have enriched and normalized features, we can directly run XGBoost. 
 Here is the xgboost job code
 
-```
+```python
 def main():
     args = define_parser()
 
@@ -331,32 +331,31 @@ Assuming you have already downloaded the credit card dataset and the creditcard.
 ```
 python prepare_data.py -i ./creditcard.csv -o /tmp/nvflare/xgb/credit_card
 ```
->>note
-> 
-> All Sender SICs are considered clients: they are 
-> * 'BARCGB22_Barclays_Bank'
-> * 'BSCHESMM_Banco_Santander'
-> * 'CITIUS33_Citibank'
-> * 'SCBLSGSG_Standard_Chartered_Bank'
-> * 'UBSWCHZH80A_UBS'
-> * 'BNPAFRPP_BNP_Paribas'
-> * 'CHASUS33_JPMorgan_Chase'
-> * 'HSBCHKHH_HSBC'
-> * 'ANZBAU3M_ANZ_Bank'
-> * 'DEUTDEFF_Deutsche_Bank'
+
+> Note: All Sender SICs are considered clients: they are 
+> * 'ZHSZUS33_Bank_1'
+> * 'SHSHKHH1_Bank_2'
+> * 'YXRXGB22_Bank_3'
+> * 'WPUWDEFF_Bank_4'
+> * 'YMNYFRPP_Bank_5'
+> * 'FBSFCHZH_Bank_6'
+> * 'YSYCESMM_Bank_7'
+> * 'ZNZZAU3M_Bank_8'
+> * 'HCBHSGSG_Bank_9'
+> * 'XITXUS33_Bank_10' 
 > Total 10 banks
 
 * enrich data
 
 
 ```
-python enrich_job.py -c CHASUS33_JPMorgan_Chase HSBCHKHH_HSBC DEUTDEFF_Deutsche_Bank BARCGB22_Barclays_Bank BNPAFRPP_BNP_Paribas UBSWCHZH80A_UBS BSCHESMM_Banco_Santander ANZBAU3M_ANZ_Bank SCBLSGSG_Standard_Chartered_Bank CITIUS33_Citibank -p enrich.py  -a "-i /tmp/nvflare/xgb/credit_card/ -o /tmp/nvflare/xgb/credit_card/"
+python enrich_job.py -c 'ZNZZAU3M_Bank_8' 'SHSHKHH1_Bank_2' 'FBSFCHZH_Bank_6' 'YMNYFRPP_Bank_5' 'WPUWDEFF_Bank_4' 'YXRXGB22_Bank_3' 'XITXUS33_Bank_10' 'YSYCESMM_Bank_7' 'ZHSZUS33_Bank_1' 'HCBHSGSG_Bank_9' -p enrich.py -a "-i /tmp/nvflare/xgb/credit_card/ -o /tmp/nvflare/xgb/credit_card/"
 ```
 
 * pre-process data
 
 ```
-python pre_process_job.py -c CHASUS33_JPMorgan_Chase HSBCHKHH_HSBC DEUTDEFF_Deutsche_Bank BARCGB22_Barclays_Bank BNPAFRPP_BNP_Paribas UBSWCHZH80A_UBS BSCHESMM_Banco_Santander ANZBAU3M_ANZ_Bank SCBLSGSG_Standard_Chartered_Bank CITIUS33_Citibank -p pre_process.py -a "-i /tmp/nvflare/xgb/credit_card  -o /tmp/nvflare/xgb/credit_card/"
+python pre_process_job.py -c 'YSYCESMM_Bank_7' 'FBSFCHZH_Bank_6' 'YXRXGB22_Bank_3' 'XITXUS33_Bank_10' 'HCBHSGSG_Bank_9' 'YMNYFRPP_Bank_5' 'ZHSZUS33_Bank_1' 'ZNZZAU3M_Bank_8' 'SHSHKHH1_Bank_2' 'WPUWDEFF_Bank_4' -p pre_process.py -a "-i /tmp/nvflare/xgb/credit_card -o /tmp/nvflare/xgb/credit_card/"
 
 ```
 
@@ -364,9 +363,9 @@ python pre_process_job.py -c CHASUS33_JPMorgan_Chase HSBCHKHH_HSBC DEUTDEFF_Deut
 Finally we take the normalized data and run XGboost Job
 
 ```
-python xgb_job.py -c CHASUS33_JPMorgan_Chase HSBCHKHH_HSBC DEUTDEFF_Deutsche_Bank BARCGB22_Barclays_Bank BNPAFRPP_BNP_Paribas UBSWCHZH80A_UBS BSCHESMM_Banco_Santander ANZBAU3M_ANZ_Bank SCBLSGSG_Standard_Chartered_Bank CITIUS33_Citibank -i /tmp/nvflare/xgb/credit_card  -w /tmp/nvflare/workspace/xgb/credit_card/
+python xgb_job.py -c 'YSYCESMM_Bank_7' 'FBSFCHZH_Bank_6' 'YXRXGB22_Bank_3' 'XITXUS33_Bank_10' 'HCBHSGSG_Bank_9' 'YMNYFRPP_Bank_5' 'ZHSZUS33_Bank_1' 'ZNZZAU3M_Bank_8' 'SHSHKHH1_Bank_2' 'WPUWDEFF_Bank_4' -i /tmp/nvflare/xgb/credit_card -w /tmp/nvflare/workspace/xgb/credit_card/
 ```
-Here is the output of last 9th and 10th round of training (starting round = 0) 
+Here is the output of last 2 rounds of training (starting round = 0) 
 ```
 ...
 
@@ -393,6 +392,3 @@ Here is the output of last 9th and 10th round of training (starting round = 0)
 [19:58:30] [9]	eval-auc:0.67348	train-auc:0.71769
 [07:33:54] Finished training
 ```
-
-
-

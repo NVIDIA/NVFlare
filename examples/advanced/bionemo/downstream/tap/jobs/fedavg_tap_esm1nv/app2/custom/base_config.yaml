@@ -4,13 +4,12 @@ do_testing: False # set to true to run evaluation on test data after training, r
 restore_from_path: null # used when starting from a .nemo file
 
 trainer:
-  devices: 2 # number of GPUs or CPUs
+  devices: 1 # number of GPUs or CPUs
   num_nodes: 1 
   accelerator: gpu #gpu or cpu
-  precision: 16 #16 or 32
+  precision: 16-mixed #16 or 32
   logger: False # logger is provided by NeMo exp_manager
   enable_checkpointing: False # checkpointing is done by NeMo exp_manager
-  replace_sampler_ddp: False # use NeMo Megatron samplers
   max_epochs: null # # use max_steps instead with NeMo Megatron model
   max_steps: 1000000 # consumed_samples = global_step * micro_batch_size * data_parallel_size * accumulate_grad_batches
   log_every_n_steps: 1  # number of iterations between logging
@@ -89,7 +88,7 @@ model:
 
 
   # miscellaneous
-  seed: 2
+  seed: 4
   use_cpu_initialization: False # Init weights on the CPU (slow for large model)
   onnx_safe: False # Use work-arounds for known problems with Torch ONNX exporter.
 
@@ -101,7 +100,7 @@ model:
     ngc_registry_target: uniref50_2022_05
     ngc_registry_version: v23.06
     data_prefix: "" # must be null or ""
-    num_workers: 8
+    num_workers: 2
     dataloader_type: single # cyclic
     reset_position_ids: False # Reset position ids after end-of-document token
     reset_attention_mask: False # Reset attention mask after end-of-document token
@@ -128,6 +127,8 @@ model:
     use_upsampling: True # if the data should be upsampled to max number of steps in the training
     seed: ${model.seed} # Random seed
     max_seq_length: ${model.seq_length} # Maximum input sequence length. Longer sequences are truncated
+    dynamic_padding: False # If True, each batch is padded to the maximum sequence length within that batch.
+              #    Set it to False when model.pipeline_model_parallel_size > 1, as pipeline parallelism requires fixed-length padding.
 
   optim:
     name: fused_adam # fused optimizers used by Megatron model
@@ -145,7 +146,7 @@ model:
   dwnstr_task_validation:
     enabled: False
     dataset:
-      class: PerTokenPredictionCallback
+      class: bionemo.model.core.dwnstr_task_callbacks.PerTokenPredictionCallback
       task_type: token-level-classification
       infer_target: bionemo.model.protein.esm1nv.infer.ESM1nvInference
       max_seq_length: ${model.seq_length}
@@ -153,7 +154,7 @@ model:
       batch_size: 128
       num_epochs: 10
       shuffle: True
-      num_workers: 8
+      num_workers: 2
       task_name: secondary_structure
       dataset_path: /data/FLIP/${model.dwnstr_task_validation.dataset.task_name}
       dataset:
