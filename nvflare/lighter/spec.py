@@ -58,20 +58,26 @@ class Participant(object):
                 if err:
                     raise ValueError(f"bad host name '{n}' in {self.name}: {reason}")
 
-        host_name = self.get_connect_to()
-        if host_name:
-            err, reason = name_check(host_name, "host_name")
-            if err:
-                raise ValueError(f"bad connect_to '{host_name}' in {self.name}: {reason}")
+        self._check_host_name("connect_to")
+        self._check_host_name("listening_host")
+        self._check_host_name("default_host")
 
-        host_name = self.get_listening_host()
+    def _check_host_name(self, prop_name: str):
+        host_name = self.get_prop(prop_name)
         if host_name:
             err, reason = name_check(host_name, "host_name")
             if err:
-                raise ValueError(f"bad listening_host '{host_name}' in {self.name}: {reason}")
+                raise ValueError(f"bad {prop_name} '{host_name}' in {self.name}: {reason}")
 
     def get_host_names(self):
-        host_names = self.props.get("host_names")
+        """Get the "host_names" attribute of this participant (server).
+        This attribute specifies additional host names for clients to access the FL Server.
+        Each name could be a domain name or IP address.
+
+        Returns: a list of host names or None if not specified.
+
+        """
+        host_names = self.get_prop("host_names")
         if not host_names:
             return None
 
@@ -86,20 +92,41 @@ class Participant(object):
         return host_names
 
     def get_connect_to(self):
-        host_name = self.props.get("connect_to")
-        if not host_name:
-            return None
-        if not isinstance(host_name, str):
-            raise ValueError(f"bad connect_to in {self.subject}: must be str but got {type(host_name)}")
-        return host_name
+        """Get the "connect_to" attribute of this participant (client).
+        This value is for the client to connect to the FL server.
+        If not specified, then the client will connect to the FL server via its default host.
+
+        Returns: the value of "connect_to" attribute or None if not specified.
+
+        """
+        return self.get_prop("connect_to")
 
     def get_listening_host(self):
-        host_name = self.props.get("listening_host")
-        if not host_name:
-            return None
-        if not isinstance(host_name, str):
-            raise ValueError(f"bad listening_host in {self.subject}: must be str but got {type(host_name)}")
-        return host_name
+        """Get the "listening_host" attribute of this participant (client).
+        When specified, the client will be listening and other parties will use the specified value to connect to
+        this client. This client will receive a "server" cert in its startup kit.
+
+        Returns: the value of "listening_host" attribute or None if not specified.
+
+        """
+        return self.get_prop("listening_host")
+
+    def get_default_host(self) -> str:
+        """Get the default host name for accessing this participant (server).
+        If the "default_host" attribute is explicitly specified, then it's the default host.
+        If the "default_host" attribute is not explicitly specified, then use the "name" attribute.
+
+        Returns: a host name
+
+        """
+        h = self.get_prop("default_host")
+        if h:
+            return h
+        else:
+            return self.name
+
+    def get_prop(self, key: str, default=None):
+        return self.props.get(key, default)
 
 
 class Project(object):

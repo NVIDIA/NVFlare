@@ -109,7 +109,12 @@ class CertBuilder(Builder):
         with open(os.path.join(dest_dir, f"{base_name}.key"), "wb") as f:
             f.write(serialize_pri_key(pri_key))
         if base_name == "client" and (listening_host := participant.get_listening_host()):
-            tmp_participant = Participant("server", listening_host, participant.org)
+            tmp_participant = Participant(
+                type="server",
+                name=participant.name,
+                org=participant.org,
+                default_host=listening_host,
+            )
             tmp_pri_key, tmp_cert = self.get_pri_key_cert(tmp_participant)
             with open(os.path.join(dest_dir, "server.crt"), "wb") as f:
                 f.write(serialize_cert(tmp_cert))
@@ -142,9 +147,11 @@ class CertBuilder(Builder):
         subject = self.get_subject(participant)
         subject_org = participant.org
         if participant.type == "admin":
-            role = participant.props.get("role")
+            role = participant.get_prop("role")
         else:
             role = None
+
+        server = participant if participant.type == "server" else None
         cert = self._generate_cert(
             subject,
             subject_org,
@@ -152,7 +159,7 @@ class CertBuilder(Builder):
             self.pri_key,
             pub_key,
             role=role,
-            host_names=participant.get_host_names(),
+            server=server,
         )
         return pri_key, cert
 
@@ -174,7 +181,7 @@ class CertBuilder(Builder):
         valid_days=360,
         ca=False,
         role=None,
-        host_names=None,
+        server: Participant = None,
     ):
         x509_subject = self._x509_name(subject, subject_org, role)
         x509_issuer = self._x509_name(issuer)
@@ -206,13 +213,17 @@ class CertBuilder(Builder):
                 .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=False)
             )
 
-        # Use SubjectAlternativeName for host names
-        sans = [x509.DNSName(subject)]
-        if host_names:
-            for h in host_names:
-                if h != subject:
-                    sans.append(x509.DNSName(h))
-        builder = builder.add_extension(x509.SubjectAlternativeName(sans), critical=False)
+        if server:
+            # This is to generate a server cert.
+            # Use SubjectAlternativeName for all host names
+            default_host = server.get_default_host()
+            host_names = server.get_host_names()
+            sans = [x509.DNSName(default_host)]
+            if host_names:
+                for h in host_names:
+                    if h != default_host:
+                        sans.append(x509.DNSName(h))
+            builder = builder.add_extension(x509.SubjectAlternativeName(sans), critical=False)
         return builder.sign(signing_pri_key, hashes.SHA256(), default_backend())
 
     def _x509_name(self, cn_name, org_name=None, role=None):
