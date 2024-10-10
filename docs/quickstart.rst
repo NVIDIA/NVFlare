@@ -101,6 +101,17 @@ Note on branches:
 
 * The 2.1, 2.2, 2.3, 2.4, 2.5, etc. branches are the branches for each major release and there are tags based on these with a third digit for minor patches
 
+Install NVFlare from source
+----------------------------
+
+Navigate to the NVFlare repository and use pip install with development mode (can be useful to access latest nightly features or test custom builds for example):
+
+.. code-block:: shell
+
+  $ git clone https://github.com/NVIDIA/NVFlare.git
+  $ cd NVFlare
+  $ pip install -e .
+
 
 .. _containerized_deployment:
 
