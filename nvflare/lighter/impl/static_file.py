@@ -205,7 +205,7 @@ class StaticFileBuilder(Builder):
         project = ctx["project"]
         server = project.get_server()
         if not server:
-            raise ValueError(f"missing server definition in project")
+            raise ValueError("missing server definition in project")
         config = json.loads(self.template["fed_client"])
         dest_dir = self.get_kit_dir(client, ctx)
         config["servers"][0]["service"]["scheme"] = self.scheme
