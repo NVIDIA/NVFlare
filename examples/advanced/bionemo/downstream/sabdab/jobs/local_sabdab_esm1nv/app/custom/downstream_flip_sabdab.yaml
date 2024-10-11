@@ -13,7 +13,7 @@ encoder_frozen: False
 trainer:
   devices: 1 # number of GPUs or CPUs
   num_nodes: 1 
-  max_epochs: 200
+  max_epochs: 20
   val_check_interval: 0.0
   limit_val_batches: 0.0 # number of batches in validation step, use fraction for fraction of data, 0 to disable
   limit_test_batches: 0.0 # number of batches in test step, use fraction for fraction of data, 0 to disable
@@ -54,7 +54,7 @@ model:
     target_column: ["Y"] #["3state"np.sum(test_df['Y']==0), "resolved"] # names of label columns in csv file
     target_sizes: [2] # number of classes in each label for classifications or 1 for regression
     num_classes: 2
-    num_workers: 8
+    num_workers: 2
     shuffle: True # shuffle training dataset
     max_seq_length: ${model.seq_length}
     emb_batch_size: ${model.micro_batch_size}

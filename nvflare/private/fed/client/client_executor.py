@@ -42,7 +42,6 @@ class ClientExecutor(ABC):
         job_id,
         args,
         app_custom_folder,
-        listen_port,
         allocated_resource,
         token,
         resource_manager,
@@ -56,7 +55,6 @@ class ClientExecutor(ABC):
             job_id: the job_id
             args: admin command arguments for starting the FL client training
             app_custom_folder: FL application custom folder
-            listen_port: port to listen the command.
             allocated_resource: allocated resources
             token: token from resource manager
             resource_manager: resource manager
@@ -149,7 +147,6 @@ class ProcessExecutor(ClientExecutor):
         job_id,
         args,
         app_custom_folder,
-        listen_port,
         allocated_resource,
         token,
         resource_manager: ResourceManagerSpec,
@@ -163,7 +160,6 @@ class ProcessExecutor(ClientExecutor):
             job_id: the job_id
             args: admin command arguments for starting the worker process
             app_custom_folder: FL application custom folder
-            listen_port: port to listen the command.
             allocated_resource: allocated resources
             token: token from resource manager
             resource_manager: resource manager
@@ -208,8 +204,6 @@ class ProcessExecutor(ClientExecutor):
 
         with self.lock:
             self.run_processes[job_id] = {
-                RunProcessKey.LISTEN_PORT: listen_port,
-                RunProcessKey.CONNECTION: None,
                 RunProcessKey.CHILD_PROCESS: process,
                 RunProcessKey.STATUS: ClientStatus.STARTING,
             }

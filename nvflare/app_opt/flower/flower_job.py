@@ -19,7 +19,6 @@ from nvflare.app_common.tie.defs import Constant
 from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
 from nvflare.app_common.widgets.metric_relay import MetricRelay
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
-from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.job_config.api import FedJob
@@ -104,10 +103,9 @@ class FlowerJob(FedJob):
         # server side - need analytics_receiver
         if analytics_receiver:
             check_object_type("analytics_receiver", analytics_receiver, AnalyticsReceiver)
+            self.to_server(analytics_receiver, "analytics_receiver")
         else:
-            analytics_receiver = TBAnalyticsReceiver(events=["fed.analytix_log_stats"])
-
-        self.to_server(analytics_receiver, "analytics_receiver")
+            raise ValueError("Missing analytics receiver on the server side.")
 
         # client side
         # cell pipe

@@ -50,7 +50,6 @@ from nvflare.fuel.f3.cellnet.core_cell import FQCN, CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellMsgReturnCode
 from nvflare.fuel.utils.argument_utils import parse_vars
-from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message, MsgHeader
 from nvflare.private.aux_runner import AuxMsgTarget
@@ -180,13 +179,11 @@ class ServerEngine(ServerEngineInternalSpec):
             if not isinstance(job, Job):
                 return "Must provide a job object to start the server app."
 
-            open_ports = get_open_ports(2)
             self._start_runner_process(
                 self.args,
                 app_root,
                 run_number,
                 app_custom_folder,
-                open_ports,
                 job.job_id,
                 job_clients,
                 snapshot,
@@ -234,7 +231,6 @@ class ServerEngine(ServerEngineInternalSpec):
         app_root,
         run_number,
         app_custom_folder,
-        open_ports,
         job_id,
         job_clients,
         snapshot,
@@ -245,7 +241,6 @@ class ServerEngine(ServerEngineInternalSpec):
         if app_custom_folder != "":
             add_custom_dir_to_path(app_custom_folder, new_env)
 
-        listen_port = open_ports[1]
         if snapshot:
             restore_snapshot = True
         else:
@@ -290,8 +285,6 @@ class ServerEngine(ServerEngineInternalSpec):
 
         with self.lock:
             self.run_processes[run_number] = {
-                RunProcessKey.LISTEN_PORT: listen_port,
-                RunProcessKey.CONNECTION: None,
                 RunProcessKey.CHILD_PROCESS: process,
                 RunProcessKey.JOB_ID: job_id,
                 RunProcessKey.PARTICIPANTS: job_clients,

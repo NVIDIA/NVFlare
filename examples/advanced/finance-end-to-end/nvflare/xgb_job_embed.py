@@ -12,12 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 import argparse
 
+from xgb_embed_data_loader import CreditCardEmbedDataLoader
+
 from nvflare import FedJob
-from nvflare.app_common.workflows.etl_controller import ETLController
-from nvflare.job_config.script_runner import ScriptRunner
+from nvflare.app_opt.xgboost.histogram_based_v2.fed_controller import XGBFedController
+from nvflare.app_opt.xgboost.histogram_based_v2.fed_executor import FedXGBHistogramExecutor
 
 
 def main():
@@ -26,21 +27,41 @@ def main():
     site_names = args.sites
     work_dir = args.work_dir
     job_name = args.job_name
-    task_script_path = args.task_script_path
-    task_script_args = args.task_script_args
+    root_dir = args.input_dir
+    file_postfix = args.file_postfix
+
+    num_rounds = 10
+    early_stopping_rounds = 10
+    xgb_params = {
+        "max_depth": 8,
+        "eta": 0.1,
+        "objective": "binary:logistic",
+        "eval_metric": "auc",
+        "tree_method": "hist",
+        "nthread": 16,
+    }
 
     job = FedJob(name=job_name)
 
-    pre_process_ctrl = ETLController(task_name="pre_process")
-    job.to(pre_process_ctrl, "server", id="pre_process")
+    # Define the controller workflow and send to server
+    controller = XGBFedController(
+        num_rounds=num_rounds,
+        data_split_mode=0,
+        secure_training=False,
+        xgb_params=xgb_params,
+        xgb_options={"early_stopping_rounds": early_stopping_rounds},
+    )
+    job.to(controller, "server")
 
     # Add clients
     for site_name in site_names:
-        executor = ScriptRunner(script=task_script_path, script_args=task_script_args)
-        job.to(executor, site_name, tasks=["pre_process"])
+        executor = FedXGBHistogramExecutor(data_loader_id="data_loader")
+        job.to(executor, site_name)
+        data_loader = CreditCardEmbedDataLoader(root_dir=root_dir, file_postfix=file_postfix)
+        job.to(data_loader, site_name, id="data_loader")
 
     if work_dir:
-        print(f"{work_dir=}")
+        print("work_dir=", work_dir)
         job.export_job(work_dir)
 
     if not args.config_only:
@@ -62,7 +83,7 @@ def define_parser():
         "--job_name",
         type=str,
         nargs="?",
-        default="credit_card_pre_process_job",
+        default="xgb_job",
         help="job name, default to xgb_job",
     )
     parser.add_argument(
@@ -73,21 +94,21 @@ def define_parser():
         default="/tmp/nvflare/jobs/xgb/workdir",
         help="work directory, default to '/tmp/nvflare/jobs/xgb/workdir'",
     )
-
     parser.add_argument(
-        "-p",
-        "--task_script_path",
-        type=str,
-        nargs="?",
-        help="task script",
-    )
-    parser.add_argument(
-        "-a",
-        "--task_script_args",
+        "-i",
+        "--input_dir",
         type=str,
         nargs="?",
         default="",
-        help="",
+        help="root directory for input data",
+    )
+    parser.add_argument(
+        "-p",
+        "--file_postfix",
+        type=str,
+        nargs="?",
+        default="_embedding.csv",
+        help="file ending postfix, such as '.csv', or '_embedding.csv'",
     )
 
     parser.add_argument("-co", "--config_only", action="store_true", help="config only mode, will not run simulator")
