@@ -210,13 +210,28 @@ Using non-HA, secure, local mode (all clients and server running on the same hos
 
 Which mode should I choose for running NVFLARE? (Note: the same jobs can be run in any of the modes, and the same project.yml deployment options can be run in both POC mode and production.)
 
-.. csv-table::
-    :header: Mode,Link,Description
-    :widths: 15, 15, 30
+.. list-table:: NVIDIA FLARE Modes
+   :header-rows: 1
 
-    Simulator,:ref:`fl_simulator`,The FL Simulator is a light weight simulation where the job run is automated on a single system. Useful for quickly running a job or experimenting with research or FL algorithms.
-    POC,:ref:`poc_command`,POC mode establishes and connects distinct server and client "systems" which can then be orchestrated using the FLARE Console all from a single machine. Users can also experiment with various deployment options (project.yml) which can directly be used in production modes.
-    Production,:ref:`provisioned_setup`,"Real world production mode involves a distributed deployment with generated startup kits from the provisioning process. Provides provisioning tool, dashboard, and various deployment options."
+   * - **Mode**
+     - **Documentation**
+     - **Description**
+   * - Simulator
+     - :ref:`fl_simulator`
+     - | The FL Simulator is a light weight simulation where the job run is automated on a 
+       | single system. Useful for quickly running a job or experimenting with research 
+       | or FL algorithms.
+   * - POC
+     - :ref:`poc_command`
+     - | POC mode establishes and connects distinct server and client "systems" which can 
+       | then be orchestrated using the FLARE Console all from a single machine. Users can 
+       | also experiment with various deployment options (project.yml), which can be used 
+       | in production modes.
+   * - Production
+     - :ref:`provisioned_setup`
+     - | Real world production mode involves a distributed deployment with generated startup 
+       | kits from the provisioning process. Provides provisioning tool, dashboard, and 
+       | various deployment options.
 
 .. _starting_fl_simulator:
 
