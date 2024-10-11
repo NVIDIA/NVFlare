@@ -25,8 +25,6 @@ class SimulatorParentClientEngine(ClientEngine):
         fl_ctx.set_prop(FLContextKey.SIMULATE_MODE, True, private=True, sticky=True)
 
         self.client_executor.run_processes[SimulatorConstants.JOB_NAME] = {
-            RunProcessKey.LISTEN_PORT: None,
-            RunProcessKey.CONNECTION: None,
             RunProcessKey.CHILD_PROCESS: None,
             RunProcessKey.STATUS: ClientStatus.STARTED,
         }

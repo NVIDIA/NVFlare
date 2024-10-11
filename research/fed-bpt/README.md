@@ -14,7 +14,7 @@ The models code is copied from the [transformers](https://github.com/huggingface
 We recommend creating a [conda environment](https://www.anaconda.com) following [BBT](https://github.com/txsun1997/Black-Box-Tuning#prepare-your-environment) 
 with the addition of installing NVFlare for running federated learning and some other updates:
 ```commandline
-conda create --name fedbpt python=3.8
+conda create --name fedbpt python=3.12
 conda activate fedbpt
 pip install -r requirements.txt
 ```

@@ -24,7 +24,6 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, MachineStatus, SystemComponents, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.workspace import Workspace
-from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.private.defs import ERROR_MSG_PREFIX, ClientStatusKey, EngineConstant
 from nvflare.private.event import fire_event
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
@@ -161,15 +160,12 @@ class ClientEngine(ClientEngineInternalSpec):
 
         self.logger.info("Starting client app. rank: {}".format(self.rank))
 
-        open_port = get_open_ports(1)[0]
-
         server_config = list(self.client.servers.values())[0]
         self.client_executor.start_app(
             self.client,
             job_id,
             self.args,
             app_custom_folder,
-            open_port,
             allocated_resource,
             token,
             resource_manager,
