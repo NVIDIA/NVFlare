@@ -202,10 +202,15 @@ class StaticFileBuilder(Builder):
         )
 
     def _build_client(self, client, ctx):
+        project = ctx["project"]
+        server = project.get_server()
+        if not server:
+            raise ValueError(f"missing server definition in project")
         config = json.loads(self.template["fed_client"])
         dest_dir = self.get_kit_dir(client, ctx)
         config["servers"][0]["service"]["scheme"] = self.scheme
         config["servers"][0]["name"] = self.project_name
+        config["servers"][0]["identity"] = server.name  # the official identity of the server
         replacement_dict = {
             "client_name": f"{client.subject}",
             "config_folder": self.config_folder,
