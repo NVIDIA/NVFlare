@@ -208,11 +208,15 @@ Production mode is secure with TLS certificates - depending the choice the deplo
 
 Using non-HA, secure, local mode (all clients and server running on the same host), production mode is very similar to POC mode except it is secure.
 
-Which mode should I choose for running NVFLARE?
+Which mode should I choose for running NVFLARE? (Note: the same jobs can be run in any of the modes, and the same project.yml deployment options can be run in both POC mode and production.)
 
-  - For a quick research run, use the FL Simulator
-  - For simulating real cases within the same machine, use POC or production (local, non-HA, secure) mode. POC has convenient ``nvflare poc`` commands for ease of use.
-  - For all other cases, use production mode.
+.. csv-table::
+    :header: Mode,Link,Description
+    :widths: 15, 15, 30
+
+    Simulator,:ref:`fl_simulator`,The FL Simulator is a light weight simulation where the job run is automated on a single system. Useful for quickly running a job or experimenting with research or FL algorithms.
+    POC,:ref:`poc_command`,POC mode establishes and connects distinct server and client "systems" which can then be orchestrated using the FLARE Console all from a single machine. Users can also experiment with various deployment options (project.yml) which can directly be used in production modes.
+    Production,:ref:`provisioned_setup`,"Real world production mode involves a distributed deployment with generated startup kits from the provisioning process. Provides provisioning tool, dashboard, and various deployment options."
 
 .. _starting_fl_simulator:
 
@@ -386,5 +390,19 @@ To start the server and client systems without an admin console:
 .. code-block::
 
   nvflare poc start -ex admin@nvidia.com
+
+We can use the :ref:`job_cli` to easily submit a job to the POC system. (Note: We can run the same jobs we ran with the simulator in POC mode. If using the :ref:`fed_job_api`, simply export the job configuration with ``job.export_job()``.)
+
+.. code-block::
+
+  nvflare job submit -j NVFlare/examples/hello-world/hello-numpy-sag/jobs/hello-numpy-sag
+
+.. code-block::
+
+  nvflare poc stop
+
+.. code-block::
+
+  nvflare poc clean
 
 For more details, see :ref:`poc_command`.
