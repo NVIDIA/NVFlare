@@ -178,19 +178,7 @@ def sh_replace(src, mapping_dict):
 
 def update_project_server_name_config(project_config: dict, old_server_name, server_name) -> dict:
     update_participant_server_name(project_config, old_server_name, server_name)
-    update_overseer_server_name(project_config, old_server_name, server_name)
     return project_config
-
-
-def update_overseer_server_name(project_config, old_server_name, server_name):
-    # update overseer_agent builder
-    builders = project_config.get("builders", [])
-    for b in builders:
-        if "args" in b:
-            if "overseer_agent" in b["args"]:
-                end_point = b["args"]["overseer_agent"]["args"]["sp_end_point"]
-                new_end_point = end_point.replace(old_server_name, server_name)
-                b["args"]["overseer_agent"]["args"]["sp_end_point"] = new_end_point
 
 
 def update_participant_server_name(project_config, old_server_name, new_server_name):
@@ -198,7 +186,28 @@ def update_participant_server_name(project_config, old_server_name, new_server_n
     for p in participants:
         if p["type"] == "server" and p["name"] == old_server_name:
             p["name"] = new_server_name
-            return
+            break
+    return project_config
+
+
+def update_server_default_host(project_config, default_host):
+    """Update the default_host property of the Server in the project config.
+    If a client does not explicitly specify "connect_to", it will use the default_host to connect to server.
+    This is mainly used for POC, where the default_host is set to localhost.
+
+    Args:
+        project_config: the project config dict
+        default_host: value of the default host
+
+    Returns: the updated project_config
+
+    """
+    participants = project_config["participants"]
+    for p in participants:
+        if p["type"] == "server":
+            p["default_host"] = default_host
+            break
+    return project_config
 
 
 def update_project_server_name(project_file: str, old_server_name, server_name):
