@@ -21,13 +21,15 @@ class MockSecureXGBExecutor(XGBExecutor):
     def __init__(
         self,
         int_server_grpc_options=None,
-        req_timeout=10.0,
+        per_msg_timeout=10.0,
+        tx_timeout=100.0,
         in_process=True,
     ):
         XGBExecutor.__init__(
             self,
             adaptor_component_id="",
-            req_timeout=req_timeout,
+            per_msg_timeout=per_msg_timeout,
+            tx_timeout=tx_timeout,
         )
         self.int_server_grpc_options = int_server_grpc_options
         self.in_process = in_process
