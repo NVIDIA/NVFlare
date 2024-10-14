@@ -584,13 +584,8 @@ class FederatedServer(BaseServer):
             return make_cellnet_reply(rc=F3ReturnCode.OK, body=reply)
 
     def register_client(self, request: Message) -> Message:
-        """Register new clients on the fly.
-
-        Each client must get registered before getting the global model.
-        The server will expect updates from the registered clients
-        for multiple federated rounds.
-
-        This function does not change min_num_clients and max_num_clients.
+        """Register a new client.
+        Each client must be registered before being able to run jobs.
         """
 
         with self.engine.new_context() as fl_ctx:

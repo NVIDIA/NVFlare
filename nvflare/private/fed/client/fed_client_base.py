@@ -387,7 +387,7 @@ class FederatedClientBase:
         return self.push_execute_result(self._get_project_name(), shareable, fl_ctx, timeout)
 
     def register(self, fl_ctx: FLContext):
-        """Push the local model to multiple servers."""
+        """Register the client with the server."""
         return self.client_register(self._get_project_name(), fl_ctx)
 
     def set_primary_sp(self, sp):
