@@ -44,7 +44,10 @@ described below at once:
 bash ./run_jobs.sh
 ```
 The CIFAR10 dataset will be downloaded when running any experiment for
-the first time. Data split files, summary logs and results will be saved in a workspace
+the first time. `Tensorboard` summary logs will be generated during
+any experiment, and you can use `Tensorboard` to visualize the
+training and validation process as the experiment runs. Data split
+files, summary logs and results will be saved in a workspace
 directory, which defaults to `/tmp` and can be configured by setting
 `--workspace` argument of the `tf_fl_script_runner_cifar10.py`
 script.
