@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import logging
 import time
 from enum import Enum
 
@@ -195,6 +196,7 @@ class K8sJobLauncher(JobLauncherSpec):
         self.namespace = namespace
 
         self.job_handle = None
+        self.logger = logging.getLogger(self.__class__.__name__)
 
     def launch_job(self, client, startup, job_id, args, app_custom_folder, target: str, scheme: str,
                    timeout=None) -> bool:
@@ -227,6 +229,8 @@ class K8sJobLauncher(JobLauncherSpec):
             },
             "set_list": args.set
         }
+
+        self.logger.info(f"launch job with k8s_launcher. Job_id:{job_id}")
 
         self.job_handle = K8sJobHandle(job_id, self.core_v1, job_config, namespace=self.namespace)
         try:
