@@ -17,7 +17,7 @@ import shlex
 import subprocess
 import sys
 
-from nvflare.private.fed.app.job_launch.job_launcher_spec import JobLauncherSpec
+from nvflare.app_opt.job_launcher.job_launcher_spec import JobLauncherSpec
 from nvflare.private.fed.utils.fed_utils import add_custom_dir_to_path
 
 

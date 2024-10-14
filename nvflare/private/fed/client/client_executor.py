@@ -13,10 +13,6 @@
 # limitations under the License.
 
 import logging
-import os
-import shlex
-import subprocess
-import sys
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -28,10 +24,10 @@ from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey, new_cell_message
-from nvflare.private.fed.utils.fed_utils import add_custom_dir_to_path, get_return_code
+from nvflare.private.fed.utils.fed_utils import get_return_code
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
-from ..app.job_launch.process_launcher import ProcessJobLauncher
+from nvflare.app_opt.job_launcher.process_launcher import ProcessJobLauncher
 from .client_status import ClientStatus, get_status_message
 
 
@@ -170,39 +166,6 @@ class JobExecutor(ClientExecutor):
             target: SP target location
             scheme: SP connection scheme
         """
-        # new_env = os.environ.copy()
-        # if app_custom_folder != "":
-        #     add_custom_dir_to_path(app_custom_folder, new_env)
-        #
-        # command_options = ""
-        # for t in args.set:
-        #     command_options += " " + t
-        # command = (
-        #     f"{sys.executable} -m nvflare.private.fed.app.client.worker_process -m "
-        #     + args.workspace
-        #     + " -w "
-        #     + self.startup
-        #     + " -t "
-        #     + client.token
-        #     + " -d "
-        #     + client.ssid
-        #     + " -n "
-        #     + job_id
-        #     + " -c "
-        #     + client.client_name
-        #     + " -p "
-        #     + str(client.cell.get_internal_listener_url())
-        #     + " -g "
-        #     + target
-        #     + " -scheme "
-        #     + scheme
-        #     + " -s fed_client.json "
-        #     " --set" + command_options + " print_conf=True"
-        # )
-        # # use os.setsid to create new process group ID
-        # process = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
-        #
-        # self.logger.info("Worker child process ID: {}".format(process.pid))
         job_launcher = self._get_job_launcher(client, job_meta)
         job_launcher.launch_job(client, self.startup, job_id, args, app_custom_folder, target, scheme)
 
