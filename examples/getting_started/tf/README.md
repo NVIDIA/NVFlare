@@ -1,18 +1,13 @@
 # Getting Started with NVFlare (TensorFlow)
 [![TensorFlow Logo](https://upload.wikimedia.org/wikipedia/commons/a/ab/TensorFlow_logo.svg)](https://tensorflow.org/)
 
-We provide several examples to quickly get you started using NVFlare's Job API. 
+We provide several examples to help you quickly get started with NVFlare.
 All examples in this folder are based on using [TensorFlow](https://tensorflow.org/) as the model training framework.
 
 ## Simulated Federated Learning with CIFAR10 Using Tensorflow
 
-This example shows `Tensorflow`-based classic Federated Learning
-algorithms, namely FedAvg and FedOpt on CIFAR10
-dataset. This example is analogous to [the example using `Pytorch`
-backend](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/cifar10-sim)
-on the same dataset, where same experiments
-were conducted and analyzed. You should expect the same
-experimental results when comparing this example with the `Pytorch` one.
+This example demonstrates TensorFlow-based federated learning algorithms,
+FedAvg and FedOpt, on the CIFAR-10 dataset.
 
 In this example, the latest Client APIs were used to implement
 client-side training logics (details in file
@@ -20,7 +15,7 @@ client-side training logics (details in file
 and the new
 [`FedJob`](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/job_config/api.py)
 APIs were used to programmatically set up an
-`nvflare` job to be exported or ran by simulator (details in file
+NVFlare job to be exported or ran by simulator (details in file
 [`tf_fl_script_runner_cifar10.py`](tf_fl_script_runner_cifar10.py)),
 alleviating the need of writing job config files, simplifying
 development process.
@@ -49,10 +44,7 @@ described below at once:
 bash ./run_jobs.sh
 ```
 The CIFAR10 dataset will be downloaded when running any experiment for
-the first time. `Tensorboard` summary logs will be generated during
-any experiment, and you can use `Tensorboard` to visualize the
-training and validation process as the experiment runs. Data split
-files, summary logs and results will be saved in a workspace
+the first time. Data split files, summary logs and results will be saved in a workspace
 directory, which defaults to `/tmp` and can be configured by setting
 `--workspace` argument of the `tf_fl_script_runner_cifar10.py`
 script.
@@ -64,12 +56,8 @@ script.
 > `export TF_FORCE_GPU_ALLOW_GROWTH=true && export
 > TF_GPU_ALLOCATOR=cuda_malloc_asyncp`
 
-The set-up of all experiments in this example are kept the same as
-[the example using `Pytorch`
-backend](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/cifar10-sim). Refer
-to the `Pytorch` example for more details. Similar to the Pytorch
-example, we here also use Dirichelet sampling on CIFAR10 data labels
-to simulate data heterogeneity among data splits for different client
+We use Dirichelet sampling (implementation from FedMA (https://github.com/IBM/FedMA)) on
+CIFAR10 data labels to simulate data heterogeneity among data splits for different client
 sites, controlled by an alpha value, ranging from 0 (not including 0)
 to 1. A high alpha value indicates less data heterogeneity, i.e., an
 alpha value equal to 1.0 would result in homogeneous data distribution
@@ -111,11 +99,11 @@ for alpha in 1.0 0.5 0.3 0.1; do
 done
 ```
 
-## 2. Results
+## 3. Results
 
 Now let's compare experimental results.
 
-### 2.1 Centralized training vs. FedAvg for homogeneous split
+### 3.1 Centralized training vs. FedAvg for homogeneous split
 Let's first compare FedAvg with homogeneous data split
 (i.e. `alpha=1.0`) and centralized training. As can be seen from the
 figure and table below, FedAvg can achieve similar performance to
@@ -129,7 +117,7 @@ no difference in data distributions among different clients.
 
 ![Central vs. FedAvg](./figs/fedavg-vs-centralized.png)
 
-### 2.2 Impact of client data heterogeneity
+### 3.2 Impact of client data heterogeneity
 
 Here we compare the impact of data heterogeneity by varying the
 `alpha` value, where lower values cause higher heterogeneity. As can
@@ -145,7 +133,7 @@ as data heterogeneity becomes higher.
 
 ![Impact of client data
 heterogeneity](./figs/fedavg-diff-alphas.png)
- 
+
 > [!NOTE]
 > More examples can be found at https://nvidia.github.io/NVFlare.
 

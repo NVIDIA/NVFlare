@@ -48,7 +48,7 @@ In scenarios where multiple clients are involved, you have to prevent TensorFlow
 by setting the following flags.
 
 ```bash
-TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async
+TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async python3 fedavg_script_runner_tf.py
 ```
 
 If you possess more GPUs than clients, a good strategy is to run one client on each GPU.
