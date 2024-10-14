@@ -13,20 +13,12 @@
 # limitations under the License.
 from abc import abstractmethod
 
-from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 
-
-class JobLaunchSpec:
+class JobLauncherSpec:
     @abstractmethod
-    def launch_job(self,
-                   client,
-                   startup,
-                   job_id,
-                   args,
-                   app_custom_folder,
-                   target: str,
-                   scheme: str,
-                   timeout=None) -> bool:
+    def launch_job(
+        self, client, startup, job_id, args, app_custom_folder, target: str, scheme: str, timeout=None
+    ) -> bool:
         """To launch a job run.
 
         Args:
@@ -48,7 +40,7 @@ class JobLaunchSpec:
         raise NotImplemented
 
     @abstractmethod
-    def return_code(self):
+    def poll(self):
         """To get the return code of the job run.
 
         Returns: return_code

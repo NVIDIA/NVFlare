@@ -17,27 +17,20 @@ import shlex
 import subprocess
 import sys
 
-from nvflare.private.fed.app.job_launch.job_launch_spec import JobLaunchSpec
+from nvflare.private.fed.app.job_launch.job_launcher_spec import JobLauncherSpec
 from nvflare.private.fed.utils.fed_utils import add_custom_dir_to_path
 
 
-class ProcessJobLaunch(JobLaunchSpec):
-    def __init__(self, job_id: str):
+class ProcessJobLauncher(JobLauncherSpec):
+    def __init__(self):
         super().__init__()
-        self.job_id = job_id
 
         self.process = None
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def launch_job(self,
-                   client,
-                   startup,
-                   job_id,
-                   args,
-                   app_custom_folder,
-                   target: str,
-                   scheme: str,
-                   timeout=None) -> bool:
+    def launch_job(
+        self, client, startup, job_id, args, app_custom_folder, target: str, scheme: str, timeout=None
+    ) -> bool:
 
         new_env = os.environ.copy()
         if app_custom_folder != "":
@@ -74,15 +67,16 @@ class ProcessJobLaunch(JobLaunchSpec):
         self.logger.info("Worker child process ID: {}".format(self.process.pid))
 
     def terminate(self):
-        try:
-            os.killpg(os.getpgid(self.process.pid), 9)
-            self.logger.debug("kill signal sent")
-        except:
-            pass
+        if self.process:
+            try:
+                os.killpg(os.getpgid(self.process.pid), 9)
+                self.logger.debug("kill signal sent")
+            except:
+                pass
 
-        self.process.terminate()
+            self.process.terminate()
 
-    def return_code(self):
+    def poll(self):
         if self.process:
             return self.process.poll()
         else:

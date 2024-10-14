@@ -134,6 +134,7 @@ class ClientEngine(ClientEngineInternalSpec):
     def start_app(
         self,
         job_id: str,
+        job_meta: dict,
         allocated_resource: dict = None,
         token: str = None,
         resource_manager=None,
@@ -164,6 +165,7 @@ class ClientEngine(ClientEngineInternalSpec):
         self.client_executor.start_app(
             self.client,
             job_id,
+            job_meta,
             self.args,
             app_custom_folder,
             allocated_resource,

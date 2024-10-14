@@ -31,6 +31,7 @@ from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey
 from nvflare.private.fed.utils.fed_utils import add_custom_dir_to_path, get_return_code
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
+from ..app.job_launch.process_launcher import ProcessJobLauncher
 from .client_status import ClientStatus, get_status_message
 
 
@@ -40,6 +41,7 @@ class ClientExecutor(ABC):
         self,
         client,
         job_id,
+        job_meta,
         args,
         app_custom_folder,
         allocated_resource,
@@ -145,6 +147,7 @@ class JobExecutor(ClientExecutor):
         self,
         client,
         job_id,
+        job_meta,
         args,
         app_custom_folder,
         allocated_resource,
@@ -158,6 +161,7 @@ class JobExecutor(ClientExecutor):
         Args:
             client: the FL client object
             job_id: the job_id
+            job_meta: job meta data
             args: admin command arguments for starting the worker process
             app_custom_folder: FL application custom folder
             allocated_resource: allocated resources
@@ -166,45 +170,47 @@ class JobExecutor(ClientExecutor):
             target: SP target location
             scheme: SP connection scheme
         """
-        new_env = os.environ.copy()
-        if app_custom_folder != "":
-            add_custom_dir_to_path(app_custom_folder, new_env)
-
-        command_options = ""
-        for t in args.set:
-            command_options += " " + t
-        command = (
-            f"{sys.executable} -m nvflare.private.fed.app.client.worker_process -m "
-            + args.workspace
-            + " -w "
-            + self.startup
-            + " -t "
-            + client.token
-            + " -d "
-            + client.ssid
-            + " -n "
-            + job_id
-            + " -c "
-            + client.client_name
-            + " -p "
-            + str(client.cell.get_internal_listener_url())
-            + " -g "
-            + target
-            + " -scheme "
-            + scheme
-            + " -s fed_client.json "
-            " --set" + command_options + " print_conf=True"
-        )
-        # use os.setsid to create new process group ID
-        process = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
-
-        self.logger.info("Worker child process ID: {}".format(process.pid))
+        # new_env = os.environ.copy()
+        # if app_custom_folder != "":
+        #     add_custom_dir_to_path(app_custom_folder, new_env)
+        #
+        # command_options = ""
+        # for t in args.set:
+        #     command_options += " " + t
+        # command = (
+        #     f"{sys.executable} -m nvflare.private.fed.app.client.worker_process -m "
+        #     + args.workspace
+        #     + " -w "
+        #     + self.startup
+        #     + " -t "
+        #     + client.token
+        #     + " -d "
+        #     + client.ssid
+        #     + " -n "
+        #     + job_id
+        #     + " -c "
+        #     + client.client_name
+        #     + " -p "
+        #     + str(client.cell.get_internal_listener_url())
+        #     + " -g "
+        #     + target
+        #     + " -scheme "
+        #     + scheme
+        #     + " -s fed_client.json "
+        #     " --set" + command_options + " print_conf=True"
+        # )
+        # # use os.setsid to create new process group ID
+        # process = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
+        #
+        # self.logger.info("Worker child process ID: {}".format(process.pid))
+        job_launcher = self._get_job_launcher(client, job_meta)
+        job_launcher.launch_job(client, self.startup, job_id, args, app_custom_folder, target, scheme)
 
         client.multi_gpu = False
 
         with self.lock:
             self.run_processes[job_id] = {
-                RunProcessKey.CHILD_PROCESS: process,
+                RunProcessKey.CHILD_PROCESS: job_launcher,
                 RunProcessKey.STATUS: ClientStatus.STARTING,
             }
 
@@ -213,6 +219,17 @@ class JobExecutor(ClientExecutor):
             args=(client, job_id, allocated_resource, token, resource_manager, args.workspace),
         )
         thread.start()
+
+    def _get_job_launcher(self, client, job_meta: dict):
+        launcher = None
+        launcher_map = job_meta.get("launcher_map")
+        for launcher_id, sites in launcher_map.items():
+            if client.client_name in sites:
+                engine = client.engine
+                launcher = engine.get_component(launcher_id)
+        if not launcher:
+            launcher = ProcessJobLauncher()
+        return launcher
 
     def notify_job_status(self, job_id, job_status):
         run_process = self.run_processes.get(job_id)
@@ -336,7 +353,7 @@ class JobExecutor(ClientExecutor):
             if process_status == ClientStatus.STARTED:
                 try:
                     with self.lock:
-                        child_process = self.run_processes[job_id][RunProcessKey.CHILD_PROCESS]
+                        job_launcher = self.run_processes[job_id][RunProcessKey.CHILD_PROCESS]
                     data = {}
                     fqcn = FQCN.join([self.client.client_name, job_id])
                     request = new_cell_message({}, data)
@@ -348,7 +365,7 @@ class JobExecutor(ClientExecutor):
                         optional=True,
                     )
                     self.logger.debug("abort sent to worker")
-                    t = threading.Thread(target=self._terminate_process, args=[child_process, job_id])
+                    t = threading.Thread(target=self._terminate_process, args=[job_launcher, job_id])
                     t.start()
                     t.join()
                     break
@@ -383,14 +400,14 @@ class JobExecutor(ClientExecutor):
 
             time.sleep(0.05)  # we want to quickly check
 
-        # kill the sub-process group directly
-        if not done:
-            self.logger.debug(f"still not done after {max_wait} secs")
-            try:
-                os.killpg(os.getpgid(child_process.pid), 9)
-                self.logger.debug("kill signal sent")
-            except:
-                pass
+        # # kill the sub-process group directly
+        # if not done:
+        #     self.logger.debug(f"still not done after {max_wait} secs")
+        #     try:
+        #         os.killpg(os.getpgid(child_process.pid), 9)
+        #         self.logger.debug("kill signal sent")
+        #     except:
+        #         pass
 
         child_process.terminate()
         self.logger.info(f"run ({job_id}): child worker process terminated")
@@ -417,11 +434,11 @@ class JobExecutor(ClientExecutor):
 
     def _wait_child_process_finish(self, client, job_id, allocated_resource, token, resource_manager, workspace):
         self.logger.info(f"run ({job_id}): waiting for child worker process to finish.")
-        child_process = self.run_processes.get(job_id, {}).get(RunProcessKey.CHILD_PROCESS)
-        if child_process:
-            child_process.wait()
+        job_launcher = self.run_processes.get(job_id, {}).get(RunProcessKey.CHILD_PROCESS)
+        if job_launcher:
+            job_launcher.wait()
 
-            return_code = get_return_code(child_process, job_id, workspace, self.logger)
+            return_code = get_return_code(job_launcher, job_id, workspace, self.logger)
 
             self.logger.info(f"run ({job_id}): child worker process finished with RC {return_code}")
             if return_code in [ProcessExitCode.UNSAFE_COMPONENT, ProcessExitCode.CONFIG_ERROR]:
