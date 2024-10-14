@@ -261,7 +261,24 @@ Client API configuration.  You can further nail down the selection by choice of 
 in-process or not, type of models ( GNN, NeMo LLM), workflow patterns ( Swarm learning or standard fedavg with scatter and gather (sag)) etc.
 
 
+Custom Data Class Serialization/Deserialization
+===============================================
 
+To pass data in the form of a custom class, you can leverage the serialization tool inside NVFlare.
 
+For example:
 
+.. code-block:: python
 
+    class CustomClass:
+        def __init__(self, x, y):
+            self.x = 1
+            self.y = 2
+
+If you are using classes derived from ``Enum`` or dataclass, they will be handled by the default decomposers.
+For other custom classes, you will need to write a dedicated custom decomposer and ensure it is registered
+using fobs.register on both the server side and client side, as well as in train.py.
+
+Please note that for the custom data class to work, it must be placed in a separate file from train.py.
+
+For more details on serialization, please refer to :ref:`serialization`.

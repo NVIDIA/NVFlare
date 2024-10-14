@@ -24,7 +24,7 @@ from nvflare.job_config.api import validate_object_for_job
 
 
 class PTModel:
-    def __init__(self, model, persistor: Optional[ModelPersistor], locator: Optional[ModelLocator]):
+    def __init__(self, model, persistor: Optional[ModelPersistor] = None, locator: Optional[ModelLocator] = None):
         """PyTorch model wrapper.
 
         If model is an nn.Module, add a PTFileModelPersistor with the model and a TFModelPersistor.
