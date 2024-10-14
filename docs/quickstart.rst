@@ -248,10 +248,10 @@ Basic usage for the :ref:`FL Simulator <fl_simulator>` is available with ``nvfla
 
   $ nvflare simulator -h
   usage: nvflare simulator [-h] [-w WORKSPACE] [-n N_CLIENTS] [-c CLIENTS] [-t THREADS] [-gpu GPU] [-m MAX_CLIENTS] job_folder
-
+  
   positional arguments:
     job_folder
-
+  
   optional arguments:
     -h, --help            show this help message and exit
     -w WORKSPACE, --workspace WORKSPACE
