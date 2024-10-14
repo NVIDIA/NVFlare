@@ -19,12 +19,32 @@ import shutil
 from base64 import b64decode, b64encode
 
 import yaml
+from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
-from nvflare.lighter.impl.cert import load_crt
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE, NVFLARE_SUBMITTER_CRT_FILE
+
+
+def serialize_pri_key(pri_key):
+    return pri_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.TraditionalOpenSSL,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+
+
+def serialize_cert(cert):
+    return cert.public_bytes(serialization.Encoding.PEM)
+
+
+def load_crt(path):
+    return load_crt_bytes(open(path, "rb").read())
+
+
+def load_crt_bytes(data: bytes):
+    return x509.load_pem_x509_certificate(data, default_backend())
 
 
 def generate_password(passlen=16):

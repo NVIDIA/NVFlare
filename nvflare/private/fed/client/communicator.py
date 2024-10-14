@@ -125,7 +125,7 @@ class Communicator:
         server_cn = reply.get(IdentityChallengeKey.COMMON_NAME)
 
         if server_cn != expected_host:
-            raise FLCommunicationError(f"expected host is '{expected_host}' but got '{server_cn}'")
+            raise FLCommunicationError(f"expected server identity is '{expected_host}' but got '{server_cn}'")
 
         # Use IdentityVerifier to validate:
         # - the server cert can be validated with the root cert. Note that all sites have the same root cert!
@@ -136,7 +136,7 @@ class Communicator:
             asserter_cert=server_cert, asserted_cn=server_cn, nonce=my_nonce, signature=server_signature
         )
 
-        self.logger.info(f"verified server host '{expected_host}'")
+        self.logger.info(f"verified server identity '{expected_host}'")
         return server_nonce
 
     def client_registration(self, client_name, project_name, fl_ctx: FLContext):
@@ -200,9 +200,9 @@ class Communicator:
                 raise RuntimeError(f"missing {FLContextKey.SERVER_CONFIG} in FL Context")
 
             server0 = server_config[0]
-            expected_host = server0.get("host")
+            expected_host = server0.get("identity")
             if not expected_host:
-                raise RuntimeError("missing 'host' in server config")
+                raise RuntimeError("missing 'identity' in server config")
 
             client_config = fl_ctx.get_prop(FLContextKey.CLIENT_CONFIG)
             if not client_config:

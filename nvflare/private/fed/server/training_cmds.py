@@ -268,10 +268,11 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                     fqcn = c.get_fqcn()
                     table.add_row(
                         [c.name, fqcn, str(c.token), time.asctime(time.localtime(c.last_connect_time))],
-                        meta={MetaKey.CLIENT_NAME: c.name,
-                              MetaKey.CLIENT_LAST_CONNECT_TIME: c.last_connect_time,
-                              MetaKey.FQCN: fqcn,
-                        }
+                        meta={
+                            MetaKey.CLIENT_NAME: c.name,
+                            MetaKey.CLIENT_LAST_CONNECT_TIME: c.last_connect_time,
+                            MetaKey.FQCN: fqcn,
+                        },
                     )
 
         if dst in [self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_ALL]:
