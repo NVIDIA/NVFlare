@@ -23,7 +23,7 @@ from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 from nvflare.app_opt.tf.job_config.model import TFModel
-from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
+from nvflare.app_opt.tf.tb_receiver import TBAnalyticsReceiver
 from nvflare.job_config.api import FedJob, validate_object_for_job
 
 
