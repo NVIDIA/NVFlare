@@ -186,10 +186,11 @@ class JobExecutor(ClientExecutor):
     def _get_job_launcher(self, client, job_meta: dict):
         launcher = None
         launcher_map = job_meta.get("launcher_map")
-        for launcher_id, sites in launcher_map.items():
-            if client.client_name in sites:
-                engine = client.engine
-                launcher = engine.get_component(launcher_id)
+        if launcher_map:
+            for launcher_id, sites in launcher_map.items():
+                if client.client_name in sites:
+                    engine = client.engine
+                    launcher = engine.get_component(launcher_id)
         if not launcher:
             launcher = ProcessJobLauncher()
         return launcher
