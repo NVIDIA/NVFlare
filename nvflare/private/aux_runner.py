@@ -14,7 +14,7 @@
 
 import time
 from threading import Lock
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_component import FLComponent

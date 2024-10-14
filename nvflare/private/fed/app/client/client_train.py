@@ -20,7 +20,7 @@ import sys
 import time
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, JobConstants, SecureTrainConst, SiteType, WorkspaceConstants
+from nvflare.apis.fl_constant import FLContextKey, JobConstants, SiteType, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
