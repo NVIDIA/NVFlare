@@ -32,7 +32,6 @@ class CreditCardDataLoader(XGBDataLoader):
             self.base_file_names[name] = name + file_postfix
 
         self.numerical_columns = [
-            "Timestamp",
             "Amount",
             "trans_volume",
             "total_amount",

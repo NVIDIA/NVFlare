@@ -17,6 +17,8 @@ from typing import Tuple
 
 import xgboost as xgb
 from xgboost import callback
+import matplotlib.pyplot as plt
+import shap
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, SystemConfigs
@@ -221,6 +223,16 @@ class XGBClientRunner(AppRunner, FLComponent):
             # Save the model.
             bst.save_model(os.path.join(self._model_dir, self.model_file_name))
             xgb.collective.communicator_print("Finished training\n")
+
+            # Save explanability outputs based on val_data
+            explainer = shap.TreeExplainer(bst)
+            explanation = explainer(val_data)
+
+            # save the beeswarm plot to png file
+            shap.plots.beeswarm(explanation, show=False)
+            img = plt.gcf()
+            img.subplots_adjust(left=0.3, right=0.9, bottom=0.3, top=0.9)
+            img.savefig(os.path.join(self._model_dir, "shap_beeswarm.png"), bbox_inches="tight")
 
         self._stopped = True
 
