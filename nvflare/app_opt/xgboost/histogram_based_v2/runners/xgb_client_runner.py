@@ -15,10 +15,10 @@
 import os
 from typing import Tuple
 
-import xgboost as xgb
-from xgboost import callback
 import matplotlib.pyplot as plt
 import shap
+import xgboost as xgb
+from xgboost import callback
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, SystemConfigs
