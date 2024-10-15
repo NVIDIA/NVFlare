@@ -107,8 +107,8 @@ def define_parser():
         "--file_postfix",
         type=str,
         nargs="?",
-        default="_embedding.csv",
-        help="file ending postfix, such as '.csv', or '_embedding.csv'",
+        default="_combined.csv",
+        help="file ending postfix, such as '.csv', or '_combined.csv'",
     )
 
     parser.add_argument("-co", "--config_only", action="store_true", help="config only mode, will not run simulator")

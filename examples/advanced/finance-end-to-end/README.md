@@ -363,3 +363,11 @@ Below is the output of last round of training (starting round = 0)
 [9]	eval-auc:0.72318	train-auc:0.72241
 ```
 As shown, GNN embeddings help to promote the model performance by providing extra features beyond the hand-crafted ones.
+
+For model explainability, our XGBoost training code will generate the feature importance plot of the XGBoost model with regard to validation data:
+For normalized data without GNN features, the feature importance plot is shown below:
+![feature_importance](./figures/shap_beeswarm_base.png)
+For normalized data with GNN embeddings, the feature importance plot is shown below:
+![feature_importance](./figures/shap_beeswarm_gnn.png)
+
+As shown, the GNN embeddings provide additional features that are important for the model.
