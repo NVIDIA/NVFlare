@@ -33,7 +33,7 @@ class BaseAppConfig(ABC):
         self.components: Dict[str, object] = {}
         self.ext_scripts = []
         self.ext_dirs = []
-
+        self.file_sources = []
         self.handlers: [FLComponent] = []
 
     def add_component(self, cid: str, component):
@@ -74,3 +74,6 @@ class BaseAppConfig(ABC):
                 if task in fd.tasks:
                     raise RuntimeError(f"Task {task} already defined in the task filters.")
         filters.append((tasks, filter))
+
+    def add_file_source(self, src_path: str, dest_dir=None):
+        self.file_sources.append((src_path, dest_dir))

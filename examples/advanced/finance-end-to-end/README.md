@@ -225,6 +225,8 @@ Please refer to the scripts:
 - [graph_construct.py](./nvflare/graph_construct.py) and [graph_construct_job.py](./nvflare/graph_construct_job.py) for graph construction
 - [gnn_train_encode.py](./nvflare/gnn_train_encode.py) and [gnn_train_encode_job.py](./nvflare/gnn_train_encode_job.py) for GNN training and encoding
 
+The resulting GNN encodings will be merged with the normalized data for enhancing the feature.
+
 ## Step 3: Federated Training of XGBoost
 Now we have enriched / encoded features, the last step is to run federated XGBoost over them. 
 Below is the xgboost job code
@@ -285,7 +287,7 @@ it anywhere in a real deployment.
 
 Assuming you have already downloaded the credit card dataset and the creditcard.csv file is located in the current directory:
 
-* prepare data
+* Prepare data
 ```
 python ./utils/prepare_data.py -i ./creditcard.csv -o /tmp/nvflare/xgb/credit_card
 ```
@@ -302,21 +304,21 @@ python ./utils/prepare_data.py -i ./creditcard.csv -o /tmp/nvflare/xgb/credit_ca
 > * 'XITXUS33_Bank_10' 
 > Total 10 banks
 
-* enrich data
+* Enrich data
 ```
 cd nvflare
 python enrich_job.py -c 'ZNZZAU3M_Bank_8' 'SHSHKHH1_Bank_2' 'FBSFCHZH_Bank_6' 'YMNYFRPP_Bank_5' 'WPUWDEFF_Bank_4' 'YXRXGB22_Bank_3' 'XITXUS33_Bank_10' 'YSYCESMM_Bank_7' 'ZHSZUS33_Bank_1' 'HCBHSGSG_Bank_9' -p enrich.py  -a "-i /tmp/nvflare/xgb/credit_card/ -o /tmp/nvflare/xgb/credit_card/"
 cd ..
 ```
 
-* pre-process data
+* Pre-process data
 ```
 cd nvflare
 python pre_process_job.py -c 'YSYCESMM_Bank_7' 'FBSFCHZH_Bank_6' 'YXRXGB22_Bank_3' 'XITXUS33_Bank_10' 'HCBHSGSG_Bank_9' 'YMNYFRPP_Bank_5' 'ZHSZUS33_Bank_1' 'ZNZZAU3M_Bank_8' 'SHSHKHH1_Bank_2' 'WPUWDEFF_Bank_4' -p pre_process.py -a "-i /tmp/nvflare/xgb/credit_card  -o /tmp/nvflare/xgb/credit_card/"
 cd ..
 ```
 
-* construct graph
+* Construct graph
 ```
 cd nvflare
 python graph_construct_job.py -c 'YSYCESMM_Bank_7' 'FBSFCHZH_Bank_6' 'YXRXGB22_Bank_3' 'XITXUS33_Bank_10' 'HCBHSGSG_Bank_9' 'YMNYFRPP_Bank_5' 'ZHSZUS33_Bank_1' 'ZNZZAU3M_Bank_8' 'SHSHKHH1_Bank_2' 'WPUWDEFF_Bank_4' -p graph_construct.py -a "-i /tmp/nvflare/xgb/credit_card  -o /tmp/nvflare/xgb/credit_card/"
@@ -330,6 +332,10 @@ python gnn_train_encode_job.py -c 'YSYCESMM_Bank_7' 'FBSFCHZH_Bank_6' 'YXRXGB22_
 cd ..
 ```
 
+* Add GNN embeddings to the normalized data
+```
+python3 utils/merge_feat.py
+```
 
 * XGBoost Job 
 
@@ -343,7 +349,7 @@ cd ..
 Below is the output of last round of training (starting round = 0) 
 ```
 ...
-[9]	eval-auc:0.67596	train-auc:0.70582
+[9]	eval-auc:0.69383	train-auc:0.71165
 ```
 For GNN embeddings, we run the following command
 ```
@@ -354,7 +360,14 @@ cd ..
 Below is the output of last round of training (starting round = 0) 
 ```
 ...
-[9]	eval-auc:0.53788	train-auc:0.61659
+[9]	eval-auc:0.72318	train-auc:0.72241
 ```
-For this example, the normalized data performs better than the GNN embeddings. This is expected as the GNN embeddings are produced with randomly generated transactional information, which adds noise to the data.
+As shown, GNN embeddings help to promote the model performance by providing extra features beyond the hand-crafted ones.
 
+For model explainability, our XGBoost training code will generate the feature importance plot of the XGBoost model with regard to validation data:
+For normalized data without GNN features, the feature importance plot is shown below:
+![feature_importance](./figures/shap_beeswarm_base.png)
+For normalized data with GNN embeddings, the feature importance plot is shown below:
+![feature_importance](./figures/shap_beeswarm_gnn.png)
+
+As shown, the GNN embeddings provide additional features that are important for the model.
