@@ -321,7 +321,7 @@ class SnapshotKey(object):
 class RunProcessKey(object):
     LISTEN_PORT = "_listen_port"
     CONNECTION = "_conn"
-    CHILD_PROCESS = "_child_process"
+    JOB_LAUNCHER = "_job_launcher"
     STATUS = "_status"
     JOB_ID = "_job_id"
     PARTICIPANTS = "_participants"

@@ -173,7 +173,7 @@ class JobExecutor(ClientExecutor):
 
         with self.lock:
             self.run_processes[job_id] = {
-                RunProcessKey.CHILD_PROCESS: job_launcher,
+                RunProcessKey.JOB_LAUNCHER: job_launcher,
                 RunProcessKey.STATUS: ClientStatus.STARTING,
             }
 
@@ -317,7 +317,7 @@ class JobExecutor(ClientExecutor):
             if process_status == ClientStatus.STARTED:
                 try:
                     with self.lock:
-                        job_launcher = self.run_processes[job_id][RunProcessKey.CHILD_PROCESS]
+                        job_launcher = self.run_processes[job_id][RunProcessKey.JOB_LAUNCHER]
                     data = {}
                     fqcn = FQCN.join([self.client.client_name, job_id])
                     request = new_cell_message({}, data)
@@ -398,7 +398,7 @@ class JobExecutor(ClientExecutor):
 
     def _wait_child_process_finish(self, client, job_id, allocated_resource, token, resource_manager, workspace):
         self.logger.info(f"run ({job_id}): waiting for child worker process to finish.")
-        job_launcher = self.run_processes.get(job_id, {}).get(RunProcessKey.CHILD_PROCESS)
+        job_launcher = self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_LAUNCHER)
         if job_launcher:
             job_launcher.wait()
 

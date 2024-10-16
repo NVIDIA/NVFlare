@@ -284,7 +284,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
         with self.lock:
             self.run_processes[run_number] = {
-                RunProcessKey.CHILD_PROCESS: process,
+                RunProcessKey.JOB_LAUNCHER: process,
                 RunProcessKey.JOB_ID: job_id,
                 RunProcessKey.PARTICIPANTS: job_clients,
             }
@@ -332,7 +332,7 @@ class ServerEngine(ServerEngineInternalSpec):
             self.logger.info(f"Abort server status: {status_message}")
         except Exception:
             with self.lock:
-                child_process = self.run_processes.get(job_id, {}).get(RunProcessKey.CHILD_PROCESS, None)
+                child_process = self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_LAUNCHER, None)
                 if child_process:
                     child_process.terminate()
         finally:

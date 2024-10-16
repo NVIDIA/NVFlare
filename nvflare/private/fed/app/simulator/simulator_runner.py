@@ -450,7 +450,7 @@ class SimulatorRunner(FLComponent):
             try:
                 self.create_clients()
                 self.server.engine.run_processes[SimulatorConstants.JOB_NAME] = {
-                    RunProcessKey.CHILD_PROCESS: None,
+                    RunProcessKey.JOB_LAUNCHER: None,
                     RunProcessKey.JOB_ID: SimulatorConstants.JOB_NAME,
                     RunProcessKey.PARTICIPANTS: self.server.engine.client_manager.clients,
                 }
