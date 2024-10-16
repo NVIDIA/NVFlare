@@ -103,6 +103,9 @@ class FedApp:
         """
         self.app_config.add_ext_dir(ext_dir)
 
+    def add_file_source(self, src_path: str, dest_dir=None):
+        self.app_config.add_file_source(src_path, dest_dir)
+
     def _add_resource(self, resource: str):
         if not isinstance(resource, str):
             raise ValueError(f"cannot add resource: resource must be a str but got {type(resource)}")
@@ -394,6 +397,20 @@ class FedJob:
         """
         app = self._get_app(ctx)
         app.add_resources(resources)
+
+    def add_file_source(self, src_path: str, dest_dir, ctx: JobCtx):
+        """Add a file source to the job. To be used by job component programmer.
+
+        Args:
+            src_path: path to the source to be added to job.
+            dest_dir: destination path for the source
+            ctx: JobCtx for contextual information.
+
+        Returns:
+
+        """
+        app = self._get_app(ctx)
+        app.add_file_source(src_path, dest_dir)
 
     def to_server(
         self,
