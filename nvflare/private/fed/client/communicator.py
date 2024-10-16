@@ -33,6 +33,7 @@ from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey,
 from nvflare.fuel.f3.cellnet.utils import format_size
 from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, SpecialTaskName, new_cell_message
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
+from nvflare.private.fed.utils.fed_utils import get_scope_prop
 from nvflare.private.fed.utils.identity_utils import IdentityAsserter, IdentityVerifier, load_crt_bytes
 from nvflare.security.logging import secure_format_exception
 
@@ -195,14 +196,20 @@ class Communicator:
         secure_mode = fl_ctx.get_prop(FLContextKey.SECURE_MODE, False)
         if secure_mode:
             # explicitly authenticate with the Server
+            expected_host = None
             server_config = fl_ctx.get_prop(FLContextKey.SERVER_CONFIG)
-            if not server_config:
-                raise RuntimeError(f"missing {FLContextKey.SERVER_CONFIG} in FL Context")
+            if server_config:
+                server0 = server_config[0]
+                expected_host = server0.get("identity")
 
-            server0 = server_config[0]
-            expected_host = server0.get("identity")
             if not expected_host:
-                raise RuntimeError("missing 'identity' in server config")
+                # the provision was done with an old version
+                # to be backward compatible, we expect the host to be the server host we connected to
+                # we get the host name from DataBus!
+                expected_host = get_scope_prop(scope_name=client_name, key=FLContextKey.SERVER_HOST_NAME)
+
+            if not expected_host:
+                raise RuntimeError("cannot determine expected_host")
 
             client_config = fl_ctx.get_prop(FLContextKey.CLIENT_CONFIG)
             if not client_config:

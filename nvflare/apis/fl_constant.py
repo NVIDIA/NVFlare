@@ -180,6 +180,7 @@ class FLContextKey(object):
     NOT_READY_TO_END_RUN = "not_ready_to_end_run__"  # component sets this to indicate it's not ready to end run yet
     CLIENT_CONFIG = "__client_config__"
     SERVER_CONFIG = "__server_config__"
+    SERVER_HOST_NAME = "__server_host_name__"
 
 
 class ReservedTopic(object):
