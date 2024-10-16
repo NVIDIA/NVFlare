@@ -55,7 +55,8 @@ class K8sJobHandle:
             },
             'spec': {
                 'containers': None,  # link to container_list
-                'volumes': None  # link to volume_list
+                'volumes': None,  # link to volume_list
+                'restartPolicy': 'OnFailure'
             }
         }
         self.volume_list = [
@@ -182,8 +183,18 @@ class K8sJobHandle:
 
 
 class K8sJobLauncher(JobLauncherSpec):
-    def __init__(self, config_file_path, namespace='default'):
+    def __init__(self, config_file_path,
+                 root_hostpath: str,
+                 job_image: str,
+                 workspace: str,
+                 mount_path: str,
+                 namespace='default'):
         super().__init__()
+
+        self.root_hostpath = root_hostpath
+        self.job_image = job_image
+        self.workspace = workspace
+        self.mount_path = mount_path
 
         config.load_kube_config(config_file_path)
         try:
@@ -201,17 +212,18 @@ class K8sJobLauncher(JobLauncherSpec):
     def launch_job(self, client, startup, job_id, args, app_custom_folder, target: str, scheme: str,
                    timeout=None) -> bool:
 
-        root_hostpath = "/home/azureuser/wksp/k2k/disk"
-        job_image = "localhost:32000/nvfl-k8s:0.0.1"
+        # root_hostpath = "/home/azureuser/wksp/k2k/disk"
+        # job_image = "localhost:32000/nvfl-k8s:0.0.1"
         job_config = {
             "name": job_id,
-            "image": job_image,
+            "image": self.job_image,
             "container_name": f"container-{job_id}",
-            "volume_mount_list": [{'name':'workspace-nvflare', 'mountPath': '/workspace/nvflare'}],
+            # "volume_mount_list": [{'name':'workspace-nvflare', 'mountPath': '/workspace/nvflare'}],
+            "volume_mount_list": [{'name': self.workspace, 'mountPath': self.mount_path}],
             "volume_list": [{
-                'name': "workspace-nvflare",
+                'name': self.workspace,
                 'hostPath': {
-                    'path': root_hostpath,
+                    'path': self.root_hostpath,
                     'type': 'Directory'
                     }
             }],
