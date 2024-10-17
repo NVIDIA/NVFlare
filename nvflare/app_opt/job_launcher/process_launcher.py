@@ -17,20 +17,47 @@ import shlex
 import subprocess
 import sys
 
-from nvflare.app_opt.job_launcher.job_launcher_spec import JobLauncherSpec
+from nvflare.app_opt.job_launcher.job_launcher_spec import JobLauncherSpec, JobHandleSpec
 from nvflare.private.fed.utils.fed_utils import add_custom_dir_to_path
+
+
+class ProcessHandle(JobHandleSpec):
+    def __init__(self, process):
+        super().__init__()
+
+        self.process = process
+        self.logger = logging.getLogger(self.__class__.__name__)
+
+    def terminate(self):
+        if self.process:
+            try:
+                os.killpg(os.getpgid(self.process.pid), 9)
+                self.logger.debug("kill signal sent")
+            except:
+                pass
+
+            self.process.terminate()
+
+    def poll(self):
+        if self.process:
+            return self.process.poll()
+        else:
+            return None
+
+    def wait(self):
+        if self.process:
+            self.process.wait()
 
 
 class ProcessJobLauncher(JobLauncherSpec):
     def __init__(self):
         super().__init__()
 
-        self.process = None
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def launch_job(
         self, client, startup, job_id, args, app_custom_folder, target: str, scheme: str, timeout=None
-    ) -> bool:
+    ) -> JobHandleSpec:
 
         new_env = os.environ.copy()
         if app_custom_folder != "":
@@ -62,26 +89,9 @@ class ProcessJobLauncher(JobLauncherSpec):
             " --set" + command_options + " print_conf=True"
         )
         # use os.setsid to create new process group ID
-        self.process = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
+        process = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
 
-        self.logger.info("Worker child process ID: {}".format(self.process.pid))
+        self.logger.info("Worker child process ID: {}".format(process.pid))
 
-    def terminate(self):
-        if self.process:
-            try:
-                os.killpg(os.getpgid(self.process.pid), 9)
-                self.logger.debug("kill signal sent")
-            except:
-                pass
+        return ProcessHandle(process)
 
-            self.process.terminate()
-
-    def poll(self):
-        if self.process:
-            return self.process.poll()
-        else:
-            return None
-
-    def wait(self):
-        if self.process:
-            self.process.wait()

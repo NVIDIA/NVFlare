@@ -14,24 +14,9 @@
 from abc import abstractmethod
 
 
-class JobLauncherSpec:
+class JobHandleSpec:
     @abstractmethod
-    def launch_job(
-        self, client, startup, job_id, args, app_custom_folder, target: str, scheme: str, timeout=None
-    ) -> bool:
-        """To launch a job run.
-
-        Args:
-            timeout: the job needs to be started within this timeout. Otherwise failed the job launch.
-                    None means no timeout limit.
-
-        Returns: boolean to indicates the job launch success or fail.
-
-        """
-        raise NotImplemented
-
-    @abstractmethod
-    def terminate(self):
+    def terminate(self, timeout=None):
         """To terminate the job run.
 
         Returns: the job run return code.
@@ -56,3 +41,21 @@ class JobLauncherSpec:
 
         """
         raise NotImplemented
+
+
+class JobLauncherSpec:
+    @abstractmethod
+    def launch_job(
+        self, client, startup, job_id, args, app_custom_folder, target: str, scheme: str, timeout=None
+    ) -> JobHandleSpec:
+        """To launch a job run.
+
+        Args:
+            timeout: the job needs to be started within this timeout. Otherwise failed the job launch.
+                    None means no timeout limit.
+
+        Returns: boolean to indicates the job launch success or fail.
+
+        """
+        raise NotImplemented
+

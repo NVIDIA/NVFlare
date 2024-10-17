@@ -15,7 +15,7 @@ import logging
 import time
 from enum import Enum
 
-from nvflare.app_opt.job_launcher.job_launcher_spec import JobLauncherSpec
+from nvflare.app_opt.job_launcher.job_launcher_spec import JobLauncherSpec, JobHandleSpec
 
 from kubernetes import config
 from kubernetes.client import Configuration
@@ -40,7 +40,7 @@ POD_STATE_MAPPING = {
     }
 
 
-class K8sJobHandle:
+class K8sJobHandle(JobHandleSpec):
     def __init__(self, job_id: str, api_instance: core_v1_api, job_config: dict, namespace='default'):
         super().__init__()
         self.job_id = job_id
@@ -156,17 +156,6 @@ class K8sJobHandle:
     def get_manifest(self):
         return self.pod_manifest
 
-    def abort(self, timeout=None):
-        resp = self.api_instance.delete_namespaced_pod(name=self.job_id, namespace=self.namespace, grace_period_seconds=0)
-        return self.enter_states([JobState.TERMINATED], timeout=timeout)
-
-    def get_state(self):
-        try:
-            resp = self.api_instance.read_namespaced_pod(name=self.job_id, namespace=self.namespace)
-        except ApiException as e:
-            return JobState.UNKNOWN
-        return POD_STATE_MAPPING.get(resp.status.phase, JobState.UNKNOWN)
-
     def enter_states(self, job_states_to_enter: list, timeout=None):
         starting_time = time.time()
         if not isinstance(job_states_to_enter, (list, tuple)):
@@ -174,12 +163,27 @@ class K8sJobHandle:
         if not all([isinstance(js, JobState)] for js in job_states_to_enter):
             raise ValueError(f"expect job_states_to_enter with valid values, but get {job_states_to_enter}")
         while True:
-            job_state = self.get_state()
+            job_state = self.poll()
             if job_state in job_states_to_enter:
                 return True
             elif timeout is not None and time.time()-starting_time>timeout:
                 return False
             time.sleep(1)
+
+    def terminate(self, timeout=None):
+        resp = self.api_instance.delete_namespaced_pod(name=self.job_id, namespace=self.namespace,
+                                                       grace_period_seconds=0)
+        return self.enter_states([JobState.TERMINATED], timeout=timeout)
+
+    def poll(self):
+        try:
+            resp = self.api_instance.read_namespaced_pod(name=self.job_id, namespace=self.namespace)
+        except ApiException as e:
+            return JobState.UNKNOWN
+        return POD_STATE_MAPPING.get(resp.status.phase, JobState.UNKNOWN)
+
+    def wait(self):
+        self.enter_states([JobState.SUCCEEDED, JobState.TERMINATED])
 
 
 class K8sJobLauncher(JobLauncherSpec):
@@ -210,7 +214,7 @@ class K8sJobLauncher(JobLauncherSpec):
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def launch_job(self, client, startup, job_id, args, app_custom_folder, target: str, scheme: str,
-                   timeout=None) -> bool:
+                   timeout=None) -> JobHandleSpec:
 
         # root_hostpath = "/home/azureuser/wksp/k2k/disk"
         # job_image = "localhost:32000/nvfl-k8s:0.0.1"
@@ -244,26 +248,15 @@ class K8sJobLauncher(JobLauncherSpec):
 
         self.logger.info(f"launch job with k8s_launcher. Job_id:{job_id}")
 
-        self.job_handle = K8sJobHandle(job_id, self.core_v1, job_config, namespace=self.namespace)
+        job_handle = K8sJobHandle(job_id, self.core_v1, job_config, namespace=self.namespace)
         try:
-            self.core_v1.create_namespaced_pod(body=self.job_handle.get_manifest(),  namespace=self.namespace)
-            if self.job_handle.enter_states([JobState.RUNNING], timeout=timeout):
-                return True
+            self.core_v1.create_namespaced_pod(body=job_handle.get_manifest(),  namespace=self.namespace)
+            if job_handle.enter_states([JobState.RUNNING], timeout=timeout):
+                return job_handle
             else:
-                return False
+                job_handle.terminate()
+                return None
         except ApiException as e:
-            return False
+            job_handle.terminate()
+            return None
 
-    def terminate(self):
-        if self.job_handle:
-            self.job_handle.abort()
-
-    def poll(self):
-        if self.job_handle:
-            return self.job_handle.get_state()
-        else:
-            return JobState.UNKNOWN
-
-    def wait(self):
-        if self.job_handle:
-            self.job_handle.enter_states([JobState.SUCCEEDED, JobState.TERMINATED])

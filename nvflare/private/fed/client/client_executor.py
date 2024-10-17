@@ -19,6 +19,7 @@ from abc import ABC, abstractmethod
 
 from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey, SystemConfigs
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
+from nvflare.app_opt.job_launcher.job_launcher_spec import JobLauncherSpec
 from nvflare.fuel.common.exit_codes import PROCESS_EXIT_REASON, ProcessExitCode
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
@@ -166,14 +167,14 @@ class JobExecutor(ClientExecutor):
             target: SP target location
             scheme: SP connection scheme
         """
-        job_launcher = self._get_job_launcher(client, job_meta)
-        job_launcher.launch_job(client, self.startup, job_id, args, app_custom_folder, target, scheme)
+        job_launcher: JobLauncherSpec = self._get_job_launcher(client, job_meta)
+        job_handle = job_launcher.launch_job(client, self.startup, job_id, args, app_custom_folder, target, scheme)
 
         client.multi_gpu = False
 
         with self.lock:
             self.run_processes[job_id] = {
-                RunProcessKey.JOB_LAUNCHER: job_launcher,
+                RunProcessKey.JOB_HANDLE: job_handle,
                 RunProcessKey.STATUS: ClientStatus.STARTING,
             }
 
@@ -183,7 +184,7 @@ class JobExecutor(ClientExecutor):
         )
         thread.start()
 
-    def _get_job_launcher(self, client, job_meta: dict):
+    def _get_job_launcher(self, client, job_meta: dict) -> JobLauncherSpec:
         launcher = None
         launcher_map = job_meta.get("launcher_map")
         if launcher_map:
@@ -317,7 +318,7 @@ class JobExecutor(ClientExecutor):
             if process_status == ClientStatus.STARTED:
                 try:
                     with self.lock:
-                        job_launcher = self.run_processes[job_id][RunProcessKey.JOB_LAUNCHER]
+                        job_launcher = self.run_processes[job_id][RunProcessKey.JOB_HANDLE]
                     data = {}
                     fqcn = FQCN.join([self.client.client_name, job_id])
                     request = new_cell_message({}, data)
@@ -398,7 +399,7 @@ class JobExecutor(ClientExecutor):
 
     def _wait_child_process_finish(self, client, job_id, allocated_resource, token, resource_manager, workspace):
         self.logger.info(f"run ({job_id}): waiting for child worker process to finish.")
-        job_launcher = self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_LAUNCHER)
+        job_launcher = self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_HANDLE)
         if job_launcher:
             job_launcher.wait()
 
