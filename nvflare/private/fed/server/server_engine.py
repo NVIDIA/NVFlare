@@ -52,6 +52,7 @@ from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellMsgReturnCode
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message, MsgHeader
+from nvflare.private.aux_runner import AuxMsgTarget
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, RequestHeader, TrainingTopic, new_cell_message
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.private.fed.server.server_state import ServerState
@@ -536,23 +537,63 @@ class ServerEngine(ServerEngineInternalSpec):
         optional: bool = False,
         secure: bool = False,
     ) -> dict:
+        if not target_requests:
+            return {}
+
+        aux_target_reqs = []
+        for name, req in target_requests.items():
+            amt = self._get_aux_msg_target(name)
+            if not amt:
+                self.logger.error(f"unknown AuxMessage target {name}")
+            else:
+                aux_target_reqs.append((amt, req))
+
+        if not aux_target_reqs:
+            return {}
+
         return self.run_manager.aux_runner.multicast_aux_requests(
             topic=topic,
-            target_requests=target_requests,
+            target_requests=aux_target_reqs,
             timeout=timeout,
             fl_ctx=fl_ctx,
             optional=optional,
             secure=secure,
         )
 
+    def _get_aux_msg_target(self, name: str):
+        if name.lower() == "server":
+            return AuxMsgTarget.server_target()
+
+        c = self.get_client_from_name(name)
+        if c:
+            return AuxMsgTarget.client_target(c)
+        else:
+            return None
+
     def send_aux_to_targets(self, targets, topic, request, timeout, fl_ctx, optional, secure):
+        msg_targets = []
         if not targets:
-            targets = []
-            for t in self.get_clients():
-                targets.append(t.name)
-        if targets:
+            # all clients
+            for c in self.get_clients():
+                msg_targets.append(AuxMsgTarget.client_target(c))
+        elif not isinstance(targets, list):
+            raise TypeError(f"invalid targets type {type(targets)}")
+        else:
+            # this is a list of targets: check targets
+            for t in targets:
+                if not isinstance(t, str):
+                    raise TypeError(f"target name must be str but got {type(t)}")
+
+                amt = self._get_aux_msg_target(t)
+                if not amt:
+                    self.logger.error(f"invalid target {t}")
+                    return {}
+                else:
+                    msg_targets.append(amt)
+
+        if msg_targets:
             return self.run_manager.aux_runner.send_aux_request(
-                targets=targets,
+                targets=msg_targets,
                 topic=topic,
                 request=request,
                 timeout=timeout,
@@ -736,8 +777,8 @@ class ServerEngine(ServerEngineInternalSpec):
                 command_name=ServerCommandNames.SHOW_STATS,
                 command_data={},
             )
-        except Exception:
-            self.logger.error(f"Failed to show_stats for JOB: {job_id}")
+        except Exception as ex:
+            self.logger.error(f"Failed to show_stats for JOB: {job_id}: {secure_format_exception(ex)}")
 
         if stats is None:
             stats = {}
@@ -751,8 +792,8 @@ class ServerEngine(ServerEngineInternalSpec):
                 command_name=ServerCommandNames.GET_ERRORS,
                 command_data={},
             )
-        except Exception:
-            self.logger.error(f"Failed to get_errors for JOB: {job_id}")
+        except Exception as ex:
+            self.logger.error(f"Failed to get_errors for JOB: {job_id}: {secure_format_exception(ex)}")
 
         if errors is None:
             errors = {}
@@ -766,8 +807,8 @@ class ServerEngine(ServerEngineInternalSpec):
                 command_name=ServerCommandNames.RESET_ERRORS,
                 command_data={},
             )
-        except Exception:
-            self.logger.error(f"Failed to reset_errors for JOB: {job_id}")
+        except Exception as ex:
+            self.logger.error(f"Failed to reset_errors for JOB: {job_id}: {secure_format_exception(ex)}")
 
         return f"reset the server error stats for job: {job_id}"
 

@@ -178,6 +178,9 @@ class FLContextKey(object):
     FILTER_DIRECTION = "__filter_dir__"
     ROOT_URL = "__root_url__"  # the URL for accessing the FL Server
     NOT_READY_TO_END_RUN = "not_ready_to_end_run__"  # component sets this to indicate it's not ready to end run yet
+    CLIENT_CONFIG = "__client_config__"
+    SERVER_CONFIG = "__server_config__"
+    SERVER_HOST_NAME = "__server_host_name__"
 
 
 class ReservedTopic(object):
@@ -478,6 +481,9 @@ class ConfigVarName:
 
     # client and server: max amount of time to wait for communication cell to be created
     CELL_WAIT_TIMEOUT = "cell_wait_timeout"
+
+    # these vars are set in Server's startup config (fed_server.json)
+    MAX_REG_DURATION = "max_reg_duration"
 
 
 class SystemVarName:
