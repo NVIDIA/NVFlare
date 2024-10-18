@@ -168,7 +168,7 @@ class JobExecutor(ClientExecutor):
             scheme: SP connection scheme
         """
         job_launcher: JobLauncherSpec = self._get_job_launcher(client, job_meta)
-        job_handle = job_launcher.launch_job(job_id, None, client, self.startup, args, app_custom_folder, target,
+        job_handle = job_launcher.launch_job(job_id, job_meta, client, self.startup, args, app_custom_folder, target,
                                              scheme)
 
         client.multi_gpu = False
@@ -192,7 +192,7 @@ class JobExecutor(ClientExecutor):
             launcher = engine.get_component("image_launcher")
             if not launcher:
                 raise RuntimeError("There's no image job launcher defined.")
-            self.logger.info(f"Launch job with job launcher: {type(launcher)}")
+            self.logger.info(f"Launch job image: {launch_image}  with job launcher: {type(launcher)} ")
         else:
             launcher = ProcessJobLauncher()
             self.logger.info("Launch job with ProcessJobLauncher.")
