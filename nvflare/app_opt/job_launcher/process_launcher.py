@@ -17,7 +17,7 @@ import shlex
 import subprocess
 import sys
 
-from nvflare.app_opt.job_launcher.job_launcher_spec import JobLauncherSpec, JobHandleSpec
+from nvflare.app_opt.job_launcher.job_launcher_spec import JobHandleSpec, JobLauncherSpec
 from nvflare.private.fed.utils.fed_utils import add_custom_dir_to_path
 
 
@@ -55,7 +55,9 @@ class ProcessJobLauncher(JobLauncherSpec):
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def launch_job(self, job_id, job_meta, client, startup, args, app_custom_folder, target: str, scheme: str) -> JobHandleSpec:
+    def launch_job(
+        self, job_id, job_meta, client, startup, args, app_custom_folder, target: str, scheme: str
+    ) -> JobHandleSpec:
 
         new_env = os.environ.copy()
         if app_custom_folder != "":
@@ -92,4 +94,3 @@ class ProcessJobLauncher(JobLauncherSpec):
         self.logger.info("Worker child process ID: {}".format(process.pid))
 
         return ProcessHandle(process)
-

@@ -18,7 +18,7 @@ from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs import Decomposer
 from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.fobs import register_custom_folder
-from nvflare.private.fed.utils.fed_utils import extract_participants, extract_job_image
+from nvflare.private.fed.utils.fed_utils import extract_job_image, extract_participants
 
 
 class ExampleTestClass:
@@ -64,31 +64,18 @@ class TestFedUtils:
         assert results == expected
 
     def test_extract_participants_with_image(self):
-        participants = ["site-1", "site-2",
-                        {
-                            "sites": ["site-3", "site-4"],
-                            "image": "image1"
-                        },
-                        {
-                            "sites": ["site-5"],
-                            "image": "image2"
-                        }
-                        ]
+        participants = [
+            "site-1",
+            "site-2",
+            {"sites": ["site-3", "site-4"], "image": "image1"},
+            {"sites": ["site-5"], "image": "image2"},
+        ]
         results = extract_participants(participants)
         expected = ["site-1", "site-2", "site-3", "site-4", "site-5"]
         assert results == expected
 
     def test_extract_job_image(self):
-        job_meta = {
-                      "deploy_map": {
-                      "app": [ "site-1", "site-2",
-                        {
-                        "sites": ["site-3", "site-4"],
-                        "image": "image1"
-                        }
-                      ]
-                    }
-            }
+        job_meta = {"deploy_map": {"app": ["site-1", "site-2", {"sites": ["site-3", "site-4"], "image": "image1"}]}}
         result = extract_job_image(job_meta, "site-3")
         expected = "image1"
         assert result == expected
@@ -97,12 +84,7 @@ class TestFedUtils:
         expected = None
         assert result == expected
 
-        job_meta = {
-                      "deploy_map": {
-                      "app": [ "site-1", "site-2"
-                      ]
-                    }
-            }
+        job_meta = {"deploy_map": {"app": ["site-1", "site-2"]}}
         result = extract_job_image(job_meta, "site-1")
         expected = None
         assert result == expected

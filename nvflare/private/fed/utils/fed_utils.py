@@ -415,7 +415,6 @@ def extract_participants(participants_list):
 
 
 def extract_job_image(job_meta, site_name):
-    # job_image = "localhost:32000/nvfl-k8s:0.0.1"
     deploy_map = job_meta.get(JobMetaKey.DEPLOY_MAP, {})
     for _, participants in deploy_map.items():
         for item in participants:

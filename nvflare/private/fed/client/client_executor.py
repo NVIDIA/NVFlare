@@ -20,15 +20,15 @@ from abc import ABC, abstractmethod
 from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey, SystemConfigs
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 from nvflare.app_opt.job_launcher.job_launcher_spec import JobLauncherSpec
+from nvflare.app_opt.job_launcher.process_launcher import ProcessJobLauncher
 from nvflare.fuel.common.exit_codes import PROCESS_EXIT_REASON, ProcessExitCode
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey, new_cell_message
-from nvflare.private.fed.utils.fed_utils import get_return_code, extract_job_image
+from nvflare.private.fed.utils.fed_utils import extract_job_image, get_return_code
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
-from nvflare.app_opt.job_launcher.process_launcher import ProcessJobLauncher
 from .client_status import ClientStatus, get_status_message
 
 
@@ -168,8 +168,9 @@ class JobExecutor(ClientExecutor):
             scheme: SP connection scheme
         """
         job_launcher: JobLauncherSpec = self._get_job_launcher(client, job_meta)
-        job_handle = job_launcher.launch_job(job_id, job_meta, client, self.startup, args, app_custom_folder, target,
-                                             scheme)
+        job_handle = job_launcher.launch_job(
+            job_id, job_meta, client, self.startup, args, app_custom_folder, target, scheme
+        )
 
         client.multi_gpu = False
 
@@ -366,15 +367,6 @@ class JobExecutor(ClientExecutor):
                 break
 
             time.sleep(0.05)  # we want to quickly check
-
-        # # kill the sub-process group directly
-        # if not done:
-        #     self.logger.debug(f"still not done after {max_wait} secs")
-        #     try:
-        #         os.killpg(os.getpgid(child_process.pid), 9)
-        #         self.logger.debug("kill signal sent")
-        #     except:
-        #         pass
 
         child_process.terminate()
         self.logger.info(f"run ({job_id}): child worker process terminated")

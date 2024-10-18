@@ -45,7 +45,9 @@ class JobHandleSpec:
 
 class JobLauncherSpec:
     @abstractmethod
-    def launch_job(self, job_id, job_meta, client, startup, args, app_custom_folder, target: str, scheme: str) -> JobHandleSpec:
+    def launch_job(
+        self, job_id, job_meta, client, startup, args, app_custom_folder, target: str, scheme: str
+    ) -> JobHandleSpec:
         """To launch a job run.
 
         Args:
@@ -55,4 +57,3 @@ class JobLauncherSpec:
 
         """
         raise NotImplemented
-

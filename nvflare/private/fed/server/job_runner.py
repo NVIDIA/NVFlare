@@ -35,7 +35,7 @@ from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import check_client_replies
 from nvflare.private.fed.server.server_state import HotState
 from nvflare.private.fed.utils.app_deployer import AppDeployer
-from nvflare.private.fed.utils.fed_utils import set_message_security_data, extract_participants
+from nvflare.private.fed.utils.fed_utils import extract_participants, set_message_security_data
 from nvflare.security.logging import secure_format_exception
 
 
