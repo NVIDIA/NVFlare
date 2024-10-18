@@ -25,7 +25,7 @@ from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey, new_cell_message
-from nvflare.private.fed.utils.fed_utils import get_return_code
+from nvflare.private.fed.utils.fed_utils import get_return_code, extract_job_image
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from nvflare.app_opt.job_launcher.process_launcher import ProcessJobLauncher
@@ -186,14 +186,11 @@ class JobExecutor(ClientExecutor):
         thread.start()
 
     def _get_job_launcher(self, client, job_meta: dict) -> JobLauncherSpec:
-        launcher = None
-        launcher_map = job_meta.get("launcher_map")
-        if launcher_map:
-            for launcher_id, sites in launcher_map.items():
-                if client.client_name in sites:
-                    engine = client.engine
-                    launcher = engine.get_component(launcher_id)
-        if not launcher:
+        launch_image = extract_job_image(job_meta, client)
+        if launch_image:
+            engine = client.engine
+            launcher = engine.get_component("image_launcher")
+        else:
             launcher = ProcessJobLauncher()
         return launcher
 

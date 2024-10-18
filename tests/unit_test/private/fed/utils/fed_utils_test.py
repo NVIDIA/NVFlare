@@ -92,3 +92,7 @@ class TestFedUtils:
         result = extract_job_image(job_meta, "site-3")
         expected = "image1"
         assert result == expected
+
+        result = extract_job_image(job_meta, "site-1")
+        expected = None
+        assert result == expected
