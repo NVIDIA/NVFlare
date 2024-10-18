@@ -190,8 +190,12 @@ class JobExecutor(ClientExecutor):
         if launch_image:
             engine = client.engine
             launcher = engine.get_component("image_launcher")
+            if not launcher:
+                raise RuntimeError("There's no image job launcher defined.")
+            self.logger.info(f"Launch job with job launcher: {type(launcher)}")
         else:
             launcher = ProcessJobLauncher()
+            self.logger.info("Launch job with ProcessJobLauncher.")
         return launcher
 
     def notify_job_status(self, job_id, job_status):
