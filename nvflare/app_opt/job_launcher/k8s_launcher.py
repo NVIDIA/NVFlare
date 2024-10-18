@@ -219,7 +219,8 @@ class K8sJobLauncher(JobLauncherSpec):
 
         # root_hostpath = "/home/azureuser/wksp/k2k/disk"
         # job_image = "localhost:32000/nvfl-k8s:0.0.1"
-        job_image = extract_job_image(job_meta, client)
+        self.logger.info(f"K8sJobLauncher start to launch job: {job_id} for client: {client.client_name}")
+        job_image = extract_job_image(job_meta, client.client_name)
         self.logger.info(f"launch job use image: {job_image}")
         job_config = {
             "name": job_id,

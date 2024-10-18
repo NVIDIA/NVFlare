@@ -96,3 +96,13 @@ class TestFedUtils:
         result = extract_job_image(job_meta, "site-1")
         expected = None
         assert result == expected
+
+        job_meta = {
+                      "deploy_map": {
+                      "app": [ "site-1", "site-2"
+                      ]
+                    }
+            }
+        result = extract_job_image(job_meta, "site-1")
+        expected = None
+        assert result == expected
