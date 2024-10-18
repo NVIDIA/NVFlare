@@ -55,9 +55,7 @@ class ProcessJobLauncher(JobLauncherSpec):
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def launch_job(
-        self, client, startup, job_id, args, app_custom_folder, target: str, scheme: str, timeout=None
-    ) -> JobHandleSpec:
+    def launch_job(self, job_id, job_meta, client, startup, args, app_custom_folder, target: str, scheme: str) -> JobHandleSpec:
 
         new_env = os.environ.copy()
         if app_custom_folder != "":

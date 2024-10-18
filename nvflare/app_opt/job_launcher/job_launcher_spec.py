@@ -45,14 +45,11 @@ class JobHandleSpec:
 
 class JobLauncherSpec:
     @abstractmethod
-    def launch_job(
-        self, client, startup, job_id, args, app_custom_folder, target: str, scheme: str, timeout=None
-    ) -> JobHandleSpec:
+    def launch_job(self, job_id, job_meta, client, startup, args, app_custom_folder, target: str, scheme: str) -> JobHandleSpec:
         """To launch a job run.
 
         Args:
-            timeout: the job needs to be started within this timeout. Otherwise failed the job launch.
-                    None means no timeout limit.
+            job_meta:
 
         Returns: boolean to indicates the job launch success or fail.
 

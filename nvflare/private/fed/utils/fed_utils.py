@@ -399,3 +399,28 @@ def add_custom_dir_to_path(app_custom_folder, new_env):
         new_env[SystemVarName.PYTHONPATH] = path + os.pathsep + app_custom_folder
     else:
         new_env[SystemVarName.PYTHONPATH] = app_custom_folder
+
+
+def extract_participants(participants_list):
+    participants = []
+    for item in participants_list:
+        if isinstance(item, str):
+            participants.append(item)
+        elif isinstance(item, dict):
+            sites = item.get("sites")
+            participants.extend(sites)
+        else:
+            raise ValueError(f"Must be tye of str or dict, but got {type(item)}")
+    return participants
+
+
+def extract_job_image(job_meta, site_name):
+    # job_image = "localhost:32000/nvfl-k8s:0.0.1"
+    deploy_map = job_meta.get(JobMetaKey.DEPLOY_MAP, {})
+    for _, participants in deploy_map.items():
+        for item in participants:
+            if isinstance(item, dict):
+                sites = item.get("sites")
+                if site_name in sites:
+                    return item.get("image")
+    return None

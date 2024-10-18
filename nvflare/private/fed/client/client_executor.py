@@ -168,7 +168,8 @@ class JobExecutor(ClientExecutor):
             scheme: SP connection scheme
         """
         job_launcher: JobLauncherSpec = self._get_job_launcher(client, job_meta)
-        job_handle = job_launcher.launch_job(client, self.startup, job_id, args, app_custom_folder, target, scheme)
+        job_handle = job_launcher.launch_job(job_id, None, client, self.startup, args, app_custom_folder, target,
+                                             scheme)
 
         client.multi_gpu = False
 

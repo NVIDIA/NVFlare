@@ -22,6 +22,8 @@ from kubernetes.client import Configuration
 from kubernetes.client.api import core_v1_api
 from kubernetes.client.rest import ApiException
 
+from nvflare.private.fed.utils.fed_utils import extract_job_image
+
 
 class JobState(Enum):
     STARTING = "starting"
@@ -189,16 +191,16 @@ class K8sJobHandle(JobHandleSpec):
 class K8sJobLauncher(JobLauncherSpec):
     def __init__(self, config_file_path,
                  root_hostpath: str,
-                 job_image: str,
                  workspace: str,
                  mount_path: str,
+                 launch_timeout=None,
                  namespace='default'):
         super().__init__()
 
         self.root_hostpath = root_hostpath
-        self.job_image = job_image
         self.workspace = workspace
         self.mount_path = mount_path
+        self.launch_timeout = launch_timeout
 
         config.load_kube_config(config_file_path)
         try:
@@ -213,14 +215,14 @@ class K8sJobLauncher(JobLauncherSpec):
         self.job_handle = None
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def launch_job(self, client, startup, job_id, args, app_custom_folder, target: str, scheme: str,
-                   timeout=None) -> JobHandleSpec:
+    def launch_job(self, job_id, job_meta, client, startup, args, app_custom_folder, target: str, scheme: str) -> JobHandleSpec:
 
         # root_hostpath = "/home/azureuser/wksp/k2k/disk"
         # job_image = "localhost:32000/nvfl-k8s:0.0.1"
+        job_image = extract_job_image(job_meta, client)
         job_config = {
             "name": job_id,
-            "image": self.job_image,
+            "image": job_image,
             "container_name": f"container-{job_id}",
             # "volume_mount_list": [{'name':'workspace-nvflare', 'mountPath': '/workspace/nvflare'}],
             "volume_mount_list": [{'name': self.workspace, 'mountPath': self.mount_path}],
@@ -251,7 +253,7 @@ class K8sJobLauncher(JobLauncherSpec):
         job_handle = K8sJobHandle(job_id, self.core_v1, job_config, namespace=self.namespace)
         try:
             self.core_v1.create_namespaced_pod(body=job_handle.get_manifest(),  namespace=self.namespace)
-            if job_handle.enter_states([JobState.RUNNING], timeout=timeout):
+            if job_handle.enter_states([JobState.RUNNING], timeout=self.launch_timeout):
                 return job_handle
             else:
                 job_handle.terminate()
