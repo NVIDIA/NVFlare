@@ -186,7 +186,7 @@ class JobExecutor(ClientExecutor):
         thread.start()
 
     def _get_job_launcher(self, client, job_meta: dict) -> JobLauncherSpec:
-        launch_image = extract_job_image(job_meta, client)
+        launch_image = extract_job_image(job_meta, client.client_name)
         if launch_image:
             engine = client.engine
             launcher = engine.get_component("image_launcher")
