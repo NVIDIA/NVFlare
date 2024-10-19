@@ -16,7 +16,7 @@ from abc import abstractmethod
 
 class JobHandleSpec:
     @abstractmethod
-    def terminate(self, timeout=None):
+    def terminate(self):
         """To terminate the job run.
 
         Returns: the job run return code.

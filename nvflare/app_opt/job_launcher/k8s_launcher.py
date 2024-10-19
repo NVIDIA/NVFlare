@@ -42,9 +42,10 @@ POD_STATE_MAPPING = {
 
 
 class K8sJobHandle(JobHandleSpec):
-    def __init__(self, job_id: str, api_instance: core_v1_api, job_config: dict, namespace="default"):
+    def __init__(self, job_id: str, api_instance: core_v1_api, job_config: dict, namespace="default", timeout=None):
         super().__init__()
         self.job_id = job_id
+        self.timeout = timeout
 
         self.api_instance = api_instance
         self.namespace = namespace
@@ -152,11 +153,11 @@ class K8sJobHandle(JobHandleSpec):
                 return False
             time.sleep(1)
 
-    def terminate(self, timeout=None):
+    def terminate(self):
         resp = self.api_instance.delete_namespaced_pod(
             name=self.job_id, namespace=self.namespace, grace_period_seconds=0
         )
-        return self.enter_states([JobState.TERMINATED], timeout=timeout)
+        return self.enter_states([JobState.TERMINATED], timeout=self.timeout)
 
     def poll(self):
         try:
@@ -176,7 +177,7 @@ class K8sJobLauncher(JobLauncherSpec):
         root_hostpath: str,
         workspace: str,
         mount_path: str,
-        launch_timeout=None,
+        timeout=None,
         namespace="default",
     ):
         super().__init__()
@@ -184,7 +185,7 @@ class K8sJobLauncher(JobLauncherSpec):
         self.root_hostpath = root_hostpath
         self.workspace = workspace
         self.mount_path = mount_path
-        self.launch_timeout = launch_timeout
+        self.timeout = timeout
 
         config.load_kube_config(config_file_path)
         try:
@@ -232,10 +233,10 @@ class K8sJobLauncher(JobLauncherSpec):
 
         self.logger.info(f"launch job with k8s_launcher. Job_id:{job_id}")
 
-        job_handle = K8sJobHandle(job_id, self.core_v1, job_config, namespace=self.namespace)
+        job_handle = K8sJobHandle(job_id, self.core_v1, job_config, namespace=self.namespace, timeout=self.timeout)
         try:
             self.core_v1.create_namespaced_pod(body=job_handle.get_manifest(), namespace=self.namespace)
-            if job_handle.enter_states([JobState.RUNNING], timeout=self.launch_timeout):
+            if job_handle.enter_states([JobState.RUNNING], timeout=self.timeout):
                 return job_handle
             else:
                 job_handle.terminate()
