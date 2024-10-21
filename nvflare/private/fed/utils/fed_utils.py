@@ -26,7 +26,8 @@ from nvflare.apis.app_validation import AppValidator
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLContext
-from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, FLMetaKey, SiteType, SystemVarName, WorkspaceConstants
+from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, FLMetaKey, SiteType, SystemVarName, \
+    WorkspaceConstants, JobConstants
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.utils.decomposers import flare_decomposers
@@ -407,7 +408,7 @@ def extract_participants(participants_list):
         if isinstance(item, str):
             participants.append(item)
         elif isinstance(item, dict):
-            sites = item.get("sites")
+            sites = item.get(JobConstants.SITES)
             participants.extend(sites)
         else:
             raise ValueError(f"Must be tye of str or dict, but got {type(item)}")
@@ -419,7 +420,7 @@ def extract_job_image(job_meta, site_name):
     for _, participants in deploy_map.items():
         for item in participants:
             if isinstance(item, dict):
-                sites = item.get("sites")
+                sites = item.get(JobConstants.SITES)
                 if site_name in sites:
-                    return item.get("image")
+                    return item.get(JobConstants.JOB_IMAGE)
     return None

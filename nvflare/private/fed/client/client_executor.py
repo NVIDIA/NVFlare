@@ -17,7 +17,7 @@ import threading
 import time
 from abc import ABC, abstractmethod
 
-from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey, SystemConfigs
+from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey, SystemConfigs, SystemComponents
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 from nvflare.app_opt.job_launcher.job_launcher_spec import JobLauncherSpec
 from nvflare.app_opt.job_launcher.process_launcher import ProcessJobLauncher
@@ -190,7 +190,7 @@ class JobExecutor(ClientExecutor):
         launch_image = extract_job_image(job_meta, client.client_name)
         if launch_image:
             engine = client.engine
-            launcher = engine.get_component("image_launcher")
+            launcher = engine.get_component(SystemComponents.IMAGE_LAUNCHER)
             if not launcher:
                 raise RuntimeError("There's no image job launcher defined.")
             self.logger.info(f"Launch job image: {launch_image}  with job launcher: {type(launcher)} ")

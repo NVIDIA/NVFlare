@@ -346,6 +346,7 @@ class SystemComponents(object):
     JOB_META_VALIDATOR = "job_meta_validator"
     FED_CLIENT = "fed_client"
     RUN_MANAGER = "run_manager"
+    IMAGE_LAUNCHER = "image_launcher"
 
 
 class JobConstants:
@@ -353,6 +354,8 @@ class JobConstants:
     CLIENT_JOB_CONFIG = "config_fed_client.json"
     META_FILE = "meta.json"
     META = "meta"
+    SITES = "sites"
+    JOB_IMAGE = "image"
 
 
 class WorkspaceConstants:
