@@ -18,6 +18,7 @@ import time
 from abc import ABC, abstractmethod
 
 from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey, SystemConfigs, SystemComponents
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 from nvflare.app_opt.job_launcher.job_launcher_spec import JobLauncherSpec
 from nvflare.app_opt.job_launcher.process_launcher import ProcessJobLauncher
@@ -44,8 +45,7 @@ class ClientExecutor(ABC):
         allocated_resource,
         token,
         resource_manager,
-        target: str,
-        scheme: str,
+        fl_ctx: FLContext
     ):
         """Starts the client app.
 
@@ -57,8 +57,7 @@ class ClientExecutor(ABC):
             allocated_resource: allocated resources
             token: token from resource manager
             resource_manager: resource manager
-            target: SP target location
-            scheme: SP target connection scheme
+            fl_ctx: FLContext
         """
         pass
 
@@ -150,8 +149,7 @@ class JobExecutor(ClientExecutor):
         allocated_resource,
         token,
         resource_manager: ResourceManagerSpec,
-        target: str,
-        scheme: str,
+        fl_ctx: FLContext
     ):
         """Starts the app.
 
@@ -164,12 +162,12 @@ class JobExecutor(ClientExecutor):
             allocated_resource: allocated resources
             token: token from resource manager
             resource_manager: resource manager
-            target: SP target location
-            scheme: SP connection scheme
+            fl_ctx: FLContext
         """
+
         job_launcher: JobLauncherSpec = self._get_job_launcher(client, job_meta)
         job_handle = job_launcher.launch_job(
-            job_id, job_meta, client, self.startup, args, app_custom_folder, target, scheme
+            job_id, job_meta, fl_ctx
         )
 
         client.multi_gpu = False

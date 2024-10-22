@@ -160,6 +160,8 @@ class FLContextKey(object):
     AUTHORIZATION_REASON = "_authorization_reason"
     DISCONNECTED_CLIENT_NAME = "_disconnected_client_name"
     RECONNECTED_CLIENT_NAME = "_reconnected_client_name"
+    SERVER_CONFIG = "_server_config"
+    SITE_OBJ = "_site_obj_"
 
     CLIENT_REGISTER_DATA = "_client_register_data"
     SECURITY_ITEMS = "_security_items"
@@ -177,6 +179,7 @@ class FLContextKey(object):
     CONFIG_CTX = "__config_ctx__"
     FILTER_DIRECTION = "__filter_dir__"
     ROOT_URL = "__root_url__"  # the URL for accessing the FL Server
+    INTERNAL_URL = "__internal_url__"
     NOT_READY_TO_END_RUN = "not_ready_to_end_run__"  # component sets this to indicate it's not ready to end run yet
 
 

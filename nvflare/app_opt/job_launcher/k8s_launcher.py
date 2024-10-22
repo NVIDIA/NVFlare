@@ -20,6 +20,9 @@ from kubernetes.client import Configuration
 from kubernetes.client.api import core_v1_api
 from kubernetes.client.rest import ApiException
 
+from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.job_launcher_spec import JobHandleSpec, JobLauncherSpec
 from nvflare.private.fed.utils.fed_utils import extract_job_image
 
@@ -201,8 +204,12 @@ class K8sJobLauncher(JobLauncherSpec):
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def launch_job(
-        self, job_id, job_meta, client, startup, args, app_custom_folder, target: str, scheme: str
+        self, job_id: str, job_meta: dict, fl_ctx: FLContext
     ) -> JobHandleSpec:
+
+        workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        args = fl_ctx.get_prop(FLContextKey.ARGS)
+        client = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
 
         # root_hostpath = "/home/azureuser/wksp/k2k/disk"
         # job_image = "localhost:32000/nvfl-k8s:0.0.1"
@@ -218,14 +225,14 @@ class K8sJobLauncher(JobLauncherSpec):
             "volume_list": [{"name": self.workspace, "hostPath": {"path": self.root_hostpath, "type": "Directory"}}],
             "module_args": {
                 "-m": args.workspace,
-                "-w": startup,
+                "-w": (workspace_obj.get_startup_kit_dir()),
                 "-t": client.token,
                 "-d": client.ssid,
                 "-n": job_id,
                 "-c": client.client_name,
                 "-p": "tcp://parent-pod:8004",
-                "-g": target,
-                "-scheme": scheme,
+                "-g": fl_ctx.get_prop(FLContextKey.SERVER_CONFIG).get("target"),
+                "-scheme": fl_ctx.get_prop(FLContextKey.SERVER_CONFIG).get("scheme", "grpc"),
                 "-s": "fed_client.json",
             },
             "set_list": args.set,

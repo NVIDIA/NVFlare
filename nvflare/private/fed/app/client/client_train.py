@@ -108,8 +108,13 @@ def main(args):
             time.sleep(1.0)
 
         with client_engine.new_context() as fl_ctx:
-            fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
             client_engine.fire_event(EventType.SYSTEM_BOOTSTRAP, fl_ctx)
+
+            fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
+            server_config = list(federated_client.servers.values())[0]
+            fl_ctx.set_prop(FLContextKey.SERVER_CONFIG, server_config, private=True, sticky=True)
+            fl_ctx.set_prop(FLContextKey.ARGS, args, private=True, sticky=True)
+            fl_ctx.set_prop(FLContextKey.SITE_OBJ, federated_client, private=True, sticky=True)
 
             component_security_check(fl_ctx)
 

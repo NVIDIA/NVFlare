@@ -13,6 +13,8 @@
 # limitations under the License.
 from abc import abstractmethod
 
+from nvflare.apis.fl_context import FLContext
+
 
 class JobHandleSpec:
     @abstractmethod
@@ -46,12 +48,14 @@ class JobHandleSpec:
 class JobLauncherSpec:
     @abstractmethod
     def launch_job(
-        self, job_id, job_meta, client, startup, args, app_custom_folder, target: str, scheme: str
+        self, job_id: str, job_meta: dict, fl_ctx: FLContext
     ) -> JobHandleSpec:
         """To launch a job run.
 
         Args:
-            job_meta:
+            job_id: job_id
+            job_meta: meta data for the job
+            fl_ctx: FLContext
 
         Returns: boolean to indicates the job launch success or fail.
 

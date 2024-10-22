@@ -161,7 +161,6 @@ class ClientEngine(ClientEngineInternalSpec):
 
         self.logger.info("Starting client app. rank: {}".format(self.rank))
 
-        server_config = list(self.client.servers.values())[0]
         self.client_executor.start_app(
             self.client,
             job_id,
@@ -171,8 +170,7 @@ class ClientEngine(ClientEngineInternalSpec):
             allocated_resource,
             token,
             resource_manager,
-            target=server_config["target"],
-            scheme=server_config.get("scheme", "grpc"),
+            fl_ctx=self.new_context()
         )
 
         return "Start the client app..."
