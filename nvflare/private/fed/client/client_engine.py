@@ -170,7 +170,7 @@ class ClientEngine(ClientEngineInternalSpec):
             allocated_resource,
             token,
             resource_manager,
-            fl_ctx=self.new_context()
+            fl_ctx=self.new_context(),
         )
 
         return "Start the client app..."

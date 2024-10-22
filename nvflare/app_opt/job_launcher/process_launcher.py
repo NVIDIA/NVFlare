@@ -17,7 +17,7 @@ import shlex
 import subprocess
 import sys
 
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.job_launcher_spec import JobHandleSpec, JobLauncherSpec
@@ -58,14 +58,13 @@ class ProcessJobLauncher(JobLauncherSpec):
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def launch_job(
-        self, job_id: str, job_meta: dict, fl_ctx: FLContext
-    ) -> JobHandleSpec:
+    def launch_job(self, launch_data: dict, fl_ctx: FLContext) -> JobHandleSpec:
 
         new_env = os.environ.copy()
         workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         args = fl_ctx.get_prop(FLContextKey.ARGS)
         client = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
+        job_id = launch_data.get(JobConstants.JOB_ID)
 
         app_custom_folder = workspace_obj.get_app_custom_dir(job_id)
         if app_custom_folder != "":
@@ -75,26 +74,26 @@ class ProcessJobLauncher(JobLauncherSpec):
         for t in args.set:
             command_options += " " + t
         command = (
-                f"{sys.executable} -m nvflare.private.fed.app.client.worker_process -m "
-                + args.workspace
-                + " -w "
-                + (workspace_obj.get_startup_kit_dir())
-                + " -t "
-                + client.token
-                + " -d "
-                + client.ssid
-                + " -n "
-                + job_id
-                + " -c "
-                + client.client_name
-                + " -p "
-                + str(client.cell.get_internal_listener_url())
-                + " -g "
-                + fl_ctx.get_prop(FLContextKey.SERVER_CONFIG).get("target")
-                + " -scheme "
-                + fl_ctx.get_prop(FLContextKey.SERVER_CONFIG).get("scheme", "grpc")
-                + " -s fed_client.json "
-                  " --set" + command_options + " print_conf=True"
+            f"{sys.executable} -m nvflare.private.fed.app.client.worker_process -m "
+            + args.workspace
+            + " -w "
+            + (workspace_obj.get_startup_kit_dir())
+            + " -t "
+            + client.token
+            + " -d "
+            + client.ssid
+            + " -n "
+            + job_id
+            + " -c "
+            + client.client_name
+            + " -p "
+            + str(client.cell.get_internal_listener_url())
+            + " -g "
+            + fl_ctx.get_prop(FLContextKey.SERVER_CONFIG).get("target")
+            + " -scheme "
+            + fl_ctx.get_prop(FLContextKey.SERVER_CONFIG).get("scheme", "grpc")
+            + " -s fed_client.json "
+            " --set" + command_options + " print_conf=True"
         )
         # use os.setsid to create new process group ID
         process = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
@@ -102,3 +101,10 @@ class ProcessJobLauncher(JobLauncherSpec):
         self.logger.info("Worker child process ID: {}".format(process.pid))
 
         return ProcessHandle(process)
+
+    def can_launch(self, launch_data: dict) -> bool:
+        job_image = launch_data.get(JobConstants.JOB_IMAGE)
+        if job_image:
+            return False
+        else:
+            return True

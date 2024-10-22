@@ -20,7 +20,7 @@ from kubernetes.client import Configuration
 from kubernetes.client.api import core_v1_api
 from kubernetes.client.rest import ApiException
 
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.job_launcher_spec import JobHandleSpec, JobLauncherSpec
@@ -180,6 +180,7 @@ class K8sJobLauncher(JobLauncherSpec):
         root_hostpath: str,
         workspace: str,
         mount_path: str,
+        supported_images: [str] = None,
         timeout=None,
         namespace="default",
     ):
@@ -189,6 +190,7 @@ class K8sJobLauncher(JobLauncherSpec):
         self.workspace = workspace
         self.mount_path = mount_path
         self.timeout = timeout
+        self.supported_images = supported_images
 
         config.load_kube_config(config_file_path)
         try:
@@ -203,18 +205,17 @@ class K8sJobLauncher(JobLauncherSpec):
         self.job_handle = None
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def launch_job(
-        self, job_id: str, job_meta: dict, fl_ctx: FLContext
-    ) -> JobHandleSpec:
+    def launch_job(self, launch_data: dict, fl_ctx: FLContext) -> JobHandleSpec:
 
         workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         args = fl_ctx.get_prop(FLContextKey.ARGS)
         client = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
+        job_id = launch_data.get(JobConstants.JOB_ID)
 
         # root_hostpath = "/home/azureuser/wksp/k2k/disk"
         # job_image = "localhost:32000/nvfl-k8s:0.0.1"
         self.logger.info(f"K8sJobLauncher start to launch job: {job_id} for client: {client.client_name}")
-        job_image = extract_job_image(job_meta, client.client_name)
+        job_image = launch_data.get(JobConstants.JOB_IMAGE)
         self.logger.info(f"launch job use image: {job_image}")
         job_config = {
             "name": job_id,
@@ -251,3 +252,10 @@ class K8sJobLauncher(JobLauncherSpec):
         except ApiException as e:
             job_handle.terminate()
             return None
+
+    def can_launch(self, launch_data: dict) -> bool:
+        job_image = launch_data.get(JobConstants.JOB_IMAGE)
+        if job_image in self.supported_images:
+            return True
+        else:
+            return False

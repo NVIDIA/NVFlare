@@ -17,7 +17,7 @@ import threading
 import time
 from abc import ABC, abstractmethod
 
-from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey, SystemConfigs, SystemComponents
+from nvflare.apis.fl_constant import AdminCommandNames, JobConstants, RunProcessKey, SystemComponents, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 from nvflare.app_opt.job_launcher.job_launcher_spec import JobLauncherSpec
@@ -45,7 +45,7 @@ class ClientExecutor(ABC):
         allocated_resource,
         token,
         resource_manager,
-        fl_ctx: FLContext
+        fl_ctx: FLContext,
     ):
         """Starts the client app.
 
@@ -149,7 +149,7 @@ class JobExecutor(ClientExecutor):
         allocated_resource,
         token,
         resource_manager: ResourceManagerSpec,
-        fl_ctx: FLContext
+        fl_ctx: FLContext,
     ):
         """Starts the app.
 
@@ -165,10 +165,11 @@ class JobExecutor(ClientExecutor):
             fl_ctx: FLContext
         """
 
-        job_launcher: JobLauncherSpec = self._get_job_launcher(client, job_meta)
-        job_handle = job_launcher.launch_job(
-            job_id, job_meta, fl_ctx
-        )
+        job_launcher, launch_data = self._get_job_launcher(job_id, client, job_meta)
+        if not job_launcher:
+            raise RuntimeError(f"There's no job launcher can handle this job: {launch_data}.")
+        job_handle = job_launcher.launch_job(launch_data, fl_ctx)
+        self.logger.info(f"Launch job data: {launch_data}  with job launcher: {type(job_launcher)} ")
 
         client.multi_gpu = False
 
@@ -184,18 +185,16 @@ class JobExecutor(ClientExecutor):
         )
         thread.start()
 
-    def _get_job_launcher(self, client, job_meta: dict) -> JobLauncherSpec:
+    def _get_job_launcher(self, job_id, client, job_meta: dict) -> (JobLauncherSpec, dict):
         launch_image = extract_job_image(job_meta, client.client_name)
-        if launch_image:
-            engine = client.engine
-            launcher = engine.get_component(SystemComponents.IMAGE_LAUNCHER)
-            if not launcher:
-                raise RuntimeError("There's no image job launcher defined.")
-            self.logger.info(f"Launch job image: {launch_image}  with job launcher: {type(launcher)} ")
-        else:
-            launcher = ProcessJobLauncher()
-            self.logger.info("Launch job with ProcessJobLauncher.")
-        return launcher
+        launch_data = {JobConstants.JOB_IMAGE: launch_image, JobConstants.JOB_ID: job_id}
+
+        launcher = None
+        for _, component in client.components.items():
+            if isinstance(component, JobLauncherSpec):
+                if component.can_launch(launch_data):
+                    launcher = component
+        return launcher, launch_data
 
     def notify_job_status(self, job_id, job_status):
         run_process = self.run_processes.get(job_id)

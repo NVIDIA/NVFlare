@@ -47,17 +47,25 @@ class JobHandleSpec:
 
 class JobLauncherSpec:
     @abstractmethod
-    def launch_job(
-        self, job_id: str, job_meta: dict, fl_ctx: FLContext
-    ) -> JobHandleSpec:
+    def launch_job(self, launch_data: dict, fl_ctx: FLContext) -> JobHandleSpec:
         """To launch a job run.
 
         Args:
-            job_id: job_id
-            job_meta: meta data for the job
+            launch_data: job launch meta data
             fl_ctx: FLContext
 
         Returns: boolean to indicates the job launch success or fail.
 
         """
         raise NotImplemented
+
+    @abstractmethod
+    def can_launch(self, launch_data: dict) -> bool:
+        """To determine if the launcher can launch this job.
+
+        Args:
+            launch_data: job launch meta data
+
+        Returns: True / False
+
+        """

@@ -359,6 +359,7 @@ class JobConstants:
     META = "meta"
     SITES = "sites"
     JOB_IMAGE = "image"
+    JOB_ID = "job_id"
 
 
 class WorkspaceConstants:
