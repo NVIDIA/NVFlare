@@ -160,7 +160,6 @@ class FLContextKey(object):
     AUTHORIZATION_REASON = "_authorization_reason"
     DISCONNECTED_CLIENT_NAME = "_disconnected_client_name"
     RECONNECTED_CLIENT_NAME = "_reconnected_client_name"
-    SERVER_CONFIG = "_server_config"
     SITE_OBJ = "_site_obj_"
 
     CLIENT_REGISTER_DATA = "_client_register_data"
