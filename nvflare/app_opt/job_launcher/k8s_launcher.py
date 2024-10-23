@@ -210,6 +210,12 @@ class K8sJobLauncher(JobLauncherSpec):
         args = fl_ctx.get_prop(FLContextKey.ARGS)
         client = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
         job_id = launch_data.get(JobConstants.JOB_ID)
+        server_config = fl_ctx.get_prop(FLContextKey.SERVER_CONFIG)
+        if not server_config:
+            raise RuntimeError(f"missing {FLContextKey.SERVER_CONFIG} in FL context")
+        service = server_config[0].get("service", {})
+        if not isinstance(service, dict):
+            raise RuntimeError(f"expect server config data to be dict but got {type(service)}")
 
         self.logger.info(f"K8sJobLauncher start to launch job: {job_id} for client: {client.client_name}")
         job_image = launch_data.get(JobConstants.JOB_IMAGE)
@@ -228,8 +234,8 @@ class K8sJobLauncher(JobLauncherSpec):
                 "-n": job_id,
                 "-c": client.client_name,
                 "-p": "tcp://parent-pod:8004",
-                "-g": fl_ctx.get_prop(FLContextKey.SERVER_CONFIG).get("target"),
-                "-scheme": fl_ctx.get_prop(FLContextKey.SERVER_CONFIG).get("scheme", "grpc"),
+                "-g": service.get("target"),
+                "-scheme": service.get("scheme", "grpc"),
                 "-s": "fed_client.json",
             },
             "set_list": args.set,

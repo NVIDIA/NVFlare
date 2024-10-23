@@ -110,9 +110,26 @@ def main(args):
         with client_engine.new_context() as fl_ctx:
             client_engine.fire_event(EventType.SYSTEM_BOOTSTRAP, fl_ctx)
 
+            fl_ctx.set_prop(
+                key=FLContextKey.CLIENT_CONFIG,
+                value=deployer.client_config,
+                private=True,
+                sticky=True,
+            )
+            fl_ctx.set_prop(
+                key=FLContextKey.SERVER_CONFIG,
+                value=deployer.server_config,
+                private=True,
+                sticky=True,
+            )
+            fl_ctx.set_prop(
+                key=FLContextKey.SECURE_MODE,
+                value=deployer.secure_train,
+                private=True,
+                sticky=True,
+            )
+
             fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
-            server_config = list(federated_client.servers.values())[0]
-            fl_ctx.set_prop(FLContextKey.SERVER_CONFIG, server_config, private=True, sticky=True)
             fl_ctx.set_prop(FLContextKey.ARGS, args, private=True, sticky=True)
             fl_ctx.set_prop(FLContextKey.SITE_OBJ, federated_client, private=True, sticky=True)
 
@@ -129,7 +146,7 @@ def main(args):
 
         federated_client.start_heartbeat(interval=kv_list.get("heart_beat_interval", 10.0))
 
-        admin_agent = create_admin_agent(deployer.req_processors, federated_client, client_engine)
+        create_admin_agent(deployer.req_processors, federated_client, client_engine)
 
         while federated_client.status != ClientStatus.STOPPED:
             time.sleep(1.0)

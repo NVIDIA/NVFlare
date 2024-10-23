@@ -65,6 +65,12 @@ class ProcessJobLauncher(JobLauncherSpec):
         args = fl_ctx.get_prop(FLContextKey.ARGS)
         client = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
         job_id = launch_data.get(JobConstants.JOB_ID)
+        server_config = fl_ctx.get_prop(FLContextKey.SERVER_CONFIG)
+        if not server_config:
+            raise RuntimeError(f"missing {FLContextKey.SERVER_CONFIG} in FL context")
+        service = server_config[0].get("service", {})
+        if not isinstance(service, dict):
+            raise RuntimeError(f"expect server config data to be dict but got {type(service)}")
 
         app_custom_folder = workspace_obj.get_app_custom_dir(job_id)
         if app_custom_folder != "":
@@ -89,9 +95,9 @@ class ProcessJobLauncher(JobLauncherSpec):
             + " -p "
             + str(client.cell.get_internal_listener_url())
             + " -g "
-            + fl_ctx.get_prop(FLContextKey.SERVER_CONFIG).get("target")
+            + service.get("target")
             + " -scheme "
-            + fl_ctx.get_prop(FLContextKey.SERVER_CONFIG).get("scheme", "grpc")
+            + service.get("scheme", "grpc")
             + " -s fed_client.json "
             " --set" + command_options + " print_conf=True"
         )

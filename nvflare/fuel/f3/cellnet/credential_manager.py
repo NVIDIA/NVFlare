@@ -20,9 +20,10 @@ from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.x509 import Certificate
 
 from nvflare.fuel.f3.cellnet.cell_cipher import SimpleCellCipher
-from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint
+from nvflare.fuel.f3.message import Message
 
 log = logging.getLogger(__name__)
 
@@ -86,39 +87,27 @@ class CredentialManager:
         return self.cell_cipher.decrypt(cipher, x509.load_pem_x509_certificate(origin_cert))
 
     def get_certificate(self, fqcn: str) -> bytes:
-
         if not self.cell_cipher:
             raise RuntimeError("This cell doesn't support certificate exchange, not running in secure mode")
+        return self.cert_cache.get(fqcn)
 
-        target = FQCN.get_root(fqcn)
-        return self.cert_cache.get(target)
-
-    def save_certificate(self, fqcn: str, cert: bytes):
-        target = FQCN.get_root(fqcn)
-        self.cert_cache[target] = cert
-
-    def create_request(self, target: str) -> dict:
-
+    def create_request(self) -> dict:
         req = {
-            CERT_TARGET: target,
-            CERT_ORIGIN: FQCN.get_root(self.local_endpoint.name),
             CERT_CONTENT: self.local_cert,
             CERT_CA_CONTENT: self.ca_cert,
         }
 
         return req
 
-    def process_request(self, request: dict) -> dict:
-
-        target = request.get(CERT_TARGET)
-        origin = request.get(CERT_ORIGIN)
-
-        reply = {CERT_TARGET: target, CERT_ORIGIN: origin}
-
+    def process_request(self, request: Message) -> dict:
+        origin = request.get_header(MessageHeaderKey.ORIGIN)
+        target = request.get_header(MessageHeaderKey.DESTINATION)
+        reply = {}
         if not self.local_cert:
             reply[CERT_ERROR] = f"Target {target} is not running in secure mode"
         else:
-            cert = request.get(CERT_CONTENT)
+            payload = request.payload
+            cert = payload.get(CERT_CONTENT)
 
             # Save cert from requester in the cache
             self.cert_cache[origin] = cert
@@ -128,14 +117,16 @@ class CredentialManager:
 
         return reply
 
-    @staticmethod
-    def process_response(reply: dict) -> bytes:
-
+    def process_response(self, message: Message) -> bytes:
+        origin = message.get_header(MessageHeaderKey.ORIGIN)
+        reply = message.payload
         error = reply.get(CERT_ERROR)
         if error:
-            raise RuntimeError(f"Request to get certificate from {target} failed: {error}")
+            raise RuntimeError(f"Request to get certificate from {origin} failed: {error}")
 
-        return reply.get(CERT_CONTENT)
+        cert = reply.get(CERT_CONTENT)
+        self.cert_cache[origin] = cert
+        return cert
 
     def get_local_cert(self) -> Certificate:
         return x509.load_pem_x509_certificate(self.local_cert)

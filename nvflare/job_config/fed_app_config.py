@@ -29,7 +29,6 @@ class ClientAppConfig(BaseAppConfig):
 
     def __init__(self) -> None:
         super().__init__()
-
         self.executors: [_ExecutorDef] = []
 
     def add_executor(self, tasks: List[str], executor: Executor):

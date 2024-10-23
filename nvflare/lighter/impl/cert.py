@@ -23,23 +23,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 from nvflare.lighter.spec import Builder, Participant
-
-
-def serialize_pri_key(pri_key):
-    return pri_key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.TraditionalOpenSSL,
-        encryption_algorithm=serialization.NoEncryption(),
-    )
-
-
-def serialize_cert(cert):
-    return cert.public_bytes(serialization.Encoding.PEM)
-
-
-def load_crt(path):
-    serialized_cert = open(path, "rb").read()
-    return x509.load_pem_x509_certificate(serialized_cert, default_backend())
+from nvflare.lighter.utils import serialize_cert, serialize_pri_key
 
 
 class CertBuilder(Builder):
@@ -108,8 +92,13 @@ class CertBuilder(Builder):
             f.write(serialize_cert(cert))
         with open(os.path.join(dest_dir, f"{base_name}.key"), "wb") as f:
             f.write(serialize_pri_key(pri_key))
-        if base_name == "client" and (listening_host := participant.props.get("listening_host")):
-            tmp_participant = Participant("server", listening_host, participant.org)
+        if base_name == "client" and (listening_host := participant.get_listening_host()):
+            tmp_participant = Participant(
+                type="server",
+                name=participant.name,
+                org=participant.org,
+                default_host=listening_host,
+            )
             tmp_pri_key, tmp_cert = self.get_pri_key_cert(tmp_participant)
             with open(os.path.join(dest_dir, "server.crt"), "wb") as f:
                 f.write(serialize_cert(tmp_cert))
@@ -142,10 +131,20 @@ class CertBuilder(Builder):
         subject = self.get_subject(participant)
         subject_org = participant.org
         if participant.type == "admin":
-            role = participant.props.get("role")
+            role = participant.get_prop("role")
         else:
             role = None
-        cert = self._generate_cert(subject, subject_org, self.issuer, self.pri_key, pub_key, role=role)
+
+        server = participant if participant.type == "server" else None
+        cert = self._generate_cert(
+            subject,
+            subject_org,
+            self.issuer,
+            self.pri_key,
+            pub_key,
+            role=role,
+            server=server,
+        )
         return pri_key, cert
 
     def get_subject(self, participant):
@@ -157,10 +156,20 @@ class CertBuilder(Builder):
         return pri_key, pub_key
 
     def _generate_cert(
-        self, subject, subject_org, issuer, signing_pri_key, subject_pub_key, valid_days=360, ca=False, role=None
+        self,
+        subject,
+        subject_org,
+        issuer,
+        signing_pri_key,
+        subject_pub_key,
+        valid_days=360,
+        ca=False,
+        role=None,
+        server: Participant = None,
     ):
         x509_subject = self._x509_name(subject, subject_org, role)
         x509_issuer = self._x509_name(issuer)
+
         builder = (
             x509.CertificateBuilder()
             .subject_name(x509_subject)
@@ -174,7 +183,6 @@ class CertBuilder(Builder):
                 + datetime.timedelta(days=valid_days)
                 # Sign our certificate with our private key
             )
-            .add_extension(x509.SubjectAlternativeName([x509.DNSName(subject)]), critical=False)
         )
         if ca:
             builder = (
@@ -188,6 +196,18 @@ class CertBuilder(Builder):
                 )
                 .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=False)
             )
+
+        if server:
+            # This is to generate a server cert.
+            # Use SubjectAlternativeName for all host names
+            default_host = server.get_default_host()
+            host_names = server.get_host_names()
+            sans = [x509.DNSName(default_host)]
+            if host_names:
+                for h in host_names:
+                    if h != default_host:
+                        sans.append(x509.DNSName(h))
+            builder = builder.add_extension(x509.SubjectAlternativeName(sans), critical=False)
         return builder.sign(signing_pri_key, hashes.SHA256(), default_backend())
 
     def _x509_name(self, cn_name, org_name=None, role=None):
