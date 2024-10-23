@@ -24,7 +24,6 @@ from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.job_launcher_spec import JobHandleSpec, JobLauncherSpec
-from nvflare.private.fed.utils.fed_utils import extract_job_image
 
 
 class JobState(Enum):
@@ -212,8 +211,6 @@ class K8sJobLauncher(JobLauncherSpec):
         client = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
         job_id = launch_data.get(JobConstants.JOB_ID)
 
-        # root_hostpath = "/home/azureuser/wksp/k2k/disk"
-        # job_image = "localhost:32000/nvfl-k8s:0.0.1"
         self.logger.info(f"K8sJobLauncher start to launch job: {job_id} for client: {client.client_name}")
         job_image = launch_data.get(JobConstants.JOB_IMAGE)
         self.logger.info(f"launch job use image: {job_image}")
@@ -221,7 +218,6 @@ class K8sJobLauncher(JobLauncherSpec):
             "name": job_id,
             "image": job_image,
             "container_name": f"container-{job_id}",
-            # "volume_mount_list": [{'name':'workspace-nvflare', 'mountPath': '/workspace/nvflare'}],
             "volume_mount_list": [{"name": self.workspace, "mountPath": self.mount_path}],
             "volume_list": [{"name": self.workspace, "hostPath": {"path": self.root_hostpath, "type": "Directory"}}],
             "module_args": {

@@ -165,7 +165,8 @@ class JobExecutor(ClientExecutor):
             fl_ctx: FLContext
         """
 
-        job_launcher, launch_data = self._get_job_launcher(job_id, client, job_meta)
+        launch_data = self._get_job_launcher(job_id, client, job_meta)
+        job_launcher = launch_data.get(JobConstants.JOB_LAUNCHER)
         if not job_launcher:
             raise RuntimeError(f"There's no job launcher can handle this job: {launch_data}.")
         job_handle = job_launcher.launch_job(launch_data, fl_ctx)
@@ -185,16 +186,17 @@ class JobExecutor(ClientExecutor):
         )
         thread.start()
 
-    def _get_job_launcher(self, job_id, client, job_meta: dict) -> (JobLauncherSpec, dict):
+    def _get_job_launcher(self, job_id, client, job_meta: dict) -> dict:
         launch_image = extract_job_image(job_meta, client.client_name)
         launch_data = {JobConstants.JOB_IMAGE: launch_image, JobConstants.JOB_ID: job_id}
 
-        launcher = None
+        job_launcher = None
         for _, component in client.components.items():
             if isinstance(component, JobLauncherSpec):
                 if component.can_launch(launch_data):
-                    launcher = component
-        return launcher, launch_data
+                    job_launcher = component
+        launch_data[JobConstants.JOB_LAUNCHER] = job_launcher
+        return launch_data
 
     def notify_job_status(self, job_id, job_status):
         run_process = self.run_processes.get(job_id)

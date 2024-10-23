@@ -179,7 +179,6 @@ class FLContextKey(object):
     CONFIG_CTX = "__config_ctx__"
     FILTER_DIRECTION = "__filter_dir__"
     ROOT_URL = "__root_url__"  # the URL for accessing the FL Server
-    INTERNAL_URL = "__internal_url__"
     NOT_READY_TO_END_RUN = "not_ready_to_end_run__"  # component sets this to indicate it's not ready to end run yet
 
 
@@ -349,7 +348,6 @@ class SystemComponents(object):
     JOB_META_VALIDATOR = "job_meta_validator"
     FED_CLIENT = "fed_client"
     RUN_MANAGER = "run_manager"
-    IMAGE_LAUNCHER = "image_launcher"
 
 
 class JobConstants:
@@ -360,6 +358,7 @@ class JobConstants:
     SITES = "sites"
     JOB_IMAGE = "image"
     JOB_ID = "job_id"
+    JOB_LAUNCHER = "job_launcher"
 
 
 class WorkspaceConstants:
