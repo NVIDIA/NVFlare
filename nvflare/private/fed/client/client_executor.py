@@ -20,13 +20,12 @@ from abc import ABC, abstractmethod
 from nvflare.apis.fl_constant import AdminCommandNames, JobConstants, RunProcessKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
-from nvflare.app_opt.job_launcher.job_launcher_spec import JobLauncherSpec
 from nvflare.fuel.common.exit_codes import PROCESS_EXIT_REASON, ProcessExitCode
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey, new_cell_message
-from nvflare.private.fed.utils.fed_utils import extract_job_image, get_return_code
+from nvflare.private.fed.utils.fed_utils import get_return_code, get_job_launcher
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .client_status import ClientStatus, get_status_message
@@ -164,7 +163,7 @@ class JobExecutor(ClientExecutor):
             fl_ctx: FLContext
         """
 
-        launch_data = self._get_job_launcher(job_id, client, job_meta)
+        launch_data = get_job_launcher(job_id, client.client_name, job_meta, fl_ctx)
         job_launcher = launch_data.get(JobConstants.JOB_LAUNCHER)
         if not job_launcher:
             raise RuntimeError(f"There's no job launcher can handle this job: {launch_data}.")
@@ -184,18 +183,6 @@ class JobExecutor(ClientExecutor):
             args=(client, job_id, allocated_resource, token, resource_manager, args.workspace),
         )
         thread.start()
-
-    def _get_job_launcher(self, job_id, client, job_meta: dict) -> dict:
-        launch_image = extract_job_image(job_meta, client.client_name)
-        launch_data = {JobConstants.JOB_IMAGE: launch_image, JobConstants.JOB_ID: job_id}
-
-        job_launcher = None
-        for _, component in client.components.items():
-            if isinstance(component, JobLauncherSpec):
-                if component.can_launch(launch_data):
-                    job_launcher = component
-        launch_data[JobConstants.JOB_LAUNCHER] = job_launcher
-        return launch_data
 
     def notify_job_status(self, job_id, job_status):
         run_process = self.run_processes.get(job_id)

@@ -132,6 +132,7 @@ def main(args):
             fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
             fl_ctx.set_prop(FLContextKey.ARGS, args, private=True, sticky=True)
             fl_ctx.set_prop(FLContextKey.SITE_OBJ, federated_client, private=True, sticky=True)
+            fl_ctx.set_prop(FLContextKey.COMPONENTS, conf.components, private=True, sticky=True)
 
             component_security_check(fl_ctx)
 

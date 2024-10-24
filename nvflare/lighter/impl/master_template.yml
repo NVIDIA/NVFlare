@@ -95,7 +95,7 @@ local_client_resources: |
       },
       {
         "id": "process_launcher",
-        "path": "nvflare.app_opt.job_launcher.process_launcher.ProcessJobLauncher",
+        "path": "nvflare.private.fed.client.client_process_launcher.ClientProcessJobLauncher",
         "args": {}
       }
     ]
@@ -221,6 +221,11 @@ local_server_resources: |
           {
               "id": "job_store",
               "path": "nvflare.app_common.storages.filesystem_storage.FilesystemStorage"
+          },
+          {
+              "id": "process_launcher",
+              "path": "nvflare.private.fed.server.server_process_launcher.ServerProcessJobLauncher",
+              "args": {}
           }
       ]
   }
