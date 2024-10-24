@@ -24,7 +24,7 @@ class JobHandleSpec:
         Returns: the job run return code.
 
         """
-        raise NotImplemented
+        raise NotImplementedError()
 
     @abstractmethod
     def poll(self):
@@ -33,7 +33,7 @@ class JobHandleSpec:
         Returns: return_code
 
         """
-        raise NotImplemented
+        raise NotImplementedError()
 
     @abstractmethod
     def wait(self):
@@ -42,7 +42,7 @@ class JobHandleSpec:
         Returns: returns until the job run complete.
 
         """
-        raise NotImplemented
+        raise NotImplementedError()
 
 
 class JobLauncherSpec:
@@ -57,7 +57,7 @@ class JobLauncherSpec:
         Returns: boolean to indicates the job launch success or fail.
 
         """
-        raise NotImplemented
+        raise NotImplementedError()
 
     @abstractmethod
     def can_launch(self, launch_data: dict) -> bool:
@@ -69,3 +69,4 @@ class JobLauncherSpec:
         Returns: True / False
 
         """
+        raise NotImplementedError()
