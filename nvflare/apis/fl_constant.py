@@ -161,6 +161,7 @@ class FLContextKey(object):
     DISCONNECTED_CLIENT_NAME = "_disconnected_client_name"
     RECONNECTED_CLIENT_NAME = "_reconnected_client_name"
     SITE_OBJ = "_site_obj_"
+    JOB_LAUNCHER = "_job_launcher"
 
     CLIENT_REGISTER_DATA = "_client_register_data"
     SECURITY_ITEMS = "_security_items"

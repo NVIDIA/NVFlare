@@ -20,10 +20,12 @@ from kubernetes.client import Configuration
 from kubernetes.client.api import core_v1_api
 from kubernetes.client.rest import ApiException
 
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec
+from nvflare.private.fed.utils.fed_utils import extract_job_image
 
 
 class JobState(Enum):
@@ -267,9 +269,11 @@ class K8sJobLauncher(JobLauncherSpec):
             job_handle.terminate()
             return None
 
-    def can_launch(self, launch_data: dict, fl_ctx: FLContext) -> bool:
-        job_image = launch_data.get(JobConstants.JOB_IMAGE)
-        if job_image:
-            return True
-        else:
-            return False
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        if event_type == EventType.GET_JOB_LAUNCHER:
+            job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
+            job_image = extract_job_image(job_meta, fl_ctx.get_identity_name())
+            if job_image:
+                job_launcher: list = fl_ctx.get_prop(FLContextKey.JOB_LAUNCHER, [])
+                job_launcher.append(self)
+                fl_ctx.set_prop(FLContextKey.JOB_LAUNCHER, job_launcher, private=True, sticky=False)

@@ -13,6 +13,7 @@
 # limitations under the License.
 from abc import abstractmethod
 
+from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 
 
@@ -45,29 +46,16 @@ class JobHandleSpec:
         raise NotImplementedError()
 
 
-class JobLauncherSpec:
+class JobLauncherSpec(FLComponent):
     @abstractmethod
-    def launch_job(self, launch_data: dict, fl_ctx: FLContext) -> JobHandleSpec:
+    def launch_job(self, meta_data: dict, fl_ctx: FLContext) -> JobHandleSpec:
         """To launch a job run.
 
         Args:
-            launch_data: job launch meta data
+            meta_data: job meta data
             fl_ctx: FLContext
 
         Returns: boolean to indicates the job launch success or fail.
-
-        """
-        raise NotImplementedError()
-
-    @abstractmethod
-    def can_launch(self, launch_data: dict, fl_ctx: FLContext) -> bool:
-        """To determine if the launcher can launch this job.
-
-        Args:
-            fl_ctx: FLContext
-            launch_data: job launch meta data
-
-        Returns: True / False
 
         """
         raise NotImplementedError()

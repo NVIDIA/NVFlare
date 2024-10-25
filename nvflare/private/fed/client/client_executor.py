@@ -17,7 +17,8 @@ import threading
 import time
 from abc import ABC, abstractmethod
 
-from nvflare.apis.fl_constant import AdminCommandNames, JobConstants, RunProcessKey, SystemConfigs
+from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_constant import AdminCommandNames, JobConstants, RunProcessKey, SystemConfigs, FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 from nvflare.apis.job_launcher_spec import JobLauncherSpec
@@ -164,12 +165,9 @@ class JobExecutor(ClientExecutor):
             fl_ctx: FLContext
         """
 
-        launch_data = self._get_job_launcher(job_id, client, job_meta)
-        job_launcher = launch_data.get(JobConstants.JOB_LAUNCHER)
-        if not job_launcher:
-            raise RuntimeError(f"There's no job launcher can handle this job: {launch_data}.")
-        job_handle = job_launcher.launch_job(launch_data, fl_ctx)
-        self.logger.info(f"Launch job data: {launch_data}  with job launcher: {type(job_launcher)} ")
+        job_launcher: JobLauncherSpec = self._get_job_launcher(job_meta, fl_ctx)
+        job_handle = job_launcher.launch_job(job_meta, fl_ctx)
+        self.logger.info(f"Launch job_id: {job_id}  with job launcher: {type(job_launcher)} ")
 
         client.multi_gpu = False
 
@@ -185,17 +183,16 @@ class JobExecutor(ClientExecutor):
         )
         thread.start()
 
-    def _get_job_launcher(self, job_id, client, job_meta: dict) -> dict:
-        launch_image = extract_job_image(job_meta, client.client_name)
-        launch_data = {JobConstants.JOB_IMAGE: launch_image, JobConstants.JOB_ID: job_id}
+    def _get_job_launcher(self, job_meta: dict, fl_ctx: FLContext) -> JobLauncherSpec:
+        engine = fl_ctx.get_engine()
+        fl_ctx.set_prop(FLContextKey.JOB_META, job_meta, private=True, sticky=False)
+        engine.fire_event(EventType.GET_JOB_LAUNCHER, fl_ctx)
 
-        job_launcher = None
-        for _, component in client.components.items():
-            if isinstance(component, JobLauncherSpec):
-                if component.can_launch(launch_data, None):
-                    job_launcher = component
-        launch_data[JobConstants.JOB_LAUNCHER] = job_launcher
-        return launch_data
+        job_launcher = fl_ctx.get_prop(FLContextKey.JOB_LAUNCHER)
+        if not (job_launcher or isinstance(job_launcher, list)):
+            raise RuntimeError(f"There's no job launcher can handle this job: {job_meta}.")
+
+        return job_launcher[0]
 
     def notify_job_status(self, job_id, job_status):
         run_process = self.run_processes.get(job_id)

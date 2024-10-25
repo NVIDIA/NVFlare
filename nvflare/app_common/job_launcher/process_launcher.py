@@ -17,11 +17,13 @@ import shlex
 import subprocess
 import sys
 
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec
-from nvflare.private.fed.utils.fed_utils import add_custom_dir_to_path
+from nvflare.private.fed.utils.fed_utils import add_custom_dir_to_path, extract_job_image
 
 
 class ProcessHandle(JobHandleSpec):
@@ -58,13 +60,13 @@ class ProcessJobLauncher(JobLauncherSpec):
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def launch_job(self, launch_data: dict, fl_ctx: FLContext) -> JobHandleSpec:
+    def launch_job(self, meta_data: dict, fl_ctx: FLContext) -> JobHandleSpec:
 
         new_env = os.environ.copy()
         workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         args = fl_ctx.get_prop(FLContextKey.ARGS)
         client = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
-        job_id = launch_data.get(JobConstants.JOB_ID)
+        job_id = meta_data.get(JobMetaKey.JOB_ID)
         server_config = fl_ctx.get_prop(FLContextKey.SERVER_CONFIG)
         if not server_config:
             raise RuntimeError(f"missing {FLContextKey.SERVER_CONFIG} in FL context")
@@ -108,9 +110,12 @@ class ProcessJobLauncher(JobLauncherSpec):
 
         return ProcessHandle(process)
 
-    def can_launch(self, launch_data: dict, fl_ctx: FLContext) -> bool:
-        job_image = launch_data.get(JobConstants.JOB_IMAGE)
-        if job_image:
-            return False
-        else:
-            return True
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        if event_type == EventType.GET_JOB_LAUNCHER:
+            job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
+            job_image = extract_job_image(job_meta, fl_ctx.get_identity_name())
+            if not job_image:
+                job_launcher: list = fl_ctx.get_prop(FLContextKey.JOB_LAUNCHER, [])
+                job_launcher.append(self)
+                fl_ctx.set_prop(FLContextKey.JOB_LAUNCHER, job_launcher, private=True, sticky=False)
+

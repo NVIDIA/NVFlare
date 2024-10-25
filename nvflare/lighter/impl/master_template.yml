@@ -95,7 +95,7 @@ local_client_resources: |
       },
       {
         "id": "process_launcher",
-        "path": "nvflare.app_opt.job_launcher.process_launcher.ProcessJobLauncher",
+        "path": "nvflare.app_common.job_launcher.process_launcher.ProcessJobLauncher",
         "args": {}
       }
     ]
