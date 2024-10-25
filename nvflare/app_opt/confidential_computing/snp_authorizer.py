@@ -61,10 +61,6 @@ class SNPAuthorizer(CCAuthorizer):
                 return False
             print(f"{cp.stdout=}\n{cp.stderr=} Now returning True")
             # print(f"{claims=}")
-<<<<<<< HEAD
-            print("Now returning True")
-=======
->>>>>>> 3bd88414 (Fix logger)
             return True
         except:
             print(traceback.format_exc())
