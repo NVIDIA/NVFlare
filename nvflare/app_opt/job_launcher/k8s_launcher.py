@@ -23,8 +23,8 @@ from kubernetes.client.rest import ApiException
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.workspace import Workspace
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec
+from nvflare.apis.workspace import Workspace
 from nvflare.private.fed.utils.fed_utils import extract_job_image
 
 
@@ -49,7 +49,7 @@ RETURN_CODES = {
     JobState.STARTING: None,
     JobState.RUNNING: None,
     JobState.TERMINATED: 1,
-    JobState.UNKNOWN: None
+    JobState.UNKNOWN: None,
 }
 
 
