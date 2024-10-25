@@ -48,11 +48,11 @@ class JobHandleSpec:
 
 class JobLauncherSpec(FLComponent):
     @abstractmethod
-    def launch_job(self, meta_data: dict, fl_ctx: FLContext) -> JobHandleSpec:
+    def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
         """To launch a job run.
 
         Args:
-            meta_data: job meta data
+            job_meta: job meta data
             fl_ctx: FLContext
 
         Returns: boolean to indicates the job launch success or fail.

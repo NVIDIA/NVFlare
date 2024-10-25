@@ -60,13 +60,13 @@ class ProcessJobLauncher(JobLauncherSpec):
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def launch_job(self, meta_data: dict, fl_ctx: FLContext) -> JobHandleSpec:
+    def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
 
         new_env = os.environ.copy()
         workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         args = fl_ctx.get_prop(FLContextKey.ARGS)
         client = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
-        job_id = meta_data.get(JobMetaKey.JOB_ID)
+        job_id = job_meta.get(JobMetaKey.JOB_ID)
         server_config = fl_ctx.get_prop(FLContextKey.SERVER_CONFIG)
         if not server_config:
             raise RuntimeError(f"missing {FLContextKey.SERVER_CONFIG} in FL context")

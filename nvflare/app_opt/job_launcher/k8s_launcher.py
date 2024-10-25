@@ -193,7 +193,6 @@ class K8sJobLauncher(JobLauncherSpec):
         root_hostpath: str,
         workspace: str,
         mount_path: str,
-        supported_images: [str] = None,
         timeout=None,
         namespace="default",
     ):
@@ -203,7 +202,6 @@ class K8sJobLauncher(JobLauncherSpec):
         self.workspace = workspace
         self.mount_path = mount_path
         self.timeout = timeout
-        self.supported_images = supported_images
 
         config.load_kube_config(config_file_path)
         try:
@@ -218,12 +216,12 @@ class K8sJobLauncher(JobLauncherSpec):
         self.job_handle = None
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def launch_job(self, launch_data: dict, fl_ctx: FLContext) -> JobHandleSpec:
+    def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
 
         workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         args = fl_ctx.get_prop(FLContextKey.ARGS)
         client = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
-        job_id = launch_data.get(JobConstants.JOB_ID)
+        job_id = job_meta.get(JobConstants.JOB_ID)
         server_config = fl_ctx.get_prop(FLContextKey.SERVER_CONFIG)
         if not server_config:
             raise RuntimeError(f"missing {FLContextKey.SERVER_CONFIG} in FL context")
@@ -232,7 +230,7 @@ class K8sJobLauncher(JobLauncherSpec):
             raise RuntimeError(f"expect server config data to be dict but got {type(service)}")
 
         self.logger.info(f"K8sJobLauncher start to launch job: {job_id} for client: {client.client_name}")
-        job_image = launch_data.get(JobConstants.JOB_IMAGE)
+        job_image = extract_job_image(job_meta, fl_ctx.get_identity_name())
         self.logger.info(f"launch job use image: {job_image}")
         job_config = {
             "name": job_id,
