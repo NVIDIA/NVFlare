@@ -14,80 +14,99 @@
 
 
 from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer
+import json
+import jwt
 
-GPU_NAMESPACE = "x-nv-gpu-"
+from nv_attestation_sdk import attestation
+import os 
 
-
+GPU_NAMESPACE = "x-nv-gpu"
+policy = """{
+  "version":"1.0",
+  "authorization-rules":{
+    "sub":"NVIDIA-GPU-ATTESTATION",
+    "secboot":true,
+    "x-nvidia-gpu-manufacturer":"NVIDIA Corporation",
+    "x-nvidia-attestation-type":"GPU",
+    "x-nvidia-attestation-detailed-result":{
+      "x-nvidia-gpu-driver-rim-schema-validated":true,
+      "x-nvidia-gpu-vbios-rim-cert-validated":true,
+      "x-nvidia-gpu-attestation-report-cert-chain-validated":true,
+      "x-nvidia-gpu-driver-rim-schema-fetched":true,
+      "x-nvidia-gpu-attestation-report-parsed":true,
+      "x-nvidia-gpu-nonce-match":true,
+      "x-nvidia-gpu-vbios-rim-signature-verified":true,
+      "x-nvidia-gpu-driver-rim-signature-verified":true,
+      "x-nvidia-gpu-arch-check":true,
+      "x-nvidia-gpu-measurements-match":true,
+      "x-nvidia-gpu-attestation-report-signature-verified":true,
+      "x-nvidia-gpu-vbios-rim-schema-validated":true,
+      "x-nvidia-gpu-driver-rim-cert-validated":true,
+      "x-nvidia-gpu-vbios-rim-schema-fetched":true,
+      "x-nvidia-gpu-vbios-rim-measurements-available":true
+    },
+    "x-nvidia-gpu-driver-version":"535.104.05",
+    "hwmodel":"GH100 A01 GSP BROM",
+    "measres":"comparison-successful",
+    "x-nvidia-gpu-vbios-version":"96.00.5E.00.02"
+  }
+}
+"""
 class GPUAuthorizer(CCAuthorizer):
-    """Note: This is just a fake implementation for GPU authorizer. It will be replaced later
-    with the real implementation.
+    def __init__(self, verifier_url="https://nras.attestation.nvidia.com/v1/attest/gpu"):
+        self._can_generate = True
+        self.client = attestation.Attestation()
+        self.client.set_name("thisNode1")
+        self.client.set_nonce("931d8dd0add203ac3d8b4fbde75e115278eefcdceac5b87671a748f32364dfcb")
+        self.client.add_verifier(attestation.Devices.GPU, attestation.Environment.REMOTE, verifier_url, "")
+        self.remote_att_result_policy = policy
 
-    """
+    def generate(self):
+        try:
+            self.client.attest()
+            token = self.client.get_token()
+        except BaseException:
+            self.can_generate = False
+            token = "[[],{}]"
+        return token
+    
+    def verify(self, eat_token):
+        try:
+            # header = jwt.get_unverified_header(jwt_token[1])
+            # # url = header.get("jku")
+            # alg = header.get('alg')
+            # jwks_client = PyJWKClient(self.verifier_url)
+            # signing_key = jwks_client.get_signing_key_from_jwt(jwt_token)
+            jwt_token = json.loads(eat_token)[1]
+            # pprint.pprint(f"{jwt_token=}")
+            claims = jwt.decode(jwt_token.get("REMOTE_GPU_CLAIMS"), options={"verify_signature": False})
+            # pprint.pprint(f"{claims=}")
+            nonce = claims.get('eat_nonce')
+            self.client.set_name("nvflare_node1")
+            # self.client.set_nonce("931d8dd0add203ac3d8b4fbde75e115278eefcdceac5b87671a748f32364dfcb")
+            self.client.set_nonce(nonce)
+            self.client.set_token(name='nvflare_node1', eat_token=eat_token)
+            result = self.client.validate_token(self.remote_att_result_policy)
+        except BaseException as e:
+            print("Exception {e=}")
+            result = False
+        return result
 
-    def __init__(self, verifiers: list) -> None:
-        """
+    def can_generate(self) -> bool:
+        return True
 
-        Args:
-            verifiers (list):
-                each element in this list is a dictionary and the keys of dictionary are
-                "devices", "env", "url", "appraisal_policy_file" and "result_policy_file."
-
-                the values of devices are "gpu" and "cpu"
-                the values of env are "local" and "test"
-                currently, valid combination is gpu + local
-
-                url must be an empty string
-                appraisal_policy_file must point to an existing file
-                currently supports an empty file only
-
-                result_policy_file must point to an existing file
-                currently supports the following content only
-
-                .. code-block:: json
-
-                    {
-                        "version":"1.0",
-                        "authorization-rules":{
-                            "x-nv-gpu-available":true,
-                            "x-nv-gpu-attestation-report-available":true,
-                            "x-nv-gpu-info-fetched":true,
-                            "x-nv-gpu-arch-check":true,
-                            "x-nv-gpu-root-cert-available":true,
-                            "x-nv-gpu-cert-chain-verified":true,
-                            "x-nv-gpu-ocsp-cert-chain-verified":true,
-                            "x-nv-gpu-ocsp-signature-verified":true,
-                            "x-nv-gpu-cert-ocsp-nonce-match":true,
-                            "x-nv-gpu-cert-check-complete":true,
-                            "x-nv-gpu-measurement-available":true,
-                            "x-nv-gpu-attestation-report-parsed":true,
-                            "x-nv-gpu-nonce-match":true,
-                            "x-nv-gpu-attestation-report-driver-version-match":true,
-                            "x-nv-gpu-attestation-report-vbios-version-match":true,
-                            "x-nv-gpu-attestation-report-verified":true,
-                            "x-nv-gpu-driver-rim-schema-fetched":true,
-                            "x-nv-gpu-driver-rim-schema-validated":true,
-                            "x-nv-gpu-driver-rim-cert-extracted":true,
-                            "x-nv-gpu-driver-rim-signature-verified":true,
-                            "x-nv-gpu-driver-rim-driver-measurements-available":true,
-                            "x-nv-gpu-driver-vbios-rim-fetched":true,
-                            "x-nv-gpu-vbios-rim-schema-validated":true,
-                            "x-nv-gpu-vbios-rim-cert-extracted":true,
-                            "x-nv-gpu-vbios-rim-signature-verified":true,
-                            "x-nv-gpu-vbios-rim-driver-measurements-available":true,
-                            "x-nv-gpu-vbios-index-conflict":true,
-                            "x-nv-gpu-measurements-match":true
-                        }
-                    }
-
-        """
-        super().__init__()
-        self.verifiers = verifiers
+    def can_verify(self) -> bool:
+        return True
 
     def get_namespace(self) -> str:
         return GPU_NAMESPACE
 
-    def generate(self) -> str:
-        raise NotImplementedError
+if __name__=="__main__":
+    gpu_ath = GPUAuthorizer(verifier_url="https://nras.attestation.nvidia.com/v1/attest/gpu")
+    # gpu_tp.generate()
+    test_token = gpu_ath.generate()
+    # print(test_token)
+    # test_token='[["JWT", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJOVi1BdHRlc3RhdGlvbi1TREsiLCJpYXQiOjE3MDk3NTA0NTQsImV4cCI6bnVsbH0.WI8rPoyzzDCXSOYN6yGC6kEYpqXif-SagpLli7-KeTM"], {"REMOTE_GPU_CLAIMS": "eyJraWQiOiJudi1hdHRlc3RhdGlvbi1zaWduLWtpZC1wcm9kLTIwMjQwMzA1MTE1MjIyIiwiYWxnIjoiRVMzODQifQ.eyJzdWIiOiJOVklESUEtR1BVLUFUVEVTVEFUSU9OIiwic2VjYm9vdCI6dHJ1ZSwieC1udmlkaWEtZ3B1LW1hbnVmYWN0dXJlciI6Ik5WSURJQSBDb3Jwb3JhdGlvbiIsIngtbnZpZGlhLWF0dGVzdGF0aW9uLXR5cGUiOiJHUFUiLCJpc3MiOiJodHRwczpcL1wvbnJhcy5hdHRlc3RhdGlvbi5udmlkaWEuY29tIiwiZWF0X25vbmNlIjoiOTMxRDhERDBBREQyMDNBQzNEOEI0RkJERTc1RTExNTI3OEVFRkNEQ0VBQzVCODc2NzFBNzQ4RjMyMzY0REZDQiIsIngtbnZpZGlhLWF0dGVzdGF0aW9uLWRldGFpbGVkLXJlc3VsdCI6eyJ4LW52aWRpYS1ncHUtZHJpdmVyLXJpbS1zY2hlbWEtdmFsaWRhdGVkIjp0cnVlLCJ4LW52aWRpYS1ncHUtdmJpb3MtcmltLWNlcnQtdmFsaWRhdGVkIjp0cnVlLCJ4LW52aWRpYS1ncHUtYXR0ZXN0YXRpb24tcmVwb3J0LWNlcnQtY2hhaW4tdmFsaWRhdGVkIjp0cnVlLCJ4LW52aWRpYS1ncHUtZHJpdmVyLXJpbS1zY2hlbWEtZmV0Y2hlZCI6dHJ1ZSwieC1udmlkaWEtZ3B1LWF0dGVzdGF0aW9uLXJlcG9ydC1wYXJzZWQiOnRydWUsIngtbnZpZGlhLWdwdS1ub25jZS1tYXRjaCI6dHJ1ZSwieC1udmlkaWEtZ3B1LXZiaW9zLXJpbS1zaWduYXR1cmUtdmVyaWZpZWQiOnRydWUsIngtbnZpZGlhLWdwdS1kcml2ZXItcmltLXNpZ25hdHVyZS12ZXJpZmllZCI6dHJ1ZSwieC1udmlkaWEtZ3B1LWFyY2gtY2hlY2siOnRydWUsIngtbnZpZGlhLWF0dGVzdGF0aW9uLXdhcm5pbmciOm51bGwsIngtbnZpZGlhLWdwdS1tZWFzdXJlbWVudHMtbWF0Y2giOnRydWUsIngtbnZpZGlhLWdwdS1hdHRlc3RhdGlvbi1yZXBvcnQtc2lnbmF0dXJlLXZlcmlmaWVkIjp0cnVlLCJ4LW52aWRpYS1ncHUtdmJpb3MtcmltLXNjaGVtYS12YWxpZGF0ZWQiOnRydWUsIngtbnZpZGlhLWdwdS1kcml2ZXItcmltLWNlcnQtdmFsaWRhdGVkIjp0cnVlLCJ4LW52aWRpYS1ncHUtdmJpb3MtcmltLXNjaGVtYS1mZXRjaGVkIjp0cnVlLCJ4LW52aWRpYS1ncHUtdmJpb3MtcmltLW1lYXN1cmVtZW50cy1hdmFpbGFibGUiOnRydWUsIngtbnZpZGlhLWdwdS1kcml2ZXItcmltLWRyaXZlci1tZWFzdXJlbWVudHMtYXZhaWxhYmxlIjp0cnVlfSwieC1udmlkaWEtdmVyIjoiMS4wIiwibmJmIjoxNzA5NzUwNDY2LCJ4LW52aWRpYS1ncHUtZHJpdmVyLXZlcnNpb24iOiI1MzUuMTI5LjAzIiwiZGJnc3RhdCI6ImRpc2FibGVkIiwiaHdtb2RlbCI6IkdIMTAwIEEwMSBHU1AgQlJPTSIsIm9lbWlkIjoiNTcwMyIsIm1lYXNyZXMiOiJjb21wYXJpc29uLXN1Y2Nlc3NmdWwiLCJleHAiOjE3MDk3NTQwNjYsImlhdCI6MTcwOTc1MDQ2NiwieC1udmlkaWEtZWF0LXZlciI6IkVBVC0yMSIsInVlaWQiOiI1MzQyNDkwNzAzMzcyNjAwNjk3MjE4NzI1ODI2NDM4NzA4NDYzNjE3MzI2MDk5MjMiLCJ4LW52aWRpYS1ncHUtdmJpb3MtdmVyc2lvbiI6Ijk2LjAwLjc0LjAwLjExIiwianRpIjoiOWU2NzU3MmYtYThmNy00YWY3LWFhYzctNzNiOWEzZGU0NzIwIn0.Te2hD9zdKCg5c58kmKbEajsB83o7hQ4hIt4AsGJ5GNc2ibhUiooLwtlPy1gie3eJKTfbmiBmP8t9fMA2h0kOodu2uRUjWOkKwtKoAI9esHuSxz1_avu65hsj-njKzgBW"}]'
+    result = gpu_ath.verify(test_token)
+    print(f"{result=}")
 
-    def verify(self, token: str) -> bool:
-        raise NotImplementedError
