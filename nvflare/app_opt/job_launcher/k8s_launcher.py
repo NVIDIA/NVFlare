@@ -23,7 +23,7 @@ from kubernetes.client.rest import ApiException
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
-from nvflare.app_opt.job_launcher.job_launcher_spec import JobHandleSpec, JobLauncherSpec
+from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec
 
 
 class JobState(Enum):
@@ -40,6 +40,14 @@ POD_STATE_MAPPING = {
     "Succeeded": JobState.SUCCEEDED,
     "Failed": JobState.TERMINATED,
     "Unknown": JobState.UNKNOWN,
+}
+
+RETURN_CODES = {
+    JobState.SUCCEEDED: 0,
+    JobState.STARTING: None,
+    JobState.RUNNING: None,
+    JobState.TERMINATED: 1,
+    JobState.UNKNOWN: None
 }
 
 
@@ -148,7 +156,7 @@ class K8sJobHandle(JobHandleSpec):
         if not all([isinstance(js, JobState)] for js in job_states_to_enter):
             raise ValueError(f"expect job_states_to_enter with valid values, but get {job_states_to_enter}")
         while True:
-            job_state = self.poll()
+            job_state = self._query_state()
             if job_state in job_states_to_enter:
                 return True
             elif timeout is not None and time.time() - starting_time > timeout:
@@ -162,6 +170,10 @@ class K8sJobHandle(JobHandleSpec):
         return self.enter_states([JobState.TERMINATED], timeout=self.timeout)
 
     def poll(self):
+        job_state = self._query_state()
+        return RETURN_CODES.get(job_state)
+
+    def _query_state(self):
         try:
             resp = self.api_instance.read_namespaced_pod(name=self.job_id, namespace=self.namespace)
         except ApiException as e:
@@ -255,9 +267,9 @@ class K8sJobLauncher(JobLauncherSpec):
             job_handle.terminate()
             return None
 
-    def can_launch(self, launch_data: dict) -> bool:
+    def can_launch(self, launch_data: dict, fl_ctx: FLContext) -> bool:
         job_image = launch_data.get(JobConstants.JOB_IMAGE)
-        if job_image in self.supported_images:
+        if job_image:
             return True
         else:
             return False

@@ -60,10 +60,11 @@ class JobLauncherSpec:
         raise NotImplementedError()
 
     @abstractmethod
-    def can_launch(self, launch_data: dict) -> bool:
+    def can_launch(self, launch_data: dict, fl_ctx: FLContext) -> bool:
         """To determine if the launcher can launch this job.
 
         Args:
+            fl_ctx: FLContext
             launch_data: job launch meta data
 
         Returns: True / False

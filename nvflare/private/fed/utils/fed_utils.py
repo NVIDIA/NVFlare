@@ -380,7 +380,7 @@ def get_target_names(targets):
     return target_names
 
 
-def get_return_code(process, job_id, workspace, logger):
+def get_return_code(job_handle, job_id, workspace, logger):
     run_dir = os.path.join(workspace, job_id)
     rc_file = os.path.join(run_dir, FLMetaKey.PROCESS_RC_FILE)
     if os.path.exists(rc_file):
@@ -391,11 +391,11 @@ def get_return_code(process, job_id, workspace, logger):
         except Exception:
             logger.warning(
                 f"Could not get the return_code from {rc_file} of the job:{job_id}, "
-                f"Return the RC from the process:{process.pid}"
+                f"Return the RC from the job_handle:{job_handle}"
             )
-            return_code = process.poll()
+            return_code = job_handle.poll()
     else:
-        return_code = process.poll()
+        return_code = job_handle.poll()
     return return_code
 
 

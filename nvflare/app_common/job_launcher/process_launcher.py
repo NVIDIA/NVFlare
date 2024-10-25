@@ -20,7 +20,7 @@ import sys
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
-from nvflare.app_opt.job_launcher.job_launcher_spec import JobHandleSpec, JobLauncherSpec
+from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec
 from nvflare.private.fed.utils.fed_utils import add_custom_dir_to_path
 
 
@@ -108,7 +108,7 @@ class ProcessJobLauncher(JobLauncherSpec):
 
         return ProcessHandle(process)
 
-    def can_launch(self, launch_data: dict) -> bool:
+    def can_launch(self, launch_data: dict, fl_ctx: FLContext) -> bool:
         job_image = launch_data.get(JobConstants.JOB_IMAGE)
         if job_image:
             return False
