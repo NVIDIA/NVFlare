@@ -1,0 +1,12 @@
+[
+  {
+    "taskname": "sentiment",
+    "prompt_template": "<|VIRTUAL_PROMPT_0|> {sentence} sentiment:{label}",
+    "total_virtual_tokens": 10,
+    "virtual_token_splits": [10],
+    "truncate_field": null,
+    "answer_only_loss": true,
+    "answer_field": "label"
+  }
+]
+

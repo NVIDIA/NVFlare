@@ -1,0 +1,22 @@
+{
+  "format_version": 2,
+  "workflows": [
+    {
+      "id": "controller",
+      "path": "nvflare.app_common.hub.hub_controller.HubController",
+      "args": {
+        "pipe_id": "pipe"
+      }
+    }
+  ],
+  "components": [
+    {
+      "id": "pipe",
+      "path": "nvflare.fuel.utils.pipe.file_pipe.FilePipe",
+      "args": {
+        "root_path": "/tmp/nvflare/hub/pipe/t1_t2a",
+        "mode": "PASSIVE"
+      }
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,14 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, RunProcessKey, ServerCommandKey
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic, ServerCommandKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
+from nvflare.fuel.f3.message import Message
+from nvflare.private.fed.server.run_manager import RunManager
 from nvflare.private.fed.server.server_state import HotState
-from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 
 from ..server.fed_server import FederatedServer
 from ..server.server_engine import ServerEngine
@@ -32,10 +33,47 @@ class SimulatorServerEngine(ServerEngine):
     def sync_clients_from_main_process(self):
         pass
 
-    def parent_aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
-        replies = self.aux_send(targets=targets, topic=topic, request=request, timeout=timeout, fl_ctx=fl_ctx)
+    def update_job_run_status(self):
+        pass
 
-        return replies
+    def fire_event(self, event_type: str, fl_ctx: FLContext):
+        if self.run_manager:
+            self.run_manager.fire_event(event_type, fl_ctx)
+
+    def send_aux_request(
+        self,
+        targets: [],
+        topic: str,
+        request: Shareable,
+        timeout: float,
+        fl_ctx: FLContext,
+        optional=False,
+        secure=False,
+    ) -> dict:
+        try:
+            return super().send_aux_to_targets(targets, topic, request, timeout, fl_ctx, optional, secure)
+        except Exception as e:
+            if topic != ReservedTopic.END_RUN:
+                self.logger.error(f"Failed to send the aux_message: {topic} with exception: {e}.")
+
+    def multicast_aux_requests(
+        self,
+        topic: str,
+        target_requests: Dict[str, Shareable],
+        timeout: float,
+        fl_ctx: FLContext,
+        optional: bool = False,
+        secure: bool = False,
+    ) -> dict:
+        if topic != ReservedTopic.END_RUN:
+            return super().multicast_aux_requests(topic, target_requests, timeout, fl_ctx, optional, secure=secure)
+        else:
+            return {}
+
+
+class SimulatorRunManager(RunManager):
+    def create_job_processing_context_properties(self, workspace, job_id):
+        return {}
 
 
 class SimulatorServer(FederatedServer):
@@ -62,19 +100,12 @@ class SimulatorServer(FederatedServer):
             handlers,
             args,
             secure_train,
-            enable_byoc,
+            # enable_byoc,
             snapshot_persistor,
             overseer_agent,
         )
 
-        self.engine.run_processes[SimulatorConstants.JOB_NAME] = {
-            RunProcessKey.LISTEN_PORT: None,
-            RunProcessKey.CONNECTION: None,
-            RunProcessKey.CHILD_PROCESS: None,
-            RunProcessKey.JOB_ID: SimulatorConstants.JOB_NAME,
-            # RunProcessKey.PARTICIPANTS: job_clients,
-        }
-
+        self.job_cell = None
         self.server_state = HotState()
 
     def _process_task_request(self, client, fl_ctx, shared_fl_ctx: FLContext):
@@ -96,14 +127,11 @@ class SimulatorServer(FederatedServer):
             server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
             server_runner.process_submission(client, contribution_task_name, task_id, shareable, fl_ctx)
 
-    def remove_dead_clients(self):
-        pass
-
     def _aux_communicate(self, fl_ctx, shareable, shared_fl_context, topic):
         try:
             with self.engine.lock:
                 reply = self.engine.dispatch(topic=topic, request=shareable, fl_ctx=fl_ctx)
-        except BaseException:
+        except Exception:
             self.logger.info("Could not connect to server runner process - asked client to end the run")
             reply = make_reply(ReturnCode.COMMUNICATION_ERROR)
 
@@ -116,7 +144,30 @@ class SimulatorServer(FederatedServer):
 
     def deploy(self, args, grpc_args=None, secure_train=False):
         super(FederatedServer, self).deploy(args, grpc_args, secure_train)
+        self._register_cellnet_cbs()
 
     def stop_training(self):
         self.engine.run_processes.clear()
         super().stop_training()
+
+    def create_run_manager(self, workspace, job_id):
+        return SimulatorRunManager(
+            server_name=self.project_name,
+            engine=self.engine,
+            job_id=job_id,
+            workspace=workspace,
+            components=self.runner_config.components,
+            client_manager=self.client_manager,
+            handlers=self.runner_config.handlers,
+        )
+
+    def stop_run_engine_cell(self):
+        self.engine.ask_to_stop()
+        # self.job_cell.stop()
+        # super().stop_run_engine_cell()
+
+    def authentication_check(self, request: Message, state_check):
+        return None
+
+    def client_cleanup(self):
+        pass

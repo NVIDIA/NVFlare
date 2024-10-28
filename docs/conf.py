@@ -44,13 +44,15 @@ print(sys.path)
 # -- Project information -----------------------------------------------------
 
 project = "NVIDIA FLARE"
-copyright = "2022, NVIDIA"
+copyright = "2024, NVIDIA"
 author = "NVIDIA"
 
 # The full version, including alpha/beta/rc tags
-release = "2.1.0"
-version = "2.1.0"
+release = "2.4.0"
+version = "2.4.0"
 
+readthedocs_version_name = os.environ.get("READTHEDOCS_VERSION_NAME")
+build_version = readthedocs_version_name if readthedocs_version_name not in (None, "latest", "stable") else "main"
 
 # -- General configuration ---------------------------------------------------
 
@@ -76,6 +78,9 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.viewcode",
     "sphinx.ext.autosectionlabel",
+    "sphinx_copybutton",
+    "sphinxcontrib.jquery",
+    "sphinx.ext.extlinks"
 ]
 
 autoclass_content = "both"
@@ -90,6 +95,7 @@ autosectionlabel_prefix_document = True
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = []
 
+extlinks = {"github_nvflare_link": (f"https://github.com/NVIDIA/NVFlare/tree/{build_version}/%s", "")}
 
 # -- Options for HTML output -------------------------------------------------
 
@@ -101,13 +107,14 @@ html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 html_theme_options = {
     "collapse_navigation": True,
     "display_version": True,
-    "navigation_depth": 5,
+    "navigation_depth": 8,
     "sticky_navigation": True,  # Set to False to disable the sticky nav while scrolling.
     # 'logo_only': True,  # if we have a html_logo below, this shows /only/ the logo with no title text
 }
 html_scaled_image_link = False
 html_show_sourcelink = True
 html_favicon = "favicon.ico"
+html_logo = "resources/nvidia_logo.png"
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,

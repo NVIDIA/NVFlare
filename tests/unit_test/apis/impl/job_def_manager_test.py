@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,9 +20,10 @@ from unittest import mock
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.job_def_manager import SimpleJobDefManager
-from nvflare.apis.job_def import JobDataKey, JobMetaKey
+from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.storage import WORKSPACE
 from nvflare.app_common.storages.filesystem_storage import FilesystemStorage
-from nvflare.fuel.hci.zip_utils import zip_directory_to_bytes
+from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 
 
@@ -42,7 +43,7 @@ class TestJobManager(unittest.TestCase):
             mock_store.return_value = FilesystemStorage()
 
             data, meta = self._create_job()
-            content = self.job_manager.get_content(meta.get(JobMetaKey.JOB_ID), self.fl_ctx)
+            content = self.job_manager.get_content(meta, self.fl_ctx)
             assert content == data
 
     def _create_job(self):
@@ -60,5 +61,5 @@ class TestJobManager(unittest.TestCase):
             data, meta = self._create_job()
             job_id = meta.get(JobMetaKey.JOB_ID)
             self.job_manager.save_workspace(job_id, data, self.fl_ctx)
-            result = self.job_manager.get_job_data(job_id, self.fl_ctx)
-            assert result.get(JobDataKey.WORKSPACE_DATA.value) == data
+            result = self.job_manager.get_storage_component(job_id, WORKSPACE, self.fl_ctx)
+            assert result == data

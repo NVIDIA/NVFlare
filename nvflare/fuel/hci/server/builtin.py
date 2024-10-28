@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 from typing import List
 
 from nvflare.fuel.hci.conn import Connection
-from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
+from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandModuleSpec, CommandSpec
 
 from .reg import ServerCommandRegister
 
@@ -38,14 +38,7 @@ class BuiltInCmdModule(CommandModule):
                     usage="_commands",
                     handler_func=self.handle_list_commands,
                     visible=False,
-                ),
-                CommandSpec(
-                    name="echo",
-                    description="echo user input back to client",
-                    usage="echo args ...",
-                    handler_func=self.handle_echo,
-                    visible=False,
-                ),
+                )
             ],
         )
 
@@ -69,20 +62,20 @@ class BuiltInCmdModule(CommandModule):
 
     def handle_list_commands(self, conn: Connection, args: List[str]):
         if len(args) <= 1:
-            table = conn.append_table(["Scope", "Command", "Description", "Usage", "Confirm"])
+            table = conn.append_table(["Scope", "Command", "Description", "Usage", "Confirm", "ClientCmd", "Visible"])
+
             for scope_name in sorted(self.reg.scopes):
                 scope = self.reg.scopes[scope_name]
                 for cmd_name in sorted(scope.entries):
+                    assert isinstance(cmd_name, str)
                     e = scope.entries[cmd_name]
-                    if e.visible:
-                        table.add_row([scope_name, cmd_name, e.desc, e.usage, e.confirm])
+                    assert isinstance(e, CommandEntry)
+                    if not cmd_name.startswith("_"):
+                        # NOTE: command name that starts with _ is internal command and should not be sent to client!
+                        table.add_row([scope_name, cmd_name, e.desc, e.usage, e.confirm, e.client_cmd, str(e.visible)])
         else:
             for cmd_name in args[1:]:
                 self._show_command(conn, cmd_name)
-
-    def handle_echo(self, conn: Connection, args: List[str]):
-        for a in args:
-            conn.append_string(a)
 
 
 def new_command_register_with_builtin_module(app_ctx):

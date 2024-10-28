@@ -3,7 +3,7 @@
 Contributing
 ============
 
-Welcome to NVIDIA FLARE! We’re excited you’re here and want to
+Welcome to NVIDIA FLARE! We're excited you're here and want to
 contribute. This documentation is intended for individuals and
 institutions interested in contributing to NVIDIA FLARE. NVIDIA FLARE is
 an open-source project and, as such, its success relies on its community
@@ -13,7 +13,7 @@ page and understand our contribution process, whether you are a seasoned
 open-source contributor or whether you are a first-time contributor.
 
 Communicate with us
-~~~~~~~~~~~~~~~~~~~
+-------------------
 
 We are happy to talk with you about your needs for NVIDIA FLARE and your
 ideas for contributing to the project. One way to do this is to create
@@ -28,13 +28,13 @@ The contribution process
 
 We encourage you to create pull requests early. It helps us track the
 contributions under development, whether they are ready to be merged or
-not. Change your pull request’s title, to begin with ``[WIP]`` and/or
+not. Change your pull request's title, to begin with ``[WIP]`` and/or
 `create a draft pull
 request <https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/about-pull-requests#draft-pull-requests>`__
 until it is ready for formal review.
 
 Preparing pull requests
-~~~~~~~~~~~~~~~~~~~~~~~
+-----------------------
 
 To ensure the code quality, NVIDIA FLARE relies on several linting tools
 (`flake8 and its plugins <https://gitlab.com/pycqa/flake8>`__,
@@ -91,20 +91,20 @@ To build the docs, first make sure you have all requirements
 .. code:: bash
 
    python -m pip upgrade
-   python -m pip install -r requirements-dev.txt
+   python -m pip install -e .[doc]
 
 To build the docs, please run.
 
 .. code:: bash
 
-   ./build_docs --html
+   ./build_doc.sh --html
 
 Once built, you can view the docs in ``docs/_build folder``. To clean
 the docs, please run
 
 .. code:: bash
 
-   ./build_docs --clean
+   ./build_doc.sh --clean
 
 Signing your work
 ^^^^^^^^^^^^^^^^^
@@ -168,12 +168,12 @@ Full text of the DCO:
        this project or the open source license(s) involved.
 
 Submitting pull requests
-~~~~~~~~~~~~~~~~~~~~~~~~
+------------------------
 
-All code changes to the dev branch must be done via `pull
+All code changes to the ``main`` branch must be done via `pull
 requests <https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/proposing-changes-to-your-work-with-pull-requests>`__.
 1. Create a new ticket or take a known ticket from `the issue
-list <https://github.com/NVIDIA/NVFlare/issues>`__. 2. Check if there’s
+list <https://github.com/NVIDIA/NVFlare/issues>`__. 2. Check if there is
 already a branch dedicated to the task. 3. If the task has not been
 taken, `create a new branch in your
 fork <https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request-from-a-fork>`__
@@ -183,23 +183,20 @@ messages if possible <https://chris.beams.io/posts/git-commit/>`__). 5.
 Make sure that new tests cover the changes and the changed codebase
 `passes all tests locally <#unit-testing>`__. 6. `Create a new pull
 request <https://help.github.com/en/desktop/contributing-to-projects/creating-a-pull-request>`__
-from the task branch to the dev branch, with detailed descriptions of
+from the task branch to the ``main`` branch, with detailed descriptions of
 the purpose of this pull request. 7. Check `the CI/CD status of the pull
 request <https://github.com/NVIDIA/NVFlare/actions>`__, make sure all
 CI/CD tests passed. 8. Assign 2 reviewers. One of the reviewers must be
 a code owner for this section of code. 9. Wait for reviews; if there are
 reviews, make point-to-point responses, make further code changes if
 needed. 10. If there are conflicts between the pull request branch and
-the main branch, pull the changes from the main and resolve the
+the ``main`` branch, pull the changes from ``main`` and resolve the
 conflicts locally. 11. Reviewer and contributor may have discussions
 back and forth until all comments addressed. All conversations must be
 resolved for PR to pass. 12. Wait for the pull request to be merged.
 
-The code reviewing process
---------------------------
-
 Reviewing pull requests
-~~~~~~~~~~~~~~~~~~~~~~~
+-----------------------
 
 All code review comments should be specific, constructive, and
 actionable. 1. Check `the CI/CD status of the pull

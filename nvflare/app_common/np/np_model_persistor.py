@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
+from nvflare.security.logging import secure_format_exception
 
 from .constants import NPConstants
 
@@ -37,6 +38,16 @@ def _get_run_dir(fl_ctx: FLContext):
 
 class NPModelPersistor(ModelPersistor):
     def __init__(self, model_dir="models", model_name="server.npy"):
+        """Model persistor for numpy arrays.
+
+        Note:
+            If the specified model can't be found using "model_dir"/"model_name"
+            Then default array of [[1, 2, 3], [4, 5, 6], [7, 8, 9]] is used.
+
+        Args:
+            model_dir (str, optional): model directory. Defaults to "models".
+            model_name (str, optional): model name. Defaults to "server.npy".
+        """
         super().__init__()
 
         self.model_dir = model_dir
@@ -54,7 +65,7 @@ class NPModelPersistor(ModelPersistor):
         except Exception as e:
             self.log_info(
                 fl_ctx,
-                f"Unable to load model from {model_path}: {e}. Using default data instead.",
+                f"Unable to load model from {model_path}: {secure_format_exception(e)}. Using default data instead.",
                 fire_event=False,
             )
             data = self.default_data.copy()

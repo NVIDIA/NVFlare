@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,52 +16,49 @@ from collections import OrderedDict
 from datetime import datetime
 from typing import Any
 
+from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.decomposer import Decomposer
 
 
 class TupleDecomposer(Decomposer):
-    @staticmethod
-    def supported_type():
+    def supported_type(self):
         return tuple
 
-    def decompose(self, target: tuple) -> Any:
+    def decompose(self, target: tuple, manager: DatumManager = None) -> Any:
         return list(target)
 
-    def recompose(self, data: Any) -> tuple:
+    def recompose(self, data: Any, manager: DatumManager = None) -> tuple:
         return tuple(data)
 
 
 class SetDecomposer(Decomposer):
-    @staticmethod
-    def supported_type():
+    def supported_type(self):
         return set
 
-    def decompose(self, target: set) -> Any:
+    def decompose(self, target: set, manager: DatumManager = None) -> Any:
         return list(target)
 
-    def recompose(self, data: Any) -> set:
+    def recompose(self, data: Any, manager: DatumManager = None) -> set:
         return set(data)
 
 
 class OrderedDictDecomposer(Decomposer):
-    @staticmethod
-    def supported_type():
+    def supported_type(self):
         return OrderedDict
 
-    def decompose(self, target: OrderedDict) -> Any:
+    def decompose(self, target: OrderedDict, manager: DatumManager = None) -> Any:
         return list(target.items())
 
-    def recompose(self, data: Any) -> set:
+    def recompose(self, data: Any, manager: DatumManager = None) -> OrderedDict:
         return OrderedDict(data)
 
 
 class DatetimeDecomposer(Decomposer):
-    @staticmethod
-    def supported_type():
+    def supported_type(self):
         return datetime
 
-    def decompose(self, target: datetime) -> Any:
+    def decompose(self, target: datetime, manager: DatumManager = None) -> Any:
         return target.isoformat()
 
-    def recompose(self, data: Any) -> datetime:
+    def recompose(self, data: Any, manager: DatumManager = None) -> datetime:
         return datetime.fromisoformat(data)

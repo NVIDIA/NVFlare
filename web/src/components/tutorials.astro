@@ -1,0 +1,673 @@
+---
+import GoogleColab from '../images/google_colab.svg.png'
+import ClickTracker from './clickTracker.astro';
+
+const gh_branch = import.meta.env.PUBLIC_GH_BRANCH;
+const base_url = import.meta.env.BASE_URL;
+
+const tutorials = [
+  {
+    title: "Intro to the FL Simulator",
+    tags: ["beg.", "tools"],
+    description: "Use the NVIDIA FLARE Simulator to run a local simulation with multi-process settings within a single computer, offering quick response and debugging.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/tutorials/flare_simulator.ipynb`,
+    colab_link: `https://colab.research.google.com/github/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/flare_simulator.ipynb`
+  },
+  {
+    title: "POC Mode",
+    tags: ["beg.", "tools"],
+    description: "Proof-of-concept mode to simulate real-world deployment on a local host with different processes represent server, clients, and an admin console.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/tutorials/setup_poc.ipynb`
+  },
+  {
+    title: "FLARE API",
+    tags: ["beg.", "tools"],
+    description: "Manage system and jobs programmatically with the python FLARE API.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/tutorials/flare_api.ipynb`,
+    colab_link: `https://colab.research.google.com/github/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/flare_api.ipynb`
+  },
+  {
+    title: "Job CLI",
+    tags: ["beg.", "tools"],
+    description: "Job CLI for options to create and submit jobs from a command line interface in POC or production environments.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/tutorials/job_cli.ipynb`,
+    colab_link: `https://colab.research.google.com/github/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/job_cli.ipynb`
+  },
+  {
+    title: "Operating NVIDIA FLARE: Admin Client, Commands, FLARE API",
+    tags: ["int.", "tools"],
+    description:
+      "Operate NVIDIA FLARE with the commands and functionalities of the admin client, which allow you to manage your system.",
+    link: "https://nvflare.readthedocs.io/en/main/real_world_fl/operation.html",
+  },
+  {
+    title: "FL Experiment Tracking with TensorBoard Streaming",
+    tags: ["int.", "tools", "pytorch"],
+    description: "Example integrating NVIDIA FLARE with TensorBoard streaming capability from clients to the server.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/experiment-tracking/tensorboard/README.md`
+  },
+  {
+    title: "FL Experiment Tracking with MLflow",
+    tags: ["int.", "tools", "pytorch"],
+    description: "Example integrating NVIDIA FLARE with MLflow streaming capability from clients to the server.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/experiment-tracking/mlflow/README.md`
+  },
+  {
+    title: "FL Experiment Tracking with Weights and Biases",
+    tags: ["int.", "tools", "pytorch"],
+    description: "Example integrating NVIDIA FLARE with Weights and Biases streaming capability from clients to the server.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/experiment-tracking/wandb/README.md`
+  },
+  {
+    title: "Containerized Deployment with Docker",
+    tags: ["beg.", "deployment"],
+    description:
+      "Run NVIDIA FLARE in a Docker container.",
+    link: "https://nvflare.readthedocs.io/en/main/quickstart.html#containerized-deployment-with-docker",
+  },
+  {
+    title: "Cloud Deployment",
+    tags: ["adv.", "deployment"],
+    description:
+      "Deploy the NVIDIA FLARE dashboard, server, and clients in the cloud. Learn to use the provided scripts for AWS and Azure.",
+    link: "https://nvflare.readthedocs.io/en/main/real_world_fl/cloud_deployment.html",
+  },
+  {
+    title: "Deployment to Kubernetes",
+    tags: ["adv.", "deployment"],
+    description:
+      "Run NVIDIA FLARE inside Amazon Elastic Kubernetes Service (EKS).",
+    link: "https://nvflare.readthedocs.io/en/main/real_world_fl/kubernetes.html",
+  },
+  {
+    title: "Helm Chart Deployment",
+    tags: ["adv.", "deployment"],
+    description:
+      "Use the provisioning tool's HelmChartBuilder to generate a reference Helm Chart to deploy NVIDIA FLARE to a local microk8s Kubernetes instance.",
+    link: "https://nvflare.readthedocs.io/en/main/user_guide/helm_chart.html",
+  },
+  {
+    title: "Secure Provisioning",
+    tags: ["adv.", "deployment"],
+    description:
+      "Utilize the secure provisioning tool for streamlining the process to provision, start, and operate federated learning with a trusted setup.",
+    link: "https://nvflare.readthedocs.io/en/main/real_world_fl/overview.html",
+  },
+  {
+    title: "Preflight Check",
+    tags: ["adv.", "deployment"],
+    description:
+      "Perform preliminary checks before starting up an NVFlare subsystem to catch errors early.",
+    link: "https://nvflare.readthedocs.io/en/main/user_guide/nvflare_cli/preflight_check.html",
+  },
+  {
+    title: "NVIDIA FLARE Dashboard",
+    tags: ["adv.", "deployment"],
+    description:
+      "Provides a CLI or UI to collect information of clients and users from different organizations, and generates startup kits with keys and certificates for users to download.",
+    link: "https://nvflare.readthedocs.io/en/main/user_guide/dashboard_api.html",
+  },
+  {
+    title: "Federated Policies",
+    tags: ["adv.", "deployment"],
+    description: "Example to demonstrate the federated site policies for authorization, resource and data privacy management.",
+    link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/advanced/federated-policies/README.rst`
+  },
+  {
+    title: "Custom Authentication",
+    tags: ["adv.", "deployment"],
+    description: "Example to demonstrate the custom authentication policy and secure mode.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/custom_authentication/README.rst`
+  },
+  {
+    title: "Job-Level Authorization",
+    tags: ["adv.", "deployment"],
+    description: "Example to demonstrate the job-level authorization policy and secure mode.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/job-level-authorization/README.md`
+  },
+  {
+    title: "Federated Learning Hub",
+    tags: ["adv.", "deployment"],
+    description: "Allow hierarchical interaction between several levels of NVIDIA FLARE FL systems, e.g. Tier-1 (hub) and Tier-2 (sub-systems).",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/fl_hub/README.md`
+  },
+  {
+    title: "Getting Started",
+    tags: ["beg.", "algorithm", "client-api", "model-controller", "job-api", "pytorch", "lightning", "sklearn", "tensorflow"],
+    description: "Getting started examples using the Client API, Model Controller API, and Job API for different frameworks.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/getting_started`
+  },
+  {
+    title: "Step-by-Step CIFAR10 Examples",
+    tags: ["beg.", "algorithm", "pytorch", "dl"],
+    description: "Step-by-step examples series with CIFAR-10 (image data) to showcase different NVIDIA FLARE features, workflows, and APIs.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/step-by-step/cifar10`
+  },
+  {
+    title: "Step-by-Step HIGGS Examples",
+    tags: ["beg.", "algorithm", "pandas", "sklearn", "xgboost"],
+    description: "Step-by-step examples series with HIGGS (tabular data) to showcase different NVIDIA FLARE features, workflows, and APIs.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/step-by-step/higgs`
+  },
+  {
+    title: "ML/DL to FL",
+    tags: ["beg.", "algorithm", "client-api", "numpy", "pytorch", "lightning", "tensorflow"],
+    description: "Example for converting Deep Learning (DL) code to Federated Learning (FL) using the Client API. Configurations for numpy, pytorch, lighting, and tensorflow.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/ml-to-fl`
+  },
+  {
+    title: "Hello FedAvg",
+    tags: ["beg.", "algorithm", "pytorch", "model-controller"],
+    description: "Example using the FedAvg workflow to implement Federated Averaging with early stopping, model selection, and saving and loading to show flexibility of Model Controller API.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-fedavg/README.md`
+  },
+  {
+    title: "Hello Numpy Cross-Site Validation",
+    tags: ["beg.", "algorithm", "numpy", "model-controller"],
+    description: "Example using the CrossSiteEval workflow for cross site evaluation. Demonstrate option to use previous results without training workflow.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-numpy-cross-val/README.md`
+  },
+  {
+    title: "Hello Cyclic Weight Transfer",
+    tags: ["beg.", "algorithm", "tensorflow", "model-controller", "dl"],
+    description: "Example using the CyclicController workflow to implement Cyclic Weight Transfer.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-cyclic/README.md`
+  },
+  {
+    title: "Hello PyTorch",
+    tags: ["beg.", "algorithm", "pytorch", "model-controller", "dl"],
+    description: "Example of an image classifier with FedAvg using PyTorch as the deep learning training framework.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-pt/README.md`
+  },
+  {
+    title: "Hello TensorFlow",
+    tags: ["beg.", "algorithm", "tensorflow", "model-controller", "dl"],
+    description: "Example of an image classifier with FedAvg using TensorFlow as the deep learning training framework.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-tf/README.md`
+  },
+  {
+    title: "Job API Examples",
+    tags: ["int.", "algorithm", "job-api", "pytorch", "lightning", "sklearn", "tensorflow"],
+    description: "Various examples using the Job API for different workflows and frameworks.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/job_api`
+  },
+  {
+    title: "Simulated Federated Learning with CIFAR-10",
+    tags: ["int.", "algorithm", "simulator", "pytorch", "learner", "model-controller", "dl"],
+    description: "Running FedAvg, FedProx, FedOpt, and SCAFFOLD algorithms using the FL simulator.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/cifar10/cifar10-sim/README.md`
+  },
+  {
+    title: "Real-world Federated Learning with CIFAR-10",
+    tags: ["int.", "algorithm", "poc", "pytorch", "learner", "dl", "he", "highlight"],
+    description: "Provisioning secure workspace and running FedAvg with streaming of TensorBoard metrics to the server during training and homomorphic encryption.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/cifar10/cifar10-real-world/README.md`
+  },
+  {
+    title: "Logistic Regression with Newton-Raphton",
+    tags: ["int.", "algorithm", "client-api", "model-controller", "ml"],
+    description:
+      "Federated binary classification via logistic regression with second-order Newton-Raphson optimization.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/lr-newton-raphson`,
+  },
+  {
+    title: "Survival Analysis with Federated Kaplan-Meier",
+    tags: ["int.", "algorithm", "healthcare", "client-api", "model-controller", "he", "analytics", "highlight"],
+    description:
+      "Kaplan-Meier survival analysis in federated setting without and with secure features via time-binning and Homomorphic Encryption (HE).",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/kaplan-meier-he`,
+  },
+  {
+    title: "Swarm Learning",
+    tags: ["int.", "algorithm", "pytorch", "learner", "dl"],
+    description:
+      "Example using Swarm Learning and Client-Controlled Cross-site Evaluation workflows.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/swarm_learning`,
+  },
+  {
+    title: "Federated Linear Model with Scikit-learn",
+    tags: ["int.", "algorithm", "sklearn", "ml"],
+    description: "Using scikit-learn for federated linear model learning on tabular data.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/sklearn-linear/README.md`
+  },
+  {
+    title: "Federated K-Means Clustering with Scikit-learn",
+    tags: ["int.", "algorithm", "sklearn", "ml"],
+    description: "Using scikit-learn and k-Means for federated clustering on tabular data.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/sklearn-kmeans/README.md`
+  },
+  {
+    title: "Federated SVM with Scikit-learn",
+    tags: ["int.", "algorithm", "sklearn", "ml"],
+    description: "Using scikit-learn and SVM for federated model learning on tabular data.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/sklearn-svm/README.md`
+  },
+  {
+    title: "Histogram-based FL for XGBoost",
+    tags: ["adv.", "algorithm", "xgboost", "ml"],
+    description: "Histogram-based algorithm for XGBoost.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/xgboost/histogram-based/README.md`
+  },
+  {
+    title: "Tree-based Federated Learning for XGBoost",
+    tags: ["adv.", "algorithm", "xgboost", "ml"],
+    description: "Tree-based algorithms including bagging and cyclic approaches for XGBoost.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/xgboost/tree-based/README.md`
+  },
+  {
+    title: "Federated Learning for Random Forest based on XGBoost",
+    tags: ["adv.", "algorithm", "xgboost", "ml"],
+    description: "Example of using NVIDIA FLARE with scikit-learn and Random Forest.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/random_forest/README.md`
+  },
+  {
+    title: "Federated Vertical XGBoost",
+    tags: ["adv.", "algorithm", "xgboost", "ml"],
+    description: "Example using Private Set Intersection and XGBoost on vertically split HIGGS data.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/vertical_xgboost/README.md`
+  },
+  {
+    title: "NVFlare + MONAI integration",
+    tags: ["adv.", "algorithm", "healthcare", "monai", "dl"],
+    description: "Using NVIDIA FLARE to train a 3D medical image analysis model using federated averaging (FedAvg) and MONAI Bundle.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/integration/monai/README.md`
+  },
+  {
+    title: "Federated Learning with Differential Privacy for BraTS18 segmentation",
+    tags: ["adv.", "algorithm", "healthcare", "dp", "monai", "dl"],
+    description: "Illustrates the use of differential privacy for training brain tumor segmentation models using federated learning.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/brats18/README.md`
+  },
+  {
+    title: "Federated Learning for Prostate Segmentation from Multi-source Data",
+    tags: ["adv.", "algorithm", "healthcare", "monai", "dl"],
+    description: "Example of training a multi-institutional prostate segmentation model using FedAvg, FedProx, and Ditto.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/prostate/README.md`
+  },
+  {
+    title: "Federated Statistics for Images",
+    tags: ["adv.", "algorithm", "pandas", "analytics"],
+    description: "Example of gathering local image histogram to compute the global dataset histograms.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/federated-statistics/image_stats/README.md`
+  },
+  {
+    title: "Federated Statistics for DataFrame",
+    tags: ["adv.", "algorithm", "pandas", "analytics"],
+    description: "Example of gathering local statistics summary from Pandas DataFrame to compute the global dataset statistics.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/federated-statistics/df_stats/README.md`
+  },
+  {
+    title: "MONAI & NVIDIA FLARE Integration with Experiment Tracking",
+    tags: ["adv.", "algorithm", "experiment-tracking", "monai"],
+    description: "Example using NVIDIA FLARE and MONAI integration with experiment tracking streaming from clients to server.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/integration/monai/examples/spleen_ct_segmentation_local/README.md#51-experiment-tracking-with-mlflow`
+  },
+  {
+    title: "KeyCloak Site Authentication Integration",
+    tags: ["adv.", "algorithm", "security"],
+    description: "Demonstrate KeyCloak integration for supporting site-specific authentication.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/keycloak-site-authentication/README.md`
+  },
+  {
+    title: "NLP-NER",
+    tags: ["adv.", "algorithm", "huggingface", "dl"],
+    description: "Illustrates both BERT and GPT-2 models from Hugging Face on a Named Entity Recognition (NER) task using the NCBI disease dataset.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/nlp-ner/README.md`
+  },
+  {
+    title: "Parameter Efficient Fine Turning",
+    tags: ["adv.", "algorithm", "nemo", "llm", "highlight"],
+    description: "Example utilizing NeMo's PEFT methods to adapt a LLM to a downstream task.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/integration/nemo/examples/peft`
+  },
+  {
+    title: "Prompt-Tuning Example",
+    tags: ["adv.", "algorithm", "nemo", "llm"],
+    description: "Example for using NVIDIA FLARE with NeMo for LLM prompt learning.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/integration/nemo/examples/prompt_learning`
+  },
+  {
+    title: "Supervised Fine Tuning (SFT)",
+    tags: ["adv.", "algorithm", "nemo", "llm"],
+    description: "Example to fine-tune all parameters of a LLM on supervised data.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/integration/nemo/examples/supervised_fine_tuning`
+  },
+  {
+    title: "LLM Tuning via HuggingFace SFT Trainer",
+    tags: ["adv.", "algorithm", "huggingface", "llm", "highlight"],
+    description: "Example for using NVIDIA FLARE with a HuggingFace trainer for LLM tuning tasks.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/llm_hf`
+  },
+  {
+    title: "Federated GNN: Protein Classification",
+    tags: ["adv.", "algorithm", "healthcare", "pytorch", "dl"],
+    description: "Example using GNNs for Protein Classification using PPI dataset using GraphSAGE.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning`
+  },
+  {
+    title: "Federated GNN: Financial Transaction Classification",
+    tags: ["adv.", "algorithm", "finance", "pytorch", "dl"],
+    description: "Example using GNNs for Financial Transaction Classification with Elliptic++ dataset using GraphSAGE.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning`
+  },
+  {
+    title: "Financial Application with Federated XGBoost Methods",
+    tags: ["adv.", "algorithm", "xgboost", "finance"],
+    description: "Example using XGBoost in vertical and horizontal approaches to train a federated model to perform fraud detection with a finance dataset.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/finance`
+  },
+  {
+    title: "BioNemo example for Drug Discovery",
+    tags: ["adv.", "algorithm", "nemo", "healthcare"],
+    description: "Running BioNeMo (NVIDIA's generative AI platform for drug discovery) in a federated learning environment using NVIDIA FLARE.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/bionemo`
+  },
+  {
+    title: "Hierarchical Federated Statistics",
+    tags: ["adv.", "algorithm", "analytics"],
+    description: "Show to generate hierarchical statistics for data that can be represented as Pandas Data Frame.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/federated-statistics/hierarchical_stats`
+  },
+  {
+    title: "TensorFlow Algorithms and Examples",
+    tags: ["adv.", "algorithm",  "model-controller", "tensorflow"],
+    description: "FedOpt, FedProx, Scaffold implementations for Tensorflow.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/job_api/tf`
+  },
+  {
+    title: "End-to-End Federated XGBoost for Financial Credit Card Detection",
+    tags: ["adv.", "algorithm", "xgboost", "finance"],
+    description: "Show the end-to-end process of feature engineering, pre-processing and training in federated settings. You can use FLARE to perform federated ETL and then training.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/finance-end-to-end`
+  },
+  {
+    title: "Auto-FedRL",
+    tags: ["adv.", "algorithm", "research", "pytorch"],
+    description: "Efficient reinforcement learning (RL)-based federated hyperparameter optimization algorithm.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research/auto-fed-rl`
+  },
+  {
+    title: "ConDistFL",
+    tags: ["adv.", "algorithm", "research", "pytorch"],
+    description: "Conditional Distillation for Federated Learning from Partially Annotated Data.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research/condist-fl`
+  },
+  {
+    title: "FedBN",
+    tags: ["adv.", "algorithm", "research", "pytorch"],
+    description: "Federated Learning on Non-IID Features via Local Batch Normalization designed to address the feature shift problem when aggregating models across different data distributions.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research/fed-bn`
+  },
+  {
+    title: "FedBPT",
+    tags: ["adv.", "algorithm", "research", "pytorch"],
+    description: "Efficient Federated Black-box Prompt Tuning for Large Language Models.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research/fed-bpt`
+  },
+  {
+    title: "FedCE",
+    tags: ["adv.", "algorithm", "research", "pytorch"],
+    description: "Fair Federated Medical Image Segmentation via Client Contribution Estimation.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research/fed-ce`
+  },
+  {
+    title: "FedSM",
+    tags: ["adv.", "algorithm", "research", "pytorch"],
+    description: "Personalized Federated Learning with FedSM Alogithrm. Closing the Generalization Gap of Cross-silo Federated Medical Image Segmentation.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research/fed-sm`
+  },
+  {
+    title: "One-shot Vertical Federated Learning",
+    tags: ["adv.", "algorithm", "research", "pytorch"],
+    description: "Solve the communication bottleneck and the problem of limited overlapping samples simultaneously based on semi-supervised learning.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research/one-shot-vfl`
+  },
+  {
+    title: "Quantifying Data Leakage in Federated Learning",
+    tags: ["adv.", "algorithm", "research", "pytorch"],
+    description: "Present new ways to measure and visualize potential data leakage in FL.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research/quantifying-data-leakage`
+  },
+  {
+    title: "Secure Federated XGBoost with Homomorphic Encryption",
+    tags: ["adv.", "algorithm", "xgboost", "he", "highlight"],
+    description:
+      "Federated secure training with XGBoost using homomorphic encryption.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/xgboost_secure`,
+  },
+]
+
+const level = ["beg.", "int.", "adv."];
+const tutorial_category = ["algorithm", "tools", "deployment", "research", "highlight"]
+const flare_api = ["client-api", "model-controller", "learner"];
+const framework = ["pytorch", "tensorflow", "lightning", "xgboost", "sklearn", "numpy", "nemo", "monai", "huggingface"];
+const application_type = ["ml", "dl", "llm", "analytics"];
+const industry_domain = ["healthcare", "finance"];
+const privacy_algorithm = ["he", "dp"];
+
+const tag_list = [
+  {
+      name: "Experience Level",
+      id: "level",
+      list: level,
+  },
+  {
+      name: "Tutorial Category",
+      id: "tutorial-category",
+      list: tutorial_category,
+  },
+  {
+      name: "Application Type",
+      id: "application-type",
+      list: application_type,
+  },
+  {
+      name: "Framework",
+      id: "framework",
+      list: framework,
+  },
+  {
+      name: "Industry Domain",
+      id: "industry-domain",
+      list: industry_domain,
+  },
+  {
+      name: "FLARE API",
+      id: "flare-api",
+      list: flare_api,
+  },
+  {
+      name: "Privacy Algorithm",
+      id: "privacy-algorithm",
+      list: privacy_algorithm,
+  },
+]
+
+---
+
+<ClickTracker div_id="tutorials_div" eventLabel="Tutorial Catalog"/>
+<div id="tutorials_div" class="bg-white py-16 sm:py-16">
+  <div class="mx-auto max-w-[1600px] px-6 lg:px-8">
+    <div class="mx-auto max-w-5xl mt-10 flex justify-left">
+      <a href={base_url} class="text-sm font-semibold leading-6 text-nvidia">
+        <span aria-hidden="true">&larr;</span>
+        Back to home
+      </a>
+    </div>
+    <!-- Tutorial Catalog Title & Description -->
+    <div class="mx-auto max-w-5xl mt-16 md:mt-0 text-center">
+      <h2 class="text-4xl lg:text-5xl font-bold lg:tracking-tight">
+        Tutorial Catalog
+      </h2>
+      <p class="text-lg mt-4 text-slate-600 w-3/4 m-auto">
+        Explore our extensive catalog of tutorials of NVIDIA FLARE features and examples for various applications.
+        Use the tags to filter by categories or search for keywords.
+
+        To read more, visit our
+        <a class="text-nvidia" href="https://nvflare.readthedocs.io/en/main/index.html">documentation</a> and
+        <a class="text-nvidia" href=`https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples`>GitHub</a>.
+      </p>
+    </div>
+
+    <div class="mx-auto max-w-[1600px] py-4 text-left inline-flex">
+
+      <div class="flex flex-col md:flex-row justify-center">
+        <div class="w-52 min-w-52 border-r border-transparent mr-12">
+
+          <!-- Search Bar -->
+          <form class="mb-4">
+            <label for="search-bar" class="sr-only">Search</label>
+              <div class="relative w-full">
+                <svg class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 stroke-gray-400" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 20">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m19 19-4-4m0-7A7 7 0 1 1 1 8a7 7 0 0 1 14 0Z"/>
+                </svg>
+                <input type="text" id="search-bar" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-nvidia focus:border-nvidia block w-full ps-10 p-2.5  dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" placeholder="Search keyword..." />
+            </div>
+          </form>
+          <!-- Filter Categories -->
+          <div id="filter-categories" class="ml-2 place-content-center" data-accordion="open" data-active-classes="bg-white dark:bg-gray-500 text-gray-500 dark:text-white" data-inactive-classes="text-gray-500 dark:text-gray-400">
+              {
+                tag_list.map((category) => (
+                  <div class="">
+                    <h2 id={category.name} class="">
+                      <button type="button" class="flex items-center justify-between mr-4 py-2 font-medium rtl:text-right text-gray-900 border-gray-200 dark:border-gray-700 dark:text-gray-400 gap-3" data-accordion-target={"#" + category.id} aria-expanded="true" aria-controls={category.id}>
+                        <span>{category.name}</span>
+                        <svg data-accordion-icon class="w-3 h-3 rotate-180 shrink-0" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 10 6">
+                          <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5 5 1 1 5"/>
+                        </svg>
+                      </button>
+                    </h2>
+                    <div id={category.id} class="hidden flex flex-wrap gap-x-1 w-40" aria-labelledby={category.name}>
+                      {category.list.map((tag) => (
+                        <ul>
+                          <input type="checkbox" id={tag} value="" class="check hidden peer" required=""/>
+                          <label for={tag} class="inline-flex rounded-full peer-checked:bg-green-50 px-2.5 py-0.5 text-xs font-medium text-gray-500 ring-1 ring-inset ring-gray-600/20 peer-checked:ring-green-600/20 text-gray-500 bg-white border-1 border-transparent rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-nvidia hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-green-700 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
+                            {tag}
+                          </label>
+                        </ul>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              }
+          </div>
+        </div>
+        <!-- Tutorial Cards -->
+        <div id="tutorials-wrapper" class="lg:max-w-5xl grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-16 mt-4"></div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<script define:vars={{tutorials, tag_list, GoogleColab}} is:inline>
+
+  const checkboxes = document.querySelectorAll('.check');
+  const filtersContainer = document.getElementById('filter-categories');
+  const searchInput = document.getElementById('search-bar');
+
+  // Initialize tutorials
+  const tutorialsWrapper = document.getElementById('tutorials-wrapper');
+  const tutorialsElements = [];
+  tutorials.forEach((tutorial) => {
+    const tutorialElement = createTutorialElement(tutorial);
+    tutorialsElements.push(tutorialElement);
+    tutorialsWrapper.appendChild(tutorialElement);
+  });
+
+  // Add filter event listeners
+  filtersContainer.addEventListener('change', filterTutorials);
+  searchInput.addEventListener('input', filterTutorials);
+
+  // Create tutorial element
+  function createTutorialElement(tutorial) {
+    const tutorialElement = document.createElement('div');
+
+    tutorialElement.className = 'item space-y-2';
+
+    let tutorial_tags = tutorial.tags.map((tag) => (
+        `<div class="inline-flex rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">
+          ${tag}
+        </div>`
+    )).join(" ")
+
+    let colab_button = ``;
+    if (tutorial.colab_link) {
+      colab_button = `
+      <span class="h-full w-px bg-gray-200"></span>
+        <a href="${tutorial.colab_link}" target="_blank" rel="noopener noreferrer" class="flex-1 border border-transparent h-full flex items-center justify-center text-sm font-semibold text-gray-900">
+          <div class="flex items-center">
+            <svg class="pb-1 w-6 h-6 me-1.5" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 18 20">
+              <image class="w-6 h-6" href="${GoogleColab.src}" alt="Google Colab logo"></image>
+            </svg>
+            <span>Google Colab</span>
+          </div>
+        </a>`;
+    }
+
+    tutorialElement.innerHTML = `
+    <div class="flex flex-col gap-1 divide-gray-200 rounded-lg bg-white shadow-md h-80">
+      <div>
+        <h3 class="font-semibold text-md px-4 pt-2 text-lg">
+          ${tutorial.title}
+        </h3>
+        <div class="px-4 gap-x-2 flex-wrap items-center">
+          ${tutorial_tags}
+        </div>
+      </div>
+      <div class="flex-grow overflow-y-auto px-4">
+        <p class="text-slate-500 mt-2 leading-relaxed">
+          ${tutorial.description}
+        </p>
+      </div>
+      <div class="h-14 flex-shrink-0 flex justify-center items-center border-t border-gray-200">
+        <a href="${tutorial.link}" target="_blank" rel="noopener noreferrer" class="flex-1 border-gray-200 h-full flex items-center justify-center text-sm font-semibold text-gray-900">
+          Go to Tutorial
+        </a>
+        ${colab_button}
+      </div>
+    </div>`;
+
+    return tutorialElement;
+  }
+
+  function filterHelper(tutorialElements, searchTerm, checkedCategories, tutorial_list) {
+    // Loop over tutorials and check for matches
+    tutorialElements.forEach((tutorialElement, index) => {
+      const tutorial = tutorial_list[index];
+
+      // Check to see if tutorial matches the search or checked items
+      const matchesSearchTerm = (
+        tutorial.title.toLowerCase().includes(searchTerm)
+        || tutorial.description.toLowerCase().includes(searchTerm)
+      );
+
+      var isInCheckedCategory = true;
+
+      checkedCategories.forEach((tag) => {
+        if (!(tutorial.tags.includes(tag))) {
+          isInCheckedCategory = false;
+        }
+      });
+
+      // Show or hide tutorial based on matches
+      if (matchesSearchTerm && isInCheckedCategory) {
+        tutorialElement.classList.remove('hidden');
+      } else {
+        tutorialElement.classList.add('hidden');
+      }
+    });
+  }
+
+  // Filter tutorials by search or checkbox
+  function filterTutorials() {
+    // Get search term
+    const searchTerm = searchInput.value.trim().toLowerCase();
+    // Get checked categories
+    const checkedCategories = Array.from(checkboxes)
+      .filter((check) => check.checked)
+      .map((check) => check.id);
+
+    filterHelper(tutorialsElements, searchTerm, checkedCategories, tutorials);
+  }
+</script>

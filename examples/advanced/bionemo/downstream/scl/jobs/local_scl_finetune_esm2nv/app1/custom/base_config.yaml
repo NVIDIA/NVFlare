@@ -1,0 +1,266 @@
+defaults:
+  - _self_
+
+name: esm2nv
+do_preprocessing: False  # set to true if data preprocessing is needed
+do_training: True # set to false if data preprocessing steps must be completed
+do_testing: False # set to true to run evaluation on test data after training, requires test_dataset section
+restore_from_path: null # used when starting from a .nemo file
+
+trainer:
+  devices: 1 # number of GPUs or CPUs
+  num_nodes: 1
+  accelerator: gpu #gpu or cpu
+  precision: 32 # 16-mixed, bf16-mixed or 32
+  logger: False # logger is provided by NeMo exp_manager
+  enable_checkpointing: False # checkpointing is done by NeMo exp_manager
+  use_distributed_sampler: False # use NeMo Megatron samplers
+  max_epochs: null # # use max_steps instead with NeMo Megatron model
+  log_every_n_steps: 10  # number of interations between logging
+  val_check_interval: 1500
+  limit_val_batches: 1.0  # Number of batches in the validation step. Use 0 for no batches, 1 for full dataset, and 0<x<1 for fractional data. If > 1 it will take that number as the number of batches.
+  limit_test_batches: 1.0 # Number of batches in the test set. Use 0 for no batches, or 0<x<1 for fractional data. Do not use 1.
+  accumulate_grad_batches: 1
+  gradient_clip_val: 1.0
+  benchmark: False
+  max_steps: 500000
+
+exp_manager:
+  name: ${name}
+  exp_dir: ${oc.env:BIONEMO_HOME}/results/nemo_experiments/${.name}/${.wandb_logger_kwargs.name}
+  explicit_log_dir: ${.exp_dir}
+  create_wandb_logger: False
+  create_tensorboard_logger: True
+  wandb_logger_kwargs:
+    project: ${name}_pretraining
+    name: ${name}_pretraining
+    group: ${name}
+    job_type: Localhost_nodes_${trainer.num_nodes}_gpus_${trainer.devices}
+    notes: "date: ${now:%y%m%d-%H%M%S}"
+    tags:
+      - ${name}
+    offline: True # set to True if there are issues uploading to WandB during training
+  resume_if_exists: True # automatically resume if checkpoint exists
+  resume_ignore_no_checkpoint: True # leave as True, will start new training if resume_if_exists is True but no checkpoint exists
+  create_checkpoint_callback: True # leave as True, use exp_manger for for checkpoints
+  checkpoint_callback_params:
+    monitor: val_TARGET_accuracy
+    save_top_k: 1 # number of checkpoints to save
+    mode: max  # use min or max of monitored metric to select best checkpoints
+    always_save_nemo: False # saves nemo file during validation, not implemented for model parallel
+    filename: 'esm2nv--{val_TARGET_accuracy:.4f}-{step}-{consumed_samples}'
+    model_parallel_size: ${multiply:${model.tensor_model_parallel_size}, ${model.pipeline_model_parallel_size}}
+
+
+model:
+  # ESM2-specific parameters
+  drop_last: True
+  micro_batch_size: 2
+  seq_length: 1024
+  num_layers: 6
+  hidden_size: 320
+  ffn_hidden_size: ${multiply:${model.hidden_size}, 4} # Transformer FFN hidden size. Usually 4 * hidden_size.
+  num_attention_heads: 20
+  megatron_legacy: false
+  position_embedding_type: rope # ESM2 uses relative positional encoding 'ROPE' to extrapolate to longer sequences unseen during training
+  hidden_dropout: 0 # ESM2 removes dropout from hidden layers and attention
+  embedding_use_attention_mask: True # ESM2 uses attention masking on the embeddings
+  embedding_token_dropout: True # ESM2 rescales embeddings based on masked tokens
+  mask_token_id: ${.tokenizer.mask_id} # Needed for token dropout rescaling
+  attention_dropout: 0.0 # ESM2 does not use attention dropout
+  normalize_attention_scores: False # ESM2 does not use normalized attention scores
+  tensor_model_parallel_size: 1 # model parallelism
+  pipeline_model_parallel_size: 1 # model parallelism. If enabled, you need to set data.dynamic_padding to False as pipeline parallelism requires fixed-length padding.
+  bias_gelu_fusion: False
+  # NOTE: these are compatability features
+  use_esm_attention: True # Use specific attention modifications for ESM2
+  esm_gelu: True # ESM2 uses custom gelu in the ML layer
+  use_pt_layernorm: False # Use pytorch implementation of layernorm instead of fused nemo layernorm. Important for equivalency of results with ESM2.
+  use_pt_mlp_out: False # Use pytorch implementation of attention output mlp instead of the nemo version. Important for equivalency of results with ESM2.
+
+  # Not specified in ESM2 models:
+  # model architecture
+  max_position_embeddings: ${.seq_length}
+  encoder_seq_length: ${.seq_length}
+
+  optim:
+    name: fused_adam # fused optimizers used by Megatron model
+    lr: 4e-4
+    weight_decay: 0.01
+    betas:
+      - 0.9
+      - 0.98
+    sched:
+      name: WarmupAnnealDecayHold
+      warmup_steps: 2000
+      min_lr: 4e-5
+      max_lr: 4e-4
+      max_steps: 500000
+      anneal_percentage: 0.10
+
+  init_method_std: 0.02 # Standard deviation of the zero mean normal distribution used for weight initialization.')
+  kv_channels: null # Projection weights dimension in multi-head attention. Set to hidden_size // num_attention_heads if null
+  apply_query_key_layer_scaling: True # scale Q * K^T by 1 / layer-number.
+  layernorm_epsilon: 1e-5
+  make_vocab_size_divisible_by: 128 # Pad the vocab size to be divisible by this value for computation efficiency.
+  pre_process: True # add embedding
+  post_process: True # add pooler
+  bert_binary_head: False # BERT binary head
+  resume_from_checkpoint: null # manually set the checkpoint file to load from
+
+  # NOTE: is this one of the new fields?
+  masked_softmax_fusion: True # Use a kernel that fuses the attention softmax with it's mask.
+  tokenizer:
+    # Use ESM2 tokenizers from HF
+    library: 'huggingface'
+    type: 'BertWordPieceLowerCase'
+    model_name: "???"
+    mask_id: 32
+    model: null
+    vocab_file: null
+    merge_file: null
+
+  # precision
+  native_amp_init_scale: 4294967296 # 2 ** 32
+  native_amp_growth_interval: 1000
+  fp32_residual_connection: False # Move residual connections to fp32
+  fp16_lm_cross_entropy: False # Move the cross entropy unreduced loss calculation for lm head to fp16
+
+
+  # miscellaneous
+  seed: 1234
+  use_cpu_initialization: False # Init weights on the CPU (slow for large model)
+  onnx_safe: False # Use work-arounds for known problems with Torch ONNX exporter.
+
+  # not implemented in NeMo yet
+  activations_checkpoint_method: null # 'uniform', 'block'
+  activations_checkpoint_num_layers: 1
+
+  data:
+    ngc_registry_target: uniref50_2022_05
+    ngc_registry_version: v23.06
+    data_prefix: "" # must be null or ""
+    num_workers: 2
+    dataloader_type: single # cyclic
+    reset_position_ids: False # Reset position ids after end-of-document token
+    reset_attention_mask: False # Reset attention mask after end-of-document token
+    eod_mask_loss: False # Mask loss for the end of document tokens
+    skip_lines: 0
+    drop_last: False
+    pin_memory: False
+    dynamic_padding: False # If True, each batch is padded to the maximum sequence length within that batch.
+              #    Set it to False when model.pipeline_model_parallel_size > 1, as pipeline parallelism requires fixed-length padding.
+    # Below is the configuration for UF90 resampling.
+    # TODO(@jomitchell) Can remove this??
+    force_regen_sample_mapping: false # When true, will always generate a new uf90 resampling. otherwise, change the seed.
+    dataset_path: ${oc.env:BIONEMO_HOME}/data/uniref202104_esm2 # an optional parameter, helpful when users want to switch between different root folders keeping the same structure of data files required by ESM2nv training
+    index_mapping_dir: ${model.data.dataset_path}
+    preprocessing:
+      num_preprocess_workers: 16
+    train:
+      data_impl: "csv_mmap"
+      data_impl_kwargs:
+        csv_mmap:
+          data_col: 1 # 0-based
+          header_lines: 1
+      use_upsampling: True # if the data should be upsampled to max number of steps in the training
+      range: x[000..049]
+      sample_from_map: True # TODO: Use uf90_datapath and cluster_mapping_tsv to create resampled dataset for training with uf50_datapath. If False, only uf50_datapath is used for training.
+      uf50_datapath: ${model.data.dataset_path}/uniref50_train_filt.fasta
+      uf90_datapath: ${model.data.dataset_path}/uniref90membersandreps_ur50trainfiltreps.fasta
+      cluster_mapping_tsv: ${model.data.dataset_path}/uniref50_mapper_to_uniref90clustermembers_andselfuniref50.tsv
+      dataset_path: ${model.data.dataset_path}/uf50 # parent directory for data, contains  train folder. Requires write for index creation.
+      sort_fastas: True # If true, assumes the input files are not sorted, and sorts them before creating the cluster mapping. Unsorted fastas will break the cluster map.
+      # supported only in ESM2 default pretraining strategy
+      num_workers: ${model.data.num_workers}
+      uf90:
+        uniref90_path: ${model.data.dataset_path}/uf90 # created and populated my preprocessing
+        dataset:
+          uf90_csvs: x[000..049] # created and populated by preprocessing, this key is a directory inside uniref90_path
+        data_impl: 'csv_fields_mmap'
+        data_impl_kwargs:
+          csv_fields_mmap: &csv_fields_mmap
+            header_lines: 1
+            newline_int: 10 # byte-value of newline
+            workers: ${model.data.train.num_workers} # number of workers when creating missing index files (null defaults to cpu_num // 2)
+            sort_dataset_paths: True # if True datasets will be sorted by name
+            data_sep: ',' # string to split text into columns
+            data_fields: &csv_fields_mmap_data_fields
+              sequence: 3
+              sequence_id: 1
+        index_mapping_dir: ${model.data.index_mapping_dir}
+      index_mapping_dir: ${model.data.index_mapping_dir}
+      max_seq_length: ${model.seq_length} # Maximum input sequence length. Longer sequences are truncated
+      seed: ${model.seed} # Random seed
+      custom_pretraining_fasta_path: null  # specific if want to have separate custom training fasta
+    val: &val_cfg
+      use_upsampling: False
+      range: x[000..049]
+      uf50_datapath: ${model.data.dataset_path}/uniref50_train_filt.fasta
+      dataset_path: ${model.data.train.dataset_path} # holds validation data.
+      data_impl: ${model.data.train.uf90.data_impl}
+      num_workers: ${model.data.num_workers}
+      data_impl_kwargs:
+        csv_fields_mmap:
+          <<: *csv_fields_mmap  # (yaml only supports shallow merge)
+          workers: ${model.data.val.num_workers} # number of workers when creating missing index files (null defaults to cpu_num // 2)
+          data_fields: ${model.data.train.uf90.data_impl_kwargs.csv_fields_mmap.data_fields}
+      index_mapping_dir: ${model.data.index_mapping_dir}
+      max_seq_length: ${model.seq_length} # Maximum input sequence length. Longer sequences are truncated
+      seed: ${model.seed} # Random seed
+      custom_pretraining_fasta_path: null  # specific if want to have separate custom validation fasta
+    test:
+      <<: *val_cfg
+      data_impl_kwargs:
+        csv_fields_mmap:
+          <<: *csv_fields_mmap
+          workers: ${model.data.test.num_workers} # number of workers when creating missing index files (null defaults to cpu_num // 2)
+          data_fields: ${model.data.train.uf90.data_impl_kwargs.csv_fields_mmap.data_fields}
+      custom_pretraining_fasta_path: null  # specific if want to have separate custom testing fasta
+
+    # These control the MLM token probabilities. The following settings are commonly used in literature.
+    modify_percent: 0.15 # Fraction of characters in a protein sequence to modify. (Modification means replacing with another amino acid or with a mask token)
+    # NOTE: if you want to replicate runs prior to 5/2024, set modify_percent (above) to 0.1 perturb_percent to 0.5, mask_percent to 0.5, and identity_percent to 0.0
+    # NOTE2: a very common bug in implementations of MLM is for the random token to be selected with a binomial on only tokens that were not assigned the
+    #  [MASK]. This results in too few random tokens (10% of 20% non-[mask] = 2%!). If you want to try this undocumented behavior, which would also be common
+    #  in the wild, set mask_percent: 0.8, perturb_percent: 0.02, identity_percent: 0.18.
+    perturb_percent: 0.1 # Of the modify_percent, what fraction of characters are to be replaced with another amino acid.
+    mask_percent: 0.8 # Of the modify_percent, what fraction of characters are to be replaced with a mask token.
+    identity_percent: 0.1 # Of the modify_percent, what fraction of characters are to be unchanged as the original amino acid.
+
+  dwnstr_task_validation:
+    enabled: False
+    dataset:
+      class: bionemo.model.core.dwnstr_task_callbacks.PerTokenPredictionCallback
+      task_type: token-level-classification
+      infer_target: bionemo.model.protein.esm1nv.infer.ESM1nvInference
+      max_seq_length: ${model.seq_length}
+      emb_batch_size: 128
+      batch_size: 128
+      num_epochs: 10
+      shuffle: True
+      num_workers: 2
+      task_name: secondary_structure
+      dataset_path: ${oc.env:BIONEMO_HOME}/data/FLIP/${model.dwnstr_task_validation.dataset.task_name}
+      dataset:
+        train: x000
+        test: x000
+      sequence_column: "sequence" # name of column with protein sequence in csv file
+      target_column: ["3state"] # names of label columns in csv file
+      target_sizes: [3] # number of classes in each label
+      mask_column: ["resolved"] # names of mask columns in csv file, masks must be 0 or 1
+      random_seed: 1234
+      optim:
+        name: adam
+        lr: 0.0001
+        betas:
+          - 0.9
+          - 0.999
+        eps: 1e-8
+        weight_decay: 0.01
+        sched:
+          name: WarmupAnnealing
+          min_lr: 0.00001
+          last_epoch: -1
+          warmup_ratio: 0.01
+          max_steps: 1000

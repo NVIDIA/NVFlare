@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import copy
-import traceback
+import gc
 
 import numpy as np
 
@@ -25,12 +25,13 @@ from nvflare.app_common.abstract.model import model_learnable_to_dxo
 from nvflare.app_common.app_constant import AlgorithmConstants, AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
+from nvflare.security.logging import secure_format_exception
 
 
 class ScatterAndGatherScaffold(ScatterAndGather):
     def __init__(
         self,
-        min_clients: int = 1,
+        min_clients: int = 1000,
         num_rounds: int = 5,
         start_round: int = 0,
         wait_time_after_min_received: int = 10,
@@ -40,6 +41,9 @@ class ScatterAndGatherScaffold(ScatterAndGather):
         train_task_name=AppConstants.TASK_TRAIN,
         train_timeout: int = 0,
         ignore_result_error: bool = False,
+        task_check_period: float = 0.5,
+        persist_every_n_rounds: int = 1,
+        snapshot_every_n_rounds: int = 1,
     ):
         """The controller for ScatterAndGatherScaffold workflow.
 
@@ -49,16 +53,25 @@ class ScatterAndGatherScaffold(ScatterAndGather):
         The model_persistor also saves the model after training.
 
         Args:
-            min_clients (int, optional): Min number of clients in training. Defaults to 1.
+            min_clients (int, optional): The minimum number of clients responses before
+                SAG starts to wait for `wait_time_after_min_received`. Note that SAG will move forward when all
+                available clients have responded regardless of this value. Defaults to 1000.
             num_rounds (int, optional): The total number of training rounds. Defaults to 5.
             start_round (int, optional): Start round for training. Defaults to 0.
             wait_time_after_min_received (int, optional): Time to wait before beginning aggregation after
-                contributions received. Defaults to 10.
-            train_timeout (int, optional): Time to wait for clients to do local training.
+                minimum number of clients responses has been received. Defaults to 10.
             aggregator_id (str, optional): ID of the aggregator component. Defaults to "aggregator".
             persistor_id (str, optional): ID of the persistor component. Defaults to "persistor".
             shareable_generator_id (str, optional): ID of the shareable generator. Defaults to "shareable_generator".
             train_task_name (str, optional): Name of the train task. Defaults to "train".
+            train_timeout (int, optional): Time to wait for clients to do local training.
+            ignore_result_error (bool, optional): whether this controller can proceed if client result has errors.
+                Defaults to False.
+            task_check_period (float, optional): interval for checking status of tasks. Defaults to 0.5.
+            persist_every_n_rounds (int, optional): persist the global model every n rounds. Defaults to 1.
+                If n is 0 then no persist.
+            snapshot_every_n_rounds (int, optional): persist the server state every n rounds. Defaults to 1.
+                If n is 0 then no persist.
         """
 
         super().__init__(
@@ -72,6 +85,9 @@ class ScatterAndGatherScaffold(ScatterAndGather):
             train_task_name=train_task_name,
             train_timeout=train_timeout,
             ignore_result_error=ignore_result_error,
+            task_check_period=task_check_period,
+            persist_every_n_rounds=persist_every_n_rounds,
+            snapshot_every_n_rounds=snapshot_every_n_rounds,
         )
 
         # for SCAFFOLD
@@ -103,13 +119,15 @@ class ScatterAndGatherScaffold(ScatterAndGather):
             fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self._num_rounds, private=True, sticky=False)
             self.fire_event(AppEventType.TRAINING_STARTED, fl_ctx)
 
-            for self._current_round in range(self._start_round, self._start_round + self._num_rounds):
+            if self._current_round is None:
+                self._current_round = self._start_round
+            while self._current_round < self._start_round + self._num_rounds:
                 if self._check_abort_signal(fl_ctx, abort_signal):
                     return
 
                 self.log_info(fl_ctx, f"Round {self._current_round} started.")
                 fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=True)
-                fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=False)
+                fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=True)
                 self.fire_event(AppEventType.ROUND_STARTED, fl_ctx)
 
                 # Create train_task
@@ -189,17 +207,27 @@ class ScatterAndGatherScaffold(ScatterAndGather):
                 if self._check_abort_signal(fl_ctx, abort_signal):
                     return
 
-                self.fire_event(AppEventType.BEFORE_LEARNABLE_PERSIST, fl_ctx)
-                self.persistor.save(self._global_weights, fl_ctx)
-                self.fire_event(AppEventType.AFTER_LEARNABLE_PERSIST, fl_ctx)
+                if self._persist_every_n_rounds != 0 and (self._current_round + 1) % self._persist_every_n_rounds == 0:
+                    self.log_info(fl_ctx, "Start persist model on server.")
+                    self.fire_event(AppEventType.BEFORE_LEARNABLE_PERSIST, fl_ctx)
+                    self.persistor.save(self._global_weights, fl_ctx)
+                    self.fire_event(AppEventType.AFTER_LEARNABLE_PERSIST, fl_ctx)
+                    self.log_info(fl_ctx, "End persist model on server.")
 
                 self.fire_event(AppEventType.ROUND_DONE, fl_ctx)
                 self.log_info(fl_ctx, f"Round {self._current_round} finished.")
+                self._current_round += 1
+
+                # need to persist snapshot after round increased because the global weights should be set to
+                # the last finished round's result
+                if self._snapshot_every_n_rounds != 0 and self._current_round % self._snapshot_every_n_rounds == 0:
+                    self._engine.persist_components(fl_ctx, completed=False)
+
+                gc.collect()
 
             self._phase = AppConstants.PHASE_FINISHED
             self.log_info(fl_ctx, "Finished ScatterAndGatherScaffold Training.")
-        except BaseException as e:
-            traceback.print_exc()
-            error_msg = f"Exception in ScatterAndGatherScaffold control_flow: {e}"
+        except Exception as e:
+            error_msg = f"Exception in ScatterAndGatherScaffold control_flow: {secure_format_exception(e)}"
             self.log_exception(fl_ctx, error_msg)
-            self.system_panic(str(e), fl_ctx)
+            self.system_panic(error_msg, fl_ctx)

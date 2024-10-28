@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,10 +18,22 @@ class ConnProps(object):
 
     EVENT_ID = "_eventId"
     USER_NAME = "_userName"
+    USER_ORG = "_userOrg"
+    USER_ROLE = "_userRole"
+    SUBMITTER_NAME = "_submitterName"
+    SUBMITTER_ORG = "_submitterOrg"
+    SUBMITTER_ROLE = "_submitterRole"
     TOKEN = "_sessionToken"
     SESSION = "_session"
+    CLIENT_IDENTITY = "_clientIdentity"
+    CA_CERT = "_caCert"
+    UPLOAD_DIR = "_uploadDir"
+    DOWNLOAD_DIR = "_downloadDir"
+    DOWNLOAD_JOB_URL = "_downloadJobUrl"
+
     CMD_ENTRY = "_cmdEntry"
-    AUTHZ_CTX = "_authztx"
     JOB_DATA = "_jobData"
     JOB_META = "_jobMeta"
-    DOWNLOAD_JOB_URL = "Download Job URL:"
+    CMD_TIMEOUT = "_cmdTimeout"
+    CUSTOM_PROPS = "_customProps"
+    CMD_PROPS = "_cmdProps"

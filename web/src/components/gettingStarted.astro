@@ -1,0 +1,274 @@
+---
+import ClickTracker from './clickTracker.astro';
+
+const gh_branch = import.meta.env.PUBLIC_GH_BRANCH;
+
+const walkthrough = [
+  {
+    id: "step1",
+    step: "Step 1",
+    title: "Introduction to NVIDIA FLARE",
+    description:
+      "Learn about the core concepts and fundamentals of NVIDIA FLARE to help you get started.",
+    button_text: "Read More",
+    link: "https://nvflare.readthedocs.io/en/main/flare_overview.html",
+    video: "https://developer.download.nvidia.com/assets/Clara/flare/Flare%202.5.0%20Getting%20Started%20-%20Part%201%20-%20Overview.mp4",
+  },
+  {
+    id: "step2",
+    step: "Step 2",
+    title: "Server Code",
+    description:
+      "Use the ModelController API to write a federated control flow for FedAvg.",
+    button_text: "View Source",
+    link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/nvflare/app_common/workflows/fedavg.py`,
+    video: "https://developer.download.nvidia.com/assets/Clara/flare/Flare%202.5.0%20Getting%20Started%20-%20Part%202%20-%20Server.mp4",
+  },
+  {
+    id: "step3",
+    step: "Step 3",
+    title: "Client Code",
+    description:
+      "Use the Client API to write local training code for a PyTorch CIFAR-10 trainer.",
+    button_text: "View Source",
+    link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/getting_started/pt/src/cifar10_fl.py`,
+    video: "https://developer.download.nvidia.com/assets/Clara/flare/Flare%202.5.0%20Getting%20Started%20-%20Part%203%20-%20Client.mp4",
+  },
+  {
+    id: "step4",
+    step: "Step 4",
+    title: "FedJob and Simulator",
+    description:
+      "Formulate the NVIDIA FLARE job and simulate a federated run with the multi-process simulator.",
+    button_text: "View Notebook",
+    link: `https://colab.research.google.com/github/NVIDIA/NVFlare/blob/${gh_branch}/examples/getting_started/pt/nvflare_pt_getting_started.ipynb`,
+    video: "https://developer.download.nvidia.com/assets/Clara/flare/Flare%202.5.0%20Getting%20Started%20-%20Part%204%20-%20Job.mp4",
+  },
+  {
+    id: "step5",
+    step: "Step 5",
+    title: "Next Steps",
+    description:
+      "Learn more about NVIDIA FLARE and taking federated learning from simulation to the real world.",
+    button_text: "Tutorial Catalog",
+    link: "catalog",
+    video: "https://developer.download.nvidia.com/assets/Clara/flare/Flare%202.5.0%20Getting%20Started%20-%20Part%205%20-%20Next%20Steps.mp4",
+  },
+];
+
+const km = [
+  {
+    id: "step1",
+    step: "Step 1",
+    title: "Federated Machine Learning",
+    description:
+      "Learn how to formulate a federated machine learning algorithm.",
+    button_text: "View Source",
+    link: "https://nvflare.readthedocs.io/en/main/fl_introduction.html",
+    video: "https://developer.download.nvidia.com/assets/Clara/flare/Flare%202.5.0%20KM%20-%20Part%201%20-%20Overview.mp4",
+  },
+  {
+    id: "step2",
+    step: "Step 2",
+    title: "Kaplan-Meier Analysis",
+    description:
+      "What is Kaplan-Meier Analysis and how can we adapt it to a federated setting?",
+    button_text: "View Source",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/kaplan-meier-he`,
+    video: "https://developer.download.nvidia.com/assets/Clara/flare/Flare%202.5.0%20KM%20-%20Part%202%20-%20Kaplan%20Meier.mp4",
+  },
+  {
+    id: "step3",
+    step: "Step 3",
+    title: "Implementation with NVIDIA FLARE",
+    description:
+      "Dive into an end-to-end implementation of federated Kaplan-Meier.",
+    button_text: "View Source",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/kaplan-meier-he/src`,
+    video: "https://developer.download.nvidia.com/assets/Clara/flare/Flare%202.5.0%20KM%20-%20Part%203%20-%20Implementation.mp4",
+  },
+];
+
+const series = [
+  walkthrough,
+  km,
+]
+---
+
+<ClickTracker div_id="getting_started_div" eventLabel="Getting Started"/>
+<div id="getting_started_div" class="bg-gray-50 py-24 sm:py-24">
+  <div class="mx-auto max-w-7xl px-6 lg:px-8">
+    <div class="mt-16 md:mt-0 text-center">
+      <h2 class="text-4xl lg:text-5xl font-bold lg:tracking-tight">
+        Getting Started with NVIDIA FLARE
+      </h2>
+      <p class="text-lg mt-4 text-slate-600 w-3/4 m-auto">
+        Begin your NVIDIA FLARE journey with these guides
+        designed to help you quickly grasp essential concepts.
+        Follow along with the videos below, and try it out yourself.
+      </p>
+    </div>
+
+    <!-- FLARE Walkthrough: CIFAR-10 / End-to-End: Kaplan-Meier -->
+    <div class="mt-5 mb-2 border-b border-gray-200 dark:border-gray-700">
+      <ul class="flex flex-wrap -mb-px text-xl font-medium text-center place-content-center lg:space-x-24" id="default-styled-tab" data-tabs-toggle="#default-styled-tab-content" data-tabs-active-classes="text-nvidia hover:text-nvidia dark:text-nvidia-light dark:hover:text-nvidia-light border-nvidia dark:border-nvidia-light" data-tabs-inactive-classes="dark:border-transparent text-gray-500 hover:text-gray-600 dark:text-gray-400 border-transparent hover:border-gray-300 dark:border-gray-700 dark:hover:text-gray-300" role="tablist">
+          <li class="me-2" role="presentation">
+            <button class="inline-block p-4 border-b-2 rounded-t-lg font-bold hover:text-gray-600 hover:border-gray-300 dark:hover:text-gray-300" id="walkthrough-tab" data-tabs-target="#series0" type="button" role="tab" aria-controls="settings" aria-selected="false">Walkthrough: CIFAR-10</button>
+          </li>
+          <li class="me-2" role="presentation">
+              <button class="inline-block p-4 border-b-2 rounded-t-lg font-bold" id="km-tab" data-tabs-target="#series1" type="button" role="tab" aria-controls="profile" aria-selected="false">End-to-End: Kaplan-Meier</button>
+          </li>
+      </ul>
+    </div>
+
+    {
+      series.map((item, index) => (
+        <div id={"series" + index}>
+          <div class="glide px-8 lg:px-20 py-8 bg-gray-50 bg-opacity-60 rounded-3xl" role="tabpanel">
+            <div class="glide__track" data-glide-el="track">
+              <ul class="glide__slides">
+                {
+                  item.map((card, card_index) => (
+                  <li data-index={card_index} class="slider__frame glide__slide m-6 mb-10 p-4 transition-shadow ease-in-out rounded-lg shadow-md opacity-70" id={"series" + index + card.id} role="presentation">
+                    <div class="text-left h-44" aria-controls="profile" aria-selected="false">
+                      <span class="flex items-center text-sm font-semibold leading-6 text-nvidia relative">
+                        {card.step}
+                        <div
+                          class="flex-1 h-px bg-gray-900/10 ml-2"
+                          aria-hidden="true"
+                        />
+                      </span>
+                      <p class="mt-6 text-lg font-semibold leading-8 tracking-tight text-gray-900">
+                        {card.title}
+                      </p>
+                      <p class="mt-1 text-base leading-7 text-gray-600">
+                        {card.description}
+                      </p>
+                    </div>
+                    <p class="mt-16" role="presentation">
+                      <a
+                        href={card.link}
+                        class="text-sm font-semibold leading-6 text-green-600">
+                        {card.button_text} <span aria-hidden="true">→</span>
+                      </a>
+                    </p>
+                  </li>
+                  ))
+                }
+              </ul>
+
+            </div>
+            <div class="glide__arrows" data-glide-el="controls">
+              <!-- Left Carousel Arrow -->
+              <button class="glide__arrow glide__arrow--left left-0 shadow-none border-none" data-glide-dir="<">
+                <svg class="stroke-gray-400 hover:stroke-nvidia w-12 h-12 text-gray-800 dark:text-white" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="m15 19-7-7 7-7"/>
+                </svg>
+              </button>
+              <!-- Carousel Bullets -->
+              <div class="glide__bullets" data-glide-el="controls[nav]">
+                {
+                  item.map((card, index) => (
+                    <button class="glide__bullet h-3 w-3 bg-gray-200 ring-1 ring-gray-200 shadow-none" data-glide-dir={"="+index}></button>
+                  ))
+                }
+              </div>
+              <!-- Right Carousel Arrow -->
+              <button class="glide__arrow glide__arrow--right right-0 shadow-none border-none" data-glide-dir=">">
+                <svg class="stroke-gray-400 hover:stroke-nvidia w-12 h-12 text-gray-800 dark:text-white" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="m9 5 7 7-7 7"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Getting Started Videos -->
+          <div>
+            {
+              item.map((card) => (
+                <div id={"series" + index + card.id + "-video"} class="mt-20 flex flex-wrap place-content-center hidden">
+                  <video class="lg:h-3/4 lg:w-3/4" controls="controls">
+                    <source src={card.video} type="video/mp4">
+                  </video>
+                </div>
+              ))
+            }
+          </div>
+        </div>
+      ))
+    }
+  
+  </div>
+</div>
+
+<script src="@glidejs/glide/dist/glide.min.js"></script>
+
+<script>
+  import Glide from '@glidejs/glide';
+
+  const config = {
+    type: 'slider',
+    animationDuration: 300,
+    rewind: true,
+    bound: false,
+    focusAt: 0,
+    startAt: 0,
+    perView: 3,
+    gap: 32,
+    peek: {before: 0, after: 48},
+    dragThreshold: true,
+    breakpoints: {
+      1280: {
+        perView: 3,
+      },
+      1024: {
+        perView: 2,
+      },
+      768: {
+        perView: 1,
+      }
+    },
+  };
+
+  const sliders = document.querySelectorAll('.glide');
+  sliders.forEach(item => {
+    let slides = item.querySelectorAll('.glide__slide');
+    let bullets = item.querySelectorAll('.glide__bullet');
+    var glide = new Glide(item, config).mount();
+
+    for (let slide of slides) {
+      slide.addEventListener('click', function () {
+          let target = this;
+          let targetId = target.dataset.index;
+          glide.go('=' + targetId);
+      });
+    }
+
+    glide.on('move.after', function(event) {
+      slides.forEach((slide) => {
+        var video = document.getElementById(slide.id + "-video");
+        if (slide.classList.contains('glide__slide--active')) {
+          slide.classList.replace("opacity-70", "opacity-100");
+          slide.classList.replace("shadow-md", "shadow-xl");
+          slide.classList.add("bg-white");
+          video?.classList.remove("hidden");
+        } else {
+          slide.classList.replace("opacity-100", "opacity-70");
+          slide.classList.replace("shadow-xl", "shadow-md");
+          slide.classList.remove("bg-white");
+          video?.classList.add("hidden");
+        }
+      });
+
+      bullets.forEach((bullet) => {
+        if (bullet.classList.contains('glide__bullet--active')) {
+          bullet.classList.replace("bg-gray-200", "bg-white");
+        } else {
+          bullet.classList.replace("bg-white", "bg-gray-200");
+        }
+      });
+    });
+
+  });
+
+</script>

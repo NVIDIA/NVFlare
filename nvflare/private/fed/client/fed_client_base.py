@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,20 +15,25 @@
 import logging
 import threading
 import time
-from functools import partial
-from multiprocessing.dummy import Pool as ThreadPool
 from typing import List, Optional
 
 from nvflare.apis.filter import Filter
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, SecureTrainConst, ServerCommandKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.overseer_spec import SP
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.net_agent import NetAgent
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import EngineConstant
+from nvflare.private.fed.utils.fed_utils import set_scope_prop
+from nvflare.security.logging import secure_format_exception
 
 from .client_status import ClientStatus
 from .communicator import Communicator
@@ -53,6 +58,7 @@ class FederatedClientBase:
         overseer_agent=None,
         args=None,
         components=None,
+        cell: Cell = None,
     ):
         """To init FederatedClientBase.
 
@@ -65,6 +71,7 @@ class FederatedClientBase:
             client_state_processors: client state processor filters
             handlers: handlers
             compression: communication compression algorithm
+            cell: CellNet communicator
         """
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -73,13 +80,21 @@ class FederatedClientBase:
         self.ssid = None
         self.client_args = client_args
         self.servers = server_args
+        self.cell = cell
+        self.net_agent = None
+        self.args = args
+        self.engine_create_timeout = client_args.get("engine_create_timeout", 30.0)
+        self.cell_check_frequency = client_args.get("cell_check_frequency", 0.005)
 
         self.communicator = Communicator(
             ssl_args=client_args,
             secure_train=secure_train,
-            retry_timeout=retry_timeout,
             client_state_processors=client_state_processors,
             compression=compression,
+            cell=cell,
+            client_register_interval=client_args.get("client_register_interval", 2.0),
+            timeout=client_args.get("communication_timeout", 30.0),
+            maint_msg_timeout=client_args.get("maint_msg_timeout", 30.0),
         )
 
         self.secure_train = secure_train
@@ -91,6 +106,7 @@ class FederatedClientBase:
         self.platform = None
         self.abort_signal = Signal()
         self.engine = None
+        self.client_runner = None
 
         self.status = ClientStatus.NOT_STARTED
         self.remote_tasks = None
@@ -108,6 +124,7 @@ class FederatedClientBase:
                     prv_key_path=client_args["ssl_private_key"],
                 )
 
+    def start_overseer_agent(self):
         if self.overseer_agent:
             self.overseer_agent.start(self.overseer_callback)
 
@@ -135,14 +152,113 @@ class FederatedClientBase:
             server = self.servers[project_name].get("target")
             location = sp.name + ":" + sp.fl_port
             if server != location:
+                # The SP name is the server host name that we will connect to.
+                # Save this name for this client so that it can be checked by others
+                set_scope_prop(scope_name=self.client_name, value=sp.name, key=FLContextKey.SERVER_HOST_NAME)
+
                 self.servers[project_name]["target"] = location
                 self.sp_established = True
-                self.logger.info(f"Got the new primary SP: {location}")
+
+                scheme = self.servers[project_name].get("scheme", "grpc")
+                scheme_location = scheme + "://" + location
+                if self.cell:
+                    self.cell.change_server_root(scheme_location)
+                else:
+                    self._create_cell(location, scheme)
+
+                self.logger.info(f"Got the new primary SP: {scheme_location}")
 
             if self.ssid and self.ssid != sp.service_session_id:
                 self.ssid = sp.service_session_id
                 thread = threading.Thread(target=self._switch_ssid)
                 thread.start()
+
+    def _create_cell(self, location, scheme):
+        """Create my cell.
+
+        Args:
+            location: the location of the Server
+            scheme: communication protocol (grpc, http, tcp, etc).
+
+        Returns: None
+
+        Note that the client can be connected to the server either directly or via bridge nodes.
+        The client's FQCN is different, depending on how the connection is made.
+
+        """
+        # Determine the CP's fqcn
+        root_url = scheme + "://" + location
+
+        # bridge_fqcn and bridge_url are set in the client's local/resources.json.
+        # If they are set, then connect via the specified bridge; if not, try to connect the Server directly
+        bridge_fqcn = self.client_args.get("bridge_fqcn")
+        bridge_url = self.client_args.get("bridge_url")
+        if bridge_fqcn:
+            cp_fqcn = FQCN.join([bridge_fqcn, self.client_name])
+            root_url = None  # do not connect to server if bridge is used
+        else:
+            cp_fqcn = self.client_name
+
+        if self.args.job_id:
+            # I am CJ
+            me = "CJ"
+            my_fqcn = FQCN.join([cp_fqcn, self.args.job_id])
+            parent_url = self.args.parent_url
+            create_internal_listener = False
+        else:
+            # I am CP
+            me = "CP"
+            my_fqcn = cp_fqcn
+            parent_url = bridge_url
+            create_internal_listener = True
+
+        if self.secure_train:
+            root_cert = self.client_args[SecureTrainConst.SSL_ROOT_CERT]
+            ssl_cert = self.client_args[SecureTrainConst.SSL_CERT]
+            private_key = self.client_args[SecureTrainConst.PRIVATE_KEY]
+
+            credentials = {
+                DriverParams.CA_CERT.value: root_cert,
+                DriverParams.CLIENT_CERT.value: ssl_cert,
+                DriverParams.CLIENT_KEY.value: private_key,
+            }
+        else:
+            credentials = {}
+
+        self.logger.info(f"{me=}: {my_fqcn=} {root_url=} {parent_url=}")
+        self.cell = Cell(
+            fqcn=my_fqcn,
+            root_url=root_url,
+            secure=self.secure_train,
+            credentials=credentials,
+            create_internal_listener=create_internal_listener,
+            parent_url=parent_url,
+        )
+        self.cell.start()
+        self.communicator.cell = self.cell
+        self.net_agent = NetAgent(self.cell)
+        mpm.add_cleanup_cb(self.net_agent.close)
+        mpm.add_cleanup_cb(self.cell.stop)
+
+        if self.args.job_id:
+            start = time.time()
+            self.logger.info("Wait for client_runner to be created.")
+            while not self.client_runner:
+                if time.time() - start > self.engine_create_timeout:
+                    raise RuntimeError(f"Failed get client_runner after {self.engine_create_timeout} seconds")
+                time.sleep(self.cell_check_frequency)
+            self.logger.info(f"Got client_runner after {time.time() - start} seconds")
+            self.client_runner.engine.cell = self.cell
+        else:
+            start = time.time()
+            self.logger.info("Wait for engine to be created.")
+            while not self.engine:
+                if time.time() - start > self.engine_create_timeout:
+                    raise RuntimeError(f"Failed to get engine after {time.time() - start} seconds")
+                time.sleep(self.cell_check_frequency)
+            self.logger.info(f"Got engine after {time.time() - start} seconds")
+            self.engine.cell = self.cell
+            self.engine.admin_agent.register_cell_cb()
 
     def _switch_ssid(self):
         if self.engine:
@@ -151,17 +267,18 @@ class FederatedClientBase:
         # self.register()
         self.logger.info(f"Primary SP switched to new SSID: {self.ssid}")
 
-    def client_register(self, project_name):
+    def client_register(self, project_name, fl_ctx: FLContext):
         """Register the client to the FL server.
 
         Args:
             project_name: FL study project name.
+            register_data: customer defined client register data (in a dict)
+            fl_ctx: FLContext
+
         """
         if not self.token:
             try:
-                self.token, self.ssid = self.communicator.client_registration(
-                    self.client_name, self.servers, project_name
-                )
+                self.token, self.ssid = self.communicator.client_registration(self.client_name, project_name, fl_ctx)
                 if self.token is not None:
                     self.fl_ctx.set_prop(FLContextKey.CLIENT_NAME, self.client_name, private=False)
                     self.fl_ctx.set_prop(EngineConstant.FL_TOKEN, self.token, private=False)
@@ -174,32 +291,33 @@ class FederatedClientBase:
             except FLCommunicationError:
                 self.communicator.heartbeat_done = True
 
-    def fetch_execute_task(self, project_name, fl_ctx: FLContext):
+    def fetch_execute_task(self, project_name, fl_ctx: FLContext, timeout=None):
         """Fetch a task from the server.
 
         Args:
             project_name: FL study project name
             fl_ctx: FLContext
+            timeout: timeout for the getTask message sent tp server
 
         Returns:
             A CurrentTask message from server
         """
         try:
             self.logger.debug("Starting to fetch execute task.")
-            task = self.communicator.getTask(self.servers, project_name, self.token, self.ssid, fl_ctx)
+            task = self.communicator.pull_task(project_name, self.token, self.ssid, fl_ctx, timeout=timeout)
 
             return task
         except FLCommunicationError as e:
-            if e:
-                self.logger.info(e)
+            self.logger.info(secure_format_exception(e))
 
-    def push_execute_result(self, project_name, shareable: Shareable, fl_ctx: FLContext):
+    def push_execute_result(self, project_name, shareable: Shareable, fl_ctx: FLContext, timeout=None):
         """Submit execution results of a task to server.
 
         Args:
             project_name: FL study project name
             shareable: Shareable object
             fl_ctx: FLContext
+            timeout: how long to wait for reply from server
 
         Returns:
             A FederatedSummary message from the server.
@@ -207,8 +325,7 @@ class FederatedClientBase:
         try:
             self.logger.info("Starting to push execute result.")
             execute_task_name = fl_ctx.get_prop(FLContextKey.TASK_NAME)
-            message = self.communicator.submitUpdate(
-                self.servers,
+            return_code = self.communicator.submit_update(
                 project_name,
                 self.token,
                 self.ssid,
@@ -216,156 +333,120 @@ class FederatedClientBase:
                 self.client_name,
                 shareable,
                 execute_task_name,
+                timeout=timeout,
             )
 
-            return message
+            return return_code
         except FLCommunicationError as e:
-            if e:
-                self.logger.info(e)
+            self.logger.info(secure_format_exception(e))
 
-    def send_aux_message(self, project_name, topic: str, shareable: Shareable, timeout: float, fl_ctx: FLContext):
-        """Send auxiliary message to the server.
-
-        Args:
-            project_name: FL study project name
-            topic: aux topic name
-            shareable: Shareable object
-            timeout: communication timeout
-            fl_ctx: FLContext
-
-        Returns:
-            A reply message
-        """
-        try:
-            self.logger.debug("Starting to send aux message.")
-            message = self.communicator.auxCommunicate(
-                self.servers, project_name, self.token, self.ssid, fl_ctx, self.client_name, shareable, topic, timeout
-            )
-
-            return message
-        except FLCommunicationError as e:
-            if e:
-                self.logger.info(e)
-
-    def send_heartbeat(self, project_name):
+    def send_heartbeat(self, project_name, interval):
         try:
             if self.token:
+                start = time.time()
                 while not self.engine:
                     time.sleep(1.0)
+                    if time.time() - start > 60.0:
+                        raise RuntimeError("No engine created. Failed to start the heartbeat process.")
                 self.communicator.send_heartbeat(
-                    self.servers, project_name, self.token, self.ssid, self.client_name, self.engine
+                    self.servers, project_name, self.token, self.ssid, self.client_name, self.engine, interval
                 )
-        except FLCommunicationError as e:
+        except FLCommunicationError:
             self.communicator.heartbeat_done = True
 
-    def heartbeat(self):
-        """Sends a heartbeat from the client to the server."""
-        pool = None
-        try:
-            pool = ThreadPool(len(self.servers))
-            return pool.map(self.send_heartbeat, tuple(self.servers))
-        finally:
-            if pool:
-                pool.terminate()
-
-    def pull_task(self, fl_ctx: FLContext):
-        """Fetch remote models and update the local client's session."""
-        pool = None
-        try:
-            pool = ThreadPool(len(self.servers))
-            self.remote_tasks = pool.map(partial(self.fetch_execute_task, fl_ctx=fl_ctx), tuple(self.servers))
-            pull_success, task_name = self.check_progress(self.remote_tasks)
-            # # Update app_ctx's current round info
-            # if self.app_context and self.remote_models[0] is not None:
-            #     self.app_context.global_round = self.remote_models[0].meta.current_round
-            # TODO: if some of the servers failed
-            # return self.model_manager.assign_current_model(self.remote_models)
-            return pull_success, task_name, self.remote_tasks
-        finally:
-            if pool:
-                pool.terminate()
-
-    def push_results(self, shareable: Shareable, fl_ctx: FLContext):
-        """Push the local model to multiple servers."""
-        pool = None
-        try:
-            pool = ThreadPool(len(self.servers))
-            return pool.map(partial(self.push_execute_result, shareable=shareable, fl_ctx=fl_ctx), tuple(self.servers))
-        finally:
-            if pool:
-                pool.terminate()
-
-    def aux_send(self, topic, shareable: Shareable, timeout: float, fl_ctx: FLContext):
-        """Push the local model to multiple servers."""
-        pool = None
-        try:
-            pool = ThreadPool(len(self.servers))
-            messages = pool.map(
-                partial(self.send_aux_message, topic=topic, shareable=shareable, timeout=timeout, fl_ctx=fl_ctx),
-                tuple(self.servers),
-            )
-            if messages is not None and messages[0] is not None:
-                # Only handle single server communication for now.
-                return messages
-            else:
-                return None
-        finally:
-            if pool:
-                pool.terminate()
-
-    def register(self):
-        """Push the local model to multiple servers."""
-        pool = None
-        try:
-            pool = ThreadPool(len(self.servers))
-            return pool.map(self.client_register, tuple(self.servers))
-        finally:
-            if pool:
-                pool.terminate()
-
-    def set_primary_sp(self, sp):
-        pool = None
-        try:
-            pool = ThreadPool(len(self.servers))
-            return pool.map(partial(self.set_sp, sp=sp), tuple(self.servers))
-        finally:
-            if pool:
-                pool.terminate()
-
-    def run_heartbeat(self):
-        """Periodically runs the heartbeat."""
-        self.heartbeat()
-
-    def start_heartbeat(self):
-        heartbeat_thread = threading.Thread(target=self.run_heartbeat)
-        heartbeat_thread.start()
-
-    def quit_remote(self, task_name, fl_ctx: FLContext):
+    def quit_remote(self, project_name, fl_ctx: FLContext):
         """Sending the last message to the server before leaving.
 
         Args:
-            task_name: task name
             fl_ctx: FLContext
 
         Returns: N/A
 
         """
-        return self.communicator.quit_remote(self.servers, task_name, self.token, self.ssid, fl_ctx)
+        return self.communicator.quit_remote(self.servers, project_name, self.token, self.ssid, fl_ctx)
+
+    def _get_project_name(self):
+        """Get name of the project that the site is part of.
+
+        Returns:
+
+        """
+        s = tuple(self.servers)  # self.servers is a dict of project_name => server config
+        return s[0]
+
+    def heartbeat(self, interval):
+        """Sends a heartbeat from the client to the server."""
+        return self.send_heartbeat(self._get_project_name(), interval)
+
+    def pull_task(self, fl_ctx: FLContext, timeout=None):
+        """Fetch remote models and update the local client's session."""
+        result = self.fetch_execute_task(self._get_project_name(), fl_ctx, timeout)
+        if result:
+            shareable = result.payload
+            return True, shareable.get_header(ServerCommandKey.TASK_NAME), shareable
+        else:
+            return False, None, None
+
+    def push_results(self, shareable: Shareable, fl_ctx: FLContext, timeout=None):
+        """Push the local model to multiple servers."""
+        return self.push_execute_result(self._get_project_name(), shareable, fl_ctx, timeout)
+
+    def register(self, fl_ctx: FLContext):
+        """Register the client with the server."""
+        return self.client_register(self._get_project_name(), fl_ctx)
+
+    def set_primary_sp(self, sp):
+        return self.set_sp(self._get_project_name(), sp)
+
+    def run_heartbeat(self, interval):
+        """Periodically runs the heartbeat."""
+        try:
+            self.heartbeat(interval)
+        except:
+            self.logger.error("Failed to start run_heartbeat.")
+
+    def start_heartbeat(self, interval=30):
+        heartbeat_thread = threading.Thread(target=self.run_heartbeat, args=[interval])
+        heartbeat_thread.daemon = True
+        heartbeat_thread.start()
+
+    def logout_client(self, fl_ctx: FLContext):
+        """Logout the client from the server.
+
+        Args:
+            fl_ctx: FLContext
+
+        Returns: N/A
+
+        """
+        return self.quit_remote(self._get_project_name(), fl_ctx)
 
     def set_client_engine(self, engine):
         self.engine = engine
 
+    def set_client_runner(self, client_runner):
+        self.client_runner = client_runner
+
+    def stop_cell(self):
+        """Stop the cell communication"""
+        if self.communicator.cell:
+            self.communicator.cell.stop()
+
     def close(self):
         """Quit the remote federated server, close the local session."""
-        self.logger.info(f"Shutting down client: {self.client_name}")
-        if self.overseer_agent:
-            self.overseer_agent.end()
+        self.terminate()
+
+        if self.engine:
+            fl_ctx = self.engine.new_context()
+        else:
+            fl_ctx = FLContext()
+        self.logout_client(fl_ctx)
+        self.logger.info(f"Logout client: {self.client_name} from server.")
 
         return 0
 
-    def check_progress(self, remote_tasks):
-        if remote_tasks[0] is not None:
-            self.server_meta = remote_tasks[0].meta
-            return True, remote_tasks[0].task_name
-        else:
-            return False, None
+    def terminate(self):
+        """Terminating the local client session."""
+        self.logger.info(f"Shutting down client run: {self.client_name}")
+        if self.overseer_agent:
+            self.overseer_agent.end()

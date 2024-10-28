@@ -1,0 +1,39 @@
+{
+  "format_version": 2,
+  "ROOT_DIR": "path_to_example_dir",
+  "train_ds_files": "path_to_train_files",
+  "val_ds_files": "path_to_validation_files",
+  "aggregation_epochs": 1,
+  "executors": [
+    {
+      "tasks": [
+        "train",
+        "validate",
+        "share_config"
+      ],
+      "executor": {
+        "id": "learner_executor",
+        "path": "nemo_nvflare.NemoLearnerExecutor",
+        "args": {
+          "learner_id": "learner"
+        }
+      }
+    }
+  ],
+  "task_result_filters": [],
+  "task_data_filters": [],
+  "components": [
+    {
+      "id": "learner",
+      "path": "nemo_nvflare.PromptLearner",
+      "args": {
+        "gpt_file_name": "{ROOT_DIR}/megatron_gpt_345m.nemo",
+        "nemo_path": "megatron_gpt_345m_sentiment.nemo",
+        "train_ds_files": "{train_ds_files}",
+        "val_ds_files": "{val_ds_files}",
+        "new_tasks": "sentiment",
+        "aggregation_epochs": "{aggregation_epochs}"
+      }
+    }
+  ]
+}

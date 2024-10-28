@@ -1,0 +1,74 @@
+{
+  "format_version": 2,
+  "min_clients": 3,
+  "num_rounds": 50,
+  "total_virtual_tokens": 10,
+  "hidden_size": 1024,
+  "config_path": "config/megatron_gpt_prompt_learning_config.yaml",
+  "server": {
+    "heart_beat_timeout": 600
+  },
+  "task_data_filters": [],
+  "task_result_filters": [],
+  "components": [
+    {
+      "id": "persistor",
+      "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
+      "args": {
+        "model": {
+          "path": "nemo_nvflare.ServerPromptEncoder",
+          "args": {
+            "config_path": "{config_path}",
+            "taskname": "sentiment",
+            "total_virtual_tokens": "{total_virtual_tokens}",
+            "hidden_size": "{hidden_size}"
+          }
+        }
+      }
+    },
+    {
+      "id": "shareable_generator",
+      "path": "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator",
+      "args": {}
+    },
+    {
+      "id": "aggregator",
+      "path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
+      "args": {}
+    },
+    {
+      "id": "model_selector",
+      "path": "nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector",
+      "args": {
+        "weigh_by_local_iter": true
+      }
+    }
+  ],
+  "workflows": [
+    {
+      "id": "share_config",
+      "path": "nemo_nvflare.ShareConfig",
+      "args": {
+        "config_path": "{config_path}",
+        "task_templates_file": "config/task_templates.json",
+        "task_name": "share_config",
+        "min_responses_required": "{min_clients}"
+      }
+    },
+    {
+      "id": "scatter_and_gather",
+      "path": "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
+      "args": {
+        "min_clients": "{min_clients}",
+        "num_rounds": "{num_rounds}",
+        "start_round": 0,
+        "wait_time_after_min_received": 10,
+        "aggregator_id": "aggregator",
+        "persistor_id": "persistor",
+        "shareable_generator_id": "shareable_generator",
+        "train_task_name": "train",
+        "train_timeout": 0
+      }
+    }
+  ]
+}

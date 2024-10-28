@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,43 +14,90 @@
 
 import os
 
-from nvflare.apis.fl_constant import MachineStatus
+from nvflare.apis.fl_constant import FLContextKey, MachineStatus
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.workspace import Workspace
+from nvflare.private.fed.app.fl_conf import create_privacy_manager
+from nvflare.private.fed.runner import Runner
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.private.fed.server.server_status import ServerStatus
+from nvflare.private.fed.utils.fed_utils import authorize_build_component
+from nvflare.private.privacy_manager import PrivacyService
+from nvflare.security.logging import secure_format_exception
 
 
-class ServerAppRunner:
-    def start_server_app(self, server, args, app_root, job_id, snapshot, logger):
+def _set_up_run_config(workspace: Workspace, server, conf):
+    runner_config = conf.runner_config
 
+    # configure privacy control!
+    privacy_manager = create_privacy_manager(workspace, names_only=False, is_server=True)
+    if privacy_manager.is_policy_defined():
+        if privacy_manager.components:
+            for cid, comp in privacy_manager.components.items():
+                runner_config.add_component(cid, comp)
+
+    # initialize Privacy Service
+    PrivacyService.initialize(privacy_manager)
+
+    server.heart_beat_timeout = conf.heartbeat_timeout
+    server.runner_config = conf.runner_config
+    server.handlers = conf.handlers
+
+
+class ServerAppRunner(Runner):
+    def __init__(self, server) -> None:
+        super().__init__()
+        self.server = server
+
+    def start_server_app(
+        self, workspace: Workspace, args, app_root, job_id, snapshot, logger, kv_list=None, event_handlers=None
+    ):
         try:
             server_config_file_name = os.path.join(app_root, args.server_config)
 
             conf = ServerJsonConfigurator(
+                workspace_obj=workspace,
                 config_file_name=server_config_file_name,
+                app_root=app_root,
+                args=args,
+                kv_list=kv_list,
             )
+            if event_handlers:
+                fl_ctx = FLContext()
+                fl_ctx.set_prop(FLContextKey.ARGS, args, sticky=False)
+                fl_ctx.set_prop(FLContextKey.APP_ROOT, app_root, private=True, sticky=False)
+                fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
+                fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job_id, private=False, sticky=False)
+                fl_ctx.set_prop(FLContextKey.CURRENT_RUN, job_id, private=False, sticky=False)
+                conf.set_component_build_authorizer(
+                    authorize_build_component, fl_ctx=fl_ctx, event_handlers=event_handlers
+                )
             conf.configure()
 
-            self.set_up_run_config(server, conf)
+            _set_up_run_config(workspace, self.server, conf)
 
-            if not isinstance(server.engine, ServerEngine):
-                raise TypeError(f"server.engine must be ServerEngine. Got type:{type(server.engine).__name__}")
-            self.sync_up_parents_process(args, server)
+            if not isinstance(self.server.engine, ServerEngine):
+                raise TypeError(f"server.engine must be ServerEngine. Got type:{type(self.server.engine).__name__}")
+            self.sync_up_parents_process(args)
 
-            server.start_run(job_id, app_root, conf, args, snapshot)
-        except BaseException as e:
-            logger.exception(f"FL server execution exception: {e}", exc_info=True)
+            self.server.start_run(job_id, app_root, conf, args, snapshot)
+        except Exception as e:
+            with self.server.engine.new_context() as fl_ctx:
+                fl_ctx.set_prop(key=FLContextKey.FATAL_SYSTEM_ERROR, value=True, private=True, sticky=True)
+            logger.exception(f"FL server execution exception: {secure_format_exception(e)}")
             raise e
         finally:
-            server.status = ServerStatus.STOPPED
-            server.engine.engine_info.status = MachineStatus.STOPPED
-            server.stop_training()
+            self.update_job_run_status()
+            self.server.status = ServerStatus.STOPPED
+            self.server.engine.engine_info.status = MachineStatus.STOPPED
+            self.server.stop_training()
 
-    def sync_up_parents_process(self, args, server):
-        server.engine.create_parent_connection(int(args.conn))
-        server.engine.sync_clients_from_main_process()
+    def sync_up_parents_process(self, args):
+        self.server.engine.sync_clients_from_main_process()
 
-    def set_up_run_config(self, server, conf):
-        server.heart_beat_timeout = conf.heartbeat_timeout
-        server.runner_config = conf.runner_config
-        server.handlers = conf.handlers
+    def update_job_run_status(self):
+        self.server.engine.update_job_run_status()
+
+    def stop(self):
+        self.server.engine.asked_to_stop = True

@@ -16,14 +16,17 @@ from flask import current_app as app
 from flask import jsonify, make_response, request
 from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 
-from .store import Store
+from .store import Store, check_role
 
 
 @app.route("/api/v1/users", methods=["POST"])
 def create_one_user():
     req = request.json
     result = Store.create_user(req)
-    return jsonify(result), 201
+    if result is not None:
+        return jsonify(result), 201
+    else:
+        return jsonify({"status": "conflicting"}), 409
 
 
 @app.route("/api/v1/users", methods=["GET"])
@@ -41,11 +44,8 @@ def get_all_users():
 @app.route("/api/v1/users/<id>", methods=["GET"])
 @jwt_required()
 def get_one_user(id):
-    claims = get_jwt()
-    requester = get_jwt_identity()
-    is_creator = requester == Store._get_email_by_id(id)
-    is_project_admin = claims.get("role") == "project_admin"
-    if not is_creator and not is_project_admin:
+    c, p = check_role(id, get_jwt(), get_jwt_identity())
+    if not c and not p:
         return jsonify({"status": "unauthorized"}), 403
 
     return jsonify(Store.get_user(id))
@@ -54,18 +54,16 @@ def get_one_user(id):
 @app.route("/api/v1/users/<id>", methods=["PATCH", "DELETE"])
 @jwt_required()
 def update_user(id):
-    claims = get_jwt()
-    requester = get_jwt_identity()
-    is_creator = requester == Store._get_email_by_id(id)
-    is_project_admin = claims.get("role") == "project_admin"
-    if not is_creator and not is_project_admin:
+    c, p = check_role(id, get_jwt(), get_jwt_identity())
+    if not c and not p:
         return jsonify({"status": "unauthorized"}), 403
 
     if request.method == "PATCH":
         req = request.json
-        if is_project_admin:
+        req.pop("email", None)
+        if p:
             result = Store.patch_user_by_project_admin(id, req)
-        elif is_creator:
+        elif c:
             result = Store.patch_user_by_creator(id, req)
     elif request.method == "DELETE":
         result = Store.delete_user(id)
@@ -79,15 +77,12 @@ def update_user(id):
 def user_blob(id):
     if not Store._is_approved_by_user_id(id):
         return jsonify({"status": "not approved yet"}), 200
-    claims = get_jwt()
-    requester = get_jwt_identity()
-    is_creator = requester == Store._get_email_by_id(id)
-    is_project_admin = claims.get("role") == "project_admin"
-    if not is_creator and not is_project_admin:
+    c, p = check_role(id, get_jwt(), get_jwt_identity())
+    if not c and not p:
         return jsonify({"status": "unauthorized"}), 403
     pin = request.json.get("pin")
     fileobj, filename = Store.get_user_blob(pin, id)
     response = make_response(fileobj.read())
     response.headers.set("Content-Type", "zip")
-    response.headers.set("Content-Disposition", "attachment", filename=filename)
+    response.headers.set("Content-Disposition", f'attachment; filename="{filename}"')
     return response

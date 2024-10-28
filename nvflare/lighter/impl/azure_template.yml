@@ -1,0 +1,517 @@
+azure_start_svr_header_sh: |
+  RESOURCE_GROUP=nvflare_rg
+  VM_NAME=nvflare_server
+  VM_IMAGE=Canonical:0001-com-ubuntu-server-focal:20_04-lts-gen2:latest
+  VM_SIZE=Standard_B2ms
+  NSG_NAME=nvflare_nsgs
+  ADMIN_USERNAME=nvflare
+  PASSWORD="NVFl@r3_P@88"$RANDOM"w0rd"
+  DEST_FOLDER=/var/tmp/cloud
+  NIC_NAME=${VM_NAME}VMNic
+  SERVER_NAME={~~server_name~~}
+  FL_PORT=8002
+  ADMIN_PORT=8003
+
+  echo "This script requires az (Azure CLI), sshpass and jq.  Now checking if they are installed."
+
+  check_binary az "Please see https://learn.microsoft.com/en-us/cli/azure/install-azure-cli on how to install it on your system."
+  check_binary sshpass "Please install it first."
+  check_binary jq "Please install it first."
+
+  self_dns=true
+  if [[ "$SERVER_NAME" = *".cloudapp.azure.com"* ]]
+  then
+    DNS_TAG=$(echo $SERVER_NAME | cut -d "." -f 1)
+    DERIVED_LOCATION=$(echo $SERVER_NAME | cut -d "." -f 2)
+    LOCATION=$DERIVED_LOCATION
+    self_dns=false
+  else
+    echo "Warning: ${SERVER_NAME} does not end with .cloudapp.azure.com."
+    echo "The cloud launch process will not create the domain name for you."
+    echo "Please use your own DNS to set the information."
+    LOCATION=westus2
+  fi
+
+  if [ -z ${image_name+x} ]
+  then
+      container=false
+  else
+      container=true
+  fi
+
+  if [ $container == true ]
+  then
+    VM_IMAGE=Canonical:0001-com-ubuntu-server-focal:20_04-lts-gen2:latest
+    VM_SIZE=Standard_D8s_v3
+  else
+    VM_IMAGE=Canonical:0001-com-ubuntu-server-focal:20_04-lts-gen2:latest
+    VM_SIZE=Standard_B2ms
+  fi
+
+  if [ -z ${config_file+x} ]
+  then
+    useDefault=true
+  else
+    useDefault=false
+    . $config_file
+    report_status "$?" "Loading config file"
+    if [ $self_dns == false ] && [ $DERIVED_LOCATION != $LOCATION ]
+    then
+      echo "Server name implies LOCATION=${DERIVED_LOCATION} but the config file specifies LOCATION=${LOCATION}.  Unable to continue provisioning."
+      exit 1
+    fi
+  fi
+
+  if [ $useDefault == true ]
+  then
+    while true
+    do
+      prompt VM_IMAGE "Cloud VM image, press ENTER to accept default" "${VM_IMAGE}"
+      prompt VM_SIZE "Cloud VM size, press ENTER to accept default" "${VM_SIZE}"
+      if [ $self_dns == true ]
+      then
+        prompt LOCATION "Cloud location, press ENTER to accept default" "${LOCATION}"
+        prompt ans "VM image = ${VM_IMAGE}, VM size = ${VM_SIZE}, location = ${LOCATION}, OK? (Y/n)"
+      else
+        prompt ans "VM image = ${VM_IMAGE}, VM size = ${VM_SIZE}, OK? (Y/n)"
+      fi
+      if [[ $ans = "" ]] || [[ $ans =~ ^(y|Y)$ ]]; then break; fi
+    done
+  fi
+
+  if [ $container == false ]
+  then
+    echo "If the client requires additional dependencies, please copy the requirements.txt to ${DIR}."
+    prompt ans "Press ENTER when it's done or no additional dependencies."
+  fi
+
+  az login --use-device-code -o none
+  report_status "$?" "login"
+
+  # Start provisioning
+
+  if [ $(az group exists -n $RESOURCE_GROUP) == 'false' ]
+  then
+    echo "Creating Resource Group $RESOURCE_GROUP at Location $LOCATION"
+    az group create --output none --name $RESOURCE_GROUP --location $LOCATION
+    report_status "$?" "creating resource group"
+  elif [ $useDefault == true ]
+  then
+    report_status "1" "Only one NVFL server VM and its resource group is allowed.  $RESOURCE_GROUP exists and thus creating duplicate resource group"
+  else
+    echo "Users require to reuse Resource Group $RESOURCE_GROUP.  This script will modify the group and may not work always."
+  fi
+
+  echo "Creating Virtual Machine, will take a few minutes"
+  if [ $self_dns == true ]
+  then
+    az vm create \
+      --output json \
+      --resource-group $RESOURCE_GROUP \
+      --location $LOCATION \
+      --name $VM_NAME \
+      --image $VM_IMAGE \
+      --size $VM_SIZE \
+      --admin-username $ADMIN_USERNAME \
+      --admin-password $PASSWORD \
+      --authentication-type password \
+      --public-ip-address nvflare_server_ip \
+      --public-ip-address-allocation static \
+      --public-ip-sku Standard > /tmp/vm.json
+  else
+    az vm create \
+      --output json \
+      --resource-group $RESOURCE_GROUP \
+      --location $LOCATION \
+      --name $VM_NAME \
+      --image $VM_IMAGE \
+      --size $VM_SIZE \
+      --admin-username $ADMIN_USERNAME \
+      --admin-password $PASSWORD \
+      --authentication-type password \
+      --public-ip-address nvflare_server_ip \
+      --public-ip-address-allocation static \
+      --public-ip-sku Standard \
+      --public-ip-address-dns-name $DNS_TAG > /tmp/vm.json
+  fi
+  report_status "$?" "creating virtual machine"
+
+  IP_ADDRESS=$(jq -r .publicIpAddress /tmp/vm.json)
+  echo "Setting up network related configuration"
+  az network nsg create \
+    --output none \
+    --resource-group $RESOURCE_GROUP \
+    --location $LOCATION \
+    --name $NSG_NAME
+  report_status "$?" "creating network security group"
+
+  az network nsg rule create \
+    --output none \
+    --resource-group $RESOURCE_GROUP \
+    --name SSH \
+    --nsg-name $NSG_NAME \
+    --priority 1000 \
+    --protocol Tcp \
+    --destination-port-ranges 22
+  report_status "$?" "creating network security group rule for SSH"
+
+  az network nsg rule create \
+    --output none \
+    --resource-group $RESOURCE_GROUP \
+    --name FL_PORT \
+    --nsg-name $NSG_NAME \
+    --priority 1001 \
+    --protocol Tcp \
+    --destination-port-ranges $FL_PORT
+  report_status "$?" "creating network security group rule for FL port"
+
+  az network nsg rule create \
+    --output none \
+    --resource-group $RESOURCE_GROUP \
+    --name ADMIN_PORT \
+    --nsg-name $NSG_NAME \
+    --priority 1002 \
+    --protocol Tcp \
+    --destination-port-ranges $ADMIN_PORT
+  report_status "$?" "creating network security group rule for Admin port"
+
+azure_start_cln_header_sh: |
+  RESOURCE_GROUP=nvflare_client_rg_${RANDOM}_${RANDOM}
+  VM_NAME=nvflare_client
+  VM_IMAGE=Canonical:0001-com-ubuntu-server-focal:20_04-lts-gen2:latest
+  VM_SIZE=Standard_B2ms
+  NSG_NAME=nvflare_nsgc
+  ADMIN_USERNAME=nvflare
+  PASSWORD="NVFl@r3_P@88"$RANDOM"w0rd"
+  DEST_FOLDER=/var/tmp/cloud
+  LOCATION=westus2
+  NIC_NAME=${VM_NAME}VMNic
+  echo "This script requires az (Azure CLI), sshpass and jq.  Now checking if they are installed."
+
+  check_binary az "Please see https://learn.microsoft.com/en-us/cli/azure/install-azure-cli on how to install it on your system."
+  check_binary sshpass "Please install it first."
+  check_binary jq "Please install it first."
+
+
+  if [ -z ${image_name+x} ]
+  then
+      container=false
+  else
+      container=true
+  fi
+
+  if [ $container == true ]
+  then
+    VM_IMAGE=Canonical:0001-com-ubuntu-server-focal:20_04-lts-gen2:latest
+    VM_SIZE=Standard_D8s_v3
+  else
+    VM_IMAGE=Canonical:0001-com-ubuntu-server-focal:20_04-lts-gen2:latest
+    VM_SIZE=Standard_B2ms
+  fi
+  if [ -z ${config_file+x} ]
+  then
+      useDefault=true
+  else
+      useDefault=false
+      . $config_file
+      report_status "$?" "Loading config file"
+  fi
+
+  if [ $useDefault == true ]
+  then
+    while true
+    do
+      prompt LOCATION "Cloud location, press ENTER to accept default" "${LOCATION}"
+      prompt VM_IMAGE "Cloud VM image, press ENTER to accept default" "${VM_IMAGE}"
+      prompt VM_SIZE "Cloud VM size, press ENTER to accept default" "${VM_SIZE}"
+      prompt ans "location = ${LOCATION}, VM image = ${VM_IMAGE}, VM size = ${VM_SIZE}, OK? (Y/n) "
+      if [[ $ans = "" ]] || [[ $ans =~ ^(y|Y)$ ]]; then break; fi
+    done
+  fi
+
+  if [ $container == false ]
+  then
+    echo "If the client requires additional dependencies, please copy the requirements.txt to ${DIR}."
+    prompt ans "Press ENTER when it's done or no additional dependencies."
+  fi
+
+  az login --use-device-code -o none
+  report_status "$?" "login"
+
+  # Start provisioning
+
+  if [ $(az group exists -n $RESOURCE_GROUP) == 'false' ]
+  then
+    echo "Creating Resource Group $RESOURCE_GROUP at Location $LOCATION"
+    az group create --output none --name $RESOURCE_GROUP --location $LOCATION
+    report_status "$?" "creating resource group"
+  else
+    echo "Resource Group $RESOURCE_GROUP exists, will reuse it."
+  fi
+
+  echo "Creating Virtual Machine, will take a few minutes"
+  az vm create \
+    --output json \
+    --resource-group $RESOURCE_GROUP \
+    --location $LOCATION \
+    --name $VM_NAME \
+    --image $VM_IMAGE \
+    --size $VM_SIZE \
+    --admin-username $ADMIN_USERNAME \
+    --admin-password $PASSWORD \
+    --authentication-type password \
+    --public-ip-sku Standard > /tmp/vm.json
+  report_status "$?" "creating virtual machine"
+
+  IP_ADDRESS=$(jq -r .publicIpAddress /tmp/vm.json)
+
+  echo "Setting up network related configuration"
+
+  az network nsg create \
+    --output none \
+    --resource-group $RESOURCE_GROUP \
+    --location $LOCATION \
+    --name $NSG_NAME
+  report_status "$?" "creating network security group"
+
+  az network nsg rule create \
+    --output none \
+    --resource-group $RESOURCE_GROUP \
+    --name SSH \
+    --nsg-name $NSG_NAME \
+    --priority 1000 \
+    --protocol Tcp \
+    --destination-port-ranges 22
+  report_status "$?" "creating network security group rule for SSH"
+
+azure_start_common_sh: |
+  az network nic update \
+    --output none \
+    --resource-group $RESOURCE_GROUP \
+    --name $NIC_NAME \
+    --network-security-group $NSG_NAME
+  report_status "$?" "updating network interface card"
+
+  echo "Copying files to $VM_NAME"
+  DEST=$ADMIN_USERNAME@${IP_ADDRESS}:$DEST_FOLDER
+  echo "Destination folder is ${DEST}"
+  cd $DIR/.. && sshpass -p $PASSWORD scp -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $PWD $DEST
+  report_status "$?" "copying startup kits to VM"
+
+  if [ $container == true ]
+  then
+    echo "Installing and lauching container in $VM_NAME, may take a few minutes."
+    scripts=$(cat << 'EOF'
+  sudo apt-get update && \
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl gnupg lsb-release && \
+  sudo mkdir -p /etc/apt/keyrings && \
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+  echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+  sudo apt-get update && \
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io
+  EOF
+  )
+    az vm run-command invoke \
+      --output json \
+      --resource-group $RESOURCE_GROUP \
+      --command-id RunShellScript \
+      --name $VM_NAME \
+      --scripts \
+      "$scripts" > /tmp/docker_engine.json
+    report_status "$?" "installing docker engine"
+    az vm run-command invoke \
+      --output json \
+      --resource-group $RESOURCE_GROUP \
+      --command-id RunShellScript \
+      --name $VM_NAME \
+      --scripts \
+      "sudo usermod -aG docker $ADMIN_USERNAME" >> /tmp/docker_engine.json
+    report_status "$?" "Setting user group"
+    az vm run-command invoke \
+      --output json \
+      --resource-group $RESOURCE_GROUP \
+      --command-id RunShellScript \
+      --name $VM_NAME \
+      --scripts \
+      "docker run -d -v ${DEST_FOLDER}:${DEST_FOLDER} {~~docker_network~~} ${image_name} /bin/bash -c \"python -u -m nvflare.private.fed.app.{~~type~~}.{~~type~~}_train -m ${DEST_FOLDER} -s fed_{~~type~~}.json --set {~~cln_uid~~} secure_train=true config_folder=config org={~~ORG~~} \" " > /tmp/vm_create.json 2>&1 
+      report_status "$?" "launching container"
+  else
+    echo "Installing packages in $VM_NAME, may take a few minutes."
+    az vm run-command invoke \
+      --output json \
+      --resource-group $RESOURCE_GROUP \
+      --command-id RunShellScript \
+      --name $VM_NAME \
+      --scripts \
+      "echo ${DEST_FOLDER} && wget -q https://bootstrap.pypa.io/get-pip.py && python3 get-pip.py && python3 -m pip install --ignore-installed nvflare && touch ${DEST_FOLDER}/startup/requirements.txt && python3 -m pip install -r ${DEST_FOLDER}/startup/requirements.txt && ${DEST_FOLDER}/startup/start.sh && sleep 20 && cat ${DEST_FOLDER}/log.txt" > /tmp/vm_create.json
+    report_status "$?" "installing packages"
+  fi
+  echo "System was provisioned"
+  echo "To delete the resource group (also delete the VM), run the following command"
+  echo "az group delete -n ${RESOURCE_GROUP}"
+  echo "To login to the VM with SSH, use ${ADMIN_USERNAME} : ${PASSWORD}" > vm_credential.txt
+
+azure_start_dsb_sh: |
+  RESOURCE_GROUP=nvflare_dashboard_rg_${RANDOM}_${RANDOM}
+  VM_NAME=nvflare_dashboard
+  VM_IMAGE=Canonical:0001-com-ubuntu-server-focal:20_04-lts-gen2:latest
+  VM_SIZE=Standard_B2ms
+  NSG_NAME=nvflare_nsgc
+  ADMIN_USERNAME=nvflare
+  PASSWORD="NVFl@r3_P@88"$RANDOM"w0rd"
+  DEST_FOLDER=/var/tmp/cloud
+  LOCATION=westus2
+  NIC_NAME=${VM_NAME}VMNic
+
+  echo "This script requires az (Azure CLI), sshpass and jq.  Now checking if they are installed."
+
+  check_binary az "Please see https://learn.microsoft.com/en-us/cli/azure/install-azure-cli on how to install it on your system."
+  check_binary sshpass "Please install it first."
+  check_binary jq "Please install it first."
+
+  echo "One initial user will be created when starting dashboard."
+  echo "Please enter the email address for this user."
+  read email
+  credential="${email}:$RANDOM"
+
+  az login --use-device-code -o none
+  report_status "$?" "login"
+
+  # Start provisioning
+  if [ $(az group exists -n $RESOURCE_GROUP) == 'false' ]
+  then
+    echo "Creating Resource Group $RESOURCE_GROUP at Location $LOCATION"
+    az group create --output none --name $RESOURCE_GROUP --location $LOCATION
+    report_status "$?" "creating resource group"
+  else
+    echo "Resource Group $RESOURCE_GROUP exists, will reuse it."
+  fi
+
+  echo "Creating Virtual Machine, will take a few minutes"
+  az vm create \
+    --output json \
+    --resource-group $RESOURCE_GROUP \
+    --location $LOCATION \
+    --name $VM_NAME \
+    --image $VM_IMAGE \
+    --size $VM_SIZE \
+    --admin-username $ADMIN_USERNAME \
+    --admin-password $PASSWORD \
+    --authentication-type password \
+    --public-ip-sku Standard > /tmp/vm.json
+  report_status "$?" "creating virtual machine"
+
+  IP_ADDRESS=$(jq -r .publicIpAddress /tmp/vm.json)
+  report_status "$?" "extracting ip address"
+
+  echo "Setting up network related configuration"
+  az network nsg create \
+    --output none \
+    --resource-group $RESOURCE_GROUP \
+    --location $LOCATION \
+    --name $NSG_NAME
+  report_status "$?" "creating network security group"
+
+  az network nsg rule create \
+    --output none \
+    --resource-group $RESOURCE_GROUP \
+    --name SSH \
+    --nsg-name $NSG_NAME \
+    --priority 1000 \
+    --protocol Tcp \
+    --destination-port-ranges 22
+  report_status "$?" "creating network security group rule for SSH"
+
+  az network nsg rule create \
+    --output none \
+    --resource-group $RESOURCE_GROUP \
+    --name HTTPS \
+    --nsg-name $NSG_NAME \
+    --priority 1001 \
+    --protocol Tcp \
+    --destination-port-ranges 443
+  report_status "$?" "creating network security group rule for HTTPS"
+
+  az network nic update \
+    --output none \
+    --resource-group $RESOURCE_GROUP \
+    --name $NIC_NAME \
+    --network-security-group $NSG_NAME
+  report_status "$?" "updating network interface card"
+
+  echo "Installing docker engine in $VM_NAME, may take a few minutes."
+  scripts=$(cat << 'EOF'
+  sudo apt-get update && \
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl gnupg lsb-release && \
+  sudo mkdir -p /etc/apt/keyrings && \
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+  echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+  sudo apt-get update && \
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io
+  EOF
+  )
+  az vm run-command invoke \
+    --output json \
+    --resource-group $RESOURCE_GROUP \
+    --command-id RunShellScript \
+    --name $VM_NAME \
+    --scripts \
+    "$scripts" > /tmp/docker_engine.json
+  report_status "$?" "installing docker engine"
+  az vm run-command invoke \
+    --output json \
+    --resource-group $RESOURCE_GROUP \
+    --command-id RunShellScript \
+    --name $VM_NAME \
+    --scripts \
+    "sudo usermod -aG docker $ADMIN_USERNAME" >> /tmp/docker_engine.json
+  report_status "$?" "installing docker engine"
+    
+  DEST_FOLDER=/home/${ADMIN_USERNAME}
+  echo "Installing nvflare in $VM_NAME, may take a few minutes."
+  az vm run-command invoke \
+    --output json \
+    --resource-group $RESOURCE_GROUP \
+    --command-id RunShellScript \
+    --name $VM_NAME \
+    --scripts \
+    "echo ${DEST_FOLDER} && wget -q https://bootstrap.pypa.io/get-pip.py && python3 get-pip.py && python3 -m pip install --ignore-installed {~~NVFLARE~~} && mkdir -p ${DEST_FOLDER}/cert && chown -R ${ADMIN_USERNAME} ${DEST_FOLDER}" > /tmp/nvflare.json
+  report_status "$?" "installing nvflare"
+
+  echo "Checking if certificate (web.crt) and private key (web.key) are available"
+  if [[ -f "web.crt" && -f "web.key" ]]; then
+    DEST=$ADMIN_USERNAME@$IP_ADDRESS:${DEST_FOLDER}/cert
+    echo "Destination folder is ${DEST}"
+    sshpass -p $PASSWORD scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null web.{crt,key} $DEST
+    report_status "$?" "copying cert/key to VM ${DEST} folder"
+    secure=true
+  else
+    echo "No web.crt and web.key found"
+    secure=false
+  fi
+
+  echo "Starting dashboard"
+  az vm run-command invoke \
+    --output json \
+    --resource-group $RESOURCE_GROUP \
+    --command-id RunShellScript \
+    --name $VM_NAME \
+    --scripts \
+    "cd ${DEST_FOLDER} && python3 -m nvflare.dashboard.cli --start -f ${DEST_FOLDER} --cred ${credential} {~~START_OPT~~}" > /tmp/dashboard.json
+
+  # credential=$(jq -r .value[0].message /tmp/dashboard.json | grep "Project admin")
+  # echo "The VM was created with user: ${ADMIN_USERNAME} and password: ${PASSWORD}"
+  if [ "$secure" == true ]
+  then
+    echo "URL is https://${IP_ADDRESS}"
+  else
+    echo "URL is http://${IP_ADDRESS}:443"
+  fi
+  echo "Note: you may need to configure DNS server with your DNS hostname and the above IP address."
+  echo "Project admin credential (username:password) is ${credential} ."
+  echo "To stop the dashboard, run az group delete -n ${RESOURCE_GROUP}"
+  echo "To login to the VM with SSH, use ${ADMIN_USERNAME} : ${PASSWORD}" > vm_credential.txt

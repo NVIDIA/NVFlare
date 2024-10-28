@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,21 +12,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, List, Optional
+import logging
+import time
+from typing import Dict, List, Optional, Union
 
-from nvflare.apis.client_engine_spec import TaskAssignment
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, ServerCommandKey, ServerCommandNames, SiteType
 from nvflare.apis.fl_context import FLContext, FLContextManager
-from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.apis.shareable import Shareable
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.f3.cellnet.core_cell import FQCN
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
+from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
+from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
 from nvflare.private.event import fire_event
+from nvflare.private.fed.utils.fed_utils import create_job_processing_context_properties
 from nvflare.widgets.fed_event import ClientFedEventRunner
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
 
-from .client_aux_runner import ClientAuxRunner
-from .client_engine_executor_spec import ClientEngineExecutorSpec
+from .client_engine_executor_spec import ClientEngineExecutorSpec, TaskAssignment
 from .client_json_config import ClientJsonConfigurator
 from .client_runner import ClientRunner
 from .fed_client import FederatedClient
@@ -42,7 +48,12 @@ class ClientRunInfo(object):
         self.job_id = job_id
         self.current_task_name = ""
         self.start_time = None
-        # self.status = MachineStatus.STOPPED
+
+
+# TODO: make this configurable
+#   this is the number of retries for client side child/job process to get clients from server
+#   we might need to think of removing the whole get clients from server logic from child process
+GET_CLIENTS_RETRY = 300
 
 
 class ClientRunManager(ClientEngineExecutorSpec):
@@ -63,7 +74,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
         Args:
             client_name: client name
             job_id: job id
-            workspace: workspacee
+            workspace: workspace
             client: FL client object
             components: available FL components
             handlers: available handlers
@@ -75,12 +86,24 @@ class ClientRunManager(ClientEngineExecutorSpec):
         self.handlers = handlers
         self.workspace = workspace
         self.components = components
-        self.aux_runner = ClientAuxRunner()
+        # self.aux_runner = ClientAuxRunner()
+        self.aux_runner = AuxRunner(self)
         self.add_handler(self.aux_runner)
         self.conf = conf
+        self.cell = None
 
+        self.all_clients = None
+
+        if not components:
+            self.components = {}
+
+        if not handlers:
+            self.handlers = []
+
+        # get job meta!
+        job_ctx_props = self.create_job_processing_context_properties(workspace, job_id)
         self.fl_ctx_mgr = FLContextManager(
-            engine=self, identity_name=client_name, job_id=job_id, public_stickers={}, private_stickers={}
+            engine=self, identity_name=client_name, job_id=job_id, public_stickers={}, private_stickers=job_ctx_props
         )
 
         self.run_info = ClientRunInfo(job_id=job_id)
@@ -89,12 +112,13 @@ class ClientRunManager(ClientEngineExecutorSpec):
         for _, widget in self.widgets.items():
             self.handlers.append(widget)
 
-    def get_task_assignment(self, fl_ctx: FLContext) -> TaskAssignment:
-        pull_success, task_name, remote_tasks = self.client.fetch_task(fl_ctx)
+        self.logger = logging.getLogger(self.__class__.__name__)
+
+    def get_task_assignment(self, fl_ctx: FLContext, timeout=None) -> TaskAssignment:
+        pull_success, task_name, return_shareable = self.client.fetch_task(fl_ctx, timeout)
         task = None
         if pull_success:
-            shareable = self.client.extract_shareable(remote_tasks, fl_ctx)
-            # task_id = fl_ctx.get_peer_context().get_cookie(FLContextKey.TASK_ID)
+            shareable = self.client.extract_shareable(return_shareable, fl_ctx)
             task_id = shareable.get_header(key=FLContextKey.TASK_ID)
             task = TaskAssignment(name=task_name, task_id=task_id, data=shareable)
         return task
@@ -102,11 +126,12 @@ class ClientRunManager(ClientEngineExecutorSpec):
     def new_context(self) -> FLContext:
         return self.fl_ctx_mgr.new_context()
 
-    def send_task_result(self, result: Shareable, fl_ctx: FLContext) -> bool:
-        try:
-            self.client.push_results(result, fl_ctx)  # push task execution results
+    def send_task_result(self, result: Shareable, fl_ctx: FLContext, timeout=None) -> bool:
+        push_result = self.client.push_results(result, fl_ctx, timeout)  # push task execution results
+        if push_result == CellReturnCode.OK:
             return True
-        except BaseException:
+        else:
+            self.logger.error(f"failed to send task result: {push_result}")
             return False
 
     def get_workspace(self) -> Workspace:
@@ -124,11 +149,40 @@ class ClientRunManager(ClientEngineExecutorSpec):
     def dispatch(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         return self.aux_runner.dispatch(topic=topic, request=request, fl_ctx=fl_ctx)
 
+    def add_component(self, component_id: str, component):
+        self.client.runner_config.add_component(component_id, component)
+
     def get_component(self, component_id: str) -> object:
         return self.components.get(component_id)
 
     def get_all_components(self) -> dict:
         return self.components
+
+    def validate_targets(self, inputs) -> ([], []):
+        valid_inputs = []
+        invalid_inputs = []
+        for item in inputs:
+            if item == FQCN.ROOT_SERVER:
+                valid_inputs.append(item)
+            else:
+                client = self.get_client_from_name(item)
+                if client:
+                    valid_inputs.append(item)
+                else:
+                    invalid_inputs.append(item)
+        return valid_inputs, invalid_inputs
+
+    def get_client_from_name(self, client_name):
+        for _, c in self.all_clients.items():
+            if client_name == c.name:
+                return c
+        return None
+
+    def get_clients(self):
+        return list(self.all_clients.values())
+
+    def persist_components(self, fl_ctx: FLContext, completed: bool):
+        self.logger.warning(f"will not persist components, not supported by {self.__class__.__name__}")
 
     def get_widget(self, widget_id: str) -> Widget:
         return self.widgets.get(widget_id)
@@ -144,23 +198,133 @@ class ClientRunManager(ClientEngineExecutorSpec):
             raise RuntimeError("No configurator set up.")
         return self.conf.build_component(config_dict)
 
-    def aux_send(self, topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> Shareable:
-        reply = self.client.aux_send(topic, request, timeout, fl_ctx)
-        if reply:
-            return self.client.extract_shareable(reply, fl_ctx)
-        else:
-            return make_reply(ReturnCode.COMMUNICATION_ERROR)
+    def get_cell(self):
+        return self.cell
 
-    def send_aux_request(self, topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> Shareable:
-        return self.aux_runner.send_aux_request(topic, request, timeout, fl_ctx)
+    def send_aux_request(
+        self,
+        targets: Union[None, str, List[str]],
+        topic: str,
+        request: Shareable,
+        timeout: float,
+        fl_ctx: FLContext,
+        optional=False,
+        secure=False,
+    ) -> dict:
+        if not targets:
+            msg_targets = [AuxMsgTarget.server_target()]
+        elif isinstance(targets, str):
+            if targets == SiteType.ALL:
+                msg_targets = [AuxMsgTarget.server_target()]
+                for _, c in self.all_clients.items():
+                    if c.name != self.client.client_name:
+                        msg_targets.append(AuxMsgTarget.client_target(c))
+            else:
+                msg_target = self._get_aux_msg_target(targets)
+                if msg_target:
+                    msg_targets = [msg_target]
+                else:
+                    self.logger.error(f"invalid targe {targets}")
+                    return {}
+        elif not isinstance(targets, list):
+            raise TypeError(f"invalid targets type {type(targets)}")
+        else:
+            # targets is a list: make sure every target is valid
+            msg_targets = []
+            for t in targets:
+                if not isinstance(t, str):
+                    raise TypeError(f"target name must be str but got {type(t)}")
+
+                msg_target = self._get_aux_msg_target(t)
+                if msg_target:
+                    msg_targets.append(msg_target)
+                else:
+                    self.logger.error(f"invalid target {t}")
+                    return {}
+
+        if msg_targets:
+            return self.aux_runner.send_aux_request(
+                msg_targets, topic, request, timeout, fl_ctx, optional=optional, secure=secure
+            )
+        else:
+            return {}
+
+    def _get_aux_msg_target(self, name: str):
+        if name.lower() == "server":
+            return AuxMsgTarget.server_target()
+
+        c = self.get_client_from_name(name)
+        if c:
+            return AuxMsgTarget.client_target(c)
+        else:
+            return None
+
+    def multicast_aux_requests(
+        self,
+        topic: str,
+        target_requests: Dict[str, Shareable],
+        timeout: float,
+        fl_ctx: FLContext,
+        optional: bool = False,
+        secure: bool = False,
+    ) -> dict:
+        if not target_requests:
+            return {}
+
+        msg_targets = []
+        for name, req in target_requests.items():
+            msg_target = self._get_aux_msg_target(name)
+            if not msg_target:
+                self.logger.error(f"invalid target {name}")
+                return {}
+            msg_targets.append((msg_target, req))
+
+        return self.aux_runner.multicast_aux_requests(
+            topic, msg_targets, timeout, fl_ctx, optional=optional, secure=secure
+        )
+
+    def get_all_clients_from_server(self, fl_ctx, retry=0):
+        job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
+        get_clients_message = new_cell_message({CellMessageHeaderKeys.JOB_ID: job_id}, {})
+        return_data = self.client.cell.send_request(
+            target=FQCN.ROOT_SERVER,
+            channel=CellChannel.SERVER_PARENT_LISTENER,
+            topic=ServerCommandNames.GET_CLIENTS,
+            request=get_clients_message,
+            timeout=5.0,
+            optional=True,
+        )
+        return_code = return_data.get_header(MessageHeaderKey.RETURN_CODE)
+
+        if return_code == CellReturnCode.OK:
+            if return_data.payload:
+                data = return_data.payload
+                self.all_clients = data.get(ServerCommandKey.CLIENTS)
+            else:
+                raise RuntimeError("Empty clients data from server")
+        else:
+            # retry to handle the server connect has not been established scenario.
+            retry += 1
+            if retry < GET_CLIENTS_RETRY:
+                time.sleep(0.5)
+                self.get_all_clients_from_server(fl_ctx, retry)
+            else:
+                raise RuntimeError("Failed to get the clients from the server.")
 
     def register_aux_message_handler(self, topic: str, message_handle_func):
         self.aux_runner.register_aux_message_handler(topic, message_handle_func)
 
-    def fire_and_forget_aux_request(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
-        return self.send_aux_request(topic, request, 0.0, fl_ctx)
+    def fire_and_forget_aux_request(
+        self, topic: str, request: Shareable, fl_ctx: FLContext, optional=False, secure=False
+    ) -> dict:
+        return self.send_aux_request(
+            targets=None, topic=topic, request=request, timeout=0.0, fl_ctx=fl_ctx, optional=optional, secure=secure
+        )
 
     def abort_app(self, job_id: str, fl_ctx: FLContext):
         runner = fl_ctx.get_prop(key=FLContextKey.RUNNER, default=None)
         if isinstance(runner, ClientRunner):
             runner.abort()
+
+    def create_job_processing_context_properties(self, workspace, job_id):
+        return create_job_processing_context_properties(workspace, job_id)

@@ -1,0 +1,58 @@
+{
+  "format_version": 2,
+
+  "executors": [
+    {
+      "tasks": [
+        "fed_stats_pre_run", "fed_stats"
+      ],
+      "executor": {
+        "id": "Executor",
+        "path": "nvflare.app_common.executors.statistics.statistics_executor.StatisticsExecutor",
+        "args": {
+          "generator_id": "local_stats_generator"
+        }
+      }
+    }
+  ],
+
+  "task_result_filters": [
+    {
+      "tasks": ["fed_stats"],
+      "filters":[
+        {
+          "path": "nvflare.app_common.filters.statistics_privacy_filter.StatisticsPrivacyFilter",
+          "args": {
+            "result_cleanser_ids": [
+              "min_count_cleanser"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "task_data_filters": [],
+  "components": [
+    {
+      "id": "local_stats_generator",
+      "path": "monai_nvflare.client_algo_statistics.ClientAlgoStatistics",
+      "args": {
+        "client_algo_stats_id": "client_algo_stats"
+      }
+    },
+    {
+      "id": "min_count_cleanser",
+      "path": "nvflare.app_common.statistics.min_count_cleanser.MinCountCleanser",
+      "args": {
+        "min_count": 5
+      }
+    },
+    {
+      "id": "client_algo_stats",
+      "path": "monai.fl.client.MonaiAlgoStats",
+      "args": {
+        "bundle_root": "config/spleen_ct_segmentation"
+      }
+    }
+  ]
+}

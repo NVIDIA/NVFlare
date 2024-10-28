@@ -1,0 +1,466 @@
+---
+import ClickTracker from './clickTracker.astro';
+
+const gh_branch = import.meta.env.PUBLIC_GH_BRANCH;
+
+const series_100 = {
+  id: "100",
+  title: "FLARE 100: Core",
+  subseries_list: [
+    {
+      id: "101",
+      title: "101: Python APIs",
+      description: "Learn to use the Client API, Model Controller API, and Job API.",
+      cards: [
+        {
+          title: "Getting Started",
+          tags: ["beg.", "pytorch", "lightning", "sklearn", "tensorflow"],
+          description: "Getting started examples using the Client API, Model Controller API, and Job API for different frameworks.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/getting_started`
+        },
+        {
+          title: "Client API",
+          tags: ["docs"],
+          description: "The FLARE Client API provides an easy way for users to convert their centralized, local training code into federated learning code.",
+          link: "https://nvflare.readthedocs.io/en/main/programming_guide/execution_api_type/client_api.html#client-api"
+        },
+        {
+          title: "Model Controller API",
+          tags: ["docs"],
+          description: "The FLARE ModelController API provides an easy way for users to write and customize FLModel-based controller workflows.",
+          link: "https://nvflare.readthedocs.io/en/main/programming_guide/controllers/model_controller.html#model-controller"
+        },
+        {
+          title: "Fed Job API",
+          tags: ["docs"],
+          description: "The FLARE FedJob API allows users to Pythonically define and create job configurations.",
+          link: "https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html",
+        },
+        {
+          title: "ML/DL to FL",
+          tags: ["beg.", "numpy", "pytorch", "lightning", "tensorflow"],
+          description: "Example for converting Deep Learning (DL) code to Federated Learning (FL) using the Client API. Configurations for numpy, pytorch, lighting, and tensorflow.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/ml-to-fl`
+        },
+        {
+          title: "Hello FedAvg",
+          tags: ["beg.", "pytorch"],
+          description: "Demonstrate flexibility of the ModelController API, and show how to write a Federated Averaging workflow with early stopping, model selection, and saving and loading.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-fedavg/README.md`
+        },
+        {
+          title: "Job API Examples",
+          tags: ["int.", "pytorch", "lightning", "sklearn", "tensorflow"],
+          description: "Various examples using the Job API for different workflows and frameworks.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/job_api`
+        },
+      ]
+    },
+    {
+      id: "102",
+      title: "102: Tools",
+      description: "Run and operate a FLARE system in different modes with a selection of tools.",
+      cards: [
+        {
+          title: "Intro to the FL Simulator",
+          tags: ["beg.", "tools"],
+          description: "Use the NVIDIA FLARE Simulator to run a local simulation with multi-process settings within a single computer, offering quick response and debugging.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/tutorials/flare_simulator.ipynb`,
+          colab_link: `https://colab.research.google.com/github/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/flare_simulator.ipynb`
+        },
+        {
+          title: "POC Mode",
+          tags: ["beg.", "tools"],
+          description: "Proof-of-concept mode to simulate real-world deployment on a local host with different processes represent server, clients, and an admin console.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/tutorials/setup_poc.ipynb`
+        },
+        {
+          title: "FLARE API",
+          tags: ["beg.", "tools"],
+          description: "Manage system and jobs programmatically with the python FLARE API.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/tutorials/flare_api.ipynb`,
+          colab_link: `https://colab.research.google.com/github/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/flare_api.ipynb`
+        },
+        {
+          title: "Operating NVIDIA FLARE: Admin Client, Commands, FLARE API",
+          tags: ["int.", "tools"],
+          description:
+            "Operate NVIDIA FLARE with the commands and functionalities of the admin client, which allow you to manage your system.",
+          link: "https://nvflare.readthedocs.io/en/main/real_world_fl/operation.html",
+        },
+      ]
+    },
+    {
+      id: "103",
+      title: "103: Deployment",
+      description: "Provision and deploy a FLARE system.",
+      cards: [
+        {
+          title: "NVIDIA FLARE Dashboard",
+          tags: ["adv.", "deployment"],
+          description:
+            "Provides a CLI or UI to collect information of clients and users from different organizations, and generates startup kits with keys and certificates for users to download.",
+          link: "https://nvflare.readthedocs.io/en/main/user_guide/dashboard_api.html",
+        },
+        {
+          title: "Containerized Deployment with Docker",
+          tags: ["beg.", "deployment"],
+          description:
+            "Run NVIDIA FLARE in a Docker container.",
+          link: "https://nvflare.readthedocs.io/en/main/quickstart.html#containerized-deployment-with-docker",
+        },
+        {
+          title: "Cloud Deployment",
+          tags: ["adv.", "deployment"],
+          description:
+            "Deploy the NVIDIA FLARE dashboard, server, and clients in the cloud. Learn to use the provided scripts for AWS and Azure.",
+          link: "https://nvflare.readthedocs.io/en/main/real_world_fl/cloud_deployment.html",
+        },
+        {
+          title: "Deployment to Kubernetes",
+          tags: ["adv.", "deployment"],
+          description:
+            "Run NVIDIA FLARE inside Amazon Elastic Kubernetes Service (EKS).",
+          link: "https://nvflare.readthedocs.io/en/main/real_world_fl/kubernetes.html",
+        },
+        {
+          title: "Helm Chart Deployment",
+          tags: ["adv.", "deployment"],
+          description:
+            "Use the provisioning tool's HelmChartBuilder to generate a reference Helm Chart to deploy NVIDIA FLARE to a local microk8s Kubernetes instance.",
+          link: "https://nvflare.readthedocs.io/en/main/user_guide/helm_chart.html",
+        },
+        {
+          title: "Secure Provisioning",
+          tags: ["adv.", "deployment"],
+          description:
+            "Utilize the secure provisioning tool for streamlining the process to provision, start, and operate federated learning with a trusted setup.",
+          link: "https://nvflare.readthedocs.io/en/main/real_world_fl/overview.html",
+        },
+      ]
+    },
+  ]
+}
+
+const series_200 = {
+  id: "200",
+  title: "FLARE 200: Algorithms",
+  subseries_list: [
+    {
+      id: "201",
+      title: "201: FL Algorithms",
+      description: "See how FL algorithms can be implemented in a variety of frameworks.",
+      cards: [
+        {
+          title: "Step-by-Step CIFAR10 Examples",
+          tags: ["beg.", "algorithm", "pytorch", "dl"],
+          description: "Step-by-step examples series with CIFAR-10 (image data) to showcase different NVIDIA FLARE features, workflows, and APIs.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/step-by-step/cifar10`
+        },
+        {
+          title: "Step-by-Step HIGGS Examples",
+          tags: ["beg.", "algorithm", "pandas", "sklearn", "xgboost"],
+          description: "Step-by-step examples series with HIGGS (tabular data) to showcase different NVIDIA FLARE features, workflows, and APIs.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/step-by-step/higgs`
+        },
+        {
+          title: "Hello FedAvg",
+          tags: ["beg.", "algorithm", "pytorch", "dl"],
+          description: "Example using the FedAvg workflow to implement Federated Averaging.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-fedavg/README.md`
+        },
+        {
+          title: "Hello Numpy Cross-Site Validation",
+          tags: ["beg.", "algorithm", "numpy"],
+          description: "Example using the CrossSiteEval workflow for cross site evaluation. Demonstrate option to use previous results without training workflow.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-numpy-cross-val/README.md`
+        },
+        {
+          title: "Hello Cyclic Weight Transfer",
+          tags: ["beg.", "algorithm", "tensorflow", "dl"],
+          description: "Example using the CyclicController workflow to implement Cyclic Weight Transfer.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-cyclic/README.md`
+        },
+        {
+          title: "Simulated Federated Learning with CIFAR-10",
+          tags: ["int.", "algorithm", "simulator", "pytorch", "dl"],
+          description: "Running FedAvg, FedProx, FedOpt, and SCAFFOLD algorithms using the FL simulator.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/cifar10/cifar10-sim/README.md`
+        },
+        {
+          title: "TensorFlow Algorithms and Examples",
+          tags: ["adv.", "algorithm", "tensorflow"],
+          description: "FedOpt, FedProx, Scaffold implementations for Tensorflow.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/job_api/tf`
+        },
+        {
+          title: "Financial Application with Federated XGBoost Methods",
+          tags: ["adv.", "algorithm", "xgboost", "finance"],
+          description: "Example using XGBoost in vertical and horizontal approaches to train a federated model to perform fraud detection with a finance dataset.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/finance`
+        },
+        {
+          title: "Federated Learning Research",
+          tags: ["adv.", "algorithm"],
+          description: "Collection of research work for Federated Learning algorithms implemented with FLARE.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research`
+        },
+      ]
+    },
+    {
+      id: "202",
+      title: "202: Applications",
+      description: "Examples of how FL can be used in real world applications.",
+      cards: [
+        {
+          title: "BioNemo example for Drug Discovery",
+          tags: ["adv.", "algorithm", "nemo", "healthcare"],
+          description: "Running BioNeMo (NVIDIA's generative AI platform for drug discovery) in a federated learning environment using NVIDIA FLARE.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/bionemo`
+        },
+        {
+          title: "Federated Learning for Prostate Segmentation from Multi-source Data",
+          tags: ["adv.", "algorithm", "healthcare", "monai", "dl"],
+          description: "Example of training a multi-institutional prostate segmentation model using FedAvg, FedProx, and Ditto.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/prostate/README.md`
+        },
+        {
+          title: "NVFlare + MONAI integration",
+          tags: ["adv.", "algorithm", "healthcare", "monai", "dl"],
+          description: "Using NVIDIA FLARE to train a 3D medical image analysis model using federated averaging (FedAvg) and MONAI Bundle.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/integration/monai/README.md`
+        },
+        {
+          title: "Federated Learning with Differential Privacy for BraTS18 segmentation",
+          tags: ["adv.", "algorithm", "healthcare", "dp", "monai", "dl"],
+          description: "Illustrates the use of differential privacy for training brain tumor segmentation models using federated learning.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/brats18/README.md`
+        },
+        {
+          title: "Federated GNN: Protein Classification",
+          tags: ["adv.", "algorithm", "healthcare", "pytorch", "dl"],
+          description: "Example using GNNs for Protein Classification using PPI dataset using GraphSAGE.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning`
+        },
+        {
+          title: "End-to-End Federated XGBoost for Financial Credit Card Detection",
+          tags: ["adv.", "algorithm", "xgboost", "finance"],
+          description: "Show the end-to-end process of feature engineering, pre-processing and training in federated settings. You can use FLARE to perform federated ETL and then training.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/finance-end-to-end`
+        },
+        {
+          title: "Federated GNN: Financial Transaction Classification",
+          tags: ["adv.", "algorithm", "finance", "pytorch", "dl"],
+          description: "Example using GNNs for Financial Transaction Classification with Elliptic++ dataset using GraphSAGE.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning`
+        },
+      ]
+    },
+    {
+      id: "203",
+      title: "203: Privacy Preserving Mechanisms",
+      description: "Techniques for data privacy in FLARE.",
+      cards: [
+        {
+          title: "Filters",
+          tags: ["docs"],
+          description:
+            "Privacy preserving algorithms in NVIDIA FLARE are implemented as filters that can be applied as data is sent or received between peers.",
+          link: "https://nvflare.readthedocs.io/en/main/programming_guide/filters.html#filters",
+        },
+        {
+          title: "Survival Analysis with Federated Kaplan-Meier",
+          tags: ["int.", "algorithm", "healthcare", "he", "analytics"],
+          description:
+            "Kaplan-Meier survival analysis in federated setting without and with secure features via time-binning and Homomorphic Encryption (HE).",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/kaplan-meier-he`,
+        },
+        {
+          title: "Federated Learning with Differential Privacy for BraTS18 segmentation",
+          tags: ["adv.", "algorithm", "healthcare", "dp", "monai", "dl"],
+          description: "Illustrates the use of differential privacy for training brain tumor segmentation models using federated learning.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/brats18/README.md`
+        },
+        {
+          title: "Real-world Federated Learning with CIFAR-10",
+          tags: ["int.", "algorithm", "poc", "pytorch", "learner", "dl", "he"],
+          description: "Provisioning secure workspace and running FedAvg with streaming of TensorBoard metrics to the server during training and homomorphic encryption.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/cifar10/cifar10-real-world/README.md`
+        },
+        {
+          title: "Secure Federated XGBoost with Homomorphic Encryption",
+          tags: ["adv.", "algorithm", "xgboost", "he"],
+          description:
+            "Federated secure training with XGBoost using homomorphic encryption.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/xgboost_secure`,
+        },
+      ]
+    }
+  ]
+}
+
+const series_list = [
+  series_100,
+  series_200,
+]
+
+---
+
+<ClickTracker div_id="series_div" eventLabel="Series"/>
+<div id="series_div" class="bg-white py-20 sm:py-24">
+  <div class="mx-auto max-w-[1500px] px-6 lg:px-8">
+    <div class="mx-auto lg:mx-0 text-center">
+      <h2 class="text-4xl lg:text-5xl font-bold lg:tracking-tight text-gray-900">
+        Tutorials
+      </h2>
+      <p class="text-lg mt-4 text-slate-600 w-3/4 m-auto">
+        These progressive tutorial series cover various aspects of NVIDIA FLARE from core concepts and basic tools to advanced algorithms and deployments.
+        For a comprehensive list of all tutorials, view the tutorial catalog below.
+      </p>
+    </div>
+
+    <div class="mt-20 max-w-[1500px] mx-auto py-4 text-left flex flex-col md:flex-row">
+
+      <!-- Series Glider -->
+      <div id="series-glide" class="lg:w-[400px] glide px-2 lg:pb-8 rounded-3xl mt-12">
+
+        <div class="glide__track" data-glide-el="track">
+          <ul id="series-slides" class="glide__slides">
+            {
+              series_list.map((series) => (
+              <li id={"series"+series.id} class="slider__frame glide__slide w- mb-4 p-4 transition-shadow ease-in-out" role="presentation">
+                <span class="flex items-center space-x-4 justify-center mb-10">
+                  <p class="text-[26px] leading-tight text-gray-700">{series.title}</p>
+                </span>
+                <ol class="relative text-gray-500 border-s border-gray-200 dark:border-gray-700 dark:text-gray-400" data-tabs-toggle="#default-styled-tab-content" role="tablist" data-tabs-active-classes="text-nvidia [&>span]:bg-nvidia-light" data-tabs-inactive-classes="text-gray-500 [&>span]:bg-gray-100">
+                  {series.subseries_list.map((subseries, index) => (
+                    <li class="mb-10 ms-6" role="presentation">
+                      <button data-tabs-target={"#subseries-content"+subseries.id} type="button" role="tab">
+                        <span class="absolute flex items-center justify-center ms-1 w-5 h-5 rounded-full -start-4 ring-4 ring-white dark:ring-gray-900 dark:bg-green-900">
+                        </span>
+                        <h3 class="font-medium leading-tight bg-white text-left">{subseries.title}</h3>
+                        <p class="text-sm bg-white text-left">{subseries.description}</p>
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div class="glide__arrows" data-glide-el="controls">
+          <!-- Left Carousel Arrow -->
+          <button class="glide__arrow glide__arrow--left top-8 left-0 shadow-none border-none" data-glide-dir="<">
+            <svg class="stroke-gray-400 w-10 h-10 text-gray-800 dark:text-white" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 16.881V7.119a1 1 0 0 0-1.636-.772l-5.927 4.881a1 1 0 0 0 0 1.544l5.927 4.88a1 1 0 0 0 1.636-.77Z"/>
+            </svg>
+          </button>
+          <!-- Right Carousel Arrow -->
+          <button class="glide__arrow glide__arrow--right top-8 right-0 shadow-none border-none" data-glide-dir=">">
+              <svg class="stroke-gray-400 w-10 h-10 text-gray-800 dark:text-white" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16.881V7.119a1 1 0 0 1 1.636-.772l5.927 4.881a1 1 0 0 1 0 1.544l-5.927 4.88A1 1 0 0 1 8 16.882Z"/>
+              </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Scrollable Subseries Content -->
+      {series_list.map((series, series_index) => (
+        <div id={"series"+series.id+"-content"} class="hidden">
+            {series.subseries_list.map((subseries, index) => (
+              <div id={"subseries-content"+subseries.id} class="flex flex-col m-auto p-auto lg:w-[925px] lg:mt-12">
+                <div class="flex overflow-x-auto pb-4 hide-scroll-bar">
+                  <div class="flex flex-nowrap ml-4 ">
+                    {
+                      subseries.cards.map((card) => (
+                        <div class="inline-block w- mb-4 p-4 transition-shadow ease-in-out w-[300px]" role="presentation">
+                          <div class="flex flex-col gap-1 divide-gray-200 rounded-lg bg-white shadow-md hover:shadow-xl h-80 transition-shadow duration-300 ease-in-out">
+                            <div>
+                              <h3 class="font-semibold text-md px-4 pt-2 text-lg">
+                                {card.title}
+                              </h3>
+                              <div class="px-4 gap-x-2 flex-wrap items-center">
+                                {card.tags.map((tag) => (
+                                  <div class="inline-flex rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">
+                                    {tag}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                            <div class="flex-grow overflow-y-auto px-4">
+                              <p class="text-slate-500 mt-2 leading-relaxed">
+                                {card.description}
+                              </p>
+                            </div>
+                            <div class="h-14 flex-shrink-0 flex justify-center items-center border-t border-gray-200">
+                              <a href={card.link} target="_blank" rel="noopener noreferrer" class="rounded-bl-lg border border-transparent py-2 px-4 text-sm font-semibold text-gray-900">
+                                Go to Tutorial
+                              </a>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    }
+                  </div>
+                </div>
+              </div>
+          ))}
+        </div>
+      ))}
+
+    </div>
+
+    <!-- Tutorial Catalog Button -->
+    <div class="mt-20 text-center">
+      <!-- <p class="text-lg mt-4 mb-8 text-slate-600 w-3/4 m-auto">
+        To dive deeper into what NVIDIA FLARE has to offer, explore our full catalog of various tutorials and examples showcasing everything from the core features to advanced applications.
+      </p> -->
+      <a
+        href="catalog"
+        class="rounded-md bg-nvidia px-3.5 py-2.5 text-mg font-semibold text-white shadow-sm hover:bg-green-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-nvidia"
+        >Tutorial Catalog -></a
+      >
+    </div>
+  </div>
+</div>
+
+<script src="@glidejs/glide/dist/glide.min.js"></script>
+
+<script>
+  import Glide from '@glidejs/glide';
+
+  const config = {
+    type: 'slider',
+    animationDuration: 300,
+    rewindDuration: 300,
+    perView: 1,
+    gap: 32,
+    dragThreshold: false,
+    touchRatio: 0,
+    swipeThreshold: false,
+  };
+
+  const glide_container = document.getElementById('series-glide');
+  var series_glide = new Glide(glide_container, config).mount();
+
+  var slides = glide_container!.querySelectorAll('.glide__slide');
+
+  series_glide.on('move.after', function(event) {
+    slides.forEach((slide) => {
+      var content = document.getElementById(slide.id+"-content");
+      if (slide.classList.contains('glide__slide--active')) {
+        content?.classList.remove("hidden");
+      } else {
+        content?.classList.add("hidden");
+      }
+    });
+  });
+
+  glide_container!.addEventListener('click', updateGlide);
+
+  function updateGlide() {
+    series_glide.update()
+  };
+
+</script>

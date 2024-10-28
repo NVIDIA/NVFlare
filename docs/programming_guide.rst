@@ -4,7 +4,7 @@
 Programming Guide
 #################
 
-The NVIDIA FLARE Controller and Worker APIs are used to implement the task-based interaction defined in an :ref:`user_guide/application:NVIDIA FLARE Application`.
+The NVIDIA FLARE Controller and Worker APIs are used to implement the task-based interaction defined in an :ref:`application`.
 In the application, the server configuration defines the components to be used in the controller workflow.
 For example, the server configuration may define the aggregator used to accumulate client task data, a persistor used to
 save models, and the shareable object used to exchange data.  The server configuration also defines the Controller
@@ -30,28 +30,31 @@ framework.
 This guide contains details on the key concepts, objects, and information you should know to implement your own components.
 
 If you want to use your components in an FL application, you will need to change the config in the application folder.
-Please refer to :ref:`user_guide/application:NVIDIA FLARE Application` for more details.
+Please refer to :ref:`application` for more details.
 
 .. toctree::
    :maxdepth: 1
 
-   programming_guide/controllers
-   programming_guide/executor
+   programming_guide/fed_job_api
+   programming_guide/workflows_and_controllers
+   programming_guide/execution_api_type
+   programming_guide/fl_model
    programming_guide/shareable
    programming_guide/data_exchange_object
    programming_guide/fl_context
    programming_guide/fl_component
-   programming_guide/serialization
    programming_guide/filters
    programming_guide/event_system
+   programming_guide/component_configuration
    programming_guide/provisioning_system
    programming_guide/high_availability
    programming_guide/system_architecture
+   programming_guide/resource_manager_and_consumer
+   programming_guide/global_model_initialization
+   programming_guide/experiment_tracking
 
 
-
-Code Structure
-==============
+.. rubric:: Code Structure
 
 Different components can be built on top of the APIs(:mod:`nvflare.apis`) in NVIDIA FLARE core, and you can now
 implement your own custom workflows. The concepts of aggregator, learnable, persistors, and shareable_generator which
@@ -61,8 +64,10 @@ this can be used in your own workflow.
 
     - :mod:`nvflare.apis` - the generic class definitions
     - :mod:`nvflare.app_common` - higher level controllers, workflows, and algorithms
+    - :mod:`nvflare.app_opt` - optional dependencies
     - :mod:`nvflare.fuel` - supporting components of the provisioning and admin systems
     - :mod:`nvflare.ha` - overseer and overseer agent to support :ref:`high_availability`
+    - :mod:`nvflare.integration` - integrations with other frameworks
     - :mod:`nvflare.lighter` - configuration, scripts, and Builders to support the provisioning tool
     - :mod:`nvflare.poc` - configurations for the poc tool
     - :mod:`nvflare.private` - low-level implementation of the platform and communication

@@ -1,0 +1,87 @@
+ha: True
+jobs_root_dir: ./data/apps
+cleanup: True
+project_yaml: ./data/projects/authz.yml
+
+
+tests:
+  - test_name: "lead a clone np_sag submitted by lead a"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job np_sag" ]
+        "admin_user_name": "trainer@a.org"
+        "result":
+          "type": "job_submit_success"
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
+    reset_job_info: False
+    validators:
+      - path: tests.integration_test.src.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
+  - test_name: "lead a clone previous np_sag"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "clone_job" ]
+        "admin_user_name": "trainer@a.org"
+        "result":
+          "type": "run_state"
+          "data": {}
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
+    reset_job_info: False
+    validators:
+      - path: tests.integration_test.src.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
+  - test_name: "lead b clone previous np_sag"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "clone_job" ]
+        "admin_user_name": "trainer@b.org"
+        "result":
+          "type": "admin_api_response"
+          "data": {
+            "message": "Error: PermissionError: Authorization Error: user 'trainer@b.org' is not authorized for 'clone_job'"
+          }
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "mark_test_done" ]
+        "result":
+          "type": "run_state"
+          "data": { }
+    reset_job_info: False
+  - test_name: "super clone previous np_sag"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "clone_job" ]
+        "result":
+          "type": "run_state"
+          "data": { }
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
+    validators:
+      - path: tests.integration_test.src.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }

@@ -1,0 +1,103 @@
+ha: True
+jobs_root_dir: ./data/apps
+cleanup: True
+project_yaml: ./data/projects/authz.yml
+poll_period: 0.5
+
+tests:
+  - test_name: "lead a submit np_sag"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job np_sag" ]
+        "admin_user_name": "trainer@a.org"
+        "result":
+          "type": "job_submit_success"
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
+    validators:
+      - path: tests.integration_test.src.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
+  - test_name: "lead b submit np_sag"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job np_sag" ]
+        "admin_user_name": "trainer@b.org"
+        "result":
+          "type": "job_submit_success"
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
+    validators:
+      - path: tests.integration_test.src.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
+  - test_name: "org admin submit np_sag"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job np_sag" ]
+        "admin_user_name": "admin@a.org"
+        "result":
+          "type": "admin_api_response"
+          "data": {
+            "message": "Error: PermissionError: Authorization Error: user 'admin@a.org' is not authorized for 'submit_job'"
+          }
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job np_sag" ]
+        "admin_user_name": "admin@b.org"
+        "result":
+          "type": "admin_api_response"
+          "data": {
+            "message": "Error: PermissionError: Authorization Error: user 'admin@b.org' is not authorized for 'submit_job'"
+          }
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "mark_test_done" ]
+        "result":
+          "type": "run_state"
+          "data": { }
+  - test_name: "member submit np_sag"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job np_sag" ]
+        "admin_user_name": "user@a.org"
+        "result":
+          "type": "admin_api_response"
+          "data": {
+            "message": "Error: PermissionError: Authorization Error: user 'user@a.org' is not authorized for 'submit_job'"
+          }
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job np_sag" ]
+        "admin_user_name": "user@b.org"
+        "result":
+          "type": "admin_api_response"
+          "data": {
+            "message": "Error: PermissionError: Authorization Error: user 'user@b.org' is not authorized for 'submit_job'"
+          }
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "mark_test_done" ]
+        "result":
+          "type": "run_state"
+          "data": { }

@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ from nvflare.apis.signal import Signal
 
 from .client import Client
 from .fl_context import FLContext
-from .shareable import Shareable
+from .shareable import ReservedHeaderKey, Shareable
 
 
 class TaskCompletionStatus(Enum):
@@ -34,6 +34,35 @@ class TaskCompletionStatus(Enum):
     CANCELLED = "cancelled"
     ABORTED = "aborted"
     IGNORED = "ignored"
+    CLIENT_DEAD = "client_dead"
+
+
+class TaskOperatorKey:
+
+    OP_ID = "op_id"
+    METHOD = "method"  # bcast, relay, etc.
+    NUM_ROUNDS = "num_rounds"
+    TARGETS = "targets"  # list of leaf nodes
+    DATA_FILTERS = "data_filters"
+    RESULT_FILTERS = "result_filters"
+    AGGREGATOR = "aggregator"  # only for bcast
+    SHAREABLE_GENERATOR = "shareable_gen"  # only for relay
+    PERSISTOR = "persistor"  # only for relay
+    TIMEOUT = "timeout"
+    TASK_ASSIGNMENT_TIMEOUT = "task_assign_timeout"  # for relay
+    MIN_TARGETS = "min_targets"
+    WAIT_TIME_AFTER_MIN_RESPS = "wait_time_after_min_received"
+
+
+class OperatorMethod:
+
+    BROADCAST = "bcast"
+    RELAY = "relay"
+
+
+class OperatorConfigKey:
+
+    OPERATORS = "operators"
 
 
 class Task(object):
@@ -47,6 +76,8 @@ class Task(object):
         after_task_sent_cb=None,
         result_received_cb=None,
         task_done_cb=None,
+        operator=None,
+        secure=False,
     ):
         """Init the Task.
 
@@ -57,7 +88,7 @@ class Task(object):
             name (str): name of the task
             data (Shareable): data of the task
             props: Any additional properties of the task
-            timeout: How long this task will last. If == 0, the task never time out.
+            timeout: How long this task will last. If == 0, the task never time out (WFCommServer-> never time out, WFCommClient-> time out after `max_task_timeout`).
             before_task_sent_cb: If provided, this callback would be called before controller sends the tasks to clients.
                 It needs to follow the before_task_sent_cb_signature.
             after_task_sent_cb: If provided, this callback would be called after controller sends the tasks to clients.
@@ -66,6 +97,8 @@ class Task(object):
                 It needs to follow the result_received_cb_signature.
             task_done_cb: If provided, this callback would be called when task is done.
                 It needs to follow the task_done_cb_signature.
+            operator: task operator that describes the operation of the task
+            secure: should this task be transmitted in a secure way
 
         """
         if not isinstance(name, str):
@@ -73,10 +106,16 @@ class Task(object):
 
         if not isinstance(data, Shareable):
             raise TypeError("data must be an instance of Shareable, but got {}.".format(type(data)))
+        if operator and not isinstance(operator, dict):
+            raise TypeError(f"operator must be a dict but got {type(operator)}")
 
         self.name = name  # name of the task
         self.data = data  # task data to be sent to client(s)
+        self.operator = operator
         self.cb_lock = threading.Lock()
+        self.secure = secure
+
+        data.set_header(ReservedHeaderKey.TASK_NAME, name)
 
         if props is None:
             self.props = {}
@@ -127,8 +166,6 @@ class Task(object):
         self.props[key] = value
 
     def get_prop(self, key):
-        if key.startswith("__"):
-            raise ValueError("Keys start with __ is reserved. Please use other key instead of {}.".format(key))
         return self.props.get(key)
 
 
@@ -230,6 +267,19 @@ class ControllerSpec(ABC):
         pass
 
     @abstractmethod
+    def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
+        """This is the control logic for the RUN.
+
+        NOTE: this is running in a separate thread, and its life is the duration of the RUN.
+
+        Args:
+            fl_ctx: the FL context
+            abort_signal: the abort signal. If triggered, this method stops waiting and returns to the caller.
+
+        """
+        pass
+
+    @abstractmethod
     def stop_controller(self, fl_ctx: FLContext):
         """Stops the controller.
 
@@ -243,7 +293,6 @@ class ControllerSpec(ABC):
         """
         pass
 
-    @abstractmethod
     def process_result_of_unknown_task(
         self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
     ):
@@ -494,24 +543,13 @@ class ControllerSpec(ABC):
         """
         pass
 
-    def abort_task(self, task: Task, fl_ctx: FLContext):
-        """Asks all clients to abort the execution of the specified task.
+    def get_client_disconnect_time(self, client_name):
+        """Get the time that the client is deemed disconnected.
 
         Args:
-            task: the task to be aborted
-            fl_ctx: the FL context
+            client_name: the name of the client
+
+        Returns: time at which the client was deemed disconnected; or None if the client is not disconnected.
 
         """
-        pass
-
-    def abort_all_tasks(self, fl_ctx: FLContext):
-        """Asks clients to abort the execution of all tasks.
-
-        NOTE: the server should send a notification to all clients, regardless of whether the server
-        has any standing tasks.
-
-        Args:
-            fl_ctx: the FL context
-
-        """
-        pass
+        return None

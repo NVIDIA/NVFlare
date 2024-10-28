@@ -1,0 +1,71 @@
+{
+    "format_version": 2,
+    "num_clients": 8,
+    "num_rounds": 50,
+    "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits",
+    "alpha": 1.0,
+    "server": {
+        "heart_beat_timeout": 600
+    },
+    "task_data_filters": [],
+    "task_result_filters": [],
+    "components": [
+        {
+            "id": "data_splitter",
+            "path": "pt.utils.cifar10_data_splitter.Cifar10DataSplitter",
+            "args": {
+                "split_dir": "{TRAIN_SPLIT_ROOT}",
+                "num_sites": "{num_clients}",
+                "alpha": "{alpha}"
+            }
+        },
+        {
+            "id": "persistor",
+            "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
+            "args": {
+                "model": {
+                    "path": "pt.networks.cifar10_nets.ModerateCNN",
+                    "args": {}
+                }
+            }
+        },
+        {
+            "id": "model_selector",
+            "path": "nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector",
+            "args": {}
+        },
+        {
+            "id": "model_locator",
+            "path": "nvflare.app_opt.pt.file_model_locator.PTFileModelLocator",
+            "args": {
+                "pt_persistor_id": "persistor"
+            }
+        },
+        {
+            "id": "json_generator",
+            "path": "nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator",
+            "args": {}
+        }
+    ],
+    "workflows": [
+        {
+            "id": "fedavg_ctl",
+            "path": "nvflare.app_common.workflows.fedavg.FedAvg",
+            "args": {
+                "num_clients": "{num_clients}",
+                "num_rounds": "{num_rounds}",
+                "persistor_id": "persistor"
+            }
+        },
+        {
+            "id": "cross_site_model_eval",
+            "path": "nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval",
+            "args": {
+                "model_locator_id": "model_locator",
+                "submit_model_timeout": 600,
+                "validation_timeout": 6000,
+                "cleanup_models": true
+            }
+        }
+    ]
+}

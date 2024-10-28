@@ -1,0 +1,59 @@
+ha: true
+jobs_root_dir: ../../examples/advanced/cifar10/cifar10-real-world/jobs
+cleanup: true
+project_yaml: ./data/projects/ha_1_servers_2_clients_with_he.yml
+additional_python_paths:
+- ../../examples/advanced/cifar10
+
+tests:
+  - test_name: Test a simplified copy of job cifar10_fedavg_he for example cifar10-real-world.
+    event_sequence:
+      - trigger:
+          type: server_log
+          data: Server started
+        actions: [ "submit_job cifar10_fedavg_he_copy" ]
+        result:
+          type: job_submit_success
+      - trigger:
+          type: run_state
+          data: { "run_finished": True }
+        actions: [ "ensure_current_job_done" ]
+        result:
+          type: run_state
+          data: { "run_finished": True }
+    validators:
+      - path: tests.integration_test.src.validators.CIFAR10ResultValidator
+    setup:
+      - cp ../../examples/advanced/cifar10/cifar10-real-world/requirements.txt ../../examples/advanced/cifar10/cifar10-real-world/temp_requirements.txt
+      - sed -i '/nvflare\|jupyter\|notebook/d' ../../examples/advanced/cifar10/cifar10-real-world/temp_requirements.txt
+      - python -m pip install -r ../../examples/advanced/cifar10/cifar10-real-world/temp_requirements.txt
+      - rm -f ../../examples/advanced/cifar10/cifar10-real-world/temp_requirements.txt
+      - bash ../../examples/advanced/cifar10/cifar10-real-world/prepare_data.sh
+      - python convert_to_test_job.py --job ../../examples/advanced/cifar10/cifar10-real-world/jobs/cifar10_fedavg_he --post _copy
+    teardown:
+      - rm -rf ../../examples/advanced/cifar10/cifar10-real-world/jobs/cifar10_fedavg_he_copy
+  - test_name: Test a simplified copy of job cifar10_fedavg_stream_tb for example cifar10-real-world.
+    event_sequence:
+      - trigger:
+          type: server_log
+          data: Server started
+        actions: [ "submit_job cifar10_fedavg_stream_tb_copy" ]
+        result:
+          type: job_submit_success
+      - trigger:
+          type: run_state
+          data: { "run_finished": True }
+        actions: [ "ensure_current_job_done" ]
+        result:
+          type: run_state
+          data: { "run_finished": True }
+    validators:
+      - path: tests.integration_test.src.validators.CIFAR10ResultValidator
+    setup:
+      - cp ../../examples/advanced/cifar10/cifar10-real-world/requirements.txt ../../examples/advanced/cifar10/cifar10-real-world/temp_requirements.txt
+      - sed -i '/nvflare\|jupyter\|notebook/d' ../../examples/advanced/cifar10/cifar10-real-world/temp_requirements.txt
+      - python -m pip install -r ../../examples/advanced/cifar10/cifar10-real-world/temp_requirements.txt
+      - rm -f ../../examples/advanced/cifar10/cifar10-real-world/temp_requirements.txt
+      - python convert_to_test_job.py --job ../../examples/advanced/cifar10/cifar10-real-world/jobs/cifar10_fedavg_stream_tb --post _copy
+    teardown:
+      - rm -rf ../../examples/advanced/cifar10/cifar10-real-world/jobs/cifar10_fedavg_stream_tb_copy

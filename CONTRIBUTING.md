@@ -4,10 +4,8 @@
     1. [Checking the coding style](#checking-the-coding-style)
     1. [Unit testing](#unit-testing)
     1. [Building the documentation](#building-the-documentation)
-    1. [Automatic code formatting](#automatic-code-formatting)
     1. [Signing your work](#signing-your-work)
-    1. [Utility functions](#utility-functions)
-    1. [Backwards compatibility](#backwards-compatibility)
+    1. [Commit signature verification](#commit-signature-verification)
   * [Submitting pull requests](#submitting-pull-requests)
 - [The code reviewing process (for the maintainers)](#the-code-reviewing-process)
   * [Reviewing pull requests](#reviewing-pull-requests)
@@ -35,7 +33,8 @@ It helps us track the contributions under development, whether they are ready to
 
 
 ### Preparing pull requests
-To ensure the code quality, NVIDIA FLARE relies on several linting tools ([flake8 and its plugins](https://gitlab.com/pycqa/flake8), [black](https://github.com/psf/black) and [isort](https://github.com/timothycrosley/isort))
+To ensure the code quality, NVIDIA FLARE relies on several linting tools:
+([flake8 and its plugins](https://github.com/pycqa/flake8), [black](https://github.com/psf/black) and [isort](https://github.com/timothycrosley/isort))
 
 This section highlights all the necessary preparation steps required before sending a pull request.
 To collaborate efficiently, please read through this section and follow them.
@@ -48,10 +47,11 @@ To collaborate efficiently, please read through this section and follow them.
 #### Checking the coding style
 We check code style using flake8 and isort.
 A bash script (`runtest.sh`) is provided to run all tests locally.
+You can use `runtest.sh -f` to use black to fix your code style automatically as well.
 
 License information: all source code files should start with this paragraph:
 ```
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -69,28 +69,28 @@ License information: all source code files should start with this paragraph:
 
 #### Unit testing
 NVIDIA FLARE tests are located under test/.
-The unit test file names follow the `test_[module_name].py` pattern.
+The unit test file names follow the `[module_name]_test.py` pattern.
 
 The bash script `runtest.sh` will run unit tests also.
 
-#### Building docs
+#### Building the documentation
 To build the docs, first make sure you have all requirements
 
 ```bash
-python -m pip upgrade
-python -m pip install -r requirements-dev.txt
+python3 -m pip install -U pip
+python3 -m pip install nvflare[dev]
 ```
 
 To build the docs, please run. 
 
 ```bash
-./build_docs --html
+./build_doc.sh --html
 ```
 
 Once built, you can view the docs in `docs/_build folder`. To clean the docs, please run
 
 ```bash
-./build_docs --clean
+./build_doc.sh --clean
 ```
 
 #### Signing your work
@@ -143,7 +143,7 @@ By making a contribution to this project, I certify that:
 ```
 
 ### Submitting pull requests
-All code changes to the dev branch must be done via [pull requests](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/proposing-changes-to-your-work-with-pull-requests).
+All code changes to the main branch must be done via [pull requests](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/proposing-changes-to-your-work-with-pull-requests).
 1. Create a new ticket or take a known ticket from [the issue list][NVIDIA FLARE issue list].
 2. Check if there's already a branch dedicated to the task.
 3. If the task has not been taken, [create a new branch in your fork](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request-from-a-fork)
@@ -151,7 +151,7 @@ of the codebase.
 Ideally, the new branch should be based on the latest `main` branch.
 4. Make changes to the branch ([use detailed commit messages if possible](https://chris.beams.io/posts/git-commit/)).
 5. Make sure that new tests cover the changes and the changed codebase [passes all tests locally](#unit-testing).
-6. [Create a new pull request](https://help.github.com/en/desktop/contributing-to-projects/creating-a-pull-request) from the task branch to the dev branch, with detailed descriptions of the purpose of this pull request.
+6. [Create a new pull request](https://help.github.com/en/desktop/contributing-to-projects/creating-a-pull-request) from the task branch to the main branch, with detailed descriptions of the purpose of this pull request.
 7. Check [the CI/CD status of the pull request][github ci], make sure all CI/CD tests passed.
 8. Assign 2 reviewers. One of the reviewers must be a code owner for this section of code.
 9. Wait for reviews; if there are reviews, make point-to-point responses, make further code changes if needed.
@@ -165,11 +165,11 @@ Ideally, the new branch should be based on the latest `main` branch.
 ### Reviewing pull requests
 All code review comments should be specific, constructive, and actionable.
 1. Check [the CI/CD status of the pull request][github ci], make sure all CI/CD tests passed before reviewing (contact the branch owner if needed).
-1. Read carefully the descriptions of the pull request and the files changed, write comments if needed.
-1. Make in-line comments to specific code segments, [request for changes](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/about-pull-request-reviews) if needed.
-1. Review any further code changes until all comments addressed by the contributors.
-1. Merge the pull request to the main branch.
-1. Close the corresponding task ticket on [the issue list][NVIDIA FLARE issue list].
+2. Read carefully the descriptions of the pull request and the files changed, write comments if needed.
+3. Make in-line comments to specific code segments, [request for changes](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/about-pull-request-reviews) if needed.
+4. Review any further code changes until all comments addressed by the contributors.
+5. Merge the pull request to the main branch.
+6. Close the corresponding task ticket on [the issue list][NVIDIA FLARE issue list].
 
 [github ci]: https://github.com/NVIDIA/NVFlare/actions
 [NVIDIA FLARE issue list]: https://github.com/NVIDIA/NVFlare/issues

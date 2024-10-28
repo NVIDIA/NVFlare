@@ -1,26 +1,27 @@
-#######################
-User Guide - Operations
-#######################
+.. _user_guide:
 
-This user guide shows how to use NVIDIA FLARE to deploy and operate an FL system on multiple sites with a
-Provision-Start-Operating procedure. A reference application will be used here to show provisioning and basic operation
-of the system through the admin client. You will find information here about the Open Provision API for setting up the
-system with all the available components (including setup for High Availability and Jobs) and the Admin API for
-operating FL. For more details on what you can do with apps with custom components and
-the flexibility that the Controller and Worker APIs bring, see the :ref:`programming_guide`.
+##########
+User Guide
+##########
 
-You can also see some `example applications <https://github.com/NVIDIA/NVFlare/tree/main/examples>`_ integrating with
-`Clara Train <https://docs.nvidia.com/clara/clara-train-sdk/>`_ and
-`MONAI <https://github.com/Project-MONAI/tutorials/tree/master/federated_learning/nvflare>`_
-to see the capabilities of the system and how it can be operated.
+This user guide provides instructions on how to utilize various features in NVIDIA FLARE.
+
+For information about operating an FL system, see :ref:`Real-World Federated Learning <real_world_fl>`.
+
+For a more in-depth exploration of the capabilities offered by apps with custom workflows and algorithms,
+please refer to the :ref:`programming_guide`.
 
 .. toctree::
    :maxdepth: 1
 
-   user_guide/overview
-   user_guide/operation
-   user_guide/application
-   user_guide/job
-   user_guide/workspace
-   user_guide/authorization
-   user_guide/federated_learning
+   user_guide/nvflare_cli
+   user_guide/configurations
+   user_guide/dashboard_api
+   user_guide/dashboard_ui
+   user_guide/nvflare_security
+   user_guide/docker_compose
+   user_guide/helm_chart
+   user_guide/confidential_computing
+   user_guide/hierarchy_unification_bridge
+   user_guide/federated_xgboost
+   user_guide/flower_integration

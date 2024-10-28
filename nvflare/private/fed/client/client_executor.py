@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,11 +20,16 @@ import sys
 import threading
 import time
 from abc import ABC, abstractmethod
-from multiprocessing.connection import Client
 
-from nvflare.apis.fl_constant import AdminCommandNames, ReturnCode, RunProcessKey
+from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey, SystemConfigs
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
-from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.fuel.common.exit_codes import PROCESS_EXIT_REASON, ProcessExitCode
+from nvflare.fuel.f3.cellnet.core_cell import FQCN
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey, new_cell_message
+from nvflare.private.fed.utils.fed_utils import add_custom_dir_to_path, get_return_code
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .client_status import ClientStatus, get_status_message
 
@@ -37,11 +42,11 @@ class ClientExecutor(ABC):
         job_id,
         args,
         app_custom_folder,
-        listen_port,
         allocated_resource,
         token,
         resource_manager,
         target: str,
+        scheme: str,
     ):
         """Starts the client app.
 
@@ -50,11 +55,11 @@ class ClientExecutor(ABC):
             job_id: the job_id
             args: admin command arguments for starting the FL client training
             app_custom_folder: FL application custom folder
-            listen_port: port to listen the command.
             allocated_resource: allocated resources
             token: token from resource manager
             resource_manager: resource manager
             target: SP target location
+            scheme: SP target connection scheme
         """
         pass
 
@@ -116,45 +121,25 @@ class ClientExecutor(ABC):
             job_id: the job_id
         """
 
-    @abstractmethod
-    def process_aux_command(self, shareable: Shareable, job_id):
-        """Processes the aux command.
-
-        Args:
-            shareable: aux message Shareable
-            job_id: the job_id
-        """
-        pass
-
 
 class ProcessExecutor(ClientExecutor):
     """Run the Client executor in a child process."""
 
-    def __init__(self, startup):
+    def __init__(self, client, startup):
         """To init the ProcessExecutor.
 
         Args:
             startup: startup folder
         """
+        self.client = client
         self.logger = logging.getLogger(self.__class__.__name__)
         self.startup = startup
         self.run_processes = {}
         self.lock = threading.Lock()
 
-    def get_conn_client(self, job_id):
-        # should be call within self.lock
-        listen_port = self.run_processes.get(job_id, {}).get(RunProcessKey.LISTEN_PORT)
-        conn_client = self.run_processes.get(job_id, {}).get(RunProcessKey.CONNECTION, None)
-
-        if not conn_client:
-            try:
-                address = ("localhost", listen_port)
-                conn_client = Client(address, authkey="client process secret password".encode())
-                self.run_processes[job_id][RunProcessKey.CONNECTION] = conn_client
-            except Exception:
-                pass
-
-        return conn_client
+        self.job_query_timeout = ConfigService.get_float_var(
+            name="job_query_timeout", conf=SystemConfigs.APPLICATION_CONF, default=5.0
+        )
 
     def start_app(
         self,
@@ -162,11 +147,11 @@ class ProcessExecutor(ClientExecutor):
         job_id,
         args,
         app_custom_folder,
-        listen_port,
         allocated_resource,
         token,
         resource_manager: ResourceManagerSpec,
         target: str,
+        scheme: str,
     ):
         """Starts the app.
 
@@ -175,15 +160,15 @@ class ProcessExecutor(ClientExecutor):
             job_id: the job_id
             args: admin command arguments for starting the worker process
             app_custom_folder: FL application custom folder
-            listen_port: port to listen the command.
             allocated_resource: allocated resources
             token: token from resource manager
             resource_manager: resource manager
             target: SP target location
+            scheme: SP connection scheme
         """
         new_env = os.environ.copy()
         if app_custom_folder != "":
-            new_env["PYTHONPATH"] = new_env.get("PYTHONPATH", "") + os.pathsep + app_custom_folder
+            add_custom_dir_to_path(app_custom_folder, new_env)
 
         command_options = ""
         for t in args.set:
@@ -202,9 +187,11 @@ class ProcessExecutor(ClientExecutor):
             + " -c "
             + client.client_name
             + " -p "
-            + str(listen_port)
+            + str(client.cell.get_internal_listener_url())
             + " -g "
             + target
+            + " -scheme "
+            + scheme
             + " -s fed_client.json "
             " --set" + command_options + " print_conf=True"
         )
@@ -217,17 +204,23 @@ class ProcessExecutor(ClientExecutor):
 
         with self.lock:
             self.run_processes[job_id] = {
-                RunProcessKey.LISTEN_PORT: listen_port,
-                RunProcessKey.CONNECTION: None,
                 RunProcessKey.CHILD_PROCESS: process,
-                RunProcessKey.STATUS: ClientStatus.STARTED,
+                RunProcessKey.STATUS: ClientStatus.STARTING,
             }
 
         thread = threading.Thread(
             target=self._wait_child_process_finish,
-            args=(client, job_id, allocated_resource, token, resource_manager),
+            args=(client, job_id, allocated_resource, token, resource_manager, args.workspace),
         )
         thread.start()
+
+    def notify_job_status(self, job_id, job_status):
+        run_process = self.run_processes.get(job_id)
+        if run_process:
+            run_process[RunProcessKey.STATUS] = job_status
+
+    def _job_fqcn(self, job_id: str):
+        return FQCN.join([self.client.cell.get_fqcn(), job_id])
 
     def check_status(self, job_id):
         """Checks the status of the running client.
@@ -239,20 +232,11 @@ class ProcessExecutor(ClientExecutor):
             A client status message
         """
         try:
-            with self.lock:
-                conn_client = self.get_conn_client(job_id)
-
-                if conn_client:
-                    data = {"command": AdminCommandNames.CHECK_STATUS, "data": {}}
-                    conn_client.send(data)
-                    status_message = conn_client.recv()
-                    self.logger.debug("check status from process listener......")
-                    return status_message
-                else:
-                    process_status = ClientStatus.NOT_STARTED
-                    return get_status_message(process_status)
+            process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED)
+            return get_status_message(process_status)
         except Exception as e:
-            self.logger.error(f"check_status execution exception: {e}.", exc_info=True)
+            self.logger.error(f"check_status execution exception: {secure_format_exception(e)}.")
+            secure_log_traceback()
             return "execution exception. Please try again."
 
     def get_run_info(self, job_id):
@@ -265,18 +249,25 @@ class ProcessExecutor(ClientExecutor):
             A dict of run information.
         """
         try:
-            with self.lock:
-                conn_client = self.get_conn_client(job_id)
-
-                if conn_client:
-                    data = {"command": AdminCommandNames.SHOW_STATS, "data": {}}
-                    conn_client.send(data)
-                    run_info = conn_client.recv()
-                    return run_info
-                else:
-                    return {}
+            data = {}
+            request = new_cell_message({}, data)
+            return_data = self.client.cell.send_request(
+                target=self._job_fqcn(job_id),
+                channel=CellChannel.CLIENT_COMMAND,
+                topic=AdminCommandNames.SHOW_STATS,
+                request=request,
+                optional=True,
+                timeout=self.job_query_timeout,
+            )
+            return_code = return_data.get_header(MessageHeaderKey.RETURN_CODE)
+            if return_code == ReturnCode.OK:
+                run_info = return_data.payload
+                return run_info
+            else:
+                return {}
         except Exception as e:
-            self.logger.error(f"get_run_info execution exception: {e}.", exc_info=True)
+            self.logger.error(f"get_run_info execution exception: {secure_format_exception(e)}.")
+            secure_log_traceback()
             return {"error": "no info collector. Please try again."}
 
     def get_errors(self, job_id):
@@ -289,18 +280,25 @@ class ProcessExecutor(ClientExecutor):
             A dict of error information.
         """
         try:
-            with self.lock:
-                conn_client = self.get_conn_client(job_id)
-
-                if conn_client:
-                    data = {"command": AdminCommandNames.SHOW_ERRORS, "data": {}}
-                    conn_client.send(data)
-                    errors_info = conn_client.recv()
-                    return errors_info
-                else:
-                    return None
+            data = {"command": AdminCommandNames.SHOW_ERRORS, "data": {}}
+            request = new_cell_message({}, data)
+            return_data = self.client.cell.send_request(
+                target=self._job_fqcn(job_id),
+                channel=CellChannel.CLIENT_COMMAND,
+                topic=AdminCommandNames.SHOW_ERRORS,
+                request=request,
+                optional=True,
+                timeout=self.job_query_timeout,
+            )
+            return_code = return_data.get_header(MessageHeaderKey.RETURN_CODE)
+            if return_code == ReturnCode.OK:
+                errors_info = return_data.payload
+                return errors_info
+            else:
+                return None
         except Exception as e:
-            self.logger.error(f"get_errors execution exception: {e}.", exc_info=True)
+            self.logger.error(f"get_errors execution exception: {secure_format_exception(e)}.")
+            secure_log_traceback()
             return None
 
     def reset_errors(self, job_id):
@@ -310,34 +308,19 @@ class ProcessExecutor(ClientExecutor):
             job_id: the job_id
         """
         try:
-            with self.lock:
-                conn_client = self.get_conn_client(job_id)
+            data = {"command": AdminCommandNames.RESET_ERRORS, "data": {}}
+            request = new_cell_message({}, data)
+            self.client.cell.fire_and_forget(
+                targets=self._job_fqcn(job_id),
+                channel=CellChannel.CLIENT_COMMAND,
+                topic=AdminCommandNames.RESET_ERRORS,
+                message=request,
+                optional=True,
+            )
 
-                if conn_client:
-                    data = {"command": AdminCommandNames.RESET_ERRORS, "data": {}}
-                    conn_client.send(data)
         except Exception as e:
-            self.logger.error(f"reset_errors execution exception: {e}.", exc_info=True)
-
-    def process_aux_command(self, shareable: Shareable, job_id):
-        """Processes the aux command.
-
-        Args:
-            shareable: aux message Shareable
-            job_id: the job_id
-        """
-        try:
-            with self.lock:
-                conn_client = self.get_conn_client(job_id)
-                if conn_client:
-                    data = {"command": AdminCommandNames.AUX_COMMAND, "data": shareable}
-                    conn_client.send(data)
-                    reply = conn_client.recv()
-                    return reply
-                else:
-                    return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-        except Exception:
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+            self.logger.error(f"reset_errors execution exception: {secure_format_exception(e)}.")
+            secure_log_traceback()
 
     def abort_app(self, job_id):
         """Aborts the running app.
@@ -345,49 +328,69 @@ class ProcessExecutor(ClientExecutor):
         Args:
             job_id: the job_id
         """
-        with self.lock:
-            # When the HeartBeat cleanup process try to abort the worker process, the job maybe already terminated,
-            # Use retry to avoid print out the error stack trace.
-            retry = 1
-            while retry >= 0:
-                process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED)
-                if process_status == ClientStatus.STARTED:
-                    try:
+        # When the HeartBeat cleanup process try to abort the worker process, the job maybe already terminated,
+        # Use retry to avoid print out the error stack trace.
+        retry = 1
+        while retry >= 0:
+            process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED)
+            if process_status == ClientStatus.STARTED:
+                try:
+                    with self.lock:
                         child_process = self.run_processes[job_id][RunProcessKey.CHILD_PROCESS]
-                        conn_client = self.get_conn_client(job_id)
-                        if conn_client:
-                            data = {"command": AdminCommandNames.ABORT, "data": {}}
-                            conn_client.send(data)
-                            self.logger.debug("abort sent")
-
-                        threading.Thread(target=self._terminate_process, args=[child_process, job_id]).start()
-                        self.run_processes.pop(job_id)
-                        break
-                    except Exception as e:
-                        if retry == 0:
-                            self.logger.error(
-                                f"abort_worker_process execution exception: {e} for run: {job_id}.", exc_info=True
-                            )
-                        retry -= 1
-                        time.sleep(5.0)
-                    finally:
-                        if conn_client:
-                            conn_client.close()
-                else:
-                    self.logger.info(f"Client worker process for run: {job_id} was already terminated.")
+                    data = {}
+                    request = new_cell_message({}, data)
+                    self.client.cell.fire_and_forget(
+                        targets=self._job_fqcn(job_id),
+                        channel=CellChannel.CLIENT_COMMAND,
+                        topic=AdminCommandNames.ABORT,
+                        message=request,
+                        optional=True,
+                    )
+                    self.logger.debug("abort sent to worker")
+                    t = threading.Thread(target=self._terminate_process, args=[child_process, job_id])
+                    t.start()
+                    t.join()
                     break
+                except Exception as e:
+                    if retry == 0:
+                        self.logger.error(
+                            f"abort_worker_process execution exception: {secure_format_exception(e)} for run: {job_id}."
+                        )
+                        secure_log_traceback()
+                    retry -= 1
+                    time.sleep(5.0)
+            else:
+                self.logger.info(f"Client worker process for run: {job_id} was already terminated.")
+                break
 
         self.logger.info("Client worker process is terminated.")
 
     def _terminate_process(self, child_process, job_id):
-        # wait for client to handle abort
-        time.sleep(10.0)
+        max_wait = 10.0
+        done = False
+        start = time.time()
+        while True:
+            process = self.run_processes.get(job_id)
+            if not process:
+                # already finished gracefully
+                done = True
+                break
+
+            if time.time() - start > max_wait:
+                # waited enough
+                break
+
+            time.sleep(0.05)  # we want to quickly check
+
         # kill the sub-process group directly
-        try:
-            os.killpg(os.getpgid(child_process.pid), 9)
-            self.logger.debug("kill signal sent")
-        except Exception:
-            pass
+        if not done:
+            self.logger.debug(f"still not done after {max_wait} secs")
+            try:
+                os.killpg(os.getpgid(child_process.pid), 9)
+                self.logger.debug("kill signal sent")
+            except:
+                pass
+
         child_process.terminate()
         self.logger.info(f"run ({job_id}): child worker process terminated")
 
@@ -397,53 +400,57 @@ class ProcessExecutor(ClientExecutor):
         Args:
             job_id: the job_id
         """
-        with self.lock:
-            process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED)
-            if process_status == ClientStatus.STARTED:
-                conn_client = self.get_conn_client(job_id)
-                if conn_client:
-                    data = {"command": AdminCommandNames.ABORT_TASK, "data": {}}
-                    conn_client.send(data)
-                    self.logger.debug("abort_task sent")
+        process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED)
+        if process_status == ClientStatus.STARTED:
+            data = {"command": AdminCommandNames.ABORT_TASK, "data": {}}
+            request = new_cell_message({}, data)
+            self.client.cell.fire_and_forget(
+                targets=self._job_fqcn(job_id),
+                channel=CellChannel.CLIENT_COMMAND,
+                topic=AdminCommandNames.ABORT_TASK,
+                message=request,
+                optional=True,
+            )
+            self.logger.debug("abort_task sent")
 
-    def _wait_child_process_finish(self, client, job_id, allocated_resource, token, resource_manager):
-        # wait for the listen_command thread to start, and send "start" message to wake up the connection.
-        start = time.time()
-        while True:
-            with self.lock:
-                conn_client = self.get_conn_client(job_id)
-                if conn_client:
-                    data = {"command": AdminCommandNames.START_APP, "data": {}}
-                    conn_client.send(data)
-                    break
-            time.sleep(1.0)
-            if time.time() - start > 15:
-                break
-
+    def _wait_child_process_finish(self, client, job_id, allocated_resource, token, resource_manager, workspace):
         self.logger.info(f"run ({job_id}): waiting for child worker process to finish.")
-        with self.lock:
-            child_process = self.run_processes.get(job_id, {}).get(RunProcessKey.CHILD_PROCESS)
+        child_process = self.run_processes.get(job_id, {}).get(RunProcessKey.CHILD_PROCESS)
         if child_process:
             child_process.wait()
-            return_code = child_process.returncode
-            self.logger.info(f"run ({job_id}): child worker process finished with execution code: {return_code}")
+
+            return_code = get_return_code(child_process, job_id, workspace, self.logger)
+
+            self.logger.info(f"run ({job_id}): child worker process finished with RC {return_code}")
+            if return_code in [ProcessExitCode.UNSAFE_COMPONENT, ProcessExitCode.CONFIG_ERROR]:
+                request = new_cell_message(
+                    headers={},
+                    payload={
+                        JobFailureMsgKey.JOB_ID: job_id,
+                        JobFailureMsgKey.CODE: return_code,
+                        JobFailureMsgKey.REASON: PROCESS_EXIT_REASON[return_code],
+                    },
+                )
+                self.client.cell.fire_and_forget(
+                    targets=[FQCN.ROOT_SERVER],
+                    channel=CellChannel.SERVER_MAIN,
+                    topic=CellChannelTopic.REPORT_JOB_FAILURE,
+                    message=request,
+                    optional=True,
+                )
+                self.logger.info(f"reported failure of job {job_id} to server!")
 
         if allocated_resource:
             resource_manager.free_resources(
                 resources=allocated_resource, token=token, fl_ctx=client.engine.new_context()
             )
-
         with self.lock:
-            conn_client = self.get_conn_client(job_id)
-            if conn_client:
-                conn_client.close()
-            if job_id in self.run_processes.keys():
-                self.run_processes.pop(job_id)
+            self.run_processes.pop(job_id, None)
+        self.logger.debug(f"run ({job_id}): child worker resources freed.")
 
     def get_status(self, job_id):
-        with self.lock:
-            process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.STOPPED)
-            return process_status
+        process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.STOPPED)
+        return process_status
 
     def get_run_processes_keys(self):
         with self.lock:

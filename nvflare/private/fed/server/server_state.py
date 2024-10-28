@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,12 +15,13 @@
 from __future__ import annotations
 
 import logging
+from abc import ABC, abstractmethod
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.overseer_spec import SP
 
 ACTION = "_action"
-MESSAGE = "_messsage"
+MESSAGE = "_message"
 
 NIS = "Not In Service"
 ABORT_RUN = "Abort Run"
@@ -34,41 +35,45 @@ class ServiceSession:
         self.ssid = ssid
 
 
-class ServerState(object):
+class ServerState(ABC):
     NOT_IN_SERVICE = {ACTION: NIS, MESSAGE: "Server not in service"}
     ABORT_CURRENT_RUN = {ACTION: ABORT_RUN, MESSAGE: "Abort current run"}
-    IN_SSERVICE = {ACTION: SERVICE, MESSAGE: "Server in service"}
+    IN_SERVICE = {ACTION: SERVICE, MESSAGE: "Server in service"}
+
+    logger = logging.getLogger("ServerState")
 
     def __init__(self, host: str = "", port: str = "", ssid: str = "") -> None:
         self.host = host
         self.service_port = port
         self.ssid = ssid
+        self.primary = False
 
-        self.logger = logging.getLogger("FederatedServer")
-
+    @abstractmethod
     def register(self, fl_ctx: FLContext) -> dict:
         pass
 
+    @abstractmethod
     def heartbeat(self, fl_ctx: FLContext) -> dict:
         pass
 
+    @abstractmethod
     def get_task(self, fl_ctx: FLContext) -> dict:
         pass
 
+    @abstractmethod
     def submit_result(self, fl_ctx: FLContext) -> dict:
         pass
 
+    @abstractmethod
     def aux_communicate(self, fl_ctx: FLContext) -> dict:
         pass
 
+    @abstractmethod
     def handle_sd_callback(self, sp: SP, fl_ctx: FLContext) -> ServerState:
         pass
 
 
 class ColdState(ServerState):
-    def __init__(self, host: str = "", port: str = "", ssid: str = "") -> None:
-        super().__init__(host, port, ssid)
-
     def register(self, fl_ctx: FLContext) -> dict:
         return ServerState.NOT_IN_SERVICE
 
@@ -85,6 +90,13 @@ class ColdState(ServerState):
         return ServerState.NOT_IN_SERVICE
 
     def handle_sd_callback(self, sp: SP, fl_ctx: FLContext) -> ServerState:
+        if sp:
+            self.logger.info(
+                f"handle_sd_callback Got SP: {sp.name=} {sp.fl_port=} {sp.primary=} {self.host=} {self.service_port=}"
+            )
+        else:
+            self.logger.info("handle_sd_callback no SP!")
+
         if sp and sp.primary is True:
             if sp.name == self.host and sp.fl_port == self.service_port:
                 self.primary = True
@@ -101,14 +113,11 @@ class ColdState(ServerState):
 
 
 class Cold2HotState(ServerState):
-    def __init__(self, host: str = "", port: str = "", ssid: str = "") -> None:
-        super().__init__(host, port, ssid)
-
     def register(self, fl_ctx: FLContext) -> dict:
-        return ServerState.IN_SSERVICE
+        return ServerState.IN_SERVICE
 
     def heartbeat(self, fl_ctx: FLContext) -> dict:
-        return ServerState.IN_SSERVICE
+        return ServerState.NOT_IN_SERVICE
 
     def get_task(self, fl_ctx: FLContext) -> dict:
         return ServerState.ABORT_CURRENT_RUN
@@ -124,23 +133,20 @@ class Cold2HotState(ServerState):
 
 
 class HotState(ServerState):
-    def __init__(self, host: str = "", port: str = "", ssid: str = "") -> None:
-        super().__init__(host, port, ssid)
-
     def register(self, fl_ctx: FLContext) -> dict:
-        return ServerState.IN_SSERVICE
+        return ServerState.IN_SERVICE
 
     def heartbeat(self, fl_ctx: FLContext) -> dict:
-        return ServerState.IN_SSERVICE
+        return ServerState.IN_SERVICE
 
     def get_task(self, fl_ctx: FLContext) -> dict:
-        return ServerState.IN_SSERVICE
+        return ServerState.IN_SERVICE
 
     def submit_result(self, fl_ctx: FLContext) -> dict:
-        return ServerState.IN_SSERVICE
+        return ServerState.IN_SERVICE
 
     def aux_communicate(self, fl_ctx: FLContext) -> dict:
-        return ServerState.IN_SSERVICE
+        return ServerState.IN_SERVICE
 
     def handle_sd_callback(self, sp: SP, fl_ctx: FLContext) -> ServerState:
         if sp and sp.primary is True:

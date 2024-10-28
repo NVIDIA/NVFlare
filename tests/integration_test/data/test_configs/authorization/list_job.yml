@@ -1,0 +1,38 @@
+ha: True
+jobs_root_dir: ./data/apps
+cleanup: True
+project_yaml: ./data/projects/authz.yml
+poll_period: 0.5
+
+tests:
+  - test_name: "lead_a submit slow_job and user_a list_job and super list_job"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job slow_job" ]
+        "admin_user_name": "trainer@a.org"
+        "result":
+          "type": "job_submit_success"
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "list_job" ]
+        "admin_user_name": "user@a.org"
+        "result":
+          "type": "run_state"
+          "data": { }
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "list_job" ]
+        "result":
+          "type": "run_state"
+          "data": { }
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }

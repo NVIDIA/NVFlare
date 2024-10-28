@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
 from typing import Any, Dict, Union
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
@@ -48,6 +49,7 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
         exclude_vars: Union[str, Dict[str, str], None] = None,
         aggregation_weights: Union[Dict[str, Any], Dict[str, Dict[str, Any]], None] = None,
         expected_data_kind: Union[DataKind, Dict[str, DataKind]] = DataKind.WEIGHT_DIFF,
+        weigh_by_local_iter: bool = True,
     ):
         """Perform accumulated weighted aggregation.
 
@@ -67,6 +69,12 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
                 DataKind for DXO. Defaults to DataKind.WEIGHT_DIFF
                 Can be one DataKind or a dict of {dxo_name: DataKind} corresponding to each aggregated DXO
                 when processing a DXO of `DataKind.COLLECTION`. Only the keys in this dict will be processed.
+            weigh_by_local_iter (bool, optional): Whether to weight the contributions by the number of iterations
+                performed in local training in the current round. Defaults to `True`.
+                Setting it to `False` can be useful in applications such as homomorphic encryption to reduce
+                the number of computations on encrypted ciphertext.
+                The aggregated sum will still be divided by the provided weights and `aggregation_weights` for the
+                resulting weighted sum to be valid.
         """
         super().__init__()
         self.logger.debug(f"exclude vars: {exclude_vars}")
@@ -74,22 +82,34 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
         self.logger.debug(f"expected data kind: {expected_data_kind}")
 
         self._single_dxo_key = ""
+        self._weigh_by_local_iter = weigh_by_local_iter
 
+        self.aggregation_weights = aggregation_weights
+        self.exclude_vars = exclude_vars
+        self.expected_data_kind = expected_data_kind
+
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        # _initialize() can not be called from the constructor. Because it changes the data, even the data format
+        # of the aggregation_weights and exclude_vars parameters. Inspect could not figure out the passed in
+        # parameters when re-construct the object creation configuration.
+        if event_type == EventType.START_RUN:
+            self._initialize(self.aggregation_weights, self.exclude_vars, self.expected_data_kind)
+
+    def _initialize(self, aggregation_weights, exclude_vars, expected_data_kind):
         # Check expected data kind
         if isinstance(expected_data_kind, dict):
             for k, v in expected_data_kind.items():
-                if v not in [DataKind.WEIGHT_DIFF, DataKind.WEIGHTS]:
+                if v not in [DataKind.WEIGHT_DIFF, DataKind.WEIGHTS, DataKind.METRICS]:
                     raise ValueError(
-                        f"expected_data_kind[{k}] = {v} is not {DataKind.WEIGHT_DIFF} or {DataKind.WEIGHTS}"
+                        f"expected_data_kind[{k}] = {v} is not {DataKind.WEIGHT_DIFF} or {DataKind.WEIGHTS} or {DataKind.METRICS}"
                     )
             self.expected_data_kind = expected_data_kind
         else:
-            if expected_data_kind not in [DataKind.WEIGHT_DIFF, DataKind.WEIGHTS]:
+            if expected_data_kind not in [DataKind.WEIGHT_DIFF, DataKind.WEIGHTS, DataKind.METRICS]:
                 raise ValueError(
-                    f"expected_data_kind = {expected_data_kind} is not {DataKind.WEIGHT_DIFF} or {DataKind.WEIGHTS}"
+                    f"expected_data_kind = {expected_data_kind} is not {DataKind.WEIGHT_DIFF} or {DataKind.WEIGHTS} or {DataKind.METRICS}"
                 )
             self.expected_data_kind = {self._single_dxo_key: expected_data_kind}
-
         # Check exclude_vars
         if exclude_vars:
             if not isinstance(exclude_vars, dict) and not isinstance(exclude_vars, str):
@@ -103,7 +123,6 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
                         "A dict exclude_vars should specify exclude_vars for every key in expected_data_kind. "
                         f"But missed these keys: {missing_keys}"
                     )
-
         exclude_vars_dict = dict()
         for k in self.expected_data_kind.keys():
             if isinstance(exclude_vars, dict):
@@ -119,7 +138,6 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
         if self._single_dxo_key in self.expected_data_kind:
             exclude_vars_dict[self._single_dxo_key] = exclude_vars
         self.exclude_vars = exclude_vars_dict
-
         # Check aggregation weights
         if _is_nested_aggregation_weights(aggregation_weights):
             missing_keys = _get_missing_keys(expected_data_kind, aggregation_weights)
@@ -128,7 +146,6 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
                     "A dict of dict aggregation_weights should specify aggregation_weights "
                     f"for every key in expected_data_kind. But missed these keys: {missing_keys}"
                 )
-
         aggregation_weights = aggregation_weights or {}
         aggregation_weights_dict = dict()
         for k in self.expected_data_kind.keys():
@@ -138,7 +155,6 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
                 # assume same aggregation weights for each entry of DXO collection.
                 aggregation_weights_dict[k] = aggregation_weights
         self.aggregation_weights = aggregation_weights_dict
-
         # Set up DXO aggregators
         self.dxo_aggregators = dict()
         for k in self.expected_data_kind.keys():
@@ -149,6 +165,7 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
                         aggregation_weights=self.aggregation_weights[k],
                         expected_data_kind=self.expected_data_kind[k],
                         name_postfix=k,
+                        weigh_by_local_iter=self._weigh_by_local_iter,
                     )
                 }
             )
@@ -166,11 +183,11 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
         """
         try:
             dxo = from_shareable(shareable)
-        except BaseException:
+        except Exception:
             self.log_exception(fl_ctx, "shareable data is not a valid DXO")
             return False
 
-        if dxo.data_kind not in (DataKind.WEIGHT_DIFF, DataKind.WEIGHTS, DataKind.COLLECTION):
+        if dxo.data_kind not in (DataKind.WEIGHT_DIFF, DataKind.WEIGHTS, DataKind.METRICS, DataKind.COLLECTION):
             self.log_error(
                 fl_ctx,
                 f"cannot handle data kind {dxo.data_kind}, "
@@ -179,7 +196,7 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
             return False
 
         contributor_name = shareable.get_peer_prop(key=ReservedKey.IDENTITY_NAME, default="?")
-        contribution_round = shareable.get_header(AppConstants.CONTRIBUTION_ROUND)
+        contribution_round = shareable.get_cookie(AppConstants.CONTRIBUTION_ROUND)
 
         rc = shareable.get_return_code()
         if rc and rc != ReturnCode.OK:

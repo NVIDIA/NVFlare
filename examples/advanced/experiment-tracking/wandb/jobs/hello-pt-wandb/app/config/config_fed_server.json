@@ -1,0 +1,84 @@
+{
+  "format_version": 2,
+
+  "task_data_filters": [],
+  "task_result_filters": [],
+  "components": [
+    {
+      "id": "persistor",
+      "path": "nvflare.app_common.pt.pt_file_model_persistor.PTFileModelPersistor",
+      "args": {
+        "model": {
+          "path": "pt.simple_network.SimpleNetwork"
+        }
+      }
+    },
+    {
+      "id": "shareable_generator",
+      "path": "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator",
+      "args": {}
+    },
+    {
+      "id": "aggregator",
+      "path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
+      "args": {
+        "expected_data_kind": "WEIGHTS"
+      }
+    },
+    {
+      "id": "model_locator",
+      "path": "nvflare.app_common.pt.pt_file_model_locator.PTFileModelLocator",
+      "args": {
+        "pt_persistor_id": "persistor"
+      }
+    },
+    {
+      "id": "json_generator",
+      "path": "nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator",
+      "args": {}
+    },
+    {
+      "id": "wandb_receiver",
+      "path": "nvflare.app_opt.tracking.wandb.wandb_receiver.WandBReceiver",
+      "args": {
+          "mode": "online",
+          "kwargs" :  {
+            "project": "hello-pt-experiment",
+            "name": "hello-pt",
+            "notes": "Federated Experiment tracking with W&B \n Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) to train an image classifier using federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629)) and [PyTorch](https://pytorch.org/) as the deep learning training framework. This example also highlights the Flare streaming capability from the clients to the server and deliver to MLFLow.\\n\\n> **_NOTE:_** \\n This example uses the *[CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset and will load its data within the trainer code.\n",
+            "tags": ["baseline", "paper1"],
+            "job_type": "train-validate",
+            "config": {
+              "architecture": "CNN",
+              "dataset_id": "CIFAR10",
+              "optimizer": "SGD"
+            }
+          }
+      }
+    }
+  ],
+  "workflows": [
+      {
+        "id": "scatter_and_gather",
+        "path": "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
+        "args": {
+            "min_clients" : 2,
+            "num_rounds" : 1,
+            "start_round": 0,
+            "wait_time_after_min_received": 10,
+            "aggregator_id": "aggregator",
+            "persistor_id": "persistor",
+            "shareable_generator_id": "shareable_generator",
+            "train_task_name": "train",
+            "train_timeout": 0
+        }
+      },
+      {
+        "id": "cross_site_validate",
+        "path": "nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval",
+        "args": {
+          "model_locator_id": "model_locator"
+        }
+      }
+  ]
+}

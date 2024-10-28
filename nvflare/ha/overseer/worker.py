@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,9 +18,14 @@ from gunicorn.workers.sync import SyncWorker
 class ClientAuthWorker(SyncWorker):
     def handle_request(self, listener, req, client, addr):
         subject = client.getpeercert().get("subject")
-        role = next(value for ((key, value),) in subject if key == "unstructuredName")
-        headers = dict(req.headers)
-        headers["X-ROLE"] = role
-        req.headers = list(headers.items())
+        role = None
+        for ((key, value),) in subject:
+            if key == "unstructuredName":
+                role = value
+                break
+        if role is not None:
+            headers = dict(req.headers)
+            headers["X-ROLE"] = role
+            req.headers = list(headers.items())
 
         super(ClientAuthWorker, self).handle_request(listener, req, client, addr)

@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -32,7 +32,7 @@ class ModelLocator(FLComponent):
         pass
 
     def locate_model(self, model_name, fl_ctx: FLContext) -> DXO:
-        """Locate a single model by it's name.
+        """Locate a single model by its name.
 
         Args:
             model_name (str): Name of the model.

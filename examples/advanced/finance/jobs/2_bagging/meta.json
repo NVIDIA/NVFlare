@@ -1,0 +1,16 @@
+{
+    "name": "higgs_2_bagging_uniform_split_uniform_lr",
+    "resource_spec": {},
+    "deploy_map": {
+        "app_server": [
+            "server"
+        ],
+        "app_site-1": [
+            "site-1"
+        ],
+        "app_site-2": [
+            "site-2"
+        ]
+    },
+    "min_clients": 2
+}

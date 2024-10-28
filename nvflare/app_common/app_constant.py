@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -95,6 +95,7 @@ class AppConstants(object):
 
     TASK_SUBMIT_MODEL = "submit_model"
     TASK_VALIDATION = "validate"
+    TASK_CONFIGURE = "configure"
 
     CROSS_VAL_SERVER_MODEL = "_cross_val_server_model_"
     CROSS_VAL_CLIENT_MODEL = "_cross_val_client_model_"
@@ -107,6 +108,8 @@ class AppConstants(object):
 
     TASK_END_RUN = "_end_run_"
     TASK_TRAIN = "train"
+    TASK_GET_WEIGHTS = "get_weights"
+    TASK_PROP_CALLBACK = "_task_callback_"
 
     DEFAULT_AGGREGATOR_ID = "aggregator"
     DEFAULT_PERSISTOR_ID = "persistor"
@@ -114,6 +117,8 @@ class AppConstants(object):
 
     SUBMIT_MODEL_NAME = "submit_model_name"
     VALIDATE_TYPE = "_validate_type"
+
+    CLIENT_UNKNOWN = "unknown"
 
 
 class EnvironmentKey(object):
@@ -152,6 +157,7 @@ class AlgorithmConstants(object):
 
 class StatisticsConstants(AppConstants):
     STATS_COUNT = "count"
+    STATS_FAILURE_COUNT = "failure_count"
     STATS_MEAN = "mean"
     STATS_SUM = "sum"
     STATS_VAR = "var"
@@ -165,16 +171,47 @@ class StatisticsConstants(AppConstants):
     STATS_GLOBAL_COUNT = "global_count"
     STATS_BINS = "bins"
     STATS_BIN_RANGE = "range"
-    STATS_TARGET_METRICS = "metrics"
+    STATS_TARGET_STATISTICS = "statistics"
 
+    FED_STATS_PRE_RUN = "fed_stats_pre_run"
     FED_STATS_TASK = "fed_stats"
-    METRIC_TASK_KEY = "fed_stats_metric"
-    STATS_1st_METRICS = "fed_stats_1st_metric"
-    STATS_2nd_METRICS = "fed_stats_2nd_metric"
+    STATISTICS_TASK_KEY = "fed_stats_task_key"
+    STATS_1st_STATISTICS = "fed_stats_1st_statistics"
+    STATS_2nd_STATISTICS = "fed_stats_2nd_statistics"
 
     GLOBAL = "Global"
+    LOCAL = "Local"
+    NAME = "Name"
 
-    ordered_metrics = {
-        STATS_1st_METRICS: [STATS_COUNT, STATS_SUM, STATS_MEAN, STATS_MIN, STATS_MAX],
-        STATS_2nd_METRICS: [STATS_HISTOGRAM, STATS_VAR, STATS_STDDEV],
+    ordered_statistics = {
+        STATS_1st_STATISTICS: [STATS_COUNT, STATS_FAILURE_COUNT, STATS_SUM, STATS_MEAN, STATS_MIN, STATS_MAX],
+        STATS_2nd_STATISTICS: [STATS_HISTOGRAM, STATS_VAR, STATS_STDDEV],
     }
+
+    PRE_RUN_RESULT = "fed_stats_pre_run_result"
+
+
+class PSIConst(AppConstants):
+    TASK_KEY = "PSI_TASK_KEY"
+    DIRECTION_KEY = "PSI_DIRECTION_KEY"
+
+    FORWARD = "PSI_FORWARD"
+    BACKWARD = "PSI_BACKWARD"
+    TASK = "PSI"
+
+    TASK_PREPARE = "PSI_PREPARE"
+    TASK_SETUP = "PSI_SETUP"
+    TASK_REQUEST = "PSI_REQUEST"
+    TASK_RESPONSE = "PSI_RESPONSE"
+    TASK_INTERSECT = "PSI_TASK_INTERSECT"
+
+    ITEMS_SIZE = "PSI_ITEMS_SIZE"
+    ITEMS_SIZE_SET = "PSI_ITEMS_SIZE_SET"
+
+    # Bloom Filter False Positive Rate
+    BLOOM_FILTER_FPR = "PSI_BLOOM_FILTER_FPR"
+
+    SETUP_MSG = "PSI_SETUP_MSG"
+    REQUEST_MSG = "PSI_REQUEST_MSG"
+    REQUEST_MSG_SET = "PSI_REQUEST_MSG_SET"
+    RESPONSE_MSG = "PSI_RESPONSE_MSG"

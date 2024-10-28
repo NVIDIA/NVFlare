@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -72,10 +72,13 @@ class TestInTimeAccumulateWeightedAggregator:
     )
     def test_invalid_create(self, exclude_vars, aggregation_weights, expected_data_kind, error, error_msg):
         with pytest.raises(error, match=re.escape(error_msg)):
-            _ = InTimeAccumulateWeightedAggregator(
+            aggregator = InTimeAccumulateWeightedAggregator(
                 exclude_vars=exclude_vars,
                 aggregation_weights=aggregation_weights,
                 expected_data_kind=expected_data_kind,
+            )
+            aggregator._initialize(
+                aggregator.aggregation_weights, aggregator.exclude_vars, aggregator.expected_data_kind
             )
 
     @pytest.mark.parametrize(
@@ -115,9 +118,13 @@ class TestInTimeAccumulateWeightedAggregator:
         ],
     )
     def test_create(self, exclude_vars, aggregation_weights, expected_data_kind, expected_object):
+        expected_object._initialize(
+            expected_object.aggregation_weights, expected_object.exclude_vars, expected_object.expected_data_kind
+        )
         result = InTimeAccumulateWeightedAggregator(
             exclude_vars=exclude_vars, aggregation_weights=aggregation_weights, expected_data_kind=expected_data_kind
         )
+        result._initialize(result.aggregation_weights, result.exclude_vars, result.expected_data_kind)
         assert result.exclude_vars == expected_object.exclude_vars
         assert result.aggregation_weights == expected_object.aggregation_weights
         assert result.expected_data_kind == expected_object.expected_data_kind
@@ -126,6 +133,7 @@ class TestInTimeAccumulateWeightedAggregator:
     def test_accept(self, current_round, contribution_round, expected):
         aggregation_weights = {f"client_{i}": random.random() for i in range(2)}
         agg = InTimeAccumulateWeightedAggregator(aggregation_weights=aggregation_weights)
+        agg._initialize(agg.aggregation_weights, agg.exclude_vars, agg.expected_data_kind)
         client_name = "client_0"
         iter_number = 1
         weights = np.random.random(4)
@@ -133,7 +141,7 @@ class TestInTimeAccumulateWeightedAggregator:
         fl_ctx = FLContext()
         s = Shareable()
         s.set_peer_props({ReservedKey.IDENTITY_NAME: client_name})
-        s.set_header(AppConstants.CONTRIBUTION_ROUND, contribution_round)
+        s.add_cookie(AppConstants.CONTRIBUTION_ROUND, contribution_round)
         fl_ctx.set_prop(AppConstants.CURRENT_ROUND, current_round)
         dxo = DXO(
             DataKind.WEIGHT_DIFF,
@@ -192,6 +200,7 @@ class TestInTimeAccumulateWeightedAggregator:
     def test_aggregate(self, received, expected):
         aggregation_weights = {k: v["weight"] for k, v in received.items()}
         agg = InTimeAccumulateWeightedAggregator(aggregation_weights=aggregation_weights)
+        agg._initialize(agg.aggregation_weights, agg.exclude_vars, agg.expected_data_kind)
         fl_ctx = FLContext()
         fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0)
         for k, v in received.items():
@@ -205,7 +214,7 @@ class TestInTimeAccumulateWeightedAggregator:
 
             s = Shareable()
             s.set_peer_props({ReservedKey.IDENTITY_NAME: k})
-            s.set_header(AppConstants.CONTRIBUTION_ROUND, 0)
+            s.add_cookie(AppConstants.CONTRIBUTION_ROUND, 0)
             agg.accept(dxo.update_shareable(s), fl_ctx)
 
         result = agg.aggregate(fl_ctx)
@@ -216,6 +225,7 @@ class TestInTimeAccumulateWeightedAggregator:
     def test_aggregate_random(self, shape, n_clients):
         aggregation_weights = {f"client_{i}": random.random() for i in range(n_clients)}
         agg = InTimeAccumulateWeightedAggregator(aggregation_weights=aggregation_weights)
+        agg._initialize(agg.aggregation_weights, agg.exclude_vars, agg.expected_data_kind)
         weighted_sum = np.zeros(shape)
         sum_of_weights = 0
         fl_ctx = FLContext()
@@ -225,7 +235,7 @@ class TestInTimeAccumulateWeightedAggregator:
             weights = np.random.random(shape)
             s = Shareable()
             s.set_peer_props({ReservedKey.IDENTITY_NAME: client_name})
-            s.set_header(AppConstants.CONTRIBUTION_ROUND, 0)
+            s.add_cookie(AppConstants.CONTRIBUTION_ROUND, 0)
             dxo = DXO(
                 DataKind.WEIGHT_DIFF,
                 data={"var1": weights},
@@ -254,6 +264,7 @@ class TestInTimeAccumulateWeightedAggregator:
             aggregation_weights=aggregation_weights,
             expected_data_kind={dxo_name: DataKind.WEIGHT_DIFF for dxo_name in dxo_names},
         )
+        agg._initialize(agg.aggregation_weights, agg.exclude_vars, agg.expected_data_kind)
         weighted_sum = {dxo_name: np.zeros(shape) for dxo_name in dxo_names}
         sum_of_weights = {dxo_name: 0 for dxo_name in dxo_names}
         fl_ctx = FLContext()
@@ -282,7 +293,7 @@ class TestInTimeAccumulateWeightedAggregator:
             dxo_collection = DXO(data_kind=DataKind.COLLECTION, data=dxo_collection_data)
             s = Shareable()
             s.set_peer_props({ReservedKey.IDENTITY_NAME: client_name})
-            s.set_header(AppConstants.CONTRIBUTION_ROUND, 0)
+            s.add_cookie(AppConstants.CONTRIBUTION_ROUND, 0)
             agg.accept(dxo_collection.update_shareable(s), fl_ctx)
 
         result = agg.aggregate(fl_ctx)

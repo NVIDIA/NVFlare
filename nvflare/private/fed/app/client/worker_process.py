@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,52 +19,31 @@ import logging
 import os
 import sys
 import threading
-import time
 
-import psutil
-
-from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
+from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, JobConstants, SystemConfigs
+from nvflare.apis.overseer_spec import SP
+from nvflare.apis.workspace import Workspace
+from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
+from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.defs import EngineConstant
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
+from nvflare.private.fed.app.utils import monitor_parent_process
 from nvflare.private.fed.client.client_app_runner import ClientAppRunner
 from nvflare.private.fed.client.client_status import ClientStatus
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler
+from nvflare.private.fed.utils.fed_utils import (
+    add_logfile_handler,
+    create_stats_pool_files_for_job,
+    fobs_initialize,
+    register_ext_decomposers,
+    set_stats_pool_config_for_job,
+)
+from nvflare.security.logging import secure_format_exception
 
 
-def check_parent_alive(parent_pid, stop_event: threading.Event):
-    while True:
-        if stop_event.is_set():
-            break
-        if not psutil.pid_exists(parent_pid):
-            # if parent is not alive, kill its worker process
-            os.killpg(os.getpgid(os.getpid()), 9)
-            break
-        time.sleep(1)
-
-
-def main():
-    """Worker process start program."""
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
-    parser.add_argument("--startup", "-w", type=str, help="startup folder", required=True)
-    parser.add_argument("--token", "-t", type=str, help="token", required=True)
-    parser.add_argument("--ssid", "-d", type=str, help="ssid", required=True)
-    parser.add_argument("--job_id", "-n", type=str, help="job_id", required=True)
-    parser.add_argument("--client_name", "-c", type=str, help="client name", required=True)
-    parser.add_argument("--listen_port", "-p", type=str, help="listen port", required=True)
-    parser.add_argument("--sp_target", "-g", type=str, help="Sp target", required=True)
-
-    parser.add_argument(
-        "--fed_client", "-s", type=str, help="an aggregation server specification json file", required=True
-    )
-
-    parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
-
-    parser.add_argument("--local_rank", type=int, default=0)
-
-    args = parser.parse_args()
+def main(args):
     kv_list = parse_vars(args.set)
 
     # get parent process id
@@ -74,26 +53,31 @@ def main():
     config_folder = kv_list.get("config_folder", "")
     secure_train = kv_list.get("secure_train", True)
     if config_folder == "":
-        args.client_config = "config_fed_client.json"
+        args.client_config = JobConstants.CLIENT_JOB_CONFIG
     else:
-        args.client_config = os.path.join(config_folder, "config_fed_client.json")
+        args.client_config = os.path.join(config_folder, JobConstants.CLIENT_JOB_CONFIG)
     args.config_folder = config_folder
     args.env = os.path.join("config", "environment.json")
+    workspace = Workspace(args.workspace, args.client_name, config_folder)
+    set_stats_pool_config_for_job(workspace, args.job_id)
 
     try:
-        remove_restart_file(args)
-    except BaseException:
+        remove_restart_file(workspace)
+    except Exception:
         print("Could not remove the restart.fl / shutdown.fl file.  Please check your system before starting FL.")
         sys.exit(-1)
 
-    restart_file = os.path.join(args.workspace, "restart.fl")
+    restart_file = workspace.get_file_path_in_root("restart.fl")
     if os.path.exists(restart_file):
         os.remove(restart_file)
 
-    print("starting the client .....")
+    fobs_initialize(workspace=workspace, job_id=args.job_id)
+    # Initialize audit service since the job execution will need it!
+    audit_file_name = workspace.get_audit_file_path()
+    AuditService.initialize(audit_file_name)
 
-    startup = os.path.join(args.workspace, "startup")
-    SecurityContentService.initialize(content_folder=startup)
+    # print("starting the client .....")
+    SecurityContentService.initialize(content_folder=workspace.get_startup_kit_dir())
 
     thread = None
     stop_event = threading.Event()
@@ -101,36 +85,30 @@ def main():
     client_app_runner = None
     federated_client = None
 
-    startup = args.startup
-    app_root = os.path.join(
-        args.workspace,
-        WorkspaceConstants.WORKSPACE_PREFIX + str(args.job_id),
-        WorkspaceConstants.APP_PREFIX + args.client_name,
-    )
+    app_root = workspace.get_app_dir(str(args.job_id))
 
-    logging_setup(app_root, args, config_folder, startup)
-
-    log_file = os.path.join(args.workspace, args.job_id, "log.txt")
-    add_logfile_handler(log_file)
-    logger = logging.getLogger("worker_process")
-    logger.info("Worker_process started.")
-
+    logger = None
     try:
-        # start parent process checking thread
-        thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
-        thread.start()
-
         conf = FLClientStarterConfiger(
-            app_root=startup,
-            client_config_file_name=args.fed_client,
-            log_config_file_name=args.log_config,
+            workspace=workspace,
+            args=args,
             kv_list=args.set,
-            logging_config=False,
         )
         conf.configure()
 
+        decomposer_module = ConfigService.get_str_var(
+            name=ConfigVarName.DECOMPOSER_MODULE, conf=SystemConfigs.RESOURCES_CONF
+        )
+        register_ext_decomposers(decomposer_module)
+
+        log_file = workspace.get_app_log_file_path(args.job_id)
+        add_logfile_handler(log_file)
+        logger = logging.getLogger("worker_process")
+        logger.info("Worker_process started.")
+
         deployer = conf.base_deployer
-        federated_client = deployer.create_fed_client(args, args.sp_target)
+        # federated_client = deployer.create_fed_client(args, args.sp_target)
+        federated_client = deployer.create_fed_client(args)
         federated_client.status = ClientStatus.STARTING
 
         federated_client.token = args.token
@@ -140,45 +118,76 @@ def main():
         federated_client.fl_ctx.set_prop(EngineConstant.FL_TOKEN, args.token, private=False)
         federated_client.fl_ctx.set_prop(FLContextKey.WORKSPACE_ROOT, args.workspace, private=True)
 
-        client_app_runner = ClientAppRunner()
-        client_app_runner.start_run(app_root, args, config_folder, federated_client, secure_train)
+        client_app_runner = ClientAppRunner(time_out=kv_list.get("app_runner_timeout", 60.0))
+        # start parent process checking thread
+        thread = threading.Thread(target=monitor_parent_process, args=(client_app_runner, parent_pid, stop_event))
+        thread.start()
 
-    except BaseException as e:
-        logger.error(f"FL client execution exception: {e}", exc_info=True)
+        sp = _create_sp(args)
+        client_app_runner.start_run(app_root, args, config_folder, federated_client, secure_train, sp, conf.handlers)
+    except Exception as e:
+        if logger:
+            logger.error(f"FL client execution exception: {secure_format_exception(e)}")
         raise e
     finally:
-        stop_event.set()
         if client_app_runner:
             client_app_runner.close()
         if deployer:
             deployer.close()
         if federated_client:
-            federated_client.close()
+            federated_client.terminate()
+        stop_event.set()
         if thread and thread.is_alive():
             thread.join()
+        AuditService.close()
+        err = create_stats_pool_files_for_job(workspace, args.job_id)
+        if err:
+            logger.warning(err)
 
 
-def logging_setup(app_root, args, config_folder, startup):
-    app_log_config = os.path.join(app_root, config_folder, "log.config")
-    if os.path.exists(app_log_config):
-        args.log_config = app_log_config
-    else:
-        args.log_config = os.path.join(startup, "log.config")
-    log_config_file_path = os.path.join(app_root, args.log_config)
-    logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
+def parse_arguments():
+    """Worker process start program."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
+    parser.add_argument("--startup", "-w", type=str, help="startup folder", required=True)
+    parser.add_argument("--token", "-t", type=str, help="token", required=True)
+    parser.add_argument("--ssid", "-d", type=str, help="ssid", required=True)
+    parser.add_argument("--job_id", "-n", type=str, help="job_id", required=True)
+    parser.add_argument("--client_name", "-c", type=str, help="client name", required=True)
+    # parser.add_argument("--listen_port", "-p", type=str, help="listen port", required=True)
+    parser.add_argument("--sp_target", "-g", type=str, help="Sp target", required=True)
+    parser.add_argument("--sp_scheme", "-scheme", type=str, help="Sp connection scheme", required=True)
+    parser.add_argument("--parent_url", "-p", type=str, help="parent_url", required=True)
+    parser.add_argument(
+        "--fed_client", "-s", type=str, help="an aggregation server specification json file", required=True
+    )
+    parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
+    parser.add_argument("--local_rank", type=int, default=0)
+    args = parser.parse_args()
+    return args
 
 
-def remove_restart_file(args):
+def _create_sp(args):
+    sp = SP()
+    target = args.sp_target.split(":")
+    sp.name = target[0]
+    sp.fl_port = target[1]
+    sp.service_session_id = args.ssid
+    sp.primary = True
+    return sp
+
+
+def remove_restart_file(workspace: Workspace):
     """To remove the restart.fl file.
 
     Args:
-        args: command args
+        workspace: workspace object
 
     """
-    restart_file = os.path.join(args.workspace, "restart.fl")
+    restart_file = workspace.get_file_path_in_root("restart.fl")
     if os.path.exists(restart_file):
         os.remove(restart_file)
-    restart_file = os.path.join(args.workspace, "shutdown.fl")
+    restart_file = workspace.get_file_path_in_root("shutdown.fl")
     if os.path.exists(restart_file):
         os.remove(restart_file)
 
@@ -188,4 +197,8 @@ if __name__ == "__main__":
     This is the program when starting the child process for running the NVIDIA FLARE executor.
     """
 
-    main()
+    # main()
+    args = parse_arguments()
+    run_dir = os.path.join(args.workspace, args.job_id)
+    rc = mpm.run(main_func=main, run_dir=run_dir, args=args)
+    sys.exit(rc)

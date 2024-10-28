@@ -1,0 +1,80 @@
+{
+  "format_version": 2,
+
+  "min_clients": 2,
+  "num_rounds": 100,
+
+  "task_data_filters": [],
+  "task_result_filters": [],
+  "components": [
+    {
+      "id": "serialize_filter",
+      "path": "nvflare.app_opt.he.model_serialize_filter.HEModelSerializeFilter",
+      "args": {}
+    },
+    {
+      "id": "persistor",
+      "path": "monai_nvflare.monai_bundle_persistor.MonaiBundlePersistor",
+      "args": {
+        "bundle_root": "config/spleen_ct_segmentation",
+        "filter_id": "serialize_filter"
+      }
+    },
+    {
+      "id": "shareable_generator",
+      "path": "nvflare.app_opt.he.model_sharable_generator.HEModelShareableGenerator",
+      "args": {}
+    },
+    {
+      "id": "aggregator",
+      "path": "nvflare.app_opt.he.intime_accumulate_model_aggregator.HEInTimeAccumulateWeightedAggregator",
+      "args": {
+        "weigh_by_local_iter": false
+      }
+    },
+    {
+      "id": "model_selector",
+      "path": "nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector",
+      "args": {}
+    },
+    {
+      "id": "model_locator",
+      "path": "nvflare.app_opt.pt.file_model_locator.PTFileModelLocator",
+      "args": {
+        "pt_persistor_id": "persistor"
+      }
+    },
+    {
+      "id": "json_generator",
+      "path": "nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator",
+      "args": {}
+    }
+  ],
+  "workflows": [
+      {
+        "id": "scatter_gather_ctl",
+        "path": "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
+        "args": {
+            "min_clients" : "{min_clients}",
+            "num_rounds" : "{num_rounds}",
+            "start_round": 0,
+            "wait_time_after_min_received": 10,
+            "aggregator_id": "aggregator",
+            "persistor_id": "persistor",
+            "shareable_generator_id": "shareable_generator",
+            "train_task_name": "train",
+            "train_timeout": 0
+        }
+      },
+      {
+        "id": "cross_site_model_eval",
+        "path": "nvflare.app_opt.he.cross_site_model_eval.HECrossSiteModelEval",
+        "args": {
+          "model_locator_id": "model_locator",
+          "submit_model_timeout": 600,
+          "validation_timeout": 6000,
+          "cleanup_models": true
+        }
+      }
+  ]
+}

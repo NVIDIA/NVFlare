@@ -1,0 +1,70 @@
+{
+  "format_version": 2,
+  "min_clients": 1,
+  "num_rounds": 5,
+  "config_path": "config/megatron_gpt_sft.yaml",
+  "base_model_file_path": "/workspace/Models/nemo-megatron-gpt-1.3B/nemo_gpt1.3B_fp16.nemo",
+  "server": {
+    "heart_beat_timeout": 600
+  },
+  "task_data_filters": [],
+  "task_result_filters": [],
+  "components": [
+    {
+      "id": "persistor",
+      "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
+      "args": {
+        "model": {
+          "path": "nemo_nvflare.ServerSFTModel",
+          "args": {
+            "config_path": "{config_path}",
+            "base_model_file_path": "{base_model_file_path}"
+          }
+        }
+      }
+    },
+    {
+      "id": "shareable_generator",
+      "path": "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator",
+      "args": {}
+    },
+    {
+      "id": "aggregator",
+      "path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
+      "args": {}
+    },
+    {
+      "id": "model_selector",
+      "path": "nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector",
+      "args": {
+        "weigh_by_local_iter": true
+      }
+    }
+  ],
+  "workflows": [
+    {
+      "id": "share_config",
+      "path": "nemo_nvflare.ShareConfigSFT",
+      "args": {
+        "config_path": "{config_path}",
+        "task_name": "share_config",
+        "min_responses_required": "{min_clients}"
+      }
+    },
+    {
+      "id": "scatter_and_gather",
+      "path": "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
+      "args": {
+        "min_clients": "{min_clients}",
+        "num_rounds": "{num_rounds}",
+        "start_round": 0,
+        "wait_time_after_min_received": 10,
+        "aggregator_id": "aggregator",
+        "persistor_id": "persistor",
+        "shareable_generator_id": "shareable_generator",
+        "train_task_name": "train",
+        "train_timeout": 0
+      }
+    }
+  ]
+}

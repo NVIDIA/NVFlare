@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,3 +24,6 @@ class NVFlareConsolePackageChecker(ClientPackageChecker):
 
     def get_dry_run_command(self) -> str:
         return os.path.join(self.package_path, "startup", "fl_admin.sh")
+
+    def get_dry_run_inputs(self):
+        return os.path.basename(os.path.normpath(self.package_path))

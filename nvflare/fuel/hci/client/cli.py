@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,20 +18,26 @@ import json
 import os
 import signal
 import time
-import traceback
 from datetime import datetime
-from enum import Enum
-from functools import partial
+from pathlib import Path
 from typing import List, Optional
 
-from nvflare.apis.overseer_spec import OverseerAgent
-from nvflare.fuel.hci.cmd_arg_utils import join_args, split_to_args
+try:
+    import readline
+except ImportError:
+    readline = None
+
+from nvflare.fuel.hci.cmd_arg_utils import join_args, parse_command_line
+from nvflare.fuel.hci.proto import CredentialType, ProtoKey
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandRegister, CommandSpec
 from nvflare.fuel.hci.security import hash_password, verify_password
 from nvflare.fuel.hci.table import Table
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
-from .api import AdminAPI
+from .api import AdminAPI, CommandInfo
+from .api_spec import ServiceFinder
 from .api_status import APIStatus
+from .event import EventContext, EventHandler, EventPropKey, EventType
 
 
 class _BuiltInCmdModule(CommandModule):
@@ -44,67 +50,68 @@ class _BuiltInCmdModule(CommandModule):
                 CommandSpec(
                     name="lpwd", description="print local work dir of the admin client", usage="lpwd", handler_func=None
                 ),
+                CommandSpec(
+                    name="timeout", description="set/show command timeout", usage="timeout [value]", handler_func=None
+                ),
             ],
         )
 
 
-class CredentialType(str, Enum):
-    PASSWORD = "password"
-    CERT = "cert"
-
-
-class AdminClient(cmd.Cmd):
+class AdminClient(cmd.Cmd, EventHandler):
     """Admin command prompt for submitting admin commands to the server through the CLI.
 
     Args:
-        host: cn provisioned for the server, with this fully qualified domain name resolving to the IP of the FL server. This may be set by the OverseerAgent.
-        port: port provisioned as admin_port for FL admin communication, by default provisioned as 8003, must be int if provided. This may be set by the OverseerAgent.
         prompt: prompt to use for the command prompt
         ca_cert: path to CA Cert file, by default provisioned rootCA.pem
         client_cert: path to admin client Cert file, by default provisioned as client.crt
         client_key: path to admin client Key file, by default provisioned as client.key
-        server_cn: server cn
-        require_login: whether to require login
         credential_type: what type of credential to use
         cmd_modules: command modules to load and register
-        overseer_agent: initialized OverseerAgent to obtain the primary service provider to set the host and port of the active server
+        service_finder: used to obtain the primary service provider to set the host and port of the active server
         debug: whether to print debug messages. False by default.
+        cli_history_size: the maximum number of commands to save in the cli history file. Defaults to 1000.
     """
 
     def __init__(
         self,
-        host=None,
-        port: int = None,
         prompt: str = "> ",
+        credential_type: CredentialType = CredentialType.PASSWORD,
         ca_cert=None,
         client_cert=None,
         client_key=None,
         upload_dir="",
         download_dir="",
-        server_cn=None,
-        require_login: bool = False,
-        credential_type: str = CredentialType.PASSWORD,
         cmd_modules: Optional[List] = None,
-        overseer_agent: OverseerAgent = None,
+        service_finder: ServiceFinder = None,
+        session_timeout_interval=900,  # close the client after 15 minutes of inactivity
         debug: bool = False,
+        username: str = "",
+        handlers=None,
+        cli_history_dir: str = str(Path.home() / ".nvflare"),
+        cli_history_size: int = 1000,
     ):
-        cmd.Cmd.__init__(self)
+        super().__init__()
         self.intro = "Type help or ? to list commands.\n"
         self.prompt = prompt
-        self.require_login = require_login
-        self.credential_type = credential_type
-        self.user_name = None
+        self.user_name = "admin"
         self.pwd = None
+        self.credential_type = credential_type
 
-        self.overseer_agent = overseer_agent
+        self.service_finder = service_finder
         self.debug = debug
         self.out_file = None
         self.no_stdout = False
+        self.stopped = False  # use this flag to prevent unnecessary signal exception
+        self.username = username
 
-        if not isinstance(overseer_agent, OverseerAgent):
-            raise TypeError("overseer_agent was not properly initialized.")
+        if not isinstance(service_finder, ServiceFinder):
+            raise TypeError("service_finder must be ServiceProvider but got {}.".format(type(service_finder)))
+
         if not isinstance(credential_type, CredentialType):
             raise TypeError("invalid credential_type {}".format(credential_type))
+
+        if not cli_history_dir:
+            raise Exception("missing cli_history_dir")
 
         modules = [_BuiltInCmdModule()]
         if cmd_modules:
@@ -115,36 +122,64 @@ class AdminClient(cmd.Cmd):
                     raise TypeError("cmd_modules must be a list of CommandModule")
                 modules.append(m)
 
-        poc = True if self.credential_type == CredentialType.PASSWORD else False
+        insecure = True if self.credential_type == CredentialType.PASSWORD else False
 
         self._get_login_creds()
 
+        event_handlers = [self]
+        if handlers:
+            event_handlers.extend(handlers)
+
         self.api = AdminAPI(
-            host=host,
-            port=port,
             ca_cert=ca_cert,
             client_cert=client_cert,
             client_key=client_key,
             upload_dir=upload_dir,
             download_dir=download_dir,
-            server_cn=server_cn,
             cmd_modules=modules,
-            overseer_agent=self.overseer_agent,
-            auto_login=True,
+            service_finder=self.service_finder,
             user_name=self.user_name,
             debug=self.debug,
-            poc=poc,
+            insecure=insecure,
+            session_timeout_interval=session_timeout_interval,
+            session_status_check_interval=1800,  # check server for session status every 30 minutes
+            event_handlers=event_handlers,
         )
 
-        signal.signal(signal.SIGUSR1, partial(self.session_signal_handler))
+        if not os.path.isdir(cli_history_dir):
+            os.mkdir(cli_history_dir)
+        self.cli_history_file = os.path.join(cli_history_dir, ".admin_cli_history")
 
-    def session_ended(self, message):
-        self.write_error(message)
-        os.kill(os.getpid(), signal.SIGUSR1)
+        if readline:
+            readline.set_history_length(cli_history_size)
+
+        # signal.signal(signal.SIGUSR1, partial(self.session_signal_handler))
+        signal.signal(signal.SIGUSR1, self.session_signal_handler)
+
+    def handle_event(self, event_type: str, ctx: EventContext):
+        if self.debug:
+            print(f"DEBUG: received session event: {event_type}")
+
+        msg = ctx.get_prop(EventPropKey.MSG)
+        if msg:
+            self.write_string(msg)
+
+        if event_type == EventType.SESSION_CLOSED:
+            os.kill(os.getpid(), signal.SIGUSR1)
 
     def session_signal_handler(self, signum, frame):
-        self.api.close_session_monitor()
-        raise ConnectionError
+        if self.stopped:
+            return
+
+        # the signal is only for the main thread
+        # the session monitor thread signals the main thread to stop
+        if self.debug:
+            print("DEBUG: signal received to close session")
+
+        self.api.close()
+
+        # use exception to interrupt the main cmd loop
+        raise RuntimeError("Session Closed")
 
     def _set_output_file(self, file, no_stdout):
         self._close_output_file()
@@ -164,25 +199,43 @@ class AdminClient(cmd.Cmd):
         called by inputting the EOF character, a message will display that the admin client is shutting down."""
         if arg != "logout":
             print("Shutting down admin client, please wait...")
-        if self.require_login:
-            self.api.server_execute("_logout")
+        self.api.logout()
         return True
 
     def do_lpwd(self, arg):
         """print local current work dir"""
         self.write_string(os.getcwd())
 
+    def do_timeout(self, arg):
+        if not arg:
+            # display current setting
+            t = self.api.cmd_timeout
+            if t:
+                self.write_string(str(t))
+            else:
+                self.write_string("not set")
+            return
+        try:
+            t = float(arg)
+            self.api.set_command_timeout(t)
+            if t == 0:
+                self.write_string("command timeout is unset")
+            else:
+                self.write_string(f"command timeout is set to {t}")
+        except:
+            self.write_string("invalid timeout value - must be float number >= 0.0")
+
     def emptyline(self):
         return
 
-    def _show_one_command(self, cmd_name, reg):
+    def _show_one_command(self, cmd_name, reg, show_invisible=False):
         entries = reg.get_command_entries(cmd_name)
         if len(entries) <= 0:
             self.write_string("Undefined command {}\n".format(cmd_name))
             return
 
         for e in entries:
-            if not e.visible:
+            if not e.visible and not show_invisible:
                 continue
 
             if len(e.scope.name) > 0:
@@ -233,7 +286,7 @@ class AdminClient(cmd.Cmd):
                 self.write_string("Server Commands")
                 self.write_string("---------------")
                 for cmd_name in server_cmds:
-                    self._show_one_command(cmd_name, self.api.server_cmd_reg)
+                    self._show_one_command(cmd_name, self.api.server_cmd_reg, show_invisible=True)
 
     def complete(self, text, state):
         results = [x + " " for x in self.api.all_cmds if x.startswith(text)] + [None]
@@ -245,14 +298,21 @@ class AdminClient(cmd.Cmd):
             return self._do_default(line)
         except KeyboardInterrupt:
             self.write_stdout("\n")
-        except BaseException as ex:
+        except Exception as e:
             if self.debug:
-                traceback.print_exc()
-            self.write_stdout("exception occurred: {}".format(ex))
+                secure_log_traceback()
+            self.write_stdout(f"exception occurred: {secure_format_exception(e)}")
         self._close_output_file()
 
+    @staticmethod
+    def _user_input(prompt: str) -> str:
+        answer = input(prompt)
+
+        # remove leading and trailing spaces
+        return answer.strip()
+
     def _do_default(self, line):
-        args = split_to_args(line)
+        line, args, props = parse_command_line(line)
         cmd_name = args[0]
 
         # check for file output
@@ -284,61 +344,47 @@ class AdminClient(cmd.Cmd):
             line = join_args(args)
             try:
                 out_file = open(out_file_name, "w")
-            except BaseException as ex:
-                self.write_error("cannot open file {}: {}".format(out_file_name, ex))
+            except Exception as e:
+                self.write_error(f"cannot open file {out_file_name}: {secure_format_exception(e)}")
                 return
 
             self._set_output_file(out_file, no_stdout)
 
         # check client command first
-        entries = self.api.client_cmd_reg.get_command_entries(cmd_name)
-        if len(entries) > 1:
-            self.write_string("Ambiguous client command {} - qualify with scope".format(cmd_name))
+        info = self.api.check_command(line)
+        if info == CommandInfo.UNKNOWN:
+            self.write_string("Undefined command {}".format(cmd_name))
             return
-        elif len(entries) == 1:
-            ent = entries[0]
-            resp = ent.handler(args, self.api)
-            self.print_resp(resp)
-            if resp.get("status") == APIStatus.ERROR_INACTIVE_SESSION:
-                return True
+        elif info == CommandInfo.AMBIGUOUS:
+            self.write_string("Ambiguous command {} - qualify with scope".format(cmd_name))
             return
-
-        entries = self.api.server_cmd_reg.get_command_entries(cmd_name)
-        if len(entries) <= 0:
-            self.write_string("Undefined server command {}".format(cmd_name))
-            return
-        elif len(entries) > 1:
-            self.write_string("Ambiguous server command {} - qualify with scope".format(cmd_name))
-            return
-
-        ent = entries[0]
-        confirm_method = ent.confirm
-        if ent.confirm == "auth":
+        elif info == CommandInfo.CONFIRM_AUTH:
             if self.credential_type == CredentialType.PASSWORD:
-                confirm_method = "pwd"
+                info = CommandInfo.CONFIRM_PWD
             elif self.user_name:
-                confirm_method = "username"
+                info = CommandInfo.CONFIRM_USER_NAME
             else:
-                confirm_method = "yesno"
+                info = CommandInfo.CONFIRM_YN
 
-        if confirm_method == "yesno":
-            answer = input("Are you sure (Y/N): ")
+        if info == CommandInfo.CONFIRM_YN:
+            answer = self._user_input("Are you sure (y/N): ")
             answer = answer.lower()
             if answer != "y" and answer != "yes":
                 return
-        elif confirm_method == "username":
-            answer = input("Confirm with User Name: ")
+        elif info == CommandInfo.CONFIRM_USER_NAME:
+            answer = self._user_input("Confirm with User Name: ")
             if answer != self.user_name:
-                self.write_string("user name mismatch")
+                self.write_string(f"user name mismatch: {answer} != {self.user_name}")
                 return
-        elif confirm_method == "pwd":
+        elif info == CommandInfo.CONFIRM_PWD:
             pwd = getpass.getpass("Enter password to confirm: ")
             if not verify_password(self.pwd, pwd):
                 self.write_string("Not authenticated")
                 return
 
+        # execute the command!
         start = time.time()
-        resp = self.api.server_execute(line)
+        resp = self.api.do_command(line, props=props)
         secs = time.time() - start
         usecs = int(secs * 1000000)
         done = "Done [{} usecs] {}".format(usecs, datetime.now())
@@ -351,11 +397,23 @@ class AdminClient(cmd.Cmd):
             self.write_string(self.api.shutdown_msg)
             return True
 
+    def preloop(self):
+        if readline and os.path.exists(self.cli_history_file):
+            try:
+                readline.read_history_file(self.cli_history_file)
+            except OSError:
+                self.stdout.write("Unable to read history file.  No command history loaded\n")
+                readline.clear_history()
+
+    def postcmd(self, stop, line):
+        if readline:
+            readline.write_history_file(self.cli_history_file)
+        return stop
+
     def cmdloop(self, intro=None):
         """Repeatedly issue a prompt, accept input, parse an initial prefix
         off the received input, and dispatch to action methods, passing them
         the remainder of the line as argument.
-
         Overriding what is in cmd.Cmd to handle exiting client on Ctrl+D (EOF).
         """
 
@@ -381,7 +439,7 @@ class AdminClient(cmd.Cmd):
                 else:
                     if self.use_rawinput:
                         try:
-                            line = input(self.prompt)
+                            line = self._user_input(self.prompt)
                         except (EOFError, ConnectionError):
                             line = "bye"
                         except KeyboardInterrupt:
@@ -409,26 +467,28 @@ class AdminClient(cmd.Cmd):
                     pass
 
     def run(self):
-
         try:
-            self.stdout.write("Waiting for token from successful login...\n")
-            while self.api.token is None:
+            while not self.api.is_ready():
                 time.sleep(1.0)
                 if self.api.shutdown_received:
                     return False
 
-            # self.api.start_session_monitor(self.session_ended)
-            # above line was commented out, but if we want to use it, need to be logged in to call server_execute("_check_session") and consider how SP changes impact this
             self.cmdloop(intro='Type ? to list commands; type "? cmdName" to show usage of a command.')
+        except RuntimeError as e:
+            if self.debug:
+                print(f"DEBUG: Exception {secure_format_exception(e)}")
         finally:
-            self.overseer_agent.end()
+            self.stopped = True
+            self.api.close()
 
     def _get_login_creds(self):
         if self.credential_type == CredentialType.PASSWORD:
             self.user_name = "admin"
             self.pwd = hash_password("admin")
+        elif self.credential_type == CredentialType.LOCAL_CERT:
+            self.user_name = self.username
         else:
-            self.user_name = input("User Name: ")
+            self.user_name = self._user_input("User Name: ")
 
     def print_resp(self, resp: dict):
         """Prints the server response
@@ -436,29 +496,31 @@ class AdminClient(cmd.Cmd):
         Args:
             resp (dict): The server response.
         """
-        if "details" in resp:
-            if isinstance(resp["details"], str):
-                self.write_string(resp["details"])
-            if isinstance(resp["details"], Table):
-                self.write_table(resp["details"])
+        if ProtoKey.DETAILS in resp:
+            details = resp[ProtoKey.DETAILS]
+            if isinstance(details, str):
+                self.write_string(details)
+            elif isinstance(details, Table):
+                self.write_table(details)
 
-        if "data" in resp:
-            for item in resp["data"]:
+        if ProtoKey.DATA in resp:
+            for item in resp[ProtoKey.DATA]:
                 if not isinstance(item, dict):
                     continue
-                item_type = item.get("type")
-                if item_type == "string":
-                    self.write_string(item["data"])
-                elif item_type == "table":
+                item_type = item.get(ProtoKey.TYPE)
+                item_data = item.get(ProtoKey.DATA)
+                if item_type == ProtoKey.STRING:
+                    self.write_string(item_data)
+                elif item_type == ProtoKey.TABLE:
                     table = Table(None)
-                    table.set_rows(item["rows"])
+                    table.set_rows(item[ProtoKey.ROWS])
                     self.write_table(table)
-                elif item_type == "error":
-                    self.write_error(item["data"])
-                elif item_type == "dict":
-                    self.write_dict(item["data"])
+                elif item_type == ProtoKey.ERROR:
+                    self.write_error(item_data)
+                elif item_type == ProtoKey.DICT:
+                    self.write_dict(item_data)
 
-        if "details" not in resp and "data" not in resp:
+        if ProtoKey.DETAILS not in resp and ProtoKey.DATA not in resp:
             self.write_string("Response is not correct.")
 
     def write_stdout(self, data: str):

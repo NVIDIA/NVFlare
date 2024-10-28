@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@ import time
 
 import numpy as np
 
-from nvflare.apis.dxo import DXO, DataKind, from_shareable
+from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
@@ -25,6 +25,7 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.security.logging import secure_format_exception
 
 from .constants import NPConstants
 
@@ -65,8 +66,10 @@ class NPTrainer(Executor):
         # First we extract DXO from the shareable.
         try:
             incoming_dxo = from_shareable(shareable)
-        except BaseException as e:
-            self.system_panic(f"Unable to convert shareable to model definition. Exception {e.__str__()}", fl_ctx)
+        except Exception as e:
+            self.system_panic(
+                f"Unable to convert shareable to model definition. Exception {secure_format_exception(e)}", fl_ctx
+            )
             return make_reply(ReturnCode.BAD_TASK_DATA)
 
         # Information about workflow is retrieved from the shareable header.
@@ -90,7 +93,7 @@ class NPTrainer(Executor):
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
 
-        # Doing some dummy training.
+        # Doing some mock training.
         if np_data:
             if NPConstants.NUMPY_KEY in np_data:
                 np_data[NPConstants.NUMPY_KEY] += self._delta
@@ -109,7 +112,7 @@ class NPTrainer(Executor):
         try:
             self._save_local_model(fl_ctx, np_data)
         except Exception as e:
-            self.log_error(fl_ctx, f"Exception in saving local model: {e}.")
+            self.log_error(fl_ctx, f"Exception in saving local model: {secure_format_exception(e)}.")
 
         self.log_info(
             fl_ctx,
@@ -121,7 +124,11 @@ class NPTrainer(Executor):
             return make_reply(ReturnCode.TASK_ABORTED)
 
         # Prepare a DXO for our updated model. Create shareable and return
-        outgoing_dxo = DXO(data_kind=incoming_dxo.data_kind, data=np_data, meta={})
+        outgoing_dxo = DXO(
+            data_kind=incoming_dxo.data_kind,
+            data=np_data,
+            meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
         return outgoing_dxo.to_shareable()
 
     def _submit_model(self, fl_ctx: FLContext, abort_signal: Signal):
@@ -130,7 +137,7 @@ class NPTrainer(Executor):
         try:
             np_data = self._load_local_model(fl_ctx)
         except Exception as e:
-            self.log_error(fl_ctx, f"Unable to load model: {e}")
+            self.log_error(fl_ctx, f"Unable to load model: {secure_format_exception(e)}")
 
         # Checking abort signal
         if abort_signal.triggered:
@@ -174,7 +181,7 @@ class NPTrainer(Executor):
                 # If unknown task name, set RC accordingly.
                 return make_reply(ReturnCode.TASK_UNKNOWN)
         except Exception as e:
-            self.log_exception(fl_ctx, f"Exception in NPTrainer execute: {e}.")
+            self.log_exception(fl_ctx, f"Exception in NPTrainer execute: {secure_format_exception(e)}.")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
     def _load_local_model(self, fl_ctx: FLContext):
@@ -187,7 +194,7 @@ class NPTrainer(Executor):
         try:
             np_data = np.load(model_load_path)
         except Exception as e:
-            self.log_error(fl_ctx, f"Unable to load local model: {e.__str__()}")
+            self.log_error(fl_ctx, f"Unable to load local model: {secure_format_exception(e)}")
             return None
 
         model = ModelLearnable()

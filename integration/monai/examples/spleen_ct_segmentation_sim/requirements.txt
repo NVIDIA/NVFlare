@@ -1,0 +1,11 @@
+tqdm
+nibabel
+fire
+pytorch-ignite>=0.4.10
+monai>=1.3.0
+nvflare~=2.5.0rc
+monai_nvflare>=0.2.3
+tensorboard
+scikit-image
+pandas
+matplotlib

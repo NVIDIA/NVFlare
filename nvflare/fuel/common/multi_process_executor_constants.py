@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -37,3 +37,11 @@ class CommunicateData(object):
     CLOSE = "close"
     SUB_WORKER_PROCESS = "sub_worker_process"
     MULTI_PROCESS_EXECUTOR = "multi_process_executor"
+
+
+class MultiProcessCommandNames:
+    INITIALIZE = "initialize"
+    TASK_EXECUTION = "task_execution"
+    FIRE_EVENT = "fire_event"
+    EXECUTE_RESULT = "execute_result"
+    CLOSE = "close"

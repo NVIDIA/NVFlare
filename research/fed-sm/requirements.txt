@@ -1,0 +1,11 @@
+nvflare~=2.5.0rc
+websockets
+torch
+torchvision
+tensorboard
+monai
+tqdm
+nibabel
+tensorflow
+seaborn
+matplotlib

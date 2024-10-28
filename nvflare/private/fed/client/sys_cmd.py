@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+from typing import List
 
 import psutil
 
@@ -21,13 +22,15 @@ try:
 except ImportError:
     pynvml = None
 
+from nvflare.apis.fl_constant import FLContextKey, SystemComponents
+from nvflare.apis.fl_context import FLContext
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import SysCommandTopic
 from nvflare.private.fed.client.admin import RequestProcessor
 
 
 class SysInfoProcessor(RequestProcessor):
-    def get_topics(self) -> [str]:
+    def get_topics(self) -> List[str]:
         return [SysCommandTopic.SYS_INFO]
 
     def process(self, req: Message, app_ctx) -> Message:
@@ -50,4 +53,30 @@ class SysInfoProcessor(RequestProcessor):
         message = Message(topic="reply_" + req.topic, body=json.dumps(infos))
         print("return sys_info")
         print(infos)
+        return message
+
+
+class ReportEnvProcessor(RequestProcessor):
+    def get_topics(self) -> [str]:
+        return [SysCommandTopic.REPORT_ENV]
+
+    def process(self, req: Message, app_ctx) -> Message:
+        engine = app_ctx
+        fl_ctx = engine.new_context()
+        assert isinstance(fl_ctx, FLContext)
+        site_name = fl_ctx.get_identity_name()
+        workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_ROOT)
+        secure_mode = fl_ctx.get_prop(FLContextKey.SECURE_MODE)
+        fed_client = fl_ctx.get_prop(SystemComponents.FED_CLIENT)
+        root_url = ""
+        if fed_client:
+            cell = fed_client.cell
+            root_url = cell.get_root_url_for_child()
+        env = {
+            "site_name": site_name,
+            "workspace": workspace,
+            "secure_mode": secure_mode,
+            "root_url": root_url,
+        }
+        message = Message(topic="reply_" + req.topic, body=json.dumps(env))
         return message

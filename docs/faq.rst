@@ -181,18 +181,25 @@ Operational
 
 #. What is the difference between the Admin client and the FL client?
 
-    The :ref:`Admin client <operating_nvflare>` is used to control the state of the server's controller workflow and only interacts with the
+    The :ref:`FLARE Console <operating_nvflare>` is used to control the state of the server's controller workflow and only interacts with the
     server.  FL clients poll the server and perform tasks based on the state of the server.  The Admin client does not
     interact directly with FL client.
 
 #. Where does the Admin client run?
 
-    The :ref:`Admin client <operating_nvflare>` runs as a standalone process, typically on a researcher's workstation or laptop.
+    The :ref:`FLARE Console <operating_nvflare>` runs as a standalone process, typically on a researcher's workstation or laptop.
 
 #. What can you do with the Admin client?
 
-    The :ref:`Admin client <operating_nvflare>` is used to orchestrate the FL study, including starting and stopping server
+    The :ref:`FLARE Console <operating_nvflare>` is used to orchestrate the FL study, including starting and stopping server
     and clients, deploying applications, and managing FL experiments.
+
+#. How can I get the global model at the end of training? What can I do to resolve keys not matching with the model defined?
+
+    You can use the download_job command with the :ref:`FLARE Console <operating_nvflare>` to get the job result into the admin
+    transfer folder. The model is saved in a dict depending on the persistor you used, so you might need to access it with
+    ``model.load_state_dict(torch.load(path_to_model)["model"])`` if you used PTFileModelPersistor because
+    PTModelPersistenceFormatManager saves the model under the key "model".
 
 #. Why am I getting an error about my custom files not being found?
 
@@ -201,6 +208,33 @@ Operational
     If the ``enable_byoc`` flag is disabled, even if you have custom code in your application folder, it will not be loaded.
     There is also a setting for ``allow_byoc`` through the authorization rule groups. This controls whether or not apps
     containing BYOC code will be allowed to be uploaded and deployed.
+
+#. I am getting the following errors, does this mean the server is down? ::
+
+    Trying to obtain server address
+    Obtained server address: nvflare1234.westus2.cloudapp.azure.com:8003
+    Trying to login, please wait ...
+    Trying to login, please wait ...
+    Trying to login, please wait ...
+    Trying to login, please wait ...
+    Trying to login, please wait ...
+    Communication Error - please try later
+
+    2023-03-14 19:36:15,966 - nvflare.fuel.f3.sfm.conn_manager - INFO - Retrying [CH00001 ACTIVE grpc://nvflare1234.westus2.cloudapp.azure.com:8002] in 60 seconds
+    2023-03-14 19:36:17,091 - Cell - ERROR - [ME=site1 O=? D=server F=? T=? CH=task TP=hear_beat] cannot find path to server
+    2023-03-14 19:36:17,091 - Cell - ERROR - [ME=site1 O=? D=server F=? T=? CH=task TP=hear_beat] cannot send to 'server': target_unreachable
+    2023-03-14 19:36:27,101 - Cell - ERROR - [ME=site1 O=? D=server F=? T=? CH=task TP=hear_beat] cannot find path to server
+    2023-03-14 19:36:27,101 - Cell - ERROR - [ME=site1 O=? D=server F=? T=? CH=task TP=hear_beat] cannot send to 'server': target_unreachable
+    2023-03-14 19:36:37,110 - Cell - ERROR - [ME=site1 O=? D=server F=? T=? CH=task TP=hear_beat] cannot find path to server
+    2023-03-14 19:36:37,110 - Cell - ERROR - [ME=site1 O=? D=server F=? T=? CH=task TP=hear_beat] cannot send to 'server': target_unreachable
+    2023-03-14 19:36:47,121 - Cell - ERROR - [ME=site1 O=? D=server F=? T=? CH=task TP=hear_beat] cannot find path to server
+
+  There are a few reasons that could cause the above errors.  One of them is the server is down.  Another possible reason is caused by
+  delay or cache of DNS name resolution.  This happens when the IP address of the NVFlare server changes but its domain name remains the same.
+  The DNS name resolution could take up to 72 hours to propagate to the entire world.  Most of the time, it takes tens of minutes.
+
+  The OS might have tools to flush its DNS cache.  For example, in Ubuntu 20.04, run `sudo systemd-resolve --flush-caches` to 
+  flush DNS cache and force it to get the updated name resolution.
 
 ********
 Security
@@ -239,7 +273,7 @@ Client related questions
 
     The federated learning clients are identified by a dynamically generated FL token issued by the server during runtime.
     When an FL client first joins an FL training, it first needs to send a login request to the FL server. During the login
-    process, the FL server and client need to exchange SSL certificates for bi-directional authentication. Once the
+    process, the FL server and client need to exchange TLS certificates for bi-directional authentication. Once the
     authentication is successful, the FL server sends an FL token to the client. The FL client will use this FL token to
     identify itself for all following requests for the global model and all model updating operations.
 
@@ -351,7 +385,7 @@ Overall training flow related questions
 
     The admin commands to the clients pass through the server. If for some reason the command is delayed by the network, or
     if the client command takes a long time to process, the admin console will experience a delay for the response. The
-    default timeout is 10 seconds. You can use the “set_timeout” command to adjust the command timeout. If this timeout
+    default timeout is 10 seconds. You can use the "set_timeout" command to adjust the command timeout. If this timeout
     value is set too low, the admin command may not reach the client to execute the command.
 
 #. Why do commands sometimes fail?

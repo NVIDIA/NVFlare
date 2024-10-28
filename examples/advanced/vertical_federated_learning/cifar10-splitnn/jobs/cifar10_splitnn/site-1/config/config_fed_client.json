@@ -1,0 +1,39 @@
+{
+    "format_version": 2,
+    "DATASET_ROOT": "/tmp/cifar10",
+    "INTERSECTION_FILE": "/tmp/nvflare/cifar10_psi/site-1/simulate_job/site-1/psi/intersection.txt",
+    "executors": [
+        {
+            "tasks": [
+                "_splitnn_task_init_model_",
+                "_splitnn_task_train_"
+            ],
+            "executor": {
+                "id": "Executor",
+                "path": "nvflare.app_common.executors.splitnn_learner_executor.SplitNNLearnerExecutor",
+                "args": {
+                    "learner_id": "cifar10-learner"
+                }
+            }
+        }
+    ],
+    "task_result_filters": [],
+    "task_data_filters": [],
+    "components": [
+        {
+            "id": "cifar10-learner",
+            "path": "splitnn.CIFAR10LearnerSplitNN",
+            "args": {
+                "dataset_root": "{DATASET_ROOT}",
+                "intersection_file": "{INTERSECTION_FILE}",
+                "lr": 0.01,
+                "model": {
+                    "path": "splitnn.SplitNN",
+                    "args": {
+                        "split_id": 0
+                    }
+                }
+            }
+        }
+    ]
+}

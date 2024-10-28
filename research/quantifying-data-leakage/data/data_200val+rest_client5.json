@@ -1,0 +1,1254 @@
+{
+    "training": [
+        {
+            "image": "COVID/images/COVID-1624.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-2242.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-169.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-641.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-1212.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-7039.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-7695.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-2067.png",
+            "label": [
+                0
+            ]
+        }
+    ],
+    "validation": [
+        {
+            "image": "COVID/images/COVID-1284.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-784.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-487.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1722.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-3009.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-3609.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-3016.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-2048.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-633.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-794.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1093.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1716.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-2104.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-2888.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1147.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1823.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1653.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1113.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1949.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-34.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1609.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-3555.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1689.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1072.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1898.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1660.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1640.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-772.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-2618.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1864.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-958.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1647.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1095.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-3479.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-74.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-2355.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-393.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1833.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-712.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-2779.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-942.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1171.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1343.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-3522.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-3010.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-3451.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1797.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-731.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-546.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1431.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1578.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1810.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-2019.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1799.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-3098.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-2182.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-2236.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-2983.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-618.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1472.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-2131.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-893.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-41.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-2250.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-3258.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-350.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-3284.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-3221.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-255.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1489.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-812.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-2878.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1527.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-219.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1155.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1100.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-3302.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-443.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1206.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-2534.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-2744.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1618.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-700.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-2866.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-863.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-3201.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1328.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-510.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-3319.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1872.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-244.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1486.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-2574.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-3282.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1344.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-243.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-2054.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-584.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-1050.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "COVID/images/COVID-514.png",
+            "label": [
+                1
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-9731.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-5771.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-5233.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-2312.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-2082.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-8899.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-5423.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-1509.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-8356.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-5573.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-3242.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-3231.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-718.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-6126.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-3858.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-6990.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-7807.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-1942.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-1998.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-9715.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-9431.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-6793.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-9017.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-8352.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-6405.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-5268.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-4631.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-2183.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-5785.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-5821.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-8642.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-251.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-1483.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-9346.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-9426.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-4095.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-10191.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-1220.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-1077.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-778.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-7905.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-4200.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-4794.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-6362.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-8697.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-2585.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-5148.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-2872.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-1086.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-5564.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-6523.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-2686.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-7007.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-2693.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-2012.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-7966.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-922.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-6103.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-7636.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-3174.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-5864.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-752.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-2568.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-9866.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-9149.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-5022.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-9763.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-3909.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-915.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-5779.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-4160.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-5584.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-505.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-7937.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-10071.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-2724.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-9281.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-6491.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-6887.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-10106.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-8406.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-8418.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-3773.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-3737.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-7478.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-2367.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-6568.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-2960.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-9312.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-5503.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-438.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-7931.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-8446.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-2277.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-506.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-6800.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-1715.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-8299.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-2706.png",
+            "label": [
+                0
+            ]
+        },
+        {
+            "image": "Normal/images/Normal-5464.png",
+            "label": [
+                0
+            ]
+        }
+    ]
+}

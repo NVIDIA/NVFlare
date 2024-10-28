@@ -1,0 +1,7 @@
+nvflare~=2.5.0rc
+torch
+torchvision
+tensorboard
+openmined.psi==1.1.1
+pandas
+scikit-learn

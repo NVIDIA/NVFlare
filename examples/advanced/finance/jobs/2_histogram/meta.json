@@ -1,0 +1,10 @@
+{
+    "name": "2_histogram",
+    "resource_spec": {},
+    "deploy_map": {
+        "app": [
+            "@ALL"
+        ]
+    },
+    "min_clients": 2
+}

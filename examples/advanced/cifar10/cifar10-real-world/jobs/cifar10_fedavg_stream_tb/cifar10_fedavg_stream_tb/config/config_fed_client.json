@@ -1,0 +1,60 @@
+{
+    "format_version": 2,
+    "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits",
+    "AGGREGATION_EPOCHS": 4,
+    "executors": [
+        {
+            "tasks": [
+                "train",
+                "submit_model",
+                "validate"
+            ],
+            "executor": {
+                "id": "Executor",
+                "path": "nvflare.app_common.executors.model_learner_executor.ModelLearnerExecutor",
+                "args": {
+                    "learner_id": "cifar10-learner"
+                }
+            }
+        }
+    ],
+    "task_result_filters": [],
+    "task_data_filters": [],
+    "components": [
+        {
+            "id": "cifar10-learner",
+            "path": "pt.learners.cifar10_model_learner.CIFAR10ModelLearner",
+            "args": {
+                "train_idx_root": "{TRAIN_SPLIT_ROOT}",
+                "aggregation_epochs": "{AGGREGATION_EPOCHS}",
+                "lr": 0.01
+            }
+        },
+        {
+            "id": "analytic_sender",
+            "path": "nvflare.app_common.widgets.streaming.AnalyticsSender",
+            "args": {
+                "event_type": "analytix_log_stats"
+            }
+        },
+        {
+            "id": "tb_analytics_receive",
+            "path": "nvflare.app_opt.tracking.tb.tb_receiver.TBAnalyticsReceiver",
+            "args": {
+                "events": [
+                    "analytix_log_stats"
+                ]
+            }
+        },
+        {
+            "id": "event_to_fed",
+            "path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent",
+            "args": {
+                "events_to_convert": [
+                    "analytix_log_stats"
+                ],
+                "fed_event_prefix": "fed."
+            }
+        }
+    ]
+}

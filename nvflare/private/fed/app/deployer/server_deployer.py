@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,12 +16,15 @@
 import threading
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import SystemComponents
+from nvflare.apis.fl_constant import FLContextKey, SystemComponents
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.private.fed.app.utils import component_security_check
 from nvflare.private.fed.server.fed_server import FederatedServer
 from nvflare.private.fed.server.job_runner import JobRunner
 from nvflare.private.fed.server.run_manager import RunManager
 from nvflare.private.fed.server.server_cmd_modules import ServerCommandModules
+from nvflare.private.fed.server.server_status import ServerStatus
 
 
 class ServerDeployer:
@@ -29,13 +32,12 @@ class ServerDeployer:
 
     def __init__(self):
         """Init the ServerDeployer."""
-        self.services = None
         self.cmd_modules = ServerCommandModules.cmd_modules
+        self.logger = get_logger(self)
         self.server_config = None
         self.secure_train = None
         self.app_validator = None
         self.host = None
-        self.enable_byoc = None
         self.snapshot_persistor = None
         self.overseer_agent = None
         self.components = None
@@ -52,7 +54,6 @@ class ServerDeployer:
         self.secure_train = build_ctx["secure_train"]
         self.app_validator = build_ctx["app_validator"]
         self.host = build_ctx["server_host"]
-        self.enable_byoc = build_ctx["enable_byoc"]
         self.snapshot_persistor = build_ctx["snapshot_persistor"]
         self.overseer_agent = build_ctx["overseer_agent"]
         self.components = build_ctx["server_components"]
@@ -70,9 +71,8 @@ class ServerDeployer:
         """
         # We only deploy the first server right now .....
         first_server = sorted(self.server_config)[0]
-        heart_beat_timeout = 600
-        if first_server["heart_beat_timeout"]:
-            heart_beat_timeout = first_server["heart_beat_timeout"]
+        heart_beat_timeout = first_server.get("heart_beat_timeout", 600)
+        self.logger.info(f"server heartbeat timeout set to {heart_beat_timeout}")
 
         if self.host:
             target = first_server["service"].get("target", None)
@@ -86,9 +86,10 @@ class ServerDeployer:
             heart_beat_timeout=heart_beat_timeout,
             args=args,
             secure_train=secure_train,
-            enable_byoc=self.enable_byoc,
             snapshot_persistor=self.snapshot_persistor,
             overseer_agent=self.overseer_agent,
+            shutdown_period=first_server.get("shutdown_period", 30.0),
+            check_engine_frequency=first_server.get("check_engine_frequency", 3.0),
         )
         return first_server, services
 
@@ -120,12 +121,19 @@ class ServerDeployer:
 
         run_manager.add_handler(job_runner)
         run_manager.add_component(SystemComponents.JOB_RUNNER, job_runner)
-        fl_ctx = services.engine.new_context()
 
-        threading.Thread(target=self._start_job_runner, args=[job_runner, fl_ctx]).start()
+        with services.engine.new_context() as fl_ctx:
+            fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
+            services.engine.fire_event(EventType.SYSTEM_BOOTSTRAP, fl_ctx)
 
-        services.engine.fire_event(EventType.SYSTEM_START, services.engine.new_context())
-        print("deployed FL server trainer.")
+            component_security_check(fl_ctx)
+
+            threading.Thread(target=self._start_job_runner, args=[job_runner, fl_ctx]).start()
+            services.status = ServerStatus.STARTED
+
+            services.engine.fire_event(EventType.SYSTEM_START, fl_ctx)
+            self.logger.info("deployed FLARE Server.")
+
         return services
 
     def _start_job_runner(self, job_runner, fl_ctx):
@@ -133,5 +141,4 @@ class ServerDeployer:
 
     def close(self):
         """To close the services."""
-        if self.services:
-            self.services.close()
+        pass

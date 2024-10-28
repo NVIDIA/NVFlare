@@ -7,7 +7,7 @@ of NVIDIA FLARE with a Server aggregating results from Clients that have produce
 
 At the core, the control_flow of :class:`nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather` is a for loop:
 
-.. image:: ../resources/fed_sag_round.png
+.. image:: ../../resources/fed_sag_round.png
     :height: 400px
 
 Trainer
@@ -42,3 +42,8 @@ Below is the signature for an aggregator.
 .. literalinclude:: ../../../nvflare/app_common/abstract/aggregator.py
     :language: python
     :lines: 22-
+
+Example with Scatter and Gather Workflow
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+See the :github_nvflare_link:`Hello Numpy Scatter and Gather Example <examples/hello-world/hello-numpy-sag>` for an example application with
+the scatter and gather workflow.

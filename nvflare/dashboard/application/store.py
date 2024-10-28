@@ -13,12 +13,21 @@
 # limitations under the License.
 
 import json
+import logging
 
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .blob import gen_client, gen_overseer, gen_server, gen_user
 from .cert import Entity, make_root_cert
 from .models import Capacity, Client, Organization, Project, Role, User, db
+
+log = logging.getLogger(__name__)
+
+
+def check_role(id, claims, requester):
+    is_creator = requester == Store._get_email_by_id(id)
+    is_project_admin = claims.get("role") == "project_admin"
+    return is_creator, is_project_admin
 
 
 def _dict_or_empty(item):
@@ -39,6 +48,13 @@ def get_or_create(session, model, **kwargs):
 def add_ok(obj):
     obj.update({"status": "ok"})
     return obj
+
+
+def inc_dl(model, id):
+    instance = model.query.get(id)
+    instance.download_count = instance.download_count + 1
+    db.session.add(instance)
+    db.session.commit()
 
 
 class Store(object):
@@ -85,25 +101,37 @@ class Store(object):
         return add_ok({"project": _dict_or_empty(project)})
 
     @classmethod
+    def _add_registered_info(cls, project_dict):
+        project_dict["num_clients"] = Client.query.count()
+        project_dict["num_orgs"] = Organization.query.count()
+        project_dict["num_users"] = User.query.count()
+        return project_dict
+
+    @classmethod
     def set_project(cls, req):
         project = Project.query.first()
         if project.frozen:
             return {"status": "Project is frozen"}
         req.pop("id", None)
+        short_name = req.pop("short_name", "")
+        if short_name:
+            if len(short_name) > 16:
+                short_name = short_name[:16]
+            project.short_name = short_name
         for k, v in req.items():
             setattr(project, k, v)
         db.session.add(project)
         db.session.commit()
         if project.frozen:
             cls.build_project(project)
-        return add_ok({"project": _dict_or_empty(project)})
+        project_dict = _dict_or_empty(project)
+        project_dict = cls._add_registered_info(project_dict)
+        return add_ok({"project": project_dict})
 
     @classmethod
     def get_project(cls):
         project_dict = _dict_or_empty(Project.query.first())
-        project_dict["num_clients"] = Client.query.count()
-        project_dict["num_orgs"] = Organization.query.count()
-        project_dict["num_users"] = User.query.count()
+        project_dict = cls._add_registered_info(project_dict)
         return add_ok({"project": project_dict})
 
     @classmethod
@@ -145,8 +173,12 @@ class Store(object):
         client = Client(name=name, description=description, creator_id=creator_id)
         client.organization_id = org.id
         client.capacity_id = cap.id
-        db.session.add(client)
-        db.session.commit()
+        try:
+            db.session.add(client)
+            db.session.commit()
+        except Exception as e:
+            log.error(f"Error while creating client: {e}")
+            return None
         return add_ok({"client": _dict_or_empty(client)})
 
     @classmethod
@@ -159,10 +191,13 @@ class Store(object):
         return add_ok({"client_list": [_dict_or_empty(client) for client in all_clients]})
 
     @classmethod
-    def get_creator_by_client_id(cls, id):
-        creator_id = Client.query.get(id).creator_id
-        creator = User.query.get(creator_id).email
-        return creator
+    def get_creator_id_by_client_id(cls, id):
+        client = Client.query.get(id)
+        if client:
+            creator_id = client.creator_id
+            return creator_id
+        else:
+            return None
 
     @classmethod
     def get_client(cls, id):
@@ -183,8 +218,12 @@ class Store(object):
             client.capacity_id = cap.id
         for k, v in req.items():
             setattr(client, k, v)
-        db.session.add(client)
-        db.session.commit()
+        try:
+            db.session.add(client)
+            db.session.commit()
+        except Exception as e:
+            log.error(f"Error while patching client: {e}")
+            return None
         return add_ok({"client": _dict_or_empty(client)})
 
     @classmethod
@@ -202,8 +241,12 @@ class Store(object):
             client.capacity_id = cap.id
         for k, v in req.items():
             setattr(client, k, v)
-        db.session.add(client)
-        db.session.commit()
+        try:
+            db.session.add(client)
+            db.session.commit()
+        except Exception as e:
+            log.error(f"Error while patching client: {e}")
+            return None
         return add_ok({"client": _dict_or_empty(client)})
 
     @classmethod
@@ -216,27 +259,36 @@ class Store(object):
     @classmethod
     def get_client_blob(cls, key, id):
         fileobj, filename = gen_client(key, id)
+        inc_dl(Client, id)
         return fileobj, filename
 
     @classmethod
     def create_user(cls, req):
-        name = req.get("name")
+        name = req.get("name", "")
         email = req.get("email")
         password = req.get("password", "")
         password_hash = generate_password_hash(password)
-        organization = req.get("organization")
-        role_name = req.get("role")
+        organization = req.get("organization", "")
+        role_name = req.get("role", "")
         description = req.get("description", "")
         approval_state = req.get("approval_state", 0)
         org = get_or_create(db.session, Organization, name=organization)
         role = get_or_create(db.session, Role, name=role_name)
-        user = User(
-            email=email, name=name, password_hash=password_hash, description=description, approval_state=approval_state
-        )
-        user.organization_id = org.id
-        user.role_id = role.id
-        db.session.add(user)
-        db.session.commit()
+        try:
+            user = User(
+                email=email,
+                name=name,
+                password_hash=password_hash,
+                description=description,
+                approval_state=approval_state,
+            )
+            user.organization_id = org.id
+            user.role_id = role.id
+            db.session.add(user)
+            db.session.commit()
+        except Exception as e:
+            log.error(f"Error while creating user: {e}")
+            return None
         return add_ok({"user": _dict_or_empty(user)})
 
     @classmethod
@@ -302,6 +354,10 @@ class Store(object):
         if organization is not None and user.organization.name == "":
             org = get_or_create(db.session, Organization, name=organization)
             user.organization_id = org.id
+        password = req.pop("password", None)
+        if password is not None:
+            password_hash = generate_password_hash(password)
+            user.password_hash = password_hash
         for k, v in req.items():
             setattr(user, k, v)
         db.session.add(user)
@@ -322,4 +378,5 @@ class Store(object):
     @classmethod
     def get_user_blob(cls, key, id):
         fileobj, filename = gen_user(key, id)
+        inc_dl(User, id)
         return fileobj, filename

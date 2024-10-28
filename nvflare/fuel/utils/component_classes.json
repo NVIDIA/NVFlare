@@ -1,0 +1,617 @@
+{
+    "DXOFilter": [
+        "nvflare.apis.dxo_filter"
+    ],
+    "Executor": [
+        "nvflare.apis.executor"
+    ],
+    "Filter": [
+        "nvflare.apis.filter"
+    ],
+    "FLComponent": [
+        "nvflare.apis.fl_component"
+    ],
+    "Controller": [
+        "nvflare.apis.impl.controller"
+    ],
+    "SimpleJobDefManager": [
+        "nvflare.apis.impl.job_def_manager"
+    ],
+    "TaskController": [
+        "nvflare.apis.impl.task_controller"
+    ],
+    "WFCommClient": [
+        "nvflare.apis.impl.wf_comm_client"
+    ],
+    "WFCommServer": [
+        "nvflare.apis.impl.wf_comm_server"
+    ],
+    "JobDefManagerSpec": [
+        "nvflare.apis.job_def_manager_spec"
+    ],
+    "Aggregator": [
+        "nvflare.app_common.abstract.aggregator"
+    ],
+    "Formatter": [
+        "nvflare.app_common.abstract.formatter"
+    ],
+    "InitFinalArgsComponent": [
+        "nvflare.app_common.abstract.init_final_component"
+    ],
+    "InitFinalComponent": [
+        "nvflare.app_common.abstract.init_final_component"
+    ],
+    "Launcher": [
+        "nvflare.app_common.abstract.launcher"
+    ],
+    "LearnablePersistor": [
+        "nvflare.app_common.abstract.learnable_persistor"
+    ],
+    "Learner": [
+        "nvflare.app_common.abstract.learner_spec"
+    ],
+    "ModelLearner": [
+        "nvflare.app_common.abstract.model_learner"
+    ],
+    "ModelLocator": [
+        "nvflare.app_common.abstract.model_locator"
+    ],
+    "ModelPersistor": [
+        "nvflare.app_common.abstract.model_persistor"
+    ],
+    "PersistorFilter": [
+        "nvflare.app_common.abstract.persistor_filter"
+    ],
+    "ResponseProcessor": [
+        "nvflare.app_common.abstract.response_processor"
+    ],
+    "ShareableGenerator": [
+        "nvflare.app_common.abstract.shareable_generator"
+    ],
+    "Statistics": [
+        "nvflare.app_common.abstract.statistics_spec"
+    ],
+    "StatisticsWriter": [
+        "nvflare.app_common.abstract.statistics_writer"
+    ],
+    "TaskHandler": [
+        "nvflare.app_common.abstract.task_handler"
+    ],
+    "Assembler": [
+        "nvflare.app_common.aggregators.assembler"
+    ],
+    "CollectAndAssembleAggregator": [
+        "nvflare.app_common.aggregators.collect_and_assemble_aggregator"
+    ],
+    "DXOAggregator": [
+        "nvflare.app_common.aggregators.dxo_aggregator"
+    ],
+    "DXOCollector": [
+        "nvflare.app_common.aggregators.dxo_collector"
+    ],
+    "InTimeAccumulateWeightedAggregator": [
+        "nvflare.app_common.aggregators.intime_accumulate_model_aggregator"
+    ],
+    "AppDefinedAggregator": [
+        "nvflare.app_common.app_defined.aggregator"
+    ],
+    "ComponentBase": [
+        "nvflare.app_common.app_defined.component_base"
+    ],
+    "AppDefinedModelPersistor": [
+        "nvflare.app_common.app_defined.model_persistor"
+    ],
+    "AppDefinedShareableGenerator": [
+        "nvflare.app_common.app_defined.shareable_generator"
+    ],
+    "ClientControllerExecutor": [
+        "nvflare.app_common.ccwf.client_controller_executor"
+    ],
+    "ClientSideController": [
+        "nvflare.app_common.ccwf.client_ctl"
+    ],
+    "CWEResultPrinter": [
+        "nvflare.app_common.ccwf.comps.cwe_result_printer"
+    ],
+    "NPFileModelPersistor": [
+        "nvflare.app_common.ccwf.comps.np_file_model_persistor"
+    ],
+    "NPTrainer": [
+        "nvflare.app_common.ccwf.comps.np_trainer",
+        "nvflare.app_common.np.np_trainer"
+    ],
+    "SimpleIntimeModelSelector": [
+        "nvflare.app_common.ccwf.comps.simple_intime_model_selector"
+    ],
+    "SimpleModelShareableGenerator": [
+        "nvflare.app_common.ccwf.comps.simple_model_shareable_generator"
+    ],
+    "CrossSiteEvalClientController": [
+        "nvflare.app_common.ccwf.cse_client_ctl"
+    ],
+    "CrossSiteEvalServerController": [
+        "nvflare.app_common.ccwf.cse_server_ctl"
+    ],
+    "CyclicClientController": [
+        "nvflare.app_common.ccwf.cyclic_client_ctl"
+    ],
+    "CyclicServerController": [
+        "nvflare.app_common.ccwf.cyclic_server_ctl"
+    ],
+    "ServerSideController": [
+        "nvflare.app_common.ccwf.server_ctl"
+    ],
+    "Gatherer": [
+        "nvflare.app_common.ccwf.swarm_client_ctl"
+    ],
+    "SwarmClientController": [
+        "nvflare.app_common.ccwf.swarm_client_ctl"
+    ],
+    "SwarmServerController": [
+        "nvflare.app_common.ccwf.swarm_server_ctl"
+    ],
+    "ClientAPILauncherExecutor": [
+        "nvflare.app_common.executors.client_api_launcher_executor"
+    ],
+    "ErrorHandlingExecutor": [
+        "nvflare.app_common.executors.error_handling_executor"
+    ],
+    "InProcessClientAPIExecutor": [
+        "nvflare.app_common.executors.in_process_client_api_executor"
+    ],
+    "IPCExchanger": [
+        "nvflare.app_common.executors.ipc_exchanger"
+    ],
+    "LauncherExecutor": [
+        "nvflare.app_common.executors.launcher_executor"
+    ],
+    "LearnerExecutor": [
+        "nvflare.app_common.executors.learner_executor"
+    ],
+    "ModelLearnerExecutor": [
+        "nvflare.app_common.executors.model_learner_executor"
+    ],
+    "MultiProcessExecutor": [
+        "nvflare.app_common.executors.multi_process_executor"
+    ],
+    "SplitNNLearnerExecutor": [
+        "nvflare.app_common.executors.splitnn_learner_executor"
+    ],
+    "StatisticsExecutor": [
+        "nvflare.app_common.executors.statistics.statistics_executor"
+    ],
+    "StatisticsTaskHandler": [
+        "nvflare.app_common.executors.statistics.statistics_task_handler"
+    ],
+    "TaskExchanger": [
+        "nvflare.app_common.executors.task_exchanger"
+    ],
+    "ConvertWeights": [
+        "nvflare.app_common.filters.convert_weights"
+    ],
+    "DXOBlocker": [
+        "nvflare.app_common.filters.dxo_blocker"
+    ],
+    "ExcludeVars": [
+        "nvflare.app_common.filters.exclude_vars"
+    ],
+    "PercentilePrivacy": [
+        "nvflare.app_common.filters.percentile_privacy"
+    ],
+    "StatisticsPrivacyFilter": [
+        "nvflare.app_common.filters.statistics_privacy_filter"
+    ],
+    "SVTPrivacy": [
+        "nvflare.app_common.filters.svt_privacy"
+    ],
+    "HubAppDeployer": [
+        "nvflare.app_common.hub.hub_app_deployer"
+    ],
+    "BcastOperator": [
+        "nvflare.app_common.hub.hub_controller"
+    ],
+    "HubController": [
+        "nvflare.app_common.hub.hub_controller"
+    ],
+    "RelayOperator": [
+        "nvflare.app_common.hub.hub_controller"
+    ],
+    "HubExecutor": [
+        "nvflare.app_common.hub.hub_executor"
+    ],
+    "DefaultJobScheduler": [
+        "nvflare.app_common.job_schedulers.job_scheduler"
+    ],
+    "SubprocessLauncher": [
+        "nvflare.app_common.launchers.subprocess_launcher"
+    ],
+    "MetricsSender": [
+        "nvflare.app_common.metrics_exchange.metrics_sender"
+    ],
+    "ListModelLocator": [
+        "nvflare.app_common.model_locator.list_model_locator"
+    ],
+    "NPFormatter": [
+        "nvflare.app_common.np.np_formatter"
+    ],
+    "NPModelLocator": [
+        "nvflare.app_common.np.np_model_locator"
+    ],
+    "NPModelPersistor": [
+        "nvflare.app_common.np.np_model_persistor"
+    ],
+    "NPValidator": [
+        "nvflare.app_common.np.np_validator"
+    ],
+    "DhPSIController": [
+        "nvflare.app_common.psi.dh_psi.dh_psi_controller"
+    ],
+    "DhPSIWorkFlow": [
+        "nvflare.app_common.psi.dh_psi.dh_psi_workflow"
+    ],
+    "FilePSIWriter": [
+        "nvflare.app_common.psi.file_psi_writer"
+    ],
+    "PSIController": [
+        "nvflare.app_common.psi.psi_controller"
+    ],
+    "PSIExecutor": [
+        "nvflare.app_common.psi.psi_executor"
+    ],
+    "PSI": [
+        "nvflare.app_common.psi.psi_spec"
+    ],
+    "PSIWorkflow": [
+        "nvflare.app_common.psi.psi_workflow_spec"
+    ],
+    "PSIWriter": [
+        "nvflare.app_common.psi.psi_writer_spec"
+    ],
+    "AutoCleanResourceManager": [
+        "nvflare.app_common.resource_managers.auto_clean_resource_manager"
+    ],
+    "GPUResourceManager": [
+        "nvflare.app_common.resource_managers.gpu_resource_manager"
+    ],
+    "ListResourceManager": [
+        "nvflare.app_common.resource_managers.list_resource_manager"
+    ],
+    "GlobalWeightsInitializer": [
+        "nvflare.app_common.response_processors.global_weights_initializer"
+    ],
+    "FullModelShareableGenerator": [
+        "nvflare.app_common.shareablegenerators.full_model_shareable_generator"
+    ],
+    "HistogramBinsCleanser": [
+        "nvflare.app_common.statistics.histogram_bins_cleanser"
+    ],
+    "JsonStatsFileWriter": [
+        "nvflare.app_common.statistics.json_stats_file_persistor"
+    ],
+    "MinCountCleanser": [
+        "nvflare.app_common.statistics.min_count_cleanser"
+    ],
+    "AddNoiseToMinMax": [
+        "nvflare.app_common.statistics.min_max_cleanser"
+    ],
+    "Applet": [
+        "nvflare.app_common.tie.applet"
+    ],
+    "CLIApplet": [
+        "nvflare.app_common.tie.cli_applet"
+    ],
+    "Connector": [
+        "nvflare.app_common.tie.connector"
+    ],
+    "TieController": [
+        "nvflare.app_common.tie.controller"
+    ],
+    "TieExecutor": [
+        "nvflare.app_common.tie.executor"
+    ],
+    "PyApplet": [
+        "nvflare.app_common.tie.py_applet"
+    ],
+    "LogWriter": [
+        "nvflare.app_common.tracking.log_writer"
+    ],
+    "FLComponentWrapper": [
+        "nvflare.app_common.utils.fl_component_wrapper"
+    ],
+    "ConvertToFedEvent": [
+        "nvflare.app_common.widgets.convert_to_fed_event"
+    ],
+    "ClientEventRecorder": [
+        "nvflare.app_common.widgets.event_recorder"
+    ],
+    "EventRecorder": [
+        "nvflare.app_common.widgets.event_recorder"
+    ],
+    "ServerEventRecorder": [
+        "nvflare.app_common.widgets.event_recorder"
+    ],
+    "ExternalConfigurator": [
+        "nvflare.app_common.widgets.external_configurator"
+    ],
+    "IntimeModelSelectionHandler": [
+        "nvflare.app_common.widgets.intime_model_selector"
+    ],
+    "IntimeModelSelector": [
+        "nvflare.app_common.widgets.intime_model_selector"
+    ],
+    "MetricRelay": [
+        "nvflare.app_common.widgets.metric_relay"
+    ],
+    "AnalyticsReceiver": [
+        "nvflare.app_common.widgets.streaming"
+    ],
+    "AnalyticsSender": [
+        "nvflare.app_common.widgets.streaming"
+    ],
+    "ValidationJsonGenerator": [
+        "nvflare.app_common.widgets.validation_json_generator"
+    ],
+    "BaseFedAvg": [
+        "nvflare.app_common.workflows.base_fedavg"
+    ],
+    "BaseModelController": [
+        "nvflare.app_common.workflows.base_model_controller"
+    ],
+    "BroadcastAndProcess": [
+        "nvflare.app_common.workflows.broadcast_and_process"
+    ],
+    "BroadcastAndWait": [
+        "nvflare.app_common.workflows.broadcast_operator"
+    ],
+    "CmdTaskController": [
+        "nvflare.app_common.workflows.cmd_task_controller"
+    ],
+    "CrossSiteEval": [
+        "nvflare.app_common.workflows.cross_site_eval"
+    ],
+    "CrossSiteModelEval": [
+        "nvflare.app_common.workflows.cross_site_model_eval"
+    ],
+    "Cyclic": [
+        "nvflare.app_common.workflows.cyclic"
+    ],
+    "CyclicController": [
+        "nvflare.app_common.workflows.cyclic_ctl"
+    ],
+    "ErrorHandlingController": [
+        "nvflare.app_common.workflows.error_handling_controller"
+    ],
+    "ETLController": [
+        "nvflare.app_common.workflows.etl_controller"
+    ],
+    "FedAvg": [
+        "nvflare.app_common.workflows.fedavg"
+    ],
+    "GlobalModelEval": [
+        "nvflare.app_common.workflows.global_model_eval"
+    ],
+    "HierarchicalStatisticsController": [
+        "nvflare.app_common.workflows.hierarchical_statistics_controller"
+    ],
+    "InitializeGlobalWeights": [
+        "nvflare.app_common.workflows.initialize_global_weights"
+    ],
+    "ModelController": [
+        "nvflare.app_common.workflows.model_controller"
+    ],
+    "Scaffold": [
+        "nvflare.app_common.workflows.scaffold"
+    ],
+    "ScatterAndGather": [
+        "nvflare.app_common.workflows.scatter_and_gather"
+    ],
+    "ScatterAndGatherScaffold": [
+        "nvflare.app_common.workflows.scatter_and_gather_scaffold"
+    ],
+    "SplitNNController": [
+        "nvflare.app_common.workflows.splitnn_workflow"
+    ],
+    "StatisticsController": [
+        "nvflare.app_common.workflows.statistics_controller"
+    ],
+    "CCManager": [
+        "nvflare.app_opt.confidential_computing.cc_manager"
+    ],
+    "FlowerClientApplet": [
+        "nvflare.app_opt.flower.applet"
+    ],
+    "FlowerServerApplet": [
+        "nvflare.app_opt.flower.applet"
+    ],
+    "FlowerClientConnector": [
+        "nvflare.app_opt.flower.connectors.flower_connector"
+    ],
+    "FlowerServerConnector": [
+        "nvflare.app_opt.flower.connectors.flower_connector"
+    ],
+    "GrpcClientConnector": [
+        "nvflare.app_opt.flower.connectors.grpc_client_connector"
+    ],
+    "GrpcServerConnector": [
+        "nvflare.app_opt.flower.connectors.grpc_server_connector"
+    ],
+    "FlowerController": [
+        "nvflare.app_opt.flower.controller"
+    ],
+    "FlowerExecutor": [
+        "nvflare.app_opt.flower.executor"
+    ],
+    "MockClientApplet": [
+        "nvflare.app_opt.flower.mock.applet"
+    ],
+    "MockClientPyApplet": [
+        "nvflare.app_opt.flower.mock.applet"
+    ],
+    "MockServerApplet": [
+        "nvflare.app_opt.flower.mock.applet"
+    ],
+    "MockController": [
+        "nvflare.app_opt.flower.mock.controller"
+    ],
+    "MockExecutor": [
+        "nvflare.app_opt.flower.mock.executor"
+    ],
+    "MockPyExecutor": [
+        "nvflare.app_opt.flower.mock.executor"
+    ],
+    "HECrossSiteModelEval": [
+        "nvflare.app_opt.he.cross_site_model_eval"
+    ],
+    "HEInTimeAccumulateWeightedAggregator": [
+        "nvflare.app_opt.he.intime_accumulate_model_aggregator"
+    ],
+    "HEModelDecryptor": [
+        "nvflare.app_opt.he.model_decryptor"
+    ],
+    "HEModelEncryptor": [
+        "nvflare.app_opt.he.model_encryptor"
+    ],
+    "HEModelSerializeFilter": [
+        "nvflare.app_opt.he.model_serialize_filter"
+    ],
+    "HEModelShareableGenerator": [
+        "nvflare.app_opt.he.model_shareable_generator"
+    ],
+    "DhPSITaskHandler": [
+        "nvflare.app_opt.psi.dh_psi.dh_psi_task_handler"
+    ],
+    "PTClientAPILauncherExecutor": [
+        "nvflare.app_opt.pt.client_api_launcher_executor"
+    ],
+    "PTFedAvgEarlyStopping": [
+        "nvflare.app_opt.pt.fedavg_early_stopping"
+    ],
+    "PTFedOptModelShareableGenerator": [
+        "nvflare.app_opt.pt.fedopt"
+    ],
+    "FedOpt": [
+        "nvflare.app_opt.pt.fedopt_ctl",
+        "nvflare.app_opt.tf.fedopt_ctl"
+    ],
+    "PTFileModelLocator": [
+        "nvflare.app_opt.pt.file_model_locator"
+    ],
+    "PTFileModelPersistor": [
+        "nvflare.app_opt.pt.file_model_persistor"
+    ],
+    "PTInProcessClientAPIExecutor": [
+        "nvflare.app_opt.pt.in_process_client_api_executor"
+    ],
+    "PTMultiProcessExecutor": [
+        "nvflare.app_opt.pt.multi_process_executor"
+    ],
+    "JoblibModelParamPersistor": [
+        "nvflare.app_opt.sklearn.joblib_model_param_persistor"
+    ],
+    "SKLearnExecutor": [
+        "nvflare.app_opt.sklearn.sklearn_executor"
+    ],
+    "TFClientAPILauncherExecutor": [
+        "nvflare.app_opt.tf.client_api_launcher_executor"
+    ],
+    "TFInProcessClientAPIExecutor": [
+        "nvflare.app_opt.tf.in_process_client_api_executor"
+    ],
+    "TFModelPersistor": [
+        "nvflare.app_opt.tf.model_persistor"
+    ],
+    "MLflowReceiver": [
+        "nvflare.app_opt.tracking.mlflow.mlflow_receiver"
+    ],
+    "MLflowWriter": [
+        "nvflare.app_opt.tracking.mlflow.mlflow_writer"
+    ],
+    "TBAnalyticsReceiver": [
+        "nvflare.app_opt.tracking.tb.tb_receiver"
+    ],
+    "TBWriter": [
+        "nvflare.app_opt.tracking.tb.tb_writer"
+    ],
+    "WandBReceiver": [
+        "nvflare.app_opt.tracking.wandb.wandb_receiver"
+    ],
+    "WandBWriter": [
+        "nvflare.app_opt.tracking.wandb.wandb_writer"
+    ],
+    "XGBFedController": [
+        "nvflare.app_opt.xgboost.histogram_based.controller",
+        "nvflare.app_opt.xgboost.histogram_based_v2.fed_controller"
+    ],
+    "AppAdaptor": [
+        "nvflare.app_opt.xgboost.histogram_based_v2.adaptors.adaptor"
+    ],
+    "GrpcClientAdaptor": [
+        "nvflare.app_opt.xgboost.histogram_based_v2.adaptors.grpc_client_adaptor"
+    ],
+    "GrpcServerAdaptor": [
+        "nvflare.app_opt.xgboost.histogram_based_v2.adaptors.grpc_server_adaptor"
+    ],
+    "XGBClientAdaptor": [
+        "nvflare.app_opt.xgboost.histogram_based_v2.adaptors.xgb_adaptor"
+    ],
+    "XGBServerAdaptor": [
+        "nvflare.app_opt.xgboost.histogram_based_v2.adaptors.xgb_adaptor"
+    ],
+    "XGBController": [
+        "nvflare.app_opt.xgboost.histogram_based_v2.controller"
+    ],
+    "XGBExecutor": [
+        "nvflare.app_opt.xgboost.histogram_based_v2.executor"
+    ],
+    "MockClientRunner": [
+        "nvflare.app_opt.xgboost.histogram_based_v2.mock.mock_client_runner"
+    ],
+    "MockXGBController": [
+        "nvflare.app_opt.xgboost.histogram_based_v2.mock.mock_controller"
+    ],
+    "MockXGBExecutor": [
+        "nvflare.app_opt.xgboost.histogram_based_v2.mock.mock_executor"
+    ],
+    "MockSecureClientRunner": [
+        "nvflare.app_opt.xgboost.histogram_based_v2.mock.mock_secure_client_runner"
+    ],
+    "MockSecureXGBExecutor": [
+        "nvflare.app_opt.xgboost.histogram_based_v2.mock.mock_secure_executor"
+    ],
+    "ClientSecurityHandler": [
+        "nvflare.app_opt.xgboost.histogram_based_v2.sec.client_handler"
+    ],
+    "SecurityHandler": [
+        "nvflare.app_opt.xgboost.histogram_based_v2.sec.sec_handler"
+    ],
+    "ServerSecurityHandler": [
+        "nvflare.app_opt.xgboost.histogram_based_v2.sec.server_handler"
+    ],
+    "XGBBaggingAggregator": [
+        "nvflare.app_opt.xgboost.tree_based.bagging_aggregator"
+    ],
+    "XGBModelPersistor": [
+        "nvflare.app_opt.xgboost.tree_based.model_persistor"
+    ],
+    "XGBModelShareableGenerator": [
+        "nvflare.app_opt.xgboost.tree_based.shareable_generator"
+    ],
+    "ComponentCaller": [
+        "nvflare.widgets.comp_caller"
+    ],
+    "ClientFedEventRunner": [
+        "nvflare.widgets.fed_event"
+    ],
+    "FedEventRunner": [
+        "nvflare.widgets.fed_event"
+    ],
+    "ServerFedEventRunner": [
+        "nvflare.widgets.fed_event"
+    ],
+    "InfoCollector": [
+        "nvflare.widgets.info_collector"
+    ],
+    "Widget": [
+        "nvflare.widgets.widget"
+    ]
+}

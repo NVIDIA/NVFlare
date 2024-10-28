@@ -1,0 +1,17 @@
+examples_root: ../../examples
+
+
+examples:
+  - root: advanced/cifar10/cifar10-sim
+    additional_python_path: advanced/cifar10
+    prepare_data_script: prepare_data.sh
+  - root: advanced/sklearn-kmeans
+    prepare_data_script: prepare_data.sh
+  - root: advanced/sklearn-linear
+    prepare_data_script: prepare_data.sh
+  - root: advanced/sklearn-svm
+    prepare_data_script: prepare_data.sh
+  - root: advanced/psi/user_email_match
+    prepare_data_script: prepare_data.sh
+  - root: advanced/federated-statistics/df_stats
+    prepare_data_script: prepare_data.sh

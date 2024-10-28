@@ -88,9 +88,11 @@ Identity Name (fl_ctx.get_identity_name())
 Each running endpoint has a unique identity name. You can get the identity name of the endpoint your application is
 running in.
 
+.. _peer_context:
+
 Peer Context (fl_ctx.get_peer_context())
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-When processing a message from the peer, the FLContext object passed to your callback functions contains the Peer
+When processing a message from another party, the FLContext object passed to your callback functions contains the Peer
 Context, which contains the public props from the peer endpoint. Note that not all FL Contexts have peer contexts -
 only those passed to your callback functions (before_task_sent, after_task_sent, and result_received on the Server
 side, and the executor's execute() method on the Client side) have peer contexts. Since filters are invoked to process

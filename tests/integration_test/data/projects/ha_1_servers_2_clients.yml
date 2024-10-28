@@ -1,0 +1,42 @@
+api_version: 3
+name: integration_test
+description: NVIDIA FLARE integration_test project yaml file
+
+participants:
+  - name: localhost
+    type: overseer
+    org: nvidia
+    protocol: https
+    api_root: /api/v1
+    port: 8443
+  - name: localhost0
+    type: server
+    org: nvidia
+    fed_learn_port: 8002
+    admin_port: 8003
+  - name: site-1
+    type: client
+    org: nvidia
+  - name: site-2
+    type: client
+    org: nvidia
+  - name: super@test.org
+    type: admin
+    org: nvidia
+    role: project_admin
+
+# The same methods in all builders are called in their order defined in builders section
+builders:
+  - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+    args:
+      template_file: master_template.yml
+  - path: nvflare.lighter.impl.template.TemplateBuilder
+  - path: nvflare.lighter.impl.static_file.StaticFileBuilder
+    args:
+      config_folder: config
+      overseer_agent:
+        path: nvflare.ha.overseer_agent.HttpOverseerAgent
+        overseer_exists: true
+
+  - path: nvflare.lighter.impl.cert.CertBuilder
+  - path: nvflare.lighter.impl.signature.SignatureBuilder

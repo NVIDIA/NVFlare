@@ -1,0 +1,1048 @@
+---
+// Import Prism to enable syntax highlighting
+import Prism from "prismjs";
+import "prismjs/components/prism-python.js";
+import "prismjs/components/prism-bash.js";
+import "prismjs/themes/prism.css";
+
+import "prismjs/plugins/toolbar/prism-toolbar.min.css";
+import "prismjs/plugins/toolbar/prism-toolbar.min";
+import "prismjs/plugins/line-highlight/prism-line-highlight.css";
+import "prismjs/plugins/line-highlight/prism-line-highlight.js";
+import 'prismjs/plugins/line-numbers/prism-line-numbers.js'
+import 'prismjs/plugins/line-numbers/prism-line-numbers.css'
+
+import ClickTracker from './clickTracker.astro';
+import GoogleColab from '../images/google_colab.svg.png'
+
+const gh_branch = import.meta.env.PUBLIC_GH_BRANCH;
+
+// PyTorch Code Sections --------------------------------------------------
+
+const installCode_pt = `
+pip install nvflare torch torchvision
+`;
+
+const clientCode_pt = `
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torchvision
+import torchvision.transforms as transforms
+
+
+class Net(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(3, 6, 5)
+        self.pool = nn.MaxPool2d(2, 2)
+        self.conv2 = nn.Conv2d(6, 16, 5)
+        self.fc1 = nn.Linear(16 * 5 * 5, 120)
+        self.fc2 = nn.Linear(120, 84)
+        self.fc3 = nn.Linear(84, 10)
+
+    def forward(self, x):
+        x = self.pool(F.relu(self.conv1(x)))
+        x = self.pool(F.relu(self.conv2(x)))
+        x = torch.flatten(x, 1) # flatten all dimensions except batch
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+        return x
+
+
+# (1) import nvflare client API
+import nvflare.client as flare
+
+# (optional) metrics
+from nvflare.client.tracking import SummaryWriter
+
+# (optional) set a fix place so we don't need to download everytime
+DATASET_PATH = "/tmp/nvflare/data"
+# If available, we use GPU to speed things up.
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
+
+def main():
+    transform = transforms.Compose([
+      transforms.ToTensor(),
+      transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+    ])
+
+    batch_size = 4
+    epochs = 2
+
+    trainset = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=True, download=True, transform=transform)
+    trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=2)
+
+    testset = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=False, download=True, transform=transform)
+    testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=2)
+
+    net = Net()
+
+    # (2) initializes NVFlare client API
+    flare.init()
+
+    summary_writer = SummaryWriter()
+    while flare.is_running():
+        # (3) receives FLModel from NVFlare
+        input_model = flare.receive()
+        print(f"current_round={input_model.current_round}")
+
+        # (4) loads model from NVFlare
+        net.load_state_dict(input_model.params)
+
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+
+        # (optional) use GPU to speed things up
+        net.to(DEVICE)
+        # (optional) calculate total steps
+        steps = epochs * len(trainloader)
+        for epoch in range(epochs):  # loop over the dataset multiple times
+
+            running_loss = 0.0
+            for i, data in enumerate(trainloader, 0):
+                # get the inputs; data is a list of [inputs, labels]
+                # (optional) use GPU to speed things up
+                inputs, labels = data[0].to(DEVICE), data[1].to(DEVICE)
+
+                # zero the parameter gradients
+                optimizer.zero_grad()
+
+                # forward + backward + optimize
+                outputs = net(inputs)
+                loss = criterion(outputs, labels)
+                loss.backward()
+                optimizer.step()
+
+                # print statistics
+                running_loss += loss.item()
+                if i % 2000 == 1999:  # print every 2000 mini-batches
+                    print(f"[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
+                    global_step = input_model.current_round * steps + epoch * len(trainloader) + i
+
+                    summary_writer.add_scalar(
+                        tag="loss_for_each_batch",
+                        scalar=running_loss, 
+                        global_step=global_step
+                    )
+                    running_loss = 0.0
+
+        print("Finished Training")
+
+        PATH = "./cifar_net.pth"
+        torch.save(net.state_dict(), PATH)
+
+        # (5) wraps evaluation logic into a method to re-use for
+        #       evaluation on both trained and received model
+        def evaluate(input_weights):
+            net = Net()
+            net.load_state_dict(input_weights)
+            # (optional) use GPU to speed things up
+            net.to(DEVICE)
+
+            correct = 0
+            total = 0
+            # since we're not training, we don't need to calculate the gradients for our outputs
+            with torch.no_grad():
+                for data in testloader:
+                    # (optional) use GPU to speed things up
+                    images, labels = data[0].to(DEVICE), data[1].to(DEVICE)
+                    # calculate outputs by running images through the network
+                    outputs = net(images)
+                    # the class with the highest energy is what we choose as prediction
+                    _, predicted = torch.max(outputs.data, 1)
+                    total += labels.size(0)
+                    correct += (predicted == labels).sum().item()
+
+            print(f"Accuracy of the network on the 10000 test images: {100 * correct // total} %")
+            return 100 * correct // total
+
+        # (6) evaluate on received model for model selection
+        accuracy = evaluate(input_model.params)
+        # (7) construct trained FL model
+        output_model = flare.FLModel(
+            params=net.cpu().state_dict(),
+            metrics={"accuracy": accuracy},
+            meta={"NUM_STEPS_CURRENT_ROUND": steps},
+        )
+        # (8) send model back to NVFlare
+        flare.send(output_model)
+
+
+if __name__ == "__main__":
+    main()`;
+
+const serverCode_pt = `
+from nvflare.app_common.workflows.base_fedavg import BaseFedAvg
+
+class FedAvg(BaseFedAvg):
+    def run(self) -> None:
+        self.info("Start FedAvg.")
+
+        model = self.load_model()
+        model.start_round = self.start_round
+        model.total_rounds = self.num_rounds
+
+        for self.current_round in range(self.start_round, self.start_round + self.num_rounds):
+            self.info(f"Round {self.current_round} started.")
+            model.current_round = self.current_round
+
+            clients = self.sample_clients(self.num_clients)
+
+            results = self.send_model_and_wait(targets=clients, data=model)
+
+            aggregate_results = self.aggregate(results)
+
+            model = self.update_model(model, aggregate_results)
+
+            self.save_model(model)
+
+        self.info("Finished FedAvg.")
+`;
+
+const jobCode_pt = `
+from cifar10_pt_fl import Net
+
+from nvflare.app_common.workflows.fedavg import FedAvg
+from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
+from nvflare.job_config.script_runner import ScriptRunner
+
+if __name__ == "__main__":
+    n_clients = 2
+    num_rounds = 2
+    train_script = "cifar10_pt_fl.py"
+
+    # Create BaseFedJob with initial model
+    job = BaseFedJob(
+      name="cifar10_pt_fedavg",
+      initial_model=Net(),
+    )
+
+    # Define the controller and send to server
+    controller = FedAvg(
+        num_clients=n_clients,
+        num_rounds=num_rounds,
+    )
+    job.to_server(controller)
+
+    # Add clients
+    for i in range(n_clients):
+        runner = ScriptRunner(script=train_script)
+        job.to(runner, f"site-{i}")
+
+    # job.export_job("/tmp/nvflare/jobs/job_config")
+    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
+`;
+
+const runCode_pt = `
+python3 fedavg_cifar10_pt_job.py
+`;
+
+// Lightning Code Sections --------------------------------------------------
+
+const installCode_lt = `
+pip install nvflare pytorch_lightning
+`;
+
+const clientCode_lt = `
+import torch
+import torch.nn.functional as F
+import torch.optim as optim
+import torchvision
+import torchvision.transforms as transforms
+from pytorch_lightning import LightningDataModule, LightningModule Trainer, seed_everything
+from torch.utils.data import DataLoader, random_split
+from torchmetrics import Accuracy
+
+
+class LitNet(LightningModule):
+    def __init__(self):
+        super().__init__()
+        self.save_hyperparameters()
+        self.model = Net()
+        self.train_acc = Accuracy(task="multiclass", num_classes=NUM_CLASSES)
+        self.valid_acc = Accuracy(task="multiclass", num_classes=NUM_CLASSES)
+        # (optional) pass additional information via self.__fl_meta__
+        self.__fl_meta__ = {}
+
+    def forward(self, x):
+        out = self.model(x)
+        return out
+
+    def training_step(self, batch, batch_idx):
+        x, labels = batch
+        outputs = self(x)
+        loss = criterion(outputs, labels)
+        self.train_acc(outputs, labels)
+        self.log("train_loss", loss)
+        self.log("train_acc", self.train_acc, on_step=True, on_epoch=False)
+        return loss
+
+    def evaluate(self, batch, stage=None):
+        x, labels = batch
+        outputs = self(x)
+        loss = criterion(outputs, labels)
+        self.valid_acc(outputs, labels)
+
+        if stage:
+            self.log(f"{stage}_loss", loss)
+            self.log(f"{stage}_acc", self.valid_acc, on_step=True, on_epoch=True)
+        return outputs
+
+    def validation_step(self, batch, batch_idx):
+        self.evaluate(batch, "val")
+
+    def test_step(self, batch, batch_idx):
+        self.evaluate(batch, "test")
+
+    def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> Any:
+        return self.evaluate(batch)
+
+    def configure_optimizers(self):
+        optimizer = optim.SGD(self.parameters(), lr=0.001, momentum=0.9)
+        return {"optimizer": optimizer}
+
+
+class CIFAR10DataModule(LightningDataModule):
+    def __init__(self, data_dir: str = DATASET_PATH, batch_size: int = BATCH_SIZE):
+        super().__init__()
+        self.data_dir = data_dir
+        self.batch_size = batch_size
+
+    def prepare_data(self):
+        torchvision.datasets.CIFAR10(root=self.data_dir, train=True, download=True, transform=transform)
+        torchvision.datasets.CIFAR10(root=self.data_dir, train=False, download=True, transform=transform)
+
+    def setup(self, stage: str):
+        # Assign train/val datasets for use in dataloaders
+        if stage == "fit" or stage == "validate":
+            cifar_full = torchvision.datasets.CIFAR10(
+                root=self.data_dir, train=True, download=False, transform=transform
+            )
+            self.cifar_train, self.cifar_val = random_split(cifar_full, [0.8, 0.2])
+
+        # Assign test dataset for use in dataloader(s)
+        if stage == "test" or stage == "predict":
+            self.cifar_test = torchvision.datasets.CIFAR10(
+                root=self.data_dir, train=False, download=False, transform=transform
+            )
+
+    def train_dataloader(self):
+        return DataLoader(self.cifar_train, batch_size=self.batch_size)
+
+    def val_dataloader(self):
+        return DataLoader(self.cifar_val, batch_size=self.batch_size)
+
+    def test_dataloader(self):
+        return DataLoader(self.cifar_test, batch_size=self.batch_size)
+
+    def predict_dataloader(self):
+        return DataLoader(self.cifar_test, batch_size=self.batch_size)
+
+
+# (1) import nvflare lightning client API
+import nvflare.client.lightning as flare
+
+seed_everything(7)
+
+
+DATASET_PATH = "/tmp/nvflare/data"
+BATCH_SIZE = 4
+
+transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+
+def main():
+    model = LitNet()
+    cifar10_dm = CIFAR10DataModule()
+    if torch.cuda.is_available():
+        trainer = Trainer(max_epochs=1, accelerator="gpu", devices=1 if torch.cuda.is_available() else None)
+    else:
+        trainer = Trainer(max_epochs=1, devices=None)
+
+    # (2) patch the lightning trainer
+    flare.patch(trainer)
+
+    while flare.is_running():
+        # (3) receives FLModel from NVFlare
+        # Note that we don't need to pass this input_model to trainer
+        # because after flare.patch the trainer.fit/validate will get the
+        # global model internally
+        input_model = flare.receive()
+        print(f"\\n[Current Round={input_model.current_round}, Site = {flare.get_site_name()}]\\n")
+
+        # (4) evaluate the current global model to allow server-side model selection
+        print("--- validate global model ---")
+        trainer.validate(model, datamodule=cifar10_dm)
+
+        # perform local training starting with the received global model
+        print("--- train new model ---")
+        trainer.fit(model, datamodule=cifar10_dm)
+
+        # test local model
+        print("--- test new model ---")
+        trainer.test(ckpt_path="best", datamodule=cifar10_dm)
+
+        # get predictions
+        print("--- prediction with new best model ---")
+        trainer.predict(ckpt_path="best", datamodule=cifar10_dm)
+
+
+if __name__ == "__main__":
+    main()
+`;
+
+const serverCode_lt = `
+from nvflare.app_common.workflows.base_fedavg import BaseFedAvg
+
+class FedAvg(BaseFedAvg):
+    def run(self) -> None:
+        self.info("Start FedAvg.")
+
+        model = self.load_model()
+        model.start_round = self.start_round
+        model.total_rounds = self.num_rounds
+
+        for self.current_round in range(self.start_round, self.start_round + self.num_rounds):
+            self.info(f"Round {self.current_round} started.")
+            model.current_round = self.current_round
+
+            clients = self.sample_clients(self.num_clients)
+
+            results = self.send_model_and_wait(targets=clients, data=model)
+
+            aggregate_results = self.aggregate(results)
+
+            model = self.update_model(model, aggregate_results)
+
+            self.save_model(model)
+
+        self.info("Finished FedAvg.")
+`;
+
+const jobCode_lt = `
+from cifar10_lightning_fl import LitNet
+
+from nvflare.app_common.workflows.fedavg import FedAvg
+from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
+from nvflare.job_config.script_runner import ScriptRunner
+
+if __name__ == "__main__":
+    n_clients = 2
+    num_rounds = 2
+    train_script = "cifar10_lightning_fl.py"
+
+    # Create BaseFedJob with initial model
+    job = BaseFedJob(
+      name="cifar10_lightning_fedavg",
+      initial_model=LitNet(),
+    )
+
+    # Define the controller and send to server
+    controller = FedAvg(
+        num_clients=n_clients,
+        num_rounds=num_rounds,
+    )
+    job.to_server(controller)
+
+    # Add clients
+    for i in range(n_clients):
+        runner = ScriptRunner(script=train_script)
+        job.to(runner, f"site-{i}")
+
+    # job.export_job("/tmp/nvflare/jobs/job_config")
+    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
+`;
+
+const runCode_lt = `
+python3 fedavg_cifar10_lightning_job.py
+`;
+
+// TensorFlow Code Sections --------------------------------------------------
+
+const installCode_tf = `
+pip install nvflare tensorflow
+`;
+
+const clientCode_tf = `
+from tensorflow.keras import datasets
+from tensorflow.keras import Model, layers, losses
+
+
+class TFNet(Model):
+    def __init__(self, input_shape):
+        super().__init__()
+        self._input_shape = input_shape  # Required to get constructor arguments in job config
+        self.conv1 = layers.Conv2D(6, 5, activation="relu")
+        self.pool = layers.MaxPooling2D((2, 2), 2)
+        self.conv2 = layers.Conv2D(16, 5, activation="relu")
+        self.flatten = layers.Flatten()
+        self.fc1 = layers.Dense(120, activation="relu")
+        self.fc2 = layers.Dense(84, activation="relu")
+        self.fc3 = layers.Dense(10)
+        loss_fn = losses.SparseCategoricalCrossentropy(from_logits=True)
+        self.compile(optimizer="sgd", loss=loss_fn, metrics=["accuracy"])
+        self.build(input_shape)
+
+    def call(self, x):
+        x = self.pool(self.conv1(x))
+        x = self.pool(self.conv2(x))
+        x = self.flatten(x)
+        x = self.fc1(x)
+        x = self.fc2(x)
+        x = self.fc3(x)
+        return x
+
+
+# (1) import nvflare client API
+import nvflare.client as flare
+
+PATH = "./tf_model.ckpt"
+
+
+def main():
+    (train_images, train_labels), (test_images, test_labels) = datasets.cifar10.load_data()
+
+    # Normalize pixel values to be between 0 and 1
+    train_images, test_images = train_images / 255.0, test_images / 255.0
+
+    model = TFNet(input_shape=(None, 32, 32, 3))
+    model.summary()
+
+    # (2) initializes NVFlare client API
+    flare.init()
+
+    # (3) gets FLModel from NVFlare
+    while flare.is_running():
+        input_model = flare.receive()
+        print(f"current_round={input_model.current_round}")
+
+        # (optional) print system info
+        system_info = flare.system_info()
+        print(f"NVFlare system info: {system_info}")
+
+        # (4) loads model from NVFlare
+        for k, v in input_model.params.items():
+            model.get_layer(k).set_weights(v)
+
+        # (5) evaluate aggregated/received model
+        _, test_global_acc = model.evaluate(test_images, test_labels, verbose=2)
+        print(
+            f"Accuracy of the received model on round {input_model.current_round} on the 10000 test images: 
+            {test_global_acc * 100} %"
+        )
+
+        model.fit(train_images, train_labels, epochs=1, validation_data=(test_images, test_labels))
+
+        print("Finished Training")
+
+        model.save_weights(PATH)
+
+        _, test_acc = model.evaluate(test_images, test_labels, verbose=2)
+        print(f"Accuracy of the model on the 10000 test images: {test_acc * 100} %")
+
+        # (6) construct trained FL model (A dict of {layer name: layer weights} from the keras model)
+        output_model = flare.FLModel(
+            params={layer.name: layer.get_weights() for layer in model.layers},
+            metrics={"accuracy": test_global_acc}
+        )
+        # (7) send model back to NVFlare
+        flare.send(output_model)
+
+
+if __name__ == "__main__":
+    main()
+`;
+
+const serverCode_tf = `
+from nvflare.app_common.workflows.base_fedavg import BaseFedAvg
+
+class FedAvg(BaseFedAvg):
+    def run(self) -> None:
+        self.info("Start FedAvg.")
+
+        model = self.load_model()
+        model.start_round = self.start_round
+        model.total_rounds = self.num_rounds
+
+        for self.current_round in range(self.start_round, self.start_round + self.num_rounds):
+            self.info(f"Round {self.current_round} started.")
+            model.current_round = self.current_round
+
+            clients = self.sample_clients(self.num_clients)
+
+            results = self.send_model_and_wait(targets=clients, data=model)
+
+            aggregate_results = self.aggregate(results)
+
+            model = self.update_model(model, aggregate_results)
+
+            self.save_model(model)
+
+        self.info("Finished FedAvg.")
+`;
+
+const jobCode_tf = `
+from cifar10_tf_fl import TFNet
+
+from nvflare.app_common.workflows.fedavg import FedAvg
+from nvflare.app_opt.tf.job_config.base_fed_job import BaseFedJob
+from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
+
+if __name__ == "__main__":
+    n_clients = 2
+    num_rounds = 2
+    train_script = "cifar10_tf_fl.py"
+
+    # Create BaseFedJob with initial model
+    job = BaseFedJob(
+      name="cifar10_tf_fedavg",
+      initial_model=TFNet(input_shape=(None, 32, 32, 3)),
+    )
+
+    # Define the controller and send to server
+    controller = FedAvg(
+        num_clients=n_clients,
+        num_rounds=num_rounds,
+    )
+    job.to_server(controller)
+
+    # Add clients
+    for i in range(n_clients):
+        runner = ScriptRunner(
+          script=train_script,
+          framework=FrameworkType.TENSORFLOW,
+        )
+        job.to(runner, f"site-{i}")
+
+    # job.export_job("/tmp/nvflare/jobs/job_config")
+    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
+`;
+
+const runCode_tf = `
+python3 fedavg_cifar10_tf_job.py
+`;
+
+const frameworks = [
+  {
+    id: "pytorch",
+    colab_link: `https://colab.research.google.com/github/NVIDIA/NVFlare/blob/${gh_branch}/examples/getting_started/pt/nvflare_pt_getting_started.ipynb`,
+    github_link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/getting_started/pt/nvflare_pt_getting_started.ipynb`,
+    sections: [
+      {
+        id: "install-pytorch",
+        type: "install",
+        framework: "pytorch",
+        title: "Installation",
+        description:
+          "Install the required PyTorch dependencies for this example.",
+        code: installCode_pt,
+      },
+      {
+        id: "client-pytorch",
+        type: "client",
+        framework: "pytorch",
+        title: "Client Code (cifar10_pt_fl.py)",
+        description:
+          "We use the Client API to convert the centralized training PyTorch code into federated learning code with only a few lines of changes highlighted below. Essentially the client will receive a model from NVIDIA FLARE, perform local training and validation, and then send the model back.",
+        code: clientCode_pt,
+        highlighted_lines: "29,58,61,63,139-143,145",
+      },
+      {
+        id: "server-pytorch",
+        type: "server",
+        framework: "pytorch",
+        title: "Server Code (fedavg.py)",
+        description:
+          "The ModelController API is used to write a federated routine with mechanisms for distributing and receiving models from clients. Here we implement the basic FedAvg algorithm using some helper functions from BaseFedAvg.",
+        code: serverCode_pt,
+        highlighted_lines: "7,17,23",
+      },
+      {
+        id: "job-pytorch",
+        type: "job",
+        framework: "pytorch",
+        title: "Job Code (fedavg_cifar10_pt_job.py)",
+        description:
+          "Lastly we construct the job with our 'cifar10_pt_fl.py' client script and 'FedAvg' server controller. The BaseFedJob automatically configures components for model persistence, model selection, and TensorBoard streaming. We then run the job with the FL simulator.",
+        code: jobCode_pt,
+      },
+      {
+        id: "run-pytorch",
+        type: "run",
+        framework: "pytorch",
+        title: "Run the Job",
+        description:
+          "To run the job with the simulator, copy the code and execute the job script, or run in Google Colab. Alternatively, export the job to a configuration and run the job in other modes.",
+        code: runCode_pt,
+      },
+    ],
+  },
+  {
+    id: "lightning",
+    colab_link: `https://colab.research.google.com/github/NVIDIA/NVFlare/blob/${gh_branch}/examples/getting_started/pt/nvflare_lightning_getting_started.ipynb`,
+    github_link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/getting_started/pt/nvflare_lightning_getting_started.ipynb`,
+    sections: [
+      {
+        id: "install-lightning",
+        type: "install",
+        framework: "lightning",
+        title: "Installation",
+        description:
+          "Install the required PyTorch Lightning dependencies for this example.",
+        code: installCode_lt,
+      },
+      {
+        id: "client-lightning",
+        type: "client",
+        framework: "lightning",
+        title: "Client Code (cifar10_lightning_fl.py)",
+        description:
+          "We use the Client API to convert the centralized training PyTorch Lightning code into federated learning code with only a few lines of changes highlighted below. Essentially the client will receive a model from NVIDIA FLARE, perform local training and validation, and then send the model back.",
+        code: clientCode_lt,
+        highlighted_lines: "97,116,118,123",
+      },
+      {
+        id: "server-lightning",
+        type: "server",
+        framework: "lightning",
+        title: "Server Code (fedavg.py)",
+        description:
+          "The ModelController API is used to write a federated routine with mechanisms for distributing and receiving models from clients. Here we implement the basic FedAvg algorithm using some helper functions from BaseFedAvg..",
+        code: serverCode_lt,
+        highlighted_lines: "7,17,23",
+      },
+      {
+        id: "job-lightning",
+        type: "job",
+        framework: "lightning",
+        title: "Job Code (fedavg_cifar10_lightning_job.py)",
+        description:
+          "Lastly we construct the job with our 'cifar10_lightning_fl.py' client script and 'FedAvg' server controller. The BaseFedJob automatically configures components for model persistence, model selection, and TensorBoard streaming. We then run the job with the FL simulator.",
+        code: jobCode_lt,
+      },
+      {
+        id: "run-lightning",
+        type: "run",
+        framework: "lightning",
+        title: "Run the Job",
+        description:
+        "To run the job with the simulator, copy the code and execute the job script, or run in Google Colab. Alternatively, export the job to a configuration and run the job in other modes.",
+        code: runCode_lt,
+      },
+    ],
+  },
+  {
+    id: "tensorflow",
+    colab_link: `https://colab.research.google.com/github/NVIDIA/NVFlare/blob/${gh_branch}/examples/getting_started/tf/nvflare_tf_getting_started.ipynb`,
+    github_link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/getting_started/tf/nvflare_tf_getting_started.ipynb`,
+    sections: [
+      {
+        id: "install-tensorflow",
+        type: "install",
+        framework: "tensorflow",
+        title: "Installation",
+        description:
+          "Install the required TensorFlow dependencies for this example.",
+        code: installCode_tf,
+      },
+      {
+        id: "client-tensorflow",
+        type: "client",
+        framework: "tensorflow",
+        title: "Client Code (cifar10_tf_fl.py)",
+        description:
+          "We use the Client API to convert the centralized training TensorFlow code into federated learning code with only a few lines of changes highlighted below. Essentially the client will receive a model from NVIDIA FLARE, perform local training and validation, and then send the model back.",
+        code: clientCode_tf,
+        highlighted_lines: "31,46,49,50,78-81,83",
+      },
+      {
+        id: "server-tensorflow",
+        type: "server",
+        framework: "tensorflow",
+        title: "Server Code (fedavg.py)",
+        description:
+          "The ModelController API is used to write a federated routine with mechanisms for distributing and receiving models from clients. Here we implement the basic FedAvg algorithm using some helper functions from BaseFedAvg..",
+        code: serverCode_tf,
+        highlighted_lines: "7,17,23",
+      },
+      {
+        id: "job-tensorflow",
+        type: "job",
+        framework: "tensorflow",
+        title: "Job Code (fedavg_cifar10_tf_job.py)",
+        description:
+          "Lastly we construct the job with our 'cifar10_tf_fl.py' client script and 'FedAvg' server controller. The BaseFedJob automatically configures components for model persistence, model selection, and TensorBoard streaming. We then run the job with the FL simulator.",
+        code: jobCode_tf,
+      },
+      {
+        id: "run-tensorflow",
+        type: "run",
+        framework: "tensorflow",
+        title: "Run the Job",
+        description:
+        "To run the job with the simulator, copy the code and execute the job script, or run in Google Colab. Alternatively, export the job to a configuration and run the job in other modes.",
+        code: runCode_tf,
+      },
+    ],
+  }
+]
+
+---
+
+<ClickTracker div_id="code_div" eventLabel="Example Code"/>
+<div id="code_div" class="bg-white py-24 sm:py-24">
+  <div class="mx-auto max-w-[1500px] px-6 lg:px-8">
+    <!-- Example Code Title & Description -->
+    <div class="mx-auto max-w-5xl text-center">
+      <h2
+        class="text-4xl lg:text-5xl font-bold lg:tracking-tight text-gray-900">
+        Example Code
+      </h2>
+      <p class="text-lg mt-4 text-slate-600 w-3/4 m-auto">
+        Try out these example code blocks below, where we showcase how simple it is to adapt
+        a popular machine learning framework to a federated learning scenario with NVIDIA FLARE.
+        For more details, refer to the getting started walkthrough guide above.
+      </p>
+    </div>
+
+    <div id="" class="flex flex-wrap -mb-px text-xl font-medium text-center place-content-center mt-4 space-x-3">
+
+      <!-- Framework Dropdown -->
+      <button id="dropdownFrameworkButton" data-dropdown-toggle="framework-dropdown" class="text-gray-900 dark:text-gray-400 m-0.5 hover:bg-gray-100 dark:bg-gray-800 dark:border-gray-600 dark:hover:bg-gray-700 rounded-lg py-1 px-2.5 inline-flex items-center justify-center bg-white border-gray-200 border">
+        <span id="framework-labels" class="inline-flex items-center">
+            <svg class="w-5 h-5 text-gray-800 dark:text-white me-1.5" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+              <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m8 8-4 4 4 4m8 0 4-4-4-4m-2-3-4 14"/>
+            </svg>
+            <!-- Framework Labels -->
+            <span id="framework-pytorch-label" class="text-sm font-semibold w-20">PyTorch</span>
+            <span id="framework-lightning-label" class="text-sm font-semibold w-20 hidden">Lightning</span>
+            <span id="framework-tensorflow-label" class="text-sm font-semibold w-20 hidden">TensorFlow</span>
+            <svg class="w-2.5 h-2.5 ms-3" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 10 6">
+              <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m1 1 4 4 4-4"/>
+            </svg>
+        </span>
+      </button>
+
+      <!-- Framework Dropdown Options -->
+      <div id="framework-dropdown" class="z-10 hidden bg-white divide-y divide-gray-100 rounded-lg shadow-lg dark:bg-gray-700 m-0.5 px-2.5">
+        <ul id="framework-tabs" class="flex-column h-fit space-y -mb-px py-2 text-sm" id="default-styled-tab" data-tabs-toggle="#default-styled-tab-content" data-tabs-active-classes="text-gray-900 bg-gray-100" data-tabs-inactive-classes="dark:border-transparent text-gray-500 hover:text-gray-900 dark:text-gray-400 border-transparent hover:border-gray-300 dark:border-gray-700 dark:hover:text-gray-300" role="tablist">
+          <li class="" role="presentation">
+              <button class="rounded-lg block px-4 py-2 dark:hover:text-white w-full" id="client-tab" data-tabs-target="#framework-pytorch-label" type="button" role="tab" aria-controls="profile" aria-selected="false">PyTorch</button>
+          </li>
+          <li class="" role="presentation">
+              <button class="rounded-lg block px-4 py-2 dark:hover:text-white w-full" id="controller-tab" data-tabs-target="#framework-lightning-label" type="button" role="tab" aria-controls="dashboard" aria-selected="false">Lightning</button>
+          </li>
+          <li class="" role="presentation">
+              <button class="rounded-lg block px-4 py-2 dark:hover:text-white w-full" id="job-tab" data-tabs-target="#framework-tensorflow-label" type="button" role="tab" aria-controls="settings" aria-selected="false">TensorFlow</button>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Google Colab Button -->
+      <a id="colab-button" href=`https://colab.research.google.com/github/NVIDIA/NVFlare/blob/${gh_branch}/examples/getting_started/pt/nvflare_pt_getting_started.ipynb` target="_blank" rel="noopener noreferrer" class="text-xs font-semibold text-gray-900 dark:text-gray-400 m-0.5 hover:bg-gray-100 dark:bg-gray-800 dark:border-gray-600 dark:hover:bg-gray-700 rounded-lg py-2 px-2.5 inline-flex items-center justify-center bg-white border-gray-200 border">
+        <span id="default-message" class="inline-flex items-center">
+          <svg class="w-0 h-3" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 18 20">
+              <img class="w-6 me-1.5" src={GoogleColab.src} alt="NVIDIA logo">
+          </svg>
+          <span class="text-sm font-semibold">Run in Google Colab</span>
+        </span>
+      </a>
+
+      <!-- View on Github Button -->
+      <a id="github-button" href=`https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/getting_started/pt/nvflare_pt_getting_started.ipynb` target="_blank" rel="noopener noreferrer" class="text-xs font-semibold text-gray-900 dark:text-gray-400 m-0.5 hover:bg-gray-100 dark:bg-gray-800 dark:border-gray-600 dark:hover:bg-gray-700 rounded-lg py-2 px-2.5 inline-flex items-center justify-center bg-white border-gray-200 border">
+        <span id="default-message" class="inline-flex items-center">
+          <svg class="w-4 h-4 text-black dark:text-white mr-2" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24">
+            <path fill-rule="evenodd" d="M12.006 2a9.847 9.847 0 0 0-6.484 2.44 10.32 10.32 0 0 0-3.393 6.17 10.48 10.48 0 0 0 1.317 6.955 10.045 10.045 0 0 0 5.4 4.418c.504.095.683-.223.683-.494 0-.245-.01-1.052-.014-1.908-2.78.62-3.366-1.21-3.366-1.21a2.711 2.711 0 0 0-1.11-1.5c-.907-.637.07-.621.07-.621.317.044.62.163.885.346.266.183.487.426.647.71.135.253.318.476.538.655a2.079 2.079 0 0 0 2.37.196c.045-.52.27-1.006.635-1.37-2.219-.259-4.554-1.138-4.554-5.07a4.022 4.022 0 0 1 1.031-2.75 3.77 3.77 0 0 1 .096-2.713s.839-.275 2.749 1.05a9.26 9.26 0 0 1 5.004 0c1.906-1.325 2.74-1.05 2.74-1.05.37.858.406 1.828.101 2.713a4.017 4.017 0 0 1 1.029 2.75c0 3.939-2.339 4.805-4.564 5.058a2.471 2.471 0 0 1 .679 1.897c0 1.372-.012 2.477-.012 2.814 0 .272.18.592.687.492a10.05 10.05 0 0 0 5.388-4.421 10.473 10.473 0 0 0 1.313-6.948 10.32 10.32 0 0 0-3.39-6.165A9.847 9.847 0 0 0 12.007 2Z" clip-rule="evenodd"/>
+          </svg>
+          <span class="text-sm font-semibold">View on Github</span>
+        </span>
+      </a>
+    </div>
+
+    <!-- Install wrapper -->
+    <div id="install-wrapper" class="mx-auto max-w-5xl py-4 text-left"></div>
+
+    <div class="mx-auto max-w-[1500px] py-4 text-left flex flex-col md:flex-row">
+      <!-- Client, Server, Job Tabs -->
+      <ul id="code-tabs" class="flex md:flex-col w-full flex-wrap md:w-auto h-fit md:border-r border-b md:border-b-0 space-y-0 md:space-y-2 space-x-2 md:space-x-0 text-xl font-medium md:mr-14 ms-1" id="default-styled-tab" data-tabs-toggle="#default-styled-tab-content" data-tabs-active-classes="stroke-nvidia text-nvidia hover:text-nvidia dark:text-nvidia-light dark:hover:text-nvidia-light border-b-2 md:border-nvidia border-nvidia dark:border-nvidia-light" data-tabs-inactive-classes="stroke-gray-500 hover:stroke-gray-600 dark:border-transparent text-gray-500 hover:text-gray-600 dark:text-gray-400 border-transparent hover:border-gray-300 dark:border-gray-700 dark:hover:text-gray-300" role="tablist">
+        <li class="flex-1" role="presentation">
+          <button class="w-36 md:w-36 inline-block p-5 border-r-0 md:border-r-2 md:border-b-0 font-bold text-left" id="client-tab" data-tabs-target="#client-wrapper" type="button" role="tab" aria-controls="client" aria-selected="false">
+            <span id="default-message" class="inline-flex items-center py-2.5">
+              <svg class="w-8 h-8 text-gray-800 dark:text-white mr-2" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+                <path stroke="" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v5m-3 0h6M4 11h16M5 15h14a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1Z"/>
+              </svg>
+              Client
+            </span>
+          </button>
+        </li>
+        <li class="flex-1" role="presentation">
+          <button class="w-36 md:w-36 inline-block p-5 border-r-0 md:border-r-2 md:border-b-0 font-bold text-left" id="server-tab" data-tabs-target="#server-wrapper" type="button" role="tab" aria-controls="server" aria-selected="false">
+            <span id="default-message" class="inline-flex items-center py-2.5">
+              <svg class="w-8 h-8 text-gray-800 dark:text-white mr-2" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+                <path stroke="" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4a1 1 0 0 0-1-1M5 12h14M5 12a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1m-2 3h.01M14 15h.01M17 9h.01M14 9h.01"/>
+              </svg>
+              Server
+            </span>
+          </button>
+        </li>
+        <li class="flex-1" role="presentation">
+          <button class="w-36 md:w-36 inline-block p-5 border-r-0 md:border-r-2 md:border-b-0 font-bold text-left" id="job-tab" data-tabs-target="#job-wrapper" type="button" role="tab" aria-controls="job" aria-selected="false">
+            <span id="default-message" class="inline-flex items-center py-2.5">
+              <svg class="w-8 h-8 text-gray-800 dark:text-white mr-2" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+                <path stroke="" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 3v4a1 1 0 0 1-1 1H5m5 4-2 2 2 2m4-4 2 2-2 2m5-12v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7.914a1 1 0 0 1 .293-.707l3.914-3.914A1 1 0 0 1 9.914 3H18a1 1 0 0 1 1 1Z"/>
+              </svg>
+              Job
+            </span>
+          </button>
+        </li>
+      </ul>
+      
+      <!-- Client wrapper -->
+      <div id="client-wrapper" class="py-4 text-left overflow-x-auto"></div>
+      <!-- Server wrapper -->
+      <div id="server-wrapper" class="py-4 text-left overflow-x-auto hidden"></div>
+      <!-- Job wrapper -->
+      <div id="job-wrapper" class="py-4 text-left overflow-x-auto hidden"></div>
+
+    </div>
+
+    <!-- Run wrapper -->
+    <div id="run-wrapper" class="mx-auto max-w-5xl py-4 text-left"></div>
+
+  </div>
+</div>
+
+<script src="prismjs/plugins/line-highlight/prism-line-highlight.min.js"></script>
+<script src="prismjs/plugins/line-numbers/prism-line-numbers.min.js"></script>
+<script src="prismjs/components/prism-python.min.js"></script>
+<script src="prismjs/plugins/normalize-whitespace/prism-normalize-whitespace.min.js"></script>
+
+<script define:vars={{frameworks}} type="module">
+  // @ts-nocheck
+  const frameworkLabels = document.querySelectorAll("#framework-labels > span");
+  const frameworkDropdown = document.getElementById('framework-dropdown');
+  const googleColab = document.getElementById('colab-button');
+  const githubButton = document.getElementById('github-button');
+
+  const codeTabs = document.getElementById("code-tabs");  
+
+  var sectionMap = {
+    "install": {
+      wrapper: document.getElementById('install-wrapper'), 
+      elements: [],
+    },
+    "client": {
+      wrapper: document.getElementById('client-wrapper'), 
+      elements: [],
+    },
+    "server": {
+      wrapper: document.getElementById('server-wrapper'), 
+      elements: [],
+    },
+    "job": {
+      wrapper: document.getElementById('job-wrapper'), 
+      elements: [],
+    },
+    "run": {
+      wrapper: document.getElementById('run-wrapper'), 
+      elements: [],
+    }
+  };
+
+  console.log(sectionMap);
+
+  // Loop over the code sections and create the code elements
+  frameworks.forEach((framework) => {
+    framework.sections.forEach((code_section) => {
+      const codeElement = createCodeElement(code_section);
+      sectionMap[code_section.type].wrapper.appendChild(codeElement);
+      sectionMap[code_section.type].elements.push(
+        {
+          section: code_section,
+          code: codeElement, 
+          framework: code_section.framework
+        }
+      );
+    });
+  });
+
+  frameworkDropdown.addEventListener('click', setCodeBlocks);
+  codeTabs.addEventListener('click', setCodeBlocks);
+
+  setCodeBlocks();
+
+  // Create code element for install, client, server, job, run
+  function createCodeElement(code_section) {
+    const codeElement = document.createElement('div');
+
+    var line_numbers = "";
+    var code_height = "";
+    var highlighted_lines = "";
+    if (code_section.type != "install" && code_section.type != "run") {
+      line_numbers = " line-numbers"
+      code_height = "h-[700px]";
+      if (code_section.hasOwnProperty("highlighted_lines")) {
+        highlighted_lines = "data-line=\"" + code_section.highlighted_lines + "\" "
+        console.log(code_section.title, code_section.type, code_section.hasOwnProperty("highlighted_lines"), highlighted_lines)
+      }
+    }
+
+    codeElement.innerHTML = `
+      <div class="mx-auto w-full max-w-5xl py-4 text-left" id="${code_section.id}" role="tabpanel" aria-labelledby="profile-tab">
+        <h2 class="text-2xl font-bold text-gray-900 mb-2">${code_section.title}</h2>
+        <p class="text-slate-900 mb-4">${code_section.description}</p>
+        <div class="relative rounded-lg border-2 border-nvidia-light border-solid bg-white text-sm text-pretty overflow-x-auto overflow-y-auto ${code_height}">
+          <button data-copy-to-clipboard-target="${code_section.id}-unformatted-block" data-copy-to-clipboard-content-type="innerHTML" data-copy-to-clipboard-html-entities="true" class="absolute top-2 right-2 z-10 text-gray-900 dark:text-gray-400 m-0.5 hover:bg-gray-100 dark:bg-gray-800 dark:border-gray-600 dark:hover:bg-gray-700 rounded-lg py-2 px-2.5 inline-flex items-center justify-center bg-white border-gray-200 border">
+            <span id="default-message" class="inline-flex items-center">
+              <svg class="w-3 h-3 me-1.5" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 18 20">
+                <path d="M16 1h-3.278A1.992 1.992 0 0 0 11 0H7a1.993 1.993 0 0 0-1.722 1H2a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2Zm-3 14H5a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2Zm0-4H5a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2Zm0-5H5a1 1 0 0 1 0-2h2V2h4v2h2a1 1 0 1 1 0 2Z"/>
+              </svg>
+              <span class="text-xs font-semibold">Copy</span>
+            </span>
+          </button>
+          <pre ${highlighted_lines}class="z-0${line_numbers}" style="background: white"><code id="${code_section.id}-block" class="language-python">${code_section.code}</code></pre>
+          <code id="${code_section.id}-unformatted-block" class="hidden">${code_section.code}</code>
+        </div>
+      </div>`;
+
+    return codeElement;
+  }
+
+  // Get active framework based on label of dropdown
+  function getActiveFramework() {
+    var activeFramework = "";
+
+    frameworkLabels.forEach((framework) => {
+      if (framework.checkVisibility()) {
+        activeFramework = framework.innerText;
+      }
+    });
+    return activeFramework;
+  }
+
+  // Set code blocks based on active framework
+  function setCodeBlocks() {
+    const active_framework = getActiveFramework().toLowerCase();
+
+    for (const [key, value] of Object.entries(sectionMap)) {
+      value.elements.forEach((element) => {
+        if (active_framework == element.framework) {
+          element.code.classList.remove('hidden');
+          Prism.highlightAllUnder(element.code);
+        } else {
+          element.code.classList.add('hidden');
+        }
+      });
+    };
+
+    frameworks.forEach((framework) => {
+      if (active_framework == framework.id) {
+        googleColab?.setAttribute("href", framework.colab_link);
+        githubButton?.setAttribute("href", framework.github_link);
+      }
+    }); 
+  }
+
+</script>

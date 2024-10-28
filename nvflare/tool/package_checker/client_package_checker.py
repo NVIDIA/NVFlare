@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,10 +16,12 @@ import os
 import sys
 
 from .check_rule import (
+    CheckNonPrimarySPGRPCServerAvailable,
+    CheckNonPrimarySPSocketServerAvailable,
     CheckOverseerRunning,
-    CheckPrimarySPInResponse,
-    CheckSPGRPCServerAvailable,
-    CheckSPSocketServerAvailable,
+    CheckPrimarySPGRPCServerAvailable,
+    CheckPrimarySPSocketServerAvailable,
+    CheckSPListInResponse,
 )
 from .package_checker import PackageChecker
 from .utils import NVFlareConfig, NVFlareRole
@@ -39,13 +41,18 @@ class ClientPackageChecker(PackageChecker):
         return False
 
     def init_rules(self, package_path):
-        self.dry_run_timeout = 5
         self.rules = [
             [
                 CheckOverseerRunning(name="Check overseer running", role=self.NVF_ROLE),
-                CheckPrimarySPInResponse(name="Check primary service provider available"),
-                CheckSPSocketServerAvailable(name="Check SP's socket server available"),
-                CheckSPGRPCServerAvailable(name="Check SP's GRPC server available"),
+                CheckSPListInResponse(name="Check service provider list available"),
+                CheckPrimarySPSocketServerAvailable(name="Check primary SP's socket server available"),
+                CheckPrimarySPGRPCServerAvailable(name="Check primary SP's GRPC server available"),
+                CheckNonPrimarySPSocketServerAvailable(
+                    name="Check non-primary SP's socket server available", required=False
+                ),
+                CheckNonPrimarySPGRPCServerAvailable(
+                    name="Check non-primary SP's GRPC server available", required=False
+                ),
             ]
         ]
 
@@ -53,6 +60,6 @@ class ClientPackageChecker(PackageChecker):
         command = (
             f"{sys.executable} -m {CLIENT_SCRIPT}"
             f" -m {self.package_path} -s {self.NVF_CONFIG}"
-            " --set secure_train=false config_folder=config"
+            " --set secure_train=true config_folder=config"
         )
         return command

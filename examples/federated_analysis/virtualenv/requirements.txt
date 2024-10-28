@@ -1,7 +1,0 @@
-nvflare>=2.1
-numpy
-itk-io
-monai
-pandas
-kaleido
-plotly

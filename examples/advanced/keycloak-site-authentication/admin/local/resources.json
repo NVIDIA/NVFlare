@@ -1,0 +1,14 @@
+{
+    "format_version": 2,
+    "handlers": [
+      {
+        "id": "auth",
+        "path": "admin_auth.AdminAuth",
+        "args": {
+          "orgs": {
+            "site-a": "http://localhost:8080/realms/myrealm/protocol/openid-connect/token"
+          }
+        }
+      }
+    ]
+}

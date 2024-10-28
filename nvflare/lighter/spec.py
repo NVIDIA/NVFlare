@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -50,6 +50,84 @@ class Participant(object):
         self.enable_byoc = enable_byoc
         self.props = kwargs
 
+        # check validity of properties
+        host_names = self.get_host_names()
+        if host_names:
+            for n in host_names:
+                err, reason = name_check(n, "host_name")
+                if err:
+                    raise ValueError(f"bad host name '{n}' in {self.name}: {reason}")
+
+        self._check_host_name("connect_to")
+        self._check_host_name("listening_host")
+        self._check_host_name("default_host")
+
+    def _check_host_name(self, prop_name: str):
+        host_name = self.get_prop(prop_name)
+        if host_name:
+            err, reason = name_check(host_name, "host_name")
+            if err:
+                raise ValueError(f"bad {prop_name} '{host_name}' in {self.name}: {reason}")
+
+    def get_host_names(self):
+        """Get the "host_names" attribute of this participant (server).
+        This attribute specifies additional host names for clients to access the FL Server.
+        Each name could be a domain name or IP address.
+
+        Returns: a list of host names or None if not specified.
+
+        """
+        host_names = self.get_prop("host_names")
+        if not host_names:
+            return None
+
+        if isinstance(host_names, str):
+            return [host_names]
+
+        if not isinstance(host_names, list):
+            raise ValueError(
+                f"bad host_names in {self.subject}: must be a str or list of str, but got {type(host_names)}"
+            )
+
+        return host_names
+
+    def get_connect_to(self):
+        """Get the "connect_to" attribute of this participant (client).
+        This value is for the client to connect to the FL server.
+        If not specified, then the client will connect to the FL server via its default host.
+
+        Returns: the value of "connect_to" attribute or None if not specified.
+
+        """
+        return self.get_prop("connect_to")
+
+    def get_listening_host(self):
+        """Get the "listening_host" attribute of this participant (client).
+        When specified, the client will be listening and other parties will use the specified value to connect to
+        this client. This client will receive a "server" cert in its startup kit.
+
+        Returns: the value of "listening_host" attribute or None if not specified.
+
+        """
+        return self.get_prop("listening_host")
+
+    def get_default_host(self) -> str:
+        """Get the default host name for accessing this participant (server).
+        If the "default_host" attribute is explicitly specified, then it's the default host.
+        If the "default_host" attribute is not explicitly specified, then use the "name" attribute.
+
+        Returns: a host name
+
+        """
+        h = self.get_prop("default_host")
+        if h:
+            return h
+        else:
+            return self.name
+
+    def get_prop(self, key: str, default=None):
+        return self.props.get(key, default)
+
 
 class Project(object):
     def __init__(self, name: str, description: str, participants: List[Participant]):
@@ -84,6 +162,14 @@ class Project(object):
                 else:
                     found.append(p)
         return found
+
+    def get_server(self):
+        """Get the server definition. Only one server is supported!
+
+        Returns: server participant
+
+        """
+        return self.get_participants_by_type("server", first_only=True)
 
 
 class Builder(ABC):
@@ -165,6 +251,7 @@ class Provisioner(object):
         workspace = os.path.join(self.root_dir, project.name)
         ctx = {"workspace": workspace}  # project is more static information while ctx is dynamic
         self._prepare_workspace(ctx)
+        ctx["project"] = project
         try:
             for b in self.builders:
                 b.initialize(ctx)
@@ -176,7 +263,7 @@ class Provisioner(object):
             for b in self.builders[::-1]:
                 b.finalize(ctx)
 
-        except BaseException as ex:
+        except Exception as ex:
             prod_dir = ctx.get("current_prod_dir")
             if prod_dir:
                 shutil.rmtree(prod_dir)

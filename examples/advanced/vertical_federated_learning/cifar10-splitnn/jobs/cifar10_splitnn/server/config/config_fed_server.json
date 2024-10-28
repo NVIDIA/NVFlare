@@ -1,0 +1,47 @@
+{
+  "format_version": 2,
+
+  "num_rounds": 15625,
+  "batch_size": 64,
+
+  "server": {
+    "heart_beat_timeout": 600
+  },
+  "task_data_filters": [],
+  "task_result_filters": [],
+  "components": [
+    {
+      "id": "persistor",
+      "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
+      "args": {
+        "model": {
+          "path": "pt.networks.cifar10_nets.ModerateCNN"
+        }
+      }
+    },
+    {
+      "id": "shareable_generator",
+      "path": "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator",
+      "args": {}
+    },
+    {
+      "id": "json_generator",
+      "path": "nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator",
+      "args": {}
+    }
+  ],
+  "workflows": [
+      {
+        "id": "splitnn_ctl",
+        "path": "nvflare.app_common.workflows.splitnn_workflow.SplitNNController",
+        "args": {
+            "num_rounds" : "{num_rounds}",
+            "batch_size": "{batch_size}",
+            "start_round": 0,
+            "persistor_id": "persistor",
+            "task_timeout": 0,
+            "shareable_generator_id": "shareable_generator"
+        }
+      }
+  ]
+}

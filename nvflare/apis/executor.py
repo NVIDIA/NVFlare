@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
 from abc import ABC, abstractmethod
 
 from nvflare.apis.signal import Signal
+from nvflare.job_config.defs import JobTargetType
 
 from .fl_component import FLComponent
 from .fl_context import FLContext
@@ -22,6 +23,52 @@ from .shareable import Shareable
 
 
 class Executor(FLComponent, ABC):
+    """Executors run on federated client side.
+
+    Each job can contain multiple applications or apps folder.
+    Each site (server or client) will have 1 app deployed for that job.
+    The server side app contains a Controller that will schedule `Task`.
+    The client side app contains an Executor that will execute corresponding logic based on `Task`'s name.
+
+    """
+
+    def __init__(self):
+        FLComponent.__init__(self)
+        self.unsafe = False
+
     @abstractmethod
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+        """Executes a task.
+
+        Args:
+            task_name (str): task name.
+            shareable (Shareable): input shareable.
+            fl_ctx (FLContext): fl context.
+            abort_signal (Signal): signal to check during execution to determine whether this task is aborted.
+
+        Returns:
+            An output shareable.
+        """
         pass
+
+    def get_job_target_type(self):
+        """This method is used by Job API.
+
+        Returns:
+
+        """
+        return JobTargetType.CLIENT
+
+    def add_to_fed_job(self, job, ctx, **kwargs):
+        """This method is used by Job API.
+
+        Args:
+            job: the Job object to add to
+            ctx: Job Context
+
+        Returns:
+
+        """
+        job.check_kwargs(args_to_check=kwargs, args_expected={"tasks": False})
+        tasks = kwargs.get("tasks", ["*"])
+        job.add_executor(obj=self, tasks=tasks, ctx=ctx)

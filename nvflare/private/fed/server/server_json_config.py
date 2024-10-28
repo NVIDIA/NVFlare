@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,12 @@
 import re
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.responder import Responder
+from nvflare.apis.fl_constant import SystemConfigs, SystemVarName
+from nvflare.apis.impl.controller import Controller
+from nvflare.apis.impl.wf_comm_server import WFCommServer
+from nvflare.apis.workspace import Workspace
+from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.private.fed_json_config import FedJsonConfigurator
 from nvflare.private.json_configer import ConfigContext, ConfigError
@@ -23,31 +28,53 @@ from nvflare.private.json_configer import ConfigContext, ConfigError
 from .server_runner import ServerRunnerConfig
 
 FL_PACKAGES = ["nvflare"]
-FL_MODULES = ["server", "client", "aggregators", "handlers", "pt", "app", "app_common", "workflows"]
+FL_MODULES = ["apis", "app_common", "widgets"]
 
 
 class WorkFlow:
-    def __init__(self, id, responder: Responder):
-        """Workflow is a responder with ID.
+    def __init__(self, id, controller: Controller):
+        """Workflow is a controller with ID.
+
+        Setting communicator to WFCommServer for server-side workflow.
 
         Args:
             id: identification
-            responder (Responder): A responder
+            controller (Controller): A controller
         """
         self.id = id
-        self.responder = responder
+        self.controller = controller
 
 
 class ServerJsonConfigurator(FedJsonConfigurator):
-    def __init__(self, config_file_name: str, exclude_libs=True):
+    def __init__(
+        self, workspace_obj: Workspace, config_file_name: str, args, app_root: str, kv_list=None, exclude_libs=True
+    ):
         """This class parses server config from json file.
 
         Args:
             config_file_name (str): json file to parse
             exclude_libs (bool): whether to exclude libs
         """
+        self.config_file_name = config_file_name
+        self.args = args
+        self.app_root = app_root
+
         base_pkgs = FL_PACKAGES
         module_names = FL_MODULES
+
+        if kv_list:
+            assert isinstance(kv_list, list), "cmd_vars must be list, but got {}".format(type(kv_list))
+            self.cmd_vars = parse_vars(kv_list)
+        else:
+            self.cmd_vars = {}
+
+        sys_vars = {
+            SystemVarName.JOB_ID: args.job_id,
+            SystemVarName.SITE_NAME: "server",
+            SystemVarName.WORKSPACE: args.workspace,
+            SystemVarName.SECURE_MODE: self.cmd_vars.get("secure_train", True),
+            SystemVarName.JOB_CUSTOM_DIR: workspace_obj.get_app_custom_dir(args.job_id),
+        }
 
         FedJsonConfigurator.__init__(
             self,
@@ -55,7 +82,16 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             base_pkgs=base_pkgs,
             module_names=module_names,
             exclude_libs=exclude_libs,
+            is_server=True,
+            sys_vars=sys_vars,
         )
+
+        if kv_list:
+            assert isinstance(kv_list, list), "cmd_vars must be list, but got {}".format(type(kv_list))
+            self.cmd_vars = parse_vars(kv_list)
+        else:
+            self.cmd_vars = {}
+        self.config_files = [config_file_name]
 
         self.runner_config = None
 
@@ -89,21 +125,19 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             if not isinstance(element, int) and not isinstance(element, float):
                 raise ConfigError('"task_request_interval" must be a number, but got {}'.format(type(element)))
 
-            if element < 1:
-                raise ConfigError('"task_request_interval" must >= 1, but got {}'.format(element))
+            if element <= 0:
+                raise ConfigError('"task_request_interval" must > 0, but got {}'.format(element))
 
             return
 
         if re.search(r"^workflows\.#[0-9]+$", path):
-            workflow = self.build_component(element)
-            if not isinstance(workflow, Responder):
-                raise ConfigError(
-                    '"workflow" must be a Responder or Controller object, but got {}'.format(type(workflow))
-                )
+            controller = self.authorize_and_build_component(element, config_ctx, node)
+            if not isinstance(controller, Controller):
+                raise ConfigError('"controller" must be a Controller object, but got {}'.format(type(controller)))
 
             cid = element.get("id", None)
             if not cid:
-                cid = type(workflow).__name__
+                cid = type(controller).__name__
 
             if not isinstance(cid, str):
                 raise ConfigError('"id" must be str but got {}'.format(type(cid)))
@@ -114,8 +148,12 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             if cid in self.components:
                 raise ConfigError('duplicate component id "{}"'.format(cid))
 
-            self.workflows.append(WorkFlow(cid, workflow))
-            self.components[cid] = workflow
+            communicator = WFCommServer()
+            self.handlers.append(communicator)
+            controller.set_communicator(communicator)
+
+            self.workflows.append(WorkFlow(cid, controller))
+            self.components[cid] = controller
             return
 
     def _get_all_workflows_ids(self):
@@ -127,8 +165,7 @@ class ServerJsonConfigurator(FedJsonConfigurator):
     def build_component(self, config_dict):
         t = super().build_component(config_dict)
         if isinstance(t, FLComponent):
-            if type(t).__name__ not in [type(h).__name__ for h in self.handlers]:
-                self.handlers.append(t)
+            self.handlers.append(t)
         return t
 
     def finalize_config(self, config_ctx: ConfigContext):
@@ -145,4 +182,16 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             task_result_filters=self.result_filter_table,
             components=self.components,
             handlers=self.handlers,
+        )
+
+        ConfigService.initialize(
+            section_files={},
+            config_path=[self.app_root],
+            parsed_args=self.args,
+            var_dict=self.cmd_vars,
+        )
+
+        ConfigService.add_section(
+            section_name=SystemConfigs.APPLICATION_CONF,
+            data=self.config_data,
         )

@@ -1,0 +1,50 @@
+title: "[Q&A] "
+labels: ["q&a"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please fill out the form so the community can better assist you!
+  - type: input
+    attributes:
+      label: Python version (`python3 -V`)
+      description: Python version (`python3 -V`)
+      placeholder: "3.10"
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: NVFlare version (`python3 -m pip list | grep "nvflare"`)
+      description: NVFlare version (`python3 -m pip list | grep "nvflare"`)
+      placeholder: "2.5.0"
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: NVFlare branch (if running examples, please use the branch that corresponds to the NVFlare version, `git branch`)
+      description: NVFlare branch (if running examples, please use the branch that corresponds to the NVFlare version, `git branch`)
+      placeholder: "2.5"
+  - type: input
+    attributes:
+      label: Operating system
+      description: Operating system (Ubuntu, MacOS, Windows, etc)
+      placeholder: "Ubuntu 22.04"
+    validations:
+      required: true
+  - type: checkboxes
+    attributes:
+      label: Have you successfully run any of the following examples?
+      options:
+        - label: hello-numpy-sag with simulator
+        - label: hello-pt with simulator
+        - label: hello-numpy-sag with POC
+        - label: hello-pt with POC
+  - type: textarea
+    id: questions
+    attributes:
+      label: Please describe your question
+      description: "Please describe your question. It would be better if you can attach some logs."
+      value: |
+        I run into the following issue and don't know what to do ...
+    validations:
+      required: true

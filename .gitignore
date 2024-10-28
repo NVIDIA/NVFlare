@@ -150,4 +150,20 @@ wrksp/*
 # Jupyter Notebook
 .ipynb_checkpoints
 
-nvflare/dashboard/application/static/**/*
+# nvflare/dashboard/application/static/**/*
+
+# ide
+.idea/
+.ipynb_checkpoints/
+
+# nvflare artifacts
+log.txt
+client_token.txt
+*.fl
+audit.log
+*.crt
+.__nvfl_sig.json
+
+# python
+__pycache__
+.pyc

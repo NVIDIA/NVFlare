@@ -1,0 +1,57 @@
+name: Deploy to gh-pages
+
+on:
+  # Trigger the workflow if any web/** files are modified
+  push:
+    branches:
+      - "main"
+      - "2.5"
+    paths:
+      - 'web/**'
+  workflow_dispatch:
+
+env:
+  site_path: ./web
+  version_path: /
+
+# Allow this job to clone the repo and create a page deployment
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update version_path for non-main branches
+        if: ${{ github.ref_type == 'branch' && github.ref_name != 'main'}}
+        run: echo version_path=/version/${{ github.ref_name }}/ >> $GITHUB_ENV
+
+      - name: Checkout your repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: "${{ env.site_path }}/package-lock.json"
+
+      - name: Install dependencies
+        run: npm install
+        working-directory: ${{ env.site_path }}
+
+      - name: Build project
+        run: npm run build
+        env:
+          PUBLIC_GH_BRANCH: ${{ github.ref_name }}
+        working-directory: ${{ env.site_path }}
+
+      - name: Deploy
+        uses: JamesIves/github-pages-deploy-action@v4.6.4
+        with:
+          branch: gh-pages
+          folder: ${{ env.site_path }}/dist
+          target-folder: ${{ env.version_path }}
+          clean-exclude: version

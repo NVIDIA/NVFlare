@@ -1,0 +1,318 @@
+---
+import Layout from "@layouts/Layout.astro";
+import ClickTracker from '@components/clickTracker.astro';
+
+import AlanLongcoy from '../images/headshots/AlanLongcoy.png';
+import AllenShen from '../images/headshots/AllenShen.jpg';
+import AnkitPatel from '../images/headshots/AnkitPatel.jpg';
+import ChesterChen from '../images/headshots/ChesterChen.png';
+import ChrisLaws from '../images/headshots/ChrisLaws.jpg';
+import DanielBeutel from '../images/headshots/DanielBeutel.jpeg';
+import EllieDobson from '../images/headshots/EllieDobson.jpg';
+import EricBoernert from '../images/headshots/EricBoernert.jpeg';
+import FahimeSheikhzadeh from '../images/headshots/FahimeSheikhzadeh.png';
+import HaishengXu from '../images/headshots/HaishengXu.jpg';
+import HolgerRoth from '../images/headshots/HolgerRoth.jpg';
+import IsaacYang from '../images/headshots/IsaacYang.jpg';
+import JacekChmiel from '../images/headshots/JacekChmiel.png';
+import JohnGarrett from '../images/headshots/JohnGarrett.jpg';
+import LisaSchneider from '../images/headshots/LisaSchneider.jpg'
+import MohammadManzari from '../images/headshots/MohammadManzari.jpg';
+import PlaceholderHeadshot from '../images/headshots/PlaceholderHeadshot.png';
+import RobinRoehm from '../images/headshots/RobinRoehm.jpg';
+import RyanProut from '../images/headshots/RyanProut.png';
+import TalEinat from '../images/headshots/TalEinat.jpg';
+import YanCheng from '../images/headshots/YanCheng.jpg';
+import ZiyueXu from '../images/headshots/ZiyueXu.jpg';
+
+const base_url = import.meta.env.BASE_URL;
+
+const talks = [
+  {
+    title: "Introduction",
+    subtitle: "Opening Remarks, NVIDIA FLARE Overview & Roadmap",
+    speakers: [
+      {
+        name: "Ankit Patel",
+        headshot: AnkitPatel.src,
+        bio: "Senior Director for Software Development Kits, APIs, and Tools at NVIDIA"
+      },
+      {
+        name: "Chester Chen",
+        headshot: ChesterChen.src,
+        bio: "Acting Product Manager and Senior Engineering Manager of NVIDIA FLARE"
+      }
+    ],
+    videoLink: "https://developer.download.nvidia.com/assets/Clara/flare/NVFLARE_DAY_2024_Part_01_Introduction.mp4",
+    slidesLink: "https://developer.download.nvidia.com/assets/Clara/flare/NVFLARE_DAY_2024_Main_Presentation.pdf"
+  },
+  {
+    title: "NVIDIA AV Team",
+    subtitle: "Autonomous Driving Federated Learning",
+    description: "To enable the training of AV models with combined CN+US multimodal raw sensor data, we proposed the NV-patented Round Robin Federated Learning (RRFL) and integrated it with the NVFLARE framework.",
+    speakers: [
+      {
+        name: "Hanson (Haisheng) Xu",
+        headshot: HaishengXu.src,
+        bio: "Autonomous Driving Algorithm Engineer at NVIDIA"
+      },
+      {
+        name: "Allen (Yichun) Shen",
+        headshot: AllenShen.src,
+        bio: "Senior Engineering Manager for AV Perception at NVIDIA"
+      }
+    ],
+    videoLink: "https://developer.download.nvidia.com/assets/Clara/flare/NVFLARE_DAY_2024_Part_02_AV.mp4",
+  },
+  {
+    title: "Roche",
+    subtitle: "Unlocking patient-level data at scale with federated computing to drive collaborative research and advance science",
+    description: "We'll present our exploration outcomes of Federated Analysis and Federated Learning in Personalized Healthcare to advance multicenter RWE studies and accelerate scientific discoveries.",
+    speakers: [
+      {
+        name: "Eric Boernert",
+        headshot: EricBoernert.src,
+        bio: "Product Manager for Federated Open Science at Roche"
+      },
+      {
+        name: "Jacek Chmiel",
+        headshot: JacekChmiel.src,
+        bio: "Technology Expert for Federated Open Science at Roche"
+      },
+      {
+        name: "Fahime Sheikhzadeh",
+        headshot: FahimeSheikhzadeh.src,
+        bio: "Principal Research Scientist at Roche"
+      }
+    ],
+    videoLink: "https://developer.download.nvidia.com/assets/Clara/flare/NVFLARE_DAY_2024_Part_03_Roche.mp4",
+    slidesLink: "https://developer.download.nvidia.com/assets/Clara/flare/NVFLARE_DAY_2024_FOS_Presentation.pdf"
+  },
+  {
+    title: "Royal Bank of Canada",
+    subtitle: "Confidential Federated Learning in a multi-party environment for product recommendations",
+    description: "By combining data mesh workflows with NVIDIA FLARE, product recommendations can be traced back to the specific data used for training, enabling business stakeholders to verify the fitness for business and regulatory compliance.",
+    speakers: [
+      {
+        name: "Iustina Vintila",
+        headshot: PlaceholderHeadshot.src,
+        bio: "Innovation Architect at Royal Bank of Canada"
+      },
+    ],
+    videoLink: "https://developer.download.nvidia.com/assets/Clara/flare/NVFLARE_DAY_2024_Part_04_RBC.mp4",
+    slidesLink: "https://developer.download.nvidia.com/assets/Clara/flare/NVFLARE_DAY_2024_RBC_CFL_Multi_Party_Product_Recommendations.pptx"
+  },
+  {
+    title: "Rhino Health",
+    subtitle: "Federated Computing In The Real World: From Drug Discovery to Fraud Detection",
+    description: "In this talk we will discuss some of the challenges we encountered at Rhino Health when working on real-world federated computing projects, as well as some tips for overcoming these challenges, highlighting some projects and use cases that were executed on the Rhino Federated Computing Platform.",
+    speakers: [
+      {
+        name: "Tal Tiano Einat",
+        headshot: TalEinat.src,
+        bio: "Lead Software Engineer at Rhino Health"
+      },
+      {
+        name: "Chris Laws",
+        headshot: ChrisLaws.src,
+        bio: "COO at Rhino Health"
+      }
+    ],
+    videoLink: "https://developer.download.nvidia.com/assets/Clara/flare/NVFLARE_DAY_2024_Part_05_Rhino_Health.mp4",
+    slidesLink: "https://developer.download.nvidia.com/assets/Clara/flare/NVFLARE_DAY_2024_Rhino_Health_Presentation.pptx"
+  },
+  {
+    title: "Flower Lab",
+    subtitle: "Running Flower Projects on NVFLARE",
+    description: "Join us for an exciting technical talk on the groundbreaking integration between two leading federated learning frameworks: Flower and NVFlare. In this talk, we will show how the integration works, how you can use it, and what's next for Flower-on-Flare.",
+    speakers: [
+      {
+        name: "Daniel J. Beutel",
+        headshot: DanielBeutel.src,
+        bio: "CEO and co-founder of Flower"
+      },
+    ],
+    videoLink: "https://developer.download.nvidia.com/assets/Clara/flare/NVFLARE_DAY_2024_Part_06_Flower.mp4",
+  },
+  {
+    title: "Apheris",
+    subtitle: "Federated data collaboration in BioPharma: leveraging NVFlare and BioNeMo",
+    description: "This talk will focus on how computational governance, with NVFlare at its heart, revolutionizes federated training and evaluation. We'll present a practical case study of a BioNeMo implementation on Apheris' product, highlighting effective strategies for governance, privacy, and security.",
+    speakers: [
+      {
+        name: "Robin Röhm",
+        headshot: RobinRoehm.src,
+        bio: "CEO and co-founder of Apheris"
+      },
+      {
+        name: "Ellie Dobson",
+        headshot: EllieDobson.src,
+        bio: "VP of Product at Apheris"
+      }
+    ],
+    videoLink: "https://developer.download.nvidia.com/assets/Clara/flare/NVFLARE_DAY_2024_Part_07_Apheris.mp4",
+    slidesLink: "https://developer.download.nvidia.com/assets/Clara/flare/NVFLARE_DAY_2024_Apheris_Presentation.pdf"
+  },
+  {
+    title: "University of Wisconsin",
+    subtitle: "Federated Learning in Medical Imaging: Enhancing Data Privacy and Advancing Healthcare",
+    description: "In this talk, we will discuss the primary motivations for adopting federated learning in medical imaging, delve into successful examples and their impact on improving diagnostic accuracy and patient outcomes, and envision the transformative potential to revolutionize personalized medicine, cross-institutional collaborations, and development of robust AI models.",
+    speakers: [
+      {
+        name: "Dr. John W. Garrett",
+        headshot: JohnGarrett.src,
+        bio: "Associate Professor in Departments of Radiology and Medical Physics"
+      },
+    ],
+    videoLink: "https://developer.download.nvidia.com/assets/Clara/flare/NVFLARE_DAY_2024_Part_08_Garrett.mp4",
+    slidesLink: "https://developer.download.nvidia.com/assets/Clara/flare/NVFLARE_DAY_2024_Garrett_Applications_To_Medical_Imaging.pdf"
+  },
+  {
+    title: "Oak Ridge National Lab",
+    subtitle: "Towards a Federating Learning Platform for HPC User Facilities",
+    description: "An overview of the ongoing effort to integrate  NVFlare into the Oak Ridge Leadership Computing Facilities (OLCF) infrastructure to enable domain agnostic Federated Learning campaigns for HPC.",
+    speakers: [
+      {
+        name: "Ryan Prout",
+        headshot: RyanProut.src,
+        bio: "Group Leader for Software Services Development Group in NCCS"
+      },
+      {
+        name: "Alan Longcoy",
+        headshot: AlanLongcoy.src,
+        bio: "Software Engineer for Software Services Development Group at ORNL"
+      }
+    ],
+    videoLink: "https://developer.download.nvidia.com/assets/Clara/flare/NVFLARE_DAY_2024_Part_09_ORNL.mp4",
+  },
+  {
+    title: "Deloitte",
+    subtitle: "FedRAG – A Secure Approach to Scaling Retrieval Augmented Generation",
+    description: "In this presentation, we introduce FedRAG, a new privacy-preserving solution for scaling RAG across a decentralized network of data providers. We also demonstrate how to implement FedRAG using the NVIDIA FLARE SDK and cloud-based trusted execution environments.",
+    speakers: [
+      {
+        name: "Mohammad Manzari",
+        headshot: MohammadManzari.src,
+        bio: "Manager of Privacy Enhancing Technologies R&D group at Deloitte Consulting"
+      },
+    ],
+    videoLink: "https://developer.download.nvidia.com/assets/Clara/flare/NVFLARE_DAY_2024_Part_10_Deloitte.mp4",
+  },
+  {
+    title: "OPTIMA",
+    subtitle: "Enabling Precision Oncology with Federated Learning: Insights from the OPTIMA Consortium",
+    description: "Lisa Schneider has taken on a pivotal role in implementing Federated Learning within the OPTIMA Consortium. OPTIMA (Optimal Treatment for Patients with Solid Tumours in Europe Through Artificial intelligence) aims to advance treatments and improve decision-making processes for physicians and patients with prostate, breast and lung cancer using machine learning.",
+    speakers: [
+      {
+        name: "Lisa Schneider",
+        headshot: LisaSchneider.src,
+        bio: "Machine Learning Research Scientist at Bayer AG"
+      },
+    ],
+  },
+  {
+    title: "FLARE Getting Started and LLM Support",
+    subtitle: "End-to-end Pythonic APIs, LLM support - PEFT, SFT, RAG",
+    speakers: [
+      {
+        name: "Holger Roth",
+        headshot: HolgerRoth.src,
+        bio: "Principal Federated Learning Scientist at NVIDIA"
+      },
+    ],
+    videoLink: "https://developer.download.nvidia.com/assets/Clara/flare/NVFLARE_DAY_2024_Part_11_FLARE_Getting_Started.mp4",
+    slidesLink: "https://developer.download.nvidia.com/assets/Clara/flare/NVFLARE_DAY_2024_Main_Presentation.pdf#page=11"
+  },
+  {
+    title: "Secure XGBoost",
+    subtitle: "Using Homomorphic Encryption for Secure Federated XGBoost Learning",
+    speakers: [
+      {
+        name: "Ziyue Xu",
+        headshot: ZiyueXu.src,
+        bio: "Senior Scientist at NVIDIA"
+      },
+    ],
+    videoLink: "https://developer.download.nvidia.com/assets/Clara/flare/NVFLARE_DAY_2024_Part_12_Secure_Federated_XGBoost.mp4",
+    slidesLink: "https://developer.download.nvidia.com/assets/Clara/flare/NVFLARE_DAY_2024_Main_Presentation.pdf#page=34"
+  },
+  {
+    title: "Confidential Computing and Looking Forward",
+    subtitle: "How FLARE integrates with Confidential Computing, Closing Remarks",
+    speakers: [
+      {
+        name: "Isaac Yang",
+        headshot: IsaacYang.src,
+        bio: "Senior Software Engineer at NVIDIA"
+      },
+      {
+        name: "Yan Cheng",
+        headshot: YanCheng.src,
+        bio: "Director of Engineering at NVIDIA and Chief Architect of NVIDIA FLARE"
+      }
+    ],
+    videoLink: "https://developer.download.nvidia.com/assets/Clara/flare/NVFLARE_DAY_2024_Part_13_Confidential_Computing_Closing.mp4",
+    slidesLink: "https://developer.download.nvidia.com/assets/Clara/flare/NVFLARE_DAY_2024_Main_Presentation.pdf#page=41"
+  },
+];
+---
+
+<Layout title="">
+  <ClickTracker div_id="flare_day_div" eventLabel="Flare Day"/>
+  <div id="flare_day_div" class="bg-white py-16 sm:py-16">
+    <div class="mx-auto max-w-[1600px] px-6 lg:px-8">
+      <div class="mx-auto max-w-5xl mt-10 flex justify-left">
+        <a href={base_url} class="text-sm font-semibold leading-6 text-nvidia">
+          <span aria-hidden="true">&larr;</span>
+          Back to home
+        </a>
+      </div>
+      <div class="mx-auto max-w-5xl mt-16 md:mt-0 text-center">
+        <h2 class="text-4xl lg:text-5xl font-bold lg:tracking-tight">
+          NVIDIA FLARE DAY 2024
+        </h2>
+        <p class="text-lg mt-4 text-slate-600 w-3/4 m-auto">
+          NVIDIA FLARE DAY is an event dedicated to showcasing the cutting-edge applications of Federated Learning across various industries.
+          See the talks from this year's event below.
+        </p>
+        <div>
+          {talks.map(talk => (
+            <div class="shadow-md border-gray-300 p-6 my-10 rounded-lg">
+              <h2 class="text-3xl mb-2">{talk.title}</h2>
+              <h3 class="text-xl text-gray-600 mb-4">{talk.subtitle}</h3>
+              <p class="text-gray-700 mb-6 text-left indent-8">{talk.description}</p>
+              
+              <div class="speakers flex flex-col md:flex-row lg:gap-16 mb-6 justify-center">
+                {talk.speakers.map(speaker => (
+                  <div class="speaker bg-white rounded-lg p-4 text-center lg:w-1/3">
+                    <div class="w-28 h-28 mx-auto rounded-full overflow-hidden mb-4">
+                        <img src={speaker.headshot} alt={`Headshot of ${speaker.name}`} class="object-cover w-full h-full" />
+                    </div>
+                    <h4 class="text-lg font-medium">{speaker.name}</h4>
+                    <p class="text-gray-600">{speaker.bio}</p>
+                  </div>
+                ))}
+              </div>
+              
+              <div class="flex flex-row gap-16 justify-center">
+                {talk.videoLink && (
+                  <div class="video mb-4">
+                    <h5 class="text-lg font-semibold">Watch the Talk:</h5>
+                    <a href={talk.videoLink} target="_blank" class="text-blue-600 hover:underline">Video Link</a>
+                  </div>
+                )}
+                
+                {talk.slidesLink && (
+                  <div class="slides">
+                    <h5 class="text-lg font-semibold">View Slides:</h5>
+                    <a href={talk.slidesLink} target="_blank" class="text-blue-600 hover:underline">Slides Link</a>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+</Layout>

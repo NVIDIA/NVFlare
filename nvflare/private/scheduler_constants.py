@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,5 +14,5 @@
 
 
 class ShareableHeader:
-    CHECK_RESOURCE_RESULT = "_check_resource_result"
+    IS_RESOURCE_ENOUGH = "_is_resource_enough"
     RESOURCE_RESERVE_TOKEN = "_resource_reserve_token"

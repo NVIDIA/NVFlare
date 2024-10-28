@@ -1,0 +1,44 @@
+{
+    "format_version": 2,
+    "client": {
+        "retry_timeout": 30,
+        "compression": "Gzip"
+    },
+    "components": [
+        {
+            "id": "resource_manager",
+            "path": "nvflare.app_common.resource_managers.list_resource_manager.ListResourceManager",
+            "args": {
+                "resources": {
+                    "gpu": [
+                        0,
+                        1,
+                        2,
+                        3
+                    ]
+                }
+            }
+        },
+        {
+            "id": "resource_consumer",
+            "path": "nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer",
+            "args": {}
+        },
+        {
+            "id": "job_manager",
+            "path": "nvflare.apis.impl.job_def_manager.SimpleJobDefManager",
+            "args": {
+                "uri_root": "/tmp/nvflare/hub/jobs/t2a",
+                "job_store_id": "job_store"
+            }
+        },
+        {
+            "id": "job_store",
+            "path": "nvflare.app_common.storages.filesystem_storage.FilesystemStorage"
+        },
+        {
+            "id": "app_deployer",
+            "path": "nvflare.app_common.hub.hub_app_deployer.HubAppDeployer"
+        }
+    ]
+}

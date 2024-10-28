@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@ class DXOAggregator(FLComponent):
         aggregation_weights: Optional[Dict[str, Any]] = None,
         expected_data_kind: DataKind = DataKind.WEIGHT_DIFF,
         name_postfix: str = "",
+        weigh_by_local_iter: bool = True,
     ):
         """Perform accumulated weighted aggregation for one kind of corresponding DXO from contributors.
 
@@ -38,16 +39,25 @@ class DXOAggregator(FLComponent):
                                 Defaults to None.
             expected_data_kind (DataKind): Expected DataKind for this DXO.
             name_postfix: optional postfix to give to class name and show in logger output.
+            weigh_by_local_iter (bool, optional): Whether to weight the contributions by the number of iterations
+                performed in local training in the current round. Defaults to `True`.
+                Setting it to `False` can be useful in applications such as homomorphic encryption to reduce
+                the number of computations on encrypted ciphertext.
+                The aggregated sum will still be divided by the provided weights and `aggregation_weights` for the
+                resulting weighted sum to be valid.
         """
         super().__init__()
         self.expected_data_kind = expected_data_kind
         self.aggregation_weights = aggregation_weights or {}
         self.logger.debug(f"aggregation weights control: {aggregation_weights}")
 
-        self.aggregation_helper = WeightedAggregationHelper(exclude_vars=exclude_vars)
+        self.aggregation_helper = WeightedAggregationHelper(
+            exclude_vars=exclude_vars, weigh_by_local_iter=weigh_by_local_iter
+        )
 
         self.warning_count = {}
         self.warning_limit = 10
+        self.processed_algorithm = None
 
         if name_postfix:
             self._name += name_postfix
@@ -72,7 +82,7 @@ class DXOAggregator(FLComponent):
             self.log_error(fl_ctx, f"Expected DXO but got {type(dxo)}")
             return False
 
-        if dxo.data_kind not in (DataKind.WEIGHT_DIFF, DataKind.WEIGHTS):
+        if dxo.data_kind not in (DataKind.WEIGHT_DIFF, DataKind.WEIGHTS, DataKind.METRICS):
             self.log_error(fl_ctx, "cannot handle data kind {}".format(dxo.data_kind))
             return False
 
@@ -82,24 +92,29 @@ class DXOAggregator(FLComponent):
 
         processed_algorithm = dxo.get_meta_prop(MetaKey.PROCESSED_ALGORITHM)
         if processed_algorithm is not None:
-            self.log_error(fl_ctx, f"unable to accept DXO processed by {processed_algorithm}")
-            return False
+            if self.processed_algorithm is None:
+                self.processed_algorithm = processed_algorithm
+            elif self.processed_algorithm != processed_algorithm:
+                self.log_error(
+                    fl_ctx,
+                    f"Only supports aggregation of data processed with the same algorithm ({self.processed_algorithm}) "
+                    f"but got algorithm: {processed_algorithm}",
+                )
+                return False
 
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
-        self.log_debug(fl_ctx, f"current_round: {current_round}")
-
-        data = dxo.data
-        if data is None:
-            self.log_error(fl_ctx, "no data to aggregate")
-            return False
-
-        n_iter = dxo.get_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND)
         if contribution_round != current_round:
             self.log_warning(
                 fl_ctx,
                 f"discarding DXO from {contributor_name} at round: "
                 f"{contribution_round}. Current round is: {current_round}",
             )
+            return False
+        self.log_debug(fl_ctx, f"current_round: {current_round}")
+
+        data = dxo.data
+        if data is None:
+            self.log_error(fl_ctx, "no data to aggregate")
             return False
 
         for item in self.aggregation_helper.get_history():
@@ -112,6 +127,7 @@ class DXOAggregator(FLComponent):
                 )
                 return False
 
+        n_iter = dxo.get_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND)
         if n_iter is None:
             if self.warning_count.get(contributor_name, 0) <= self.warning_limit:
                 self.log_warning(
@@ -153,7 +169,7 @@ class DXOAggregator(FLComponent):
             DXO: the weighted mean of accepted DXOs from contributors
         """
 
-        self.log_debug(fl_ctx, "Start aggregation")
+        self.log_debug(fl_ctx, f"Start aggregation with weights {self.aggregation_weights}")
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         self.log_info(fl_ctx, f"aggregating {self.aggregation_helper.get_len()} update(s) at round {current_round}")
         self.log_debug(fl_ctx, f"complete history {self.aggregation_helper.get_len()}")
@@ -161,4 +177,8 @@ class DXOAggregator(FLComponent):
         self.log_debug(fl_ctx, "End aggregation")
 
         dxo = DXO(data_kind=self.expected_data_kind, data=aggregated_dict)
+        if self.processed_algorithm is not None:
+            dxo.set_meta_prop(MetaKey.PROCESSED_ALGORITHM, self.processed_algorithm)
+            self.processed_algorithm = None
+
         return dxo

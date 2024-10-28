@@ -1,0 +1,147 @@
+{
+  "format_version": 2,
+  "min_clients": 4,
+  "num_rounds": 120,
+
+  "server": {
+    "heart_beat_timeout": 600
+  },
+
+  "task_data_filters": [],
+  "task_result_filters": [],
+
+  "components": [
+    {
+      "id": "persistor",
+      "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
+      "args": {
+        "model": "model",
+        "source_ckpt_file_full_name": null
+      }
+    },
+    {
+      "id": "model",
+      "path": "monai.networks.nets.DynUNet",
+      "args": {
+        "spatial_dims": 3,
+        "in_channels": 1,
+        "out_channels": 8,
+        "kernel_size": [[3, 3, 1], [3, 3, 3], [3, 3, 3], [3, 3, 3], [3, 3, 3], [3, 3, 3]],
+        "strides": [[1, 1, 1], [2, 2, 1], [2, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2]],
+        "upsample_kernel_size": [[2, 2, 1], [2, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2]],
+        "deep_supervision": true,
+        "deep_supr_num": 3
+      }
+    },
+    {
+      "id": "shareable_generator",
+      "path": "nvflare.app_opt.pt.fedopt.PTFedOptModelShareableGenerator",
+      "args": {
+        "device": "cpu",
+        "source_model": "model",
+        "optimizer_args": {
+          "path": "torch.optim.SGD",
+          "args": {
+            "lr": 1.0,
+            "momentum": 0.6
+          },
+          "config_type": "dict"
+        },
+        "lr_scheduler_args": {
+          "path": "torch.optim.lr_scheduler.CosineAnnealingLR",
+          "args": {
+            "T_max": "{num_rounds}",
+            "eta_min": 0.9
+          },
+          "config_type": "dict"
+        }
+      }
+    },
+    {
+      "id": "aggregator",
+      "path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
+      "args": {
+        "exclude_vars": null,
+        "aggregation_weights": {
+          "liver": 1.0,
+          "spleen": 1.0,
+          "pancreas": 1.0,
+          "kidney": 1.0
+        },
+        "expected_data_kind": "WEIGHT_DIFF"
+      }
+    },
+    {
+      "id": "metric_logger",
+      "path": "metric_logger.GlobalMetricLogger",
+      "args": {
+        "log_dir": "logs",
+        "log_name": "fl_val_meandice",
+        "aggregation_weights": {
+          "liver": 2.0,
+          "spleen": 1.0,
+          "pancreas": 2.0,
+          "kidney": 2.0
+        }
+      }
+    },
+    {
+      "id": "model_selector",
+      "path": "nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector",
+      "args": {
+        "weigh_by_local_iter": false,
+        "aggregation_weights": {
+          "liver": 2.0,
+          "spleen": 1.0,
+          "pancreas": 2.0,
+          "kidney": 2.0
+        }
+      }
+    },
+    {
+      "id": "model_locator",
+      "path": "model_locator.SimpleModelLocator",
+      "args": {}
+    },
+    {
+      "id": "formatter",
+      "path": "simple_formatter.SimpleFormatter",
+      "args": {}
+    },
+    {
+      "id": "report_generator",
+      "path": "report_generator.ReportGenerator",
+      "args": {}
+    }
+  ],
+
+  "workflows": [
+    {
+      "id": "scatter_and_gather",
+      "path": "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
+      "args": {
+        "min_clients": "{min_clients}",
+        "num_rounds": "{num_rounds}",
+        "start_round": 0,
+        "wait_time_after_min_received": 10,
+        "aggregator_id": "aggregator",
+        "persistor_id": "persistor",
+        "shareable_generator_id": "shareable_generator",
+        "train_task_name": "train",
+        "train_timeout": 0,
+        "task_check_period": 1
+      }
+    },
+    {
+      "id": "cross_site_model_eval",
+      "path": "nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval",
+      "args": {
+        "model_locator_id": "model_locator",
+        "formatter_id": "formatter",
+        "submit_model_timeout": 600,
+        "validation_timeout": 6000,
+        "cleanup_models": true
+      }
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,30 +11,61 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import subprocess
 from typing import List
 
 
-def get_host_gpu_ids() -> List:
-    try:
-        process = subprocess.Popen(
-            ["nvidia-smi", "--list-gpus"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-        )
-        result = process.communicate()
-        rc = process.returncode
-        if rc > 0:
-            raise Exception("Failed to get host gpu device Ids", result[0])
-        else:
-            # 'GPU 0: NVIDIA GeForce RTX 3090 (UUID: GPU-xxxx-xxxx-xxxx-xxx)\n'
-            if result[0].startswith("GPU"):
-                gpus = result[0].split("\n")
-                gpu_ids = [int(gpu.split(":")[0].split(" ")[1]) for gpu in gpus[:-1]]
-            else:
-                gpu_ids = []
-    except FileNotFoundError as e:
-        print(f"Failed to get gpu device Ids {e}")
-        print("Assume no gpu device in the host")
-        gpu_ids = []
+def has_nvidia_smi() -> bool:
+    from shutil import which
 
+    return which("nvidia-smi") is not None
+
+
+def use_nvidia_smi(query: str, report_format: str = "csv"):
+    if has_nvidia_smi():
+        result = subprocess.run(
+            ["nvidia-smi", f"--query-gpu={query}", f"--format={report_format}"],
+            capture_output=True,
+            text=True,
+        )
+        rc = result.returncode
+        if rc > 0:
+            raise Exception(f"Failed to call nvidia-smi with query {query}", result.stderr)
+        else:
+            return result.stdout.splitlines()
+    return None
+
+
+def _parse_gpu_mem(result: str = None, unit: str = "MiB") -> List:
+    gpu_memory = []
+    if result:
+        for i in result[1:]:
+            mem, mem_unit = i.split(" ")
+            if mem_unit != unit:
+                raise RuntimeError("Memory unit does not match.")
+            gpu_memory.append(int(mem))
+    return gpu_memory
+
+
+def get_host_gpu_memory_total(unit="MiB") -> List:
+    result = use_nvidia_smi("memory.total")
+    return _parse_gpu_mem(result, unit)
+
+
+def get_host_gpu_memory_free(unit="MiB") -> List:
+    result = use_nvidia_smi("memory.free")
+    return _parse_gpu_mem(result, unit)
+
+
+def get_host_gpu_ids() -> List:
+    """Gets GPU IDs.
+
+    Note:
+        Only supports nvidia-smi now.
+    """
+    result = use_nvidia_smi("index")
+    gpu_ids = []
+    if result:
+        for i in result[1:]:
+            gpu_ids.append(int(i))
     return gpu_ids

@@ -6,7 +6,7 @@ Provisioning in NVIDIA FLARE
 A necessary first step in establishing a federation is provisioning to establish the identities of the server, clients,
 and admin clients.
 
-When operating federated learning, communication channels use shared SSL certificates generated
+When operating federated learning, communication channels use shared TLS certificates generated
 during provisioning to establish the identities and secure communication between participants.
 
 Provisioning in NVIDIA FLARE generates mutual-trusted system-wide configurations for all participants
@@ -65,7 +65,9 @@ they can add API calls to Open Provision API to generate required outputs.
 Provisioner
 -----------
 This is the container class that owns all instances of Project, Workspace, Provision Context, Builders and Participants,
-as shown in the above diagram.  A typical usage of this class is like the following::
+as shown in the above diagram.  A typical usage of this class is like the following:
+
+.. code-block:: python
 
     provisioner = Provisioner(workspace_full_path, builders)
 
@@ -74,7 +76,9 @@ as shown in the above diagram.  A typical usage of this class is like the follow
 Project
 -------
 The Project class keeps information about participants.  Therefore, information of any participant can be retrieved from
-the Project instance::
+the Project instance:
+
+.. code-block:: python
 
     class Project(object):
        def __init__(self, name: str, description: str, participants: List[Participant]):
@@ -102,7 +106,9 @@ Participant
 -----------
 Each participant is one entity that communicates with other participants inside the NVIDIA FLARE system during runtime.
 Each participant has the following attributes: type, name, org and props.  The attribute ``props`` is a dictionary and
-stores additional information::
+stores additional information:
+
+.. code-block:: python
 
     class Participant(object):
        def __init__(self, type: str, name: str, org: str, *args, **kwargs):
@@ -145,7 +151,9 @@ builders being called after it will not be able to access the wip folder.
 
 .. note:: The collaboration among all builders is the responsibility of Open Provision API developers.
 
-Every builder has to subclass the Builder class and override one or more of these three methods::
+Every builder has to subclass the Builder class and override one or more of these three methods:
+
+.. code-block:: python
 
     class Builder(ABC):
        def initialize(self, ctx: dict):
@@ -187,14 +195,18 @@ is called before other builders' finalize methods and before other builders' bui
 Case 1: generating additional files
 -----------------------------------
 The developers would like to add a configuration file about a database server to admin participants.  The configuration
-is like this::
+is like this:
+
+.. code-block:: yaml
 
     [database]
     db_server = server name
     db_port = port_number
     user_name = admin's name
 
-As this requires adding one file to every admin participant, the developer can write a DBBuilder as follows::
+As this requires adding one file to every admin participant, the developer can write a DBBuilder as follows:
+
+.. code-block:: python
 
     class DBConfigBuilder(Builder):
        def __init__(self, db_server, db_port):
@@ -210,7 +222,9 @@ As this requires adding one file to every admin participant, the developer can w
                    f.write(f"db_port = {self.db_port}\n")
                    f.write(f"user_name = {admin.name}\n")
 
-And in project.yml, add an entry in the builders section::
+And in project.yml, add an entry in the builders section:
+
+.. code-block:: yaml
 
     - path: byob.DBConfigBuilder
       args:
@@ -219,9 +233,11 @@ And in project.yml, add an entry in the builders section::
 
 Case 2: enhancing an existing builder
 -------------------------------------
-The developer would like to push the generated zip file, done by nvflare.lighter.impl.workspace.DistributionBuilder, to
-a web server via a POST method.  This can be done easily by replacing the DistributionBuilder with a new builder as
-follows (after pip install requests)::
+The developer would like to push zip files of each generated folder, to
+a web server via a POST method.  This can be done easily by implementing a new builder as
+follows (after pip install requests):
+
+.. code-block:: python
 
     class WebPostDistributionBuilder(Builder):
        def __init__(self, url):
@@ -236,14 +252,18 @@ follows (after pip install requests)::
                files = {"upload_file": open(dest_zip_file, "rb")}
                r = requests.post(self.url, files=files)
 
-And just replace the existing one with the new builder under Builders in the project.yml::
+And just replace the existing one with the new builder under Builders in the project.yml:
+
+.. code-block:: yaml
 
     - path: byob.WebPostDistributionBuilder
       args:
         url: https://example.com/nvflare/provision
 
 For the above two cases, if developers opt to use Open Provision API directly instead of project.yml, they can do this
-(some code omitted for clarity)::
+(some code omitted for clarity):
+
+.. code-block:: python
 
     from byob import WebPostDistributionBuilder
     builders = list()
@@ -258,20 +278,26 @@ For the above two cases, if developers opt to use Open Provision API directly in
 Case 3: adding both new builders and participants of new types
 --------------------------------------------------------------
 The developers would like to add participants of type = 'gateway.'  In order to handle this type of participants, a new
-builder is needed to write gateway specific configuration.  First, specify that in project.yml::
+builder is needed to write gateway specific configuration.  First, specify that in project.yml:
+
+.. code-block:: yaml
 
     - name: gateway1
       type: gateway
       org: nvidia
       port: 8102
 
-or in API style::
+or in API style:
+
+.. code-block:: python
 
     participants = list()
     p = Participant(name="gateway1", type="gateway", org="nvidia", port=8102)
     participants.append(p)
 
-A new builder to write 'gateway.conf' can be implemented as follows (for reference)::
+A new builder to write 'gateway.conf' can be implemented as follows (for reference):
+
+.. code-block:: python
 
     class GWConfigBuilder(Builder):
       def build(self, project, ctx):
@@ -282,6 +308,71 @@ A new builder to write 'gateway.conf' can be implemented as follows (for referen
                   f.write("[gateway]\n")
                   f.write(f"name = {gw.name}\n")
                   f.write(f"port = {port}\n")
+
+.. _distribution_builder:
+
+Case 4: adding a builder for enabling the creation of zip archives for the startup kits
+---------------------------------------------------------------------------------------
+DistributionBuilder was included in NVIDIA FLARE before version 2.2.1 but has been removed from the
+default builders. You can make this builder available and add it as a builder in project.yml if you want to zip the startup kits:
+
+.. code-block:: python
+
+    import os
+    import shutil
+    import subprocess
+
+    from nvflare.lighter.spec import Builder, Project
+    from nvflare.lighter.utils import generate_password
+
+    class DistributionBuilder(Builder):
+        def __init__(self, zip_password=False):
+            """Build the zip files for each folder.
+            Creates the zip files containing the archives for each startup kit. It will add password protection if the
+            argument (zip_password) is true.
+            Args:
+                zip_password: if true, will create zipped packages with passwords
+            """
+            self.zip_password = zip_password
+
+        def build(self, project: Project, ctx: dict):
+            """Create a zip for each individual folder.
+            Note that if zip_password is True, the zip command will be used to encrypt zip files.  Users have to
+            install this zip utility before provisioning.  In Ubuntu system, use this command to install zip utility:
+            sudo apt-get install zip
+            Args:
+                project (Project): project instance
+                ctx (dict): the provision context
+            """
+            wip_dir = self.get_wip_dir(ctx)
+            dirs = [
+                name
+                for name in os.listdir(wip_dir)
+                if os.path.isdir(os.path.join(wip_dir, name)) and "nvflare_" not in name
+            ]
+            for dir in dirs:
+                dest_zip_file = os.path.join(wip_dir, f"{dir}")
+                if self.zip_password:
+                    pw = generate_password()
+                    run_args = ["zip", "-rq", "-P", pw, dest_zip_file + ".zip", ".", "-i", "startup/*"]
+                    os.chdir(dest_zip_file)
+                    try:
+                        subprocess.run(run_args)
+                        print(f"Password {pw} on {dir}.zip")
+                    except FileNotFoundError:
+                        raise RuntimeError("Unable to zip folders with password.  Maybe the zip utility is not installed.")
+                    finally:
+                        os.chdir(os.path.join(dest_zip_file, ".."))
+                else:
+                    shutil.make_archive(dest_zip_file, "zip", root_dir=os.path.join(wip_dir, dir), base_dir="startup")
+
+If the above code is made available at ``nvflare.lighter.impl.workspace.DistributionBuilder``, add the following to your project.yml at the bottom of the list of builders:
+
+.. code-block:: yaml
+
+    path: nvflare.lighter.impl.workspace.DistributionBuilder
+    args:
+      zip_password: true
 
 Takeaways for Custom Builders
 -----------------------------
@@ -305,12 +396,11 @@ own requirements:
 
     - :class:`WorkspaceBuilder<nvflare.lighter.impl.workspace.WorkspaceBuilder>`
     - :class:`TemplateBuilder<nvflare.lighter.impl.template.TemplateBuilder>`
+    - :class:`DockerBuilder<nvflare.lighter.impl.docker.DockerBuilder>`
+    - :class:`HelmChartBuilder<nvflare.lighter.impl.helm_chart.HelmChartBuilder>`
     - :class:`StaticFileBuilder<nvflare.lighter.impl.static_file.StaticFileBuilder>`
-    - :class:`AuthPolicyBuilder<nvflare.lighter.impl.auth_policy.AuthPolicyBuilder>`
     - :class:`CertBuilder<nvflare.lighter.impl.cert.CertBuilder>`
-    - :class:`HEBuilder<nvflare.lighter.impl.he.HEBuilder>`
     - :class:`SignatureBuilder<nvflare.lighter.impl.signature.SignatureBuilder>`
-    - :class:`DistributionBuilder<nvflare.lighter.impl.workspace.DistributionBuilder>`
 
 ::
 
@@ -318,33 +408,35 @@ own requirements:
     └── example_project
         ├── prod_00
         │   ├── admin@nvidia.com
-        │   │   └── startup
-        │   ├── localhost
-        │   │   └── startup
-        │   ├── site1
-        │   │   └── startup
-        │   └── site2
-        │       └── startup
-        ├── prod_01
-        │   ├── admin@nvidia.com
-        │   │   └── startup
-        │   ├── localhost
-        │   │   └── startup
-        │   ├── site1
-        │   │   └── startup
-        │   └── site2
-        │       └── startup
-        ├── prod_02
-        │   ├── admin@nvidia.com
-        │   │   └── startup
-        │   ├── localhost
-        │   │   └── startup
-        │   ├── site1
-        │   │   └── startup
-        │   └── site2
-        │       └── startup
+        │   │   ├── local
+        │   │   ├── startup
+        │   │   └── transfer
+        │   ├── nvflare_compose
+        │   ├── nvflare_hc
+        │   │   └── templates
+        │   ├── overseer
+        │   │   ├── local
+        │   │   ├── startup
+        │   │   └── transfer
+        │   ├── server1
+        │   │   ├── local
+        │   │   ├── startup
+        │   │   └── transfer
+        │   ├── server2
+        │   │   ├── local
+        │   │   ├── startup
+        │   │   └── transfer
+        │   ├── site-1
+        │   │   ├── local
+        │   │   ├── startup
+        │   │   └── transfer
+        │   └── site-2
+        │       ├── local
+        │       ├── startup
+        │       └── transfer
         ├── resources
         └── state
+
 
 The prod_NN folders contain the provisioning results.  The number, NN, increases every time the provision command runs successfully.
 
@@ -356,11 +448,15 @@ This is the key file that describes the information which provisioning tool will
 If there is no ``project.yml`` in your current working directory, simply run ``provision`` without any option.  It
 will ask you if you would like to have one sample copy of this file created.
 
-.. code-block:: shell
+.. code-block:: console
 
   (nvflare-venv) ~/workspace$ provision
-  No project.yml found in current folder.  Is it OK to generate one at /home/nvflare/workspace/project.yml for you? (y/N) y
-  /home/nvflare/workspace/project.yml was created.  Please edit it to fit your FL configuration.
+  No project.yml found in current folder.
+  There are two types of templates for project.yml.
+  1) project.yml for HA mode
+  2) project.yml for non-HA mode
+  3) Don't generate project.yml.  Exit this program.
+  Which type of project.yml should be generated at /home/nvflare/workspace/project.yml for you? (1/2/3) 
 
 
 Edit the project.yml configuration file to meet your project requirements:
@@ -370,69 +466,112 @@ Edit the project.yml configuration file to meet your project requirements:
     - "participants" describes the different parties in the FL system, distinguished by type. For all participants, "name"
       should be unique, and "org" should be defined in AuthPolicyBuilder. The "name" of the Overseer and servers should
       be in the format of fully qualified domain names. It is possible to use a unique hostname rather than FQDN, with
-      the IP mapped to the hostname by having it added to ``/etc/hosts``.
+      the IP mapped to the hostname by having it added to ``/etc/hosts``:
+
         - Type "overseer" describes the Overseer, with the "org", "name", "protocol", "api_root", and "port".
-        - Type "server" describes the FL servers, with the "org", "name", "fed_learn_port", "admin_port", and "enable_byoc".
+        - Type "server" describes the FL servers, with the "org", "name", "fed_learn_port", "admin_port", and "enable_byoc":
+
             - "fed_learn_port" is the port number for communication between the FL server and FL clients
             - "admin_port" is the port number for communication between the FL server and FL administration client
         - Type "client" describes the FL clients, with one "org" and "name" for each client as well as "enable_byoc" settings.
-        - Type "admin" describes the admin clients with the name being a unique email. The roles must be defined in AuthPolicyBuilder below.
+        - Type "admin" describes the admin clients with the name being a unique email. The role must be one of "project_admin", "org_admin", "lead" and "member".
     - "builders" contains all of the builders and the args to be passed into each. See the details in docstrings of the :ref:`bundled_builders`.
-    - See :ref:`system_components` for information on the components configured in StaticFileBuilder.
-
-.. note::
-
-   For each participant, the ``enable_byoc`` flag can be set to enable loading of code in the custom folder of applications.
-   If the ``enable_byoc`` flag is disabled, even if you have custom code in your application folder, it will not be loaded.
-
-   There is also a setting for ``allow_byoc`` in the rules for authorization groups (in AuthPolicyBuilder). This controls
-   whether or not applications containing custom code will be allowed to be uploaded and deployed to the participants
-   of the orgs of that rule group.
-
-   Here, ``byoc`` is referring to the custom code in the custom folder in an FL application. Code already in the python path
-   through other means is not considered ``byoc`` for these purposes.
 
 .. _project_yml:
 
 Default project.yml file
 ========================
 
-The following is an example of the default project.yml file.
+The following is an example of the default project.yml file of HA mode.
 
-.. literalinclude:: ../../nvflare/lighter/project.yml
+.. literalinclude:: ../../nvflare/lighter/ha_project.yml
   :language: yaml
 
 .. attention:: Please make sure that the Overseer and FL servers ports are accessible by all participating sites.
 
-*****************************
-Provision commandline options
-*****************************
 
-Running ``provision -h`` shows all available options.
+The following is an example of the default project.yml file of non-HA mode.
+
+.. literalinclude:: ../../nvflare/lighter/dummy_project.yml
+  :language: yaml
+
+.. attention:: Please make sure that the FL server ports are accessible by all participating sites.
+
+.. _provision_command:
+
+.. include:: ../user_guide/nvflare_cli/provision_command.rst
+
+.. _provisioning_output:
+
+*************************
+Provisioning Output
+*************************
+NVFLARE 2.2 supports the concept of "Site Config" to enable Org Admin to manage their own policies for resource management (resources.json), data privacy (privacy.json), as well as security control (authorization.json). The content of the Site Config is managed by the Org Admin for their own sites.
+
+To help Org Admin easily understand and manage their Site Config, the provisioning system will create the Site Config with default policy files.
+
+Furthermore, to help Org Admin install and operate their NVFLARE sites more easily, the Provision system will create a Readme.txt file that describes how to manage their sites.
+
+The output from the Provision process is a package (called Site Installation Kit). The Installation Kit is a folder of this structure::
+
+    Installation Kit
+        startup 
+            Certs, private key, fed_[server|client].json, shell scripts
+        local
+            resources.json - used by main and job process (on client)
+            privacy.json - used by job process only
+            authorization.json - used by main process only
+        Readme.txt: describe how to use scripts to install startup and site; how to manage content in the "site" folder
+
+
+Changes to Startup Kit Content
+
+1) Move authorization.json from "startup" to "site".
+2) For client sites, remove resource manager and resource consumer configuration from fed_client.json in "startup", and put them into resources.json in "site".
+3) For server sites, remove job scheduler configuration from fed_server.json in "startup", and put them into resources.json in "site".
+
+
+During the runtime, the workspace used by each participant will be updated, resulting in the following workspace structure:
+
+Workspace Structure
+===================
 
 .. code-block:: shell
 
-  (nvflare_venv) ~/workspace/repos/flare$ provision -h
-  usage: provision [-h] [-p PROJECT_FILE] [-w WORKSPACE] [-c CUSTOM_FOLDER] [-u]
-
-  optional arguments:
-    -h, --help                                               show this help message and exit
-    -p PROJECT_FILE, --project_file PROJECT_FILE                 file to describe FL project
-    -w WORKSPACE, --workspace WORKSPACE                          directory used by provision
-    -c CUSTOM_FOLDER, --custom_folder CUSTOM_FOLDER    additional folder to load python code
-    -u, --ui_tool                      Run provisioning UI tool to generate project.yml file
-
-Running ``provision`` without any options and without a project.yml file in the current working directory will prompt
-to copy a default project.yml to the current working directory.
-
-*************************
-Provisioning tool UI page
-*************************
-
-The ``-u`` option will open the provisioning tool helper UI page in your browser.  This tool is built to help with
-setting up and generating a project.yml to work with the reference configuration of default bundled builders in the
-NVIDIA FLARE package. You may need to add to or edit the builders section before running ``provision -p project.yml`` if you
-have customized builders.
-
-.. image:: ../resources/provisioning_ui.png
-    :height: 400px
+    {WSROOT}
+        Startup
+            Fed_server|client.json
+            Site cert, site private key, root certificate, and site 
+            Start.sh
+            Xxx.sh
+            yyy.sh
+        local
+            Resources.json.default
+            Authorization.json.default
+            Privacy.json.sample
+            Log.config.default
+            Resources.json
+            Authorization.json
+            Privacy.json
+            Log.config
+            custom/
+                local_code.xyz
+        Audit.txt
+        Log.txt
+        1234567 (run)
+                Log.txt
+                job_meta.json
+                App_xxx
+                    Fl_app.txt
+                    Config
+                        Config_fed_client.json
+                        …
+                    Custom
+                            xyz.py
+        234562 (run)
+                Log.txt
+                job_meta.json
+                App_xxx
+                    Fl_app.txt
+                    Config
+                    Custom

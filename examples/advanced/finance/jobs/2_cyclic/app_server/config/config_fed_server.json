@@ -1,0 +1,40 @@
+{
+    "format_version": 2,
+    "server": {
+        "heart_beat_timeout": 600,
+        "task_request_interval": 0.05
+    },
+    "task_data_filters": [],
+    "task_result_filters": [],
+    "components": [
+        {
+            "id": "persistor",
+            "path": "nvflare.app_opt.xgboost.tree_based.model_persistor.XGBModelPersistor",
+            "args": {
+                "save_name": "xgboost_model.json",
+                "load_as_dict": false
+            }
+        },
+        {
+            "id": "shareable_generator",
+            "path": "nvflare.app_opt.xgboost.tree_based.shareable_generator.XGBModelShareableGenerator",
+            "args": {}
+        }
+    ],
+    "workflows": [
+        {
+            "id": "cyclic_ctl",
+            "path": "nvflare.app_common.workflows.cyclic_ctl.CyclicController",
+            "args": {
+                "num_rounds": 50,
+                "task_assignment_timeout": 60,
+                "persistor_id": "persistor",
+                "shareable_generator_id": "shareable_generator",
+                "task_name": "train",
+                "task_check_period": 0.01,
+                "persist_every_n_rounds": 0,
+                "snapshot_every_n_rounds": 0
+            }
+        }
+    ]
+}

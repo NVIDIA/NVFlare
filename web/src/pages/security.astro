@@ -1,0 +1,78 @@
+---
+import Layout from "@layouts/Layout.astro";
+import DataPrivacy from '../images/data_privacy_arch.png'
+import FedAuth from '../images/fed_auth_arch.png'
+
+const base_url = import.meta.env.BASE_URL;
+
+---
+
+<Layout title="">
+  <div>
+    <div class="bg-white py-16 sm:py-16">
+      <div class="mx-auto max-w-[1600px] px-6 lg:px-8">
+        <div class="mx-auto max-w-5xl mt-10 flex justify-left">
+          <a href={base_url} class="text-sm font-semibold leading-6 text-nvidia">
+            <span aria-hidden="true">&larr;</span>
+            Back to home
+          </a>
+        </div>
+        <div class="mx-auto max-w-5xl mt-16 md:mt-0 text-center">
+          <h2 class="text-4xl lg:text-5xl font-bold lg:tracking-tight">
+            NVIDIA FLARE Security
+          </h2>
+          <p class="text-lg mt-4 text-slate-600 w-3/4 m-auto">
+            NVIDIA FLARE implements comprehensive security measures across various areas.
+          </p>
+
+          <div class="mx-auto lg:mx-0 text-left text-lg py-20 text-slate-600">
+
+              <h2><span class="text-4xl lg:text-xl font-bold lg:tracking-tight text-gray-900 font-bold">Identity Security</span>:
+              Ensures authentication and authorization of communicating parties.</h2>
+
+              <ul class="list-disc mt-2 ml-6 mb-6">
+                <li><span class="font-bold">Authentication</span>: Utilizes Public Key Infrastructure (PKI) technology. For FL projects, a Root CA with a self-signed root certificate issues all necessary certificates for communicating parties.</li>
+                <li><span class="font-bold">Roles</span>: Defines roles such as Project Admin, Organization Admin, Lead, and Member.</li>
+                <li><span class="font-bold">Centralized Authorization</span>: Enforces authorization based on user roles via NVIDIA FLARE servers.</li>
+                <li><span class="font-bold">Federated Authorization</span>: Allows each site to enforce their own defined authorization rules.</li>
+                <li><span class="font-bold">Site Policy Management</span>: Enables sites to define their own policies for resource management, authorization, and privacy protection.</li>
+                <li><span class="font-bold">Event-Based Plugins</span>: Supports site-specific authentication integration with site authentication systems and allows site-specific plugins for authorization enforcement.</li>
+                <li><span class="font-bold">Data Privacy Enforcement</span>: Uses a filter mechanism to enforce data privacy policies.</li>
+              </ul>
+
+              <img class="mt-10 mb-10 flex items-center w-2/3" src={FedAuth.src} alt="federated authorization">
+
+              <span class="text-4xl lg:text-xl font-bold lg:tracking-tight text-gray-900 font-bold">Communication Security</span>:
+              Ensures the confidentiality of data communication messages.
+
+              <ul class="list-disc ml-6 mb-6">
+                <li><span class="font-bold">Message Serialization</span>: Applies techniques to ensure safe serialization and deserialization processes between communicating parties.</li>
+              </ul>
+
+              <h2 class="mb-6"><span class="text-4xl lg:text-xl font-bold lg:tracking-tight text-gray-900 font-bold">Component Security</span>:
+              Leverages a plugin mechanism to detect unsafe components.</h2>
+
+              <h2 class="mb-6"><span class="text-4xl lg:text-xl font-bold lg:tracking-tight text-gray-900 font-bold">Auditing</span>:
+              Provides built-in audit logs for increased transparency and accountability.</h2>
+
+              <h2 ><span class="text-4xl lg:text-xl font-bold lg:tracking-tight text-gray-900 font-bold">Privacy Protection</span>:
+              Offers multiple approaches to safeguard data privacy.</h2>
+
+              <ul class="list-disc mt-2 ml-6 mb-6">
+                <li><span class="font-bold">Filtering Mechanism</span></li>
+                <li><span class="font-bold">Traditional Privacy Enhancing Technologies (PET)</span>: Includes differential privacy techniques.</li>
+                <li><span class="font-bold">Homomorphic Encryption</span></li>
+                <li><span class="font-bold">Multi-party Private Set Intersection (PSI)</span></li>
+                <li><span class="font-bold">Confidential Computing</span></li>
+              </ul>
+
+              <img class="mt-10 mb-10 flex items-center w-2/3" src={DataPrivacy.src} alt="data privacy">
+
+            To learn more, visit the <a class="text-nvidia" href="https://nvflare.readthedocs.io/en/main/user_guide/nvflare_security.html">Security</a> section in our documention.
+
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</Layout>

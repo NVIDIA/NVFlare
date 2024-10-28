@@ -1,0 +1,12 @@
+{
+  "name": "multiorgan-segmentation",
+  "resource_spec": {},
+  "min_clients": 4,
+  "deploy_map": {
+    "server": ["server"],
+    "liver": ["liver"],
+    "spleen": ["spleen"],
+    "pancreas": ["pancreas"],
+    "kidney": ["kidney"]
+  }
+}

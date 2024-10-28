@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,19 +22,8 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
-from nvflare.lighter.spec import Builder
-
-
-def serialize_pri_key(pri_key):
-    return pri_key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.TraditionalOpenSSL,
-        encryption_algorithm=serialization.NoEncryption(),
-    )
-
-
-def serialize_cert(cert):
-    return cert.public_bytes(serialization.Encoding.PEM)
+from nvflare.lighter.spec import Builder, Participant
+from nvflare.lighter.utils import serialize_cert, serialize_pri_key
 
 
 class CertBuilder(Builder):
@@ -74,7 +63,7 @@ class CertBuilder(Builder):
             self.persistent_state["root_pri_key"] = serialize_pri_key(self.pri_key).decode("ascii")
 
     def _build_write_cert_pair(self, participant, base_name, ctx):
-        subject = participant.subject
+        subject = self.get_subject(participant)
         if self.persistent_state and subject in self.persistent_state:
             cert = x509.load_pem_x509_certificate(
                 self.persistent_state[subject]["cert"].encode("ascii"), default_backend()
@@ -82,6 +71,17 @@ class CertBuilder(Builder):
             pri_key = serialization.load_pem_private_key(
                 self.persistent_state[subject]["pri_key"].encode("ascii"), password=None, backend=default_backend()
             )
+            if participant.type == "admin":
+                cn_list = cert.subject.get_attributes_for_oid(NameOID.UNSTRUCTURED_NAME)
+                for cn in cn_list:
+                    role = cn.value
+                    new_role = participant.props.get("role")
+                    if role != new_role:
+                        err_msg = (
+                            f"{participant.name}'s previous role is {role} but is now {new_role}.\n"
+                            + "Please delete existing workspace and provision from scratch."
+                        )
+                        raise RuntimeError(err_msg)
         else:
             pri_key, cert = self.get_pri_key_cert(participant)
             self.persistent_state[subject] = dict(
@@ -92,11 +92,19 @@ class CertBuilder(Builder):
             f.write(serialize_cert(cert))
         with open(os.path.join(dest_dir, f"{base_name}.key"), "wb") as f:
             f.write(serialize_pri_key(pri_key))
-        pkcs12 = serialization.pkcs12.serialize_key_and_certificates(
-            subject.encode("ascii"), pri_key, cert, None, serialization.BestAvailableEncryption(subject.encode("ascii"))
-        )
-        with open(os.path.join(dest_dir, f"{base_name}.pfx"), "wb") as f:
-            f.write(pkcs12)
+        if base_name == "client" and (listening_host := participant.get_listening_host()):
+            tmp_participant = Participant(
+                type="server",
+                name=participant.name,
+                org=participant.org,
+                default_host=listening_host,
+            )
+            tmp_pri_key, tmp_cert = self.get_pri_key_cert(tmp_participant)
+            with open(os.path.join(dest_dir, "server.crt"), "wb") as f:
+                f.write(serialize_cert(tmp_cert))
+            with open(os.path.join(dest_dir, "server.key"), "wb") as f:
+                f.write(serialize_pri_key(tmp_pri_key))
+
         with open(os.path.join(dest_dir, "rootCA.pem"), "wb") as f:
             f.write(self.serialized_cert)
 
@@ -105,7 +113,8 @@ class CertBuilder(Builder):
         ctx["root_cert"] = self.root_cert
         ctx["root_pri_key"] = self.pri_key
         overseer = project.get_participants_by_type("overseer")
-        self._build_write_cert_pair(overseer, "overseer", ctx)
+        if overseer:
+            self._build_write_cert_pair(overseer, "overseer", ctx)
 
         servers = project.get_participants_by_type("server", first_only=False)
         for server in servers:
@@ -119,14 +128,27 @@ class CertBuilder(Builder):
 
     def get_pri_key_cert(self, participant):
         pri_key, pub_key = self._generate_keys()
-        subject = participant.subject
+        subject = self.get_subject(participant)
         subject_org = participant.org
         if participant.type == "admin":
-            role = participant.props.get("role")
+            role = participant.get_prop("role")
         else:
             role = None
-        cert = self._generate_cert(subject, subject_org, self.issuer, self.pri_key, pub_key, role=role)
+
+        server = participant if participant.type == "server" else None
+        cert = self._generate_cert(
+            subject,
+            subject_org,
+            self.issuer,
+            self.pri_key,
+            pub_key,
+            role=role,
+            server=server,
+        )
         return pri_key, cert
+
+    def get_subject(self, participant):
+        return participant.subject
 
     def _generate_keys(self):
         pri_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
@@ -134,10 +156,20 @@ class CertBuilder(Builder):
         return pri_key, pub_key
 
     def _generate_cert(
-        self, subject, subject_org, issuer, signing_pri_key, subject_pub_key, valid_days=360, ca=False, role=None
+        self,
+        subject,
+        subject_org,
+        issuer,
+        signing_pri_key,
+        subject_pub_key,
+        valid_days=360,
+        ca=False,
+        role=None,
+        server: Participant = None,
     ):
         x509_subject = self._x509_name(subject, subject_org, role)
         x509_issuer = self._x509_name(issuer)
+
         builder = (
             x509.CertificateBuilder()
             .subject_name(x509_subject)
@@ -151,7 +183,6 @@ class CertBuilder(Builder):
                 + datetime.timedelta(days=valid_days)
                 # Sign our certificate with our private key
             )
-            .add_extension(x509.SubjectAlternativeName([x509.DNSName(subject)]), critical=False)
         )
         if ca:
             builder = (
@@ -165,6 +196,18 @@ class CertBuilder(Builder):
                 )
                 .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=False)
             )
+
+        if server:
+            # This is to generate a server cert.
+            # Use SubjectAlternativeName for all host names
+            default_host = server.get_default_host()
+            host_names = server.get_host_names()
+            sans = [x509.DNSName(default_host)]
+            if host_names:
+                for h in host_names:
+                    if h != default_host:
+                        sans.append(x509.DNSName(h))
+            builder = builder.add_extension(x509.SubjectAlternativeName(sans), critical=False)
         return builder.sign(signing_pri_key, hashes.SHA256(), default_backend())
 
     def _x509_name(self, cn_name, org_name=None, role=None):

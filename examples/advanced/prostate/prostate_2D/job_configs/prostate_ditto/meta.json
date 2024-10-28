@@ -1,0 +1,9 @@
+{
+  "name": "prostate_ditto",
+  "resource_spec": {},
+  "deploy_map": {
+    "app": [
+      "@ALL"
+    ]
+  }
+}

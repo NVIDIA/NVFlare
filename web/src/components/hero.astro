@@ -1,0 +1,114 @@
+---
+import NvidiaLogo from '../images/nvidia_eye.png'
+import NvflareAnimation from '../images/nvflare_graphic_animation.mp4'
+import ClickTracker from './clickTracker.astro';
+
+const gh_branch = import.meta.env.PUBLIC_GH_BRANCH;
+const base_url = import.meta.env.BASE_URL;
+---
+<ClickTracker div_id="hero_div" eventLabel="Hero"/>
+<div id="hero_div" class="bg-white">
+  <div class="relative isolate overflow-hidden bg-black">
+    <div class="mx-auto max-w-7xl pb-24 pt-10 sm:pb-32 lg:grid lg:grid-cols-2 lg:gap-x-8 lg:px-8 lg:py-12">
+      <div class="px-6 lg:px-0 lg:pt-4">
+        <div class="mx-auto max-w-2xl">
+          <div class="max-w-lg">
+            <div class="mt-24 sm:mt-32 lg:mt-16 space-x-1">
+
+              <!-- Version Dropdown -->
+              <button id="dropdownVersionButton" data-dropdown-toggle="version-dropdown" class="text-gray-900 dark:text-gray-400 m-0.5 hover:bg-gray-300 dark:bg-gray-800 dark:border-gray-600 dark:hover:bg-gray-700 rounded-lg py-1 px-2.5 inline-flex items-center justify-center bg-gray-200 border-gray-200 border">
+                <span class="inline-flex items-center text-left">
+                    <span class="text-sm font-semibold w-14">v: {gh_branch}</span>
+                    <svg class="w-2.5 h-2.5" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 10 6">
+                      <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m1 1 4 4 4-4"/>
+                    </svg>
+                </span>
+              </button>
+
+              <!-- Version Dropdown Options -->
+              <div id="version-dropdown" class="z-10 hidden bg-gray-200 divide-y divide-gray-100 rounded-lg shadow-lg dark:bg-gray-700 m-0.5 px-2.5 text-left">
+                <ul id="version-tabs" class="flex-column h-fit space-y -mb-px py-2 text-sm text-gray-500 w-full">
+                  <li>
+                      <a href="/NVFlare" class=`rounded-lg block px-4 py-2 dark:hover:text-white hover:text-gray-900 ${gh_branch == "main" ? "bg-gray-300 text-gray-900" : ""}`>main</a>
+                  </li>
+                  <li >
+                      <a href="/NVFlare/version/2.5" class=`rounded-lg block px-4 py-2 dark:hover:text-white hover:text-gray-900 ${gh_branch == "2.5" ? "bg-gray-300 text-gray-900" : ""}`>2.5</a>
+                  </li>
+                </ul>
+              </div>
+
+              <a
+                href="https://nvflare.readthedocs.io/en/main/whats_new.html"
+                class="inline-flex space-x-6">
+                <span
+                  class="rounded-full bg-nvidia/20 px-3 py-1 text-sm font-semibold leading-6 text-nvidia ring-1 ring-inset ring-nvidia/10"
+                  >What's new</span
+                >
+              </a>
+              <a
+                href="flareDay"
+                class="inline-flex space-x-6">
+                <span
+                  class="inline-flex items-center space-x-1 text-base font-medium text-gray-200 hover:text-gray-100">
+                  <span class="border-b-2 border-nvidia">NVIDIA FLARE DAY 2024</span>
+                  <svg
+                    class="h-8 w-8 text-gray-400"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    aria-hidden="true">
+                    <path
+                      fill-rule="evenodd"
+                      d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z"
+                      clip-rule="evenodd"></path>
+                  </svg>
+                </span>
+              </a>
+            </div>
+            <img class="mt-6 flex items-center w-1/2" src={NvidiaLogo.src} alt="NVIDIA logo">
+            <h1
+              class="mt-10 text-4xl font-bold tracking-tight text-neutral-200 sm:text-6xl">
+              NVIDIA FLARE
+            </h1>
+
+            <p class="mt-4 text-lg leading-8 text-neutral-400">
+              NVIDIA FLARE™ (NVIDIA Federated Learning Application Runtime
+              Environment) is a domain-agnostic, open-source, and extensible SDK
+              for Federated Learning. It allows researchers and data scientists
+              to adapt existing ML/DL workflow to a federated paradigm and
+              enables platform developers to build a secure, privacy-preserving
+              offering for a distributed multi-party collaboration.
+            </p>
+            <div class="mt-10 mb-10 items-center space-x-1">
+              <a
+                href="https://nvflare.readthedocs.io/en/main/index.html"
+                class="inline-flex rounded-md bg-nvidia px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-green-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-nvidia"
+                >Documentation</a
+              >
+              <a
+                href="catalog"
+                class="inline-flex whitespace-nowrap rounded-md bg-clear ring-inset ring-2 ring-gray-300 px-3.5 py-2.5 text-sm font-semibold text-gray-200 shadow-sm hover:bg-gray-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-nvidia"
+                >Tutorial Catalog</a
+              >
+              <a
+                href=`https://github.com/NVIDIA/NVFlare/tree/${gh_branch}`
+                class="inline-flex text-sm font-semibold leading-6 text-gray-200 hover:text-neutral-100 py-2.5 align-middle"
+                >
+                <span id="default-message" class="inline-flex py-2.5">
+                <svg class="invert w-6 h-6 text-black dark:text-white mr-2" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24">
+                  <path fill-rule="evenodd" d="M12.006 2a9.847 9.847 0 0 0-6.484 2.44 10.32 10.32 0 0 0-3.393 6.17 10.48 10.48 0 0 0 1.317 6.955 10.045 10.045 0 0 0 5.4 4.418c.504.095.683-.223.683-.494 0-.245-.01-1.052-.014-1.908-2.78.62-3.366-1.21-3.366-1.21a2.711 2.711 0 0 0-1.11-1.5c-.907-.637.07-.621.07-.621.317.044.62.163.885.346.266.183.487.426.647.71.135.253.318.476.538.655a2.079 2.079 0 0 0 2.37.196c.045-.52.27-1.006.635-1.37-2.219-.259-4.554-1.138-4.554-5.07a4.022 4.022 0 0 1 1.031-2.75 3.77 3.77 0 0 1 .096-2.713s.839-.275 2.749 1.05a9.26 9.26 0 0 1 5.004 0c1.906-1.325 2.74-1.05 2.74-1.05.37.858.406 1.828.101 2.713a4.017 4.017 0 0 1 1.029 2.75c0 3.939-2.339 4.805-4.564 5.058a2.471 2.471 0 0 1 .679 1.897c0 1.372-.012 2.477-.012 2.814 0 .272.18.592.687.492a10.05 10.05 0 0 0 5.388-4.421 10.473 10.473 0 0 0 1.313-6.948 10.32 10.32 0 0 0-3.39-6.165A9.847 9.847 0 0 0 12.007 2Z" clip-rule="evenodd"/>
+                </svg>
+                GitHub <span aria-hidden="true">→</span>
+                </span></a
+              >
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="mt-20 sm:mt-24 md:mx-auto md:max-w-2xl lg:mx-0 lg:mt-0 lg:w-screen place-content-center">
+        <video autoplay loop muted playsinline>
+          <source src={NvflareAnimation} type="video/mp4">
+        </video>
+      </div>
+    </div>
+  </div>
+</div>

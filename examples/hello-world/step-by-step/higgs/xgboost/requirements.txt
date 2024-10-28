@@ -1,0 +1,4 @@
+pandas
+scikit-learn
+# require xgboost 2.2 version, for now need to install a nightly build
+https://s3-us-west-2.amazonaws.com/xgboost-nightly-builds/federated-secure/xgboost-2.2.0.dev0%2B4601688195708f7c31fcceeb0e0ac735e7311e61-py3-none-manylinux_2_28_x86_64.whl

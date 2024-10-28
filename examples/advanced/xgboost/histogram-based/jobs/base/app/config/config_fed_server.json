@@ -1,0 +1,23 @@
+{
+  "format_version": 2,
+  "task_data_filters": [],
+  "task_result_filters": [],
+  "components": [
+    {
+      "id": "tb_receiver",
+      "path": "nvflare.app_opt.tracking.tb.tb_receiver.TBAnalyticsReceiver",
+      "args": {
+        "tb_folder": "tb_events"
+      }
+    }
+  ],
+  "workflows": [
+    {
+      "id": "xgb_controller",
+      "path": "nvflare.app_opt.xgboost.histogram_based.controller.XGBFedController",
+      "args": {
+        "train_timeout": 30000
+      }
+    }
+  ]
+}

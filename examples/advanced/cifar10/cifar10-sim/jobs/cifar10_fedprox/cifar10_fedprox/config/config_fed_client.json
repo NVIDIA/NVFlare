@@ -1,0 +1,39 @@
+{
+  "format_version": 2,
+
+  "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits",
+  "AGGREGATION_EPOCHS": 4,
+
+  "executors": [
+    {
+      "tasks": [
+        "train", "submit_model", "validate"
+      ],
+      "executor": {
+        "id": "Executor",
+        "path": "nvflare.app_common.executors.model_learner_executor.ModelLearnerExecutor",
+        "args": {
+          "learner_id": "cifar10-learner"
+        }
+      }
+    }
+  ],
+
+  "task_result_filters": [
+  ],
+  "task_data_filters": [
+  ],
+
+  "components": [
+    {
+      "id": "cifar10-learner",
+      "path": "pt.learners.CIFAR10ModelLearner",
+      "args": {
+        "train_idx_root": "{TRAIN_SPLIT_ROOT}",
+        "aggregation_epochs": "{AGGREGATION_EPOCHS}",
+        "lr": 1e-2,
+        "fedproxloss_mu": 1e-5
+      }
+    }
+  ]
+}

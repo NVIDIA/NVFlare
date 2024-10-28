@@ -1,0 +1,39 @@
+ha: True
+jobs_root_dir: ./data/apps
+cleanup: True
+project_yaml: ./data/projects/authz.yml
+poll_period: 0.5
+
+tests:
+  - test_name: "ls command"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "shell_commands ls site-1" ]
+        "admin_user_name": "admin@a.org"
+        "result":
+          "type": "admin_api_response"
+          "data": "audit.log daemon_pid.fl local log.txt pid.fl readme.txt startup transfer"
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "shell_commands ls site-1" ]
+        "admin_user_name": "admin@b.org"
+        "result":
+          "type": "admin_api_response"
+          "data": "Error: PermissionError: user 'admin@b.org' is not authorized for 'ls'"
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "shell_commands ls site-1" ]
+        "result":
+          "type": "admin_api_response"
+          "data": "audit.log daemon_pid.fl local log.txt pid.fl readme.txt startup transfer"
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "mark_test_done" ]
+        "result":
+          "type": "run_state"
+          "data": { }

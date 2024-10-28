@@ -9,7 +9,7 @@ Before You Start
 Before jumping into this guide, make sure you have an environment with
 `NVIDIA FLARE <https://pypi.org/project/nvflare/>`_ installed.
 
-You can follow the :ref:`installation <installation>` guide on the general concept of setting up a
+You can follow :ref:`getting_started` on the general concept of setting up a
 Python virtual environment (the recommended environment) and how to install NVIDIA FLARE.
 
 
@@ -64,9 +64,9 @@ NVIDIA FLARE Client
 You will first notice that the ``hello-numpy-sag`` application does not contain a ``custom`` folder.
 
 The code for the client and server components has been implemented in the
-`nvflare/app-common/np <https://github.com/NVIDIA/NVFlare/tree/main/nvflare/app_common/np>`_ folder of the NVFlare code tree.
+:github_nvflare_link:`nvflare/app-common/np <nvflare/app_common/np>` folder of the NVFlare code tree.
 
-These files, for example the trainer in `np_trainer.py <https://github.com/NVIDIA/NVFlare/tree/main/nvflare/app_common/np/np_trainer.py>`_
+These files, for example the trainer in :github_nvflare_link:`np_trainer.py <nvflare/app_common/np/np_trainer.py>`
 can be copied into a ``custom`` folder in the ``hello-numpy-sag`` application as ``custom_trainer.py`` and modified to perform additional tasks.
 
 The ``config_fed_client.json`` configuration discussed below would then be modified to point to this custom code by providing the custom path.
@@ -121,12 +121,12 @@ Inside the config folder there are two files, ``config_fed_client.json`` and ``c
 For now, the default configurations are sufficient.
 
 
-.. literalinclude:: ../../examples/hello-numpy-sag/config/config_fed_server.json
+.. literalinclude:: ../../examples/hello-world/hello-numpy-sag/jobs/hello-numpy-sag/app/config/config_fed_server.json
    :language: json
    :linenos:
    :caption: config_fed_server.json
 
-.. literalinclude:: ../../examples/hello-numpy-sag/config/config_fed_client.json
+.. literalinclude:: ../../examples/hello-world/hello-numpy-sag/jobs/hello-numpy-sag/app/config/config_fed_client.json
    :language: json
    :linenos:
    :caption: config_fed_client.json
@@ -163,5 +163,13 @@ You've successfully built and run your first numpy federated learning system.
 You now have a decent grasp of the main FL concepts, and are ready to start exploring how NVIDIA FLARE can be applied to many other tasks.
 
 The full application for this exercise can be found in
-`examples/hello-numpy-sag <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-numpy-sag>`_,
-with the client and server components implemented in the `nvflare/app-common/np <https://github.com/NVIDIA/NVFlare/tree/main/nvflare/app_common/np>`_ folder of the NVFlare code tree.
+:github_nvflare_link:`examples/hello-world/hello-numpy-sag <examples/hello-world/hello-numpy-sag>`,
+with the client and server components implemented in the :github_nvflare_link:`nvflare/app-common/np <nvflare/app_common/np>` folder of the NVFlare code tree.
+
+Previous Versions of Hello Scatter and Gather
+---------------------------------------------
+
+   - `hello-numpy-sag for 2.0 <https://github.com/NVIDIA/NVFlare/tree/2.0/examples/hello-numpy-sag>`_
+   - `hello-numpy-sag for 2.1 <https://github.com/NVIDIA/NVFlare/tree/2.1/examples/hello-numpy-sag>`_
+   - `hello-numpy-sag for 2.2 <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/hello-numpy-sag>`_
+   - `hello-numpy-sag for 2.3 <https://github.com/NVIDIA/NVFlare/tree/2.3/examples/hello-world/hello-numpy-sag>`_

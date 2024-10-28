@@ -2,26 +2,67 @@
 NVIDIA FLARE
 ############
 
+.. toctree::
+   :maxdepth: -1
+   :hidden:
+   :caption: Introduction
 
-NVIDIA FLARE (NVIDIA Federated Learning Application Runtime Environment) is a domain-agnostic, open-source, extensible SDK that allows researchers and data scientists to adaptexisting ML/DL workflows (PyTorch, RAPIDS, Nemo, TensorFlow) to a federated paradigm; and enables platform developers to build a secure, privacy preserving offering for a distributed multi-party collaboration.
-
-Federated learning allows multiple clients, each with their own data, to collaborate without sharing data.  Different parties or institutions located throughtout the world can perform a set of tasks on their own local data, coordinated by a secure, central Federated Learning server, to build a global model.  NVIDIA FLARE enables this collaborative workflow without ever needing to give external access to a participants' local data.
-
-NVIDIA FLARE is built on a componentized architecture that allows researchers to customize workflows to their liking and experiment with different ideas quickly.
-
-With NVIDIA FLARE 2.1.0, :ref:`High Availability (HA) <high_availability>` and :ref:`Multi-Job Execution <multi_job>` introduce new concepts and change the way the system needs to be configured and operated. See `conversion from 2.0 <appendix/converting_from_previous.html>`_ for details.
+   fl_introduction
+   flare_overview
+   whats_new
+   Getting Started <quickstart>
 
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: -1
+   :hidden:
+   :caption: Guides
 
-   highlights
-   flare_overview
-   quickstart
-   example_applications
+   example_applications_algorithms
+   real_world_fl
    user_guide
    programming_guide
    best_practices
+
+.. toctree::
+   :maxdepth: -1
+   :hidden:
+   :caption: Miscellaneous
+
    faq
+   publications_and_talks
    contributing
    API <apidocs/modules>
-   appendix
+   glossary
+
+NVIDIA FLARE (NVIDIA Federated Learning Application Runtime Environment) is a domain-agnostic, open-source, extensible SDK that allows
+researchers and data scientists to adapt existing ML/DL workflows (PyTorch, RAPIDS, Nemo, TensorFlow) to a federated paradigm; and enables
+platform developers to build a secure, privacy preserving offering for a distributed multi-party collaboration.
+
+NVIDIA FLARE is built on a componentized architecture that gives you the flexibility to take federated learning workloads from research
+and simulation to real-world production deployment.  Some of the key components of this architecture include:
+
+ - **FL Simulator** for rapid development and prototyping
+ - **FLARE Dashboard** for simplified project management and deployment
+ - **Reference FL algorithms** (e.g., FedAvg, FedProx) and workflows (e.g., Scatter and Gather, Cyclic)
+ - **Privacy preservation** with differential privacy, homomorphic encryption, and more
+ - **Management tools** for secure provisioning and deployment, orchestration, and management
+ - **Specification-based API** for extensibility
+
+Learn more about FLARE features in the :ref:`FLARE Overview <flare_overview>` and :ref:`What's New <whats_new>`.
+
+Getting Started
+===============
+For first-time users and FL researchers, FLARE provides the :ref:`FL Simulator <fl_simulator>` that allows you to build, test, and deploy applications locally.
+The :ref:`Getting Started <getting_started>` guide covers installation and walks through an example application using the FL Simulator.
+Additional examples can be found at the :ref:`Examples Applications <example_applications>`, which showcase different federated learning workflows and algorithms on various machine learning and deep learning tasks.
+
+FLARE for Users
+===============
+If you want to learn how to interact with the FLARE system, please refer to the :ref:`User Guide <user_guide>`.
+When you are ready to for a secure, distributed deployment, the :ref:`Real World Federated Learning <real_world_fl>` section covers the tools and process
+required to deploy and operate a secure, real-world FLARE project.
+
+FLARE for Developers
+====================
+When you're ready to build your own application, the :ref:`Programming Guide <programming_guide>`, :ref:`Programming Best Practices <best_practices>`, :ref:`FAQ<faq>`, and :ref:`API Reference <apidocs/modules>`
+give an in depth look at the FLARE platform and APIs.

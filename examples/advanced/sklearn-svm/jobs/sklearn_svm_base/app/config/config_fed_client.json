@@ -1,0 +1,32 @@
+{
+  "format_version": 2,
+
+  "executors": [
+    {
+      "tasks": ["train"],
+      "executor": {
+        "id": "Executor",
+        "path": "nvflare.app_opt.sklearn.sklearn_executor.SKLearnExecutor",
+        "args": {
+          "learner_id": "svm_learner"
+        }
+      }
+    }
+  ],
+  "task_result_filters": [],
+  "task_data_filters": [],
+  "components": [
+    {
+      "id": "svm_learner",
+      "path": "svm_learner.SVMLearner",
+      "args": {
+        "backend": "sklearn",
+        "data_path": "/tmp/nvflare/dataset/sklearn_breast_cancer.csv",
+        "train_start": 114,
+        "train_end": 265,
+        "valid_start": 0,
+        "valid_end": 114
+      }
+    }
+  ]
+}

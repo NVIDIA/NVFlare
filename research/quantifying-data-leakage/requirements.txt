@@ -1,0 +1,10 @@
+nvflare~=2.5.0rc
+pytorch-ignite>=0.4.10
+torchvision
+monai>=1.0.1
+tqdm
+tensorboard
+scikit-learn
+scikit-image
+matplotlib
+seaborn

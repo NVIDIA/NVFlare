@@ -1,0 +1,33 @@
+defaults:
+  - base_config
+restore_from_path: null # used when starting from a .nemo file
+
+model:
+  tokenizer:
+    library: 'sentencepiece'
+    type: null
+    model: ${oc.env:BIONEMO_HOME}/tokenizers/protein/esm1nv/vocab/protein_sequence_sentencepiece.model
+    vocab_file: ${oc.env:BIONEMO_HOME}/tokenizers/vocab/protein_sequence_sentencepiece.vocab
+  data:
+    dataset_path: ${oc.env:BIONEMO_HOME}/data/uniref2022_05 # parent directory for data, contains train / val / test folders. Needs to be writeable for index creation.
+    dataset: # inclusive range of data files to load x[000..049] or can a single file, e.g. x000
+      train: x[000..049]
+      test: x[000..049]
+      val: x[000..049]
+    micro_batch_size: ${model.micro_batch_size}
+    num_workers: 2
+
+    # Supported kwargs (with default values):
+    #     text_mmap (newline_int=10, header_lines=0, workers=None, sort_dataset_paths=True)
+    #     csv_mmap (newline_int=10, header_lines=0,workers=None, sort_dataset_paths=True, data_col=1, data_sep=",")
+    data_impl_kwargs:
+      csv_mmap:
+        data_col: 3 # 0-based
+
+    # These control the MLM token probabilities. The following settings are commonly used in literature.
+    modify_percent: 0.15 # Fraction of characters in a protein sequence to modify. (Modification means replacing with another amino acid or with a mask token)
+    perturb_percent: 0.1 # Of the modify_percent, what fraction of characters are to be replaced with another amino acid.
+    mask_percent: 0.8 # Of the modify_percent, what fraction of characters are to be replaced with a mask token.
+    identity_percent: 0.1 # Of the modify_percent, what fraction of characters are to be unchanged as the original amino acid.
+  dwnst_task_validation:
+    enabled: True

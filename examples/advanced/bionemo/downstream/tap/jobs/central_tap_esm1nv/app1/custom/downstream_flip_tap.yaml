@@ -1,0 +1,74 @@
+name: esm1nv_flip
+defaults:
+  - pretrain_small
+  - _self_
+do_preprocessing: False
+do_training: True # set to false if data preprocessing steps must be completed
+do_testing: False # set to true to run evaluation on test data after training
+restore_from_path: null # path to nemo checkpoint of the fine-tuned model (encoder + task head) to be used for further training, testing or inference
+target: bionemo.model.protein.esm1nv.ESM1nvModel # target class for protein model
+infer_target: bionemo.model.protein.esm1nv.infer.ESM1nvInference # target inference class for protein model
+encoder_frozen: False
+
+trainer:
+  devices: 1 # number of GPUs or CPUs
+  num_nodes: 1 
+  max_epochs: 20
+  val_check_interval: 1
+  limit_val_batches: 1000 # number of batches in validation step, use fraction for fraction of data, 0 to disable
+  limit_test_batches: 1000 # number of batches in test step, use fraction for fraction of data, 0 to disable
+  use_distributed_sampler: False
+exp_manager:
+  wandb_logger_kwargs:
+    project: ${name}_${model.data.task_name}_finetuning
+    name: ${name}_${model.data.task_name}_finetuning_encoder_frozen_${model.encoder_frozen}
+
+model:
+  restore_encoder_path: ${oc.env:BIONEMO_HOME}/models/protein/esm1nv/esm1nv.nemo # path to nemo checkpoint of the protein model/encoder
+  encoder_frozen: False # encoder trainable or frozen
+  post_process: False # must be False for downstream task
+  micro_batch_size: 8 # NOTE: adjust to occupy ~ 90% of GPU memory
+  global_batch_size: null # if null will be computed automatically
+  tensor_model_parallel_size: 1  # model parallelism
+  loss_func: MSELoss
+  hidden_layer_size: 128
+  dropout_rate: 0.1
+
+  optim_param_groups:
+    encoder_model:
+      lr: 1e-6
+    task_head:
+      lr: 5e-4
+
+  data:
+    batch_size: 128
+    task_name: tap # options: aav, bind, conservation, gb1, meltome, sav, scl, secondary_structure
+    task_type: regression #'token-level-classification'  # alternative: classification, regression
+    preprocessed_data_path: /tmp/data # path where all preprocessed FLIP datasets are saved
+    dataset_path: ${model.data.preprocessed_data_path}/tap # path to a training data
+    dataset:
+      train: tap_full_train
+      val: tap_valid
+      test: tap_test
+    sequence_column: "Antibody" # name of column with protein sequence in csv file
+    target_column: ["PSH"] #["3state", "resolved"] # names of label columns in csv file
+    target_sizes: [1] # number of classes in each label for classifications or 1 for regression
+    num_workers: 2
+    shuffle: True # shuffle training dataset
+    max_seq_length: ${model.seq_length}
+    emb_batch_size: ${model.micro_batch_size}
+  
+  finetuning_optim: # optimizer parameters for downstream task model
+    name: adam
+    #lr: 0.0005
+    betas:
+      - 0.9
+      - 0.999
+    eps: 1e-8
+    weight_decay: 0.001
+    #sched:
+    #  name: WarmupAnnealing
+    #  min_lr: 0.00001   #0.00001
+    #  last_epoch: -1
+    #  warmup_steps: 10
+

@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,6 +20,17 @@ from nvflare.apis.shareable import Shareable
 
 
 class Aggregator(FLComponent, ABC):
+    def reset(self, fl_ctx: FLContext):
+        """Reset the internal state of the aggregator.
+
+        Args:
+            fl_ctx: FLContext
+
+        Returns:
+
+        """
+        pass
+
     @abstractmethod
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
         """Accept the shareable submitted by the client.

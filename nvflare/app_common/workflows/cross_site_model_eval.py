@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ from typing import Union
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task
-from nvflare.apis.dxo import DXO, from_bytes, from_shareable
+from nvflare.apis.dxo import DXO, from_file, from_shareable, get_leaf_dxos
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
@@ -30,6 +30,7 @@ from nvflare.app_common.abstract.formatter import Formatter
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.app_constant import AppConstants, ModelName
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
 
@@ -48,7 +49,9 @@ class CrossSiteModelEval(Controller):
         participating_clients=None,
         wait_for_clients_timeout=300,
     ):
-        """Cross Site Model Validation workflow.
+        """Cross Site Model Evaluation workflow.
+
+        # TODO: change validation to evaluation to reflect the real meaning
 
         Args:
             task_check_period (float, optional): How often to check for new tasks or tasks being finished.
@@ -57,8 +60,8 @@ class CrossSiteModelEval(Controller):
                 Defaults to "cross_site_val".
             submit_model_timeout (int, optional): Timeout of submit_model_task. Defaults to 600 secs.
             validation_timeout (int, optional): Timeout for validate_model task. Defaults to 6000 secs.
-            model_locator_id (str, optional): ID for model_locator component. Defaults to "".
-            formatter_id (str, optional): ID for formatter component. Defaults to "".
+            model_locator_id (str, optional): ID for `ModelLocator` component. Defaults to "".
+            formatter_id (str, optional): ID for `Formatter` component. Defaults to "".
             submit_model_task_name (str, optional): Name of submit_model task. Defaults to "".
             validation_task_name (str, optional): Name of validate_model task. Defaults to "validate".
             cleanup_models (bool, optional): Whether or not models should be deleted after run. Defaults to False.
@@ -66,7 +69,7 @@ class CrossSiteModelEval(Controller):
                 to all clients connected at start of controller.
             wait_for_clients_timeout (int, optional): Timeout for clients to appear. Defaults to 300 secs
         """
-        super(CrossSiteModelEval, self).__init__(task_check_period=task_check_period)
+        super().__init__(task_check_period=task_check_period)
 
         if not isinstance(task_check_period, float):
             raise TypeError("task_check_period must be float but got {}".format(type(task_check_period)))
@@ -230,8 +233,8 @@ class CrossSiteModelEval(Controller):
                     return
                 self.log_debug(fl_ctx, "Checking standing tasks to see if cross site validation finished.")
                 time.sleep(self._task_check_period)
-        except BaseException as e:
-            error_msg = f"Exception in cross site validator control_flow: {e.__str__()}"
+        except Exception as e:
+            error_msg = f"Exception in cross site validator control_flow: {secure_format_exception(e)}"
             self.log_exception(fl_ctx, error_msg)
             self.system_panic(error_msg, fl_ctx)
 
@@ -263,8 +266,8 @@ class CrossSiteModelEval(Controller):
 
         try:
             model_dxo: DXO = self._load_validation_content(model_name, self._cross_val_models_dir, fl_ctx)
-        except ValueError as v_e:
-            reason = f"Error in loading model shareable for {model_name}: {v_e}. CrossSiteModelEval exiting."
+        except ValueError as e:
+            reason = f"Error in loading model shareable for {model_name}: {secure_format_exception(e)}. CrossSiteModelEval exiting."
             self.log_error(fl_ctx, reason)
             self.system_panic(reason, fl_ctx)
             return
@@ -318,7 +321,7 @@ class CrossSiteModelEval(Controller):
             unique_name = "SRV_" + name
             unique_names.append(unique_name)
             try:
-                save_path = self._save_validation_content(unique_name, self._cross_val_models_dir, dxo, fl_ctx)
+                save_path = self._save_dxo_content(unique_name, self._cross_val_models_dir, dxo, fl_ctx)
             except:
                 self.log_exception(fl_ctx, f"Unable to save shareable contents of server model {unique_name}")
                 self.system_panic(f"Unable to save shareable contents of server model {unique_name}", fl_ctx)
@@ -334,9 +337,9 @@ class CrossSiteModelEval(Controller):
         return True
 
     def _accept_local_model(self, client_name: str, result: Shareable, fl_ctx: FLContext):
-        fl_ctx.set_prop(AppConstants.RECEIVED_MODEL, result, private=False, sticky=False)
-        fl_ctx.set_prop(AppConstants.RECEIVED_MODEL_OWNER, client_name, private=False, sticky=False)
-        fl_ctx.set_prop(AppConstants.CROSS_VAL_DIR, self._cross_val_dir, private=False, sticky=False)
+        fl_ctx.set_prop(AppConstants.RECEIVED_MODEL, result, private=True, sticky=False)
+        fl_ctx.set_prop(AppConstants.RECEIVED_MODEL_OWNER, client_name, private=True, sticky=False)
+        fl_ctx.set_prop(AppConstants.CROSS_VAL_DIR, self._cross_val_dir, private=True, sticky=False)
         self.fire_event(AppEventType.RECEIVE_BEST_MODEL, fl_ctx)
 
         # get return code
@@ -364,20 +367,28 @@ class CrossSiteModelEval(Controller):
             try:
                 self.log_debug(fl_ctx, "Extracting DXO from shareable.")
                 dxo = from_shareable(result)
-                save_path = self._save_validation_content(client_name, self._cross_val_models_dir, dxo, fl_ctx)
-            except ValueError as v_e:
+            except ValueError as e:
                 self.log_error(
-                    fl_ctx, f"Unable to save shareable contents of {client_name}'s model. Exception: {str(v_e)}"
+                    fl_ctx,
+                    f"Ignored bad result from {client_name}: {secure_format_exception(e)}",
                 )
-                self.log_warning(fl_ctx, f"Ignoring client {client_name}'s model.")
                 return
 
-            self.log_info(fl_ctx, f"Received local model from client {client_name}.")
+            # The DXO could contain multiple sub-DXOs (e.g. received from a T2 system)
+            leaf_dxos, errors = get_leaf_dxos(dxo, client_name)
+            if errors:
+                for err in errors:
+                    self.log_error(fl_ctx, f"Bad result from {client_name}: {err}")
+            for k, v in leaf_dxos.items():
+                self._save_client_model(k, v, fl_ctx)
 
-            self._client_models[client_name] = save_path
+    def _save_client_model(self, model_name: str, dxo: DXO, fl_ctx: FLContext):
+        save_path = self._save_dxo_content(model_name, self._cross_val_models_dir, dxo, fl_ctx)
+        self.log_info(fl_ctx, f"Saved client model {model_name} to {save_path}")
+        self._client_models[model_name] = save_path
 
-            # Send a model to this client to validate
-            self._send_validation_task(client_name, fl_ctx)
+        # Send a model to this client to validate
+        self._send_validation_task(model_name, fl_ctx)
 
     def _send_validation_task(self, model_name: str, fl_ctx: FLContext):
         self.log_info(fl_ctx, f"Sending {model_name} model to all participating clients for validation.")
@@ -430,24 +441,41 @@ class CrossSiteModelEval(Controller):
                     " Logging empty results.",
                 )
 
+            if client_name not in self._val_results:
+                self._val_results[client_name] = {}
             self._val_results[client_name][model_owner] = {}
         else:
-            save_file_name = client_name + "_" + model_owner
-
             try:
                 dxo = from_shareable(result)
-                self._save_validation_content(save_file_name, self._cross_val_results_dir, dxo, fl_ctx)
-                self._val_results[client_name][model_owner] = os.path.join(self._cross_val_results_dir, save_file_name)
-
-                self.log_info(fl_ctx, f"Client {client_name} sent results for validating {model_owner} model.")
-            except ValueError as v_e:
+            except ValueError as e:
                 reason = (
-                    f"Unable to save validation result from {client_name} of {model_owner}'s model. "
-                    f"Exception: {str(v_e)}"
+                    f"Bad validation result from {client_name} on model {model_owner}. "
+                    f"Exception: {secure_format_exception(e)}"
                 )
                 self.log_exception(fl_ctx, reason)
+                return
 
-    def _save_validation_content(self, name: str, save_dir: str, dxo: DXO, fl_ctx: FLContext) -> str:
+            # The DXO could contain multiple sub-DXOs (e.g. received from a T2 system)
+            leaf_dxos, errors = get_leaf_dxos(dxo, client_name)
+            if errors:
+                for err in errors:
+                    self.log_error(fl_ctx, f"Bad result from {client_name}: {err}")
+            for k, v in leaf_dxos.items():
+                self._save_validation_result(k, model_owner, v, fl_ctx)
+
+    def _save_validation_result(self, client_name: str, model_name: str, dxo, fl_ctx):
+        file_name = client_name + "_" + model_name
+        file_path = self._save_dxo_content(file_name, self._cross_val_results_dir, dxo, fl_ctx)
+        client_results = self._val_results.get(client_name, None)
+        if not client_results:
+            client_results = {}
+            self._val_results[client_name] = client_results
+        client_results[model_name] = file_path
+        self.log_info(
+            fl_ctx, f"Saved validation result from client '{client_name}' on model '{model_name}' in {file_path}"
+        )
+
+    def _save_dxo_content(self, name: str, save_dir: str, dxo: DXO, fl_ctx: FLContext) -> str:
         """Saves shareable to given directory within the app_dir.
 
         Args:
@@ -463,18 +491,9 @@ class CrossSiteModelEval(Controller):
         data_filename = os.path.join(save_dir, name)
 
         try:
-            bytes_to_save = dxo.to_bytes()
+            dxo.to_file(data_filename)
         except Exception as e:
-            raise ValueError(f"Unable to extract shareable contents. Exception: {(e.__str__())}") from e
-
-        # Save contents to path
-        try:
-            with open(data_filename, "wb") as f:
-                f.write(bytes_to_save)
-        except Exception as e:
-            raise ValueError(f"Unable to save shareable contents: {str(e)}") from e
-
-        self.log_debug(fl_ctx, f"Saved cross validation model with name: {name}.")
+            raise ValueError(f"Unable to save DXO to {data_filename}: {secure_format_exception(e)}")
 
         return data_filename
 
@@ -484,14 +503,10 @@ class CrossSiteModelEval(Controller):
 
         # load shareable
         try:
-            with open(shareable_filename, "rb") as f:
-                data = f.read()
-
-            dxo: DXO = from_bytes(data)
-
+            dxo: DXO = from_file(shareable_filename)
             self.log_debug(fl_ctx, f"Loading cross validation shareable content with name: {name}.")
         except Exception as e:
-            raise ValueError(f"Exception in loading shareable content for {name}: {str(e)}")
+            raise ValueError(f"Exception in loading shareable content for {name}: {secure_format_exception(e)}")
 
         return dxo
 

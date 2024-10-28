@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
@@ -24,7 +24,7 @@ class JobDefManagerSpec(FLComponent, ABC):
     """Job Definition Management API."""
 
     @abstractmethod
-    def create(self, meta: dict, uploaded_content: bytes, fl_ctx: FLContext) -> Dict[str, Any]:
+    def create(self, meta: dict, uploaded_content: Union[str, bytes], fl_ctx: FLContext) -> Dict[str, Any]:
         """Create a new job permanently.
 
         The caller must have validated the content already and created initial meta. Receives bytes of uploaded folder,
@@ -32,12 +32,28 @@ class JobDefManagerSpec(FLComponent, ABC):
 
         Args:
             meta: caller-provided meta info
-            uploaded_content: data of the job definition
+            uploaded_content: data of the job definition: data bytes or file name that contains the data bytes
             fl_ctx (FLContext): FLContext information
 
         Returns:
             A dict containing meta info. Additional meta info are added, especially
             a unique Job ID (jid) which has been created.
+        """
+        pass
+
+    @abstractmethod
+    def clone(self, from_jid: str, meta: dict, fl_ctx: FLContext) -> Dict[str, Any]:
+        """Create a new job by cloning an existing job.
+
+        Args:
+            from_jid: the job to be cloned
+            meta: meta info for the new job
+            fl_ctx: FLContext info
+
+        Returns:
+            A dict containing meta info. Additional meta info are added, especially
+            a unique Job ID (jid) which has been created.
+
         """
         pass
 
@@ -69,45 +85,15 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def get_apps(self, job: Job, fl_ctx: FLContext) -> Dict[str, bytes]:
-        """Get the all the apps of a Job.
-
-        Args:
-            job: Job object
-            fl_ctx (FLContext): FLContext information
-
-        Returns:
-            A dictionary of app names with the content of the corresponding app encoded in bytes
-        """
-        pass
-
-    @abstractmethod
-    def get_content(self, jid: str, fl_ctx: FLContext) -> Optional[bytes]:
+    def get_content(self, meta: dict, fl_ctx: FLContext) -> Optional[bytes]:
         """Gets the entire uploaded content for a Job.
 
         Args:
-            jid (str): Job ID
+            meta (dict): the meta info of the job
             fl_ctx (FLContext): FLContext information
 
         Returns:
             Uploaded content of the job in bytes
-        """
-        pass
-
-    @abstractmethod
-    def get_job_data(self, jid: str, fl_ctx: FLContext) -> dict:
-        """Gets the entire uploaded content and workspace for a job.
-
-        Args:
-            jid (str): Job ID
-            fl_ctx (FLContext): FLContext information
-
-        Returns:
-            a dict to hold the job data and workspace.
-            Format: {
-                        JobDataKey.JOB_DATA.value: stored_data,
-                        JobDataKey.WORKSPACE_DATA: workspace_data
-                    }
         """
         pass
 
@@ -119,6 +105,19 @@ class JobDefManagerSpec(FLComponent, ABC):
             jid (str): Job ID
             meta: dictionary of metadata for the job
             fl_ctx (FLContext): FLContext information
+
+        """
+        pass
+
+    @abstractmethod
+    def refresh_meta(self, job: Job, meta_keys: list, fl_ctx: FLContext):
+        """Refresh meta of the job as specified in the meta keys
+        Save the values of the specified keys into job store
+
+        Args:
+            job: job object
+            meta_keys: meta keys need to updated
+            fl_ctx: FLContext
 
         """
         pass
@@ -136,6 +135,18 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
+    def get_jobs_to_schedule(self, fl_ctx: FLContext) -> List[Job]:
+        """Get job candidates for scheduling.
+
+        Args:
+            fl_ctx: FL context
+
+        Returns: list of jobs for scheduling
+
+        """
+        pass
+
+    @abstractmethod
     def get_all_jobs(self, fl_ctx: FLContext) -> List[Job]:
         """Gets all Jobs in the system.
 
@@ -148,11 +159,11 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def get_jobs_by_status(self, run_status: RunStatus, fl_ctx: FLContext) -> List[Job]:
+    def get_jobs_by_status(self, run_status: Union[RunStatus, List[RunStatus]], fl_ctx: FLContext) -> List[Job]:
         """Gets Jobs of a specified status.
 
         Args:
-            run_status (RunStatus): status to filter for
+            run_status: status to filter for: a single or a list of status values
             fl_ctx (FLContext): FLContext information
 
         Returns:
@@ -203,12 +214,40 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def save_workspace(self, jid: str, data: bytes, fl_ctx: FLContext):
+    def save_workspace(self, jid: str, data: Union[bytes, str], fl_ctx: FLContext):
         """Save the job workspace to the job storage.
 
         Args:
             jid (str): Job ID
-            data: Job workspace data
+            data: Job workspace data or name of data file
+            fl_ctx (FLContext): FLContext information
+
+        """
+        pass
+
+    @abstractmethod
+    def get_storage_component(self, jid: str, component: str, fl_ctx: FLContext):
+        """Get the workspace data from the job storage.
+
+        Args:
+            jid (str): Job ID
+            component: storage component name
+            fl_ctx (FLContext): FLContext information
+
+        """
+        pass
+
+    @abstractmethod
+    def get_storage_for_download(
+        self, jid: str, download_dir: str, component: str, download_file: str, fl_ctx: FLContext
+    ):
+        """Get the workspace data from the job storage.
+
+        Args:
+            jid (str): Job ID
+            download_dir: download folder
+            component: storage component name
+            download_file: download file name
             fl_ctx (FLContext): FLContext information
 
         """

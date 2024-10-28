@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,6 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+import time
+import uuid
+
+# this import is to let existing scripts import from nvflare.private.defs
+from nvflare.fuel.f3.cellnet.defs import CellChannel, CellChannelTopic, SSLConstants  # noqa: F401
+from nvflare.fuel.f3.message import Message
+from nvflare.fuel.hci.server.constants import ConnProps
 
 
 class SpecialTaskName(object):
@@ -58,15 +66,28 @@ class TrainingTopic(object):
     ALLOCATE_RESOURCE = "scheduler.allocate_resource"
     CANCEL_RESOURCE = "scheduler.cancel_resource"
     START_JOB = "train.start_job"
+    GET_SCOPES = "train.get_scopes"
+    NOTIFY_JOB_STATUS = "train.notify_job_status"
 
 
 class RequestHeader(object):
 
     JOB_ID = "job_id"
+    JOB_STATUS = "job_status"
+    TOPIC = "topic"
+    JOB_META = "job_meta"
     APP_NAME = "app_name"
     CONTROL_COMMAND = "control_command"
     CALL_NAME = "call_name"
     COMPONENT_TARGET = "component_target"
+    ADMIN_COMMAND = "admin_command"
+    USER_NAME = ConnProps.USER_NAME
+    USER_ORG = ConnProps.USER_ORG
+    USER_ROLE = ConnProps.USER_ROLE
+    SUBMITTER_NAME = ConnProps.SUBMITTER_NAME
+    SUBMITTER_ORG = ConnProps.SUBMITTER_ORG
+    SUBMITTER_ROLE = ConnProps.SUBMITTER_ROLE
+    REQUIRE_AUTHZ = "require_authz"
 
 
 class SysCommandTopic(object):
@@ -74,6 +95,7 @@ class SysCommandTopic(object):
     SYS_INFO = "sys.info"
     SHELL = "sys.shell"
     REPORT_RESOURCES = "resource_manager.report_resources"
+    REPORT_ENV = "sys.report_env"
 
 
 class ControlCommandTopic(object):
@@ -97,22 +119,58 @@ class ClientStatusKey(object):
     RUNNING_JOBS = "running_jobs"
 
 
+class ScopeInfoKey(object):
+
+    SCOPE_NAMES = "scope_names"
+    DEFAULT_SCOPE = "default_scope"
+
+
 # TODO:: Remove some of these constants
 class AppFolderConstants:
     """hard coded file names inside the app folder."""
 
     CONFIG_TRAIN = "config_train.json"
     CONFIG_ENV = "environment.json"
-    CONFIG_FED_SERVER = "config_fed_server.json"
-    CONFIG_FED_CLIENT = "config_fed_client.json"
-
-
-class SSLConstants:
-    """hard coded names related to SSL."""
-
-    CERT = "ssl_cert"
-    PRIVATE_KEY = "ssl_private_key"
-    ROOT_CERT = "ssl_root_cert"
 
 
 ERROR_MSG_PREFIX = "NVFLARE_ERROR"
+
+
+class CellMessageHeaderKeys:
+
+    CLIENT_NAME = "client_name"
+    CLIENT_IP = "client_ip"
+    PROJECT_NAME = "project_name"
+    TOKEN = "token"
+    SSID = "ssid"
+    UNAUTHENTICATED = "unauthenticated"
+    JOB_ID = "job_id"
+    JOB_IDS = "job_ids"
+    MESSAGE = "message"
+    ABORT_JOBS = "abort_jobs"
+
+
+class JobFailureMsgKey:
+
+    JOB_ID = "job_id"
+    CODE = "code"
+    REASON = "reason"
+
+
+class InternalFLContextKey:
+
+    CLIENT_REG_SESSION = "client_reg_session"
+
+
+class ClientRegSession:
+    def __init__(self, client_name: str):
+        self.client_name = client_name
+        self.nonce = str(uuid.uuid4())
+        self.reg_start_time = time.time()
+
+
+def new_cell_message(headers: dict, payload=None):
+    msg_headers = {}
+    if headers:
+        msg_headers.update(headers)
+    return Message(msg_headers, payload)

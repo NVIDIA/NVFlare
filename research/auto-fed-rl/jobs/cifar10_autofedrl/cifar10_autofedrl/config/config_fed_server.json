@@ -1,0 +1,150 @@
+{
+    "format_version": 2,
+    "min_clients": 8,
+    "num_rounds": 50,
+    "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits",
+    "alpha": 0.1,
+    "server": {
+        "heart_beat_timeout": 600
+    },
+    "task_data_filters": [],
+    "task_result_filters": [],
+    "components": [
+        {
+            "id": "data_splitter",
+            "path": "pt.utils.cifar10_data_splitter.Cifar10DataSplitter",
+            "args": {
+                "split_dir": "{TRAIN_SPLIT_ROOT}",
+                "num_sites": "{min_clients}",
+                "alpha": "{alpha}"
+            }
+        },
+        {
+            "id": "model",
+            "path": "pt.networks.cifar10_nets.ModerateCNN",
+            "args": {}
+        },
+        {
+            "id": "persistor",
+            "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
+            "args": {
+                "model": "model"
+            }
+        },
+        {
+            "id": "shareable_generator",
+            "path": "autofedrl.AutoFedRLFedOptModelShareableGenerator",
+            "args": {
+                "device": "cpu",
+                "source_model": "model",
+                "optimizer_args": {
+                    "path": "torch.optim.SGD",
+                    "args": {
+                        "lr": 1.0,
+                        "momentum": 0.0
+                    },
+                    "config_type": "dict"
+                }
+            }
+        },
+        {
+            "id": "search_space",
+            "path": "autofedrl.PTAutoFedRLSearchSpace",
+            "args": {
+                "search_type": "cs",
+                "device": "cpu",
+                "optimizer_args": {
+                    "path": "torch.optim.Adam",
+                    "args": {
+                        "lr": 0.01,
+                        "betas": [
+                            0.7,
+                            0.7
+                        ]
+                    },
+                    "config_type": "dict"
+                },
+                "n_clients": "{min_clients}",
+                "search_lr": true,
+                "lr_range": [
+                    0.0005,
+                    0.05
+                ],
+                "search_ne": true,
+                "ne_range": [
+                    2,
+                    40
+                ],
+                "search_aw": true,
+                "aw_range": [
+                    0.1,
+                    1.0
+                ],
+                "search_slr": true,
+                "slr_range": [
+                    0.5,
+                    1.5
+                ],
+                "initial_precision": 85.0
+            }
+        },
+        {
+            "id": "aggregator",
+            "path": "autofedrl.AutoFedRLWeightedAggregator",
+            "args": {}
+        },
+        {
+            "id": "aggregator_search_val",
+            "path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
+            "args": {
+                "expected_data_kind": "METRICS",
+                "aggregation_weights": {
+                    "site-1": 1.0,
+                    "site-2": 1.0,
+                    "site-3": 1.0,
+                    "site-4": 1.0,
+                    "site-5": 1.0,
+                    "site-6": 1.0,
+                    "site-7": 1.0,
+                    "site-8": 1.0
+                }
+            }
+        },
+        {
+            "id": "model_selector",
+            "path": "nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector",
+            "args": {}
+        },
+        {
+            "id": "model_locator",
+            "path": "nvflare.app_opt.pt.file_model_locator.PTFileModelLocator",
+            "args": {
+                "pt_persistor_id": "persistor"
+            }
+        },
+        {
+            "id": "json_generator",
+            "path": "nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator",
+            "args": {}
+        }
+    ],
+    "workflows": [
+        {
+            "id": "scatter_gather_ctl",
+            "path": "autofedrl.ScatterAndGatherAutoFedRL",
+            "args": {
+                "min_clients": "{min_clients}",
+                "num_rounds": "{num_rounds}",
+                "start_round": 0,
+                "wait_time_after_min_received": 10,
+                "aggregator_id": "aggregator",
+                "aggregator_search_val_id": "aggregator_search_val",
+                "persistor_id": "persistor",
+                "shareable_generator_id": "shareable_generator",
+                "search_space_id": "search_space",
+                "train_task_name": "train",
+                "train_timeout": 0
+            }
+        }
+    ]
+}

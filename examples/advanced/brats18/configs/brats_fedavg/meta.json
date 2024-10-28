@@ -1,0 +1,9 @@
+{
+  "name": "brats_fedavg",
+  "resource_spec": {},
+  "deploy_map": {
+    "app": [
+      "@ALL"
+    ]
+  }
+}

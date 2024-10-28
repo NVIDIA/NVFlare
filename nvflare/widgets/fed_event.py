@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ FED_EVENT_TOPIC = "fed.event"
 
 
 class FedEventRunner(Widget):
-    def __init__(self, topic=FED_EVENT_TOPIC):
+    def __init__(self, topic=FED_EVENT_TOPIC, regular_interval=0.01, grace_period=2.0, queue_empty_period=2.0):
         """Init FedEventRunner.
 
         The FedEventRunner handles posting and receiving of fed events.
@@ -41,15 +41,15 @@ class FedEventRunner(Widget):
         self.topic = topic
         self.abort_signal = None
         self.asked_to_stop = False
-        self.asked_to_flush = False
-        self.regular_interval = 0.001
-        self.grace_period = 2
-        self.flush_wait = 2
+        self.regular_interval = regular_interval
+        self.grace_period = grace_period
+        self.queue_empty_period = queue_empty_period
         self.engine = None
         self.last_timestamps = {}  # client name => last_timestamp
         self.in_events = []
         self.in_lock = threading.Lock()
-        self.poster = threading.Thread(target=self._post, args=())
+        self.last_queue_empty_time = time.time()  # last time when the in_events queue became empty
+        self.poster = None
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -57,18 +57,24 @@ class FedEventRunner(Widget):
             self.engine.register_aux_message_handler(topic=self.topic, message_handle_func=self._receive)
             self.abort_signal = fl_ctx.get_run_abort_signal()
             self.asked_to_stop = False
-            self.asked_to_flush = False
-            self.poster.start()
-        elif event_type == EventType.ABOUT_TO_END_RUN:
-            self.asked_to_flush = True
-            # delay self.flush_wait seconds so
-            # _post can empty the queue before
-            # END_RUN is fired
-            time.sleep(self.flush_wait)
         elif event_type == EventType.END_RUN:
             self.asked_to_stop = True
-            if self.poster.is_alive():
+            if self.poster is not None and self.poster.is_alive():
                 self.poster.join()
+        elif event_type == EventType.CHECK_END_RUN_READINESS:
+            # Are we ready to end the run?
+            ready_to_end = True
+            with self.in_lock:
+                if len(self.in_events) > 0:
+                    # we still have unprocessed incoming events.
+                    ready_to_end = False
+                elif time.time() - self.last_queue_empty_time < self.queue_empty_period:
+                    # there are no pending incoming events, but we want to wait for self.queue_empty_period in case
+                    # some clients still send us events.
+                    ready_to_end = False
+            if not ready_to_end:
+                # tell the controller that we are not ready to end the run!
+                fl_ctx.set_prop(FLContextKey.NOT_READY_TO_END_RUN, value=True, private=True, sticky=False)
         else:
             # handle outgoing fed events
             event_scope = fl_ctx.get_prop(key=FLContextKey.EVENT_SCOPE, default=EventScope.LOCAL)
@@ -90,9 +96,9 @@ class FedEventRunner(Widget):
             event_data.set_header(FedEventHeader.TIMESTAMP, time.time())
 
             targets = event_data.get_header(FedEventHeader.TARGETS, None)
-            self.fire_and_forget_request(request=event_data, fl_ctx=fl_ctx, targets=targets)
+            self.fire_and_forget_request(request=event_data, fl_ctx=fl_ctx, targets=targets, secure=False)
 
-    def fire_and_forget_request(self, request: Shareable, fl_ctx: FLContext, targets=None):
+    def fire_and_forget_request(self, request: Shareable, fl_ctx: FLContext, targets=None, secure=False):
         pass
 
     def _receive(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
@@ -112,6 +118,11 @@ class FedEventRunner(Widget):
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
         with self.in_lock:
+            if self.poster is None:
+                # create the poster thread now
+                self.poster = threading.Thread(target=self._post, name="fed_event_poster")
+                self.poster.start()
+
             last_timestamp = self.last_timestamps.get(peer_name, None)
             if last_timestamp is None or timestamp > last_timestamp:
                 # we only keep new items, in case the peer somehow sent old items
@@ -138,30 +149,25 @@ class FedEventRunner(Widget):
         be handled by receiving side.
         """
         sleep_time = self.regular_interval
-        countdown = self.grace_period
         while True:
             time.sleep(sleep_time)
             if self.abort_signal.triggered:
                 break
             n = len(self.in_events)
             if n > 0:
-                if self.asked_to_flush:
-                    sleep_time = 0
-                else:
-                    sleep_time = self.regular_interval
+                sleep_time = 0.0
                 with self.in_lock:
                     event_to_post = self.in_events.pop(0)
+                    if len(self.in_events) == 0:
+                        self.last_queue_empty_time = time.time()
             elif self.asked_to_stop:
-                # the queue is empty, and we are asked to stop.
-                # wait self.grace_period seconds , then exit.
-                if countdown < 0:
-                    break
-                else:
-                    countdown = countdown - 1
-                    time.sleep(1)
+                time.sleep(self.grace_period)
+                if len(self.in_events) > 0:
                     continue
+                else:
+                    break
             else:
-                sleep_time = min(sleep_time * 2, 1)
+                sleep_time = self.regular_interval
                 continue
 
             with self.engine.new_context() as fl_ctx:
@@ -173,7 +179,7 @@ class FedEventRunner(Widget):
                 event_type = event_to_post.get_header(FedEventHeader.EVENT_TYPE)
                 try:
                     self.engine.fire_event(event_type=event_type, fl_ctx=fl_ctx)
-                except BaseException as e:
+                except Exception as e:
                     if self.asked_to_stop:
                         self.log_warning(fl_ctx, f"event {event_to_post} fired unsuccessfully during END_RUN")
                     else:
@@ -181,18 +187,15 @@ class FedEventRunner(Widget):
 
 
 class ServerFedEventRunner(FedEventRunner):
-    def __init__(self, topic=FED_EVENT_TOPIC):
+    def __init__(self, topic=FED_EVENT_TOPIC, regular_interval=0.01, grace_period=2.0, queue_empty_period=2.0):
         """Init ServerFedEventRunner."""
-        FedEventRunner.__init__(self, topic)
+        FedEventRunner.__init__(self, topic, regular_interval, grace_period, queue_empty_period)
 
-    def fire_and_forget_request(self, request: Shareable, fl_ctx: FLContext, targets=None):
+    def fire_and_forget_request(self, request: Shareable, fl_ctx: FLContext, targets=None, secure=False):
         if not isinstance(self.engine, ServerEngineSpec):
             raise TypeError("self.engine must be ServerEngineSpec but got {}".format(type(self.engine)))
         self.engine.fire_and_forget_aux_request(
-            topic=self.topic,
-            targets=targets,
-            request=request,
-            fl_ctx=fl_ctx,
+            topic=self.topic, targets=targets, request=request, fl_ctx=fl_ctx, secure=secure
         )
 
 
@@ -208,11 +211,11 @@ class ClientFedEventRunner(FedEventRunner):
         if event_type == EventType.START_RUN:
             self.ready = True
 
-    def fire_and_forget_request(self, request: Shareable, fl_ctx: FLContext, targets=None):
+    def fire_and_forget_request(self, request: Shareable, fl_ctx: FLContext, targets=None, secure=False):
         if not self.ready:
             self.log_warning(fl_ctx, "Engine in not ready, skip the fed event firing.")
             return
 
         if not isinstance(self.engine, ClientEngineSpec):
             raise TypeError("self.engine must be ClientEngineSpec but got {}".format(type(self.engine)))
-        self.engine.fire_and_forget_aux_request(topic=self.topic, request=request, fl_ctx=fl_ctx)
+        self.engine.fire_and_forget_aux_request(topic=self.topic, request=request, fl_ctx=fl_ctx, secure=secure)

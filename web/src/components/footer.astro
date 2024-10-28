@@ -1,0 +1,51 @@
+---
+import NvidiaLogo from '../images/nvidia_eye.png';
+
+const base_url = import.meta.env.BASE_URL;
+
+---
+<footer class="bg-gray-100 dark:bg-gray-900">
+  <div class="mx-auto w-full max-w-screen-xl p-4 py-6 lg:py-8">
+      <div class="md:flex md:justify-between">
+        <div class="mb-6 md:mb-0">
+            <a href={base_url} class="flex items-center">
+                <img class="flex items-center h-8 me-3" src={NvidiaLogo.src} alt="NVIDIA logo">
+                <span class="self-center text-2xl font-semibold whitespace-nowrap dark:text-white">NVIDIA FLARE</span>
+            </a>
+        </div>
+        <div class="grid grid-cols-2 gap-8 sm:gap-6 sm:grid-cols-2">
+            <div>
+                <h2 class="mb-6 text-sm font-semibold text-gray-900 uppercase dark:text-white">Resources</h2>
+                <ul class="text-gray-500 dark:text-gray-400 font-medium">
+                    <li class="mb-4">
+                        <a href="https://github.com/NVIDIA/NVFlare" class="hover:underline">GitHub</a>
+                    </li>
+                    <li class="mb-4">
+                        <a href="https://nvflare.readthedocs.io/en/main/index.html" class="hover:underline">Documentation</a>
+                    </li>
+                    <li class="mb-4">
+                        <a href="https://www.youtube.com/results?search_query=nvidia+flare&sp=CAASAhAB" class="hover:underline">YouTube</a>
+                    </li>
+                </ul>
+            </div>
+            <div>
+                <h2 class="mb-6 text-sm font-semibold text-gray-900 uppercase dark:text-white">Community</h2>
+                <ul class="text-gray-500 dark:text-gray-400 font-medium">
+                    <li class="mb-4">
+                        <a href="https://github.com/NVIDIA/NVFlare/discussions" class="hover:underline ">Discussions</a>
+                    </li>
+                    <li class="mb-4">
+                        <a href="https://github.com/NVIDIA/NVFlare/blob/main/CONTRIBUTING.md" class="hover:underline">Contributing</a>
+                    </li>
+                    <li class="mb-4">
+                        <a href="https://github.com/NVIDIA/NVFlare/blob/main/CITATION.cff" class="hover:underline">Citation</a>
+                    </li>
+                    <li class="mb-4">
+                        <a href="https://github.com/NVIDIA/NVFlare?tab=Apache-2.0-1-ov-file#readme" class="hover:underline">License</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+  </div>
+</footer>

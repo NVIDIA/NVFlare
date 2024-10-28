@@ -1,0 +1,66 @@
+{
+  "format_version": 2,
+  "executors": [
+    {
+      "tasks": [
+        "fed_stats_pre_run" ,"fed_stats"
+      ],
+      "executor": {
+        "id": "Executor",
+        "path": "nvflare.app_common.executors.statistics.statistics_executor.StatisticsExecutor",
+        "args": {
+          "generator_id": "df_stats_generator"
+        }
+      }
+    }
+  ],
+  "task_result_filters": [
+    {
+      "tasks": ["fed_stats"],
+      "filters":[
+        {
+          "path": "nvflare.app_common.filters.statistics_privacy_filter.StatisticsPrivacyFilter",
+          "args": {
+            "result_cleanser_ids": [
+              "min_count_cleanser",
+              "min_max_noise_cleanser",
+              "hist_bins_cleanser"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "task_data_filters": [],
+  "components": [
+    {
+      "id": "df_stats_generator",
+      "path": "df_statistics.DFStatistics",
+      "args": {
+        "data_path": "data.csv"
+      }
+    },
+    {
+      "id": "min_max_cleanser",
+      "path": "nvflare.app_common.statistics.min_max_cleanser.AddNoiseToMinMax",
+      "args": {
+        "min_noise_level": 0.1,
+        "max_noise_level": 0.3
+      }
+    },
+    {
+      "id": "hist_bins_cleanser",
+      "path": "nvflare.app_common.statistics.histogram_bins_cleanser.HistogramBinsCleanser",
+      "args": {
+        "max_bins_percent": 10
+      }
+    },
+    {
+      "id": "min_count_cleanser",
+      "path": "nvflare.app_common.statistics.min_count_cleanser.MinCountCleanser",
+      "args": {
+        "min_count": 10
+      }
+    }
+  ]
+}

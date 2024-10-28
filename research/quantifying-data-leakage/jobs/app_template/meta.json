@@ -1,0 +1,8 @@
+{
+    "name": "cxr_dp-sgd",
+    "deploy_map": {
+        "server": ["server"],
+        "client": ["site-1"]
+    },
+    "min_clients": 1
+}

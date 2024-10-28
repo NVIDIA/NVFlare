@@ -9,7 +9,7 @@ Before You Start
 Before jumping into this guide, make sure you have an environment
 with `NVIDIA FLARE <https://pypi.org/project/nvflare/>`_ installed.
 
-You can follow the :ref:`installation <installation>` guide on the general concept of setting up a
+You can follow :ref:`getting_started` on the general concept of setting up a
 Python virtual environment (the recommended environment) and how to install NVIDIA FLARE.
 
 Prerequisite
@@ -110,36 +110,15 @@ and adding a ``random_epsilon`` before returning the results packaged with a DXO
   NVIDIA FLARE can be used with any data packaged inside a :ref:`Shareable <shareable>` object (subclasses ``dict``), and
   :ref:`DXO <data_exchange_object>` is recommended as a way to manage that data in a standard way.
 
-Application Configuration
-^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Inside the config folder there are two files, ``config_fed_client.json`` and ``config_fed_server.json``.
-
-.. literalinclude:: ../../examples/hello-numpy-cross-val/config/config_fed_server.json
-   :language: python
-   :linenos:
-   :caption: config_fed_server.json
-
-The server now has a second workflow configured after Scatter and Gather, :class:`CrossSiteModelEval<nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval>`.
-
-The components "model_locator" and "formatter" have been added to work with the cross site model evaluation workflow,
-and the rest is the same as in :doc:`Hello Scatter and Gather <hello_scatter_and_gather>`.
-
-
-.. literalinclude:: ../../examples/hello-numpy-cross-val/config/config_fed_client.json
-   :language: python
-   :linenos:
-   :caption: config_fed_client.json
-
-The client configuration now has more tasks and an additional Executor ``NPValidator`` configured to handle the "validate" task.
-The "submit_model" task has been added to the ``NPTrainer`` Executor to work with the :class:`CrossSiteModelEval<nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval>`
-workflow to get the client models.
-
 Cross site validation!
 ----------------------
 
-.. |ExampleApp| replace:: hello-numpy-cross-val
-.. include:: run_fl_system.rst
+We can run it using NVFlare simulator
+
+.. code-block:: bash
+
+  python3 job_train_and_cse.py
+
 
 During the first phase, the model will be trained.
 
@@ -154,27 +133,31 @@ This can produce a lot of results. All the results will be kept in the job's wor
 Understanding the Output
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
-After starting the server and clients, you should begin to see
-some outputs in each terminal tracking the progress of the FL run.
-As each client finishes training, it will start the cross site validation process.
-During this you'll see several important outputs the track the progress of cross site validation.
+You can find the running logs and results inside the simulator's workspace:
 
-The server shows the log of each client requesting models, the models it sends and the results received.
-Since the server could be responding to many clients at the same time, it may
-require careful examination to make proper sense of events from the jumbled logs.
+.. code-block:: bash
+
+  ls /tmp/nvflare/jobs/workdir/
+  server/  site-1/  site-2/  startup/
 
 
-.. include:: access_result.rst
+The cross site validation results:
 
-.. note::
-    You could see the cross-site validation results
-    at ``[DOWNLOAD_DIR]/[JOB_ID]/workspace/cross_site_val/cross_val_results.json``
-
-.. include:: shutdown_fl_system.rst
+.. code-block:: bash
+  cat /tmp/nvflare/jobs/workdir/server/simulate_job/cross_site_val/cross_val_results.json
 
 Congratulations!
 
 You've successfully run your numpy federated learning system with cross site validation.
 
 The full source code for this exercise can be found in
-`examples/hello-numpy-cross-val <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-numpy-cross-val/>`_.
+:github_nvflare_link:`examples/hello-world/hello-numpy-cross-val <examples/hello-world/hello-numpy-cross-val/>`.
+
+Previous Versions of Hello Cross-Site Validation
+------------------------------------------------
+
+  - `hello-numpy-cross-val for 2.0 <https://github.com/NVIDIA/NVFlare/tree/2.0/examples/hello-numpy-cross-val>`_
+  - `hello-numpy-cross-val for 2.1 <https://github.com/NVIDIA/NVFlare/tree/2.1/examples/hello-numpy-cross-val>`_
+  - `hello-numpy-cross-val for 2.2 <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/hello-numpy-cross-val>`_
+  - `hello-numpy-cross-val for 2.3 <https://github.com/NVIDIA/NVFlare/tree/2.3/examples/hello-world/hello-numpy-cross-val/>`_
+  - `hello-numpy-cross-val for 2.4 <https://github.com/NVIDIA/NVFlare/tree/2.4/examples/hello-world/hello-numpy-cross-val/>`_

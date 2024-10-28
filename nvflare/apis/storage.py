@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,6 +15,13 @@
 from abc import ABC, abstractmethod
 from typing import List, Tuple
 
+DATA = "data"
+JOB_ZIP = "job.zip"
+META = "meta"
+META_JSON = "meta.json"
+WORKSPACE = "workspace"
+WORKSPACE_ZIP = "workspace.zip"
+
 
 class StorageException(Exception):
     """Base class for Storage exceptions."""
@@ -27,13 +34,14 @@ class StorageSpec(ABC):
 
     An object is identified by a URI (unique resource identifier).
     Each object contains:
+
         - content (data)
         - meta info that describes the control info of the object.
 
     """
 
     @abstractmethod
-    def create_object(self, uri: str, data: bytes, meta: dict, overwrite_existing: bool):
+    def create_object(self, uri: str, data, meta: dict, overwrite_existing: bool):
         """Creates an object.
 
         Examples of URI:
@@ -44,7 +52,7 @@ class StorageSpec(ABC):
 
         Args:
             uri: URI of the object
-            data: content of the object
+            data: content of the object. bytes or file name.
             meta: meta info of the object
             overwrite_existing: whether to overwrite the object if already exists
 
@@ -52,6 +60,35 @@ class StorageSpec(ABC):
             - invalid args
             - object already exists and overwrite_existing is False
             - error creating the object
+
+        """
+        pass
+
+    @abstractmethod
+    def clone_object(self, from_uri: str, to_uri: str, meta: dict, overwrite_existing: bool = False):
+        """Create a new object by cloning an existing one
+
+        Args:
+            from_uri: the existing object's uri
+            to_uri: the uri for the new object
+            meta: meta info for the new object
+            overwrite_existing: whether to overwrite the new uri if already exists
+
+        Returns:
+
+        """
+        pass
+
+    @abstractmethod
+    def update_object(self, uri: str, data, component_name: str):
+        """Update the object
+
+        Args:
+            uri: URI of the object
+            data: content data of the component, or the content file location
+            component_name: component name
+
+        Raises StorageException when the object does not exit.
 
         """
         pass
@@ -74,27 +111,12 @@ class StorageSpec(ABC):
         pass
 
     @abstractmethod
-    def update_data(self, uri: str, data: bytes):
-        """Updates the data of the specified object.
-
-        Args:
-            uri: URI of the object
-            data: value of new data
-
-        Raises StorageException when:
-            - invalid args
-            - no such object
-            - error updating the object
-
-        """
-        pass
-
-    @abstractmethod
-    def list_objects(self, path: str) -> List[str]:
+    def list_objects(self, path: str, without_tag=None) -> List[str]:
         """Lists all objects in the specified path.
 
         Args:
             path: the path to the objects
+            without_tag: skip the objects with this specified tag
 
         Returns:
             list of URIs of objects
@@ -120,15 +142,31 @@ class StorageSpec(ABC):
         pass
 
     @abstractmethod
-    def get_data(self, uri: str) -> bytes:
+    def get_data(self, uri: str, component_name: str = DATA) -> bytes:
         """Gets data of the specified object.
 
         Args:
             uri: URI of the object
+            component_name: storage component name
 
         Returns:
             data of the object.
             if object does not exist, return None
+
+        Raises StorageException when:
+            - invalid args
+
+        """
+        pass
+
+    @abstractmethod
+    def get_data_for_download(self, uri: str, component_name: str = DATA, download_file: str = None):
+        """Gets data of the specified object.
+
+        Args:
+            uri: URI of the object
+            component_name: storage component name
+            download_file: component file_name for download
 
         Raises StorageException when:
             - invalid args
@@ -162,3 +200,21 @@ class StorageSpec(ABC):
 
         """
         pass
+
+    @abstractmethod
+    def tag_object(self, uri: str, tag: str, data=None):
+        """Tag an object with specified tag and data.
+
+        Args:
+            uri: URI of the object
+            tag: tag to be placed on the object
+            data: data associated with the tag.
+
+        Returns: None
+
+        """
+        pass
+
+    @staticmethod
+    def is_valid_component(component_name):
+        return component_name in [DATA, META, WORKSPACE]

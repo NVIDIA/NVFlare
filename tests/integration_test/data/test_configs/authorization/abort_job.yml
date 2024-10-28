@@ -1,0 +1,161 @@
+ha: True
+jobs_root_dir: ./data/apps
+cleanup: True
+project_yaml: ./data/projects/authz.yml
+poll_period: 0.5
+
+tests:
+  - test_name: "lead_a submit slow_job and lead_a abort"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job slow_job" ]
+        "admin_user_name": "trainer@a.org"
+        "result":
+          "type": "job_submit_success"
+      - "trigger":
+          "type": "server_log"
+          "data": "Started run"
+        "actions": [ "abort_job" ]
+        "admin_user_name": "trainer@a.org"
+        "result":
+          "type": "run_state"
+          "data": {}
+      - "trigger":
+          "type": "server_log"
+          "data": "Abort"
+        "actions": [ "mark_test_done" ]
+        "result":
+          "type": "run_state"
+          "data": { }
+  - test_name: "lead_a submit slow_job and lead_b abort"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job slow_job" ]
+        "admin_user_name": "trainer@a.org"
+        "result":
+          "type": "run_state"
+          "data": {}
+      - "trigger":
+          "type": "server_log"
+          "data": "Started run"
+        "actions": [ "abort_job" ]
+        "admin_user_name": "trainer@b.org"
+        "result":
+          "type": "admin_api_response"
+          "data": {
+            "message": "Error: PermissionError: Authorization Error: user 'trainer@b.org' is not authorized for 'abort_job'"
+          }
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
+  - test_name: "lead_a submit slow_job and admin_a abort"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job slow_job" ]
+        "admin_user_name": "trainer@a.org"
+        "result":
+          "type": "run_state"
+          "data": {}
+      - "trigger":
+          "type": "server_log"
+          "data": "Started run"
+        "actions": [ "abort_job" ]
+        "admin_user_name": "admin@a.org"
+        "result":
+          "type": "run_state"
+          "data": {}
+      - "trigger":
+          "type": "server_log"
+          "data": "Abort"
+        "actions": [ "mark_test_done" ]
+        "result":
+          "type": "run_state"
+          "data": { }
+  - test_name: "lead_a submit slow_job and admin_b abort"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job slow_job" ]
+        "admin_user_name": "trainer@a.org"
+        "result":
+          "type": "run_state"
+          "data": {}
+      - "trigger":
+          "type": "server_log"
+          "data": "Started run"
+        "actions": [ "abort_job" ]
+        "admin_user_name": "admin@b.org"
+        "result":
+          "type": "admin_api_response"
+          "data": {
+            "message": "Error: PermissionError: Authorization Error: user 'admin@b.org' is not authorized for 'abort_job'"
+          }
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
+  - test_name: "lead_a submit slow_job and user_a abort"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job slow_job" ]
+        "admin_user_name": "trainer@a.org"
+        "result":
+          "type": "run_state"
+          "data": {}
+      - "trigger":
+          "type": "server_log"
+          "data": "Started run"
+        "actions": [ "abort_job" ]
+        "admin_user_name": "user@a.org"
+        "result":
+          "type": "admin_api_response"
+          "data": {
+            "message": "Error: PermissionError: Authorization Error: user 'user@a.org' is not authorized for 'abort_job'"
+          }
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
+  - test_name: "lead_a submit slow_job and super abort"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job slow_job" ]
+        "admin_user_name": "trainer@a.org"
+        "result":
+          "type": "run_state"
+          "data": {}
+      - "trigger":
+          "type": "server_log"
+          "data": "Started run"
+        "actions": [ "abort_job" ]
+        "result":
+          "type": "run_state"
+          "data": { }
+      - "trigger":
+          "type": "server_log"
+          "data": "Abort"
+        "actions": [ "mark_test_done" ]
+        "result":
+          "type": "run_state"
+          "data": { }

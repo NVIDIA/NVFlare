@@ -74,47 +74,42 @@ gunicorn_conf_py: |
 
 local_client_resources: |
   {
-      "format_version": 2,
-      "client": {
-        "retry_timeout": 30,
-        "compression": "Gzip"
+    "format_version": 2,
+    "client": {
+      "retry_timeout": 30,
+      "compression": "Gzip"
+    },
+    "components": [
+      {
+        "id": "resource_manager",
+        "path": "nvflare.app_common.resource_managers.gpu_resource_manager.GPUResourceManager",
+        "args": {
+          "num_of_gpus": 0,
+          "mem_per_gpu_in_GiB": 0
+        }
       },
-      "components": [
-          {
-            "id": "resource_manager",
-            "path": "nvflare.app_common.resource_managers.gpu_resource_manager.GPUResourceManager",
-            "args": {
-              "num_of_gpus": 4,
-              "mem_per_gpu_in_GiB": 16
-            }
-          },
-          {
-            "id": "resource_consumer",
-            "path": "nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer",
-            "args": {
-            }
-          }
-      ]
+      {
+        "id": "resource_consumer",
+        "path": "nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer",
+        "args": {}
+      }
+    ]
   }
 
 fed_client: |
   {
     "format_version": 2,
     "servers": [
-        {
-            "name": "spleen_segmentation",
-            "service": {
-                "options": [
-                    ["grpc.max_send_message_length",    2147483647],
-                    ["grpc.max_receive_message_length", 2147483647]
-                ]
-            }
+      {
+        "name": "spleen_segmentation",
+        "service": {
         }
+      }
     ],
     "client": {
-        "ssl_private_key": "client.key",
-        "ssl_cert": "client.crt",
-        "ssl_root_cert": "rootCA.pem"
+      "ssl_private_key": "client.key",
+      "ssl_cert": "client.crt",
+      "ssl_root_cert": "rootCA.pem"
     }
   }
 
@@ -207,7 +202,7 @@ local_server_resources: |
               "id": "job_scheduler",
               "path": "nvflare.app_common.job_schedulers.job_scheduler.DefaultJobScheduler",
               "args": {
-                  "max_jobs": 1
+                  "max_jobs": 4
               }
           },
           {
@@ -232,11 +227,7 @@ fed_server: |
         {
             "name": "spleen_segmentation",
             "service": {
-                "target": "localhost:8002",
-                "options": [
-                    ["grpc.max_send_message_length",    2147483647],
-                    ["grpc.max_receive_message_length", 2147483647]
-                ]
+                "target": "localhost:8002"
             },
             "admin_host": "localhost",
             "admin_port": 5005,
@@ -295,50 +286,6 @@ default_authz: |
     }
   }
 
-authz_def: |
-  {
-    "rules": {
-      "allow_byoc": {
-        "desc": "allow BYOC in APP",
-        "type": "bool",
-        "default": false
-      },
-      "allow_custom_datalist": {
-        "desc": "allow custom datalist",
-        "default": true
-      }
-    },
-    "rights": {
-      "train_self": {
-        "desc": "do training operations on own site",
-        "default": false,
-        "precond": "selfOrg"
-      },
-      "train_all": {
-        "desc": "do training ops on all sites",
-        "default": false
-      },
-      "view_self": {
-        "desc": "view log files of own org",
-        "default": true,
-        "precond": "selfOrg"
-      },
-      "view_all": {
-        "desc": "view log files of all sites",
-        "default": false
-      },
-      "operate_all": {
-        "desc": "start/stop all sites",
-        "default": false
-      },
-      "operate_self": {
-        "desc": "start/stop own site",
-        "default": false,
-        "precond": "selfOrg"
-      }
-    }
-  }
-
 fl_admin_sh: |
   #!/usr/bin/env bash
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
@@ -347,7 +294,7 @@ fl_admin_sh: |
 
 log_config: |
   [loggers]
-  keys=root,modelLogger
+  keys=root
 
   [handlers]
   keys=consoleHandler
@@ -358,12 +305,6 @@ log_config: |
   [logger_root]
   level=INFO
   handlers=consoleHandler
-
-  [logger_modelLogger]
-  level=DEBUG
-  handlers=consoleHandler
-  qualname=modelLogger
-  propagate=0
 
   [handler_consoleHandler]
   class=StreamHandler
@@ -382,13 +323,80 @@ start_ovsr_sh: |
 start_cln_sh: |
   #!/usr/bin/env bash
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-  $DIR/sub_start.sh &
+  all_arguments="${@}"
+  doCloud=false
+  # parse arguments
+  while [[ $# -gt 0 ]]
+  do
+      key="$1"
+      case $key in
+        --cloud)
+          doCloud=true
+          csp=$2
+          shift
+        ;;
+      esac
+      shift
+  done
+
+  if [ $doCloud == true ]
+  then
+    case $csp in
+      azure)
+        $DIR/azure_start.sh ${all_arguments}
+        ;;
+      aws)
+        $DIR/aws_start.sh ${all_arguments}
+        ;;
+      *)
+        echo "Only on-prem or azure or aws is currently supported."
+    esac
+  else
+    $DIR/sub_start.sh &
+  fi
 
 start_svr_sh: |
   #!/usr/bin/env bash
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-  $DIR/sub_start.sh &
+  all_arguments="${@}"
+  doCloud=false
+  ha_mode={~~ha_mode~~}
+  # parse arguments
+  while [[ $# -gt 0 ]]
+  do
+    key="$1"
+    case $key in
+      --cloud)
+        if [ $ha_mode == false ]
+        then
+          doCloud=true
+          csp=$2
+          shift
+        else
+          echo "Cloud launch does not support NVFlare HA mode."
+          exit 1
+        fi
+      ;;
+    esac
+    shift
+  done
 
+  if [ $doCloud == true ]
+  then
+    case $csp in
+      azure)
+        $DIR/azure_start.sh ${all_arguments}
+        ;;
+      aws)
+        $DIR/aws_start.sh ${all_arguments}
+        ;;
+      *)
+        echo "Only on-prem or azure or aws is currently supported."
+    esac
+  else
+    $DIR/sub_start.sh &
+  fi
+    
 stop_fl_sh: |
   #!/usr/bin/env bash
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
@@ -409,7 +417,7 @@ stop_fl_sh: |
       ;;
   esac
 
-sub_start_cln_sh: |
+sub_start_sh: |
   #!/usr/bin/env bash
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
   echo "WORKSPACE set to $DIR/.."
@@ -432,7 +440,7 @@ sub_start_cln_sh: |
       exit
     fi
     lst=$SECONDS
-  ((python3 -u -m nvflare.private.fed.app.client.client_train -m $DIR/.. -s fed_client.json --set secure_train=true uid={~~client_name~~} org={~~org_name~~} config_folder={~~config_folder~~} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl )
+  ((python3 -u -m nvflare.private.fed.app.{~~type~~}.{~~type~~}_train -m $DIR/.. -s fed_{~~type~~}.json --set secure_train=true {~~cln_uid~~} org={~~org_name~~} config_folder={~~config_folder~~} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl )
     pid=`cat $DIR/../pid.fl`
     echo "new pid ${pid}"
   }
@@ -498,112 +506,42 @@ sub_start_cln_sh: |
 
   rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../daemon_pid.fl
 
-sub_start_svr_sh: |
-  #!/usr/bin/env bash
-  DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-  echo "WORKSPACE set to $DIR/.."
-  mkdir -p $DIR/../transfer 
-
-  SECONDS=0
-  lst=-400
-  restart_count=0
-  start_fl() {
-    if [[ $(( $SECONDS - $lst )) -lt 300 ]]; then
-      ((restart_count++))
-    else
-      restart_count=0
-    fi
-    if [[ $(($SECONDS - $lst )) -lt 300 && $restart_count -ge 5 ]]; then
-      echo "System is in trouble and unable to start the task!!!!!"
-      rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../daemon_pid.fl
-      exit
-    fi
-    lst=$SECONDS
-  ((python3 -u -m nvflare.private.fed.app.server.server_train -m $DIR/.. -s fed_server.json --set secure_train=true org={~~org_name~~} config_folder={~~config_folder~~} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl )
-    pid=`cat $DIR/../pid.fl`
-    echo "new pid ${pid}"
-  }
-
-  stop_fl() {
-    if [[ ! -f "$DIR/../pid.fl" ]]; then
-      echo "No pid.fl.  No need to kill process."
-      return
-    fi
-    pid=`cat $DIR/../pid.fl`
-    sleep 5
-    kill -0 ${pid} 2> /dev/null 1>&2
-    if [[ $? -ne 0 ]]; then
-      echo "Process already terminated"
-      return
-    fi
-    kill -9 $pid
-    rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl
-  }
-    
-  if [[ -f "$DIR/../daemon_pid.fl" ]]; then
-    dpid=`cat $DIR/../daemon_pid.fl`
-    kill -0 ${dpid} 2> /dev/null 1>&2
-    if [[ $? -eq 0 ]]; then
-      echo "There seems to be one instance, pid=$dpid, running."
-      echo "If you are sure it's not the case, please kill process $dpid and then remove daemon_pid.fl in $DIR/.."
-      exit
-    fi
-    rm -f $DIR/../daemon_pid.fl
-  fi
-
-  echo $BASHPID > $DIR/../daemon_pid.fl
-
-  while true
-  do
-    sleep 5
-    if [[ ! -f "$DIR/../pid.fl" ]]; then
-      echo "start fl because of no pid.fl"
-      start_fl
-      continue
-    fi
-    pid=`cat $DIR/../pid.fl`
-    kill -0 ${pid} 2> /dev/null 1>&2
-    if [[ $? -ne 0 ]]; then
-      if [[ -f "$DIR/../shutdown.fl" ]]; then
-        echo "Gracefully shutdown."
-        break
-      fi
-      echo "start fl because process of ${pid} does not exist"
-      start_fl
-      continue
-    fi
-    if [[ -f "$DIR/../shutdown.fl" ]]; then
-      echo "About to shutdown."
-      stop_fl
-      break
-    fi
-    if [[ -f "$DIR/../restart.fl" ]]; then
-      echo "About to restart."
-      stop_fl
-    fi
-  done
-
-  rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../daemon_pid.fl
-
 docker_cln_sh: |
   #!/usr/bin/env bash
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
   # docker run script for FL client
   # local data directory
-  MY_DATA_DIR=/home/flclient/data
+  : ${MY_DATA_DIR:="/home/flclient/data"}
+  # The syntax above is to set MY_DATA_DIR to /home/flcient/data if this
+  # environment variable is not set previously.
+  # Therefore, users can set their own MY_DATA_DIR with
+  # export MY_DATA_DIR=$SOME_DIRECTORY
+  # before running docker.sh
+
   # for all gpus use line below 
-  GPU2USE=all 
+  #GPU2USE='--gpus=all'
   # for 2 gpus use line below
-  #GPU2USE=2 
+  #GPU2USE='--gpus=2' 
   # for specific gpus as gpu#0 and gpu#2 use line below
-  #GPU2USE='"device=0,2"'
+  #GPU2USE='--gpus="device=0,2"'
   # to use host network, use line below
   NETARG="--net=host"
   # FL clients do not need to open ports, so the following line is not needed.
   #NETARG="-p 443:443 -p 8003:8003"
   DOCKER_IMAGE={~~docker_image~~}
   echo "Starting docker with $DOCKER_IMAGE"
-  docker run --rm -it --name={~~client_name~~} --gpus=$GPU2USE -u $(id -u):$(id -g) -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group -v $DIR/..:/workspace/ -v $MY_DATA_DIR:/data/:ro -w /workspace/ --ipc=host $NETARG $DOCKER_IMAGE /bin/bash
+  mode="${1:--r}"
+  if [ $mode = "-d" ]
+  then
+    docker run -d --rm --name={~~client_name~~} $GPU2USE -u $(id -u):$(id -g) \
+    -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group -v $DIR/..:/workspace/ \
+    -v $MY_DATA_DIR:/data/:ro -w /workspace/ --ipc=host $NETARG $DOCKER_IMAGE \
+    /bin/bash -c "python -u -m nvflare.private.fed.app.client.client_train -m /workspace -s fed_client.json --set uid={~~client_name~~} secure_train=true config_folder=config org={~~org_name~~}"
+  else
+    docker run --rm -it --name={~~client_name~~} $GPU2USE -u $(id -u):$(id -g) \
+    -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group -v $DIR/..:/workspace/ \
+    -v $MY_DATA_DIR:/data/:ro -w /workspace/ --ipc=host $NETARG $DOCKER_IMAGE /bin/bash
+  fi
 
 docker_svr_sh: |
   #!/usr/bin/env bash
@@ -615,7 +553,16 @@ docker_svr_sh: |
   #NETARG="-p {~~admin_port~~}:{~~admin_port~~} -p {~~fed_learn_port~~}:{~~fed_learn_port~~}"
   DOCKER_IMAGE={~~docker_image~~}
   echo "Starting docker with $DOCKER_IMAGE"
-  docker run --rm -it --name=flserver -v $DIR/..:/workspace/ -w /workspace/ --ipc=host $NETARG $DOCKER_IMAGE /bin/bash
+  svr_name="${SVR_NAME:-flserver}"
+  mode="${1:-r}"
+  if [ $mode = "-d" ]
+  then
+    docker run -d --rm --name=$svr_name -v $DIR/..:/workspace/ -w /workspace \
+    --ipc=host $NETARG $DOCKER_IMAGE /bin/bash -c \
+    "python -u -m nvflare.private.fed.app.server.server_train -m /workspace -s fed_server.json --set secure_train=true config_folder=config org={~~org_name~~}"
+  else
+    docker run --rm -it --name=$svr_name -v $DIR/..:/workspace/ -w /workspace/ --ipc=host $NETARG $DOCKER_IMAGE /bin/bash
+  fi
 
 docker_adm_sh: |
   #!/usr/bin/env bash
@@ -633,27 +580,27 @@ compose_yaml: |
   services:
     __overseer__:
       build: ./nvflare
-      image: nvflare-service
+      image: ${IMAGE_NAME}
       volumes:
         - .:/workspace
-      command: ["/workspace/startup/start.sh"]
+      command: ["${WORKSPACE}/startup/start.sh"]
       ports:
         - "8443:8443"
 
     __flserver__:
-      image: nvflare-service
+      image: ${IMAGE_NAME}
       ports:
         - "8002:8002"
         - "8003:8003"
       volumes:
         - .:/workspace
         - nvflare_svc_persist:/tmp/nvflare/
-      command: ["/usr/local/bin/python3",
+      command: ["${PYTHON_EXECUTABLE}",
             "-u",
             "-m",
             "nvflare.private.fed.app.server.server_train",
             "-m",
-            "/workspace",
+            "${WORKSPACE}",
             "-s",
             "fed_server.json",
             "--set",
@@ -663,15 +610,15 @@ compose_yaml: |
           ]
 
     __flclient__:
-      image: nvflare-service
+      image: ${IMAGE_NAME}
       volumes:
         - .:/workspace
-      command: ["/usr/local/bin/python3",
+      command: ["${PYTHON_EXECUTABLE}",
             "-u",
             "-m",
             "nvflare.private.fed.app.client.client_train",
             "-m",
-            "/workspace",
+            "${WORKSPACE}",
             "-s",
             "fed_client.json",
             "--set",
@@ -825,4 +772,211 @@ helm_chart_values: |
   workspace: /home/nvflare
   persist: /home/nvflare
 
+
+cloud_script_header: |
+  #!/usr/bin/env bash
+  
+  DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+  function report_status() {
+    status="$1"
+    if [ "${status}" -ne 0 ]
+    then
+      echo "$2 failed"
+      exit "${status}"
+    fi
+  }
+
+  function check_binary() {
+    echo -n "Checking if $1 exists. => "
+    if ! command -v $1 &> /dev/null
+    then
+      echo "not found. $2"
+      exit 1
+    else
+      echo "found"
+    fi
+  }
+
+  function prompt() {
+    # usage:  prompt NEW_VAR "Prompt message" ["${PROMPT_VALUE}"]
+    local __resultvar=$1
+    local __prompt=$2
+    local __default=${3:-}
+    local __result
+    if [[ ${BASH_VERSINFO[0]} -ge 4 && -n "$__default" ]]
+      then
+      read -e -i "$__default" -p "$__prompt: " __result
+    else
+      __default=${3:-${!__resultvar:-}}
+      if [[ -n $__default ]]
+        then
+        printf "%s [%s]: " "$__prompt" "$__default"
+      else
+        printf "%s: " "$__prompt"
+      fi
+      IFS= read -r __result
+      if [[ -z "$__result" && -n "$__default" ]]
+        then
+        __result="$__default"
+      fi
+    fi
+    eval $__resultvar="'$__result'"
+  }
+
+  function get_resources_file() {
+    local rfile="${DIR}/../local/resources.json"
+    if [ -f "${rfile}" ]
+      then
+      echo "${rfile}"
+    elif [ -f "${rfile}.default" ]
+      then
+      echo "${rfile}.default"
+    else
+      echo ""
+      exit 1
+    fi
+  }
+
+  # parse arguments
+  while [[ $# -gt 0 ]]
+  do
+    key="$1"
+    case $key in
+      --config)
+        config_file=$2
+        shift
+      ;;
+      --image)
+        image_name=$2
+        shift
+      ;;
+      --vpc-id)
+        vpc_id=$2
+        shift
+      ;;
+      --subnet-id)
+        subnet_id=$2
+        shift
+      ;;
+    esac
+    shift
+  done
+
+adm_notebook: |
+  {
+  "cells": [
+    {
+    "cell_type": "markdown",
+    "id": "b758695b",
+    "metadata": {},
+    "source": [
+      "# System Info"
+    ]
+    },
+    {
+    "cell_type": "markdown",
+    "id": "9f7cd9e6",
+    "metadata": {},
+    "source": [
+      "In this notebook, System Info is checked with the FLARE API."
+    ]
+    },
+    {
+    "cell_type": "markdown",
+    "id": "ea50ba28",
+    "metadata": {},
+    "source": [
+      "#### 1. Connect to the FL System with the FLARE API\n",
+      "\n",
+      "Use `new_secure_session()` to initiate a session connecting to the FL Server with the FLARE API. The necessary arguments are the username of the admin user you are using and the corresponding startup kit location.\n",
+      "\n",
+      "In the code example below, we get the `admin_user_dir` by concatenating the workspace root with the default directories that are created if you provision a project with a given project name. You can change the values to what applies to your system if needed.\n",
+      "\n",
+      "Note that if debug mode is not enabled, there is no output after initiating a session successfully, so instead we print the output of `get_system_info()`. If you are unable to connect and initiate a session, make sure that your FL Server is running and that the configurations are correct with the right path to the admin startup kit directory."
+    ]
+    },
+    {
+    "cell_type": "code",
+    "execution_count": null,
+    "id": "0166942d",
+    "metadata": {
+      "collapsed": true
+    },
+    "outputs": [],
+    "source": [
+      "# Run this pip install if NVFlare is not installed in your Jupyter Notebook\n",
+      "\n",
+      "# !python3 -m pip install -U nvflare"
+    ]
+    },
+    {
+    "cell_type": "code",
+    "execution_count": null,
+    "id": "c3dbde69",
+    "metadata": {},
+    "outputs": [],
+    "source": [
+      "import os\n",
+      "from nvflare.fuel.flare_api.flare_api import new_secure_session\n",
+      "\n",
+      "username = \"{~~admin_name~~}\"  # change this to your own username\n",
+      "\n",
+      "sess = new_secure_session(\n",
+      "    username=username,\n",
+      "    startup_kit_location=os.getcwd()\n",
+      ")\n",
+      "print(sess.get_system_info())"
+    ]
+    },
+    {
+    "cell_type": "markdown",
+    "id": "31ccb6a6",
+    "metadata": {},
+    "source": [
+      "### 2. Shutting Down the FL System\n",
+      "\n",
+      "As of now, there is no specific FLARE API command for shutting down the FL system, but the FLARE API can use the `do_command()` function of the underlying AdminAPI to submit any commands that the FLARE Console supports including shutdown commands to the clients and server:"
+    ]
+    },
+    {
+    "cell_type": "code",
+    "execution_count": null,
+    "id": "b0d8aa9c",
+    "metadata": {},
+    "outputs": [],
+    "source": [
+      "print(sess.api.do_command(\"shutdown client\"))\n",
+      "print(sess.api.do_command(\"shutdown server\"))\n",
+      "\n",
+      "sess.close()"
+    ]
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+    "display_name": "Python 3 (ipykernel)",
+    "language": "python",
+    "name": "python3"
+    },
+    "language_info": {
+    "codemirror_mode": {
+      "name": "ipython",
+      "version": 3
+    },
+    "file_extension": ".py",
+    "mimetype": "text/x-python",
+    "name": "python",
+    "nbconvert_exporter": "python",
+    "pygments_lexer": "ipython3",
+    "version": "3.8.13"
+    },
+    "vscode": {
+    "interpreter": {
+      "hash": "31f2aee4e71d21fbe5cf8b01ff0e069b9275f58929596ceb00d14d90e3e16cd6"
+    }
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 5
+  }
 

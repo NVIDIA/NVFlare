@@ -1,0 +1,35 @@
+n_servers: 1
+n_clients: 2
+jobs_root_dir: ../../examples/advanced/experiment-tracking/tensorboard/jobs
+cleanup: true
+additional_python_paths:
+- ../../examples/advanced/experiment-tracking
+
+tests:
+  - test_name: "run tensorboard-streaming"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job tensorboard-streaming" ]
+        "result":
+          "type": "job_submit_success"
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
+    validators:
+      - path: tests.integration_test.src.validators.PTModelValidator
+      - path: tests.integration_test.src.validators.CrossValResultValidator
+        args: { server_model_names: [ "FL_global_model.pt" ] }
+      - path: tests.integration_test.src.validators.TBResultValidator
+        args: { require_result_on_client: False }
+    setup:
+      - cp ../../examples/advanced/experiment-tracking/tensorboard/requirements.txt ../../examples/advanced/experiment-tracking/tensorboard/temp_requirements.txt
+      - sed -i '/nvflare\|jupyter\|notebook/d' ../../examples/advanced/experiment-tracking/tensorboard/temp_requirements.txt
+      - python -m pip install -r ../../examples/advanced/experiment-tracking/tensorboard/temp_requirements.txt
+      - rm -f ../../examples/advanced/experiment-tracking/tensorboard/temp_requirements.txt
+      - bash ../../examples/advanced/experiment-tracking/tensorboard/prepare_data.sh

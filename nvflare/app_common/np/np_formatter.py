@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,10 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.apis.dxo import DataKind, from_bytes
+from nvflare.apis.dxo import DataKind, from_file
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.formatter import Formatter
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.security.logging import secure_format_exception
 
 
 class NPFormatter(Formatter):
@@ -46,17 +47,15 @@ class NPFormatter(Formatter):
                 if validation_dict:
                     res[data_client] = {}
                     for model_name in validation_dict.keys():
-                        dxo_path = validation_dict[model_name]
-
                         # Load the shareable
-                        with open(dxo_path, "rb") as f:
-                            metric_dxo = from_bytes(f.read())
+                        dxo_path = validation_dict[model_name]
+                        metric_dxo = from_file(dxo_path)
 
                         # Get metrics from shareable
                         if metric_dxo and metric_dxo.data_kind == DataKind.METRICS:
                             metrics = metric_dxo.data
                             res[data_client][model_name] = metrics
         except Exception as e:
-            self.log_error(fl_ctx, f"Exception: {e.__str__()}")
+            self.log_error(fl_ctx, f"Exception: {secure_format_exception(e)}")
 
         return f"{res}"

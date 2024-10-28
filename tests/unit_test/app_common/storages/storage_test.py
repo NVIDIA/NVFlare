@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import ast
 import json
 import os
 import random
@@ -42,7 +41,7 @@ def random_data():
 
 
 def random_meta():
-    return {random.getrandbits(8): random.getrandbits(8) for _ in range(32)}
+    return {random_string(20): random.getrandbits(8) for _ in range(32)}
 
 
 ROOT_DIR = os.path.abspath(os.sep)
@@ -95,7 +94,7 @@ class TestStorage:
 
                 with open(os.path.join(test_filepath, "meta"), "wb") as f:
                     meta = random_meta()
-                    f.write(json.dumps(str(meta)).encode("utf-8"))
+                    f.write(json.dumps(meta).encode("utf-8"))
 
                 storage.create_object(filepath, data, meta, overwrite_existing=True)
 
@@ -109,7 +108,7 @@ class TestStorage:
                 with open(os.path.join(test_dir_path, "data"), "rb") as f:
                     data = f.read()
                 with open(os.path.join(test_dir_path, "meta"), "rb") as f:
-                    meta = ast.literal_eval(json.loads(f.read().decode("utf-8")))
+                    meta = json.loads(f.read().decode("utf-8"))
 
                 assert storage.get_data(dir_path) == data
                 assert storage.get_detail(dir_path)[1] == data
@@ -124,13 +123,13 @@ class TestStorage:
         "uri, data, meta, overwrite_existing",
         [
             (1234, b"c", {}, True),
-            ("/test_dir/test_object", "not a byte string", {}, True),
+            ("/test_dir/test_object", "not a valid file name", {}, True),
             ("/test_dir/test_object", b"c", "not a dictionary", True),
             ("/test_dir/test_object", b"c", {}, "not a bool"),
         ],
     )
     def test_create_invalid_inputs(self, storage, uri, data, meta, overwrite_existing):
-        with pytest.raises(TypeError):
+        with pytest.raises(Exception):
             storage.create_object(uri, data, meta, overwrite_existing)
 
     def test_invalid_inputs(self, storage):
@@ -161,13 +160,13 @@ class TestStorage:
     @pytest.mark.parametrize(
         "uri, data",
         [
-            (1234, "not bytes"),
+            (1234, "not valid file"),
             ("/test_dir/test_object", "not bytes"),
         ],
     )
     def test_update_data_invalid_inputs(self, storage, uri, data):
-        with pytest.raises(TypeError):
-            storage.update_data(uri, data)
+        with pytest.raises(Exception):
+            storage.update_object(uri, data)
 
     @pytest.mark.parametrize(
         "uri",
@@ -245,7 +244,7 @@ class TestStorage:
         # methods on non-existent object
         with pytest.raises(StorageException):
             data3 = random_data()
-            storage.update_data(uri, data3)
+            storage.update_object(uri, data3)
         with pytest.raises(StorageException):
             meta4 = random_meta()
             storage.update_meta(uri, meta4, replace=True)
@@ -273,7 +272,7 @@ class TestStorage:
 
         # update_data()
         data2 = random_data()
-        storage.update_data(uri, data2)
+        storage.update_object(uri, data2)
         assert storage.get_data(uri) == data2
         assert storage.get_detail(uri)[1] == data2
 

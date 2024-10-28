@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,12 +13,19 @@
 # limitations under the License.
 
 import json
+import os
 from typing import List
 
-from nvflare.private.admin_defs import Message
-from nvflare.private.defs import RequestHeader, TrainingTopic
+from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.workspace import Workspace
+from nvflare.fuel.hci.proto import MetaStatusValue, make_meta
+from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.lighter.utils import verify_folder_signature
+from nvflare.private.admin_defs import Message, error_reply, ok_reply
+from nvflare.private.defs import RequestHeader, ScopeInfoKey, TrainingTopic
 from nvflare.private.fed.client.admin import RequestProcessor
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
+from nvflare.private.fed.utils.fed_utils import get_scope_info
 
 
 class StartAppProcessor(RequestProcessor):
@@ -34,7 +41,7 @@ class StartAppProcessor(RequestProcessor):
         result = engine.start_app(job_id)
         if not result:
             result = "OK"
-        return Message(topic="reply_" + req.topic, body=result)
+        return ok_reply(topic=f"reply_{req.topic}", body=result)
 
 
 class AbortAppProcessor(RequestProcessor):
@@ -49,7 +56,7 @@ class AbortAppProcessor(RequestProcessor):
         result = engine.abort_app(job_id)
         if not result:
             result = "OK"
-        return Message(topic="reply_" + req.topic, body=result)
+        return ok_reply(topic=f"reply_{req.topic}", body=result)
 
 
 class AbortTaskProcessor(RequestProcessor):
@@ -64,7 +71,7 @@ class AbortTaskProcessor(RequestProcessor):
         result = engine.abort_task(job_id)
         if not result:
             result = "OK"
-        return Message(topic="reply_" + req.topic, body=result)
+        return ok_reply(topic=f"reply_{req.topic}", body=result, meta=make_meta(MetaStatusValue.OK, result))
 
 
 class ShutdownClientProcessor(RequestProcessor):
@@ -78,7 +85,7 @@ class ShutdownClientProcessor(RequestProcessor):
         result = engine.shutdown()
         if not result:
             result = "OK"
-        return Message(topic="reply_" + req.topic, body=result)
+        return ok_reply(topic=f"reply_{req.topic}", body=result)
 
 
 class RestartClientProcessor(RequestProcessor):
@@ -92,7 +99,7 @@ class RestartClientProcessor(RequestProcessor):
         result = engine.restart()
         if not result:
             result = "OK"
-        return Message(topic="reply_" + req.topic, body=result)
+        return ok_reply(topic=f"reply_{req.topic}", body=result)
 
 
 class DeployProcessor(RequestProcessor):
@@ -100,16 +107,35 @@ class DeployProcessor(RequestProcessor):
         return [TrainingTopic.DEPLOY]
 
     def process(self, req: Message, app_ctx) -> Message:
+        # Note: this method executes in the Main process of the client
         engine = app_ctx
         if not isinstance(engine, ClientEngineInternalSpec):
             raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
         job_id = req.get_header(RequestHeader.JOB_ID)
+        job_meta = req.get_header(RequestHeader.JOB_META)
         app_name = req.get_header(RequestHeader.APP_NAME)
         client_name = engine.get_client_name()
-        result = engine.deploy_app(app_name=app_name, job_id=job_id, client_name=client_name, app_data=req.body)
-        if not result:
-            result = "OK"
-        return Message(topic="reply_" + req.topic, body=result)
+
+        if not job_meta:
+            return error_reply("missing job meta")
+
+        kv_list = parse_vars(engine.args.set)
+        secure_train = kv_list.get("secure_train", True)
+        from_hub_site = job_meta.get(JobMetaKey.FROM_HUB_SITE.value)
+        if secure_train and not from_hub_site:
+            workspace = Workspace(root_dir=engine.args.workspace, site_name=client_name)
+            app_path = workspace.get_app_dir(job_id)
+            root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
+            if not verify_folder_signature(app_path, root_ca_path):
+                return error_reply(f"app {app_name} does not pass signature verification")
+
+        err = engine.deploy_app(
+            app_name=app_name, job_id=job_id, job_meta=job_meta, client_name=client_name, app_data=req.body
+        )
+        if err:
+            return error_reply(err)
+
+        return ok_reply(body=f"deployed {app_name} to {client_name}")
 
 
 class DeleteRunNumberProcessor(RequestProcessor):
@@ -124,8 +150,7 @@ class DeleteRunNumberProcessor(RequestProcessor):
         result = engine.delete_run(job_id)
         if not result:
             result = "OK"
-        message = Message(topic="reply_" + req.topic, body=result)
-        return message
+        return ok_reply(topic=f"reply_{req.topic}", body=result)
 
 
 class ClientStatusProcessor(RequestProcessor):
@@ -137,17 +162,30 @@ class ClientStatusProcessor(RequestProcessor):
         if not isinstance(engine, ClientEngineInternalSpec):
             raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
         result = engine.get_engine_status()
-        # run_info = engine.get_current_run_info()
-        # if not run_info or run_info.job_id < 0:
-        #     result = {
-        #         ClientStatusKey.RUN_NUM: 'none',
-        #         ClientStatusKey.CURRENT_TASK: 'none'
-        #     }
-        # else:
-        #     result = {
-        #         ClientStatusKey.RUN_NUM: str(run_info.job_id),
-        #         ClientStatusKey.CURRENT_TASK: run_info.current_task_name
-        #     }
         result = json.dumps(result)
-        message = Message(topic="reply_" + req.topic, body=result)
-        return message
+        return ok_reply(topic=f"reply_{req.topic}", body=result)
+
+
+class ScopeInfoProcessor(RequestProcessor):
+    def get_topics(self) -> List[str]:
+        return [TrainingTopic.GET_SCOPES]
+
+    def process(self, req: Message, app_ctx) -> Message:
+        scope_names, default_scope_name = get_scope_info()
+        result = {ScopeInfoKey.SCOPE_NAMES: scope_names, ScopeInfoKey.DEFAULT_SCOPE: default_scope_name}
+        result = json.dumps(result)
+        return ok_reply(topic=f"reply_{req.topic}", body=result)
+
+
+class NotifyJobStatusProcessor(RequestProcessor):
+    def get_topics(self) -> [str]:
+        return [TrainingTopic.NOTIFY_JOB_STATUS]
+
+    def process(self, req: Message, app_ctx) -> Message:
+        engine = app_ctx
+        if not isinstance(engine, ClientEngineInternalSpec):
+            raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
+        job_id = req.get_header(RequestHeader.JOB_ID)
+        job_status = req.get_header(RequestHeader.JOB_STATUS)
+        engine.notify_job_status(job_id, job_status)
+        return ok_reply(topic=f"reply_{req.topic}", body=f"notify status: {job_status}")

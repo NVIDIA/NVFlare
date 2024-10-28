@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import os
 
 from nvflare.lighter.spec import Builder
@@ -22,14 +21,13 @@ from nvflare.lighter.utils import load_yaml
 class TemplateBuilder(Builder):
     """Load template file.
 
-    Loads the content of the template_file and the authz_def (section of template file with fixed authorization
-    definitions) into two key-value pairs in the build context.
+    Loads the content of the template_file into the key-value pair (template) in the build context.
     """
 
     def initialize(self, ctx):
         resource_dir = self.get_resources_dir(ctx)
-        template_file = ctx.get("template_file")
-        template = load_yaml(os.path.join(resource_dir, template_file))
-        authz_def = json.loads(template.get("authz_def"))
+        template_files = ctx.get("template_files")
+        template = dict()
+        for tplt_file in template_files:
+            template.update(load_yaml(os.path.join(resource_dir, tplt_file)))
         ctx["template"] = template
-        ctx["authz_def"] = authz_def

@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,9 +13,9 @@
 # limitations under the License.
 
 import logging
-import traceback
 
 from nvflare.apis.utils.fl_context_utils import generate_log_message
+from nvflare.security.logging import secure_format_traceback
 
 from .analytix import AnalyticsData, AnalyticsDataType
 from .event_type import EventType
@@ -36,6 +36,10 @@ class FLComponent(StatePersistable):
         """
         self._name = self.__class__.__name__
         self.logger = logging.getLogger(self._name)
+
+    @property
+    def name(self):
+        return self._name
 
     def _fire(self, event_type: str, fl_ctx: FLContext):
         fl_ctx.set_prop(FLContextKey.EVENT_ORIGIN, self._name, private=True, sticky=False)
@@ -98,16 +102,6 @@ class FLComponent(StatePersistable):
         """
         fl_ctx.set_prop(FLContextKey.EVENT_DATA, reason, private=True, sticky=False)
         self.fire_event(EventType.FATAL_SYSTEM_ERROR, fl_ctx)
-
-    def task_panic(self, reason: str, fl_ctx: FLContext):
-        """Signals a fatal condition that could cause the current task (on Client) to end.
-
-        Args:
-            reason (str): The reason for panic.
-            fl_ctx (FLContext): FLContext information.
-        """
-        fl_ctx.set_prop(FLContextKey.EVENT_DATA, reason, private=True, sticky=False)
-        self.fire_event(EventType.FATAL_TASK_ERROR, fl_ctx)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         """Handles events.
@@ -214,10 +208,10 @@ class FLComponent(StatePersistable):
         """
         log_msg = generate_log_message(fl_ctx, msg)
         self.logger.error(log_msg)
-        traceback.print_exc()
+        ex_text = secure_format_traceback()
+        self.logger.error(ex_text)
 
         if fire_event:
-            ex_text = traceback.format_exc()
             ex_msg = "{}\n{}".format(log_msg, ex_text)
             self._fire_log_event(
                 event_type=EventType.EXCEPTION_LOG_AVAILABLE,
@@ -227,7 +221,10 @@ class FLComponent(StatePersistable):
             )
 
     def _fire_log_event(self, event_type: str, log_tag: str, log_msg: str, fl_ctx: FLContext):
-        event_data = AnalyticsData(tag=log_tag, value=log_msg, data_type=AnalyticsDataType.TEXT, kwargs=None)
+        if not fl_ctx:
+            return
+
+        event_data = AnalyticsData(key=log_tag, value=log_msg, data_type=AnalyticsDataType.TEXT, kwargs=None)
         dxo = event_data.to_dxo()
         fl_ctx.set_prop(key=FLContextKey.EVENT_DATA, value=dxo.to_shareable(), private=True, sticky=False)
         self.fire_event(event_type=event_type, fl_ctx=fl_ctx)

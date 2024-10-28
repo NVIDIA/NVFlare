@@ -8,7 +8,7 @@ The Data Exchange Format (:class:`nvflare.apis.dxo.DXO`) in NVIDIA FLARE standar
 
 .. literalinclude:: ../../nvflare/apis/dxo.py
     :language: python
-    :lines: 29-40
+    :lines: 54-76
 
 ``data_kind`` keeps track of the kind of data for example "WEIGHTS" or "WEIGHT_DIFF".
 

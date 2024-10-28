@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,12 +16,14 @@ import logging
 import socketserver
 import ssl
 import threading
-import traceback
 
-from nvflare.fuel.hci.conn import Connection, receive_til_end
-from nvflare.fuel.hci.proto import validate_proto
-from nvflare.fuel.hci.security import get_certificate_common_name
+from nvflare.fuel.hci.binary_proto import CT_BINARY, receive_all
+from nvflare.fuel.hci.conn import Connection
+from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey, make_meta, validate_proto
+from nvflare.fuel.hci.security import IdentityKey, get_identity_info
+from nvflare.security.logging import secure_log_traceback
 
+from .constants import ConnProps
 from .reg import ServerCommandRegister
 
 logger = logging.getLogger(__name__)
@@ -35,45 +37,81 @@ class _MsgHandler(socketserver.BaseRequestHandler):
     """
 
     def handle(self):
+        conn = None
         try:
             conn = Connection(self.request, self.server)
+            conn.set_prop(ConnProps.CA_CERT, self.server.ca_cert)
+
+            if self.server.extra_conn_props:
+                conn.set_props(self.server.extra_conn_props)
+
+            if self.server.cmd_reg.conn_props:
+                conn.set_props(self.server.cmd_reg.conn_props)
 
             if self.server.use_ssl:
-                cn = get_certificate_common_name(self.request.getpeercert())
-                conn.set_prop("_client_cn", cn)
-                valid = self.server.validate_client_cn(cn)
-                ssl_version = self.request.version()
-                logger.debug(f"TLS version for admin connection: {ssl_version}")
+                identity = get_identity_info(self.request.getpeercert())
+                conn.set_prop(ConnProps.CLIENT_IDENTITY, identity)
+                valid = self.server.validate_client_cn(identity[IdentityKey.NAME])
             else:
                 valid = True
 
             if not valid:
-                conn.append_error("authentication error")
+                conn.append_error(
+                    "authentication error", meta=make_meta(MetaStatusValue.NOT_AUTHENTICATED, info="invalid credential")
+                )
             else:
-                req = receive_til_end(self.request).strip()
-                command = None
-                req_json = validate_proto(req)
-                conn.request = req_json
-                if req_json is not None:
-                    data = req_json["data"]
-                    for item in data:
-                        it = item["type"]
-                        if it == "command":
-                            command = item["data"]
-                            break
-
-                    if command is None:
-                        conn.append_error("protocol violation")
-                    else:
-                        self.server.cmd_reg.process_command(conn, command)
+                ct, req, extra = receive_all(self.request)
+                if ct == CT_BINARY and not extra:
+                    conn.append_error(
+                        "no data received from client",
+                        meta=make_meta(MetaStatusValue.INTERNAL_ERROR, info="no data received"),
+                    )
                 else:
-                    # not json encoded
-                    conn.append_error("protocol violation")
+                    req = req.strip()
+                    command = None
+                    req_json = validate_proto(req)
+                    conn.request = req_json
+                    conn.content_type = ct
+                    conn.extra = extra
 
-            if not conn.ended:
-                conn.close()
-        except BaseException:
-            traceback.print_exc()
+                    if req_json is not None:
+                        meta = req_json.get(ProtoKey.META, None)
+                        if meta and isinstance(meta, dict):
+                            cmd_timeout = meta.get(MetaKey.CMD_TIMEOUT)
+                            if cmd_timeout:
+                                conn.set_prop(ConnProps.CMD_TIMEOUT, cmd_timeout)
+
+                            custom_props = meta.get(MetaKey.CUSTOM_PROPS)
+                            if custom_props:
+                                conn.set_prop(ConnProps.CUSTOM_PROPS, custom_props)
+
+                            cmd_props = meta.get(MetaKey.CMD_PROPS)
+                            if cmd_props:
+                                conn.set_prop(ConnProps.CMD_PROPS, cmd_props)
+
+                        data = req_json[ProtoKey.DATA]
+                        for item in data:
+                            it = item[ProtoKey.TYPE]
+                            if it == ProtoKey.COMMAND:
+                                command = item[ProtoKey.DATA]
+                                break
+
+                        if command is None:
+                            conn.append_error(
+                                "protocol violation",
+                                meta=make_meta(MetaStatusValue.INTERNAL_ERROR, "protocol violation"),
+                            )
+                        else:
+                            self.server.cmd_reg.process_command(conn, command)
+                    else:
+                        # not json encoded
+                        conn.append_error(
+                            "protocol violation", meta=make_meta(MetaStatusValue.INTERNAL_ERROR, "protocol violation")
+                        )
+        except:
+            secure_log_traceback()
+        if conn and not conn.ended:
+            conn.close()
 
 
 def initialize_hci():
@@ -99,6 +137,7 @@ class AdminServer(socketserver.ThreadingTCPServer):
         server_cert=None,
         server_key=None,
         accepted_client_cns=None,
+        extra_conn_props=None,
     ):
         """Base class of FedAdminServer to create a server that can receive commands.
 
@@ -110,7 +149,13 @@ class AdminServer(socketserver.ThreadingTCPServer):
             server_cert: server's cert, signed by the CA
             server_key: server's private key file
             accepted_client_cns: list of accepted Common Names from client, if specified
+            extra_conn_props: a dict of extra conn props, if specified
         """
+        if extra_conn_props is not None:
+            assert isinstance(extra_conn_props, dict), "extra_conn_props must be dict but got {}".format(
+                extra_conn_props
+            )
+
         socketserver.TCPServer.__init__(self, ("0.0.0.0", port), _MsgHandler, False)
 
         self.use_ssl = False
@@ -136,9 +181,11 @@ class AdminServer(socketserver.ThreadingTCPServer):
         self.server_activate()
 
         self._thread = None
+        self.ca_cert = ca_cert
         self.host = host
         self.port = port
         self.accepted_client_cns = accepted_client_cns
+        self.extra_conn_props = extra_conn_props
         self.cmd_reg = cmd_reg
         cmd_reg.finalize()
 
@@ -151,10 +198,6 @@ class AdminServer(socketserver.ThreadingTCPServer):
     def stop(self):
         self.shutdown()
         self.cmd_reg.close()
-
-        if self._thread.is_alive():
-            self._thread.join()
-
         logger.info(f"Admin Server {self.host} on Port {self.port} shutdown!")
 
     def set_command_registry(self, cmd_reg: ServerCommandRegister):
@@ -169,6 +212,7 @@ class AdminServer(socketserver.ThreadingTCPServer):
     def start(self):
         if self._thread is None:
             self._thread = threading.Thread(target=self._run, args=())
+            self._thread.daemon = True
 
         if not self._thread.is_alive():
             self._thread.start()

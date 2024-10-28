@@ -1,0 +1,9 @@
+{
+    "name": "cifar10_fedavg",
+    "deploy_map": {
+        "cifar10_fedavg": [
+            "@ALL"
+        ]
+    },
+    "min_clients": 8
+}

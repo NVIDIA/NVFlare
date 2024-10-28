@@ -1,0 +1,268 @@
+ha: True
+project_yaml: ./data/projects/authz.yml
+jobs_root_dir: ../unit_test/data/jobs
+cleanup: True
+poll_period: 0.5
+
+tests:
+  - test_name: "submit duplicate_clients"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job duplicate_clients" ]
+        "result":
+          "type": "admin_api_response"
+          "data": [
+            {
+              "type": "error",
+              "data": "Multiple apps to be deployed to following sites ['site-1'] for job duplicate_clients"
+            }
+          ]
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "mark_test_done" ]
+        "result":
+          "type": "run_state"
+          "data": {}
+  - test_name: "submit duplicate_server"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job duplicate_server" ]
+        "result":
+          "type": "admin_api_response"
+          "data": [
+            {
+              "type": "error",
+              "data": "Multiple apps to be deployed to following sites ['server'] for job duplicate_server"
+            }
+          ]
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "mark_test_done" ]
+        "result":
+          "type": "run_state"
+          "data": {}
+  - test_name: "submit invalid_resource_spec_data_type"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job invalid_resource_spec_data_type" ]
+        "result":
+          "type": "admin_api_response"
+          "data": [
+            {
+              "type": "error",
+              "data": "value for key site-1 in resource spec is expecting a dictionary"
+            }
+          ]
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "mark_test_done" ]
+        "result":
+          "type": "run_state"
+          "data": {}
+  - test_name: "submit mandatory_not_met"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job mandatory_not_met" ]
+        "result":
+          "type": "admin_api_response"
+          "data": [
+            {
+              "type": "error",
+              "data": "Mandatory clients {'site-1'} are not in the deploy_map for job mandatory_not_met"
+            }
+          ]
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "mark_test_done" ]
+        "result":
+          "type": "run_state"
+          "data": {}
+  - test_name: "submit min_clients_value_range"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job min_clients_value_range" ]
+        "result":
+          "type": "admin_api_response"
+          "data": [
+            {
+              "type": "error",
+              "data": "min_clients -1 must be positive for job min_clients_value_range"
+            }
+          ]
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "mark_test_done" ]
+        "result":
+          "type": "run_state"
+          "data": {}
+  - test_name: "submit missing_app"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job missing_app" ]
+        "result":
+          "type": "admin_api_response"
+          "data": [
+            {
+              "type": "error",
+              "data": "App 'sag2' in deploy_map doesn't exist for job missing_app"
+            }
+          ]
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "mark_test_done" ]
+        "result":
+          "type": "run_state"
+          "data": {}
+  - test_name: "submit missing_client_config"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job missing_client_config" ]
+        "result":
+          "type": "admin_api_response"
+          "data": [
+            {
+              "type": "error",
+              "data": "App 'sag2' will be deployed to client but client config is missing"
+            }
+          ]
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "mark_test_done" ]
+        "result":
+          "type": "run_state"
+          "data": {}
+  - test_name: "submit missing_server_config"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job missing_server_config" ]
+        "result":
+          "type": "admin_api_response"
+          "data": [
+            {
+              "type": "error",
+              "data": "App 'sag1' will be deployed to server but server config is missing"
+            }
+          ]
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "mark_test_done" ]
+        "result":
+          "type": "run_state"
+          "data": {}
+  - test_name: "submit no_deployment"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job no_deployment" ]
+        "result":
+          "type": "admin_api_response"
+          "data": [
+            {
+              "type": "error",
+              "data": "No site is specified in deploy_map for job no_deployment"
+            }
+          ]
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "mark_test_done" ]
+        "result":
+          "type": "run_state"
+          "data": {}
+  - test_name: "submit not_enough_clients"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job not_enough_clients" ]
+        "result":
+          "type": "admin_api_response"
+          "data": [
+            {
+              "type": "error",
+              "data": "min 4 clients required for job not_enough_clients, found 2."
+            }
+          ]
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "mark_test_done" ]
+        "result":
+          "type": "run_state"
+          "data": {}
+  - test_name: "submit old_app"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job old_app" ]
+        "result":
+          "type": "admin_api_response"
+          "data": [
+            {
+              "type": "error",
+              "data": "meta.[json|conf|yml] not existing for job old_app, possible in legacy job format.  Please upgrade the job structure."
+            }
+          ]
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "mark_test_done" ]
+        "result":
+          "type": "run_state"
+          "data": {}
+  - test_name: "submit valid_job"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job valid_job" ]
+        "result":
+          "type": "job_submit_success"
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
+  - test_name: "submit valid_job_deployment_all_idle"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job valid_job_deployment_all_idle" ]
+        "result":
+          "type": "job_submit_success"
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }

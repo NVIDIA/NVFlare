@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,6 +25,10 @@ from nvflare.fuel.hci.client.api import AdminAPI
 from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
 from nvflare.fuel.hci.client.fl_admin_api_spec import APISyntaxError, FLAdminAPIResponse, FLAdminAPISpec, TargetType
+from nvflare.fuel.hci.cmd_arg_utils import validate_text_file_name
+from nvflare.security.logging import secure_format_exception
+
+from .overseer_service_finder import ServiceFinderByOverseer
 
 
 def wrap_with_return_exception_responses(func):
@@ -41,20 +45,26 @@ def wrap_with_return_exception_responses(func):
                     APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not generate reply."}
                 )
         except ConnectionRefusedError as e:
-            return FLAdminAPIResponse(APIStatus.ERROR_AUTHENTICATION, {"message": "Error: " + str(e)})
+            return FLAdminAPIResponse(
+                APIStatus.ERROR_AUTHENTICATION, {"message": f"Error: {secure_format_exception(e)}"}
+            )
         except PermissionError as e:
-            return FLAdminAPIResponse(APIStatus.ERROR_AUTHORIZATION, {"message": "Error: " + str(e)})
+            return FLAdminAPIResponse(
+                APIStatus.ERROR_AUTHORIZATION, {"message": f"Error: {secure_format_exception(e)}"}
+            )
         except LookupError as e:
-            return FLAdminAPIResponse(APIStatus.ERROR_INVALID_CLIENT, {"message": "Error: " + str(e)})
+            return FLAdminAPIResponse(
+                APIStatus.ERROR_INVALID_CLIENT, {"message": f"Error: {secure_format_exception(e)}"}
+            )
         except APISyntaxError as e:
-            return FLAdminAPIResponse(APIStatus.ERROR_SYNTAX, {"message": "Error: " + str(e)})
+            return FLAdminAPIResponse(APIStatus.ERROR_SYNTAX, {"message": f"Error: {secure_format_exception(e)}"})
         except TimeoutError as e:
             return FLAdminAPIResponse(
                 APIStatus.ERROR_RUNTIME,
-                {"message": "TimeoutError: possibly unable to communicate with server. " + str(e)},
+                {"message": f"TimeoutError: possibly unable to communicate with server: {secure_format_exception(e)}"},
             )
         except Exception as e:
-            return FLAdminAPIResponse(APIStatus.ERROR_RUNTIME, {"message": "Exception: " + str(e)})
+            return FLAdminAPIResponse(APIStatus.ERROR_RUNTIME, {"message": f"Exception: {secure_format_exception(e)}"})
 
     return wrapper
 
@@ -88,17 +98,19 @@ def default_stats_handling_cb(reply: FLAdminAPIResponse) -> bool:
 class FLAdminAPI(AdminAPI, FLAdminAPISpec):
     def __init__(
         self,
+        overseer_agent: OverseerAgent,
         ca_cert: str = "",
         client_cert: str = "",
         client_key: str = "",
         upload_dir: str = "",
         download_dir: str = "",
-        server_cn=None,
         cmd_modules: Optional[List] = None,
-        overseer_agent: OverseerAgent = None,
         user_name: str = None,
-        poc=False,
+        insecure=False,
         debug=False,
+        session_timeout_interval=None,
+        session_status_check_interval=None,
+        auto_login_max_tries: int = 5,
     ):
         """FLAdminAPI serves as foundation for communications to FL server through the AdminAPI.
 
@@ -111,26 +123,32 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             client_key: path to admin client Key file, by default provisioned as client.key
             upload_dir: File transfer upload directory. Folders uploaded to the server to be deployed must be here. Folder must already exist and be accessible.
             download_dir: File transfer download directory. Can be same as upload_dir. Folder must already exist and be accessible.
-            server_cn: server cn (only used for validating server cn)
             cmd_modules: command modules to load and register. Note that FileTransferModule is initialized here with upload_dir and download_dir if cmd_modules is None.
             overseer_agent: initialized OverseerAgent to obtain the primary service provider to set the host and port of the active server
             user_name: Username to authenticate with FL server
-            poc: Whether to enable poc mode for using the proof of concept example without secure communication.
+            insecure: Whether or not to use secure communication, poc was the name of this arg before version 2.4.
             debug: Whether to print debug messages. False by default.
+            session_timeout_interval: if specified, automatically close the session after inactive for this long
+            session_status_check_interval: how often to check session status with server
+            auto_login_max_tries: maximum number of tries to auto-login.
         """
-        super().__init__(
+        service_finder = ServiceFinderByOverseer(overseer_agent)
+
+        AdminAPI.__init__(
+            self,
             ca_cert=ca_cert,
             client_cert=client_cert,
             client_key=client_key,
             upload_dir=upload_dir,
             download_dir=download_dir,
-            server_cn=server_cn,
             cmd_modules=cmd_modules,
-            overseer_agent=overseer_agent,
-            auto_login=True,
+            service_finder=service_finder,
             user_name=user_name,
-            poc=poc,
+            insecure=insecure,
             debug=debug,
+            session_timeout_interval=session_timeout_interval,
+            session_status_check_interval=session_status_check_interval,
+            auto_login_max_tries=auto_login_max_tries,
         )
         self.upload_dir = upload_dir
         self.download_dir = download_dir
@@ -192,12 +210,10 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         for p in paths:
             if p == "..":
                 raise APISyntaxError(".. in file path is not allowed")
-        basename, file_extension = os.path.splitext(file)
-        if file_extension not in [".txt", ".log", ".json", ".csv", ".sh", ".config", ".py"]:
-            raise APISyntaxError(
-                "this command cannot be applied to file {}. Only files with the following extensions are "
-                "permitted: .txt, .log, .json, .csv, .sh, .config, .py".format(file)
-            )
+
+        err = validate_text_file_name(file)
+        if err:
+            raise APISyntaxError(err)
         return file
 
     def _validate_sp_string(self, sp_string) -> str:
@@ -223,6 +239,8 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         if self._error_buffer:
             err = self._error_buffer
             self._error_buffer = None
+            if "not authorized" in err:
+                raise PermissionError(err)
             raise RuntimeError(err)
         if reply.get("status") == APIStatus.SUCCESS:
             success_in_data = True
@@ -244,9 +262,11 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
                 raise LookupError(reply_data_full_response)
             if "unknown site" in reply_data_full_response:
                 raise LookupError(reply_data_full_response)
-            if "Authorization Error" in reply_data_full_response:
+            if "not authorized" in reply_data_full_response:
                 raise PermissionError(reply_data_full_response)
         if reply.get("status") != APIStatus.SUCCESS:
+            if reply.get("details") and ("not authorized" in reply.get("details")):
+                raise PermissionError(reply.get("details"))
             raise RuntimeError(reply.get("details"))
         return success_in_data, reply_data_full_response, reply
 
@@ -356,9 +376,9 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
     @wrap_with_return_exception_responses
     def clone_job(self, job_id: str) -> FLAdminAPIResponse:
         if not job_id:
-            raise APISyntaxError("job_folder is required but not specified.")
+            raise APISyntaxError("job_id is required but not specified.")
         if not isinstance(job_id, str):
-            raise APISyntaxError("job_folder must be str but got {}.".format(type(job_id)))
+            raise APISyntaxError("job_id must be str but got {}.".format(type(job_id)))
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(
             AdminCommandNames.CLONE_JOB + " " + job_id
         )
@@ -379,9 +399,12 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         if options:
             options = self._validate_options_string(options)
             command = command + " " + options
-        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(command)
-        if reply_data_full_response:
-            return FLAdminAPIResponse(APIStatus.SUCCESS, {"message": reply_data_full_response}, reply)
+        success, _, reply = self._get_processed_cmd_reply_data(command)
+        if success:
+            meta = reply.get("meta")
+            if meta:
+                jobs_list = meta.get("jobs", [])
+                return FLAdminAPIResponse(APIStatus.SUCCESS, jobs_list, reply)
         return FLAdminAPIResponse(
             APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
         )
@@ -414,13 +437,21 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(
             AdminCommandNames.ABORT_JOB + " " + job_id
         )
-        if reply_data_full_response:
-            if "Abort signal has been sent" in reply_data_full_response:
-                return FLAdminAPIResponse(
-                    APIStatus.SUCCESS,
-                    {"message": reply_data_full_response},
-                    reply,
-                )
+        if reply:
+            meta = reply.get("meta", None)
+            if isinstance(meta, dict):
+                status = meta.get("status")
+                info = meta.get("info", "")
+                if status == "ok":
+                    return FLAdminAPIResponse(
+                        APIStatus.SUCCESS,
+                        {"message": info},
+                        reply,
+                    )
+                else:
+                    msg = f"{status}: {info}"
+                    return FLAdminAPIResponse(APIStatus.ERROR_RUNTIME, {"message": msg}, reply)
+
         return FLAdminAPIResponse(
             APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
         )
@@ -433,7 +464,9 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             AdminCommandNames.DELETE_JOB + " " + str(job_id)
         )
         if reply_data_full_response:
-            if "can not be deleted" in reply_data_full_response:
+            if ("can not be deleted" in reply_data_full_response) or (
+                "could not be deleted" in reply_data_full_response
+            ):
                 return FLAdminAPIResponse(APIStatus.ERROR_RUNTIME, {"message": reply_data_full_response})
         if success:
             return FLAdminAPIResponse(APIStatus.SUCCESS, {"message": reply_data_full_response}, reply)
@@ -854,8 +887,8 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
                 else:
                     print("Could not get reply from check status client, trying again later")
                     failed_attempts += 1
-            except BaseException as e:
-                print("Could not get clients stats, trying again later. Exception: ", e)
+            except Exception as e:
+                print(f"Could not get clients stats, trying again later. Exception: {secure_format_exception(e)}")
                 failed_attempts += 1
 
             now = time.time()
@@ -916,8 +949,8 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
                     # if attribute cannot be found, check if app is no longer running to return APIStatus.SUCCESS
                     if reply.get("details").get("message") == "App is not running":
                         return FLAdminAPIResponse(APIStatus.SUCCESS, {"message": "Waited until app not running."}, None)
-            except BaseException as e:
-                print("Could not get server stats, trying again later. Exception: ", e)
+            except Exception as e:
+                print(f"Could not get server stats, trying again later. Exception: {secure_format_exception(e)}")
                 failed_attempts += 1
 
             now = time.time()
@@ -934,11 +967,3 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
                     None,
                 )
             time.sleep(interval)
-
-    def login(self, username: str):
-        result = super().login(username=username)
-        return FLAdminAPIResponse(status=result["status"], details=result["details"])
-
-    def login_with_poc(self, username: str, poc_key: str):
-        result = super().login_with_poc(username=username, poc_key=poc_key)
-        return FLAdminAPIResponse(status=result["status"], details=result["details"])

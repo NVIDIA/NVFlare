@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,21 +22,25 @@ class EventType(object):
     START_RUN = "_start_run"
     ABOUT_TO_END_RUN = "_about_to_end_run"
     END_RUN = "_end_run"
+    CHECK_END_RUN_READINESS = "_check_end_run_readiness"
     SWAP_IN = "_swap_in"
     SWAP_OUT = "_swap_out"
     START_WORKFLOW = "_start_workflow"
     END_WORKFLOW = "_end_workflow"
     ABORT_TASK = "_abort_task"
     FATAL_SYSTEM_ERROR = "_fatal_system_error"
-    FATAL_TASK_ERROR = "_fatal_task_error"
     JOB_DEPLOYED = "_job_deployed"
     JOB_STARTED = "_job_started"
     JOB_COMPLETED = "_job_completed"
     JOB_ABORTED = "_job_aborted"
     JOB_CANCELLED = "_job_cancelled"
+    CLIENT_DISCONNECTED = "_client_disconnected"
+    CLIENT_RECONNECTED = "_client_reconnected"
 
     BEFORE_PULL_TASK = "_before_pull_task"
     AFTER_PULL_TASK = "_after_pull_task"
+    BEFORE_PROCESS_TASK_REQUEST = "_before_process_task_request"
+    AFTER_PROCESS_TASK_REQUEST = "_after_process_task_request"
     BEFORE_PROCESS_SUBMISSION = "_before_process_submission"
     AFTER_PROCESS_SUBMISSION = "_after_process_submission"
 
@@ -48,6 +52,8 @@ class EventType(object):
     AFTER_TASK_EXECUTION = "_after_task_execution"
     BEFORE_SEND_TASK_RESULT = "_before_send_task_result"
     AFTER_SEND_TASK_RESULT = "_after_send_task_result"
+    BEFORE_PROCESS_RESULT_OF_UNKNOWN_TASK = "_before_process_result_of_unknown_task"
+    AFTER_PROCESS_RESULT_OF_UNKNOWN_TASK = "_after_process_result_of_unknown_task"
 
     CRITICAL_LOG_AVAILABLE = "_critical_log_available"
     ERROR_LOG_AVAILABLE = "_error_log_available"
@@ -55,3 +61,31 @@ class EventType(object):
     WARNING_LOG_AVAILABLE = "_warning_log_available"
     INFO_LOG_AVAILABLE = "_info_log_available"
     DEBUG_LOG_AVAILABLE = "_debug_log_available"
+
+    PRE_RUN_RESULT_AVAILABLE = "_pre_run_result_available"
+
+    # event types for job scheduling - server side
+    BEFORE_CHECK_CLIENT_RESOURCES = "_before_check_client_resources"
+    AFTER_CHECK_CLIENT_RESOURCES = "_after_check_client_resources"
+    SUBMIT_JOB = "_submit_job"
+    DEPLOY_JOB_TO_SERVER = "_deploy_job_to_server"
+    DEPLOY_JOB_TO_CLIENT = "_deploy_job_to_client"
+
+    # event types for job scheduling - client side
+    BEFORE_CHECK_RESOURCE_MANAGER = "_before_check_resource_manager"
+
+    BEFORE_SEND_ADMIN_COMMAND = "_before_send_admin_command"
+
+    BEFORE_CLIENT_REGISTER = "_before_client_register"
+    AFTER_CLIENT_REGISTER = "_after_client_register"
+    CLIENT_REGISTER_RECEIVED = "_client_register_received"
+    CLIENT_REGISTER_PROCESSED = "_client_register_processed"
+    CLIENT_QUIT = "_client_quit"
+    SYSTEM_BOOTSTRAP = "_system_bootstrap"
+    BEFORE_CLIENT_HEARTBEAT = "_before_client_heartbeat"
+    AFTER_CLIENT_HEARTBEAT = "_after_client_heartbeat"
+    CLIENT_HEARTBEAT_RECEIVED = "_client_heartbeat_received"
+    CLIENT_HEARTBEAT_PROCESSED = "_client_heartbeat_processed"
+
+    AUTHORIZE_COMMAND_CHECK = "_authorize_command_check"
+    BEFORE_BUILD_COMPONENT = "_before_build_component"

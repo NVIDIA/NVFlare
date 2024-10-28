@@ -1,0 +1,9 @@
+{
+    "name": "cifar10_autofedrl",
+    "deploy_map": {
+        "cifar10_autofedrl": [
+            "@ALL"
+        ]
+    },
+    "min_clients": 8
+}

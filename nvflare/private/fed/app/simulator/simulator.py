@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,22 +15,43 @@
 """Federated Simulator launching script."""
 
 import argparse
-import os
 import sys
+from sys import platform
 
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
+from nvflare.private.fed.app.utils import version_check
 
 
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("job_folder")
-    parser.add_argument("--workspace", "-w", type=str, help="WORKSPACE folder", required=True)
-    parser.add_argument("--n_clients", "-n", type=int, help="number of clients")
-    parser.add_argument("--clients", "-c", type=str, help="client names list")
-    parser.add_argument("--threads", "-t", type=int, help="number of parallel running clients")
-    parser.add_argument("--gpu", "-gpu", type=str, help="list of GPUs")
-    args = parser.parse_args()
-    return args
+def define_simulator_parser(simulator_parser):
+    simulator_parser.add_argument("job_folder")
+    simulator_parser.add_argument("-w", "--workspace", type=str, help="WORKSPACE folder")
+    simulator_parser.add_argument("-n", "--n_clients", type=int, help="number of clients")
+    simulator_parser.add_argument("-c", "--clients", type=str, help="client names list")
+    simulator_parser.add_argument("-t", "--threads", type=int, help="number of parallel running clients")
+    simulator_parser.add_argument("-gpu", "--gpu", type=str, help="list of GPU Device Ids, comma separated")
+    simulator_parser.add_argument("-m", "--max_clients", type=int, default=100, help="max number of clients")
+    simulator_parser.add_argument(
+        "--end_run_for_all",
+        default=False,
+        action="store_true",
+        help="flag to indicate if running END_RUN event for all clients",
+    )
+
+
+def run_simulator(simulator_args):
+    simulator = SimulatorRunner(
+        job_folder=simulator_args.job_folder,
+        workspace=simulator_args.workspace,
+        clients=simulator_args.clients,
+        n_clients=simulator_args.n_clients,
+        threads=simulator_args.threads,
+        gpu=simulator_args.gpu,
+        max_clients=simulator_args.max_clients,
+        end_run_for_all=simulator_args.end_run_for_all,
+    )
+    run_status = simulator.run()
+
+    return run_status
 
 
 if __name__ == "__main__":
@@ -39,20 +60,17 @@ if __name__ == "__main__":
     create the SimulatorRunner object, do a setup(), then calls the run().
     """
 
-    if sys.version_info >= (3, 9):
-        raise RuntimeError("Python versions 3.9 and above are not yet supported. Please use Python 3.8 or 3.7.")
-    if sys.version_info < (3, 7):
-        raise RuntimeError("Python versions 3.6 and below are not supported. Please use Python 3.8 or 3.7.")
-    args = parse_args()
+    # For MacOS, it needs to use 'spawn' for creating multi-process.
+    if platform == "darwin":
+        # OS X
+        import multiprocessing
 
-    simulator = SimulatorRunner(
-        job_folder=args.job_folder,
-        workspace=args.workspace,
-        clients=args.clients,
-        n_clients=args.n_clients,
-        threads=args.threads,
-        gpu=args.gpu,
-    )
-    run_status = simulator.run()
+        multiprocessing.set_start_method("spawn")
 
-    os._exit(run_status)
+    version_check()
+
+    parser = argparse.ArgumentParser()
+    define_simulator_parser(parser)
+    args = parser.parse_args()
+    status = run_simulator(args)
+    sys.exit(status)

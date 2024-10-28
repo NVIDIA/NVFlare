@@ -1,0 +1,17 @@
+{
+  "data_root": "/work/pancreas/nvidia-tlt/scripts/condist_fl/data/Spleen",
+  "data_list": "/work/pancreas/nvidia-tlt/scripts/condist_fl/data/Spleen/datalist.json",
+
+  "num_samples": 2,
+
+  "dataset": {
+    "use_cache_dataset": true,
+    "cache_rate": 1.0,
+    "num_worker": 4
+  },
+
+  "data_loader": {
+    "batch_size": 2,
+    "num_workers": 4
+  }
+}

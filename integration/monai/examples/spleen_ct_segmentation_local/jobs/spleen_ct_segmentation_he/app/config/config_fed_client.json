@@ -1,0 +1,66 @@
+{
+  "format_version": 2,
+
+  "executors": [
+    {
+      "tasks": [
+        "train", "submit_model", "validate"
+      ],
+      "executor": {
+        "id": "executor",
+        "path": "monai_nvflare.client_algo_executor.ClientAlgoExecutor",
+        "args": {
+          "client_algo_id": "client_algo",
+          "key_metric": "val_mean_dice"
+        }
+      }
+    }
+  ],
+  "task_result_filters": [
+    {
+      "tasks": ["train"],
+      "filters":[
+          {
+          "path": "nvflare.app_opt.he.model_encryptor.HEModelEncryptor",
+          "args": {
+            "weigh_by_local_iter": true
+          }
+        }
+      ]
+    },
+    {
+      "tasks": ["submit_model"],
+      "filters":[
+          {
+          "path": "nvflare.app_opt.he.model_encryptor.HEModelEncryptor",
+          "args": {
+            "weigh_by_local_iter": false
+          }
+        }
+      ]
+    }
+  ],
+  "task_data_filters": [
+    {
+      "tasks": ["train", "validate"],
+      "filters":[
+          {
+          "path": "nvflare.app_opt.he.model_encryptor.HEModelDecryptor",
+          "args": {
+          }
+        }
+      ]
+    }
+  ],
+
+  "components": [
+    {
+      "id": "client_algo",
+      "path": "monai.fl.client.MonaiAlgo",
+      "args": {
+        "bundle_root": "config/spleen_ct_segmentation",
+        "local_epochs": 10
+      }
+    }
+  ]
+}

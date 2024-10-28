@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,8 +13,12 @@
 # limitations under the License.
 
 import copy
+import logging
+from abc import ABC, abstractmethod
 
-from nvflare.fuel.common.excepts import ConfigError
+from nvflare.fuel.common.excepts import ComponentNotAuthorized, ConfigError
+from nvflare.fuel.utils.config_factory import ConfigFactory
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 
 class Node(object):
@@ -63,9 +67,10 @@ def _child_node(node: Node, key, pos, element) -> Node:
     return child
 
 
-class JsonObjectProcessor(object):
+class JsonObjectProcessor(ABC):
     """JsonObjectProcessor is used to process JSON elements by the scan_json() function."""
 
+    @abstractmethod
     def process_element(self, node: Node):
         """This method is called by the scan() function for each JSON element scanned.
 
@@ -83,18 +88,37 @@ class JsonScanner(object):
             json_data: dictionary containing json data to scan
             location: location to provide in error messages
         """
-        assert isinstance(json_data, dict), "json_data must be dict"
+        if not isinstance(json_data, dict):
+            raise ValueError("json_data must be dict")
         self.location = location
         self.data = json_data
+        self.logger = logging.getLogger("JsonScanner")
 
     def _do_scan(self, node: Node):
         try:
             node.processor.process_element(node)
-        except BaseException as ex:
+        except ComponentNotAuthorized as e:
+            secure_log_traceback(self.logger)
+
             if self.location:
-                raise ConfigError("Error processing {} in JSON element {}: {}".format(self.location, node.path(), ex))
+                raise ComponentNotAuthorized(
+                    "Error processing {} in JSON element {}: path: {}, exception: {}".format(
+                        self.location, node.element, node.path(), secure_format_exception(e)
+                    )
+                )
             else:
-                raise ConfigError("Error in JSON element {}: {}".format(node.path(), ex))
+                raise ComponentNotAuthorized(
+                    "Error in JSON element: {}, path: {}, exception: {}".format(
+                        node.element, node.path(), secure_format_exception(e)
+                    )
+                )
+
+        except Exception as e:
+            secure_log_traceback(self.logger)
+            config = ConfigFactory.load_config(self.location[0])
+            elmt_str = config.to_str(node.element)
+            location = config.get_location()
+            raise ConfigError(self.get_process_err_msg(e, elmt_str, location, node))
 
         element = node.element
 
@@ -110,16 +134,26 @@ class JsonScanner(object):
         if node.exit_cb is not None:
             try:
                 node.exit_cb(node)
-            except BaseException as ex:
-                if self.location:
-                    raise ConfigError(
-                        "Error post-processing {} in JSON element {}: {}".format(self.location, node.path(), ex)
-                    )
-                else:
-                    raise ConfigError("Error post-processing JSON element {}: {}".format(node.path(), ex))
+            except Exception as e:
+                raise ConfigError(self.get_post_proces_err_msg(e, node))
+
+    def get_process_err_msg(self, e, elmt, location, node):
+        location_msg = f" processing '{location}' " if location else ""
+        msg = "Error{}in element '{}': path: '{}', exception: '{}'".format(
+            location_msg, elmt, node.path(), secure_format_exception(e)
+        )
+        return msg
+
+    def get_post_proces_err_msg(self, e, node):
+        location = f" {self.location} in " if self.location else ""
+        msg = "Error post-processing{}JSON element: {}, exception: {}".format(
+            location, node.path(), secure_format_exception(e)
+        )
+        return msg
 
     def scan(self, processor: JsonObjectProcessor):
-        assert isinstance(processor, JsonObjectProcessor), "processor must be JsonObjectProcessor"
+        if not isinstance(processor, JsonObjectProcessor):
+            raise ValueError(f"processor must be JsonObjectProcessor, but got type {type(processor)}")
         node = Node(self.data)
         node.processor = processor
         self._do_scan(node)

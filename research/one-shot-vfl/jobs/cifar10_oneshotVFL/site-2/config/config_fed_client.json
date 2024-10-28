@@ -1,0 +1,40 @@
+{
+    "format_version": 2,
+    "DATASET_ROOT": "/tmp/cifar10",
+    "INTERSECTION_FILE": "/tmp/nvflare/cifar10_psi/simulate_job/site-2/psi/intersection.txt",
+    "executors": [
+        {
+            "tasks": [
+                "_osvfl_task_init_model_",
+                "_osvfl_task_train_",
+                "_osvfl_task_valid_"
+            ],
+            "executor": {
+                "id": "Executor",
+                "path": "oneshotVFL.vfl_oneshot_learner_executor.OSVFLLearnerExecutor",
+                "args": {
+                    "learner_id": "cifar10-learner"
+                }
+            }
+        }
+    ],
+    "task_result_filters": [],
+    "task_data_filters": [],
+    "components": [
+        {
+            "id": "cifar10-learner",
+            "path": "oneshotVFL.CIFAR10LearnerOneshotVFL",
+            "args": {
+                "dataset_root": "{DATASET_ROOT}",
+                "intersection_file": "{INTERSECTION_FILE}",
+                "lr": 0.01,
+                "model": {
+                    "path": "oneshotVFL.SplitNN",
+                    "args": {
+                        "split_id": 1
+                    }
+                }
+            }
+        }
+    ]
+}
