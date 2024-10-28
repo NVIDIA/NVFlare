@@ -23,7 +23,7 @@ from kubernetes.client.rest import ApiException
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec
+from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
 from nvflare.private.fed.utils.fed_utils import extract_job_image
 
@@ -44,12 +44,12 @@ POD_STATE_MAPPING = {
     "Unknown": JobState.UNKNOWN,
 }
 
-RETURN_CODES = {
-    JobState.SUCCEEDED: 0,
-    JobState.STARTING: None,
-    JobState.RUNNING: None,
-    JobState.TERMINATED: 1,
-    JobState.UNKNOWN: None,
+JOB_RETURN_CODE_MAPPING = {
+    JobState.SUCCEEDED: JobReturnCode.SUCCESS,
+    JobState.STARTING: JobReturnCode.UNKNOWN,
+    JobState.RUNNING: JobReturnCode.UNKNOWN,
+    JobState.TERMINATED: JobReturnCode.ABORTED,
+    JobState.UNKNOWN: JobReturnCode.UNKNOWN,
 }
 
 
@@ -173,7 +173,7 @@ class K8sJobHandle(JobHandleSpec):
 
     def poll(self):
         job_state = self._query_state()
-        return RETURN_CODES.get(job_state)
+        return JOB_RETURN_CODE_MAPPING.get(job_state, JobReturnCode.UNKNOWN)
 
     def _query_state(self):
         try:
@@ -272,6 +272,4 @@ class K8sJobLauncher(JobLauncherSpec):
             job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
             job_image = extract_job_image(job_meta, fl_ctx.get_identity_name())
             if job_image:
-                job_launcher: list = fl_ctx.get_prop(FLContextKey.JOB_LAUNCHER, [])
-                job_launcher.append(self)
-                fl_ctx.set_prop(FLContextKey.JOB_LAUNCHER, job_launcher, private=True, sticky=False)
+                add_launcher(self, fl_ctx)

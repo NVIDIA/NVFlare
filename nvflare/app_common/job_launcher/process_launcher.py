@@ -21,9 +21,11 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec
+from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
 from nvflare.private.fed.utils.fed_utils import add_custom_dir_to_path, extract_job_image
+
+JOB_RETURN_CODE_MAPPING = {0: JobReturnCode.SUCCESS, 1: JobReturnCode.EXECUTION_ERROR, 9: JobReturnCode.ABORTED}
 
 
 class ProcessHandle(JobHandleSpec):
@@ -45,9 +47,9 @@ class ProcessHandle(JobHandleSpec):
 
     def poll(self):
         if self.process:
-            return self.process.poll()
+            return JOB_RETURN_CODE_MAPPING.get(self.process.poll(), JobReturnCode.EXECUTION_ERROR)
         else:
-            return None
+            return JobReturnCode.UNKNOWN
 
     def wait(self):
         if self.process:
@@ -115,6 +117,4 @@ class ProcessJobLauncher(JobLauncherSpec):
             job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
             job_image = extract_job_image(job_meta, fl_ctx.get_identity_name())
             if not job_image:
-                job_launcher: list = fl_ctx.get_prop(FLContextKey.JOB_LAUNCHER, [])
-                job_launcher.append(self)
-                fl_ctx.set_prop(FLContextKey.JOB_LAUNCHER, job_launcher, private=True, sticky=False)
+                add_launcher(self, fl_ctx)

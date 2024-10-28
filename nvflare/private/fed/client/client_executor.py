@@ -189,7 +189,7 @@ class JobExecutor(ClientExecutor):
         engine.fire_event(EventType.GET_JOB_LAUNCHER, fl_ctx)
 
         job_launcher = fl_ctx.get_prop(FLContextKey.JOB_LAUNCHER)
-        if not (job_launcher or isinstance(job_launcher, list)):
+        if not isinstance(job_launcher, list):
             raise RuntimeError(f"There's no job launcher can handle this job: {job_meta}.")
 
         return job_launcher[0]
@@ -327,7 +327,7 @@ class JobExecutor(ClientExecutor):
                         optional=True,
                     )
                     self.logger.debug("abort sent to worker")
-                    t = threading.Thread(target=self._terminate_process, args=[job_handle, job_id])
+                    t = threading.Thread(target=self._terminate_job, args=[job_handle, job_id])
                     t.start()
                     t.join()
                     break
@@ -345,7 +345,7 @@ class JobExecutor(ClientExecutor):
 
         self.logger.info("Client worker process is terminated.")
 
-    def _terminate_process(self, child_process, job_id):
+    def _terminate_job(self, job_handle, job_id):
         max_wait = 10.0
         done = False
         start = time.time()
@@ -362,7 +362,7 @@ class JobExecutor(ClientExecutor):
 
             time.sleep(0.05)  # we want to quickly check
 
-        child_process.terminate()
+        job_handle.terminate()
         self.logger.info(f"run ({job_id}): child worker process terminated")
 
     def abort_task(self, job_id):

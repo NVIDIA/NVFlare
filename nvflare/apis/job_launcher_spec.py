@@ -14,7 +14,22 @@
 from abc import abstractmethod
 
 from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.fuel.common.exit_codes import ProcessExitCode
+
+
+class JobReturnCode(ProcessExitCode):
+    SUCCESS = 0
+    EXECUTION_ERROR = 1
+    ABORTED = 9
+    UNKNOWN = 127
+
+
+def add_launcher(launcher, fl_ctx: FLContext):
+    job_launcher: list = fl_ctx.get_prop(FLContextKey.JOB_LAUNCHER, [])
+    job_launcher.append(launcher)
+    fl_ctx.set_prop(FLContextKey.JOB_LAUNCHER, job_launcher, private=True, sticky=False)
 
 
 class JobHandleSpec:
