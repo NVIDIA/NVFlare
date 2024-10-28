@@ -27,7 +27,7 @@ from nvflare.fuel.f3.streaming.stream_const import (
     StreamDataType,
     StreamHeaderKey,
 )
-from nvflare.fuel.f3.streaming.stream_types import Stream, StreamCancelled, StreamError, StreamFuture, StreamTaskSpec
+from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture, StreamTaskSpec
 from nvflare.fuel.f3.streaming.stream_utils import (
     ONE_MB,
     gen_stream_id,
