@@ -27,7 +27,7 @@ from nvflare.fuel.f3.streaming.stream_const import (
     StreamDataType,
     StreamHeaderKey,
 )
-from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture
+from nvflare.fuel.f3.streaming.stream_types import Stream, StreamCancelled, StreamError, StreamFuture, StreamTaskSpec
 from nvflare.fuel.f3.streaming.stream_utils import (
     ONE_MB,
     gen_stream_id,
@@ -49,7 +49,7 @@ COUNTER_NAME_SENT = "sent"
 log = logging.getLogger(__name__)
 
 
-class TxTask:
+class TxTask(StreamTaskSpec):
     def __init__(
         self,
         cell: CoreCell,
@@ -84,7 +84,7 @@ class TxTask:
         self.optional = optional
         self.stopped = False
 
-        self.stream_future = StreamFuture(self.sid)
+        self.stream_future = StreamFuture(self.sid, task_handle=self)
         self.stream_future.set_size(stream.get_size())
 
         self.window_size = CommConfigurator().get_streaming_window_size(STREAM_WINDOW_SIZE)
@@ -184,6 +184,9 @@ class TxTask:
 
         self.stopped = True
 
+        if self.task_future:
+            self.task_future.cancel()
+
         if not error:
             # Result is the number of bytes streamed
             if self.stream_future:
@@ -231,6 +234,9 @@ class TxTask:
 
     def start_task_thread(self, task_handler: Callable):
         self.task_future = stream_thread_pool.submit(task_handler, self)
+
+    def cancel(self):
+        self.stop(error=StreamError("cancelled"))
 
 
 class ByteStreamer:
