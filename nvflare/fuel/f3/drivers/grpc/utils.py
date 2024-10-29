@@ -26,9 +26,11 @@ def get_grpc_client_credentials(params: dict):
     root_cert = _read_file(params.get(DriverParams.CA_CERT.value))
     cert_chain = _read_file(params.get(DriverParams.CLIENT_CERT))
     private_key = _read_file(params.get(DriverParams.CLIENT_KEY))
-    return grpc.ssl_channel_credentials(
-        certificate_chain=cert_chain, private_key=private_key, root_certificates=root_cert
-    )
+    # return grpc.ssl_channel_credentials(
+    #     certificate_chain=cert_chain, private_key=private_key, root_certificates=root_cert
+    # )
+    print("SUPPORT 1-WAY SSL!!!")
+    return grpc.ssl_channel_credentials(root_certificates=root_cert)
 
 
 def get_grpc_server_credentials(params: dict):
@@ -39,7 +41,7 @@ def get_grpc_server_credentials(params: dict):
     return grpc.ssl_server_credentials(
         [(private_key, cert_chain)],
         root_certificates=root_cert,
-        require_client_auth=True,
+        require_client_auth=False,
     )
 
 

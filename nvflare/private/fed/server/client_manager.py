@@ -133,6 +133,7 @@ class ClientManager:
 
         if not client:
             fqcn = request.get_prop(MessagePropKey.ENDPOINT).conn_props.get(DriverParams.PEER_CN.value)
+
             if fqcn and fqcn != client_name:
                 context.set_prop(
                     FLContextKey.UNAUTHENTICATED,

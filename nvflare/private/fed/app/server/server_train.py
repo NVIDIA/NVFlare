@@ -47,6 +47,9 @@ def main(args):
     args.env = os.path.join("config", AppFolderConstants.CONFIG_ENV)
     args.train_config = os.path.join("config", AppFolderConstants.CONFIG_TRAIN)
     args.config_folder = config_folder
+
+    # logging.Formatter.converter = time.gmtime
+
     logger = logging.getLogger()
     args.log_config = None
     args.job_id = None

@@ -61,10 +61,12 @@ def get_ssl_context(params: dict, ssl_server: bool) -> Optional[SSLContext]:
         cert_path = params.get(DriverParams.SERVER_CERT.value)
         key_path = params.get(DriverParams.SERVER_KEY.value)
     else:
-        cert_path = params.get(DriverParams.CLIENT_CERT.value)
-        key_path = params.get(DriverParams.CLIENT_KEY.value)
+        # cert_path = params.get(DriverParams.CLIENT_CERT.value)
+        # key_path = params.get(DriverParams.CLIENT_KEY.value)
+        cert_path = None
+        key_path = None
 
-    if not all([ca_path, cert_path, key_path]):
+    if not all([ca_path]):
         scheme = params.get(DriverParams.SCHEME.value, "Unknown")
         role = "Server" if ssl_server else "Client"
         raise CommError(CommError.BAD_CONFIG, f"{role} certificate parameters are missing for scheme {scheme}")
@@ -72,13 +74,18 @@ def get_ssl_context(params: dict, ssl_server: bool) -> Optional[SSLContext]:
     if ssl_server:
         ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
     else:
-        ctx = ssl.create_default_context()
+        ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
 
     ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-    ctx.verify_mode = ssl.CERT_REQUIRED
+    if ssl_server:
+        ctx.verify_mode = ssl.CERT_NONE
+    else:
+        ctx.verify_mode = ssl.CERT_REQUIRED
+
     ctx.check_hostname = False
     ctx.load_verify_locations(ca_path)
-    ctx.load_cert_chain(certfile=cert_path, keyfile=key_path)
+    if cert_path:
+        ctx.load_cert_chain(certfile=cert_path, keyfile=key_path)
 
     return ctx
 
