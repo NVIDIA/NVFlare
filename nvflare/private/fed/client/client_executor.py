@@ -189,7 +189,7 @@ class JobExecutor(ClientExecutor):
         engine.fire_event(EventType.GET_JOB_LAUNCHER, fl_ctx)
 
         job_launcher = fl_ctx.get_prop(FLContextKey.JOB_LAUNCHER)
-        if not isinstance(job_launcher, list):
+        if not (job_launcher and isinstance(job_launcher, list)):
             raise RuntimeError(f"There's no job launcher can handle this job: {job_meta}.")
 
         return job_launcher[0]
