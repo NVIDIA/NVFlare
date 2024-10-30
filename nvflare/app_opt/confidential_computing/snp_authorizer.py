@@ -12,37 +12,38 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import subprocess
 import base64
-import uuid
-import os
 import logging
+import os
+import subprocess
+import uuid
 
 from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer
 
 SNP_NAMESPACE = "x-snp"
 
+
 class SNPAuthorizer(CCAuthorizer):
     def __init__(self):
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
-        
+
     def generate(self):
-        cmd = ['sudo', 'snpguest', 'report', 'report.bin', 'request.bin']
-        with open('request.bin', 'wb') as request_file:
-            request_file.write(b'\x01'*64)
+        cmd = ["sudo", "snpguest", "report", "report.bin", "request.bin"]
+        with open("request.bin", "wb") as request_file:
+            request_file.write(b"\x01" * 64)
         _ = subprocess.run(cmd, capture_output=True)
-        with open('report.bin', 'rb') as report_file:
+        with open("report.bin", "rb") as report_file:
             token = base64.b64encode(report_file.read())
         return token
-    
+
     def verify(self, token):
         try:
             report_bin = base64.b64decode(token)
             tmp_bin_file = uuid.uuid4().hex
-            with open(tmp_bin_file, 'wb') as report_file:
+            with open(tmp_bin_file, "wb") as report_file:
                 report_file.write(report_bin)
-            cmd = ['snpguest', 'verify', 'attestation', './cert', tmp_bin_file]
+            cmd = ["snpguest", "verify", "attestation", "./cert", tmp_bin_file]
             cp = subprocess.run(cmd, capture_output=True)
             if cp.returncode != 0:
                 return False

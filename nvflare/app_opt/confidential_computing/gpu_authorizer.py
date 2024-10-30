@@ -13,13 +13,14 @@
 # limitations under the License.
 
 
-from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer
-import logging
 import json
-import jwt
+import logging
 import uuid
 
+import jwt
 from nv_attestation_sdk import attestation
+
+from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer
 
 GPU_NAMESPACE = "x-nv-gpu"
 default_policy = """{
@@ -53,6 +54,8 @@ default_policy = """{
   }
 }
 """
+
+
 class GPUAuthorizer(CCAuthorizer):
     def __init__(self, verifier_url="https://nras.attestation.nvidia.com/v1/attest/gpu", policy_file=None):
         self._can_generate = True
@@ -75,15 +78,15 @@ class GPUAuthorizer(CCAuthorizer):
             self.can_generate = False
             token = "[[],{}]"
         return token
-    
+
     def verify(self, eat_token):
         try:
             jwt_token = json.loads(eat_token)[1]
             claims = jwt.decode(jwt_token.get("REMOTE_GPU_CLAIMS"), options={"verify_signature": False})
             # With claims, we will retrieve the nonce
-            nonce = claims.get('eat_nonce')
+            nonce = claims.get("eat_nonce")
             self.client.set_nonce(nonce)
-            self.client.set_token(name='nvflare_node', eat_token=eat_token)
+            self.client.set_token(name="nvflare_node", eat_token=eat_token)
             result = self.client.validate_token(self.remote_att_result_policy)
         except BaseException as e:
             self.logger.info(f"Token verification failed {e=}")

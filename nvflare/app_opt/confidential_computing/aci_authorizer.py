@@ -12,15 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import json
-import requests
 import time
+
 import jwt
+import requests
 from jwt import PyJWKClient
 
 from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer
 
 ACI_NAMESPACE = "x-ms"
-maa_endpoint = 'sharedeus2.eus2.attest.azure.net'
+maa_endpoint = "sharedeus2.eus2.attest.azure.net"
+
 
 class ACIAuthorizer(CCAuthorizer):
     def generate(self):
@@ -29,7 +31,11 @@ class ACIAuthorizer(CCAuthorizer):
         while True:
             count = count + 1
             try:
-                r = requests.post('http://localhost:8284/attest/maa', data=json.dumps({"maa_endpoint": maa_endpoint, "runtime_data":  "ewp9"}), headers={"Content-Type" : "application/json"})
+                r = requests.post(
+                    "http://localhost:8284/attest/maa",
+                    data=json.dumps({"maa_endpoint": maa_endpoint, "runtime_data": "ewp9"}),
+                    headers={"Content-Type": "application/json"},
+                )
                 if r.status_code == requests.codes.ok:
                     token = r.json().get("token")
                 break
@@ -38,11 +44,11 @@ class ACIAuthorizer(CCAuthorizer):
                     break
                 time.sleep(2)
         return token
-    
+
     def verify(self, token):
         try:
             header = jwt.get_unverified_header(token)
-            alg = header.get('alg')
+            alg = header.get("alg")
             jwks_client = PyJWKClient(f"https://{maa_endpoint}/certs")
             signing_key = jwks_client.get_signing_key_from_jwt(token)
             claims = jwt.decode(token, signing_key.key, algorithms=[alg])
@@ -54,4 +60,3 @@ class ACIAuthorizer(CCAuthorizer):
 
     def get_namespace(self) -> str:
         return ACI_NAMESPACE
-

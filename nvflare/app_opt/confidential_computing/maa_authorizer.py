@@ -12,29 +12,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import subprocess
+
 import jwt
 from jwt import PyJWKClient
-import subprocess
 
 from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer
 
 MAA_NAMESPACE = "x-ms"
-maa_endpoint = 'sharedeus2.eus2.attest.azure.net'
+maa_endpoint = "sharedeus2.eus2.attest.azure.net"
+
 
 class MAAAuthorizer(CCAuthorizer):
     def generate(self):
-        cmd = ['sudo', 'AttestationClient', '-o', 'token']
+        cmd = ["sudo", "AttestationClient", "-o", "token"]
         cp = subprocess.run(cmd, capture_output=True)
         # print(f"{cp.stdout=}\n{cp.stderr=}")
         # print(token)
         token = cp.stdout
         return cp.stdout
-    
+
     def verify(self, token):
         try:
             header = jwt.get_unverified_header(token)
             # print(f"{header=}")
-            alg = header.get('alg')
+            alg = header.get("alg")
             jwks_client = PyJWKClient(f"https://{maa_endpoint}/certs")
             signing_key = jwks_client.get_signing_key_from_jwt(token)
             claims = jwt.decode(token, signing_key.key, algorithms=[alg])
@@ -56,8 +58,8 @@ class MAAAuthorizer(CCAuthorizer):
 
 
 if __name__ == "__main__":
-  m = MAAAuthorizer()
-  token = m.generate()
-  print(type(token))
-  v = m.verify(token)
-  print(v)
+    m = MAAAuthorizer()
+    token = m.generate()
+    print(type(token))
+    v = m.verify(token)
+    print(v)
