@@ -54,9 +54,9 @@ from .app_authz import AppAuthzService
 
 def add_logfile_handler(log_file: str):
     """Adds a log file handler to the root logger.
-    
+
     The purpose for this is to handle dynamic log file locations.
-    
+
     If a handler named errorFileHandler is found, it will be used as a template to
     create a new handler for writing to the error.log file at the same directory as log_file.
     The original errorFileHandler will be removed and replaced by the new handler.
