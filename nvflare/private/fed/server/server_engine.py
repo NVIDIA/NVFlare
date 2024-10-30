@@ -165,30 +165,24 @@ class ServerEngine(ServerEngineInternalSpec):
     def validate_targets(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
         return self.client_manager.get_all_clients_from_inputs(client_names)
 
-    def start_app_on_server(self, run_number: str, fl_ctx: FLContext, job: Job = None, job_clients=None, snapshot=None) -> str:
-        if run_number in self.run_processes.keys():
-            return f"Server run: {run_number} already started."
+    def start_app_on_server(self, fl_ctx: FLContext, job: Job = None, job_clients=None, snapshot=None) -> str:
+        if not isinstance(job, Job):
+            return "Must provide a job object to start the server app."
+
+        if job.job_id in self.run_processes.keys():
+            return f"Server run: {job.job_id} already started."
         else:
             workspace = Workspace(root_dir=self.args.workspace, site_name="server")
-            app_root = workspace.get_app_dir(run_number)
+            app_root = workspace.get_app_dir(job.job_id)
             if not os.path.exists(app_root):
                 return "Server app does not exist. Please deploy the server app before starting."
 
             self.engine_info.status = MachineStatus.STARTING
-            app_custom_folder = workspace.get_app_custom_dir(run_number)
-
-            if not isinstance(job, Job):
-                return "Must provide a job object to start the server app."
 
             self._start_runner_process(
-                app_root,
-                run_number,
-                app_custom_folder,
                 job,
                 job_clients,
                 snapshot,
-                self.server.cell,
-                self.server.server_state,
                 fl_ctx
             )
 
@@ -228,14 +222,9 @@ class ServerEngine(ServerEngineInternalSpec):
 
     def _start_runner_process(
         self,
-        app_root,
-        run_number,
-        app_custom_folder,
         job,
         job_clients,
         snapshot,
-        cell: CoreCell,
-        server_state: ServerState,
         fl_ctx: FLContext
     ):
         job_launcher: JobLauncherSpec = get_job_launcher(job.meta, fl_ctx)
@@ -253,13 +242,13 @@ class ServerEngine(ServerEngineInternalSpec):
             job_clients = self.client_manager.clients
 
         with self.lock:
-            self.run_processes[run_number] = {
+            self.run_processes[job.job_id] = {
                 RunProcessKey.JOB_HANDLE: job_handle,
                 RunProcessKey.JOB_ID: job.job_id,
                 RunProcessKey.PARTICIPANTS: job_clients,
             }
 
-        threading.Thread(target=self.wait_for_complete, args=[args.workspace, run_number, job_handle]).start()
+        threading.Thread(target=self.wait_for_complete, args=[args.workspace, job.job_id, job_handle]).start()
         return job_handle
 
     def get_job_clients(self, client_sites):
