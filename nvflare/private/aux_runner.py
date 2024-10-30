@@ -280,7 +280,9 @@ class AuxRunner(FLComponent):
             )
 
         if timeout > 0:
-            cell_replies = cell.broadcast_multi_requests(target_messages, timeout, optional=optional, secure=secure)
+            cell_replies = cell.broadcast_multi_requests(
+                target_messages, timeout, optional=optional, secure=secure, abort_signal=fl_ctx.get_run_abort_signal()
+            )
             return self._process_cell_replies(cell_replies, topic, channel, fqcn_to_name)
         else:
             cell.fire_multi_requests_and_forget(
@@ -395,6 +397,7 @@ class AuxRunner(FLComponent):
                 timeout=timeout,
                 optional=optional,
                 secure=secure,
+                abort_signal=fl_ctx.get_run_abort_signal(),
             )
             return self._process_cell_replies(cell_replies, topic, channel, fqcn_to_name)
         else:

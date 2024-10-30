@@ -144,7 +144,7 @@ class GetTaskCommand(CommandProcessor, ServerStateCheck):
         return ServerCommandNames.GET_TASK
 
     def process(self, data: Shareable, fl_ctx: FLContext):
-        """Called to process the abort command.
+        """Called to process the GetTask command.
 
         Args:
             data: process data

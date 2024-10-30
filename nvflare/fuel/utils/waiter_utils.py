@@ -28,11 +28,29 @@ class WaiterRC:
 
 
 def conditional_wait(waiter: threading.Event, timeout: float, abort_signal: Signal, condition_cb=None, **cb_kwargs):
+    """Wait for an event until timeout, aborted, or some condition is met.
+
+    Args:
+        waiter: the event to wait
+        timeout: the max time to wait
+        abort_signal: signal to abort the wait
+        condition_cb: condition to check during waiting
+        **cb_kwargs: kwargs for the condition_cb
+
+    Returns: return code to indicate how the waiting is stopped:
+        IS_SET: the event is set
+        TIMEOUT: the event timed out
+        ABORTED: abort signal is triggered during the wait
+        ERROR: the condition_cb encountered unhandled exception
+        OK: only used by the condition_cb to say "all is normal"
+        other integers: returned by condition_cb for other conditions met
+
+    """
     wait_time = min(_SMALL_WAIT, timeout)
     start = time.time()
     while True:
         if waiter.wait(wait_time):
-            # triggered
+            # the event just happened!
             return WaiterRC.IS_SET
 
         if time.time() - start >= timeout:
@@ -46,6 +64,8 @@ def conditional_wait(waiter: threading.Event, timeout: float, abort_signal: Sign
             try:
                 rc = condition_cb(**cb_kwargs)
                 if rc != WaiterRC.OK:
+                    # a bad condition is detected by the condition_cb
+                    # we return the rc from the condition_cb
                     return rc
             except:
                 return WaiterRC.ERROR
