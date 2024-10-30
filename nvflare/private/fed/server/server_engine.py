@@ -16,9 +16,7 @@ import copy
 import logging
 import os
 import re
-import shlex
 import shutil
-import subprocess
 import sys
 import threading
 import time
@@ -37,8 +35,7 @@ from nvflare.apis.fl_constant import (
     ServerCommandKey,
     ServerCommandNames,
     SnapshotKey,
-    WorkspaceConstants, JobConstants,
-)
+    WorkspaceConstants, )
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.fl_snapshot import RunSnapshot
 from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
@@ -47,7 +44,7 @@ from nvflare.apis.job_launcher_spec import JobLauncherSpec
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
-from nvflare.fuel.f3.cellnet.core_cell import FQCN, CoreCell
+from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellMsgReturnCode
 from nvflare.fuel.utils.argument_utils import parse_vars
@@ -56,9 +53,7 @@ from nvflare.private.admin_defs import Message, MsgHeader
 from nvflare.private.aux_runner import AuxMsgTarget
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, RequestHeader, TrainingTopic, new_cell_message
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
-from nvflare.private.fed.server.server_state import ServerState
 from nvflare.private.fed.utils.fed_utils import (
-    add_custom_dir_to_path,
     get_return_code,
     security_close,
     set_message_security_data, get_job_launcher,
@@ -67,7 +62,6 @@ from nvflare.private.scheduler_constants import ShareableHeader
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
-
 from .client_manager import ClientManager
 from .job_runner import JobRunner
 from .message_send import ClientReply

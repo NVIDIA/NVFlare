@@ -17,8 +17,7 @@ import threading
 import time
 from abc import ABC, abstractmethod
 
-from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, RunProcessKey, SystemConfigs
+from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobLauncherSpec
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
@@ -27,10 +26,9 @@ from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey, new_cell_message
-from nvflare.private.fed.utils.fed_utils import get_return_code, get_job_launcher
+from nvflare.private.fed.utils.fed_utils import get_job_launcher
 from nvflare.private.fed.utils.fed_utils import get_return_code
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
-
 from .client_status import ClientStatus, get_status_message
 
 
