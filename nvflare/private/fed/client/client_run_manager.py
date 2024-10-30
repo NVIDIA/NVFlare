@@ -24,7 +24,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
-from nvflare.private.aux_runner import AuxRunner
+from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.fed_utils import create_job_processing_context_properties
@@ -212,22 +212,52 @@ class ClientRunManager(ClientEngineExecutorSpec):
         secure=False,
     ) -> dict:
         if not targets:
-            targets = [FQCN.ROOT_SERVER]
-        else:
-            if isinstance(targets, str):
-                if targets == SiteType.ALL:
-                    targets = [FQCN.ROOT_SERVER]
-                    for _, t in self.all_clients.items():
-                        if t.name != self.client.client_name:
-                            targets.append(t.name)
+            msg_targets = [AuxMsgTarget.server_target()]
+        elif isinstance(targets, str):
+            if targets == SiteType.ALL:
+                msg_targets = [AuxMsgTarget.server_target()]
+                for _, c in self.all_clients.items():
+                    if c.name != self.client.client_name:
+                        msg_targets.append(AuxMsgTarget.client_target(c))
+            else:
+                msg_target = self._get_aux_msg_target(targets)
+                if msg_target:
+                    msg_targets = [msg_target]
                 else:
-                    targets = [targets]
-        if targets:
+                    self.logger.error(f"invalid targe {targets}")
+                    return {}
+        elif not isinstance(targets, list):
+            raise TypeError(f"invalid targets type {type(targets)}")
+        else:
+            # targets is a list: make sure every target is valid
+            msg_targets = []
+            for t in targets:
+                if not isinstance(t, str):
+                    raise TypeError(f"target name must be str but got {type(t)}")
+
+                msg_target = self._get_aux_msg_target(t)
+                if msg_target:
+                    msg_targets.append(msg_target)
+                else:
+                    self.logger.error(f"invalid target {t}")
+                    return {}
+
+        if msg_targets:
             return self.aux_runner.send_aux_request(
-                targets, topic, request, timeout, fl_ctx, optional=optional, secure=secure
+                msg_targets, topic, request, timeout, fl_ctx, optional=optional, secure=secure
             )
         else:
             return {}
+
+    def _get_aux_msg_target(self, name: str):
+        if name.lower() == "server":
+            return AuxMsgTarget.server_target()
+
+        c = self.get_client_from_name(name)
+        if c:
+            return AuxMsgTarget.client_target(c)
+        else:
+            return None
 
     def multicast_aux_requests(
         self,
@@ -238,8 +268,19 @@ class ClientRunManager(ClientEngineExecutorSpec):
         optional: bool = False,
         secure: bool = False,
     ) -> dict:
+        if not target_requests:
+            return {}
+
+        msg_targets = []
+        for name, req in target_requests.items():
+            msg_target = self._get_aux_msg_target(name)
+            if not msg_target:
+                self.logger.error(f"invalid target {name}")
+                return {}
+            msg_targets.append((msg_target, req))
+
         return self.aux_runner.multicast_aux_requests(
-            topic, target_requests, timeout, fl_ctx, optional=optional, secure=secure
+            topic, msg_targets, timeout, fl_ctx, optional=optional, secure=secure
         )
 
     def get_all_clients_from_server(self, fl_ctx, retry=0):

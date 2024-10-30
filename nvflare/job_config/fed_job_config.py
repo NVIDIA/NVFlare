@@ -186,6 +186,26 @@ class FedJobConfig:
 
         self._copy_ext_scripts(custom_dir, fed_app.server_app.ext_scripts)
         self._copy_ext_dirs(custom_dir, fed_app.server_app)
+        self._copy_file_sources(custom_dir, fed_app.server_app.file_sources)
+
+    def _copy_file_sources(self, custom_dir, file_sources):
+        for s in file_sources:
+            # s is a tuple of (src_path, dest_dir)
+            src_path, dest_dir = s
+            if dest_dir:
+                dest_path = os.path.join(custom_dir, dest_dir)
+                if not os.path.exists(dest_path):
+                    os.makedirs(dest_path, exist_ok=True)
+            else:
+                dest_path = custom_dir
+
+            if os.path.isfile(src_path):
+                base_name = os.path.basename(src_path)
+                dest_file = os.path.join(dest_path, base_name)
+                shutil.copy(src_path, dest_file)
+            else:
+                # this is a dir
+                shutil.copytree(src_path, dest_path, dirs_exist_ok=True)
 
     def _copy_ext_scripts(self, custom_dir, ext_scripts):
         for script in ext_scripts:
@@ -282,6 +302,7 @@ class FedJobConfig:
 
         self._copy_ext_scripts(custom_dir, fed_app.client_app.ext_scripts)
         self._copy_ext_dirs(custom_dir, fed_app.client_app)
+        self._copy_file_sources(custom_dir, fed_app.client_app.file_sources)
 
     def _get_base_app(self, custom_dir, app, app_config):
         app_config["components"] = []

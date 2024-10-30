@@ -161,6 +161,7 @@ class CellChannel:
 
 class CellChannelTopic:
 
+    Challenge = "challenge"
     Register = "register"
     Quit = "quit"
     GET_TASK = "get_task"
@@ -171,3 +172,11 @@ class CellChannelTopic:
     REPORT_JOB_FAILURE = "report_job_failure"
 
     SIMULATOR_WORKER_INIT = "simulator_worker_init"
+
+
+class IdentityChallengeKey:
+
+    NONCE = "nonce"
+    CERT = "cert"
+    SIGNATURE = "signature"
+    COMMON_NAME = "cn"

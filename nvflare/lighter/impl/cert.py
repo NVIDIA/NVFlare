@@ -23,23 +23,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 from nvflare.lighter.spec import Builder, Participant
-
-
-def serialize_pri_key(pri_key):
-    return pri_key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.TraditionalOpenSSL,
-        encryption_algorithm=serialization.NoEncryption(),
-    )
-
-
-def serialize_cert(cert):
-    return cert.public_bytes(serialization.Encoding.PEM)
-
-
-def load_crt(path):
-    serialized_cert = open(path, "rb").read()
-    return x509.load_pem_x509_certificate(serialized_cert, default_backend())
+from nvflare.lighter.utils import serialize_cert, serialize_pri_key
 
 
 class CertBuilder(Builder):
