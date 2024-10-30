@@ -12,75 +12,47 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import jwt
-from jwt import PyJWKClient
 import subprocess
 import base64
-import traceback
+import uuid
 import os
+import logging
 
 from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer
 
 SNP_NAMESPACE = "x-snp"
 
 class SNPAuthorizer(CCAuthorizer):
+    def __init__(self):
+        super().__init__()
+        self.logger = logging.getLogger(self.__class__.__name__)
+        
     def generate(self):
         cmd = ['sudo', 'snpguest', 'report', 'report.bin', 'request.bin']
         with open('request.bin', 'wb') as request_file:
             request_file.write(b'\x01'*64)
-        cp = subprocess.run(cmd, capture_output=True)
-        # print(token)
+        _ = subprocess.run(cmd, capture_output=True)
         with open('report.bin', 'rb') as report_file:
             token = base64.b64encode(report_file.read())
-        # print(token)
         return token
     
     def verify(self, token):
-        # print("Now verifying SNP")
         try:
-            # if not os.path.exists('./cert'):
-            #     os.mkdir('./cert')
-            # cmd = ['snpguest', 'fetch', 'ca', 'der', 'genoa', './cert', '--endorser', 'vcek']
-            # cp = subprocess.run(cmd, capture_output=True)
-            # if cp.returncode != 0:
-            #     return False
             report_bin = base64.b64decode(token)
-            with open('rcv_report.bin', 'wb') as report_file:
+            tmp_bin_file = uuid.uuid4().hex
+            with open(tmp_bin_file, 'wb') as report_file:
                 report_file.write(report_bin)
-            # cmd = ['snpguest', 'fetch', 'vcek', 'der', 'genoa', './cert', 'rcv_report.bin']
-            # cp = subprocess.run(cmd, capture_output=True)
-            # if cp.returncode != 0:
-            #     return False
-            # cmd = ['snpguest', 'verify', 'certs', './cert']
-            # cp = subprocess.run(cmd, capture_output=True)
-            # if cp.returncode != 0:
-            #     return False
-            cmd = ['snpguest', 'verify', 'attestation', './cert', 'rcv_report.bin']
+            cmd = ['snpguest', 'verify', 'attestation', './cert', tmp_bin_file]
             cp = subprocess.run(cmd, capture_output=True)
             if cp.returncode != 0:
                 return False
-            print(f"{cp.stdout=}\n{cp.stderr=} Now returning True")
-            # print(f"{claims=}")
             return True
-        except:
-            print(traceback.format_exc())
+        except Exception as e:
+            self.logger.info(f"Token verification failed {e=}")
             return False
-        return True
-
-    def can_generate(self) -> bool:
-        return True
-
-    def can_verify(self) -> bool:
-        return True
+        finally:
+            if os.path.exists(tmp_bin_file):
+                os.remove(tmp_bin_file)
 
     def get_namespace(self) -> str:
         return SNP_NAMESPACE
-
-
-if __name__ == "__main__":
-  m = SNPAuthorizer()
-  token = m.generate()
-  print(type(token))
-  v = m.verify(token)
-  print(v)
-
