@@ -42,31 +42,16 @@ class ACIAuthorizer(CCAuthorizer):
     def verify(self, token):
         try:
             header = jwt.get_unverified_header(token)
-            # print(f"{header=}")
             alg = header.get('alg')
             jwks_client = PyJWKClient(f"https://{maa_endpoint}/certs")
             signing_key = jwks_client.get_signing_key_from_jwt(token)
             claims = jwt.decode(token, signing_key.key, algorithms=[alg])
             if claims:
-                # print(f"{claims=}")
                 return True
         except:
             return False
         return False
 
-    def can_generate(self) -> bool:
-        return True
-
-    def can_verify(self) -> bool:
-        return True
-
     def get_namespace(self) -> str:
         return ACI_NAMESPACE
-
-if __name__ == "__main__":
-  m = ACIAuthorizer()
-  token = m.generate()
-  print(type(token))
-  v = m.verify(token)
-  print(v)
 
