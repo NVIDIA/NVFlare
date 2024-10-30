@@ -17,7 +17,6 @@ import logging
 import logging.config
 import os
 import pkgutil
-import re
 import sys
 import warnings
 from logging.handlers import RotatingFileHandler
