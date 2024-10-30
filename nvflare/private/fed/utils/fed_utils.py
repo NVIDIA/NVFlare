@@ -17,6 +17,7 @@ import logging
 import logging.config
 import os
 import pkgutil
+import re
 import sys
 import warnings
 from logging.handlers import RotatingFileHandler
@@ -53,11 +54,23 @@ from .app_authz import AppAuthzService
 
 def add_logfile_handler(log_file):
     root_logger = logging.getLogger()
+    configured_handlers = root_logger.handlers
     main_handler = root_logger.handlers[0]
     file_handler = RotatingFileHandler(log_file, maxBytes=20 * 1024 * 1024, backupCount=10)
     file_handler.setLevel(main_handler.level)
     file_handler.setFormatter(main_handler.formatter)
     root_logger.addHandler(file_handler)
+
+    if len(configured_handlers) < 2:
+        return
+    
+    config_error_handler = configured_handlers[1]
+    error_log_file = os.path.join(os.path.dirname(log_file), "error.log")
+    error_file_handler = RotatingFileHandler(error_log_file, maxBytes=20 * 1024 * 1024, backupCount=10)
+    error_file_handler.setLevel(config_error_handler.level)
+    error_file_handler.setFormatter(config_error_handler.formatter)
+    root_logger.addHandler(error_file_handler)
+    root_logger.removeHandler(config_error_handler)
 
 
 def _check_secure_content(site_type: str) -> List[str]:
