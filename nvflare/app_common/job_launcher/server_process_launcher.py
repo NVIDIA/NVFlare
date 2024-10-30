@@ -16,23 +16,23 @@ import sys
 
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.workspace import Workspace
-from nvflare.app_opt.job_launcher.process_launcher import ProcessJobLauncher
+from nvflare.app_common.job_launcher.process_launcher import ProcessJobLauncher
 from nvflare.private.fed.utils.fed_utils import add_custom_dir_to_path
 
 
-class ClientProcessJobLauncher(ProcessJobLauncher):
+class ServerProcessJobLauncher(ProcessJobLauncher):
     def get_command(self, launch_data, fl_ctx) -> (str, dict):
         new_env = os.environ.copy()
+
         workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         args = fl_ctx.get_prop(FLContextKey.ARGS)
-        client = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
+        server = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
         job_id = launch_data.get(JobConstants.JOB_ID)
-        server_config = fl_ctx.get_prop(FLContextKey.SERVER_CONFIG)
-        if not server_config:
-            raise RuntimeError(f"missing {FLContextKey.SERVER_CONFIG} in FL context")
-        service = server_config[0].get("service", {})
-        if not isinstance(service, dict):
-            raise RuntimeError(f"expect server config data to be dict but got {type(service)}")
+        restore_snapshot = fl_ctx.get_prop(FLContextKey.SNAPSHOT, False)
+
+        app_root = workspace_obj.get_app_dir(job_id)
+        cell = server.cell
+        server_state = server.server_state
 
         app_custom_folder = workspace_obj.get_app_custom_dir(job_id)
         if app_custom_folder != "":
@@ -41,26 +41,31 @@ class ClientProcessJobLauncher(ProcessJobLauncher):
         command_options = ""
         for t in args.set:
             command_options += " " + t
+
         command = (
-                f"{sys.executable} -m nvflare.private.fed.app.client.worker_process -m "
-                + args.workspace
-                + " -w "
-                + (workspace_obj.get_startup_kit_dir())
-                + " -t "
-                + client.token
-                + " -d "
-                + client.ssid
-                + " -n "
-                + job_id
-                + " -c "
-                + client.client_name
-                + " -p "
-                + str(client.cell.get_internal_listener_url())
-                + " -g "
-                + service.get("target")
-                + " -scheme "
-                + service.get("scheme", "grpc")
-                + " -s fed_client.json "
-                  " --set" + command_options + " print_conf=True"
+            sys.executable
+            + " -m nvflare.private.fed.app.server.runner_process -m "
+            + args.workspace
+            + " -s fed_server.json -r "
+            + app_root
+            + " -n "
+            + str(job_id)
+            + " -p "
+            + str(cell.get_internal_listener_url())
+            + " -u "
+            + str(cell.get_root_url_for_child())
+            + " --host "
+            + str(server_state.host)
+            + " --port "
+            + str(server_state.service_port)
+            + " --ssid "
+            + str(server_state.ssid)
+            + " --ha_mode "
+            + str(server.ha_mode)
+            + " --set"
+            + command_options
+            + " print_conf=True restore_snapshot="
+            + str(restore_snapshot)
         )
+
         return command, new_env

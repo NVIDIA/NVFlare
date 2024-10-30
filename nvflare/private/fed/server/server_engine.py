@@ -43,10 +43,10 @@ from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.fl_snapshot import RunSnapshot
 from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
 from nvflare.apis.job_def import Job
+from nvflare.apis.job_launcher_spec import JobLauncherSpec
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
-from nvflare.app_opt.job_launcher.job_launcher_spec import JobLauncherSpec
 from nvflare.fuel.f3.cellnet.core_cell import FQCN, CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellMsgReturnCode
@@ -238,65 +238,16 @@ class ServerEngine(ServerEngineInternalSpec):
         server_state: ServerState,
         fl_ctx: FLContext
     ):
-        launch_data = get_job_launcher(job.job_id, "server", job.meta, fl_ctx)
-        job_launcher: JobLauncherSpec = launch_data.get(JobConstants.JOB_LAUNCHER)
-        if not job_launcher:
-            raise RuntimeError(f"There's no job launcher can handle this job: {launch_data}.")
+        job_launcher: JobLauncherSpec = get_job_launcher(job.meta, fl_ctx)
         if snapshot:
             restore_snapshot = True
         else:
             restore_snapshot = False
         fl_ctx.set_prop(FLContextKey.SNAPSHOT, restore_snapshot, private=True, sticky=False)
-        job_handle = job_launcher.launch_job(launch_data, fl_ctx)
-        self.logger.info(f"Launch job data: {launch_data}  with job launcher: {type(job_launcher)} ")
+        job_handle = job_launcher.launch_job(job.meta, fl_ctx)
+        self.logger.info(f"Launch job_id: {job.job_id}  with job launcher: {type(job_launcher)} ")
 
         args = fl_ctx.get_prop(FLContextKey.ARGS)
-
-        # workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-        # args = fl_ctx.get_prop(FLContextKey.ARGS)
-        # site = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
-        #
-        #
-        # new_env = os.environ.copy()
-        # if app_custom_folder != "":
-        #     add_custom_dir_to_path(app_custom_folder, new_env)
-        #
-        # if snapshot:
-        #     restore_snapshot = True
-        # else:
-        #     restore_snapshot = False
-        # command_options = ""
-        # for t in args.set:
-        #     command_options += " " + t
-        #
-        # command = (
-        #     sys.executable
-        #     + " -m nvflare.private.fed.app.server.runner_process -m "
-        #     + args.workspace
-        #     + " -s fed_server.json -r "
-        #     + app_root
-        #     + " -n "
-        #     + str(run_number)
-        #     + " -p "
-        #     + str(cell.get_internal_listener_url())
-        #     + " -u "
-        #     + str(cell.get_root_url_for_child())
-        #     + " --host "
-        #     + str(server_state.host)
-        #     + " --port "
-        #     + str(server_state.service_port)
-        #     + " --ssid "
-        #     + str(server_state.ssid)
-        #     + " --ha_mode "
-        #     + str(self.server.ha_mode)
-        #     + " --set"
-        #     + command_options
-        #     + " print_conf=True restore_snapshot="
-        #     + str(restore_snapshot)
-        # )
-        # # use os.setsid to create new process group ID
-        #
-        # process = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
 
         if not job_clients:
             job_clients = self.client_manager.clients
@@ -637,7 +588,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
             if time.time() - start >= max_wait:
                 self.logger.critical(f"Cannot get participating clients for job {job_id} after {max_wait} seconds")
-                raise RuntimeError("Exiting job process: Cannot get participating clients for job {job_id}")
+                raise RuntimeError(f"Exiting job process: Cannot get participating clients for job {job_id}")
 
             self.logger.debug("didn't receive clients info - retry in 1 second")
             time.sleep(1.0)

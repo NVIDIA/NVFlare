@@ -13,7 +13,23 @@
 # limitations under the License.
 from abc import abstractmethod
 
+from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.fuel.common.exit_codes import ProcessExitCode
+
+
+class JobReturnCode(ProcessExitCode):
+    SUCCESS = 0
+    EXECUTION_ERROR = 1
+    ABORTED = 9
+    UNKNOWN = 127
+
+
+def add_launcher(launcher, fl_ctx: FLContext):
+    job_launcher: list = fl_ctx.get_prop(FLContextKey.JOB_LAUNCHER, [])
+    job_launcher.append(launcher)
+    fl_ctx.set_prop(FLContextKey.JOB_LAUNCHER, job_launcher, private=True, sticky=False)
 
 
 class JobHandleSpec:
@@ -45,28 +61,16 @@ class JobHandleSpec:
         raise NotImplementedError()
 
 
-class JobLauncherSpec:
+class JobLauncherSpec(FLComponent):
     @abstractmethod
-    def launch_job(self, launch_data: dict, fl_ctx: FLContext) -> JobHandleSpec:
+    def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
         """To launch a job run.
 
         Args:
-            launch_data: job launch meta data
+            job_meta: job meta data
             fl_ctx: FLContext
 
         Returns: boolean to indicates the job launch success or fail.
-
-        """
-        raise NotImplementedError()
-
-    @abstractmethod
-    def can_launch(self, launch_data: dict) -> bool:
-        """To determine if the launcher can launch this job.
-
-        Args:
-            launch_data: job launch meta data
-
-        Returns: True / False
 
         """
         raise NotImplementedError()

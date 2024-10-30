@@ -20,10 +20,12 @@ from kubernetes.client import Configuration
 from kubernetes.client.api import core_v1_api
 from kubernetes.client.rest import ApiException
 
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
-from nvflare.app_opt.job_launcher.job_launcher_spec import JobHandleSpec, JobLauncherSpec
+from nvflare.private.fed.utils.fed_utils import extract_job_image
 
 
 class JobState(Enum):
@@ -40,6 +42,14 @@ POD_STATE_MAPPING = {
     "Succeeded": JobState.SUCCEEDED,
     "Failed": JobState.TERMINATED,
     "Unknown": JobState.UNKNOWN,
+}
+
+JOB_RETURN_CODE_MAPPING = {
+    JobState.SUCCEEDED: JobReturnCode.SUCCESS,
+    JobState.STARTING: JobReturnCode.UNKNOWN,
+    JobState.RUNNING: JobReturnCode.UNKNOWN,
+    JobState.TERMINATED: JobReturnCode.ABORTED,
+    JobState.UNKNOWN: JobReturnCode.UNKNOWN,
 }
 
 
@@ -148,7 +158,7 @@ class K8sJobHandle(JobHandleSpec):
         if not all([isinstance(js, JobState)] for js in job_states_to_enter):
             raise ValueError(f"expect job_states_to_enter with valid values, but get {job_states_to_enter}")
         while True:
-            job_state = self.poll()
+            job_state = self._query_state()
             if job_state in job_states_to_enter:
                 return True
             elif timeout is not None and time.time() - starting_time > timeout:
@@ -162,6 +172,10 @@ class K8sJobHandle(JobHandleSpec):
         return self.enter_states([JobState.TERMINATED], timeout=self.timeout)
 
     def poll(self):
+        job_state = self._query_state()
+        return JOB_RETURN_CODE_MAPPING.get(job_state, JobReturnCode.UNKNOWN)
+
+    def _query_state(self):
         try:
             resp = self.api_instance.read_namespaced_pod(name=self.job_id, namespace=self.namespace)
         except ApiException as e:
@@ -179,7 +193,6 @@ class K8sJobLauncher(JobLauncherSpec):
         root_hostpath: str,
         workspace: str,
         mount_path: str,
-        supported_images: [str] = None,
         timeout=None,
         namespace="default",
     ):
@@ -189,7 +202,6 @@ class K8sJobLauncher(JobLauncherSpec):
         self.workspace = workspace
         self.mount_path = mount_path
         self.timeout = timeout
-        self.supported_images = supported_images
 
         config.load_kube_config(config_file_path)
         try:
@@ -204,12 +216,12 @@ class K8sJobLauncher(JobLauncherSpec):
         self.job_handle = None
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def launch_job(self, launch_data: dict, fl_ctx: FLContext) -> JobHandleSpec:
+    def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
 
         workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         args = fl_ctx.get_prop(FLContextKey.ARGS)
         client = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
-        job_id = launch_data.get(JobConstants.JOB_ID)
+        job_id = job_meta.get(JobConstants.JOB_ID)
         server_config = fl_ctx.get_prop(FLContextKey.SERVER_CONFIG)
         if not server_config:
             raise RuntimeError(f"missing {FLContextKey.SERVER_CONFIG} in FL context")
@@ -218,7 +230,7 @@ class K8sJobLauncher(JobLauncherSpec):
             raise RuntimeError(f"expect server config data to be dict but got {type(service)}")
 
         self.logger.info(f"K8sJobLauncher start to launch job: {job_id} for client: {client.client_name}")
-        job_image = launch_data.get(JobConstants.JOB_IMAGE)
+        job_image = extract_job_image(job_meta, fl_ctx.get_identity_name())
         self.logger.info(f"launch job use image: {job_image}")
         job_config = {
             "name": job_id,
@@ -255,9 +267,9 @@ class K8sJobLauncher(JobLauncherSpec):
             job_handle.terminate()
             return None
 
-    def can_launch(self, launch_data: dict) -> bool:
-        job_image = launch_data.get(JobConstants.JOB_IMAGE)
-        if job_image in self.supported_images:
-            return True
-        else:
-            return False
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        if event_type == EventType.GET_JOB_LAUNCHER:
+            job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
+            job_image = extract_job_image(job_meta, fl_ctx.get_identity_name())
+            if job_image:
+                add_launcher(self, fl_ctx)

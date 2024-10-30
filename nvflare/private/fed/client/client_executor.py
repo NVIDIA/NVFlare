@@ -17,8 +17,10 @@ import threading
 import time
 from abc import ABC, abstractmethod
 
-from nvflare.apis.fl_constant import AdminCommandNames, JobConstants, RunProcessKey, SystemConfigs
+from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, RunProcessKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_launcher_spec import JobLauncherSpec
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 from nvflare.fuel.common.exit_codes import PROCESS_EXIT_REASON, ProcessExitCode
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
@@ -26,6 +28,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey, new_cell_message
 from nvflare.private.fed.utils.fed_utils import get_return_code, get_job_launcher
+from nvflare.private.fed.utils.fed_utils import get_return_code
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .client_status import ClientStatus, get_status_message
@@ -163,12 +166,9 @@ class JobExecutor(ClientExecutor):
             fl_ctx: FLContext
         """
 
-        launch_data = get_job_launcher(job_id, client.client_name, job_meta, fl_ctx)
-        job_launcher = launch_data.get(JobConstants.JOB_LAUNCHER)
-        if not job_launcher:
-            raise RuntimeError(f"There's no job launcher can handle this job: {launch_data}.")
-        job_handle = job_launcher.launch_job(launch_data, fl_ctx)
-        self.logger.info(f"Launch job data: {launch_data}  with job launcher: {type(job_launcher)} ")
+        job_launcher: JobLauncherSpec = get_job_launcher(job_meta, fl_ctx)
+        job_handle = job_launcher.launch_job(job_meta, fl_ctx)
+        self.logger.info(f"Launch job_id: {job_id}  with job launcher: {type(job_launcher)} ")
 
         client.multi_gpu = False
 
@@ -306,7 +306,7 @@ class JobExecutor(ClientExecutor):
             if process_status == ClientStatus.STARTED:
                 try:
                     with self.lock:
-                        job_launcher = self.run_processes[job_id][RunProcessKey.JOB_HANDLE]
+                        job_handle = self.run_processes[job_id][RunProcessKey.JOB_HANDLE]
                     data = {}
                     request = new_cell_message({}, data)
                     self.client.cell.fire_and_forget(
@@ -317,7 +317,7 @@ class JobExecutor(ClientExecutor):
                         optional=True,
                     )
                     self.logger.debug("abort sent to worker")
-                    t = threading.Thread(target=self._terminate_process, args=[job_launcher, job_id])
+                    t = threading.Thread(target=self._terminate_job, args=[job_handle, job_id])
                     t.start()
                     t.join()
                     break
@@ -335,7 +335,7 @@ class JobExecutor(ClientExecutor):
 
         self.logger.info("Client worker process is terminated.")
 
-    def _terminate_process(self, child_process, job_id):
+    def _terminate_job(self, job_handle, job_id):
         max_wait = 10.0
         done = False
         start = time.time()
@@ -352,7 +352,7 @@ class JobExecutor(ClientExecutor):
 
             time.sleep(0.05)  # we want to quickly check
 
-        child_process.terminate()
+        job_handle.terminate()
         self.logger.info(f"run ({job_id}): child worker process terminated")
 
     def abort_task(self, job_id):
@@ -376,11 +376,11 @@ class JobExecutor(ClientExecutor):
 
     def _wait_child_process_finish(self, client, job_id, allocated_resource, token, resource_manager, workspace):
         self.logger.info(f"run ({job_id}): waiting for child worker process to finish.")
-        job_launcher = self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_HANDLE)
-        if job_launcher:
-            job_launcher.wait()
+        job_handle = self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_HANDLE)
+        if job_handle:
+            job_handle.wait()
 
-            return_code = get_return_code(job_launcher, job_id, workspace, self.logger)
+            return_code = get_return_code(job_handle, job_id, workspace, self.logger)
 
             self.logger.info(f"run ({job_id}): child worker process finished with RC {return_code}")
             if return_code in [ProcessExitCode.UNSAFE_COMPONENT, ProcessExitCode.CONFIG_ERROR]:

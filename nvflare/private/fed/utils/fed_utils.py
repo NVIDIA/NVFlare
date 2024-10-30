@@ -40,7 +40,6 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.decomposers import common_decomposers
-from nvflare.app_opt.job_launcher.job_launcher_spec import JobLauncherSpec
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.f3.stats_pool import CsvRecordHandler, StatsPoolManager
 from nvflare.fuel.sec.audit import AuditService
@@ -381,7 +380,7 @@ def get_target_names(targets):
     return target_names
 
 
-def get_return_code(process, job_id, workspace, logger):
+def get_return_code(job_handle, job_id, workspace, logger):
     run_dir = os.path.join(workspace, job_id)
     rc_file = os.path.join(run_dir, FLMetaKey.PROCESS_RC_FILE)
     if os.path.exists(rc_file):
@@ -392,11 +391,11 @@ def get_return_code(process, job_id, workspace, logger):
         except Exception:
             logger.warning(
                 f"Could not get the return_code from {rc_file} of the job:{job_id}, "
-                f"Return the RC from the process:{process.pid}"
+                f"Return the RC from the job_handle:{job_handle}"
             )
-            return_code = process.poll()
+            return_code = job_handle.poll()
     else:
-        return_code = process.poll()
+        return_code = job_handle.poll()
     return return_code
 
 
@@ -473,15 +472,13 @@ def get_scope_prop(scope_name: str, key: str) -> Any:
     return data_bus.get_data(_scope_prop_key(scope_name, key))
 
 
-def get_job_launcher(job_id, site_name, job_meta: dict, fl_ctx: FLContext) -> dict:
-    launch_image = extract_job_image(job_meta, site_name)
-    launch_data = {JobConstants.JOB_IMAGE: launch_image, JobConstants.JOB_ID: job_id}
+def get_job_launcher(job_meta: dict, fl_ctx: FLContext) -> dict:
+    engine = fl_ctx.get_engine()
+    fl_ctx.set_prop(FLContextKey.JOB_META, job_meta, private=True, sticky=False)
+    engine.fire_event(EventType.GET_JOB_LAUNCHER, fl_ctx)
 
-    job_launcher = None
-    components = fl_ctx.get_prop(FLContextKey.COMPONENTS)
-    for _, component in components.items():
-        if isinstance(component, JobLauncherSpec):
-            if component.can_launch(launch_data):
-                job_launcher = component
-    launch_data[JobConstants.JOB_LAUNCHER] = job_launcher
-    return launch_data
+    job_launcher = fl_ctx.get_prop(FLContextKey.JOB_LAUNCHER)
+    if not (job_launcher and isinstance(job_launcher, list)):
+        raise RuntimeError(f"There's no job launcher can handle this job: {job_meta}.")
+
+    return job_launcher[0]

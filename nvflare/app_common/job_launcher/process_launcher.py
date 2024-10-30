@@ -18,11 +18,15 @@ import subprocess
 import sys
 from abc import abstractmethod
 
-from nvflare.apis.fl_constant import FLContextKey, JobConstants
+from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
-from nvflare.app_opt.job_launcher.job_launcher_spec import JobHandleSpec, JobLauncherSpec
-from nvflare.private.fed.utils.fed_utils import add_custom_dir_to_path
+from nvflare.private.fed.utils.fed_utils import add_custom_dir_to_path, extract_job_image
+
+JOB_RETURN_CODE_MAPPING = {0: JobReturnCode.SUCCESS, 1: JobReturnCode.EXECUTION_ERROR, 9: JobReturnCode.ABORTED}
 
 
 class ProcessHandle(JobHandleSpec):
@@ -44,9 +48,9 @@ class ProcessHandle(JobHandleSpec):
 
     def poll(self):
         if self.process:
-            return self.process.poll()
+            return JOB_RETURN_CODE_MAPPING.get(self.process.poll(), JobReturnCode.EXECUTION_ERROR)
         else:
-            return None
+            return JobReturnCode.UNKNOWN
 
     def wait(self):
         if self.process:
@@ -59,9 +63,9 @@ class ProcessJobLauncher(JobLauncherSpec):
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def launch_job(self, launch_data: dict, fl_ctx: FLContext) -> JobHandleSpec:
+    def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
 
-        command, new_env = self.get_command(launch_data, fl_ctx)
+        command, new_env = self.get_command(job_meta, fl_ctx)
         # use os.setsid to create new process group ID
         process = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
 
@@ -69,12 +73,12 @@ class ProcessJobLauncher(JobLauncherSpec):
 
         return ProcessHandle(process)
 
-    def can_launch(self, launch_data: dict) -> bool:
-        job_image = launch_data.get(JobConstants.JOB_IMAGE)
-        if job_image:
-            return False
-        else:
-            return True
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        if event_type == EventType.GET_JOB_LAUNCHER:
+            job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
+            job_image = extract_job_image(job_meta, fl_ctx.get_identity_name())
+            if not job_image:
+                add_launcher(self, fl_ctx)
 
     @abstractmethod
     def get_command(self, launch_data, fl_ctx) -> (str, dict):
