@@ -244,7 +244,13 @@ class ClientRunManager(ClientEngineExecutorSpec):
 
         if msg_targets:
             return self.aux_runner.send_aux_request(
-                msg_targets, topic, request, timeout, fl_ctx, optional=optional, secure=secure
+                msg_targets,
+                topic,
+                request,
+                timeout,
+                fl_ctx,
+                optional=optional,
+                secure=secure,
             )
         else:
             return {}
