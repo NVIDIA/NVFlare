@@ -243,7 +243,7 @@ class K8sJobLauncher(JobLauncherSpec):
             "volume_mount_list": [{"name": self.workspace, "mountPath": self.mount_path}],
             "volume_list": [{"name": self.workspace, "hostPath": {"path": self.root_hostpath, "type": "Directory"}}],
             "module_args": self.get_module_args(job_id, fl_ctx),
-            "set_list": self.get_set_list(args),
+            "set_list": self.get_set_list(args, fl_ctx),
         }
 
         self.logger.info(f"launch job with k8s_launcher. Job_id:{job_id}")
