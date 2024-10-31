@@ -4,15 +4,16 @@ This example shows how to use [NVIDIA FLARE](https://nvidia.github.io/NVFlare) f
 ## Introduction 
 This example illustrates both supervised fine-tuning (SFT) and parameter-efficient fine-tuning (PEFT) using the [SFT Trainer](https://huggingface.co/docs/trl/sft_trainer) from [HuggingFace](https://huggingface.co/) with [PEFT library](https://github.com/huggingface/peft).
 
-We used the [Llama-2-7b-hf model](https://huggingface.co/meta-llama/Llama-2-7b-hf) to showcase the functionality of federated SFT and PEFT, allowing HuggingFace models to be trained and adapted with NVFlare. 
+We used the [Llama-3.2-1B model](https://huggingface.co/meta-llama/Llama-3.2-1B) to showcase the functionality of federated SFT and PEFT, allowing HuggingFace models to be trained and adapted with NVFlare. All other models from HuggingFace can be easily adapted following the same steps.
 
 For PEFT, we used LoRA method, other PEFT methods (e.g. p-tuning, prompt-tuning) can be easily adapted as well by modifying the configs following [PEFT](https://github.com/huggingface/peft) examples.
 
-Mainly on two fronts:
-- Adapt local HuggingFace training scripts to federated application
-- Handling large model weights (~26 GB for Llama-2-7b-hf model), this is supported by NVFlare infrastructure, and does not need any code change.
+We would like to showcase three key points in this example:
+- Adapt local HuggingFace training scripts, both SFT and PEFT, to federated application
+- Handling large model weights (~6 GB for Llama-3.2-1B model with float32 precision for communication), which is beyond protobuf's 2 GB hard limit. It is supported by NVFlare infrastructure via streaming, and does not need any code change.
+- Use NVFlare's filter functionality to enable model compression and precision conversion for communication, which can significantly reduce the message size and is thus important for communicating LLM updates.  
 
-We conducted these experiments on two 80GB A100 GPUs, PEFT only needs 1 GPU, while SFT needs both GPUs. Less computation resources will be needed if smaller models are used, simply replace Llama-2-7b-hf with other options from HuggingFace.
+We conducted these experiments on a single 48GB RTX 6000 Ada GPU. 
 
 ## Setup
 Please make sure you set up virtual environment following [example root readme](../../README.md).
@@ -21,31 +22,28 @@ Install additional requirements (if you already have a specific version of nvfla
 python3 -m pip install -r requirements.txt
 ```
 
-## Model and Data Preparation
-We first download the model and save it to the `model` folder, note that approved access to the model is required
-```
-mkdir model
-cd model
-git clone https://huggingface.co/meta-llama/Llama-2-7b-hf
-cd ..
-```
-
-We then download and preprocess (to be consistent with our [NeMo example](../../../integration/nemo/examples/supervised_fine_tuning), we follow the same preprocessing steps) the dataset [databricks-dolly-15k](https://huggingface.co/datasets/databricks/databricks-dolly-15k) for this example. 
+## Data Preparation
+We download and preprocess (consistent with our [NeMo example](../../../integration/nemo/examples/supervised_fine_tuning/README.md), we follow the same preprocessing steps).
 ```
 mkdir dataset
 cd dataset
+git clone https://huggingface.co/datasets/tatsu-lab/alpaca
 git clone https://huggingface.co/datasets/databricks/databricks-dolly-15k
+git clone https://huggingface.co/datasets/OpenAssistant/oasst1
 cd ..
 mkdir dataset/dolly
 python ./utils/preprocess_dolly.py --training_file dataset/databricks-dolly-15k/databricks-dolly-15k.jsonl --output_dir dataset/dolly
+python ./utils/preprocess_alpaca.py --training_file dataset/alpaca/data/train-00000-of-00001-a09b74b3ef9c3b56.parquet --output_dir dataset/alpaca
+python ./utils/preprocess_oasst1.py --training_file dataset/oasst1/data/train-00000-of-00001-b42a775f407cee45.parquet --validation_file dataset/oasst1/data/validation-00000-of-00001-134b8fd0c89408b6.parquet --output_dir dataset/oasst1
 ```
 
-## Centralized Training
+## Adaptation of Centralized Training Script to Federated
+To illustrate the adaptation process, we use a single dataset [databricks-dolly-15k](https://huggingface.co/datasets/databricks/databricks-dolly-15k).
 ### One-call training
-Centralized trainings, as the baseline for comparison with FL results, are done with the following command:
+Centralized trainings, as the baseline for comparison with other results, are done with the following command:
 ```
-python3 ./utils/hf_sft_peft.py --output_path ./workspace_centralized/llama2-7b-dolly-sft --mode 0
-python3 ./utils/hf_sft_peft.py --output_path ./workspace_centralized/llama2-7b-dolly-peft --mode 1
+python3 ./utils/hf_sft_peft.py --output_path ./workspace/llama-3.2-1b-dolly-cen_sft --mode 0
+python3 ./utils/hf_sft_peft.py --output_path ./workspace/llama-3.2-1b-dolly-cen_peft --mode 1
 ```
 ### Pre: Launch Modes
 Before we start adapting the local training script to federated application, we first need to understand the launch modes of NVFlare client API.
@@ -79,17 +77,15 @@ If the intended model weights (serving as the starting point for each round, the
 
 To run iterative training, we use the following command:
 ``` 
-python3 ./utils/hf_sft_peft_iter.py --output_path /workspace_centralized/llama2-7b-dolly-sft-iter --mode 0
-python3 ./utils/hf_sft_peft_iter.py --output_path /workspace_centralized/llama2-7b-dolly-peft-iter --mode 1
+python3 ./utils/hf_sft_peft_iter.py --output_path ./workspace/llama-3.2-1b-dolly-cen_sft-iter --mode 0
+python3 ./utils/hf_sft_peft_iter.py --output_path ./workspace/llama-3.2-1b-dolly-cen_peft-iter --mode 1
 ```
 
-The PEFT curves are shown below, blue for single call, black for iterative. We can see the "zig-zag" pattern in the iterative training loss curve.
-
-![peft](./figs/cen_peft.png)
-
-Similar patterns can be observed from the SFT curves
-
+The SFT curves are shown below, black for single call, blue for iterative. We can see the "zig-zag" pattern in the iterative training loss curve.
 ![sft](./figs/cen_sft.png)
+
+Similar patterns can be observed from the PEFT curves, purple for single call, green for iterative.
+![peft](./figs/cen_peft.png)
 
 ### Adaptation Step 2: federated with NVFlare
 Once we have the iterative training script ready with "starting model" loading capability, it can be easily adapted to a NVFlare trainer by using [Client API](../../hello-world/ml-to-fl/pt/README.md).
@@ -99,55 +95,34 @@ The major code modifications are for receiving and returning the global model (r
 ![diff](./figs/diff_fl_1.png)
 ![diff](./figs/diff_fl_2.png)
 
-## Job for NVFlare FL Training
-With the local training script ready, we can go ahead to generate the NVFlare job configs by reusing the job templates from [sag_pt](../../../job_templates/sag_pt/).
-
-Let's set the job template path with the following command.
-```bash
-nvflare config -jt ../../../job_templates/
+### Federated Training Results
+We run the federated training on a single client using NVFlare Simulator via [JobAPI](../job_api/README.md).
 ```
-Then we can check the available templates with the following command.
-```bash
-nvflare job list_templates
+python3 sft_job.py --data_path ${PWD}/dataset/dolly --workspace_dir ${PWD}/workspace/hf_sft --job_dir ${PWD}/workspace/jobs/hf_sft --train_mode 0 
+python3 sft_job.py --data_path ${PWD}/dataset/dolly --workspace_dir ${PWD}/workspace/hf_peft --job_dir ${PWD}/workspace/jobs/hf_peft --train_mode 1 
 ```
-We can see the "sag_pt" template is available, with which we further generate job configs for SFT and PEFT as:
-```
-nvflare job create -force -j "./jobs/hf_peft" -w "sag_pt" -sd "code" \
-  -f meta.conf min_clients=1 \
-  -f config_fed_client.conf app_script="hf_sft_peft_fl.py" app_config="--model_path ${PWD}/model/Llama-2-7b-hf --data_path_train ${PWD}/dataset/dolly/training.jsonl --data_path_valid ${PWD}/dataset/dolly/validation.jsonl --output_path llama2-7b-dolly-peft --mode 1" \
-  -f config_fed_server.conf model_class_path="hf_peft_model.CausalLMPEFTModel" components[0].args.model.args.model_path="${PWD}/model/Llama-2-7b-hf" min_clients=1 num_rounds=3 key_metric="eval_loss" negate_key_metric=True
-```
-and
-```
-nvflare job create -force -j "./jobs/hf_sft" -w "sag_pt" -sd "code" \
-  -f meta.conf min_clients=1 \
-  -f config_fed_client.conf app_script="hf_sft_peft_fl.py" app_config="--model_path ${PWD}/model/Llama-2-7b-hf --data_path_train ${PWD}/dataset/dolly/training.jsonl --data_path_valid ${PWD}/dataset/dolly/validation.jsonl --output_path llama2-7b-dolly-sft --mode 0" \
-  -f config_fed_server.conf model_class_path="hf_sft_model.CausalLMModel" components[0].args.model.args.model_path="${PWD}/model/Llama-2-7b-hf" min_clients=1 num_rounds=3 key_metric="eval_loss" negate_key_metric=True  
-```
-
-For both client and server configs, we only set the necessary parameters for the SFT and PEFT tasks, and leave the rest to the default values.
-
-## Federated Training
-With the produced job, we run the federated training on a single client using NVFlare Simulator.
-```
-nvflare simulator -w ./workspace_fl/hf_peft -n 1 -t 1 ./jobs/hf_peft
-```
-and
-```
-nvflare simulator -w ./workspace_fl/hf_sft -n 1 -t 1 ./jobs/hf_sft
-``` 
-
-## Results
-In this example, our purpose is to showcase the adaptation process and FL functionality. Hence, we used 1-client setting, with which the training results should relatively align with centralized training.
-
-The PEFT curves are shown below, blue for centralized results from `./utils/hf_sft_peft.py`, black for FL training. 
-
-We can see with some training randomness, the two PEFT training loss curves align with each other.
-
-![peft](./figs/fl_peft.png)
-
-Similar patterns can be observed from the SFT curves
-
+The SFT curves are shown below, black for centralized results, magenta for FL training. With some training randomness, the two PEFT training loss curves align with each other. 
 ![sft](./figs/fl_sft.png)
 
+Similar patterns can be observed from the PEFT curves, purple for centralized results, orange for FL training. Alignment better than SFT can be observed.
+![peft](./figs/fl_peft.png)
 
+## Model Precision Conversion for Communication
+In the above example, we used float32 for communication. To reduce the message size, we can use model precision conversion for communication. Model conversion is enabled by NVFlare's [filter mechanism](https://nvflare.readthedocs.io/en/main/programming_guide/filters.html). We can use the following command to run the federated training with model precision conversion:
+```
+python3 sft_job_compress.py --data_path ${PWD}/dataset/dolly --workspace_dir ${PWD}/workspace/hf_sft_compress --job_dir ${PWD}/workspace/jobs/hf_sft_compress --train_mode 0
+python3 sft_job_compress.py --data_path ${PWD}/dataset/dolly --workspace_dir ${PWD}/workspace/hf_peft_compress --job_dir ${PWD}/workspace/jobs/hf_peft_compress --train_mode 1
+```
+The SFT curves are shown below, black for centralized results, yellow for FL training with compression. We can see it achieves similar alignment with centralized result.
+![sft](./figs/fl_sft_comp.png)
+
+Similar patterns can be observed from the PEFT curves, purple for centralized results, black for FL training with compression.
+![peft](./figs/fl_peft_comp.png)
+
+These results show that model precision conversion does not significantly impact the training while reducing the message size and is important for communicating LLM updates.
+We can also see that the PEFT training loss curves are more aligned than SFT, which is consistent with the results from the centralized training.
+
+For message reduce, since we convert float32 to float16, the message size is reduced by 2 times. The message size is reduced from 6GB to 3GB for Llama-3.2-1B model according to the log.
+```shell
+Compressed all 147 params Before compression: 5993930752 bytes After compression: 2996965376 bytes
+```

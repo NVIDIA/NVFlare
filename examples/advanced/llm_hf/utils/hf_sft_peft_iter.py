@@ -15,13 +15,19 @@
 import argparse
 import os
 
+# Add deterministic seed for reproducibility illustration
+import random
+
 import datasets
+import numpy as np
 import torch
 from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, set_peft_model_state_dict, utils
-from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments, trainer_utils
-from trl import SFTTrainer
+from transformers import AutoModelForCausalLM, AutoTokenizer, trainer_utils
+from trl import SFTConfig, SFTTrainer
 
-use_flash_attention = True
+torch.manual_seed(0)
+random.seed(0)
+np.random.seed(0)
 
 
 def format_instruction(example):
@@ -35,9 +41,9 @@ def format_instruction(example):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--model_path",
+        "--model_name_or_path",
         type=str,
-        default="./model/Llama-2-7b-hf",
+        default="meta-llama/llama-3.2-1b",
     )
     parser.add_argument(
         "--data_path_train",
@@ -52,7 +58,7 @@ def main():
     parser.add_argument(
         "--output_path",
         type=str,
-        default="./workspace_centralized/llama2-7b-dolly-sft-iter",
+        default="./workspace_centralized/llama-3.2-1b-dolly-sft-iter",
     )
     parser.add_argument("--mode", type=int, default=0)
     args = parser.parse_args()
@@ -69,7 +75,22 @@ def main():
     print(f"logging_steps: {logging_steps}")
 
     # Model configs
-    model_path = args.model_path
+    model_name_or_path = args.model_name_or_path
+    peft_config = None
+
+    # Load model
+    default_dtype = torch.get_default_dtype()
+    torch.set_default_dtype(torch.bfloat16)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name_or_path,
+        attn_implementation="flash_attention_2",
+        device_map="auto",
+        use_cache=False,
+        torch_dtype=torch.bfloat16,
+    )
+    torch.set_default_dtype(default_dtype)
+
+    # PEFT specific
     if args.mode:
         # PEFT configs
         peft_config = LoraConfig(
@@ -79,39 +100,16 @@ def main():
             bias="none",
             task_type="CAUSAL_LM",
         )
-        # Load model
-        model = AutoModelForCausalLM.from_pretrained(
-            model_path,
-            use_cache=False,
-            use_flash_attention_2=use_flash_attention,
-            device_map="auto",
-        )
         model = get_peft_model(model, peft_config)
-    else:
-        peft_config = None
-        model = AutoModelForCausalLM.from_pretrained(
-            model_path,
-            use_flash_attention_2=use_flash_attention,
-            use_cache=False,
-            device_map="auto",
-        )
-
     model.config.pretraining_tp = 1
+
     # Set tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "right"
 
-    # Save base model state_dict, which will be used as the starting
-    # weights for each round - to show the weights are loaded correctly
-    if args.mode:
-        params = get_peft_model_state_dict(model)
-    else:
-        params = model.state_dict()
-    torch.save(params, "model_dict_base.pt")
-
     # Training arguments
-    train_args = TrainingArguments(
+    train_args = SFTConfig(
         output_dir=args.output_path,
         num_train_epochs=1,
         per_device_train_batch_size=batch_size,
@@ -120,36 +118,45 @@ def main():
         optim="paged_adamw_32bit",
         logging_steps=logging_steps,
         save_strategy="epoch",
-        learning_rate=2e-4,
+        learning_rate=5e-4,
         bf16=True,
-        tf32=True,
         max_grad_norm=0.3,
         warmup_ratio=0.03,
         lr_scheduler_type="constant",
         disable_tqdm=True,
+        max_seq_length=1024,
+        # safetensors has some issues in saving lm_head.weight, disable it for now
+        save_safetensors=False,
     )
 
     # Trainer
-    max_seq_length = 1024
     trainer = SFTTrainer(
         model=model,
         train_dataset=dataset_train,
         eval_dataset=dataset_valid,
         peft_config=peft_config,
-        max_seq_length=max_seq_length,
         tokenizer=tokenizer,
         packing=False,
         formatting_func=format_instruction,
         args=train_args,
     )
 
+    # Save base model state_dict, which will be used as the starting
+    # weights for each round - to show the weights are loaded correctly
+    initial_model_path = os.path.join(args.output_path, "model_dict_base.pt")
+    if args.mode:
+        params = get_peft_model_state_dict(model)
+    else:
+        params = model.state_dict()
+    torch.save(params, initial_model_path)
+
     # Train iteratively by using "resume" functionality
     # and replace the resume weights every round
     for curr_round in range(3):
         print(f"current_round={curr_round}")
 
-        # Evaluate
-        state_dict_replace = torch.load("model_dict_base.pt", map_location="cpu")
+        # Load and Evaluate model file
+        state_dict_replace = torch.load(initial_model_path, map_location="cpu", weights_only=True)
         if args.mode:
             set_peft_model_state_dict(trainer.model, state_dict_replace)
         else:
@@ -169,7 +176,8 @@ def main():
                 torch.save(state_dict_replace, resume_model_file_path)
             else:
                 # SFT model can be large, save via HF API
-                trainer.model.save_pretrained(resume_from_checkpoint_folder)
+                # Disable safetensor for now
+                trainer.model.save_pretrained(resume_from_checkpoint_folder, safe_serialization=False)
             # increment num_train_epochs so that the trainer will continue training
             trainer.args.num_train_epochs += 1
             # continue training
