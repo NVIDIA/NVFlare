@@ -333,10 +333,8 @@ class ClientK8sJobLauncher(K8sJobLauncher):
         }
 
     def get_set_list(self, args, fl_ctx: FLContext):
-        command_options = ""
-        for t in args.set:
-            command_options += " " + t
-        return command_options + " print_conf=True"
+        args.set.append("print_conf=True")
+        return args.set
 
 
 class ServerK8sJobLauncher(K8sJobLauncher):
@@ -363,9 +361,8 @@ class ServerK8sJobLauncher(K8sJobLauncher):
 
     def get_set_list(self, args, fl_ctx: FLContext):
         restore_snapshot = fl_ctx.get_prop(FLContextKey.SNAPSHOT, False)
-        command_options = ""
-        for t in args.set:
-            command_options += " " + t
-        return command_options + " print_conf=True restore_snapshot=" + str(restore_snapshot)
+        args.set.append("print_conf=True")
+        args.set.append("restore_snapshot=" + str(restore_snapshot))
+        return args.set
 
 
