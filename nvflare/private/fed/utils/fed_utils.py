@@ -51,13 +51,44 @@ from ..simulator.simulator_const import SimulatorConstants
 from .app_authz import AppAuthzService
 
 
-def add_logfile_handler(log_file):
+def add_logfile_handler(log_file: str):
+    """Adds a log file handler to the root logger.
+
+    The purpose for this is to handle dynamic log file locations.
+
+    If a handler named errorFileHandler is found, it will be used as a template to
+    create a new handler for writing to the error.log file at the same directory as log_file.
+    The original errorFileHandler will be removed and replaced by the new handler.
+
+    Each log file will be rotated when it reaches 20MB.
+
+    Args:
+        log_file (str): log file path
+    """
     root_logger = logging.getLogger()
+    configured_handlers = root_logger.handlers
     main_handler = root_logger.handlers[0]
     file_handler = RotatingFileHandler(log_file, maxBytes=20 * 1024 * 1024, backupCount=10)
     file_handler.setLevel(main_handler.level)
     file_handler.setFormatter(main_handler.formatter)
     root_logger.addHandler(file_handler)
+
+    configured_error_handler = None
+    for handler in configured_handlers:
+        if handler.get_name() == "errorFileHandler":
+            configured_error_handler = handler
+            break
+
+    if not configured_error_handler:
+        return
+
+    error_log_file = os.path.join(os.path.dirname(log_file), "error.log")
+    error_file_handler = RotatingFileHandler(error_log_file, maxBytes=20 * 1024 * 1024, backupCount=10)
+    error_file_handler.setLevel(configured_error_handler.level)
+    error_file_handler.setFormatter(configured_error_handler.formatter)
+
+    root_logger.addHandler(error_file_handler)
+    root_logger.removeHandler(configured_error_handler)
 
 
 def _check_secure_content(site_type: str) -> List[str]:
