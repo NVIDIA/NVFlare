@@ -13,6 +13,7 @@
 # limitations under the License.
 import logging
 import time
+from abc import abstractmethod
 from enum import Enum
 
 from kubernetes import config
@@ -82,7 +83,7 @@ class K8sJobHandle(JobHandleSpec):
                 "imagePullPolicy": "Always",
             }
         ]
-        self.container_args_python_args_list = ["-u", "-m", "nvflare.private.fed.app.client.worker_process"]
+        self.container_args_python_args_list = ["-u", "-m", job_config.get("command")]
         self.container_args_module_args_dict = {
             "-m": None,
             "-w": None,
@@ -236,6 +237,7 @@ class K8sJobLauncher(JobLauncherSpec):
             "name": job_id,
             "image": job_image,
             "container_name": f"container-{job_id}",
+            "command": self.get_command(),
             "volume_mount_list": [{"name": self.workspace, "mountPath": self.mount_path}],
             "volume_list": [{"name": self.workspace, "hostPath": {"path": self.root_hostpath, "type": "Directory"}}],
             "module_args": {
@@ -245,7 +247,7 @@ class K8sJobLauncher(JobLauncherSpec):
                 "-d": client.ssid,
                 "-n": job_id,
                 "-c": client.client_name,
-                "-p": "tcp://parent-pod:8004",
+                "-p": str(client.cell.get_internal_listener_url()),
                 "-g": service.get("target"),
                 "-scheme": service.get("scheme", "grpc"),
                 "-s": "fed_client.json",
@@ -273,3 +275,17 @@ class K8sJobLauncher(JobLauncherSpec):
             job_image = extract_job_image(job_meta, fl_ctx.get_identity_name())
             if job_image:
                 add_launcher(self, fl_ctx)
+
+    @abstractmethod
+    def get_command(self):
+        """To get the run command of the launcher
+
+        Returns: the command for the launcher process
+
+        """
+        pass
+
+
+class ClientK8sJobLauncher(K8sJobLauncher):
+    def get_command(self):
+        return "nvflare.private.fed.app.client.worker_process"
