@@ -101,6 +101,7 @@ class StartJobProcessor(RequestProcessor):
         try:
             resource_spec = req.body
             job_id = req.get_header(RequestHeader.JOB_ID)
+            job_meta = req.get_header(RequestHeader.JOB_META)
             token = req.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN)
         except Exception as e:
             msg = f"{ERROR_MSG_PREFIX}: Start job execution exception, missing required information: {secure_format_exception(e)}."
@@ -116,6 +117,7 @@ class StartJobProcessor(RequestProcessor):
                 resource_consumer.consume(allocated_resources)
             result = engine.start_app(
                 job_id,
+                job_meta=job_meta,
                 allocated_resource=allocated_resources,
                 token=token,
                 resource_manager=resource_manager,

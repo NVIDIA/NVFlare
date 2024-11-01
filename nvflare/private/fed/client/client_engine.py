@@ -32,7 +32,7 @@ from nvflare.private.fed.utils.fed_utils import security_close
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .client_engine_internal_spec import ClientEngineInternalSpec
-from .client_executor import ProcessExecutor
+from .client_executor import JobExecutor
 from .client_run_manager import ClientRunInfo
 from .client_status import ClientStatus
 from .fed_client import FederatedClient
@@ -62,7 +62,7 @@ class ClientEngine(ClientEngineInternalSpec):
         self.client_name = client.client_name
         self.args = args
         self.rank = rank
-        self.client_executor = ProcessExecutor(client, os.path.join(args.workspace, "startup"))
+        self.client_executor = JobExecutor(client, os.path.join(args.workspace, "startup"))
         self.admin_agent = None
 
         self.fl_ctx_mgr = FLContextManager(
@@ -134,6 +134,7 @@ class ClientEngine(ClientEngineInternalSpec):
     def start_app(
         self,
         job_id: str,
+        job_meta: dict,
         allocated_resource: dict = None,
         token: str = None,
         resource_manager=None,
@@ -160,17 +161,16 @@ class ClientEngine(ClientEngineInternalSpec):
 
         self.logger.info("Starting client app. rank: {}".format(self.rank))
 
-        server_config = list(self.client.servers.values())[0]
         self.client_executor.start_app(
             self.client,
             job_id,
+            job_meta,
             self.args,
             app_custom_folder,
             allocated_resource,
             token,
             resource_manager,
-            target=server_config["target"],
-            scheme=server_config.get("scheme", "grpc"),
+            fl_ctx=self.new_context(),
         )
 
         return "Start the client app..."

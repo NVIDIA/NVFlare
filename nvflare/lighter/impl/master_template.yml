@@ -92,6 +92,11 @@ local_client_resources: |
         "id": "resource_consumer",
         "path": "nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer",
         "args": {}
+      },
+      {
+        "id": "process_launcher",
+        "path": "nvflare.app_common.job_launcher.process_launcher.ProcessJobLauncher",
+        "args": {}
       }
     ]
   }

@@ -160,6 +160,8 @@ class FLContextKey(object):
     AUTHORIZATION_REASON = "_authorization_reason"
     DISCONNECTED_CLIENT_NAME = "_disconnected_client_name"
     RECONNECTED_CLIENT_NAME = "_reconnected_client_name"
+    SITE_OBJ = "_site_obj_"
+    JOB_LAUNCHER = "_job_launcher"
 
     CLIENT_REGISTER_DATA = "_client_register_data"
     SECURITY_ITEMS = "_security_items"
@@ -324,7 +326,7 @@ class SnapshotKey(object):
 class RunProcessKey(object):
     LISTEN_PORT = "_listen_port"
     CONNECTION = "_conn"
-    CHILD_PROCESS = "_child_process"
+    JOB_HANDLE = "_job_launcher"
     STATUS = "_status"
     JOB_ID = "_job_id"
     PARTICIPANTS = "_participants"
@@ -356,6 +358,10 @@ class JobConstants:
     CLIENT_JOB_CONFIG = "config_fed_client.json"
     META_FILE = "meta.json"
     META = "meta"
+    SITES = "sites"
+    JOB_IMAGE = "image"
+    JOB_ID = "job_id"
+    JOB_LAUNCHER = "job_launcher"
 
 
 class WorkspaceConstants:

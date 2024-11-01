@@ -26,7 +26,15 @@ from nvflare.apis.app_validation import AppValidator
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLContext
-from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, FLMetaKey, SiteType, SystemVarName, WorkspaceConstants
+from nvflare.apis.fl_constant import (
+    ConfigVarName,
+    FLContextKey,
+    FLMetaKey,
+    JobConstants,
+    SiteType,
+    SystemVarName,
+    WorkspaceConstants,
+)
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.utils.decomposers import flare_decomposers
@@ -403,7 +411,7 @@ def get_target_names(targets):
     return target_names
 
 
-def get_return_code(process, job_id, workspace, logger):
+def get_return_code(job_handle, job_id, workspace, logger):
     run_dir = os.path.join(workspace, job_id)
     rc_file = os.path.join(run_dir, FLMetaKey.PROCESS_RC_FILE)
     if os.path.exists(rc_file):
@@ -414,11 +422,11 @@ def get_return_code(process, job_id, workspace, logger):
         except Exception:
             logger.warning(
                 f"Could not get the return_code from {rc_file} of the job:{job_id}, "
-                f"Return the RC from the process:{process.pid}"
+                f"Return the RC from the job_handle:{job_handle}"
             )
-            return_code = process.poll()
+            return_code = job_handle.poll()
     else:
-        return_code = process.poll()
+        return_code = job_handle.poll()
     return return_code
 
 
@@ -432,6 +440,30 @@ def add_custom_dir_to_path(app_custom_folder, new_env):
         new_env[SystemVarName.PYTHONPATH] = path + os.pathsep + app_custom_folder
     else:
         new_env[SystemVarName.PYTHONPATH] = app_custom_folder
+
+
+def extract_participants(participants_list):
+    participants = []
+    for item in participants_list:
+        if isinstance(item, str):
+            participants.append(item)
+        elif isinstance(item, dict):
+            sites = item.get(JobConstants.SITES)
+            participants.extend(sites)
+        else:
+            raise ValueError(f"Must be tye of str or dict, but got {type(item)}")
+    return participants
+
+
+def extract_job_image(job_meta, site_name):
+    deploy_map = job_meta.get(JobMetaKey.DEPLOY_MAP, {})
+    for _, participants in deploy_map.items():
+        for item in participants:
+            if isinstance(item, dict):
+                sites = item.get(JobConstants.SITES)
+                if site_name in sites:
+                    return item.get(JobConstants.JOB_IMAGE)
+    return None
 
 
 def _scope_prop_key(scope_name: str, key: str):

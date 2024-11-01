@@ -53,6 +53,7 @@ class ClientEngineInternalSpec(ClientEngineSpec, ABC):
     def start_app(
         self,
         job_id: str,
+        job_meta: dict,
         allocated_resource: dict = None,
         token: str = None,
         resource_manager=None,
