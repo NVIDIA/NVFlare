@@ -149,10 +149,11 @@ class ClientEngineExecutorSpec(ClientEngineSpec, EngineSpec, ABC):
         """Send an async request to Server via the aux channel.
 
         Args:
-            topic: topic of the request
+            topic: topic of the request.
             request: request to be sent
             fl_ctx: FL context
             optional: whether the request is optional
+            secure: whether to send the message in P2P secure mode
 
         Returns:
 

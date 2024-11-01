@@ -110,13 +110,23 @@ class ObjectIterator(Iterator, ABC):
         self.index = index
 
 
+class StreamTaskSpec(ABC):
+    def cancel(self):
+        """Cancel the task
+
+        Returns:
+
+        """
+        pass
+
+
 class StreamFuture:
     """Future class for all stream calls.
 
     Fashioned after concurrent.futures.Future
     """
 
-    def __init__(self, stream_id: int, headers: Optional[dict] = None):
+    def __init__(self, stream_id: int, headers: Optional[dict] = None, task_handle: StreamTaskSpec = None):
         self.stream_id = stream_id
         self.headers = headers
         self.waiter = threading.Event()
@@ -126,6 +136,7 @@ class StreamFuture:
         self.size = 0
         self.progress = 0
         self.done_callbacks = []
+        self.task_handle = task_handle
 
     def get_stream_id(self) -> int:
         return self.stream_id
@@ -157,7 +168,8 @@ class StreamFuture:
                 return False
 
             self.error = StreamCancelled(f"Stream {self.stream_id} is cancelled")
-
+            if self.task_handle:
+                self.task_handle.cancel()
             return True
 
     def cancelled(self):

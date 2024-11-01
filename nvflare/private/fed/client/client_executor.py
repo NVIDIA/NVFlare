@@ -17,7 +17,8 @@ import threading
 import time
 from abc import ABC, abstractmethod
 
-from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey, SystemConfigs
+from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey, SystemConfigs, FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobLauncherSpec
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
@@ -181,6 +182,17 @@ class JobExecutor(ClientExecutor):
             args=(client, job_id, allocated_resource, token, resource_manager, args.workspace),
         )
         thread.start()
+
+    def _get_job_launcher(self, job_meta: dict, fl_ctx: FLContext) -> JobLauncherSpec:
+        engine = fl_ctx.get_engine()
+        fl_ctx.set_prop(FLContextKey.JOB_META, job_meta, private=True, sticky=False)
+        engine.fire_event(EventType.GET_JOB_LAUNCHER, fl_ctx)
+
+        job_launcher = fl_ctx.get_prop(FLContextKey.JOB_LAUNCHER)
+        if not (job_launcher and isinstance(job_launcher, list)):
+            raise RuntimeError(f"There's no job launcher can handle this job: {job_meta}.")
+
+        return job_launcher[0]
 
     def notify_job_status(self, job_id, job_status):
         run_process = self.run_processes.get(job_id)
