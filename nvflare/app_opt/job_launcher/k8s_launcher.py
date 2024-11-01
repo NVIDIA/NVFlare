@@ -221,18 +221,6 @@ class K8sJobLauncher(JobLauncherSpec):
 
         job_id = job_meta.get(JobConstants.JOB_ID)
         args = fl_ctx.get_prop(FLContextKey.ARGS)
-        # workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-        # args = fl_ctx.get_prop(FLContextKey.ARGS)
-        # client = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
-        # job_id = job_meta.get(JobConstants.JOB_ID)
-        # server_config = fl_ctx.get_prop(FLContextKey.SERVER_CONFIG)
-        # if not server_config:
-        #     raise RuntimeError(f"missing {FLContextKey.SERVER_CONFIG} in FL context")
-        # service = server_config[0].get("service", {})
-        # if not isinstance(service, dict):
-        #     raise RuntimeError(f"expect server config data to be dict but got {type(service)}")
-
-        # self.logger.info(f"K8sJobLauncher start to launch job: {job_id} for client: {client.client_name}")
         job_image = extract_job_image(job_meta, fl_ctx.get_identity_name())
         self.logger.info(f"launch job use image: {job_image}")
         job_config = {
@@ -352,11 +340,11 @@ class ServerK8sJobLauncher(K8sJobLauncher):
             "-r": workspace_obj.get_app_dir(),
             "-n": str(job_id),
             "-p": str(server.cell.get_internal_listener_url()),
-            "-u":  str(server.cell.get_root_url_for_child()),
-            "--host":  str(server.server_state.host),
+            "-u": str(server.cell.get_root_url_for_child()),
+            "--host": str(server.server_state.host),
             "--port": str(server.server_state.service_port),
             "--ssid": str(server.server_state.ssid),
-            "--ha_mode": str(server.ha_mode)
+            "--ha_mode": str(server.ha_mode),
         }
 
     def get_set_list(self, args, fl_ctx: FLContext):
@@ -364,5 +352,3 @@ class ServerK8sJobLauncher(K8sJobLauncher):
         args.set.append("print_conf=True")
         args.set.append("restore_snapshot=" + str(restore_snapshot))
         return args.set
-
-

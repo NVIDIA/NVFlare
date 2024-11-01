@@ -42,25 +42,25 @@ class ClientProcessJobLauncher(ProcessJobLauncher):
         for t in args.set:
             command_options += " " + t
         command = (
-                f"{sys.executable} -m nvflare.private.fed.app.client.worker_process -m "
-                + args.workspace
-                + " -w "
-                + (workspace_obj.get_startup_kit_dir())
-                + " -t "
-                + client.token
-                + " -d "
-                + client.ssid
-                + " -n "
-                + job_id
-                + " -c "
-                + client.client_name
-                + " -p "
-                + str(client.cell.get_internal_listener_url())
-                + " -g "
-                + service.get("target")
-                + " -scheme "
-                + service.get("scheme", "grpc")
-                + " -s fed_client.json "
-                  " --set" + command_options + " print_conf=True"
+            f"{sys.executable} -m nvflare.private.fed.app.client.worker_process -m "
+            + args.workspace
+            + " -w "
+            + (workspace_obj.get_startup_kit_dir())
+            + " -t "
+            + client.token
+            + " -d "
+            + client.ssid
+            + " -n "
+            + job_id
+            + " -c "
+            + client.client_name
+            + " -p "
+            + str(client.cell.get_internal_listener_url())
+            + " -g "
+            + service.get("target")
+            + " -scheme "
+            + service.get("scheme", "grpc")
+            + " -s fed_client.json "
+            " --set" + command_options + " print_conf=True"
         )
         return command, new_env

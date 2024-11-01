@@ -90,4 +90,3 @@ class ProcessJobLauncher(JobLauncherSpec):
 
         """
         pass
-

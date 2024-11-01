@@ -35,7 +35,8 @@ from nvflare.apis.fl_constant import (
     ServerCommandKey,
     ServerCommandNames,
     SnapshotKey,
-    WorkspaceConstants, )
+    WorkspaceConstants,
+)
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.fl_snapshot import RunSnapshot
 from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
@@ -54,14 +55,16 @@ from nvflare.private.aux_runner import AuxMsgTarget
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, RequestHeader, TrainingTopic, new_cell_message
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.private.fed.utils.fed_utils import (
+    get_job_launcher,
     get_return_code,
     security_close,
-    set_message_security_data, get_job_launcher,
+    set_message_security_data,
 )
 from nvflare.private.scheduler_constants import ShareableHeader
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
+
 from .client_manager import ClientManager
 from .job_runner import JobRunner
 from .message_send import ClientReply
@@ -173,12 +176,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
             self.engine_info.status = MachineStatus.STARTING
 
-            self._start_runner_process(
-                job,
-                job_clients,
-                snapshot,
-                fl_ctx
-            )
+            self._start_runner_process(job, job_clients, snapshot, fl_ctx)
 
             self.engine_info.status = MachineStatus.STARTED
             return ""
@@ -214,13 +212,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 self.run_processes.pop(job_id, None)
         self.engine_info.status = MachineStatus.STOPPED
 
-    def _start_runner_process(
-        self,
-        job,
-        job_clients,
-        snapshot,
-        fl_ctx: FLContext
-    ):
+    def _start_runner_process(self, job, job_clients, snapshot, fl_ctx: FLContext):
         job_launcher: JobLauncherSpec = get_job_launcher(job.meta, fl_ctx)
         if snapshot:
             restore_snapshot = True
