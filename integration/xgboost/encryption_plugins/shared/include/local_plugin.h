@@ -27,7 +27,7 @@ protected:
   std::vector<uint8_t> encrypted_gh_;
   std::vector<double> histo_;
   std::vector<uint32_t> cuts_;
-  std::vector<int32_t> slots_;
+  std::vector<int32_t> bin_idx_vec_;
   std::vector<uint8_t> buffer_;
 
 public:
@@ -79,7 +79,7 @@ public:
    * \return A map of the serialized encrypted sum of G and H for each slot
    *         The input and output maps must have the same size
    */
-  virtual std::map<int, Buffer> AddGHPairs(const std::map<int, std::vector<int>> &sample_ids) = 0;
+  virtual void AddGHPairs(std::vector<Buffer>& result, const std::uint64_t *ridx, const std::size_t size) = 0;
 
   /*!
    * \brief Free encrypted data buffer
@@ -94,11 +94,42 @@ public:
     ciphertext.buf_size = 0;
   };
 
+  /**
+   * @brief Prepare the bin index vector
+   *
+   * @param binIndexVec A vector of length "total_bin_size", each item contains a vector of row ID
+   * @param ridx Point to an array of row IDs
+   * @param size Size of the ridx
+   *
+  */
+  void prepareBinIndexVec(std::vector<std::vector<int>>& binIndexVec, const std::uint64_t *ridx, const std::size_t size);
+
 private:
 
+  /**
+   * @brief Build histograms in encrypted space for vertical training
+   *
+   * @param ridx Pointer to a matrix of row IDs for each node
+   * @param sizes An array of sizes of each node
+   * @param nidx An array for each node ID
+   * @param len Number of nodes
+   * @param out_hist Pointer to encrypted histogram buffer
+   * @param out_len Buffer size
+   */
   void BuildEncryptedHistVertActive(const std::uint64_t **ridx, const std::size_t *sizes, const std::int32_t *nidx,
                                     std::size_t len, std::uint8_t **out_hist, std::size_t *out_len);
 
+
+  /**
+   * @brief Build histograms in encrypted space for vertical training
+   *
+   * @param ridx Pointer to a matrix of row IDs for each node
+   * @param sizes An array of sizes of each node
+   * @param nidx An array for each node ID
+   * @param len Number of nodes
+   * @param out_hist Pointer to encrypted histogram buffer
+   * @param out_len Buffer size
+   */
   void BuildEncryptedHistVertPassive(const std::uint64_t **ridx, const std::size_t *sizes, const std::int32_t *nidx,
                                      std::size_t len, std::uint8_t **out_hist, std::size_t *out_len);
 
