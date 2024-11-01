@@ -100,6 +100,7 @@ def main(args):
 
         federated_client.use_gpu = False
         federated_client.config_folder = config_folder
+        workspace = Workspace(args.workspace, federated_client.client_name, config_folder)
 
         client_engine = ClientEngine(federated_client, args, rank)
 
