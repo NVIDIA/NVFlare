@@ -131,6 +131,18 @@ def _check_secure_content(site_type: str) -> List[str]:
         if sig != LoadResult.OK:
             insecure_list.append(WorkspaceConstants.AUTHORIZATION_CONFIG)
 
+    # every component file in the startup must be signed and not tampered with!
+    bad_files = SecurityContentService.check_json_files(
+        [
+            WorkspaceConstants.COMPONENT_FILE_NAME_PATTERN,
+            WorkspaceConstants.PARENT_COMPONENT_FILE_NAME_PATTERN,
+            WorkspaceConstants.JOB_COMPONENT_FILE_NAME_PATTERN,
+        ]
+    )
+
+    if bad_files:
+        insecure_list.extend(bad_files)
+
     return insecure_list
 
 
@@ -184,6 +196,33 @@ def security_init(secure_train: bool, site_org: str, workspace: Workspace, app_v
     if err:
         print("AuthorizationService error: {}".format(err))
         sys.exit(1)
+
+
+def security_init_for_job(secure_train: bool, workspace: Workspace, site_type: str):
+    """Initialize security processing for a job process (SJ or CJ).
+
+    Args:
+       secure_train (bool): if run in secure mode or not.
+       workspace: the workspace object.
+       site_type (str): server or client. fed_client.json or fed_server.json
+    """
+    # initialize the SecurityContentService.
+    # must do this before initializing other services since it may be needed by them!
+    startup_dir = workspace.get_startup_kit_dir()
+    SecurityContentService.initialize(content_folder=startup_dir)
+
+    if secure_train:
+        insecure_list = _check_secure_content(site_type=site_type)
+        if len(insecure_list):
+            print("The following files are not secure content.")
+            for item in insecure_list:
+                print(item)
+            sys.exit(1)
+
+    # initialize the AuditService, which is used by command processing.
+    # The Audit Service can be used in other places as well.
+    audit_file_name = workspace.get_audit_file_path()
+    AuditService.initialize(audit_file_name)
 
 
 def security_close():
