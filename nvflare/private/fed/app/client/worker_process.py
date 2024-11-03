@@ -24,7 +24,6 @@ from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, JobConstants, 
 from nvflare.apis.overseer_spec import SP
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
-from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.defs import EngineConstant
