@@ -191,10 +191,10 @@ class Workspace:
             - component files from the "startup" folder take precedence
             - component files from the "local" folder are next
 
-        These extra component files must be json and follow the following patterns:
-        - *__components.json: these files are for both parent process and job processes
-        - *__p_components.json: these files are for parent process only
-        - *__j_components.json: these files are for job process only
+        These extra resource config files must be json and follow the following patterns:
+        - *__resources.json: these files are for both parent process and job processes
+        - *__p_resources.json: these files are for parent process only
+        - *__j_resources.json: these files are for job process only
 
         Args:
             is_server: whether this is for server site or client site
@@ -216,12 +216,12 @@ class Workspace:
             if os.path.exists(job_resources_file_path):
                 config_files.append(job_resources_file_path)
 
-        # add other component config files
-        patterns = [WorkspaceConstants.COMPONENT_FILE_NAME_PATTERN]
+        # add other resource config files
+        patterns = [WorkspaceConstants.RESOURCE_FILE_NAME_PATTERN]
         if for_job:
-            patterns.append(WorkspaceConstants.JOB_COMPONENT_FILE_NAME_PATTERN)
+            patterns.append(WorkspaceConstants.JOB_RESOURCE_FILE_NAME_PATTERN)
         else:
-            patterns.append(WorkspaceConstants.PARENT_COMPONENT_FILE_NAME_PATTERN)
+            patterns.append(WorkspaceConstants.PARENT_RESOURCE_FILE_NAME_PATTERN)
 
         # add startup files first, then local files
         self._add_resource_files(self.get_startup_kit_dir(), config_files, patterns)

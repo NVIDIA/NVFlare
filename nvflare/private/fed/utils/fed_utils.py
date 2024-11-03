@@ -131,12 +131,12 @@ def _check_secure_content(site_type: str) -> List[str]:
         if sig != LoadResult.OK:
             insecure_list.append(WorkspaceConstants.AUTHORIZATION_CONFIG)
 
-    # every component file in the startup must be signed and not tampered with!
+    # every resource file in the startup must be signed and not tampered with!
     bad_files = SecurityContentService.check_json_files(
         [
-            WorkspaceConstants.COMPONENT_FILE_NAME_PATTERN,
-            WorkspaceConstants.PARENT_COMPONENT_FILE_NAME_PATTERN,
-            WorkspaceConstants.JOB_COMPONENT_FILE_NAME_PATTERN,
+            WorkspaceConstants.RESOURCE_FILE_NAME_PATTERN,
+            WorkspaceConstants.PARENT_RESOURCE_FILE_NAME_PATTERN,
+            WorkspaceConstants.JOB_RESOURCE_FILE_NAME_PATTERN,
         ]
     )
 

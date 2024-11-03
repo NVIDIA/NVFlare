@@ -403,9 +403,9 @@ class WorkspaceConstants:
 
     ADMIN_STARTUP_CONFIG = "fed_admin.json"
 
-    COMPONENT_FILE_NAME_PATTERN = "*__components.json"  # for bot parent and job processes
-    JOB_COMPONENT_FILE_NAME_PATTERN = "*__j_components.json"  # for job process only
-    PARENT_COMPONENT_FILE_NAME_PATTERN = "*__p_components.json"  # for parent process only
+    RESOURCE_FILE_NAME_PATTERN = "*__resources.json"  # for bot parent and job processes
+    JOB_RESOURCE_FILE_NAME_PATTERN = "*__j_resources.json"  # for job process only
+    PARENT_RESOURCE_FILE_NAME_PATTERN = "*__p_resources.json"  # for parent process only
 
 
 class SiteType:
