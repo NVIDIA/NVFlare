@@ -137,4 +137,4 @@ Alpaca:
 Oasst1:
 ![sft](./figs/fl_sft_oasst1.png)
 
-As shown, federated training with multiple clients (lines with three sections) can achieve comparable or better results w.r.t. training loss to individual site's centralized trainings, demonstrating the effectiveness of NVFlare for LLM tuning tasks.
+As shown, federated training with multiple clients (lines with three sections) can achieve comparable or better results w.r.t. training loss to individual site's centralized trainings, demonstrating the effectiveness of federated learning.
