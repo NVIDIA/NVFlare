@@ -45,17 +45,6 @@ Centralized trainings, as the baseline for comparison with other results, are do
 python3 ./utils/hf_sft_peft.py --output_path ./workspace/llama-3.2-1b-dolly-cen_sft --mode 0
 python3 ./utils/hf_sft_peft.py --output_path ./workspace/llama-3.2-1b-dolly-cen_peft --mode 1
 ```
-### Pre: Launch Modes
-Before we start adapting the local training script to federated application, we first need to understand the launch modes of NVFlare client API.
-In our [client settings](../../../job_templates/sag_pt/config_fed_client.conf), we have two launch modes by switching the `--launch_once` flag:
-* If launch_once is true, the SubprocessLauncher will launch an external process once for the whole job
-* If launch_once is false, the SubprocessLauncher will launch an external process everytime it receives a task from server
-So if it is false, the SubprocessLauncher will create new processes every round.
-If it is true, the SubprocessLauncher will reuse the same process for all rounds.
-
-Turning `launch_once` to `false` can be useful in some scenarios like quick prototyping, but for the application of LLM where setup stage can take significant resources, we would want to only setup once. Hence, the below steps are for `launch_once = true` scenario.
-
-See [Client API](../../hello-world/ml-to-fl/pt/README.md) for more details.
 
 ### Adaptation Step 1: iterative training
 To adapt the centralized training script to federated application, under `launch_once = true` setting, we first need to "break" the single call to `trainer.train()` into iterative calls, one for each round of training.
@@ -98,8 +87,8 @@ The major code modifications are for receiving and returning the global model (r
 ### Federated Training Results
 We run the federated training on a single client using NVFlare Simulator via [JobAPI](../job_api/README.md).
 ```
-python3 sft_job.py --data_path ${PWD}/dataset/dolly --workspace_dir ${PWD}/workspace/hf_sft --job_dir ${PWD}/workspace/jobs/hf_sft --train_mode 0 
-python3 sft_job.py --data_path ${PWD}/dataset/dolly --workspace_dir ${PWD}/workspace/hf_peft --job_dir ${PWD}/workspace/jobs/hf_peft --train_mode 1 
+python3 sft_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft --job_dir ${PWD}/workspace/jobs/hf_sft --train_mode 0 
+python3 sft_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_peft --job_dir ${PWD}/workspace/jobs/hf_peft --train_mode 1 
 ```
 The SFT curves are shown below, black for centralized results, magenta for FL training. With some training randomness, the two PEFT training loss curves align with each other. 
 ![sft](./figs/fl_sft.png)
@@ -110,8 +99,8 @@ Similar patterns can be observed from the PEFT curves, purple for centralized re
 ## Model Precision Conversion for Communication
 In the above example, we used float32 for communication. To reduce the message size, we can use model precision conversion for communication. Model conversion is enabled by NVFlare's [filter mechanism](https://nvflare.readthedocs.io/en/main/programming_guide/filters.html). We can use the following command to run the federated training with model precision conversion:
 ```
-python3 sft_job_compress.py --data_path ${PWD}/dataset/dolly --workspace_dir ${PWD}/workspace/hf_sft_compress --job_dir ${PWD}/workspace/jobs/hf_sft_compress --train_mode 0
-python3 sft_job_compress.py --data_path ${PWD}/dataset/dolly --workspace_dir ${PWD}/workspace/hf_peft_compress --job_dir ${PWD}/workspace/jobs/hf_peft_compress --train_mode 1
+python3 sft_job_compress.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_compress --job_dir ${PWD}/workspace/jobs/hf_sft_compress --train_mode 0
+python3 sft_job_compress.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_peft_compress --job_dir ${PWD}/workspace/jobs/hf_peft_compress --train_mode 1
 ```
 The SFT curves are shown below, black for centralized results, yellow for FL training with compression. We can see it achieves similar alignment with centralized result.
 ![sft](./figs/fl_sft_comp.png)
@@ -126,3 +115,26 @@ For message reduce, since we convert float32 to float16, the message size is red
 ```shell
 Compressed all 147 params Before compression: 5993930752 bytes After compression: 2996965376 bytes
 ```
+
+## Federated Training with Multiple Clients
+With the above example, we can easily extend the federated training to multiple clients. We can use the following command to run the federated training with multiple clients:
+```
+python3 sft_job.py --client_ids dolly alpaca oasst1 --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_multi --job_dir ${PWD}/workspace/jobs/hf_sft_multi --train_mode 0 --threads 1
+python3 sft_job_compress.py --client_ids dolly alpaca oasst1 --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_multi_compress --job_dir ${PWD}/workspace/jobs/hf_sft_multi_compress --train_mode 0 --threads 1
+```
+
+For comparison, we run the other two sites in centralized training mode:
+```
+python3 ./utils/hf_sft_peft.py --data_path_train ./dataset/alpaca/training.jsonl --data_path_valid ./dataset/alpaca/validation.jsonl --output_path ./workspace/llama-3.2-1b-alpaca-cen_sft --mode 0
+python3 ./utils/hf_sft_peft.py --data_path_train ./dataset/oasst1/training.jsonl --data_path_valid ./dataset/oasst1/validation.jsonl --output_path ./workspace/llama-3.2-1b-oasst1-cen_peft --mode 0
+```
+
+The training loss curves are shown below:
+Dolly:
+![sft](./figs/fl_sft_dolly.png)
+Alpaca:
+![sft](./figs/fl_sft_alpaca.png)
+Oasst1:
+![sft](./figs/fl_sft_oasst1.png)
+
+As shown, federated training with multiple clients (lines with three sections) can achieve comparable or better results w.r.t. training loss to individual site's centralized trainings, demonstrating the effectiveness of NVFlare for LLM tuning tasks.

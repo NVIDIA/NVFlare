@@ -27,13 +27,24 @@ from nvflare.job_config.script_runner import ScriptRunner
 def main():
     args = define_parser()
     train_script = "src/hf_sft_peft_fl.py"
-    num_clients = args.num_clients
+    client_ids = args.client_ids
+    num_clients = len(client_ids)
+
+    if args.threads:
+        num_threads = args.threads
+    else:
+        num_threads = num_clients
+
+    if args.threads < num_clients:
+        print("The number of threads smaller than the number of clients, runner clean-up will be performed.")
+        clean_up = 1
+    else:
+        clean_up = 0
+
     num_rounds = args.num_rounds
     workspace_dir = args.workspace_dir
     job_dir = args.job_dir
     model_name_or_path = args.model_name_or_path
-    data_path_train = os.path.join(args.data_path, "training.jsonl")
-    data_path_valid = os.path.join(args.data_path, "validation.jsonl")
     train_mode = args.train_mode
 
     # Create the FedJob
@@ -68,10 +79,13 @@ def main():
 
     # Send ScriptRunner to all clients
     for i in range(num_clients):
-        site_name = f"site-{i}"
+        client_id = client_ids[i]
+        site_name = f"site-{client_id}"
+        data_path_train = os.path.join(args.data_path, client_id, "training.jsonl")
+        data_path_valid = os.path.join(args.data_path, client_id, "validation.jsonl")
         runner = ScriptRunner(
             script=train_script,
-            script_args=f"--model_name_or_path {model_name_or_path} --data_path_train {data_path_train} --data_path_valid {data_path_valid} --output_path {output_path} --mode {train_mode}",
+            script_args=f"--model_name_or_path {model_name_or_path} --data_path_train {data_path_train} --data_path_valid {data_path_valid} --output_path {output_path} --mode {train_mode} --clean_up {clean_up}",
         )
         job.to(runner, site_name, tasks=["train"])
         job.to(compressor, site_name, tasks=["train"], filter_type=FilterType.TASK_RESULT)
@@ -83,16 +97,18 @@ def main():
 
     # Run the job
     print("workspace_dir=", workspace_dir)
-    job.simulator_run(workspace_dir)
+    print("num_threads=", num_threads)
+    job.simulator_run(workspace_dir, threads=num_threads)
 
 
 def define_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--num_clients",
-        type=int,
-        default=1,
-        help="Number of clients, default to 1",
+        "--client_ids",
+        nargs="+",
+        type=str,
+        default="",
+        help="Clinet IDs, used to get the data path for each client",
     )
     parser.add_argument(
         "--num_rounds",
@@ -130,7 +146,11 @@ def define_parser():
         default=0,
         help="training mode, 0: SFT, 1: PEFT, default to 0",
     )
-
+    parser.add_argument(
+        "--threads",
+        type=int,
+        help="number of threads to use for FL simulation, default to the number of clients",
+    )
     return parser.parse_args()
 
 

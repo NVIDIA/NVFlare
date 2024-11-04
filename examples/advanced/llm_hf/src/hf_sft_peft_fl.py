@@ -64,6 +64,8 @@ def main():
         default="./workspace_federated/llama-3.2-1b-dolly-sft",
     )
     parser.add_argument("--mode", type=int, default=0)
+    parser.add_argument("--local_epoch", type=int, default=1)
+    parser.add_argument("--clean_up", type=int, default=0)
     args = parser.parse_args()
 
     # Dataset
@@ -114,7 +116,7 @@ def main():
     # Training arguments
     train_args = SFTConfig(
         output_dir=args.output_path,
-        num_train_epochs=1,
+        num_train_epochs=args.local_epoch,
         per_device_train_batch_size=batch_size,
         gradient_accumulation_steps=gra_accu_steps,
         gradient_checkpointing=False,
@@ -192,7 +194,13 @@ def main():
                 # Disable safetensor for now
                 trainer.model.save_pretrained(resume_from_checkpoint_folder, safe_serialization=False)
             # increment num_train_epochs so that the trainer will continue training
-            trainer.args.num_train_epochs += 1
+            if args.clean_up:
+                # runner got cleaned up, set num_train_epochs with curr_round
+                trainer.args.num_train_epochs = (curr_round + 1) * args.local_epoch
+            else:
+                # runner still alive, increment num_train_epochs with local_epoch
+                trainer.args.num_train_epochs += args.local_epoch
+            print(f"Increment num_train_epochs to {trainer.args.num_train_epochs}")
             # continue training
             trainer.train(resume_from_checkpoint=True)
 
