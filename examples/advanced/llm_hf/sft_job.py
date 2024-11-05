@@ -46,12 +46,14 @@ def main():
     train_mode = args.train_mode
 
     # Create the FedJob
-    if train_mode == 0:
+    if train_mode.lower() == "sft":
         job = FedJob(name="llm_hf_sft", min_clients=num_clients)
         output_path = "sft"
-    else:
+    elif train_mode.lower() == "peft":
         job = FedJob(name="llm_hf_peft", min_clients=num_clients)
         output_path = "peft"
+    else:
+        raise ValueError(f"Invalid train_mode: {train_mode}, only SFT and PEFT are supported.")
 
     # Define the FedAvg controller workflow and send to server
     controller = FedAvg(
@@ -133,9 +135,9 @@ def define_parser():
     )
     parser.add_argument(
         "--train_mode",
-        type=int,
-        default=0,
-        help="training mode, 0: SFT, 1: PEFT, default to 0",
+        type=str,
+        default="SFT",
+        help="training mode, SFT or PEFT, default to SFT",
     )
     parser.add_argument(
         "--threads",
