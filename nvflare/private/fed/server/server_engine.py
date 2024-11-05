@@ -285,7 +285,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
         with self.lock:
             self.run_processes[run_number] = {
-                RunProcessKey.CHILD_PROCESS: process,
+                RunProcessKey.JOB_HANDLE: process,
                 RunProcessKey.JOB_ID: job_id,
                 RunProcessKey.PARTICIPANTS: job_clients,
             }
@@ -333,7 +333,7 @@ class ServerEngine(ServerEngineInternalSpec):
             self.logger.info(f"Abort server status: {status_message}")
         except Exception:
             with self.lock:
-                child_process = self.run_processes.get(job_id, {}).get(RunProcessKey.CHILD_PROCESS, None)
+                child_process = self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_HANDLE, None)
                 if child_process:
                     child_process.terminate()
         finally:
@@ -873,13 +873,14 @@ class ServerEngine(ServerEngineInternalSpec):
         if requests:
             _ = self._send_admin_requests(requests, fl_ctx)
 
-    def start_client_job(self, job_id, client_sites, fl_ctx: FLContext):
+    def start_client_job(self, job, client_sites, fl_ctx: FLContext):
         requests = {}
         for site, dispatch_info in client_sites.items():
             resource_requirement = dispatch_info.resource_requirements
             token = dispatch_info.token
             request = Message(topic=TrainingTopic.START_JOB, body=resource_requirement)
-            request.set_header(RequestHeader.JOB_ID, job_id)
+            request.set_header(RequestHeader.JOB_ID, job.job_id)
+            request.set_header(RequestHeader.JOB_META, job.meta)
             request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
             client = self.get_client_from_name(site)
             if client:

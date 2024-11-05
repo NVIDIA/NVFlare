@@ -35,7 +35,7 @@ from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import check_client_replies
 from nvflare.private.fed.server.server_state import HotState
 from nvflare.private.fed.utils.app_deployer import AppDeployer
-from nvflare.private.fed.utils.fed_utils import set_message_security_data
+from nvflare.private.fed.utils.fed_utils import extract_participants, set_message_security_data
 from nvflare.security.logging import secure_format_exception
 
 
@@ -131,6 +131,7 @@ class JobRunner(FLComponent):
 
         for app_name, participants in job.get_deployment().items():
             app_data = job.get_application(app_name, fl_ctx)
+            participants = extract_participants(participants)
 
             if len(participants) == 1 and participants[0].upper() == ALL_SITES:
                 participants = ["server"]
@@ -249,7 +250,7 @@ class JobRunner(FLComponent):
         if err:
             raise RuntimeError(f"Could not start the server App for job: {job_id}.")
 
-        replies = engine.start_client_job(job_id, client_sites, fl_ctx)
+        replies = engine.start_client_job(job, client_sites, fl_ctx)
         client_sites_names = list(client_sites.keys())
         check_client_replies(replies=replies, client_sites=client_sites_names, command=f"start job ({job_id})")
         display_sites = ",".join(client_sites_names)
