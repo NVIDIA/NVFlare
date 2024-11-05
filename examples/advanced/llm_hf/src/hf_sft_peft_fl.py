@@ -218,7 +218,7 @@ def main():
                 out_param["model." + key] = out_param.pop(key).cpu()
 
         # cast out_param to float32 preparing for communication
-        out_param = {k: v.to(torch.float16) for k, v in out_param.items()}
+        out_param = {k: v.to(torch.float32) for k, v in out_param.items()}
 
         # construct trained FL model
         output_model = flare.FLModel(
