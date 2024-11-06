@@ -359,6 +359,12 @@ class FederatedServer(BaseServer):
 
         self.cell.register_request_cb(
             channel=CellChannel.SERVER_MAIN,
+            topic=CellChannelTopic.TRANSMIT_ERROR_LOG,
+            cb=self.process_error_log,
+        )
+
+        self.cell.register_request_cb(
+            channel=CellChannel.SERVER_MAIN,
             topic=CellChannelTopic.REPORT_JOB_FAILURE,
             cb=self.process_job_failure,
         )
@@ -664,6 +670,11 @@ class FederatedServer(BaseServer):
 
             headers = {CellMessageHeaderKeys.MESSAGE: "Removed client"}
             return self._generate_reply(headers=headers, payload=None, fl_ctx=fl_ctx)
+
+    def process_error_log(self, request: Message):
+        payload = request.payload
+        client = request.get_header(key=MessageHeaderKey.ORIGIN)
+        print(f"Error log from {client}: {payload}")
 
     def process_job_failure(self, request: Message):
         payload = request.payload

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import logging
+import os
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -22,6 +23,7 @@ from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, RunProcess
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobLauncherSpec
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
+from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import PROCESS_EXIT_REASON, ProcessExitCode
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
@@ -393,6 +395,29 @@ class JobExecutor(ClientExecutor):
             return_code = get_return_code(job_handle, job_id, workspace, self.logger)
 
             self.logger.info(f"run ({job_id}): child worker process finished with RC {return_code}")
+
+            should_report_error_log = False # set this to True to report error.log to server, todo: get value from client config
+            if should_report_error_log:
+                error_log_contents = None
+                workspace_object = Workspace(root_dir=workspace, site_name=client.client_name)
+                error_log_path = workspace_object.get_app_error_log_file_path(job_id=job_id)
+                if os.path.exists(error_log_path):
+                    with open(error_log_path, 'r') as f:
+                        error_log_contents = f.read()
+                if error_log_contents:
+                    request = new_cell_message(
+                        headers={},
+                        payload=error_log_contents,
+                    )
+                    self.client.cell.fire_and_forget(
+                        targets=[FQCN.ROOT_SERVER],
+                        channel=CellChannel.SERVER_MAIN,
+                        topic=CellChannelTopic.TRANSMIT_ERROR_LOG,
+                        message=request,
+                        optional=True,
+                    )
+                    self.logger.info(f"Reported contents of error.log to server!")
+
             if return_code in [ProcessExitCode.UNSAFE_COMPONENT, ProcessExitCode.CONFIG_ERROR]:
                 request = new_cell_message(
                     headers={},
