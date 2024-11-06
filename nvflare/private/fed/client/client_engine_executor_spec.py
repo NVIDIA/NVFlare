@@ -20,6 +20,7 @@ from nvflare.apis.client_engine_spec import ClientEngineSpec
 from nvflare.apis.engine_spec import EngineSpec
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.apis.stream_shareable import StreamShareableGenerator, StreamShareableProcessorFactory
 from nvflare.apis.workspace import Workspace
 from nvflare.widgets.widget import Widget
 
@@ -158,6 +159,28 @@ class ClientEngineExecutorSpec(ClientEngineSpec, EngineSpec, ABC):
         Returns:
 
         """
+        pass
+
+    @abstractmethod
+    def stream_objects(
+        self,
+        channel: str,
+        topic: str,
+        targets: List[str],
+        generator: StreamShareableGenerator,
+        fl_ctx: FLContext,
+        optional=False,
+        secure=False,
+    ):
+        pass
+
+    @abstractmethod
+    def register_stream_object_processor_factory(
+        self,
+        channel: str,
+        topic: str,
+        factory: StreamShareableProcessorFactory,
+    ):
         pass
 
     @abstractmethod
