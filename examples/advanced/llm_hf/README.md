@@ -23,10 +23,6 @@ Install additional requirements (if you already have a specific version of nvfla
 ```
 python3 -m pip install -r requirements.txt
 ```
-flash-attn cannot be installed together with others, and needs to be installed alone after the above step:
-```
-python3 -m pip install flash-attn --no-build-isolation
-```
 Git LFS is also necessary for downloads, please follow the steps in this [link](https://github.com/git-lfs/git-lfs/blob/main/INSTALLING.md).
 
 ## Data Preparation
