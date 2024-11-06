@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import glob
 import json
 import os
 from base64 import b64decode
@@ -98,29 +99,29 @@ class SecurityContentService(object):
     """Uses SecurityContentManager to load secure content."""
 
     security_content_manager = None
+    content_folder = None
 
-    @staticmethod
-    def initialize(content_folder: str, signature_filename="signature.json", root_cert="rootCA.pem"):
-        if SecurityContentService.security_content_manager is None:
-            SecurityContentService.security_content_manager = SecurityContentManager(
-                content_folder, signature_filename, root_cert
-            )
+    @classmethod
+    def initialize(cls, content_folder: str, signature_filename="signature.json", root_cert="rootCA.pem"):
+        if cls.security_content_manager is None:
+            cls.content_folder = content_folder
+            cls.security_content_manager = SecurityContentManager(content_folder, signature_filename, root_cert)
 
-    @staticmethod
-    def load_content(file_under_verification):
-        if not SecurityContentService.security_content_manager:
+    @classmethod
+    def load_content(cls, file_under_verification):
+        if not cls.security_content_manager:
             return None, LoadResult.NOT_MANAGED
 
-        return SecurityContentService.security_content_manager.load_content(file_under_verification)
+        return cls.security_content_manager.load_content(file_under_verification)
 
-    @staticmethod
-    def load_json(file_under_verification):
-        if not SecurityContentService.security_content_manager:
+    @classmethod
+    def load_json(cls, file_under_verification):
+        if not cls.security_content_manager:
             return None, LoadResult.NOT_MANAGED
 
         json_data = None
 
-        data_bytes, result = SecurityContentService.security_content_manager.load_content(file_under_verification)
+        data_bytes, result = cls.security_content_manager.load_content(file_under_verification)
 
         if data_bytes:
             try:
@@ -130,3 +131,32 @@ class SecurityContentService(object):
                 return None, LoadResult.INVALID_CONTENT
 
         return json_data, result
+
+    @classmethod
+    def check_json_files(cls, patterns: [str]) -> [str]:
+        """Check JSON files that match the specified patterns
+
+        Args:
+            patterns: the patterns to be checked
+
+        Returns: full paths of invalid files if any.
+        A file is considered invalid in any of the cases:
+        - The file is not signed
+        - The file does not match signature
+
+        """
+        bad_files = []
+        if not cls.security_content_manager:
+            return bad_files
+
+        if not patterns:
+            return bad_files
+
+        for p in patterns:
+            files = glob.glob(os.path.join(cls.content_folder, p))
+            if files:
+                for f in files:
+                    _, result = cls.load_json(os.path.basename(f))
+                    if result != LoadResult.OK:
+                        bad_files.append(f)
+        return bad_files
