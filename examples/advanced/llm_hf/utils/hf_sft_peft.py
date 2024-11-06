@@ -59,7 +59,12 @@ def main():
         type=str,
         default="./workspace_centralized/llama-3.2-1b-dolly-sft",
     )
-    parser.add_argument("--mode", type=int, default=0)
+    parser.add_argument(
+        "--train_mode",
+        type=str,
+        default="SFT",
+        help="training mode, SFT or PEFT, default to SFT",
+    )
     args = parser.parse_args()
 
     # Dataset
@@ -82,15 +87,22 @@ def main():
     torch.set_default_dtype(torch.bfloat16)
     model = AutoModelForCausalLM.from_pretrained(
         model_name_or_path,
-        attn_implementation="flash_attention_2",
         device_map="auto",
         use_cache=False,
         torch_dtype=torch.bfloat16,
     )
     torch.set_default_dtype(default_dtype)
 
+    # Train mode
+    if args.train_mode.lower() == "sft":
+        train_mode = 0
+    elif args.train_mode.lower() == "peft":
+        train_mode = 1
+    else:
+        raise ValueError(f"Invalid train_mode: {args.train_mode}, only SFT and PEFT are supported.")
+
     # PEFT specific
-    if args.mode:
+    if train_mode:
         # PEFT configs
         peft_config = LoraConfig(
             lora_alpha=16,

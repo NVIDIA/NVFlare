@@ -49,11 +49,9 @@ def main():
     if train_mode.lower() == "sft":
         job = FedJob(name="llm_hf_sft", min_clients=num_clients)
         output_path = "sft"
-        mode = 0
     elif train_mode.lower() == "peft":
         job = FedJob(name="llm_hf_peft", min_clients=num_clients)
         output_path = "peft"
-        mode = 1
     else:
         raise ValueError(f"Invalid train_mode: {train_mode}, only SFT and PEFT are supported.")
 
@@ -82,7 +80,7 @@ def main():
         data_path_valid = os.path.join(args.data_path, client_id, "validation.jsonl")
         runner = ScriptRunner(
             script=train_script,
-            script_args=f"--model_name_or_path {model_name_or_path} --data_path_train {data_path_train} --data_path_valid {data_path_valid} --output_path {output_path} --mode {mode} --clean_up {clean_up}",
+            script_args=f"--model_name_or_path {model_name_or_path} --data_path_train {data_path_train} --data_path_valid {data_path_valid} --output_path {output_path} --train_mode {train_mode} --clean_up {clean_up}",
         )
         job.to(runner, site_name, tasks=["train"])
 

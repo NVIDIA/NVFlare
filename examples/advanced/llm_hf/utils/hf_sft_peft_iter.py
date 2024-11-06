@@ -60,7 +60,12 @@ def main():
         type=str,
         default="./workspace_centralized/llama-3.2-1b-dolly-sft-iter",
     )
-    parser.add_argument("--mode", type=int, default=0)
+    parser.add_argument(
+        "--train_mode",
+        type=str,
+        default="SFT",
+        help="training mode, SFT or PEFT, default to SFT",
+    )
     args = parser.parse_args()
 
     # Dataset
@@ -83,15 +88,22 @@ def main():
     torch.set_default_dtype(torch.bfloat16)
     model = AutoModelForCausalLM.from_pretrained(
         model_name_or_path,
-        attn_implementation="flash_attention_2",
         device_map="auto",
         use_cache=False,
         torch_dtype=torch.bfloat16,
     )
     torch.set_default_dtype(default_dtype)
 
+    # Train mode
+    if args.train_mode.lower() == "sft":
+        train_mode = 0
+    elif args.train_mode.lower() == "peft":
+        train_mode = 1
+    else:
+        raise ValueError(f"Invalid train_mode: {args.train_mode}, only SFT and PEFT are supported.")
+
     # PEFT specific
-    if args.mode:
+    if train_mode:
         # PEFT configs
         peft_config = LoraConfig(
             lora_alpha=16,
@@ -144,7 +156,7 @@ def main():
     # Save base model state_dict, which will be used as the starting
     # weights for each round - to show the weights are loaded correctly
     initial_model_path = os.path.join(args.output_path, "model_dict_base.pt")
-    if args.mode:
+    if train_mode:
         params = get_peft_model_state_dict(model)
     else:
         params = model.state_dict()
@@ -157,7 +169,7 @@ def main():
 
         # Load and Evaluate model file
         state_dict_replace = torch.load(initial_model_path, map_location="cpu", weights_only=True)
-        if args.mode:
+        if train_mode:
             set_peft_model_state_dict(trainer.model, state_dict_replace)
         else:
             trainer.model.load_state_dict(state_dict_replace)
@@ -170,7 +182,7 @@ def main():
         else:
             # replace local resume weights with global weights
             resume_from_checkpoint_folder = trainer_utils.get_last_checkpoint(trainer.args.output_dir)
-            if args.mode:
+            if train_mode:
                 # PEFT model small, directly save via torch.save
                 resume_model_file_path = os.path.join(resume_from_checkpoint_folder, utils.WEIGHTS_NAME)
                 torch.save(state_dict_replace, resume_model_file_path)

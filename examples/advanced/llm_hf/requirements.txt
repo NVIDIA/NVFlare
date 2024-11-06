@@ -5,5 +5,4 @@ tensorboard
 transformers
 peft
 trl
-flash-attn
 bitsandbytes

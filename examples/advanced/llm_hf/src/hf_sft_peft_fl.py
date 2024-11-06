@@ -63,7 +63,12 @@ def main():
         type=str,
         default="./workspace_federated/llama-3.2-1b-dolly-sft",
     )
-    parser.add_argument("--mode", type=int, default=0)
+    parser.add_argument(
+        "--train_mode",
+        type=str,
+        default="SFT",
+        help="training mode, SFT or PEFT, default to SFT",
+    )
     parser.add_argument("--local_epoch", type=int, default=1)
     parser.add_argument("--clean_up", type=int, default=0)
     args = parser.parse_args()
@@ -88,15 +93,22 @@ def main():
     torch.set_default_dtype(torch.bfloat16)
     model = AutoModelForCausalLM.from_pretrained(
         model_name_or_path,
-        attn_implementation="flash_attention_2",
         device_map="auto",
         use_cache=False,
         torch_dtype=torch.bfloat16,
     )
     torch.set_default_dtype(default_dtype)
 
+    # Train mode
+    if args.train_mode.lower() == "sft":
+        train_mode = 0
+    elif args.train_mode.lower() == "peft":
+        train_mode = 1
+    else:
+        raise ValueError(f"Invalid train_mode: {args.train_mode}, only SFT and PEFT are supported.")
+
     # PEFT specific
-    if args.mode:
+    if train_mode:
         # PEFT configs
         peft_config = LoraConfig(
             lora_alpha=16,
@@ -149,6 +161,8 @@ def main():
     # initializes NVFlare client API
     flare.init()
 
+    # Train federated rounds
+    # start with global model at the beginning of each round
     while flare.is_running():
         # receives FLModel from NVFlare
         input_model = flare.receive()
@@ -164,7 +178,7 @@ def main():
         # evaluation on both trained and received model
         def evaluate(input_weights, mode):
             # Special load func for PEFT
-            if mode:
+            if train_mode:
                 set_peft_model_state_dict(trainer.model, input_weights)
             else:
                 trainer.model.load_state_dict(input_weights)
@@ -173,7 +187,7 @@ def main():
             return metric_score
 
         # evaluate on received global model
-        eval_loss = evaluate(global_model, args.mode)
+        eval_loss = evaluate(global_model, train_mode)
         eval_loss = float(eval_loss["eval_loss"])
 
         # Load global model and previous training states
@@ -185,7 +199,7 @@ def main():
         else:
             # replace local resume weights with global weights
             resume_from_checkpoint_folder = trainer_utils.get_last_checkpoint(trainer.args.output_dir)
-            if args.mode:
+            if train_mode:
                 # PEFT model small, directly save via torch.save
                 resume_model_file_path = os.path.join(resume_from_checkpoint_folder, utils.WEIGHTS_NAME)
                 torch.save(global_model, resume_model_file_path)
@@ -205,7 +219,7 @@ def main():
             trainer.train(resume_from_checkpoint=True)
 
         # compose output model to send back to server
-        if args.mode:
+        if train_mode:
             # PEFT, load PEFT part from trainer model
             out_param = get_peft_model_state_dict(trainer.model)
         else:
@@ -213,7 +227,7 @@ def main():
             out_param = trainer.model.state_dict()
 
         # update the key name sent to global model
-        if not args.mode:
+        if not train_mode:
             for key in list(out_param.keys()):
                 out_param["model." + key] = out_param.pop(key).cpu()
 
