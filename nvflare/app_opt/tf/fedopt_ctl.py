@@ -147,12 +147,11 @@ class FedOpt(FedAvg):
             start = time.time()
             weights = global_model_tf.get_weights()
 
-    
             new_weights = {}
-            for w_idx , key in enumerate (global_model.params):
+            for w_idx, key in enumerate(global_model.params):
                 if key in model_diff_params:
                     new_weights[key] = weights[w_idx]
-               
+
                 else:
 
                     new_weights[key] = (
