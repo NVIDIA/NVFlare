@@ -1,8 +1,8 @@
-nvflare~=2.5.0rc
+nvflare
 torch
 datasets
 tensorboard
 transformers
 peft
 trl
-flash-attn
+bitsandbytes

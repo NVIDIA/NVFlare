@@ -14,12 +14,19 @@
 
 import argparse
 
-import datasets
-from peft import LoraConfig, get_peft_model
-from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments
-from trl import SFTTrainer
+# Add deterministic seed for reproducibility illustration
+import random
 
-use_flash_attention = True
+import datasets
+import numpy as np
+import torch
+from peft import LoraConfig, get_peft_model
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from trl import SFTConfig, SFTTrainer
+
+torch.manual_seed(0)
+random.seed(0)
+np.random.seed(0)
 
 
 def format_instruction(example):
@@ -33,9 +40,9 @@ def format_instruction(example):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--model_path",
+        "--model_name_or_path",
         type=str,
-        default="./model/Llama-2-7b-hf",
+        default="meta-llama/llama-3.2-1b",
     )
     parser.add_argument(
         "--data_path_train",
@@ -50,9 +57,14 @@ def main():
     parser.add_argument(
         "--output_path",
         type=str,
-        default="./workspace_centralized/llama2-7b-dolly-sft",
+        default="./workspace_centralized/llama-3.2-1b-dolly-sft",
     )
-    parser.add_argument("--mode", type=int, default=0)
+    parser.add_argument(
+        "--train_mode",
+        type=str,
+        default="SFT",
+        help="training mode, SFT or PEFT, default to SFT",
+    )
     args = parser.parse_args()
 
     # Dataset
@@ -67,8 +79,30 @@ def main():
     print(f"logging_steps: {logging_steps}")
 
     # Model configs
-    model_path = args.model_path
-    if args.mode:
+    model_name_or_path = args.model_name_or_path
+    peft_config = None
+
+    # Load model
+    default_dtype = torch.get_default_dtype()
+    torch.set_default_dtype(torch.bfloat16)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name_or_path,
+        device_map="auto",
+        use_cache=False,
+        torch_dtype=torch.bfloat16,
+    )
+    torch.set_default_dtype(default_dtype)
+
+    # Train mode
+    if args.train_mode.lower() == "sft":
+        train_mode = 0
+    elif args.train_mode.lower() == "peft":
+        train_mode = 1
+    else:
+        raise ValueError(f"Invalid train_mode: {args.train_mode}, only SFT and PEFT are supported.")
+
+    # PEFT specific
+    if train_mode:
         # PEFT configs
         peft_config = LoraConfig(
             lora_alpha=16,
@@ -77,31 +111,16 @@ def main():
             bias="none",
             task_type="CAUSAL_LM",
         )
-        # Load model
-        model = AutoModelForCausalLM.from_pretrained(
-            model_path,
-            use_cache=False,
-            use_flash_attention_2=use_flash_attention,
-            device_map="auto",
-        )
         model = get_peft_model(model, peft_config)
-    else:
-        peft_config = None
-        model = AutoModelForCausalLM.from_pretrained(
-            model_path,
-            use_flash_attention_2=use_flash_attention,
-            use_cache=False,
-            device_map="auto",
-        )
-
     model.config.pretraining_tp = 1
+
     # Set tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "right"
 
     # Training arguments
-    train_args = TrainingArguments(
+    train_args = SFTConfig(
         output_dir=args.output_path,
         num_train_epochs=3,
         per_device_train_batch_size=batch_size,
@@ -110,23 +129,21 @@ def main():
         optim="paged_adamw_32bit",
         logging_steps=logging_steps,
         save_strategy="epoch",
-        learning_rate=2e-4,
+        learning_rate=5e-4,
         bf16=True,
-        tf32=True,
         max_grad_norm=0.3,
         warmup_ratio=0.03,
         lr_scheduler_type="constant",
         disable_tqdm=True,
+        max_seq_length=1024,
     )
 
     # Trainer
-    max_seq_length = 1024
     trainer = SFTTrainer(
         model=model,
         train_dataset=dataset_train,
         eval_dataset=dataset_valid,
         peft_config=peft_config,
-        max_seq_length=max_seq_length,
         tokenizer=tokenizer,
         packing=False,
         formatting_func=format_instruction,
