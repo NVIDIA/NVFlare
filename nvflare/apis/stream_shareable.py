@@ -28,10 +28,36 @@ class StreamShareableGenerator(ABC):
         fl_ctx: FLContext,
         abort_signal: Signal,
     ) -> Tuple[Shareable, float]:
+        """Called to generate next Shareable object to be sent.
+        If this method needs to take long time, it should check the abort_signal frequently. When aborted it should
+        quickly return.
+
+        Args:
+            channel: the app channel of the stream
+            topic: the app topic of the stream
+            fl_ctx: The FLContext object
+            abort_signal: signal to abort processing
+
+        Returns: a tuple of (Shareable object to be sent, timeout for sending this object)
+
+        """
         pass
 
     @abstractmethod
     def process_replies(self, replies: Dict[str, Shareable], fl_ctx: FLContext, abort_signal: Signal) -> Any:
+        """Called to process replies from receivers of the last Shareable object sent to them.
+
+        Args:
+            replies: replies from receivers. It's dict of site_name => reply
+            fl_ctx: the FLContext object
+            abort_signal: signal to abort processing
+
+        Returns: Any object or None
+
+        If None is returned, the streaming will continue; otherwise the streaming stops and the returned object is
+        returned as the final result of the streaming.
+
+        """
         pass
 
 
@@ -45,13 +71,13 @@ class StreamShareableProcessor(ABC):
         fl_ctx: FLContext,
         abort_signal: Signal,
     ) -> Tuple[bool, Shareable]:
-        """Process received Stream Msg.
+        """Process received Shareable object in the stream.
 
         Args:
             channel: app channel of the msg.
             topic: app topic of the msg.
-            shareable: the request to be processed
-            fl_ctx:
+            shareable: the Shareable object to be processed
+            fl_ctx: the FLContext object
             abort_signal: signal to abort processing
 
         Returns: a tuple of (whether to continue streaming, reply message)
@@ -67,11 +93,12 @@ class StreamShareableProcessorFactory(ABC):
     @abstractmethod
     def get_processor(self, channel: str, topic: str, shareable: Shareable) -> StreamShareableProcessor:
         """Get a processor to process a shareable stream.
+        This is called only when the 1st Shareable object is received for each stream.
 
         Args:
             channel: app channel
             topic: app topic
-            shareable: the received msg
+            shareable: the first received Shareable object
 
         Returns: a StreamShareableProcessor
 

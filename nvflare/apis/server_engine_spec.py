@@ -176,6 +176,20 @@ class ServerEngineSpec(EngineSpec, ABC):
         optional=False,
         secure=False,
     ):
+        """Send a stream of Shareable objects to receivers.
+
+        Args:
+            channel: the channel for this stream
+            topic: topic of the stream
+            targets: receiving sites
+            generator: the generator that can generates the stream of Shareable objects
+            fl_ctx: the FLContext object
+            optional: whether the stream is optional
+            secure: whether to use P2P security
+
+        Returns: result from the generator's reply processing
+
+        """
         pass
 
     @abstractmethod
@@ -185,6 +199,22 @@ class ServerEngineSpec(EngineSpec, ABC):
         topic: str,
         factory: StreamShareableProcessorFactory,
     ):
+        """Register a StreamShareableProcessorFactory for specified app channel and topic
+        Once a new streaming request is received for the channel/topic, the registered factory will be used
+        to create a StreamShareableProcessor object to handle the msg stream.
+
+        Note: the factory should generate a new processor every time get_processor() is called. This is because
+        multiple streaming sessions could be going on at the same time. Each streaming session should have its
+        own processor.
+
+        Args:
+            channel: app channel
+            topic: app topic
+            factory: the factory to be registered
+
+        Returns: None
+
+        """
         pass
 
     @abstractmethod

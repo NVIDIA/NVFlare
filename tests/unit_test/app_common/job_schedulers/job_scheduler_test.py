@@ -24,6 +24,7 @@ from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.apis.job_scheduler_spec import DispatchInfo
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 from nvflare.apis.server_engine_spec import ServerEngineSpec
+from nvflare.apis.stream_shareable import StreamShareableGenerator, StreamShareableProcessorFactory
 from nvflare.app_common.job_schedulers.job_scheduler import DefaultJobScheduler
 from nvflare.app_common.resource_managers.list_resource_manager import ListResourceManager
 
@@ -123,6 +124,26 @@ class MockServerEngine(ServerEngineSpec):
         optional: bool = False,
         secure: bool = False,
     ) -> dict:
+        pass
+
+    def stream_shareables(
+        self,
+        channel: str,
+        topic: str,
+        targets: List[str],
+        generator: StreamShareableGenerator,
+        fl_ctx: FLContext,
+        optional=False,
+        secure=False,
+    ):
+        pass
+
+    def register_shareable_processor_factory(
+        self,
+        channel: str,
+        topic: str,
+        factory: StreamShareableProcessorFactory,
+    ):
         pass
 
     def get_widget(self, widget_id: str):
