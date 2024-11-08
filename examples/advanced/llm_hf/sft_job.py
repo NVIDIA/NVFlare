@@ -91,7 +91,7 @@ def main():
     # Run the job
     print("workspace_dir=", workspace_dir)
     print("num_threads=", num_threads)
-    job.simulator_run(workspace_dir, threads=num_threads)
+    job.simulator_run(workspace_dir, threads=num_threads, gpu=args.gpu)
 
 
 def define_parser():
@@ -143,6 +143,12 @@ def define_parser():
         "--threads",
         type=int,
         help="number of threads to use for FL simulation, default to the number of clients",
+    )
+    parser.add_argument(
+        "--gpu",
+        type=str,
+        default="0",
+        help="gpu assignments for simulating clients, comma separated, default to single gpu",
     )
     return parser.parse_args()
 
