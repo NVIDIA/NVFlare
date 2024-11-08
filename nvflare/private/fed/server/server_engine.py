@@ -608,7 +608,7 @@ class ServerEngine(ServerEngineInternalSpec):
         else:
             return {}
 
-    def stream_objects(
+    def stream_shareables(
         self,
         channel: str,
         topic: str,
@@ -618,7 +618,7 @@ class ServerEngine(ServerEngineInternalSpec):
         optional=False,
         secure=False,
     ):
-        return self.run_manager.stream_runner.stream(
+        return self.run_manager.shareable_streamer.stream(
             channel=channel,
             topic=topic,
             targets=self._to_aux_msg_targets(targets),
@@ -628,13 +628,13 @@ class ServerEngine(ServerEngineInternalSpec):
             optional=optional,
         )
 
-    def register_stream_object_processor_factory(
+    def register_shareable_processor_factory(
         self,
         channel: str,
         topic: str,
         factory: StreamShareableProcessorFactory,
     ):
-        self.run_manager.stream_runner.register_processor_factory(
+        self.run_manager.shareable_streamer.register_processor_factory(
             channel=channel,
             topic=topic,
             factory=factory,

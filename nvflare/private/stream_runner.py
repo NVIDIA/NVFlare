@@ -31,16 +31,17 @@ from nvflare.fuel.utils.obj_utils import get_logger
 from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
 from nvflare.security.logging import secure_format_exception
 
-# Topics for Msg Streamer
-TOPIC_STREAM_REQUEST = "MsgStream.Request"
-TOPIC_STREAM_ABORT = "MsgStream.Abort"
+# Topics for streaming messages
+PREFIX = "ShareableStreamer."
+TOPIC_STREAM_REQUEST = PREFIX + "Request"
+TOPIC_STREAM_ABORT = PREFIX + "Abort"
 
 
 class HeaderKey:
-    TX_ID = "MsgStream.TX_ID"
-    SEQ = "MsgStream.SEQ"
-    TOPIC = "MsgStream.TOPIC"
-    CHANNEL = "MsgStream.CHANNEL"
+    TX_ID = PREFIX + "TX_ID"
+    SEQ = PREFIX + "SEQ"
+    TOPIC = PREFIX + "TOPIC"
+    CHANNEL = PREFIX + "CHANNEL"
 
 
 class _ProcessorInfo:
@@ -64,7 +65,7 @@ class _ProcessorInfo:
         return reply
 
 
-class StreamRunner(FLComponent):
+class ShareableStreamer(FLComponent):
     def __init__(self, aux_runner: AuxRunner):
         FLComponent.__init__(self)
         self.aux_runner = aux_runner
@@ -105,6 +106,7 @@ class StreamRunner(FLComponent):
 
         """
         self.registry.set(channel, topic, factory)
+        self.logger.info(f"registered processor_factory: {channel=} {topic=} {factory.__class__.__name__}")
 
     @staticmethod
     def _log_msg(req: Shareable, msg: str):
@@ -120,20 +122,15 @@ class StreamRunner(FLComponent):
     def info(self, req: Shareable, msg: str):
         self.logger.info(self._log_msg(req, msg))
 
+    def debug(self, req: Shareable, msg: str):
+        self.logger.debug(self._log_msg(req, msg))
+
     def _abort_tx(self, tx_id: str):
         with self.tx_lock:
             self.tx_table.pop(tx_id, None)
 
-    def _abort_streaming(self, request: Shareable):
-        tx_id = request.get_header(HeaderKey.TX_ID)
-        if not tx_id:
-            self.logger.error(f"missing header {HeaderKey.TX_ID}")
-            return make_reply(ReturnCode.BAD_REQUEST_DATA)
-
-        self._abort_tx(tx_id)
-        return make_reply(ReturnCode.OK)
-
     def _handle_abort(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
+        self.logger.debug("abort received")
         tx_id = request.get_header(HeaderKey.TX_ID)
         if not tx_id:
             self.logger.error(f"missing header {HeaderKey.TX_ID}")
@@ -176,6 +173,7 @@ class StreamRunner(FLComponent):
             self.error(request, f"no StreamShareableProcessorFactory registered for {channel}:{topic}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
+        self.debug(request, "received stream request")
         with self.tx_lock:
             info = self.tx_table.get(tx_id)
             if info:
@@ -232,6 +230,8 @@ class StreamRunner(FLComponent):
         if not continue_streaming:
             # remove the tx
             self._abort_tx(tx_id)
+
+        self.debug(request, f"send reply: {reply}")
         return reply
 
     def _notify_abort_streaming(
@@ -274,14 +274,6 @@ class StreamRunner(FLComponent):
         secure=False,
         optional=False,
     ) -> Tuple[str, Any]:
-        if not isinstance(targets, list):
-            raise ValueError(f"targets must be list of AuxMsgTarget but got {type(targets)}")
-
-        # each target must be a valid FQCN
-        for t in targets:
-            if not isinstance(t, AuxMsgTarget):
-                raise ValueError(f"target must be AuxMsgTarget but got {type(t)}")
-
         tx_id = str(uuid.uuid4())
         seq = 0
         abort_signal = fl_ctx.get_run_abort_signal()
@@ -292,6 +284,7 @@ class StreamRunner(FLComponent):
                 return ReturnCode.TASK_ABORTED, None
 
             request, timeout = generator.get_next(channel, topic, fl_ctx, abort_signal)
+            self.logger.debug(f"got next from {generator.__class__.__name__}: {seq=} {timeout=} {tx_id=}")
 
             if request is None:
                 # end of the streaming
@@ -337,7 +330,9 @@ class StreamRunner(FLComponent):
                 fl_ctx=fl_ctx,
             )
 
+            self.logger.debug("got replies from receivers")
             result = generator.process_replies(replies, fl_ctx, abort_signal)
+            self.logger.debug(f"got processed result from generator: {result}")
             if result is not None:
                 # this is end of the streaming
                 if abort_signal and abort_signal.triggered:
@@ -345,4 +340,5 @@ class StreamRunner(FLComponent):
                 else:
                     rc = ReturnCode.OK
                 self._notify_abort_streaming(targets, tx_id, secure, fl_ctx)
+                self.logger.debug(f"Done streaming: {rc}")
                 return rc, result

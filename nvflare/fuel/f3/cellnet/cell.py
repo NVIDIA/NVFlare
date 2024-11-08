@@ -167,7 +167,7 @@ class Cell(StreamCell):
         Returns: a dict of: cell_id => reply message
 
         """
-        self.logger.info(f"broadcast: {channel=}, {topic=}, {targets=}, {timeout=}")
+        self.logger.debug(f"broadcast: {channel=}, {topic=}, {targets=}, {timeout=}")
 
         if isinstance(targets, str):
             targets = [targets]

@@ -23,7 +23,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.private.aux_runner import AuxRunner
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.fed_utils import create_job_processing_context_properties
-from nvflare.private.stream_runner import StreamRunner
+from nvflare.private.stream_runner import ShareableStreamer
 
 from .client_manager import ClientManager
 from .run_info import RunInfo
@@ -57,9 +57,9 @@ class RunManager(EngineSpec):
         self.client_manager = client_manager
         self.handlers = handlers
         self.aux_runner = AuxRunner(self)
-        self.stream_runner = StreamRunner(self.aux_runner)
+        self.shareable_streamer = ShareableStreamer(self.aux_runner)
         self.add_handler(self.aux_runner)
-        self.add_handler(self.stream_runner)
+        self.add_handler(self.shareable_streamer)
 
         if job_id:
             job_ctx_props = self.create_job_processing_context_properties(workspace, job_id)

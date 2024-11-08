@@ -29,7 +29,7 @@ from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.fed_utils import create_job_processing_context_properties
-from nvflare.private.stream_runner import StreamRunner
+from nvflare.private.stream_runner import ShareableStreamer
 from nvflare.widgets.fed_event import ClientFedEventRunner
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
@@ -90,9 +90,9 @@ class ClientRunManager(ClientEngineExecutorSpec):
         self.components = components
         # self.aux_runner = ClientAuxRunner()
         self.aux_runner = AuxRunner(self)
-        self.stream_runner = StreamRunner(self.aux_runner)
+        self.shareable_streamer = ShareableStreamer(self.aux_runner)
         self.add_handler(self.aux_runner)
-        self.add_handler(self.stream_runner)
+        self.add_handler(self.shareable_streamer)
         self.conf = conf
         self.cell = None
 
@@ -337,7 +337,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
             targets=None, topic=topic, request=request, timeout=0.0, fl_ctx=fl_ctx, optional=optional, secure=secure
         )
 
-    def stream_objects(
+    def stream_shareables(
         self,
         channel: str,
         topic: str,
@@ -347,7 +347,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
         optional=False,
         secure=False,
     ):
-        return self.stream_runner.stream(
+        return self.shareable_streamer.stream(
             channel=channel,
             topic=topic,
             targets=self._to_aux_msg_targets(targets),
@@ -357,13 +357,13 @@ class ClientRunManager(ClientEngineExecutorSpec):
             optional=optional,
         )
 
-    def register_stream_object_processor_factory(
+    def register_shareable_processor_factory(
         self,
         channel: str,
         topic: str,
         factory: StreamShareableProcessorFactory,
     ):
-        self.stream_runner.register_processor_factory(channel, topic, factory)
+        self.shareable_streamer.register_processor_factory(channel, topic, factory)
 
     def abort_app(self, job_id: str, fl_ctx: FLContext):
         runner = fl_ctx.get_prop(key=FLContextKey.RUNNER, default=None)

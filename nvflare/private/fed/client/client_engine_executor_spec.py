@@ -162,7 +162,7 @@ class ClientEngineExecutorSpec(ClientEngineSpec, EngineSpec, ABC):
         pass
 
     @abstractmethod
-    def stream_objects(
+    def stream_shareables(
         self,
         channel: str,
         topic: str,
@@ -175,7 +175,7 @@ class ClientEngineExecutorSpec(ClientEngineSpec, EngineSpec, ABC):
         pass
 
     @abstractmethod
-    def register_stream_object_processor_factory(
+    def register_shareable_processor_factory(
         self,
         channel: str,
         topic: str,
