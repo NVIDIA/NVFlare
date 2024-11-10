@@ -16,7 +16,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Tuple
 
 from nvflare.apis.shareable import Shareable
-from nvflare.apis.stream_shareable import StreamShareableGenerator, StreamShareableProcessorFactory
+from nvflare.apis.stream_shareable import StreamMeta, StreamShareableGenerator, StreamShareableProcessorFactory
 from nvflare.widgets.widget import Widget
 
 from .client import Client
@@ -170,7 +170,7 @@ class ServerEngineSpec(EngineSpec, ABC):
         self,
         channel: str,
         topic: str,
-        stream_meta: dict,
+        stream_meta: StreamMeta,
         targets: List[str],
         generator: StreamShareableGenerator,
         fl_ctx: FLContext,

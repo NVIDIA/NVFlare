@@ -20,7 +20,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, ServerCommandKey, ServerCommandNames, SiteType
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable
-from nvflare.apis.stream_shareable import StreamShareableGenerator, StreamShareableProcessorFactory
+from nvflare.apis.stream_shareable import StreamMeta, StreamShareableGenerator, StreamShareableProcessorFactory
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
@@ -341,7 +341,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
         self,
         channel: str,
         topic: str,
-        stream_meta: dict,
+        stream_meta: StreamMeta,
         targets: List[str],
         generator: StreamShareableGenerator,
         fl_ctx: FLContext,

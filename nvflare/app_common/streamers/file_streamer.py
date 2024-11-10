@@ -19,6 +19,7 @@ from typing import Any, Dict, Tuple
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.stream_shareable import (
+    StreamMeta,
     StreamShareableGenerator,
     StreamShareableProcessor,
     StreamShareableProcessorFactory,
@@ -35,7 +36,7 @@ _KEY_EOF = _PREFIX + "eof"
 
 
 class _ChunkProcessor(StreamShareableProcessor):
-    def __init__(self, stream_meta: dict, dest_dir):
+    def __init__(self, stream_meta: StreamMeta, dest_dir):
         file_name = stream_meta.get(_KEY_FILE_NAME)
         self.logger = get_logger(self)
         self.file_name = file_name
@@ -47,7 +48,7 @@ class _ChunkProcessor(StreamShareableProcessor):
     def process(
         self,
         shareable: Shareable,
-        stream_meta: dict,
+        stream_meta: StreamMeta,
         fl_ctx: FLContext,
     ) -> Tuple[bool, Shareable]:
         data = shareable.get(_KEY_DATA)
@@ -62,7 +63,7 @@ class _ChunkProcessor(StreamShareableProcessor):
             # continue streaming
             return True, make_reply(ReturnCode.OK)
 
-    def finalize(self, stream_meta: dict, fl_ctx: FLContext):
+    def finalize(self, stream_meta: StreamMeta, fl_ctx: FLContext):
         if self.file:
             file_location = stream_meta.get(_KEY_FILE_LOCATION)
             self.file.close()
@@ -73,7 +74,7 @@ class _ChunkProcessorFactory(StreamShareableProcessorFactory):
     def __init__(self, dest_dir: str):
         self.dest_dir = dest_dir
 
-    def get_processor(self, stream_meta: dict, fl_ctx: FLContext) -> StreamShareableProcessor:
+    def get_processor(self, stream_meta: StreamMeta, fl_ctx: FLContext) -> StreamShareableProcessor:
         return _ChunkProcessor(stream_meta, self.dest_dir)
 
 
@@ -87,7 +88,7 @@ class _ChunkGenerator(StreamShareableGenerator):
 
     def get_next(
         self,
-        stream_meta: dict,
+        stream_meta: StreamMeta,
         fl_ctx: FLContext,
     ) -> Tuple[Shareable, float]:
         chunk = self.file.read(self.chunk_size)
@@ -108,7 +109,7 @@ class _ChunkGenerator(StreamShareableGenerator):
     def process_replies(
         self,
         replies: Dict[str, Shareable],
-        stream_meta: dict,
+        stream_meta: StreamMeta,
         fl_ctx: FLContext,
     ) -> Any:
         has_error = False
@@ -173,7 +174,7 @@ class FileStreamer:
     def stream_file(
         channel: str,
         topic: str,
-        stream_meta: dict,
+        stream_meta: StreamMeta,
         targets,
         file_name: str,
         fl_ctx: FLContext,
@@ -221,7 +222,7 @@ class FileStreamer:
             )
 
     @staticmethod
-    def get_file_name(stream_meta: dict):
+    def get_file_name(stream_meta: StreamMeta):
         """Get the file base name property from stream metadata.
         This method is intended to be used by the stream_done_cb() function of the receiving side.
 
@@ -234,7 +235,7 @@ class FileStreamer:
         return stream_meta.get(_KEY_FILE_NAME)
 
     @staticmethod
-    def get_file_location(stream_meta: dict):
+    def get_file_location(stream_meta: StreamMeta):
         """Get the file location property from stream metadata.
         This method is intended to be used by the stream_done_cb() function of the receiving side.
 

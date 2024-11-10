@@ -24,11 +24,22 @@ class StreamMetaKey:
     RC = "__RC__"
 
 
+class StreamMeta(dict):
+    def get_channel(self):
+        return self.get(StreamMetaKey.CHANNEL)
+
+    def get_topic(self):
+        return self.get(StreamMetaKey.TOPIC)
+
+    def get_rc(self):
+        return self.get(StreamMetaKey.RC)
+
+
 class StreamShareableGenerator(ABC):
     @abstractmethod
     def get_next(
         self,
-        stream_meta: dict,
+        stream_meta: StreamMeta,
         fl_ctx: FLContext,
     ) -> Tuple[Shareable, float]:
         """Called to generate next Shareable object to be sent.
@@ -49,7 +60,7 @@ class StreamShareableGenerator(ABC):
     def process_replies(
         self,
         replies: Dict[str, Shareable],
-        stream_meta: dict,
+        stream_meta: StreamMeta,
         fl_ctx: FLContext,
     ) -> Any:
         """Called to process replies from receivers of the last Shareable object sent to them.
@@ -73,7 +84,7 @@ class StreamShareableProcessor(ABC):
     def process(
         self,
         shareable: Shareable,
-        stream_meta: dict,
+        stream_meta: StreamMeta,
         fl_ctx: FLContext,
     ) -> Tuple[bool, Shareable]:
         """Process received Shareable object in the stream.
@@ -93,7 +104,7 @@ class StreamShareableProcessor(ABC):
 
     def finalize(
         self,
-        stream_meta: dict,
+        stream_meta: StreamMeta,
         fl_ctx: FLContext,
     ):
         """Called to finalize the generator.
@@ -114,10 +125,10 @@ class StreamShareableProcessorFactory(ABC):
     @abstractmethod
     def get_processor(
         self,
-        stream_meta: dict,
+        stream_meta: StreamMeta,
         fl_ctx: FLContext,
     ) -> StreamShareableProcessor:
-        """Get a processor to process a shareable stream.
+        """Called to get a processor to process a new shareable stream on the receiving side.
         This is called only when the 1st streaming object is received for each stream.
 
         Args:
@@ -132,10 +143,10 @@ class StreamShareableProcessorFactory(ABC):
     def return_processor(
         self,
         processor: StreamShareableProcessor,
-        stream_meta: dict,
+        stream_meta: StreamMeta,
         fl_ctx: FLContext,
     ):
-        """Return the processor back to the factory after a stream is finished.
+        """Return the processor back to the factory after a stream is finished on the receiving side.
 
         Args:
             processor: the processor to return
@@ -148,5 +159,15 @@ class StreamShareableProcessorFactory(ABC):
         pass
 
 
-def stream_done_cb_signature(stream_meta: dict, fl_ctx: FLContext, **kwargs):
+def stream_done_cb_signature(stream_meta: StreamMeta, fl_ctx: FLContext, **kwargs):
+    """This is the signature of stream_done_cb.
+
+    Args:
+        stream_meta: metadata of the stream
+        fl_ctx: FLContext object
+        **kwargs: the kwargs specified when registering the stream_done_cb.
+
+    Returns: None
+
+    """
     pass

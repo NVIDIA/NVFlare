@@ -21,6 +21,7 @@ from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.stream_shareable import (
+    StreamMeta,
     StreamMetaKey,
     StreamShareableGenerator,
     StreamShareableProcessor,
@@ -50,7 +51,7 @@ class _ProcessorInfo:
     def __init__(
         self,
         logger,
-        stream_meta: dict,
+        stream_meta: StreamMeta,
         factory: StreamShareableProcessorFactory,
         processor: StreamShareableProcessor,
         stream_done_cb,
@@ -244,9 +245,11 @@ class ShareableStreamer(FLComponent):
                 try:
                     stream_meta = request.get_header(HeaderKey.META)
                     if not stream_meta:
-                        self.error(request, "missing stream meta in seq 0")
+                        self.error(request, f"missing stream meta in seq 0: {request.get('__headers__')}")
                         return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
+                    # received stream_data is a dict - convert to StreamMeta!
+                    stream_meta = StreamMeta(stream_meta)
                     processor = factory.get_processor(stream_meta, fl_ctx)
                     if not processor:
                         self.error(request, f"no processor from factory {type(factory)}")
@@ -333,28 +336,25 @@ class ShareableStreamer(FLComponent):
         self,
         channel: str,
         topic: str,
-        stream_meta: dict,
+        stream_meta: StreamMeta,
         targets: List[AuxMsgTarget],
         generator: StreamShareableGenerator,
         fl_ctx: FLContext,
         secure=False,
         optional=False,
     ) -> Tuple[str, Any]:
+        if not stream_meta:
+            stream_meta = StreamMeta()
+
         check_str("channel", channel)
         check_str("topic", topic)
-        check_object_type("stream_meta", stream_meta, dict)
+        check_object_type("stream_meta", stream_meta, StreamMeta)
         check_object_type("generator", generator, StreamShareableGenerator)
         check_object_type("fl_ctx", fl_ctx, FLContext)
 
         tx_id = str(uuid.uuid4())
         seq = 0
         abort_signal = fl_ctx.get_run_abort_signal()
-
-        if not stream_meta:
-            stream_meta = {}
-
-        if not isinstance(stream_meta, dict):
-            raise ValueError(f"stream_meta must be dict but got {type(stream_meta)}")
 
         stream_meta[StreamMetaKey.TOPIC] = topic
         stream_meta[StreamMetaKey.CHANNEL] = channel
@@ -412,7 +412,8 @@ class ShareableStreamer(FLComponent):
 
             if seq == 0:
                 # only send meta in 1st request
-                request.set_header(HeaderKey.META, stream_meta)
+                # convert to dict type, otherwise it won't be sent properly!
+                request.set_header(HeaderKey.META, dict(stream_meta))
 
             seq += 1
 

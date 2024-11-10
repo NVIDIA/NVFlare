@@ -44,7 +44,7 @@ from nvflare.apis.fl_snapshot import RunSnapshot
 from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
 from nvflare.apis.job_def import Job
 from nvflare.apis.shareable import Shareable, make_reply
-from nvflare.apis.stream_shareable import StreamShareableGenerator, StreamShareableProcessorFactory
+from nvflare.apis.stream_shareable import StreamMeta, StreamShareableGenerator, StreamShareableProcessorFactory
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.core_cell import FQCN, CoreCell
@@ -612,7 +612,7 @@ class ServerEngine(ServerEngineInternalSpec):
         self,
         channel: str,
         topic: str,
-        stream_meta: dict,
+        stream_meta: StreamMeta,
         targets: List[str],
         generator: StreamShareableGenerator,
         fl_ctx: FLContext,
