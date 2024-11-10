@@ -27,6 +27,8 @@ from nvflare.apis.stream_shareable import (
 from nvflare.fuel.utils.obj_utils import get_logger
 from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number
 
+from .streamer_base import StreamerBase
+
 _PREFIX = "FileStreamer."
 _KEY_FILE_NAME = _PREFIX + "file_name"
 _KEY_FILE_LOCATION = _PREFIX + "file_location"
@@ -130,7 +132,7 @@ class _ChunkGenerator(StreamShareableGenerator):
             return None
 
 
-class FileStreamer:
+class FileStreamer(StreamerBase):
     @staticmethod
     def register_stream_processing(
         fl_ctx: FLContext,

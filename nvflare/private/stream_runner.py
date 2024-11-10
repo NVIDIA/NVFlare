@@ -248,8 +248,6 @@ class ShareableStreamer(FLComponent):
                         self.error(request, f"missing stream meta in seq 0: {request.get('__headers__')}")
                         return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
-                    # received stream_data is a dict - convert to StreamMeta!
-                    stream_meta = StreamMeta(stream_meta)
                     processor = factory.get_processor(stream_meta, fl_ctx)
                     if not processor:
                         self.error(request, f"no processor from factory {type(factory)}")
@@ -412,8 +410,7 @@ class ShareableStreamer(FLComponent):
 
             if seq == 0:
                 # only send meta in 1st request
-                # convert to dict type, otherwise it won't be sent properly!
-                request.set_header(HeaderKey.META, dict(stream_meta))
+                request.set_header(HeaderKey.META, stream_meta)
 
             seq += 1
 

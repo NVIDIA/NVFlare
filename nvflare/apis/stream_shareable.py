@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from abc import ABC, abstractmethod
+from builtins import dict as StreamMeta
 from typing import Any, Dict, Tuple
 
 from nvflare.apis.fl_context import FLContext
@@ -22,17 +23,6 @@ class StreamMetaKey:
     CHANNEL = "__channel__"
     TOPIC = "__topic__"
     RC = "__RC__"
-
-
-class StreamMeta(dict):
-    def get_channel(self):
-        return self.get(StreamMetaKey.CHANNEL)
-
-    def get_topic(self):
-        return self.get(StreamMetaKey.TOPIC)
-
-    def get_rc(self):
-        return self.get(StreamMetaKey.RC)
 
 
 class StreamShareableGenerator(ABC):
