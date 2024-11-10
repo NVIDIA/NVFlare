@@ -157,7 +157,6 @@ class CellChannel:
     MULTI_PROCESS_EXECUTOR = "multi_process_executor"
     SIMULATOR_RUNNER = "simulator_runner"
     RETURN_ONLY = "return_only"
-    MSG_STREAM = "msg_stream"
 
 
 class CellChannelTopic:
