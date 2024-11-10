@@ -341,6 +341,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
         self,
         channel: str,
         topic: str,
+        stream_meta: dict,
         targets: List[str],
         generator: StreamShareableGenerator,
         fl_ctx: FLContext,
@@ -350,6 +351,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
         return self.shareable_streamer.stream(
             channel=channel,
             topic=topic,
+            stream_meta=stream_meta,
             targets=self._to_aux_msg_targets(targets),
             generator=generator,
             fl_ctx=fl_ctx,
@@ -357,13 +359,15 @@ class ClientRunManager(ClientEngineExecutorSpec):
             optional=optional,
         )
 
-    def register_shareable_processor_factory(
+    def register_stream_processing(
         self,
         channel: str,
         topic: str,
         factory: StreamShareableProcessorFactory,
+        stream_done_cb=None,
+        **cb_kwargs,
     ):
-        self.shareable_streamer.register_processor_factory(channel, topic, factory)
+        self.shareable_streamer.register_stream_processing(channel, topic, factory, stream_done_cb, **cb_kwargs)
 
     def abort_app(self, job_id: str, fl_ctx: FLContext):
         runner = fl_ctx.get_prop(key=FLContextKey.RUNNER, default=None)

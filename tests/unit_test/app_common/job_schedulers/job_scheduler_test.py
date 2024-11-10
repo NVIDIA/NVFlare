@@ -130,6 +130,7 @@ class MockServerEngine(ServerEngineSpec):
         self,
         channel: str,
         topic: str,
+        stream_meta: dict,
         targets: List[str],
         generator: StreamShareableGenerator,
         fl_ctx: FLContext,
@@ -138,11 +139,13 @@ class MockServerEngine(ServerEngineSpec):
     ):
         pass
 
-    def register_shareable_processor_factory(
+    def register_stream_processing(
         self,
         channel: str,
         topic: str,
         factory: StreamShareableProcessorFactory,
+        stream_done_cb=None,
+        **cb_kwargs,
     ):
         pass
 

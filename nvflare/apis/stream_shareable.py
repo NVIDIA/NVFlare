@@ -16,27 +16,29 @@ from typing import Any, Dict, Tuple
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.apis.signal import Signal
+
+
+class StreamMetaKey:
+    CHANNEL = "__channel__"
+    TOPIC = "__topic__"
+    RC = "__RC__"
 
 
 class StreamShareableGenerator(ABC):
     @abstractmethod
     def get_next(
         self,
-        channel: str,
-        topic: str,
+        stream_meta: dict,
         fl_ctx: FLContext,
-        abort_signal: Signal,
     ) -> Tuple[Shareable, float]:
         """Called to generate next Shareable object to be sent.
-        If this method needs to take long time, it should check the abort_signal frequently. When aborted it should
-        quickly return.
+        If this method needs to take long time, it should check the abort_signal in the fl_ctx frequently.
+        If aborted it should return immediately.
+        You can get the abort_signal by calling fl_ctx.get_run_abort_signal().
 
         Args:
-            channel: the app channel of the stream
-            topic: the app topic of the stream
+            stream_meta: stream metadata
             fl_ctx: The FLContext object
-            abort_signal: signal to abort processing
 
         Returns: a tuple of (Shareable object to be sent, timeout for sending this object)
 
@@ -44,13 +46,18 @@ class StreamShareableGenerator(ABC):
         pass
 
     @abstractmethod
-    def process_replies(self, replies: Dict[str, Shareable], fl_ctx: FLContext, abort_signal: Signal) -> Any:
+    def process_replies(
+        self,
+        replies: Dict[str, Shareable],
+        stream_meta: dict,
+        fl_ctx: FLContext,
+    ) -> Any:
         """Called to process replies from receivers of the last Shareable object sent to them.
 
         Args:
             replies: replies from receivers. It's dict of site_name => reply
+            stream_meta: stream metadata
             fl_ctx: the FLContext object
-            abort_signal: signal to abort processing
 
         Returns: Any object or None
 
@@ -65,20 +72,16 @@ class StreamShareableProcessor(ABC):
     @abstractmethod
     def process(
         self,
-        channel: str,
-        topic: str,
         shareable: Shareable,
+        stream_meta: dict,
         fl_ctx: FLContext,
-        abort_signal: Signal,
     ) -> Tuple[bool, Shareable]:
         """Process received Shareable object in the stream.
 
         Args:
-            channel: app channel of the msg.
-            topic: app topic of the msg.
+            stream_meta: the stream metadata.
             shareable: the Shareable object to be processed
             fl_ctx: the FLContext object
-            abort_signal: signal to abort processing
 
         Returns: a tuple of (whether to continue streaming, reply message)
 
@@ -88,19 +91,62 @@ class StreamShareableProcessor(ABC):
         """
         pass
 
+    def finalize(
+        self,
+        stream_meta: dict,
+        fl_ctx: FLContext,
+    ):
+        """Called to finalize the generator.
+
+        Args:
+            stream_meta: stream metadata
+            fl_ctx: the FLContext object
+
+        Returns: None
+
+        This method is guaranteed to be called at the end of streaming.
+
+        """
+        pass
+
 
 class StreamShareableProcessorFactory(ABC):
     @abstractmethod
-    def get_processor(self, channel: str, topic: str, shareable: Shareable) -> StreamShareableProcessor:
+    def get_processor(
+        self,
+        stream_meta: dict,
+        fl_ctx: FLContext,
+    ) -> StreamShareableProcessor:
         """Get a processor to process a shareable stream.
-        This is called only when the 1st Shareable object is received for each stream.
+        This is called only when the 1st streaming object is received for each stream.
 
         Args:
-            channel: app channel
-            topic: app topic
-            shareable: the first received Shareable object
+            stream_meta: the metadata of the stream
+            fl_ctx: FLContext object
 
         Returns: a StreamShareableProcessor
 
         """
         pass
+
+    def return_processor(
+        self,
+        processor: StreamShareableProcessor,
+        stream_meta: dict,
+        fl_ctx: FLContext,
+    ):
+        """Return the processor back to the factory after a stream is finished.
+
+        Args:
+            processor: the processor to return
+            stream_meta: metadata of the stream
+            fl_ctx: FLContext object
+
+        Returns: None
+
+        """
+        pass
+
+
+def stream_done_cb_signature(stream_meta: dict, fl_ctx: FLContext, **kwargs):
+    pass

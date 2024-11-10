@@ -612,6 +612,7 @@ class ServerEngine(ServerEngineInternalSpec):
         self,
         channel: str,
         topic: str,
+        stream_meta: dict,
         targets: List[str],
         generator: StreamShareableGenerator,
         fl_ctx: FLContext,
@@ -621,6 +622,7 @@ class ServerEngine(ServerEngineInternalSpec):
         return self.run_manager.shareable_streamer.stream(
             channel=channel,
             topic=topic,
+            stream_meta=stream_meta,
             targets=self._to_aux_msg_targets(targets),
             generator=generator,
             fl_ctx=fl_ctx,
@@ -628,16 +630,16 @@ class ServerEngine(ServerEngineInternalSpec):
             optional=optional,
         )
 
-    def register_shareable_processor_factory(
+    def register_stream_processing(
         self,
         channel: str,
         topic: str,
         factory: StreamShareableProcessorFactory,
+        stream_done_cb=None,
+        **cb_kwargs,
     ):
-        self.run_manager.shareable_streamer.register_processor_factory(
-            channel=channel,
-            topic=topic,
-            factory=factory,
+        self.run_manager.shareable_streamer.register_stream_processing(
+            channel=channel, topic=topic, factory=factory, stream_done_cb=stream_done_cb, **cb_kwargs
         )
 
     def sync_clients_from_main_process(self):

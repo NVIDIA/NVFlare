@@ -170,6 +170,7 @@ class ServerEngineSpec(EngineSpec, ABC):
         self,
         channel: str,
         topic: str,
+        stream_meta: dict,
         targets: List[str],
         generator: StreamShareableGenerator,
         fl_ctx: FLContext,
@@ -181,6 +182,7 @@ class ServerEngineSpec(EngineSpec, ABC):
         Args:
             channel: the channel for this stream
             topic: topic of the stream
+            stream_meta: metadata of the stream
             targets: receiving sites
             generator: the generator that can generates the stream of Shareable objects
             fl_ctx: the FLContext object
@@ -193,11 +195,13 @@ class ServerEngineSpec(EngineSpec, ABC):
         pass
 
     @abstractmethod
-    def register_shareable_processor_factory(
+    def register_stream_processing(
         self,
         channel: str,
         topic: str,
         factory: StreamShareableProcessorFactory,
+        stream_done_cb=None,
+        **cb_kwargs,
     ):
         """Register a StreamShareableProcessorFactory for specified app channel and topic
         Once a new streaming request is received for the channel/topic, the registered factory will be used
@@ -211,6 +215,7 @@ class ServerEngineSpec(EngineSpec, ABC):
             channel: app channel
             topic: app topic
             factory: the factory to be registered
+            stream_done_cb: the callback to be called when streaming is done on receiving side
 
         Returns: None
 

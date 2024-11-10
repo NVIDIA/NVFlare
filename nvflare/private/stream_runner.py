@@ -20,14 +20,15 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
-from nvflare.apis.signal import Signal
 from nvflare.apis.stream_shareable import (
+    StreamMetaKey,
     StreamShareableGenerator,
     StreamShareableProcessor,
     StreamShareableProcessorFactory,
 )
 from nvflare.fuel.f3.cellnet.registry import Registry
 from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.validation_utils import check_callable, check_object_type, check_str
 from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
 from nvflare.security.logging import secure_format_exception
 
@@ -42,27 +43,66 @@ class HeaderKey:
     SEQ = PREFIX + "SEQ"
     TOPIC = PREFIX + "TOPIC"
     CHANNEL = PREFIX + "CHANNEL"
+    META = PREFIX + "META"
 
 
 class _ProcessorInfo:
-    def __init__(self, processor: StreamShareableProcessor):
+    def __init__(
+        self,
+        logger,
+        stream_meta: dict,
+        factory: StreamShareableProcessorFactory,
+        processor: StreamShareableProcessor,
+        stream_done_cb,
+        cb_kwargs,
+    ):
+        self.logger = logger
+        self.factory = factory
+        self.stream_meta = stream_meta
         self.processor = processor
+        self.stream_done_cb = stream_done_cb
+        self.stream_done_cb_kwargs = cb_kwargs
         self.stream_start_time = time.time()
         self.last_msg_start_time = None
         self.last_msg_end_time = None
 
     def process(
         self,
-        channel: str,
-        topic: str,
         msg: Shareable,
         fl_ctx: FLContext,
-        abort_signal: Signal,
     ):
         self.last_msg_start_time = time.time()
-        reply = self.processor.process(channel, topic, msg, fl_ctx, abort_signal)
+        reply = self.processor.process(msg, self.stream_meta, fl_ctx)
         self.last_msg_end_time = time.time()
         return reply
+
+    def stream_done(self, rc: str, fl_ctx: FLContext):
+        self.stream_meta[StreamMetaKey.RC] = rc
+        if self.stream_done_cb:
+            try:
+                self.stream_done_cb(self.stream_meta, fl_ctx, **self.stream_done_cb_kwargs)
+            except Exception as ex:
+                self.logger.error(
+                    f"exception from stream_done_cb {self.stream_done_cb.__name__}: {secure_format_exception(ex)}"
+                )
+        try:
+            self.processor.finalize(self.stream_meta, fl_ctx)
+        except Exception as ex:
+            self.logger.error(
+                f"exception finalizing processor {self.processor.__class__.__name__}: {secure_format_exception(ex)}"
+            )
+
+        try:
+            self.factory.return_processor(
+                processor=self.processor,
+                stream_meta=self.stream_meta,
+                fl_ctx=fl_ctx,
+            )
+        except Exception as ex:
+            self.logger.error(
+                f"exception returning processor to factory {self.factory.__class__.__name__}: "
+                f"{secure_format_exception(ex)}"
+            )
 
 
 class ShareableStreamer(FLComponent):
@@ -83,11 +123,13 @@ class ShareableStreamer(FLComponent):
             message_handle_func=self._handle_abort,
         )
 
-    def register_processor_factory(
+    def register_stream_processing(
         self,
         channel: str,
         topic: str,
         factory: StreamShareableProcessorFactory,
+        stream_done_cb=None,
+        **cb_kwargs,
     ):
         """Register a StreamShareableProcessorFactory for specified app channel and topic
         Once a new streaming request is received for the channel/topic, the registered factory will be used
@@ -101,11 +143,17 @@ class ShareableStreamer(FLComponent):
             channel: app channel
             topic: app topic
             factory: the factory to be registered
+            stream_done_cb: the CB to be called when a stream is done
 
         Returns: None
 
         """
-        self.registry.set(channel, topic, factory)
+        check_str("channel", channel)
+        check_str("topic", topic)
+        check_object_type("factory", factory, StreamShareableProcessorFactory)
+        if stream_done_cb is not None:
+            check_callable("stream_done_cb", stream_done_cb)
+        self.registry.set(channel, topic, (factory, stream_done_cb, cb_kwargs))
         self.logger.info(f"registered processor_factory: {channel=} {topic=} {factory.__class__.__name__}")
 
     @staticmethod
@@ -125,9 +173,12 @@ class ShareableStreamer(FLComponent):
     def debug(self, req: Shareable, msg: str):
         self.logger.debug(self._log_msg(req, msg))
 
-    def _abort_tx(self, tx_id: str):
+    def _end_tx(self, tx_id: str, rc: str, fl_ctx: FLContext):
         with self.tx_lock:
-            self.tx_table.pop(tx_id, None)
+            info = self.tx_table.pop(tx_id, None)
+
+        if info:
+            info.stream_done(rc, fl_ctx)
 
     def _handle_abort(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         self.logger.debug("abort received")
@@ -136,7 +187,7 @@ class ShareableStreamer(FLComponent):
             self.logger.error(f"missing header {HeaderKey.TX_ID}")
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
-        self._abort_tx(tx_id)
+        self._end_tx(tx_id, ReturnCode.TASK_ABORTED, fl_ctx)
         return make_reply(ReturnCode.OK)
 
     def _handle_request(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
@@ -149,29 +200,31 @@ class ShareableStreamer(FLComponent):
         topic = request.get_header(HeaderKey.TOPIC)
         if not topic:
             self.logger.error(f"missing header {HeaderKey.TOPIC}")
-            self._abort_tx(tx_id)
+            self._end_tx(tx_id, ReturnCode.BAD_REQUEST_DATA, fl_ctx)
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
         channel = request.get_header(HeaderKey.CHANNEL)
         if not channel:
             self.logger.error(f"missing header {HeaderKey.CHANNEL}")
-            self._abort_tx(tx_id)
+            self._end_tx(tx_id, ReturnCode.BAD_REQUEST_DATA, fl_ctx)
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
         seq = request.get_header(HeaderKey.SEQ)
         if seq is None:
             self.logger.error(f"missing header {HeaderKey.SEQ}")
-            self._abort_tx(tx_id)
+            self._end_tx(tx_id, ReturnCode.BAD_REQUEST_DATA, fl_ctx)
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
         if abort_signal and abort_signal.triggered:
-            self._abort_tx(tx_id)
+            self._end_tx(tx_id, ReturnCode.TASK_ABORTED, fl_ctx)
             return make_reply(ReturnCode.TASK_ABORTED)
 
-        factory = self.registry.find(channel, topic)
-        if not factory:
-            self.error(request, f"no StreamShareableProcessorFactory registered for {channel}:{topic}")
+        factory_info = self.registry.find(channel, topic)
+        if not factory_info:
+            self.error(request, f"no stream processing info registered for {channel}:{topic}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+
+        factory, stream_done_db, cb_kwargs = factory_info
 
         self.debug(request, "received stream request")
         with self.tx_lock:
@@ -180,7 +233,7 @@ class ShareableStreamer(FLComponent):
                 if seq <= 0:
                     # if we already have processor for this tx_id, then the seq number must be > 0
                     self.error(request, f"sequence error: expect > 0 but got {seq}")
-                    self._abort_tx(tx_id)
+                    self._end_tx(tx_id, ReturnCode.BAD_REQUEST_DATA, fl_ctx)
                     return make_reply(ReturnCode.BAD_REQUEST_DATA)
             else:
                 if seq != 0:
@@ -189,7 +242,12 @@ class ShareableStreamer(FLComponent):
                     return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
                 try:
-                    processor = factory.get_processor(channel, topic, request)
+                    stream_meta = request.get_header(HeaderKey.META)
+                    if not stream_meta:
+                        self.error(request, "missing stream meta in seq 0")
+                        return make_reply(ReturnCode.BAD_REQUEST_DATA)
+
+                    processor = factory.get_processor(stream_meta, fl_ctx)
                     if not processor:
                         self.error(request, f"no processor from factory {type(factory)}")
                         return make_reply(ReturnCode.EXECUTION_EXCEPTION)
@@ -202,7 +260,14 @@ class ShareableStreamer(FLComponent):
                         )
                         return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-                    info = _ProcessorInfo(processor)
+                    info = _ProcessorInfo(
+                        logger=self.logger,
+                        factory=factory,
+                        processor=processor,
+                        stream_meta=stream_meta,
+                        stream_done_cb=stream_done_db,
+                        cb_kwargs=cb_kwargs,
+                    )
                     self.tx_table[tx_id] = info
                 except Exception as ex:
                     self.error(
@@ -212,7 +277,7 @@ class ShareableStreamer(FLComponent):
 
         # process the message
         try:
-            continue_streaming, reply = info.process(channel, topic, request, fl_ctx, abort_signal=abort_signal)
+            continue_streaming, reply = info.process(request, fl_ctx)
             if not reply:
                 # ack
                 reply = make_reply(ReturnCode.OK)
@@ -229,7 +294,7 @@ class ShareableStreamer(FLComponent):
 
         if not continue_streaming:
             # remove the tx
-            self._abort_tx(tx_id)
+            self._end_tx(tx_id, rc=reply.get_return_code(), fl_ctx=fl_ctx)
 
         self.debug(request, f"send reply: {reply}")
         return reply
@@ -268,23 +333,50 @@ class ShareableStreamer(FLComponent):
         self,
         channel: str,
         topic: str,
+        stream_meta: dict,
         targets: List[AuxMsgTarget],
         generator: StreamShareableGenerator,
         fl_ctx: FLContext,
         secure=False,
         optional=False,
     ) -> Tuple[str, Any]:
+        check_str("channel", channel)
+        check_str("topic", topic)
+        check_object_type("stream_meta", stream_meta, dict)
+        check_object_type("generator", generator, StreamShareableGenerator)
+        check_object_type("fl_ctx", fl_ctx, FLContext)
+
         tx_id = str(uuid.uuid4())
         seq = 0
         abort_signal = fl_ctx.get_run_abort_signal()
+
+        if not stream_meta:
+            stream_meta = {}
+
+        if not isinstance(stream_meta, dict):
+            raise ValueError(f"stream_meta must be dict but got {type(stream_meta)}")
+
+        stream_meta[StreamMetaKey.TOPIC] = topic
+        stream_meta[StreamMetaKey.CHANNEL] = channel
+
         while True:
             if abort_signal and abort_signal.triggered:
                 if seq > 0:
                     self._notify_abort_streaming(targets, tx_id, secure, fl_ctx)
                 return ReturnCode.TASK_ABORTED, None
 
-            request, timeout = generator.get_next(channel, topic, fl_ctx, abort_signal)
-            self.logger.debug(f"got next from {generator.__class__.__name__}: {seq=} {timeout=} {tx_id=}")
+            try:
+                request, timeout = generator.get_next(stream_meta, fl_ctx)
+                self.logger.debug(f"got next from {generator.__class__.__name__}: {seq=} {timeout=} {tx_id=}")
+            except Exception as ex:
+                if seq > 0:
+                    self._notify_abort_streaming(targets, tx_id, secure, fl_ctx)
+
+                self.logger.error(
+                    f"Generator {generator.__class__.__name__} failed to produce next Shareable: "
+                    f"{secure_format_exception(ex)}"
+                )
+                raise ex
 
             if request is None:
                 # end of the streaming
@@ -317,6 +409,11 @@ class ShareableStreamer(FLComponent):
             request.set_header(HeaderKey.TOPIC, topic)
             request.set_header(HeaderKey.TX_ID, tx_id)
             request.set_header(HeaderKey.SEQ, seq)
+
+            if seq == 0:
+                # only send meta in 1st request
+                request.set_header(HeaderKey.META, stream_meta)
+
             seq += 1
 
             # broadcast the message to all targets
@@ -331,7 +428,7 @@ class ShareableStreamer(FLComponent):
             )
 
             self.logger.debug("got replies from receivers")
-            result = generator.process_replies(replies, fl_ctx, abort_signal)
+            result = generator.process_replies(replies, stream_meta, fl_ctx)
             self.logger.debug(f"got processed result from generator: {result}")
             if result is not None:
                 # this is end of the streaming
