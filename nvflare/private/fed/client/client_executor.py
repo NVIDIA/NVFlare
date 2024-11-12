@@ -418,7 +418,7 @@ class JobExecutor(ClientExecutor):
                         message=request,
                         optional=True,
                     )
-                    self.logger.info(f"Reported contents of error log to server!")
+                    self.logger.info("Reported contents of error log to server!")
 
             if return_code in [ProcessExitCode.UNSAFE_COMPONENT, ProcessExitCode.CONFIG_ERROR]:
                 request = new_cell_message(
