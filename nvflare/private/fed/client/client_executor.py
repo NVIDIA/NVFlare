@@ -396,13 +396,15 @@ class JobExecutor(ClientExecutor):
 
             self.logger.info(f"run ({job_id}): child worker process finished with RC {return_code}")
 
-            should_report_error_log = False # set this to True to report error.log to server, todo: get value from client config
+            should_report_error_log = (
+                False  # set this to True to report error log to server, todo: get value from client config
+            )
             if should_report_error_log:
                 error_log_contents = None
                 workspace_object = Workspace(root_dir=workspace, site_name=client.client_name)
                 error_log_path = workspace_object.get_app_error_log_file_path(job_id=job_id)
                 if os.path.exists(error_log_path):
-                    with open(error_log_path, 'r') as f:
+                    with open(error_log_path, "r") as f:
                         error_log_contents = f.read()
                 if error_log_contents:
                     request = new_cell_message(
@@ -416,7 +418,7 @@ class JobExecutor(ClientExecutor):
                         message=request,
                         optional=True,
                     )
-                    self.logger.info(f"Reported contents of error.log to server!")
+                    self.logger.info(f"Reported contents of error log to server!")
 
             if return_code in [ProcessExitCode.UNSAFE_COMPONENT, ProcessExitCode.CONFIG_ERROR]:
                 request = new_cell_message(
