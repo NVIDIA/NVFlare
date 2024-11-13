@@ -21,7 +21,7 @@ from typing import Any, Optional
 from urllib.parse import parse_qsl, urlencode, urlparse
 
 from nvflare.fuel.f3.comm_error import CommError
-from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.drivers.driver_params import DriverParams, SSLMode
 from nvflare.fuel.utils.argument_utils import str2bool
 from nvflare.security.logging import secure_format_exception
 
@@ -44,6 +44,7 @@ SSL_SERVER_CERT = "server.crt"
 SSL_CLIENT_PRIVATE_KEY = "client.key"
 SSL_CLIENT_CERT = "client.crt"
 SSL_ROOT_CERT = "rootCA.pem"
+CUSTOM_ROOT_CERT = "customRootCA.pem"
 
 
 def ssl_required(params: dict) -> bool:
@@ -56,32 +57,40 @@ def get_ssl_context(params: dict, ssl_server: bool) -> Optional[SSLContext]:
     if not ssl_required(params):
         return None
 
-    ca_path = params.get(DriverParams.CA_CERT.value)
+    ssl_mode = params.get(DriverParams.SSL_MODE.value, SSLMode.TWO_WAY)
     if ssl_server:
+        ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        ca_path = params.get(DriverParams.CA_CERT.value)
         cert_path = params.get(DriverParams.SERVER_CERT.value)
         key_path = params.get(DriverParams.SERVER_KEY.value)
+        if ssl_mode == SSLMode.TWO_WAY:
+            ctx.verify_mode = ssl.CERT_REQUIRED
+        else:
+            # do not require client auth
+            ctx.verify_mode = ssl.CERT_NONE
     else:
-        # cert_path = params.get(DriverParams.CLIENT_CERT.value)
-        # key_path = params.get(DriverParams.CLIENT_KEY.value)
-        cert_path = None
-        key_path = None
+        ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+        ctx.verify_mode = ssl.CERT_REQUIRED
+        if ssl_mode == SSLMode.TWO_WAY:
+            # use provisioned cert
+            ca_path = params.get(DriverParams.CA_CERT.value)
+            cert_path = params.get(DriverParams.CLIENT_CERT.value)
+            key_path = params.get(DriverParams.CLIENT_KEY.value)
+        else:
+            # one-way SSL: use custom CA cert if provided
+            ca_path = params.get(DriverParams.CUSTOM_CA_CERT)
+            if not ca_path:
+                # no custom CA cert: use provisioned CA cert
+                ca_path = params.get(DriverParams.CA_CERT.value)
+            cert_path = None
+            key_path = None
 
-    if not all([ca_path]):
+    if not ca_path:
         scheme = params.get(DriverParams.SCHEME.value, "Unknown")
         role = "Server" if ssl_server else "Client"
         raise CommError(CommError.BAD_CONFIG, f"{role} certificate parameters are missing for scheme {scheme}")
 
-    if ssl_server:
-        ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-    else:
-        ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-
     ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-    if ssl_server:
-        ctx.verify_mode = ssl.CERT_NONE
-    else:
-        ctx.verify_mode = ssl.CERT_REQUIRED
-
     ctx.check_hostname = False
     ctx.load_verify_locations(ca_path)
     if cert_path:
@@ -276,38 +285,59 @@ def get_tcp_urls(scheme: str, resources: dict) -> (str, str):
 
 
 def enhance_credential_info(params: dict):
-    # must have CA
+    """Enhance the params by loading additional cert and key from the folder that contains the CA cert.
+    This is necessary because the params initially only contains basic credentials:
+    - for server, only CA cert, and the server's cert and key;
+    - for client, only CA cert, the client's cert and key.
+
+    However, a client could also behave like a server for other processes, and could have a server cert as well.
+    This function loads all certs and keys, regardless the role of the process.
+
+    Args:
+        params: the dict that contains initial credentials
+
+    Returns: None
+
+    """
+    # Must have CA since all other certs/keys are assumed to be in the same folder as the CA cert.
     ca_path = params.get(DriverParams.CA_CERT.value)
     if not ca_path:
-        return params
+        return
 
     # assume all SSL credential files are in the same folder with CA cert
     cred_folder = os.path.dirname(ca_path)
 
     client_cert_path = params.get(DriverParams.CLIENT_CERT.value)
     if not client_cert_path:
-        # see whether the file client cert file exists
+        # see whether the client cert file exists
         client_cert_path = os.path.join(cred_folder, SSL_CLIENT_CERT)
         if os.path.exists(client_cert_path):
             params[DriverParams.CLIENT_CERT.value] = client_cert_path
 
     client_key_path = params.get(DriverParams.CLIENT_KEY.value)
     if not client_key_path:
-        # see whether the file client key file exists
+        # see whether the client key file exists
         client_key_path = os.path.join(cred_folder, SSL_CLIENT_PRIVATE_KEY)
         if os.path.exists(client_key_path):
             params[DriverParams.CLIENT_KEY.value] = client_key_path
 
     server_cert_path = params.get(DriverParams.SERVER_CERT.value)
     if not server_cert_path:
-        # see whether the file client cert file exists
+        # see whether the server cert file exists
         server_cert_path = os.path.join(cred_folder, SSL_SERVER_CERT)
         if os.path.exists(server_cert_path):
             params[DriverParams.SERVER_CERT.value] = server_cert_path
 
     server_key_path = params.get(DriverParams.SERVER_KEY.value)
     if not server_key_path:
-        # see whether the file client key file exists
+        # see whether the server key file exists
         server_key_path = os.path.join(cred_folder, SSL_SERVER_PRIVATE_KEY)
         if os.path.exists(server_key_path):
             params[DriverParams.SERVER_KEY.value] = server_key_path
+
+    custom_ca_cert_path = params.get(DriverParams.CUSTOM_CA_CERT.value)
+    if not custom_ca_cert_path:
+        # see whether the custom CA cert file exists
+        custom_ca_cert_path = os.path.join(cred_folder, CUSTOM_ROOT_CERT)
+        if os.path.exists(custom_ca_cert_path):
+            params[DriverParams.CUSTOM_CA_CERT.value] = custom_ca_cert_path

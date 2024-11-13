@@ -141,7 +141,12 @@ def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=
         add_extra_users(add_user_file_path, participants)
     if add_client_file_path:
         add_extra_clients(add_client_file_path, participants)
-    project = Project(name=project_name, description=project_description, participants=participants)
+    project = Project(
+        name=project_name,
+        description=project_description,
+        participants=participants,
+        config=project_dict,
+    )
     n_servers = len(project.get_participants_by_type("server", first_only=False))
     if n_servers > 2:
         raise ValueError(

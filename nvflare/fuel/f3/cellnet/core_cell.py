@@ -43,7 +43,7 @@ from nvflare.fuel.f3.cellnet.utils import decode_payload, encode_payload, format
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.communicator import Communicator, MessageReceiver
 from nvflare.fuel.f3.connection import Connection
-from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.drivers.driver_params import ConnectionSecurity, DriverParams
 from nvflare.fuel.f3.drivers.net_utils import enhance_credential_info
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.message import Message
@@ -330,6 +330,14 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         if err:
             raise ValueError(f"Invalid FQCN '{fqcn}': {err}")
 
+        # determine connection security
+        conn_security = credentials.get(DriverParams.CONNECTION_SECURITY.value)
+        if conn_security == ConnectionSecurity.SECURE:
+            secure = True
+        elif conn_security == ConnectionSecurity.INSECURE:
+            secure = False
+
+        self.logger.debug(f"connection secure: {secure}")
         self.my_info = FqcnInfo(FQCN.normalize(fqcn))
         self.secure = secure
         self.logger.debug(f"{self.my_info.fqcn}: max_msg_size={self.max_msg_size}")

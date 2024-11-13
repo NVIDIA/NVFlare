@@ -21,7 +21,60 @@ from typing import List
 from nvflare.apis.utils.format_check import name_check
 
 
-class Participant(object):
+class PropKey:
+    CONN_SECURITY = "connection_security"
+    CUSTOM_CA_CERT = "custom_ca_cert"
+    SSL_MODE = "ssl_mode"
+
+
+class SSLMode:
+    ONE_WAY = "one_way"
+    TWO_WAY = "two_way"
+
+
+class ConnSecurity:
+    INSECURE = "insecure"
+    SECURE = "secure"
+
+
+class ConfigEntity:
+    def __init__(self, props):
+        self.props = props
+        self.ssl_mode = None
+        self.conn_security = None
+        self.custom_ca_cert = None
+
+        # validate properties
+        conn_security = self.get_prop(PropKey.CONN_SECURITY)
+        if conn_security:
+            valid_values = [ConnSecurity.SECURE, ConnSecurity.INSECURE]
+            if conn_security not in valid_values:
+                raise ValueError(
+                    f"invalid value for {PropKey.CONN_SECURITY}: {conn_security}. Must be one of {valid_values}"
+                )
+        self.conn_security = conn_security
+
+        ssl_mode = self.get_prop(PropKey.SSL_MODE)
+        if ssl_mode:
+            valid_values = [SSLMode.TWO_WAY, SSLMode.ONE_WAY]
+            if ssl_mode not in valid_values:
+                raise ValueError(f"invalid value for {PropKey.SSL_MODE}: {ssl_mode}. Must be one of {valid_values}")
+        self.ssl_mode = ssl_mode
+
+        custom_ca_cert = self.get_prop(PropKey.CUSTOM_CA_CERT)
+        if custom_ca_cert:
+            if not os.path.isfile(custom_ca_cert):
+                raise ValueError(f"specified {PropKey.CUSTOM_CA_CERT} {custom_ca_cert} is not a valid file.")
+            _, file_extension = os.path.splitext(custom_ca_cert)
+            if file_extension != ".pem":
+                raise ValueError(f"specified {PropKey.CUSTOM_CA_CERT} {custom_ca_cert} must have '.pem' extension.")
+        self.custom_ca_cert = custom_ca_cert
+
+    def get_prop(self, key: str, default=None):
+        return self.props.get(key, default)
+
+
+class Participant(ConfigEntity):
     def __init__(self, type: str, name: str, org: str, enable_byoc: bool = False, *args, **kwargs):
         """Class to represent a participant.
 
@@ -37,6 +90,7 @@ class Participant(object):
         Raises:
             ValueError: if name or org is not compliant with characters or format specification.
         """
+        ConfigEntity.__init__(self, kwargs)
         err, reason = name_check(name, type)
         if err:
             raise ValueError(reason)
@@ -48,11 +102,10 @@ class Participant(object):
         self.org = org
         self.subject = name
         self.enable_byoc = enable_byoc
-        self.props = kwargs
 
 
-class Project(object):
-    def __init__(self, name: str, description: str, participants: List[Participant]):
+class Project(ConfigEntity):
+    def __init__(self, name: str, description: str, participants: List[Participant], config: dict):
         """A container class to hold information about this FL project.
 
         This class only holds information.  It does not drive the workflow.
@@ -61,10 +114,12 @@ class Project(object):
             name (str): the project name
             description (str): brief description on this name
             participants (List[Participant]): All the participants that will join this project
+            config: the whole config dict of the project
 
         Raises:
             ValueError: when duplicate name found in participants list
         """
+        ConfigEntity.__init__(self, config)
         self.name = name
         all_names = list()
         for p in participants:
@@ -163,7 +218,12 @@ class Provisioner(object):
     def provision(self, project: Project):
         # ctx = {"workspace": os.path.join(self.root_dir, project.name), "project": project}
         workspace = os.path.join(self.root_dir, project.name)
-        ctx = {"workspace": workspace}  # project is more static information while ctx is dynamic
+
+        # project is more static information while ctx is dynamic
+        ctx = {
+            "workspace": workspace,
+            "project": project,
+        }
         self._prepare_workspace(ctx)
         try:
             for b in self.builders:

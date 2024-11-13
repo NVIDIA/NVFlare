@@ -187,6 +187,14 @@ class FederatedClientBase:
                 DriverParams.CLIENT_CERT.value: ssl_cert,
                 DriverParams.CLIENT_KEY.value: private_key,
             }
+
+            ssl_mode = self.client_args.get(SecureTrainConst.SSL_MODE)
+            if ssl_mode:
+                credentials[DriverParams.SSL_MODE.value] = ssl_mode
+
+            conn_security = self.client_args.get(SecureTrainConst.CONNECTION_SECURITY)
+            if conn_security:
+                credentials[DriverParams.CONNECTION_SECURITY.value] = conn_security
         else:
             credentials = {}
         self.cell = Cell(

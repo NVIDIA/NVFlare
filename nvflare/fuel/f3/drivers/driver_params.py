@@ -33,12 +33,25 @@ class DriverParams(str, Enum):
     SERVER_KEY = "server_key"
     CLIENT_CERT = "client_cert"
     CLIENT_KEY = "client_key"
+    SSL_MODE = "ssl_mode"
+    CONNECTION_SECURITY = "connection_security"
+    CUSTOM_CA_CERT = "custom_ca_cert"
     SECURE = "secure"
     PORTS = "ports"
     SOCKET = "socket"
     LOCAL_ADDR = "local_addr"
     PEER_ADDR = "peer_addr"
     PEER_CN = "peer_cn"
+
+
+class ConnectionSecurity:
+    INSECURE = "insecure"
+    SECURE = "secure"
+
+
+class SSLMode:
+    ONE_WAY = "one_way"
+    TWO_WAY = "two_way"
 
 
 class DriverCap(str, Enum):

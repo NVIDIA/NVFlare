@@ -14,7 +14,7 @@
 import grpc
 
 from nvflare.fuel.f3.comm_config import CommConfigurator
-from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.drivers.driver_params import DriverParams, SSLMode
 
 
 def use_aio_grpc():
@@ -23,14 +23,29 @@ def use_aio_grpc():
 
 
 def get_grpc_client_credentials(params: dict):
-    root_cert = _read_file(params.get(DriverParams.CA_CERT.value))
-    cert_chain = _read_file(params.get(DriverParams.CLIENT_CERT))
-    private_key = _read_file(params.get(DriverParams.CLIENT_KEY))
-    # return grpc.ssl_channel_credentials(
-    #     certificate_chain=cert_chain, private_key=private_key, root_certificates=root_cert
-    # )
-    print("SUPPORT 1-WAY SSL!!!")
-    return grpc.ssl_channel_credentials(root_certificates=root_cert)
+    ssl_mode = params.get(DriverParams.SSL_MODE.value, SSLMode.TWO_WAY)
+    if ssl_mode == SSLMode.TWO_WAY:
+        # For two-way SSL, we always use our own provisioned certs.
+        # In the future, we may change to also support other ways to get cert and key.
+        root_cert = _read_file(params.get(DriverParams.CA_CERT.value))
+        cert_chain = _read_file(params.get(DriverParams.CLIENT_CERT))
+        private_key = _read_file(params.get(DriverParams.CLIENT_KEY))
+        return grpc.ssl_channel_credentials(
+            certificate_chain=cert_chain, private_key=private_key, root_certificates=root_cert
+        )
+    else:
+        # One-way SSL
+        # For one-way SSL, only CA cert is needed, and no need for client cert and key.
+        # We try to use custom CA cert if it's provided. This is because the client may connect to ALB or proxy
+        # that provides its CA cert to the client.
+        # If the custom CA cert is not provided, we'll use Flare provisioned CA cert.
+        root_cert_file = params.get(DriverParams.CUSTOM_CA_CERT)
+        if not root_cert_file:
+            root_cert_file = params.get(DriverParams.CA_CERT.value)
+        if not root_cert_file:
+            raise ValueError(f"cannot get CA cert for one-way SSL: {params}")
+        root_cert = _read_file(root_cert_file)
+        return grpc.ssl_channel_credentials(root_certificates=root_cert)
 
 
 def get_grpc_server_credentials(params: dict):
@@ -38,10 +53,13 @@ def get_grpc_server_credentials(params: dict):
     cert_chain = _read_file(params.get(DriverParams.SERVER_CERT))
     private_key = _read_file(params.get(DriverParams.SERVER_KEY))
 
+    ssl_mode = params.get(DriverParams.SSL_MODE.value, SSLMode.TWO_WAY)
+    require_client_auth = False if ssl_mode == SSLMode.ONE_WAY else True
+
     return grpc.ssl_server_credentials(
         [(private_key, cert_chain)],
         root_certificates=root_cert,
-        require_client_auth=False,
+        require_client_auth=require_client_auth,
     )
 
 
