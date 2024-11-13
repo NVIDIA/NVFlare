@@ -22,20 +22,18 @@ from nvflare.apis.dxo import DXO, DataKind, MetaKey
 from nvflare.apis.dxo_filter import DXOFilter
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.app_opt.compression.constant import COMPRESSION_TYPE, DATA_TYPE
+from nvflare.app_opt.quantization.constant import DATA_TYPE, QUANTIZATION_TYPE
 
 
-class ModelCompressor(DXOFilter):
+class ModelQuantizator(DXOFilter):
     def __init__(
         self,
-        source_data_type="float32",
-        compression_type="float16",
+        quantization_type="float16",
     ):
-        """Filter to compress Shareable object to reduce communication burden.
+        """Filter to quantize Shareable object to reduce communication burden.
 
         Args:
-            source_data_type: original data type of the model
-            compression_type: method used for compression
+            quantization_type: method used for quantization
 
         """
 
@@ -43,41 +41,41 @@ class ModelCompressor(DXOFilter):
         data_kinds = [DataKind.WEIGHTS, DataKind.WEIGHT_DIFF]
         super().__init__(supported_data_kinds=data_kinds, data_kinds_to_filter=data_kinds)
 
-        # assign data and compression types
-        self.logger.info("Using model compressor.")
-        # check if source data type is valid
-        if source_data_type.upper() not in DATA_TYPE:
-            raise ValueError(f"Invalid source data type: {source_data_type}")
+        # assign quantization type and check if it is valid
+        self.logger.info("Using model quantizator.")
+        if quantization_type.upper() not in QUANTIZATION_TYPE:
+            raise ValueError(f"Invalid quantization type: {quantization_type}")
         else:
-            self.source_data_type = source_data_type
-        # check if compression type is valid
-        if compression_type.upper() not in COMPRESSION_TYPE:
-            raise ValueError(f"Invalid compression type: {compression_type}")
-        else:
-            self.compression_type = compression_type
-        # compression constants
-        self.FP16_MIN = np.finfo(np.float32).min
-        self.FP16_MAX = np.finfo(np.float32).max
+            self.quantization_type = quantization_type
 
-    def compression(self, params: dict, fl_ctx: FLContext):
+        # quantization constants
+        self.FP16_MIN = np.finfo(np.float16).min
+        self.FP16_MAX = np.finfo(np.float16).max
+
+    def quantization(self, params: dict, fl_ctx: FLContext):
         n_params = len(params.keys())
-        self.log_info(fl_ctx, f"Running compression {n_params} variables")
+        self.log_info(fl_ctx, f"Running quantization on {n_params} variables")
         n_bytes_before = 0
         n_bytes_after = 0
         n_bytes_meta = 0
         quant_state = {"absmax": {}, "codebook": {}}
         for i, param_name in enumerate(params.keys()):
             values = params[param_name]
+            # check the data type of the values and if it is valid
+            source_data_type = values.dtype.name
+            if source_data_type.upper() not in DATA_TYPE:
+                raise ValueError(f"Invalid source data type: {source_data_type}")
+            # add the number of bytes of the values
             n_bytes_before += values.nbytes
-            if self.source_data_type == "float32":
-                if self.compression_type == "float16":
+            if source_data_type == "float32":
+                if self.quantization_type == "float16":
                     # first clamp the values to the range of float16
                     values = np.clip(values, self.FP16_MIN, self.FP16_MAX)
                     # then convert to float16
                     values = values.astype(np.float16)
                     n_bytes_after += values.nbytes
                     params[param_name] = values
-                elif self.compression_type == "blockwise8":
+                elif self.quantization_type == "blockwise8":
                     # use bitsandbytes to quantize the values
                     # input is a tensor, output is a tuple of (quantized tensor, (absmax, codebook))
                     # first convert numpy array to tensor
@@ -98,9 +96,9 @@ class ModelCompressor(DXOFilter):
 
         self.log_info(
             fl_ctx,
-            f"Compressed all {n_params} params"
-            f" Before compression: {n_bytes_before} bytes"
-            f" After compression: {n_bytes_after} bytes with meta: {n_bytes_meta} bytes",
+            f"Quantized all {n_params} params."
+            f" Before quantization: {n_bytes_before} bytes."
+            f" After quantization: {n_bytes_after} bytes with meta: {n_bytes_meta} bytes.",
         )
         return params, quant_state
 
@@ -112,17 +110,17 @@ class ModelCompressor(DXOFilter):
             shareable: that the dxo belongs to
             fl_ctx: FLContext
 
-        Returns: DXO object with compressed weights
+        Returns: DXO object with quantized weights
 
         """
 
-        self.log_info(fl_ctx, "Running compression...")
-        compressed_params, quant_state = self.compression(params=dxo.data, fl_ctx=fl_ctx)
-        # Compose new DXO with compressed data
+        self.log_info(fl_ctx, "Running quantization...")
+        quantized_params, quant_state = self.quantization(params=dxo.data, fl_ctx=fl_ctx)
+        # Compose new DXO with quantized data
         # Add quant_state to the new DXO meta
-        new_dxo = DXO(data_kind=dxo.data_kind, data=compressed_params, meta=dxo.meta)
-        new_dxo.set_meta_prop(key=MetaKey.PROCESSED_ALGORITHM, value=self.compression_type)
+        new_dxo = DXO(data_kind=dxo.data_kind, data=quantized_params, meta=dxo.meta)
+        new_dxo.set_meta_prop(key=MetaKey.PROCESSED_ALGORITHM, value=self.quantization_type)
         new_dxo.set_meta_prop(key="quant_state", value=quant_state)
-        self.log_info(fl_ctx, f"Compressed from {self.source_data_type} with {self.compression_type}")
+        self.log_info(fl_ctx, f"Quantized to {self.quantization_type}")
 
         return new_dxo

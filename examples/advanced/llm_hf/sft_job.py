@@ -15,10 +15,12 @@
 import argparse
 import os
 
-from nvflare import FedJob
+from nvflare import FedJob, FilterType
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+from nvflare.app_opt.quantization.model_dequantizator import ModelDequantizator
+from nvflare.app_opt.quantization.model_quantizator import ModelQuantizator
 from nvflare.job_config.script_runner import ScriptRunner
 
 
@@ -62,6 +64,13 @@ def main():
     )
     job.to(controller, "server")
 
+    if args.quantize_mode:
+        # If using quantization, add quantize filters.
+        quantizator = ModelQuantizator(quantization_type=args.quantize_mode)
+        dequantizator = ModelDequantizator(source_data_type="float32")
+        job.to(quantizator, "server", tasks=["train"], filter_type=FilterType.TASK_DATA)
+        job.to(dequantizator, "server", tasks=["train"], filter_type=FilterType.TASK_RESULT)
+
     # Define the model persistor and send to server
     # First send the model to the server
     job.to("src/hf_sft_model.py", "server")
@@ -83,6 +92,9 @@ def main():
             script_args=f"--model_name_or_path {model_name_or_path} --data_path_train {data_path_train} --data_path_valid {data_path_valid} --output_path {output_path} --train_mode {train_mode} --clean_up {clean_up}",
         )
         job.to(runner, site_name, tasks=["train"])
+        if args.quantize_mode:
+            job.to(quantizator, site_name, tasks=["train"], filter_type=FilterType.TASK_RESULT)
+            job.to(dequantizator, site_name, tasks=["train"], filter_type=FilterType.TASK_DATA)
 
     # Export the job
     print("job_dir=", job_dir)
@@ -138,6 +150,12 @@ def define_parser():
         type=str,
         default="SFT",
         help="training mode, SFT or PEFT, default to SFT",
+    )
+    parser.add_argument(
+        "--quantize_mode",
+        type=str,
+        default=None,
+        help="quantization mode, float16 or blockwise8, default to None (no quantization)",
     )
     parser.add_argument(
         "--threads",

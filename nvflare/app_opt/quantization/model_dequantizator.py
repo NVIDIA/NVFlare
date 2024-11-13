@@ -22,20 +22,15 @@ from nvflare.apis.dxo import DXO, DataKind, MetaKey
 from nvflare.apis.dxo_filter import DXOFilter
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.app_opt.compression.constant import COMPRESSION_TYPE, DATA_TYPE
+from nvflare.app_opt.quantization.constant import DATA_TYPE, QUANTIZATION_TYPE
 
 
-class ModelExtractor(DXOFilter):
-    def __init__(
-        self,
-        source_data_type="float32",
-        compression_type="float16",
-    ):
-        """Filter to extract Shareable object to recover from compression
+class ModelDequantizator(DXOFilter):
+    def __init__(self, source_data_type="float32"):
+        """Filter to dequantize Shareable object to recover from quantization
 
         Args:
             source_data_type: original data type of the model
-            compression_type: method used for compression
 
         """
 
@@ -43,35 +38,29 @@ class ModelExtractor(DXOFilter):
         data_kinds = [DataKind.WEIGHTS, DataKind.WEIGHT_DIFF]
         super().__init__(supported_data_kinds=data_kinds, data_kinds_to_filter=data_kinds)
 
-        # assign data and compression types
-        self.logger.info("Using model extractor.")
-        # check if source data type is valid
+        # assign data type and check if it is valid
+        self.logger.info("Using model dequantizator.")
         if source_data_type.upper() not in DATA_TYPE:
             raise ValueError(f"Invalid source data type: {source_data_type}")
         else:
             self.source_data_type = source_data_type
-        # check if compression type is valid
-        if compression_type.upper() not in COMPRESSION_TYPE:
-            raise ValueError(f"Invalid compression type: {compression_type}")
-        else:
-            self.compression_type = compression_type
 
-    def extraction(self, params: dict, quant_state: dict, fl_ctx: FLContext):
+    def dequantization(self, params: dict, quant_state: dict, fl_ctx: FLContext):
         n_params = len(params.keys())
-        self.log_info(fl_ctx, f"Running extraction {n_params} variables")
+        self.log_info(fl_ctx, f"Running dequantization on {n_params} variables")
         n_bytes_before = 0
         n_bytes_after = 0
         n_bytes_meta = 0
         for i, param_name in enumerate(params.keys()):
             if self.source_data_type == "float32":
-                if self.compression_type == "float16":
+                if self.quantization_type == "float16":
                     # direct convert
                     values = params[param_name]
                     n_bytes_before += values.nbytes
                     values = values.astype(np.float32)
                     n_bytes_after += values.nbytes
                     params[param_name] = values
-                elif self.compression_type == "blockwise8":
+                elif self.quantization_type == "blockwise8":
                     # extract necessary values
                     values = params[param_name]
                     n_bytes_before += values.nbytes
@@ -87,12 +76,12 @@ class ModelExtractor(DXOFilter):
                         quantized, absmax=absmax, code=codebook, blocksize=4096, nested=False
                     )
                     n_bytes_after += dequantized.nbytes
-                    params[param_name] = dequantized
+                    params[param_name] = dequantized.numpy()
         self.log_info(
             fl_ctx,
-            f"Extracted all {n_params} params"
-            f" Before extraction: {n_bytes_before} bytes with meta: {n_bytes_meta} bytes"
-            f" After extraction: {n_bytes_after} bytes",
+            f"Dequantized all {n_params} params."
+            f" Before dequantization: {n_bytes_before} bytes with meta: {n_bytes_meta} bytes."
+            f" After dequantization: {n_bytes_after} bytes.",
         )
         return params
 
@@ -104,26 +93,25 @@ class ModelExtractor(DXOFilter):
             shareable: that the dxo belongs to
             fl_ctx: FLContext
 
-        Returns: DXO object with extracted weights
+        Returns: DXO object with dequantized weights
 
         """
 
-        self.log_info(fl_ctx, "Running extraction...")
+        self.log_info(fl_ctx, "Running dequantization...")
 
         # check config
-        compression_type = dxo.get_meta_prop(key=MetaKey.PROCESSED_ALGORITHM, default=None)
-        if compression_type != self.compression_type:
-            self.log_error(
-                fl_ctx, f"shareable compression mode misalign! dxo with {compression_type}, not {self.compression_type}"
-            )
-            return None
+        quantization_type = dxo.get_meta_prop(key=MetaKey.PROCESSED_ALGORITHM, default=None)
+        if quantization_type.upper() not in QUANTIZATION_TYPE:
+            raise ValueError(f"Invalid quantization type: {quantization_type}")
+        else:
+            self.quantization_type = quantization_type
 
-        extracted_params = self.extraction(params=dxo.data, quant_state=dxo.meta["quant_state"], fl_ctx=fl_ctx)
-        # Compose new DXO with extracted data
-        dxo.data = extracted_params
+        dequantized_params = self.dequantization(params=dxo.data, quant_state=dxo.meta["quant_state"], fl_ctx=fl_ctx)
+        # Compose new DXO with dequantized data
+        dxo.data = dequantized_params
         dxo.remove_meta_props(MetaKey.PROCESSED_ALGORITHM)
         dxo.remove_meta_props("quant_state")
         dxo.update_shareable(shareable)
-        self.log_info(fl_ctx, f"Extracted {self.compression_type} to {self.source_data_type}")
+        self.log_info(fl_ctx, f"Dequantized back to {self.source_data_type}")
 
         return dxo

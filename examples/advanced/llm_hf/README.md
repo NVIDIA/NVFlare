@@ -11,7 +11,7 @@ For PEFT, we used LoRA method, other PEFT methods (e.g. p-tuning, prompt-tuning)
 We would like to showcase three key points in this example:
 - Adapt local HuggingFace training scripts, both SFT and PEFT, to federated application
 - Handling large model weights (~6 GB for Llama-3.2-1B model with float32 precision for communication), which is beyond protobuf's 2 GB hard limit. It is supported by NVFlare infrastructure via streaming, and does not need any code change.
-- Use NVFlare's filter functionality to enable model compression and precision conversion for communication, which can significantly reduce the message size and is thus important for communicating LLM updates.  
+- Use NVFlare's filter functionality to enable model quantization and precision conversion for communication, which can significantly reduce the message size and is thus important for communicating LLM updates.  
 
 We conducted these experiments on a single 48GB RTX 6000 Ada GPU. 
 
@@ -101,20 +101,20 @@ Similar patterns can be observed from the PEFT curves, purple for centralized re
 ## Model Precision Conversion for Communication
 In the above example, we used float32 for communication. To reduce the message size, we can use model precision conversion from float32 to float16 for communication. Model conversion is enabled by NVFlare's [filter mechanism](https://nvflare.readthedocs.io/en/main/programming_guide/filters.html). We can use the following command to run the federated training with model precision conversion:
 ```
-python3 sft_job_compress.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_compress --job_dir ${PWD}/workspace/jobs/hf_sft_compress --train_mode SFT
-python3 sft_job_compress.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_peft_compress --job_dir ${PWD}/workspace/jobs/hf_peft_compress --train_mode PEFT
+python3 sft_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_quantize --job_dir ${PWD}/workspace/jobs/hf_sft_quantize --train_mode SFT --quantize_mode float16
+python3 sft_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_peft_quantize --job_dir ${PWD}/workspace/jobs/hf_peft_quantize --train_mode PEFT --quantize_mode float16
 ```
-The SFT curves are shown below, black for centralized results, yellow for FL training with compression. We can see it achieves similar alignment with centralized result.
+The SFT curves are shown below, black for centralized results, yellow for FL training with quantization. We can see it achieves similar alignment with centralized result.
 ![sft](./figs/fl_sft_comp.png)
 
-Similar patterns can be observed from the PEFT curves, purple for centralized results, black for FL training with compression.
+Similar patterns can be observed from the PEFT curves, purple for centralized results, black for FL training with quantization.
 ![peft](./figs/fl_peft_comp.png)
 
 Further, we utilize the blockwise 8-bit quantization by [bitsandbytes](https://github.com/bitsandbytes-foundation/bitsandbytes/tree/main) for communication. We can use the following command to run the federated training with 8-bit quantization:
 ```
-python3 sft_job_compress.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_compress_8 --job_dir ${PWD}/workspace/jobs/hf_sft_compress --train_mode SFT --compress_mode blockwise8
+python3 sft_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_quantize_8 --job_dir ${PWD}/workspace/jobs/hf_sft_quantize --train_mode SFT --quantize_mode blockwise8
 ```
-Similarly for SFT, the training loss curves are shown below, black for centralized results, green for FL training with compression.
+Similarly for SFT, the training loss curves are shown below, black for centralized results, green for FL training with quantization.
 ![sft](./figs/fl_sft_comp_8.png)
 
 These results show that model precision conversion / quantization does not significantly impact the training while reducing the message size to 1/2 and 1/4. Thus, it can be important for communicating LLM updates.
@@ -122,11 +122,11 @@ We can also see that the PEFT training loss curves are more aligned than SFT, wh
 
 For message reduce, for float32 to float16 conversion, the message size is reduced by 2 times. The message size is reduced from 6GB to 3GB for Llama-3.2-1B model according to the log.
 ```shell
-Compressed all 147 params Before compression: 5993930752 bytes After compression: 2996965376 bytes
+Quantized all 147 params. Before quantization: 5993930752 bytes. After quantization: 2996965376 bytes with meta: 0 bytes.
 ```
 For 8-bit quantization, the message size is reduced by 4 times. The message size is reduced from 6GB to 1.5GB for Llama-3.2-1B model according to the log.
 ```shell
-Compressed all 147 params Before compression: 5993930752 bytes After compression: 1498482688 bytes with meta: 1613956 bytes
+Quantized all 147 params. Before quantization: 5993930752 bytes. After quantization: 1498482688 bytes with meta: 1613956 bytes.
 ```
 
 ## Federated Training with Multiple Clients
