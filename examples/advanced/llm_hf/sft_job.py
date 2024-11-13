@@ -19,8 +19,8 @@ from nvflare import FedJob, FilterType
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
-from nvflare.app_opt.quantization.model_dequantizator import ModelDequantizator
-from nvflare.app_opt.quantization.model_quantizator import ModelQuantizator
+from nvflare.app_opt.quantization.model_dequantizor import ModelDequantizor
+from nvflare.app_opt.quantization.model_quantizor import ModelQuantizor
 from nvflare.job_config.script_runner import ScriptRunner
 
 
@@ -66,10 +66,10 @@ def main():
 
     if args.quantize_mode:
         # If using quantization, add quantize filters.
-        quantizator = ModelQuantizator(quantization_type=args.quantize_mode)
-        dequantizator = ModelDequantizator(source_data_type="float32")
-        job.to(quantizator, "server", tasks=["train"], filter_type=FilterType.TASK_DATA)
-        job.to(dequantizator, "server", tasks=["train"], filter_type=FilterType.TASK_RESULT)
+        quantizor = ModelQuantizor(quantization_type=args.quantize_mode)
+        dequantizor = ModelDequantizor(source_data_type="float32")
+        job.to(quantizor, "server", tasks=["train"], filter_type=FilterType.TASK_DATA)
+        job.to(dequantizor, "server", tasks=["train"], filter_type=FilterType.TASK_RESULT)
 
     # Define the model persistor and send to server
     # First send the model to the server
@@ -93,8 +93,8 @@ def main():
         )
         job.to(runner, site_name, tasks=["train"])
         if args.quantize_mode:
-            job.to(quantizator, site_name, tasks=["train"], filter_type=FilterType.TASK_RESULT)
-            job.to(dequantizator, site_name, tasks=["train"], filter_type=FilterType.TASK_DATA)
+            job.to(quantizor, site_name, tasks=["train"], filter_type=FilterType.TASK_RESULT)
+            job.to(dequantizor, site_name, tasks=["train"], filter_type=FilterType.TASK_DATA)
 
     # Export the job
     print("job_dir=", job_dir)

@@ -25,7 +25,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.app_opt.quantization.constant import DATA_TYPE, QUANTIZATION_TYPE
 
 
-class ModelQuantizator(DXOFilter):
+class ModelQuantizor(DXOFilter):
     def __init__(
         self,
         quantization_type="float16",
