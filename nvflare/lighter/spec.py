@@ -35,6 +35,9 @@ class ConnSecurity:
 
 class ConfigEntity:
     def __init__(self, props):
+        if not props:
+            props = {}
+
         self.props = props
         self.conn_security = None
         self.custom_ca_cert = None
@@ -101,7 +104,7 @@ class Participant(ConfigEntity):
 
 
 class Project(ConfigEntity):
-    def __init__(self, name: str, description: str, participants: List[Participant], config: dict):
+    def __init__(self, name: str, description: str, participants: List[Participant], config: dict = None):
         """A container class to hold information about this FL project.
 
         This class only holds information.  It does not drive the workflow.

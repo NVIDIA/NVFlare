@@ -51,35 +51,11 @@ from .app_authz import AppAuthzService
 
 def add_logfile_handler(log_file):
     root_logger = logging.getLogger()
-
-    conf_handlers = root_logger.handlers
-    num_conf_handlers = len(conf_handlers)
-    print(f"configured handlers: {num_conf_handlers}")
-
-    conf_err_handler = None
-    if num_conf_handlers >= 2:
-        conf_err_handler = conf_handlers[1]
-        print(f"conf_err_handler type: {type(conf_err_handler)} {conf_err_handler.name=}")
-
-    main_handler = conf_handlers[0]
+    main_handler = root_logger.handlers[0]
     file_handler = RotatingFileHandler(log_file, maxBytes=20 * 1024 * 1024, backupCount=10)
     file_handler.setLevel(main_handler.level)
     file_handler.setFormatter(main_handler.formatter)
     root_logger.addHandler(file_handler)
-
-    if not conf_err_handler:
-        return
-
-    # compute error log file name based on log_file (a/b/c/log.txt => a/b/c/error.log)
-    err_file = os.path.join(os.path.dirname(log_file), "error.txt")
-    print(f"error log file: {err_file=}")
-    print(f"configured err handler level: {conf_err_handler.level}")
-    err_file_handler = RotatingFileHandler(err_file, maxBytes=20 * 1024 * 1024, backupCount=10)
-    err_file_handler.setLevel(conf_err_handler.level)
-    err_file_handler.setFormatter(conf_err_handler.formatter)
-    root_logger.removeHandler(conf_err_handler)
-    root_logger.addHandler(err_file_handler)
-    print("added err_file_handler")
 
 
 def _check_secure_content(site_type: str) -> List[str]:
