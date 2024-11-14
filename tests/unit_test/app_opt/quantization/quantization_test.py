@@ -22,9 +22,9 @@ from nvflare.app_opt.quantization.model_quantizor import ModelQuantizor
 
 TEST_CASES = [
     (
-        {"a": np.array([1.0, 2.0, 3.0, 4.0], dtype="float32")},
+        {"a": np.array([1.0, 2.0, 3.0, 70000.0], dtype="float32")},
         "float16",
-        {"a": np.array([1.0, 2.0, 3.0, 4.0], dtype="float32")},
+        {"a": np.array([1.0, 2.0, 3.0, 65504.0], dtype="float32")},
     ),
     (
         {"a": np.array([1.0, 2.0, 3.0, 4.0], dtype="float32")},
