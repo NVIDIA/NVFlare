@@ -21,7 +21,7 @@ from typing import Any, Optional
 from urllib.parse import parse_qsl, urlencode, urlparse
 
 from nvflare.fuel.f3.comm_error import CommError
-from nvflare.fuel.f3.drivers.driver_params import DriverParams, SSLMode
+from nvflare.fuel.f3.drivers.driver_params import ConnectionSecurity, DriverParams
 from nvflare.fuel.utils.argument_utils import str2bool
 from nvflare.security.logging import secure_format_exception
 
@@ -55,35 +55,41 @@ def ssl_required(params: dict) -> bool:
 
 def get_ssl_context(params: dict, ssl_server: bool) -> Optional[SSLContext]:
     if not ssl_required(params):
+        params["conn_sec"] = "clear"
         return None
 
-    ssl_mode = params.get(DriverParams.SSL_MODE.value, SSLMode.TWO_WAY)
+    conn_security = params.get(DriverParams.CONNECTION_SECURITY.value, ConnectionSecurity.MTLS)
     if ssl_server:
         ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
         ca_path = params.get(DriverParams.CA_CERT.value)
         cert_path = params.get(DriverParams.SERVER_CERT.value)
         key_path = params.get(DriverParams.SERVER_KEY.value)
-        if ssl_mode == SSLMode.TWO_WAY:
-            ctx.verify_mode = ssl.CERT_REQUIRED
-        else:
+        if conn_security == ConnectionSecurity.TLS:
             # do not require client auth
             ctx.verify_mode = ssl.CERT_NONE
+            params["conn_sec"] = "server TLS: client auth not required"
+        else:
+            ctx.verify_mode = ssl.CERT_REQUIRED
+            params["conn_sec"] = "server mTLS: client auth required"
     else:
         ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
         ctx.verify_mode = ssl.CERT_REQUIRED
-        if ssl_mode == SSLMode.TWO_WAY:
-            # use provisioned cert
-            ca_path = params.get(DriverParams.CA_CERT.value)
-            cert_path = params.get(DriverParams.CLIENT_CERT.value)
-            key_path = params.get(DriverParams.CLIENT_KEY.value)
-        else:
+        if conn_security == ConnectionSecurity.TLS:
             # one-way SSL: use custom CA cert if provided
+            params["conn_sec"] = "client TLS: Custom CA Cert used"
             ca_path = params.get(DriverParams.CUSTOM_CA_CERT)
             if not ca_path:
                 # no custom CA cert: use provisioned CA cert
                 ca_path = params.get(DriverParams.CA_CERT.value)
+                params["conn_sec"] = "client TLS: Flare CA Cert used"
             cert_path = None
             key_path = None
+        else:
+            # two-way SSL: use provisioned cert
+            ca_path = params.get(DriverParams.CA_CERT.value)
+            cert_path = params.get(DriverParams.CLIENT_CERT.value)
+            key_path = params.get(DriverParams.CLIENT_KEY.value)
+            params["conn_sec"] = "client mTLS: Flare credentials used"
 
     if not ca_path:
         scheme = params.get(DriverParams.SCHEME.value, "Unknown")

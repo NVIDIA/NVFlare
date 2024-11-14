@@ -160,10 +160,6 @@ class BaseServer(ABC):
                 DriverParams.SERVER_KEY.value: private_key,
             }
 
-            ssl_mode = grpc_args.get(SecureTrainConst.SSL_MODE)
-            if ssl_mode:
-                credentials[DriverParams.SSL_MODE.value] = ssl_mode
-
             conn_security = grpc_args.get(SecureTrainConst.CONNECTION_SECURITY)
             if conn_security:
                 credentials[DriverParams.CONNECTION_SECURITY.value] = conn_security
@@ -418,10 +414,6 @@ class FederatedServer(BaseServer):
                 DriverParams.SERVER_CERT.value: ssl_cert,
                 DriverParams.SERVER_KEY.value: private_key,
             }
-
-            ssl_mode = server_config.get(SecureTrainConst.SSL_MODE)
-            if ssl_mode:
-                credentials[DriverParams.SSL_MODE.value] = ssl_mode
 
             conn_security = server_config.get(SecureTrainConst.CONNECTION_SECURITY)
             if conn_security:

@@ -24,42 +24,38 @@ from nvflare.apis.utils.format_check import name_check
 class PropKey:
     CONN_SECURITY = "connection_security"
     CUSTOM_CA_CERT = "custom_ca_cert"
-    SSL_MODE = "ssl_mode"
-
-
-class SSLMode:
-    ONE_WAY = "one_way"
-    TWO_WAY = "two_way"
 
 
 class ConnSecurity:
+    CLEAR = "clear"
     INSECURE = "insecure"
-    SECURE = "secure"
+    TLS = "tls"
+    MTLS = "mtls"
 
 
 class ConfigEntity:
     def __init__(self, props):
         self.props = props
-        self.ssl_mode = None
         self.conn_security = None
         self.custom_ca_cert = None
 
         # validate properties
         conn_security = self.get_prop(PropKey.CONN_SECURITY)
         if conn_security:
-            valid_values = [ConnSecurity.SECURE, ConnSecurity.INSECURE]
+            if not isinstance(conn_security, str):
+                raise ValueError(f"invalid value '{conn_security}' for {PropKey.CONN_SECURITY}")
+            conn_security = conn_security.lower().strip()
+            valid_values = [
+                ConnSecurity.INSECURE,
+                ConnSecurity.CLEAR,
+                ConnSecurity.TLS,
+                ConnSecurity.MTLS,
+            ]
             if conn_security not in valid_values:
                 raise ValueError(
                     f"invalid value for {PropKey.CONN_SECURITY}: {conn_security}. Must be one of {valid_values}"
                 )
         self.conn_security = conn_security
-
-        ssl_mode = self.get_prop(PropKey.SSL_MODE)
-        if ssl_mode:
-            valid_values = [SSLMode.TWO_WAY, SSLMode.ONE_WAY]
-            if ssl_mode not in valid_values:
-                raise ValueError(f"invalid value for {PropKey.SSL_MODE}: {ssl_mode}. Must be one of {valid_values}")
-        self.ssl_mode = ssl_mode
 
         custom_ca_cert = self.get_prop(PropKey.CUSTOM_CA_CERT)
         if custom_ca_cert:

@@ -20,7 +20,7 @@ import shutil
 import yaml
 
 from nvflare.lighter import utils
-from nvflare.lighter.spec import Builder, ConnSecurity, Participant, Project, SSLMode
+from nvflare.lighter.spec import Builder, ConnSecurity, Participant, Project
 
 CUSTOM_CA_CERT_FILE_NAME = "customRootCA.pem"
 
@@ -125,23 +125,14 @@ class StaticFileBuilder(Builder):
     def _build_conn_properties(self, site: Participant, ctx: dict, site_config: dict):
         project = ctx.get("project")
         assert isinstance(project, Project)
-        ssl_mode = site.ssl_mode if site.ssl_mode else project.ssl_mode
-        if ssl_mode:
-            valid_values = [SSLMode.TWO_WAY, SSLMode.ONE_WAY]
-            if ssl_mode not in valid_values:
-                raise ValueError(f"invalid ssl_mode: '{ssl_mode}'. Must be one of {valid_values}")
-            site_config["ssl_mode"] = ssl_mode
-
         conn_security = site.conn_security if site.conn_security else project.conn_security
         if conn_security:
-            valid_values = [ConnSecurity.SECURE, ConnSecurity.INSECURE]
-            if conn_security not in valid_values:
-                raise ValueError(f"invalid connection_security: '{conn_security}'. Must be one of {valid_values}")
+            if conn_security in [ConnSecurity.CLEAR, ConnSecurity.INSECURE]:
+                conn_security = ConnSecurity.INSECURE
             site_config["connection_security"] = conn_security
 
         custom_ca_cert = site.custom_ca_cert if site.custom_ca_cert else project.custom_ca_cert
         if custom_ca_cert:
-            site_config["custom_ca_cert"] = CUSTOM_CA_CERT_FILE_NAME
             shutil.copyfile(custom_ca_cert, os.path.join(self.get_kit_dir(site, ctx), CUSTOM_CA_CERT_FILE_NAME))
 
     def _build_server(self, server, ctx):

@@ -33,7 +33,6 @@ class DriverParams(str, Enum):
     SERVER_KEY = "server_key"
     CLIENT_CERT = "client_cert"
     CLIENT_KEY = "client_key"
-    SSL_MODE = "ssl_mode"
     CONNECTION_SECURITY = "connection_security"
     CUSTOM_CA_CERT = "custom_ca_cert"
     SECURE = "secure"
@@ -46,12 +45,8 @@ class DriverParams(str, Enum):
 
 class ConnectionSecurity:
     INSECURE = "insecure"
-    SECURE = "secure"
-
-
-class SSLMode:
-    ONE_WAY = "one_way"
-    TWO_WAY = "two_way"
+    TLS = "tls"
+    MTLS = "mtls"
 
 
 class DriverCap(str, Enum):

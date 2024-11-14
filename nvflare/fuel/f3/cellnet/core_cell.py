@@ -330,12 +330,14 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         if err:
             raise ValueError(f"Invalid FQCN '{fqcn}': {err}")
 
-        # determine connection security
+        # Determine the value of 'secure' based on configured connection_security in credentials.
+        # If configured, use it; otherwise keep the original value of 'secure'.
         conn_security = credentials.get(DriverParams.CONNECTION_SECURITY.value)
-        if conn_security == ConnectionSecurity.SECURE:
-            secure = True
-        elif conn_security == ConnectionSecurity.INSECURE:
-            secure = False
+        if conn_security:
+            if conn_security == ConnectionSecurity.INSECURE:
+                secure = False
+            else:
+                secure = True
 
         self.logger.debug(f"connection secure: {secure}")
         self.my_info = FqcnInfo(FQCN.normalize(fqcn))
