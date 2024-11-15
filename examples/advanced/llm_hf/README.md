@@ -122,11 +122,11 @@ We can also see that the PEFT training loss curves are more aligned than SFT, wh
 
 For message reduce, for float32 to float16 conversion, the message size is reduced by 2 times. The message size is reduced from 6GB to 3GB for Llama-3.2-1B model according to the log.
 ```shell
-Quantized all 147 params. Before quantization: 5993930752 bytes. After quantization: 2996965376 bytes with meta: 0 bytes.
+Quantized all 147 params. Before quantization: 5716.26 MB. After quantization: 2858.13 MB with meta: 0.00 MB.
 ```
 For 8-bit quantization, the message size is reduced by 4 times. The message size is reduced from 6GB to 1.5GB for Llama-3.2-1B model according to the log.
 ```shell
-Quantized all 147 params. Before quantization: 5993930752 bytes. After quantization: 1498482688 bytes with meta: 1613956 bytes.
+Quantized all 147 params. Before quantization: 5716.26 MB. After quantization: 1429.06 MB with meta: 1.54 MB.
 ```
 
 ## Federated Training with Multiple Clients
