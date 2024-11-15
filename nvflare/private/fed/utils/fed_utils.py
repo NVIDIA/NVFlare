@@ -540,3 +540,19 @@ def get_scope_prop(scope_name: str, key: str) -> Any:
     check_str("key", key)
     data_bus = DataBus()
     return data_bus.get_data(_scope_prop_key(scope_name, key))
+
+
+def get_job_launcher(job_meta: dict, fl_ctx: FLContext) -> dict:
+    engine = fl_ctx.get_engine()
+
+    with engine.new_context() as job_launcher_ctx:
+        # Remove the potential not cleaned up JOB_LAUNCHER
+        job_launcher_ctx.remove_prop(FLContextKey.JOB_LAUNCHER)
+        job_launcher_ctx.set_prop(FLContextKey.JOB_META, job_meta, private=True, sticky=False)
+        engine.fire_event(EventType.GET_JOB_LAUNCHER, job_launcher_ctx)
+
+        job_launcher = job_launcher_ctx.get_prop(FLContextKey.JOB_LAUNCHER)
+        if not (job_launcher and isinstance(job_launcher, list)):
+            raise RuntimeError(f"There's no job launcher can handle this job: {job_meta}.")
+
+    return job_launcher[0]
