@@ -404,6 +404,10 @@ class WorkspaceConstants:
 
     ADMIN_STARTUP_CONFIG = "fed_admin.json"
 
+    RESOURCE_FILE_NAME_PATTERN = "*__resources.json"  # for both parent and job processes
+    JOB_RESOURCE_FILE_NAME_PATTERN = "*__j_resources.json"  # for job process only
+    PARENT_RESOURCE_FILE_NAME_PATTERN = "*__p_resources.json"  # for parent process only
+
 
 class SiteType:
     SERVER = "server"
