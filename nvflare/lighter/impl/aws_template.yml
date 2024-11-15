@@ -279,7 +279,7 @@ aws_start_sh: |
 
 aws_start_dsb_sh: |
   VM_NAME=nvflare_dashboard
-  AMI_IMAGE=ami-04bad3c587fe60d89
+  AMI_IMAGE=ami-04c7330a29e61bbca # 22.04 from https://cloud-images.ubuntu.com/locator/ec2/
   EC2_TYPE=t2.small
   SECURITY_GROUP=nvflare_dashboard_sg_$RANDOM
   REGION=us-west-2
