@@ -38,7 +38,6 @@ jobs:
         run: |
           python3 -m pip install --upgrade pip
           python3 -m pip install --no-cache-dir -e .[dev]
-          python3 -m pip install --no-cache-dir torch bitsandbytes
       - name: Run unit test
         run: ./runtest.sh
 

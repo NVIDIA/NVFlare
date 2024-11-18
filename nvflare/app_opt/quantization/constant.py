@@ -19,4 +19,6 @@ DATA_TYPE = [
 QUANTIZATION_TYPE = [
     "FLOAT16",
     "BLOCKWISE8",
+    "FLOAT4",
+    "NORMFLOAT4",
 ]

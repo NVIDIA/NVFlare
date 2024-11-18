@@ -16,7 +16,8 @@ from typing import Union
 
 import numpy as np
 import torch
-from bitsandbytes.functional import dequantize_blockwise
+from bitsandbytes.functional import dequantize_blockwise, dequantize_4bit, QuantState
+from mpmath import absmax
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey
 from nvflare.apis.dxo_filter import DXOFilter
@@ -41,11 +42,11 @@ class ModelDequantizor(DXOFilter):
         # assign data type and check if it is valid
         self.logger.info("Using model dequantizator.")
         if source_data_type.upper() not in DATA_TYPE:
-            raise ValueError(f"Invalid source data type: {source_data_type}")
+            raise ValueError(f"Invalid source data type: {source_data_type}, valid: {DATA_TYPE}")
         else:
             self.source_data_type = source_data_type
 
-    def dequantization(self, params: dict, quant_state: dict, fl_ctx: FLContext):
+    def dequantization(self, params: dict, quant_state: dict, quant_type: str, fl_ctx: FLContext):
         n_params = len(params.keys())
         self.log_info(fl_ctx, f"Running dequantization on {n_params} variables")
         n_bytes_before = 0
@@ -53,35 +54,56 @@ class ModelDequantizor(DXOFilter):
         n_bytes_meta = 0
         for i, param_name in enumerate(params.keys()):
             if self.source_data_type == "float32":
-                if self.quantization_type == "float16":
+                values = params[param_name]
+                n_bytes_before += values.nbytes
+                for item in quant_state[param_name].values():
+                    if isinstance(item, np.ndarray):
+                        n_bytes_meta += item.nbytes
+                if quant_type == "float16":
                     # direct convert
-                    values = params[param_name]
-                    n_bytes_before += values.nbytes
                     values = values.astype(np.float32)
-                    n_bytes_after += values.nbytes
                     params[param_name] = values
-                elif self.quantization_type == "blockwise8":
-                    # extract necessary values
-                    values = params[param_name]
-                    n_bytes_before += values.nbytes
-                    absmax = quant_state["absmax"][param_name]
-                    n_bytes_meta += absmax.nbytes
-                    codebook = quant_state["codebook"][param_name]
-                    n_bytes_meta += codebook.nbytes
-                    # de-quanitze
-                    absmax = torch.as_tensor(absmax)
-                    codebook = torch.as_tensor(codebook)
-                    quantized = torch.as_tensor(values)
-                    dequantized = dequantize_blockwise(
-                        quantized, absmax=absmax, code=codebook, blocksize=4096, nested=False
-                    )
-                    n_bytes_after += dequantized.nbytes
-                    params[param_name] = dequantized.numpy()
+                elif quant_type in ["blockwise8", "float4", "normfloat4"]:
+                    # use bitsandbytes to dequantize the values
+                    # extract quantization state
+                    if quant_type == "blockwise8":
+                        quantized = torch.as_tensor(values)
+                        absmax = torch.as_tensor(quant_state[param_name]["absmax"])
+                        code = torch.as_tensor(quant_state[param_name]["code"])
+                        # de-quanitze
+                        dequantized = dequantize_blockwise(
+                            quantized, absmax=absmax, code=code
+                        )
+                        params[param_name] = dequantized.numpy()
+                    else:
+                        # first convert numpy array to tensor, need to use GPU
+                        quantized = torch.as_tensor(values).cuda()
+                        # create QuantState object
+                        quantize_state = QuantState(
+                            quant_type=quant_state[param_name]["quant_type"],
+                            absmax=torch.as_tensor(quant_state[param_name]["absmax"]).cuda(),
+                            blocksize=quant_state[param_name]["blocksize"],
+                            code=torch.as_tensor(quant_state[param_name]["quant_map"]).cuda(),
+                            dtype=getattr(torch, quant_state[param_name]["dtype"]),
+                            shape=torch.Size(quant_state[param_name]["shape"])
+                        )
+                        # de-quanitze
+                        if quant_type == "float4":
+                            dequantized = dequantize_4bit(
+                                quantized, quantize_state, quant_type="fp4"
+                            )
+                        else:
+                            dequantized = dequantize_4bit(
+                                quantized, quantize_state, quant_type="nf4"
+                            )
+                        params[param_name] = dequantized.cpu().numpy()
+                n_bytes_after += params[param_name].nbytes
+
         self.log_info(
             fl_ctx,
-            f"Dequantized all {n_params} params."
-            f" Before dequantization: {n_bytes_before} bytes with meta: {n_bytes_meta} bytes."
-            f" After dequantization: {n_bytes_after} bytes.",
+            f"Dequantized in total {n_params} params."
+            f" Before dequantization: {n_bytes_before / (1024 ** 2):.2f} MB with meta: {n_bytes_meta / (1024 ** 2):.2f} MB."
+            f" After dequantization: {n_bytes_after / (1024 ** 2):.2f} MB.",
         )
         return params
 
@@ -102,11 +124,9 @@ class ModelDequantizor(DXOFilter):
         # check config
         quantization_type = dxo.get_meta_prop(key=MetaKey.PROCESSED_ALGORITHM, default=None)
         if quantization_type.upper() not in QUANTIZATION_TYPE:
-            raise ValueError(f"Invalid quantization type: {quantization_type}")
-        else:
-            self.quantization_type = quantization_type
+            raise ValueError(f"Invalid quantization type: {quantization_type}, valid: {QUANTIZATION_TYPE}")
 
-        dequantized_params = self.dequantization(params=dxo.data, quant_state=dxo.meta["quant_state"], fl_ctx=fl_ctx)
+        dequantized_params = self.dequantization(params=dxo.data, quant_state=dxo.meta["quant_state"], quant_type = quantization_type, fl_ctx=fl_ctx)
         # Compose new DXO with dequantized data
         dxo.data = dequantized_params
         dxo.remove_meta_props(MetaKey.PROCESSED_ALGORITHM)
