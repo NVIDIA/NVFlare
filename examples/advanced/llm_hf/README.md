@@ -45,8 +45,8 @@ To illustrate the adaptation process, we use a single dataset [databricks-dolly-
 ### One-call training
 Centralized trainings, as the baseline for comparison with other results, are done with the following command:
 ```
-python3 ./utils/hf_sft_peft.py --output_path ./workspace/llama-3.2-1b-dolly-cen_sft --train_mode SFT
-python3 ./utils/hf_sft_peft.py --output_path ./workspace/llama-3.2-1b-dolly-cen_peft --train_mode PEFT
+python3 ./utils/hf_sft_peft.py --output_path ./workspace/dolly_cen_sft --train_mode SFT
+python3 ./utils/hf_sft_peft.py --output_path ./workspace/dolly_cen_peft --train_mode PEFT
 ```
 
 ### Adaptation Step 1: iterative training
@@ -68,8 +68,8 @@ If the intended model weights (serving as the starting point for each round, the
 
 To run iterative training, we use the following command:
 ``` 
-python3 ./utils/hf_sft_peft_iter.py --output_path ./workspace/llama-3.2-1b-dolly-cen_sft-iter --train_mode SFT
-python3 ./utils/hf_sft_peft_iter.py --output_path ./workspace/llama-3.2-1b-dolly-cen_peft-iter --train_mode PEFT
+python3 ./utils/hf_sft_peft_iter.py --output_path ./workspace/dolly_cen_sft_iter --train_mode SFT
+python3 ./utils/hf_sft_peft_iter.py --output_path ./workspace/dolly_cen_peft_iter --train_mode PEFT
 ```
 
 The SFT curves are shown below, black for single call, blue for iterative. We can see the "zig-zag" pattern in the iterative training loss curve.
@@ -92,41 +92,41 @@ We run the federated training on a single client using NVFlare Simulator via [Jo
 python3 sft_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft --job_dir ${PWD}/workspace/jobs/hf_sft --train_mode SFT 
 python3 sft_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_peft --job_dir ${PWD}/workspace/jobs/hf_peft --train_mode PEFT 
 ```
-The SFT curves are shown below, black for centralized results, magenta for FL training. With some training randomness, the two PEFT training loss curves align with each other. 
+The SFT curves are shown below, black for centralized results, magenta for FL training. With some training randomness, the two SFT training loss curves align with each other. 
 ![sft](./figs/fl_sft.png)
 
 Similar patterns can be observed from the PEFT curves, purple for centralized results, orange for FL training. Alignment better than SFT can be observed.
 ![peft](./figs/fl_peft.png)
 
-## Model Precision Conversion for Communication
-In the above example, we used float32 for communication. To reduce the message size, we can use model precision conversion from float32 to float16 for communication. Model conversion is enabled by NVFlare's [filter mechanism](https://nvflare.readthedocs.io/en/main/programming_guide/filters.html). We can use the following command to run the federated training with model precision conversion:
+## Model Quantization for Communication
+In the above example, we used float32 for communication. To reduce the message size, we can use model precision conversion and quantization 
+from float32 to 16-bit, 8-bit, and 4-bit for communication. Quantization is enabled by NVFlare's [filter mechanism](https://nvflare.readthedocs.io/en/main/programming_guide/filters.html). We can use the following command to run the federated training with model quantization.
+16-bit is a direct precision conversion, while 8-bit, 4-bit quantization is performed by [bitsandbytes](https://github.com/bitsandbytes-foundation/bitsandbytes/tree/main).
+Note that 4-bit quantizations (`fp4` or `nf4`) need device support.
 ```
-python3 sft_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_quantize --job_dir ${PWD}/workspace/jobs/hf_sft_quantize --train_mode SFT --quantize_mode float16
-python3 sft_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_peft_quantize --job_dir ${PWD}/workspace/jobs/hf_peft_quantize --train_mode PEFT --quantize_mode float16
+python3 sft_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_16 --job_dir ${PWD}/workspace/jobs/hf_sft_16 --train_mode SFT --quantize_mode float16
+python3 sft_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_8 --job_dir ${PWD}/workspace/jobs/hf_sft_8 --train_mode SFT --quantize_mode blockwise8
+python3 sft_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_fp4 --job_dir ${PWD}/workspace/jobs/hf_sft_fp4 --train_mode SFT --quantize_mode float4
+python3 sft_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_nf4 --job_dir ${PWD}/workspace/jobs/hf_sft_nf4 --train_mode SFT --quantize_mode normfloat4
 ```
-The SFT curves are shown below, black for centralized results, yellow for FL training with quantization. We can see it achieves similar alignment with centralized result.
+The SFT curves are shown below, magenta for centralized results, others for FL training with quantization. We can see it achieves similar alignment comparing to centralized result with training randomness (similar to previous figure).
 ![sft](./figs/fl_sft_comp.png)
 
-Similar patterns can be observed from the PEFT curves, purple for centralized results, black for FL training with quantization.
-![peft](./figs/fl_peft_comp.png)
+These results show that model precision conversion / quantization does not significantly impact the training while reducing the message size to 1/2, 1/4, and even 1/8, which can significantly reduce the message size, making it crucial for transmitting LLM updates.
 
-Further, we utilize the blockwise 8-bit quantization by [bitsandbytes](https://github.com/bitsandbytes-foundation/bitsandbytes/tree/main) for communication. We can use the following command to run the federated training with 8-bit quantization:
-```
-python3 sft_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_quantize_8 --job_dir ${PWD}/workspace/jobs/hf_sft_quantize --train_mode SFT --quantize_mode blockwise8
-```
-Similarly for SFT, the training loss curves are shown below, black for centralized results, green for FL training with quantization.
-![sft](./figs/fl_sft_comp_8.png)
+For message reduce, from float32 to 16-/8-/8-bit, the message size is reduced from 6 GB to 3 GB / 1.5 GB / 800 MB for Llama-3.2-1B model according to the log. Note that quantization will generate additional meta data, which can be significant for 4-bit cases.
 
-These results show that model precision conversion / quantization does not significantly impact the training while reducing the message size to 1/2 and 1/4. Thus, it can be important for communicating LLM updates.
-We can also see that the PEFT training loss curves are more aligned than SFT, which is consistent with the results from the centralized training.
-
-For message reduce, for float32 to float16 conversion, the message size is reduced by 2 times. The message size is reduced from 6GB to 3GB for Llama-3.2-1B model according to the log.
+16-bit:
 ```shell
 Quantized all 147 params. Before quantization: 5716.26 MB. After quantization: 2858.13 MB with meta: 0.00 MB.
 ```
-For 8-bit quantization, the message size is reduced by 4 times. The message size is reduced from 6GB to 1.5GB for Llama-3.2-1B model according to the log.
+8-bit:
 ```shell
 Quantized all 147 params. Before quantization: 5716.26 MB. After quantization: 1429.06 MB with meta: 1.54 MB.
+```
+4-bit:
+```shell
+Quantized all 147 params. Before quantization: 5716.26 MB. After quantization: 714.53 MB with meta: 89.33 MB.
 ```
 
 ## Federated Training with Multiple Clients
@@ -137,8 +137,8 @@ python3 sft_job.py --client_ids dolly alpaca oasst1 --data_path ${PWD}/dataset -
 
 For comparison, we run the other two sites in centralized training mode:
 ```
-python3 ./utils/hf_sft_peft.py --data_path_train ./dataset/alpaca/training.jsonl --data_path_valid ./dataset/alpaca/validation.jsonl --output_path ./workspace/llama-3.2-1b-alpaca-cen_sft --train_mode SFT
-python3 ./utils/hf_sft_peft.py --data_path_train ./dataset/oasst1/training.jsonl --data_path_valid ./dataset/oasst1/validation.jsonl --output_path ./workspace/llama-3.2-1b-oasst1-cen_sft --train_mode SFT
+python3 ./utils/hf_sft_peft.py --data_path_train ./dataset/alpaca/training.jsonl --data_path_valid ./dataset/alpaca/validation.jsonl --output_path ./workspace/alpaca_cen_sft --train_mode SFT
+python3 ./utils/hf_sft_peft.py --data_path_train ./dataset/oasst1/training.jsonl --data_path_valid ./dataset/oasst1/validation.jsonl --output_path ./workspace/oasst1_cen_sft --train_mode SFT
 ```
 
 The training loss curves are shown below:
@@ -154,8 +154,8 @@ As shown, federated training with multiple clients (lines with three sections) c
 
 Similarly for PEFT, we can run the following command:
 ```
-python3 ./utils/hf_sft_peft.py --data_path_train ./dataset/alpaca/training.jsonl --data_path_valid ./dataset/alpaca/validation.jsonl --output_path ./workspace/llama-3.2-1b-alpaca-cen_peft --train_mode PEFT
-python3 ./utils/hf_sft_peft.py --data_path_train ./dataset/oasst1/training.jsonl --data_path_valid ./dataset/oasst1/validation.jsonl --output_path ./workspace/llama-3.2-1b-oasst1-cen_peft --train_mode PEFT
+python3 ./utils/hf_sft_peft.py --data_path_train ./dataset/alpaca/training.jsonl --data_path_valid ./dataset/alpaca/validation.jsonl --output_path ./workspace/alpaca_cen_peft --train_mode PEFT
+python3 ./utils/hf_sft_peft.py --data_path_train ./dataset/oasst1/training.jsonl --data_path_valid ./dataset/oasst1/validation.jsonl --output_path ./workspace/oasst1_cen_peft --train_mode PEFT
 python3 sft_job.py --client_ids dolly alpaca oasst1 --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_peft_multi --job_dir ${PWD}/workspace/jobs/hf_peft_multi --train_mode PEFT --threads 1
 ```
 
