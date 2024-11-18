@@ -21,10 +21,16 @@ import threading
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, MachineStatus, SystemComponents, WorkspaceConstants
+from nvflare.apis.fl_constant import FLContextKey, MachineStatus, ProcessType, SystemComponents, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext, FLContextManager
+from nvflare.apis.shareable import Shareable
+from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.apis.workspace import Workspace
-from nvflare.private.defs import ERROR_MSG_PREFIX, ClientStatusKey, EngineConstant
+from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.message import Message as CellMessage
+from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
+from nvflare.private.defs import ERROR_MSG_PREFIX, ClientStatusKey, EngineConstant, new_cell_message
 from nvflare.private.event import fire_event
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.utils.app_deployer import AppDeployer
@@ -46,7 +52,7 @@ def _remove_custom_path():
 
 
 class ClientEngine(ClientEngineInternalSpec):
-    """ClientEngine runs in the client parent process."""
+    """ClientEngine runs in the client parent process (CP)."""
 
     def __init__(self, client: FederatedClient, args, rank, workers=5):
         """To init the ClientEngine.
@@ -64,6 +70,8 @@ class ClientEngine(ClientEngineInternalSpec):
         self.rank = rank
         self.client_executor = JobExecutor(client, os.path.join(args.workspace, "startup"))
         self.admin_agent = None
+        self.aux_runner = AuxRunner(self)
+        self.cell = None
 
         self.fl_ctx_mgr = FLContextManager(
             engine=self,
@@ -76,6 +84,7 @@ class ClientEngine(ClientEngineInternalSpec):
                 SystemComponents.FED_CLIENT: client,
                 FLContextKey.SECURE_MODE: self.client.secure_train,
                 FLContextKey.WORKSPACE_ROOT: args.workspace,
+                FLContextKey.PROCESS_TYPE: ProcessType.CLIENT_PARENT,
             },
         )
 
@@ -88,6 +97,108 @@ class ClientEngine(ClientEngineInternalSpec):
 
     def fire_event(self, event_type: str, fl_ctx: FLContext):
         fire_event(event=event_type, handlers=self.fl_components, ctx=fl_ctx)
+
+    def get_cell(self):
+        """Get the communication cell.
+        This method must be implemented since AuxRunner calls to get cell.
+
+        Returns:
+
+        """
+        return self.cell
+
+    def initialize_comm(self, cell: Cell):
+        """This is called when communication cell has been created.
+        We will set up aux message handler here.
+
+        Args:
+            cell:
+
+        Returns:
+
+        """
+        cell.register_request_cb(
+            channel=CellChannel.AUX_COMMUNICATION,
+            topic="*",
+            cb=self._handle_aux_message,
+        )
+        self.cell = cell
+
+    def _handle_aux_message(self, request: CellMessage) -> CellMessage:
+        assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
+        data = request.payload
+
+        topic = request.get_header(MessageHeaderKey.TOPIC)
+        with self.new_context() as fl_ctx:
+            reply = self.aux_runner.dispatch(topic=topic, request=data, fl_ctx=fl_ctx)
+            shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
+            reply.set_header(key=FLContextKey.PEER_CONTEXT, value=shared_fl_ctx)
+
+            if reply is not None:
+                return_message = new_cell_message({}, reply)
+                return_message.set_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
+            else:
+                return_message = new_cell_message({}, None)
+            return return_message
+
+    def register_aux_message_handler(self, topic: str, message_handle_func):
+        """Register aux message handling function with specified topics.
+
+        Exception is raised when:
+            a handler is already registered for the topic;
+            bad topic - must be a non-empty string
+            bad message_handle_func - must be callable
+
+        Implementation Note:
+            This method should simply call the ServerAuxRunner's register_aux_message_handler method.
+
+        Args:
+            topic: the topic to be handled by the func
+            message_handle_func: the func to handle the message. Must follow aux_message_handle_func_signature.
+
+        """
+        self.aux_runner.register_aux_message_handler(topic, message_handle_func)
+
+    def send_aux_request(
+        self,
+        topic: str,
+        request: Shareable,
+        timeout: float,
+        fl_ctx: FLContext,
+        optional=False,
+        secure=False,
+    ) -> Shareable:
+        """Send a request to the Server via the aux channel.
+
+        Implementation: simply calls the AuxRunner's send_aux_request method.
+
+        Args:
+            topic: topic of the request.
+            request: request to be sent
+            timeout: number of secs to wait for replies. 0 means fire-and-forget.
+            fl_ctx: FL context
+            optional: whether this message is optional
+            secure: send the aux request in a secure way
+
+        Returns: a dict of replies (client name => reply Shareable)
+
+        """
+        reply = self.aux_runner.send_aux_request(
+            targets=[AuxMsgTarget.server_target()],
+            topic=topic,
+            request=request,
+            timeout=timeout,
+            fl_ctx=fl_ctx,
+            optional=optional,
+            secure=secure,
+        )
+
+        self.logger.info(f"got aux reply: {reply}")
+
+        if len(reply) > 0:
+            return next(iter(reply.values()))
+        else:
+            return Shareable()
 
     def set_agent(self, admin_agent):
         self.admin_agent = admin_agent

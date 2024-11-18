@@ -32,7 +32,7 @@ from nvflare.apis.fl_constant import (
     AdminCommandNames,
     FLContextKey,
     MachineStatus,
-    ReturnCode,
+    ProcessType,
     RunProcessKey,
     ServerCommandKey,
     ServerCommandNames,
@@ -43,12 +43,14 @@ from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.fl_snapshot import RunSnapshot
 from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
 from nvflare.apis.job_def import Job
-from nvflare.apis.shareable import Shareable, make_reply
-from nvflare.apis.utils.fl_context_utils import get_serializable_data
+from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
+from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx, get_serializable_data
 from nvflare.apis.workspace import Workspace
-from nvflare.fuel.f3.cellnet.core_cell import FQCN, CoreCell
+from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellMsgReturnCode
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message, MsgHeader
@@ -115,6 +117,7 @@ class ServerEngine(ServerEngineInternalSpec):
         self.snapshot_persistor = snapshot_persistor
         self.job_runner = None
         self.job_def_manager = None
+        self.cell = None
 
         self.kv_list = parse_vars(args.set)
 
@@ -234,7 +237,7 @@ class ServerEngine(ServerEngineInternalSpec):
         job_id,
         job_clients,
         snapshot,
-        cell: CoreCell,
+        cell: Cell,
         server_state: ServerState,
     ):
         new_env = os.environ.copy()
@@ -437,8 +440,58 @@ class ServerEngine(ServerEngineInternalSpec):
 
     def set_run_manager(self, run_manager: RunManager):
         self.run_manager = run_manager
+
+        # we set the run_manager's cell if we have the cell.
+        if self.cell:
+            self.run_manager.cell = self.cell
         for _, widget in self.widgets.items():
             self.run_manager.add_handler(widget)
+
+    def get_cell(self):
+        return self.cell
+
+    def initialize_comm(self, cell: Cell):
+        """This is called when the communication cell has been created.
+        We will set up aux message handler here.
+
+        Args:
+            cell:
+
+        Returns:
+
+        """
+        self.logger.info("initialize_comm called!")
+
+        self.cell = cell
+        if self.run_manager:
+            # Note that the aux_runner is created with the self.run_manager as the "engine".
+            # We must set the cell in it; otherwise it won't be able to send messages.
+            # The timing of the creation of the run_manager and the cell is not deterministic, we set the cell here
+            # only if the run_manager has been created.
+            self.run_manager.cell = cell
+
+        cell.register_request_cb(
+            channel=CellChannel.AUX_COMMUNICATION,
+            topic="*",
+            cb=self._handle_aux_message,
+        )
+
+    def _handle_aux_message(self, request: CellMessage) -> CellMessage:
+        assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
+        data = request.payload
+
+        topic = request.get_header(MessageHeaderKey.TOPIC)
+        with self.new_context() as fl_ctx:
+            reply = self.run_manager.aux_runner.dispatch(topic=topic, request=data, fl_ctx=fl_ctx)
+            shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
+            reply.set_header(key=FLContextKey.PEER_CONTEXT, value=shared_fl_ctx)
+
+            if reply is not None:
+                return_message = new_cell_message({}, reply)
+                return_message.set_header(MessageHeaderKey.RETURN_CODE, CellMsgReturnCode.OK)
+            else:
+                return_message = new_cell_message({}, None)
+            return return_message
 
     def set_job_runner(self, job_runner: JobRunner, job_manager: JobDefManagerSpec):
         self.job_runner = job_runner
@@ -458,7 +511,11 @@ class ServerEngine(ServerEngineInternalSpec):
         else:
             # return FLContext()
             return FLContextManager(
-                engine=self, identity_name=self.server.project_name, job_id="", public_stickers={}, private_stickers={}
+                engine=self,
+                identity_name=self.server.project_name,
+                job_id="",
+                public_stickers={},
+                private_stickers={FLContextKey.PROCESS_TYPE, ProcessType.SERVER_PARENT},
             ).new_context()
 
     def add_component(self, component_id: str, component):
@@ -527,6 +584,7 @@ class ServerEngine(ServerEngineInternalSpec):
             return self.send_aux_to_targets(targets, topic, request, timeout, fl_ctx, optional, secure)
         except Exception as e:
             self.logger.error(f"Failed to send the aux_message: {topic} with exception: {secure_format_exception(e)}.")
+            return {}
 
     def multicast_aux_requests(
         self,

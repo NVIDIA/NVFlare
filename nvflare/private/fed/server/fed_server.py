@@ -893,7 +893,7 @@ class FederatedServer(BaseServer):
                     prv_key_path=grpc_args["ssl_private_key"],
                 )
 
-        self.engine.cell = self.cell
+        self.engine.initialize_comm(self.cell)
         self._register_cellnet_cbs()
 
         self.overseer_agent.start(self.overseer_callback)

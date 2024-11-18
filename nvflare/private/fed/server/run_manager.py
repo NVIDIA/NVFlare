@@ -17,6 +17,7 @@ from typing import List, Optional, Tuple
 from nvflare.apis.client import Client
 from nvflare.apis.engine_spec import EngineSpec
 from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.fl_constant import FLContextKey, ProcessType
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.workspace import Workspace
@@ -60,8 +61,9 @@ class RunManager(EngineSpec):
 
         if job_id:
             job_ctx_props = self.create_job_processing_context_properties(workspace, job_id)
+            job_ctx_props.update({FLContextKey.PROCESS_TYPE, ProcessType.SERVER_JOB})
         else:
-            job_ctx_props = {}
+            job_ctx_props = {FLContextKey.PROCESS_TYPE, ProcessType.SERVER_PARENT}
 
         self.fl_ctx_mgr = FLContextManager(
             engine=engine, identity_name=server_name, job_id=job_id, public_stickers={}, private_stickers=job_ctx_props

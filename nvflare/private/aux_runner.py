@@ -59,7 +59,7 @@ class AuxRunner(FLComponent):
     def register_aux_message_handler(self, topic: str, message_handle_func):
         """Register aux message handling function with specified topics.
 
-        This method should be called by ServerEngine's register_aux_message_handler method.
+        This method should be called by Engine's register_aux_message_handler method.
 
         Args:
             topic: the topic to be handled by the func
@@ -196,7 +196,7 @@ class AuxRunner(FLComponent):
         if cell_replies:
             for reply_cell_fqcn, v in cell_replies.items():
                 assert isinstance(v, Message)
-                rc = v.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
+                rc = v.get_header(MessageHeaderKey.RETURN_CODE, CellReturnCode.OK)
                 target_name = fqcn_to_name[reply_cell_fqcn]
                 if rc == CellReturnCode.OK:
                     result = v.payload
@@ -383,9 +383,12 @@ class AuxRunner(FLComponent):
         fqcn_to_name = {}
         for t in targets:
             # targeting job cells!
-            job_cell_fqcn = FQCN.join([t.fqcn, job_id])
-            target_fqcns.append(job_cell_fqcn)
-            fqcn_to_name[job_cell_fqcn] = t.name
+            if job_id:
+                cell_fqcn = FQCN.join([t.fqcn, job_id])
+            else:
+                cell_fqcn = t.fqcn
+            target_fqcns.append(cell_fqcn)
+            fqcn_to_name[cell_fqcn] = t.name
 
         cell_msg = Message(payload=request)
         if timeout > 0:
@@ -412,7 +415,7 @@ class AuxRunner(FLComponent):
     @staticmethod
     def _convert_return_code(rc):
         rc_table = {
-            CellReturnCode.TIMEOUT: ReturnCode.COMMUNICATION_ERROR,
+            CellReturnCode.TIMEOUT: ReturnCode.TIMEOUT,
             CellReturnCode.COMM_ERROR: ReturnCode.COMMUNICATION_ERROR,
             CellReturnCode.PROCESS_EXCEPTION: ReturnCode.EXECUTION_EXCEPTION,
             CellReturnCode.ABORT_RUN: CellReturnCode.ABORT_RUN,
