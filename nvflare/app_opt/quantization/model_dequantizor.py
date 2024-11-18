@@ -16,8 +16,7 @@ from typing import Union
 
 import numpy as np
 import torch
-from bitsandbytes.functional import dequantize_blockwise, dequantize_4bit, QuantState
-from mpmath import absmax
+from bitsandbytes.functional import QuantState, dequantize_4bit, dequantize_blockwise
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey
 from nvflare.apis.dxo_filter import DXOFilter
@@ -71,9 +70,7 @@ class ModelDequantizor(DXOFilter):
                         absmax = torch.as_tensor(quant_state[param_name]["absmax"])
                         code = torch.as_tensor(quant_state[param_name]["code"])
                         # de-quanitze
-                        dequantized = dequantize_blockwise(
-                            quantized, absmax=absmax, code=code
-                        )
+                        dequantized = dequantize_blockwise(quantized, absmax=absmax, code=code)
                         params[param_name] = dequantized.numpy()
                     else:
                         # first convert numpy array to tensor, need to use GPU
@@ -85,17 +82,13 @@ class ModelDequantizor(DXOFilter):
                             blocksize=quant_state[param_name]["blocksize"],
                             code=torch.as_tensor(quant_state[param_name]["quant_map"]).cuda(),
                             dtype=getattr(torch, quant_state[param_name]["dtype"]),
-                            shape=torch.Size(quant_state[param_name]["shape"])
+                            shape=torch.Size(quant_state[param_name]["shape"]),
                         )
                         # de-quanitze
                         if quant_type == "float4":
-                            dequantized = dequantize_4bit(
-                                quantized, quantize_state, quant_type="fp4"
-                            )
+                            dequantized = dequantize_4bit(quantized, quantize_state, quant_type="fp4")
                         else:
-                            dequantized = dequantize_4bit(
-                                quantized, quantize_state, quant_type="nf4"
-                            )
+                            dequantized = dequantize_4bit(quantized, quantize_state, quant_type="nf4")
                         params[param_name] = dequantized.cpu().numpy()
                 n_bytes_after += params[param_name].nbytes
 
@@ -126,7 +119,9 @@ class ModelDequantizor(DXOFilter):
         if quantization_type.upper() not in QUANTIZATION_TYPE:
             raise ValueError(f"Invalid quantization type: {quantization_type}, valid: {QUANTIZATION_TYPE}")
 
-        dequantized_params = self.dequantization(params=dxo.data, quant_state=dxo.meta["quant_state"], quant_type = quantization_type, fl_ctx=fl_ctx)
+        dequantized_params = self.dequantization(
+            params=dxo.data, quant_state=dxo.meta["quant_state"], quant_type=quantization_type, fl_ctx=fl_ctx
+        )
         # Compose new DXO with dequantized data
         dxo.data = dequantized_params
         dxo.remove_meta_props(MetaKey.PROCESSED_ALGORITHM)

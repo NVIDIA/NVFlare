@@ -16,7 +16,7 @@ from typing import Union
 
 import numpy as np
 import torch
-from bitsandbytes.functional import quantize_blockwise, quantize_4bit
+from bitsandbytes.functional import quantize_4bit, quantize_blockwise
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey
 from nvflare.apis.dxo_filter import DXOFilter
