@@ -24,7 +24,7 @@ from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.apis.job_scheduler_spec import DispatchInfo
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 from nvflare.apis.server_engine_spec import ServerEngineSpec
-from nvflare.apis.streaming import StreamContext, ObjectProducer, ConsumerFactory
+from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamContext
 from nvflare.app_common.job_schedulers.job_scheduler import DefaultJobScheduler
 from nvflare.app_common.resource_managers.list_resource_manager import ListResourceManager
 
