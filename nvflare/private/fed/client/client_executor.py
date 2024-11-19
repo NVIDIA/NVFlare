@@ -384,7 +384,9 @@ class JobExecutor(ClientExecutor):
             )
             self.logger.debug("abort_task sent")
 
-    def _wait_child_process_finish(self, client, job_id, allocated_resource, token, resource_manager, workspace, fl_ctx):
+    def _wait_child_process_finish(
+        self, client, job_id, allocated_resource, token, resource_manager, workspace, fl_ctx
+    ):
         self.logger.info(f"run ({job_id}): waiting for child worker process to finish.")
         job_handle = self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_HANDLE)
         if job_handle:
