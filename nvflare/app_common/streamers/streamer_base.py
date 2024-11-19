@@ -15,9 +15,7 @@ from nvflare.apis.streaming import StreamContext, StreamContextKey
 
 
 class StreamerBase:
-
-    """
-    This is the base class for all future streamers.
+    """This is the base class for all future streamers.
     This base class provides methods for accessing common properties in the StreamContext.
     When a streamer class is defined as a subclass of this base, then all such StreamContext accessing methods
     will be inherited.
