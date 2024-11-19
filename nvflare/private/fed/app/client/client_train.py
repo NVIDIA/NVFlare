@@ -100,6 +100,7 @@ def main(args):
 
         federated_client.use_gpu = False
         federated_client.config_folder = config_folder
+        workspace = Workspace(args.workspace, federated_client.client_name, config_folder)
 
         client_engine = ClientEngine(federated_client, args, rank)
 
@@ -108,6 +109,8 @@ def main(args):
             time.sleep(1.0)
 
         with client_engine.new_context() as fl_ctx:
+            client_engine.fire_event(EventType.SYSTEM_BOOTSTRAP, fl_ctx)
+
             fl_ctx.set_prop(
                 key=FLContextKey.CLIENT_CONFIG,
                 value=deployer.client_config,
@@ -128,7 +131,8 @@ def main(args):
             )
 
             fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
-            client_engine.fire_event(EventType.SYSTEM_BOOTSTRAP, fl_ctx)
+            fl_ctx.set_prop(FLContextKey.ARGS, args, private=True, sticky=True)
+            fl_ctx.set_prop(FLContextKey.SITE_OBJ, federated_client, private=True, sticky=True)
 
             component_security_check(fl_ctx)
 

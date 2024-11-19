@@ -16,9 +16,7 @@ import copy
 import logging
 import os
 import re
-import shlex
 import shutil
-import subprocess
 import sys
 import threading
 import time
@@ -43,10 +41,11 @@ from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.fl_snapshot import RunSnapshot
 from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
 from nvflare.apis.job_def import Job
+from nvflare.apis.job_launcher_spec import JobLauncherSpec
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
-from nvflare.fuel.f3.cellnet.core_cell import FQCN, CoreCell
+from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellMsgReturnCode
 from nvflare.fuel.utils.argument_utils import parse_vars
@@ -55,9 +54,8 @@ from nvflare.private.admin_defs import Message, MsgHeader
 from nvflare.private.aux_runner import AuxMsgTarget
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, RequestHeader, TrainingTopic, new_cell_message
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
-from nvflare.private.fed.server.server_state import ServerState
 from nvflare.private.fed.utils.fed_utils import (
-    add_custom_dir_to_path,
+    get_job_launcher,
     get_return_code,
     security_close,
     set_message_security_data,
@@ -164,32 +162,21 @@ class ServerEngine(ServerEngineInternalSpec):
     def validate_targets(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
         return self.client_manager.get_all_clients_from_inputs(client_names)
 
-    def start_app_on_server(self, run_number: str, job: Job = None, job_clients=None, snapshot=None) -> str:
-        if run_number in self.run_processes.keys():
-            return f"Server run: {run_number} already started."
+    def start_app_on_server(self, fl_ctx: FLContext, job: Job = None, job_clients=None, snapshot=None) -> str:
+        if not isinstance(job, Job):
+            return "Must provide a job object to start the server app."
+
+        if job.job_id in self.run_processes.keys():
+            return f"Server run: {job.job_id} already started."
         else:
             workspace = Workspace(root_dir=self.args.workspace, site_name="server")
-            app_root = workspace.get_app_dir(run_number)
+            app_root = workspace.get_app_dir(job.job_id)
             if not os.path.exists(app_root):
                 return "Server app does not exist. Please deploy the server app before starting."
 
             self.engine_info.status = MachineStatus.STARTING
-            app_custom_folder = workspace.get_app_custom_dir(run_number)
 
-            if not isinstance(job, Job):
-                return "Must provide a job object to start the server app."
-
-            self._start_runner_process(
-                self.args,
-                app_root,
-                run_number,
-                app_custom_folder,
-                job.job_id,
-                job_clients,
-                snapshot,
-                self.server.cell,
-                self.server.server_state,
-            )
+            self._start_runner_process(job, job_clients, snapshot, fl_ctx)
 
             self.engine_info.status = MachineStatus.STARTED
             return ""
@@ -225,73 +212,30 @@ class ServerEngine(ServerEngineInternalSpec):
                 self.run_processes.pop(job_id, None)
         self.engine_info.status = MachineStatus.STOPPED
 
-    def _start_runner_process(
-        self,
-        args,
-        app_root,
-        run_number,
-        app_custom_folder,
-        job_id,
-        job_clients,
-        snapshot,
-        cell: CoreCell,
-        server_state: ServerState,
-    ):
-        new_env = os.environ.copy()
-        if app_custom_folder != "":
-            add_custom_dir_to_path(app_custom_folder, new_env)
-
+    def _start_runner_process(self, job, job_clients, snapshot, fl_ctx: FLContext):
+        job_launcher: JobLauncherSpec = get_job_launcher(job.meta, fl_ctx)
         if snapshot:
             restore_snapshot = True
         else:
             restore_snapshot = False
-        command_options = ""
-        for t in args.set:
-            command_options += " " + t
+        fl_ctx.set_prop(FLContextKey.SNAPSHOT, restore_snapshot, private=True, sticky=False)
+        job_handle = job_launcher.launch_job(job.meta, fl_ctx)
+        self.logger.info(f"Launch job_id: {job.job_id}  with job launcher: {type(job_launcher)} ")
 
-        command = (
-            sys.executable
-            + " -m nvflare.private.fed.app.server.runner_process -m "
-            + args.workspace
-            + " -s fed_server.json -r "
-            + app_root
-            + " -n "
-            + str(run_number)
-            + " -p "
-            + str(cell.get_internal_listener_url())
-            + " -u "
-            + str(cell.get_root_url_for_child())
-            + " --host "
-            + str(server_state.host)
-            + " --port "
-            + str(server_state.service_port)
-            + " --ssid "
-            + str(server_state.ssid)
-            + " --ha_mode "
-            + str(self.server.ha_mode)
-            + " --set"
-            + command_options
-            + " print_conf=True restore_snapshot="
-            + str(restore_snapshot)
-        )
-        # use os.setsid to create new process group ID
+        args = fl_ctx.get_prop(FLContextKey.ARGS)
 
-        process = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
-
-        if not job_id:
-            job_id = ""
         if not job_clients:
             job_clients = self.client_manager.clients
 
         with self.lock:
-            self.run_processes[run_number] = {
-                RunProcessKey.CHILD_PROCESS: process,
-                RunProcessKey.JOB_ID: job_id,
+            self.run_processes[job.job_id] = {
+                RunProcessKey.JOB_HANDLE: job_handle,
+                RunProcessKey.JOB_ID: job.job_id,
                 RunProcessKey.PARTICIPANTS: job_clients,
             }
 
-        threading.Thread(target=self.wait_for_complete, args=[args.workspace, run_number, process]).start()
-        return process
+        threading.Thread(target=self.wait_for_complete, args=[args.workspace, job.job_id, job_handle]).start()
+        return job_handle
 
     def get_job_clients(self, client_sites):
         job_clients = {}
@@ -333,7 +277,7 @@ class ServerEngine(ServerEngineInternalSpec):
             self.logger.info(f"Abort server status: {status_message}")
         except Exception:
             with self.lock:
-                child_process = self.run_processes.get(job_id, {}).get(RunProcessKey.CHILD_PROCESS, None)
+                child_process = self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_HANDLE, None)
                 if child_process:
                     child_process.terminate()
         finally:
@@ -619,7 +563,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
             if time.time() - start >= max_wait:
                 self.logger.critical(f"Cannot get participating clients for job {job_id} after {max_wait} seconds")
-                raise RuntimeError("Exiting job process: Cannot get participating clients for job {job_id}")
+                raise RuntimeError(f"Exiting job process: Cannot get participating clients for job {job_id}")
 
             self.logger.debug("didn't receive clients info - retry in 1 second")
             time.sleep(1.0)
@@ -873,13 +817,14 @@ class ServerEngine(ServerEngineInternalSpec):
         if requests:
             _ = self._send_admin_requests(requests, fl_ctx)
 
-    def start_client_job(self, job_id, client_sites, fl_ctx: FLContext):
+    def start_client_job(self, job, client_sites, fl_ctx: FLContext):
         requests = {}
         for site, dispatch_info in client_sites.items():
             resource_requirement = dispatch_info.resource_requirements
             token = dispatch_info.token
             request = Message(topic=TrainingTopic.START_JOB, body=resource_requirement)
-            request.set_header(RequestHeader.JOB_ID, job_id)
+            request.set_header(RequestHeader.JOB_ID, job.job_id)
+            request.set_header(RequestHeader.JOB_META, job.meta)
             request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
             client = self.get_client_from_name(site)
             if client:

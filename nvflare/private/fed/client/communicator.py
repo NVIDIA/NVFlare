@@ -28,8 +28,9 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
-from nvflare.fuel.f3.cellnet.core_cell import FQCN, CoreCell
+from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import format_size
 from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, SpecialTaskName, new_cell_message
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
@@ -67,7 +68,7 @@ class Communicator:
         secure_train=False,
         client_state_processors: Optional[List[Filter]] = None,
         compression=None,
-        cell: CoreCell = None,
+        cell: Cell = None,
         client_register_interval=2,
         timeout=5.0,
         maint_msg_timeout=5.0,
@@ -312,6 +313,7 @@ class Communicator:
             request=task_message,
             timeout=timeout,
             optional=True,
+            abort_signal=fl_ctx.get_run_abort_signal(),
         )
         end_time = time.time()
         return_code = task.get_header(MessageHeaderKey.RETURN_CODE)
@@ -388,6 +390,7 @@ class Communicator:
             request=task_message,
             timeout=timeout,
             optional=optional,
+            abort_signal=fl_ctx.get_run_abort_signal(),
         )
         end_time = time.time()
         return_code = result.get_header(MessageHeaderKey.RETURN_CODE)

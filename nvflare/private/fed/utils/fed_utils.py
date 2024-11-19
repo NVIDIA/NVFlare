@@ -26,7 +26,15 @@ from nvflare.apis.app_validation import AppValidator
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLContext
-from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, FLMetaKey, SiteType, SystemVarName, WorkspaceConstants
+from nvflare.apis.fl_constant import (
+    ConfigVarName,
+    FLContextKey,
+    FLMetaKey,
+    JobConstants,
+    SiteType,
+    SystemVarName,
+    WorkspaceConstants,
+)
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.utils.decomposers import flare_decomposers
@@ -51,13 +59,44 @@ from ..simulator.simulator_const import SimulatorConstants
 from .app_authz import AppAuthzService
 
 
-def add_logfile_handler(log_file):
+def add_logfile_handler(log_file: str):
+    """Adds a log file handler to the root logger.
+
+    The purpose for this is to handle dynamic log file locations.
+
+    If a handler named errorFileHandler is found, it will be used as a template to
+    create a new handler for writing to the error.log file at the same directory as log_file.
+    The original errorFileHandler will be removed and replaced by the new handler.
+
+    Each log file will be rotated when it reaches 20MB.
+
+    Args:
+        log_file (str): log file path
+    """
     root_logger = logging.getLogger()
+    configured_handlers = root_logger.handlers
     main_handler = root_logger.handlers[0]
     file_handler = RotatingFileHandler(log_file, maxBytes=20 * 1024 * 1024, backupCount=10)
     file_handler.setLevel(main_handler.level)
     file_handler.setFormatter(main_handler.formatter)
     root_logger.addHandler(file_handler)
+
+    configured_error_handler = None
+    for handler in configured_handlers:
+        if handler.get_name() == "errorFileHandler":
+            configured_error_handler = handler
+            break
+
+    if not configured_error_handler:
+        return
+
+    error_log_file = os.path.join(os.path.dirname(log_file), "error.log")
+    error_file_handler = RotatingFileHandler(error_log_file, maxBytes=20 * 1024 * 1024, backupCount=10)
+    error_file_handler.setLevel(configured_error_handler.level)
+    error_file_handler.setFormatter(configured_error_handler.formatter)
+
+    root_logger.addHandler(error_file_handler)
+    root_logger.removeHandler(configured_error_handler)
 
 
 def _check_secure_content(site_type: str) -> List[str]:
@@ -91,6 +130,18 @@ def _check_secure_content(site_type: str) -> List[str]:
         data, sig = SecurityContentService.load_json(WorkspaceConstants.AUTHORIZATION_CONFIG)
         if sig != LoadResult.OK:
             insecure_list.append(WorkspaceConstants.AUTHORIZATION_CONFIG)
+
+    # every resource file in the startup must be signed and not tampered with!
+    bad_files = SecurityContentService.check_json_files(
+        [
+            WorkspaceConstants.RESOURCE_FILE_NAME_PATTERN,
+            WorkspaceConstants.PARENT_RESOURCE_FILE_NAME_PATTERN,
+            WorkspaceConstants.JOB_RESOURCE_FILE_NAME_PATTERN,
+        ]
+    )
+
+    if bad_files:
+        insecure_list.extend(bad_files)
 
     return insecure_list
 
@@ -145,6 +196,33 @@ def security_init(secure_train: bool, site_org: str, workspace: Workspace, app_v
     if err:
         print("AuthorizationService error: {}".format(err))
         sys.exit(1)
+
+
+def security_init_for_job(secure_train: bool, workspace: Workspace, site_type: str):
+    """Initialize security processing for a job process (SJ or CJ).
+
+    Args:
+       secure_train (bool): if run in secure mode or not.
+       workspace: the workspace object.
+       site_type (str): server or client. fed_client.json or fed_server.json
+    """
+    # initialize the SecurityContentService.
+    # must do this before initializing other services since it may be needed by them!
+    startup_dir = workspace.get_startup_kit_dir()
+    SecurityContentService.initialize(content_folder=startup_dir)
+
+    if secure_train:
+        insecure_list = _check_secure_content(site_type=site_type)
+        if len(insecure_list):
+            print("The following files are not secure content.")
+            for item in insecure_list:
+                print(item)
+            sys.exit(1)
+
+    # initialize the AuditService, which is used by command processing.
+    # The Audit Service can be used in other places as well.
+    audit_file_name = workspace.get_audit_file_path()
+    AuditService.initialize(audit_file_name)
 
 
 def security_close():
@@ -372,7 +450,7 @@ def get_target_names(targets):
     return target_names
 
 
-def get_return_code(process, job_id, workspace, logger):
+def get_return_code(job_handle, job_id, workspace, logger):
     run_dir = os.path.join(workspace, job_id)
     rc_file = os.path.join(run_dir, FLMetaKey.PROCESS_RC_FILE)
     if os.path.exists(rc_file):
@@ -383,11 +461,11 @@ def get_return_code(process, job_id, workspace, logger):
         except Exception:
             logger.warning(
                 f"Could not get the return_code from {rc_file} of the job:{job_id}, "
-                f"Return the RC from the process:{process.pid}"
+                f"Return the RC from the job_handle:{job_handle}"
             )
-            return_code = process.poll()
+            return_code = job_handle.poll()
     else:
-        return_code = process.poll()
+        return_code = job_handle.poll()
     return return_code
 
 
@@ -401,6 +479,30 @@ def add_custom_dir_to_path(app_custom_folder, new_env):
         new_env[SystemVarName.PYTHONPATH] = path + os.pathsep + app_custom_folder
     else:
         new_env[SystemVarName.PYTHONPATH] = app_custom_folder
+
+
+def extract_participants(participants_list):
+    participants = []
+    for item in participants_list:
+        if isinstance(item, str):
+            participants.append(item)
+        elif isinstance(item, dict):
+            sites = item.get(JobConstants.SITES)
+            participants.extend(sites)
+        else:
+            raise ValueError(f"Must be tye of str or dict, but got {type(item)}")
+    return participants
+
+
+def extract_job_image(job_meta, site_name):
+    deploy_map = job_meta.get(JobMetaKey.DEPLOY_MAP, {})
+    for _, participants in deploy_map.items():
+        for item in participants:
+            if isinstance(item, dict):
+                sites = item.get(JobConstants.SITES)
+                if site_name in sites:
+                    return item.get(JobConstants.JOB_IMAGE)
+    return None
 
 
 def _scope_prop_key(scope_name: str, key: str):
@@ -438,3 +540,19 @@ def get_scope_prop(scope_name: str, key: str) -> Any:
     check_str("key", key)
     data_bus = DataBus()
     return data_bus.get_data(_scope_prop_key(scope_name, key))
+
+
+def get_job_launcher(job_meta: dict, fl_ctx: FLContext) -> dict:
+    engine = fl_ctx.get_engine()
+
+    with engine.new_context() as job_launcher_ctx:
+        # Remove the potential not cleaned up JOB_LAUNCHER
+        job_launcher_ctx.remove_prop(FLContextKey.JOB_LAUNCHER)
+        job_launcher_ctx.set_prop(FLContextKey.JOB_META, job_meta, private=True, sticky=False)
+        engine.fire_event(EventType.GET_JOB_LAUNCHER, job_launcher_ctx)
+
+        job_launcher = job_launcher_ctx.get_prop(FLContextKey.JOB_LAUNCHER)
+        if not (job_launcher and isinstance(job_launcher, list)):
+            raise RuntimeError(f"There's no job launcher can handle this job: {job_meta}.")
+
+    return job_launcher[0]

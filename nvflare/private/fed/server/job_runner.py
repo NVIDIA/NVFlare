@@ -35,7 +35,7 @@ from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import check_client_replies
 from nvflare.private.fed.server.server_state import HotState
 from nvflare.private.fed.utils.app_deployer import AppDeployer
-from nvflare.private.fed.utils.fed_utils import set_message_security_data
+from nvflare.private.fed.utils.fed_utils import extract_participants, set_message_security_data
 from nvflare.security.logging import secure_format_exception
 
 
@@ -131,6 +131,7 @@ class JobRunner(FLComponent):
 
         for app_name, participants in job.get_deployment().items():
             app_data = job.get_application(app_name, fl_ctx)
+            participants = extract_participants(participants)
 
             if len(participants) == 1 and participants[0].upper() == ALL_SITES:
                 participants = ["server"]
@@ -245,11 +246,11 @@ class JobRunner(FLComponent):
         """
         engine = fl_ctx.get_engine()
         job_clients = engine.get_job_clients(client_sites)
-        err = engine.start_app_on_server(job_id, job=job, job_clients=job_clients)
+        err = engine.start_app_on_server(fl_ctx, job=job, job_clients=job_clients)
         if err:
             raise RuntimeError(f"Could not start the server App for job: {job_id}.")
 
-        replies = engine.start_client_job(job_id, client_sites, fl_ctx)
+        replies = engine.start_client_job(job, client_sites, fl_ctx)
         client_sites_names = list(client_sites.keys())
         check_client_replies(replies=replies, client_sites=client_sites_names, command=f"start job ({job_id})")
         display_sites = ",".join(client_sites_names)
@@ -497,13 +498,13 @@ class JobRunner(FLComponent):
     def stop(self):
         self.ask_to_stop = True
 
-    def restore_running_job(self, run_number: str, job_id: str, job_clients, snapshot, fl_ctx: FLContext):
+    def restore_running_job(self, job_id: str, job_clients, snapshot, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
 
         try:
             job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
             job = job_manager.get_job(jid=job_id, fl_ctx=fl_ctx)
-            err = engine.start_app_on_server(run_number, job=job, job_clients=job_clients, snapshot=snapshot)
+            err = engine.start_app_on_server(fl_ctx, job=job, job_clients=job_clients, snapshot=snapshot)
             if err:
                 raise RuntimeError(f"Could not restore the server App for job: {job_id}.")
             with self.lock:

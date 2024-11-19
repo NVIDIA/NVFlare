@@ -16,15 +16,21 @@ import argparse
 import copy
 import os
 
+# Add deterministic seed for reproducibility illustration
+import random
+
 import datasets
+import numpy as np
 import torch
 from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, set_peft_model_state_dict, utils
-from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments, trainer_utils
-from trl import SFTTrainer
+from transformers import AutoModelForCausalLM, AutoTokenizer, trainer_utils
+from trl import SFTConfig, SFTTrainer
 
 import nvflare.client as flare
 
-use_flash_attention = True
+torch.manual_seed(0)
+random.seed(0)
+np.random.seed(0)
 
 
 def format_instruction(example):
@@ -38,9 +44,9 @@ def format_instruction(example):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--model_path",
+        "--model_name_or_path",
         type=str,
-        default="./model/Llama-2-7b-hf",
+        default="meta-llama/llama-3.2-1b",
     )
     parser.add_argument(
         "--data_path_train",
@@ -55,9 +61,16 @@ def main():
     parser.add_argument(
         "--output_path",
         type=str,
-        default="llama2-7b-dolly-sft",
+        default="./workspace_federated/llama-3.2-1b-dolly-sft",
     )
-    parser.add_argument("--mode", type=int, default=0)
+    parser.add_argument(
+        "--train_mode",
+        type=str,
+        default="SFT",
+        help="training mode, SFT or PEFT, default to SFT",
+    )
+    parser.add_argument("--local_epoch", type=int, default=1)
+    parser.add_argument("--clean_up", type=int, default=0)
     args = parser.parse_args()
 
     # Dataset
@@ -72,8 +85,30 @@ def main():
     print(f"logging_steps: {logging_steps}")
 
     # Model configs
-    model_path = args.model_path
-    if args.mode:
+    model_name_or_path = args.model_name_or_path
+    peft_config = None
+
+    # Load model
+    default_dtype = torch.get_default_dtype()
+    torch.set_default_dtype(torch.bfloat16)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name_or_path,
+        device_map="auto",
+        use_cache=False,
+        torch_dtype=torch.bfloat16,
+    )
+    torch.set_default_dtype(default_dtype)
+
+    # Train mode
+    if args.train_mode.lower() == "sft":
+        train_mode = 0
+    elif args.train_mode.lower() == "peft":
+        train_mode = 1
+    else:
+        raise ValueError(f"Invalid train_mode: {args.train_mode}, only SFT and PEFT are supported.")
+
+    # PEFT specific
+    if train_mode:
         # PEFT configs
         peft_config = LoraConfig(
             lora_alpha=16,
@@ -82,56 +117,41 @@ def main():
             bias="none",
             task_type="CAUSAL_LM",
         )
-        # Load model
-        model = AutoModelForCausalLM.from_pretrained(
-            model_path,
-            use_cache=False,
-            use_flash_attention_2=use_flash_attention,
-            device_map="auto",
-        )
         model = get_peft_model(model, peft_config)
-    else:
-        peft_config = None
-        model = AutoModelForCausalLM.from_pretrained(
-            model_path,
-            use_flash_attention_2=use_flash_attention,
-            use_cache=False,
-            device_map="auto",
-        )
-
     model.config.pretraining_tp = 1
+
     # Set tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "right"
 
     # Training arguments
-    train_args = TrainingArguments(
+    train_args = SFTConfig(
         output_dir=args.output_path,
-        num_train_epochs=1,
+        num_train_epochs=args.local_epoch,
         per_device_train_batch_size=batch_size,
         gradient_accumulation_steps=gra_accu_steps,
         gradient_checkpointing=False,
         optim="paged_adamw_32bit",
         logging_steps=logging_steps,
         save_strategy="epoch",
-        learning_rate=2e-4,
+        learning_rate=5e-4,
         bf16=True,
-        tf32=True,
         max_grad_norm=0.3,
         warmup_ratio=0.03,
         lr_scheduler_type="constant",
         disable_tqdm=True,
+        max_seq_length=1024,
+        # safetensors has some issues in saving lm_head.weight, disable it for now
+        save_safetensors=False,
     )
 
     # Trainer
-    max_seq_length = 1024
     trainer = SFTTrainer(
         model=model,
         train_dataset=dataset_train,
         eval_dataset=dataset_valid,
         peft_config=peft_config,
-        max_seq_length=max_seq_length,
         tokenizer=tokenizer,
         packing=False,
         formatting_func=format_instruction,
@@ -141,6 +161,8 @@ def main():
     # initializes NVFlare client API
     flare.init()
 
+    # Train federated rounds
+    # start with global model at the beginning of each round
     while flare.is_running():
         # receives FLModel from NVFlare
         input_model = flare.receive()
@@ -156,7 +178,7 @@ def main():
         # evaluation on both trained and received model
         def evaluate(input_weights, mode):
             # Special load func for PEFT
-            if mode:
+            if train_mode:
                 set_peft_model_state_dict(trainer.model, input_weights)
             else:
                 trainer.model.load_state_dict(input_weights)
@@ -165,10 +187,10 @@ def main():
             return metric_score
 
         # evaluate on received global model
-        eval_loss = evaluate(global_model, args.mode)
+        eval_loss = evaluate(global_model, train_mode)
         eval_loss = float(eval_loss["eval_loss"])
 
-        # loads global model
+        # Load global model and previous training states
         # Since we perform iterative training by using "resume" functionality
         # we need to replace the resume weights with global weights every round
         if curr_round == 0:
@@ -177,20 +199,27 @@ def main():
         else:
             # replace local resume weights with global weights
             resume_from_checkpoint_folder = trainer_utils.get_last_checkpoint(trainer.args.output_dir)
-            if args.mode:
+            if train_mode:
                 # PEFT model small, directly save via torch.save
                 resume_model_file_path = os.path.join(resume_from_checkpoint_folder, utils.WEIGHTS_NAME)
                 torch.save(global_model, resume_model_file_path)
             else:
                 # SFT model can be large, save via HF API
-                trainer.model.save_pretrained(resume_from_checkpoint_folder)
+                # Disable safetensor for now
+                trainer.model.save_pretrained(resume_from_checkpoint_folder, safe_serialization=False)
             # increment num_train_epochs so that the trainer will continue training
-            trainer.args.num_train_epochs += 1
+            if args.clean_up:
+                # runner got cleaned up, set num_train_epochs with curr_round
+                trainer.args.num_train_epochs = (curr_round + 1) * args.local_epoch
+            else:
+                # runner still alive, increment num_train_epochs with local_epoch
+                trainer.args.num_train_epochs += args.local_epoch
+            print(f"Increment num_train_epochs to {trainer.args.num_train_epochs}")
             # continue training
             trainer.train(resume_from_checkpoint=True)
 
         # compose output model to send back to server
-        if args.mode:
+        if train_mode:
             # PEFT, load PEFT part from trainer model
             out_param = get_peft_model_state_dict(trainer.model)
         else:
@@ -198,9 +227,12 @@ def main():
             out_param = trainer.model.state_dict()
 
         # update the key name sent to global model
-        if not args.mode:
+        if not train_mode:
             for key in list(out_param.keys()):
                 out_param["model." + key] = out_param.pop(key).cpu()
+
+        # cast out_param to float32 preparing for communication
+        out_param = {k: v.to(torch.float32) for k, v in out_param.items()}
 
         # construct trained FL model
         output_model = flare.FLModel(

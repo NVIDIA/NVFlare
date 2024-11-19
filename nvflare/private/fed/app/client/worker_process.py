@@ -20,12 +20,10 @@ import os
 import sys
 import threading
 
-from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, JobConstants, SystemConfigs
+from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, JobConstants, SiteType, SystemConfigs
 from nvflare.apis.overseer_spec import SP
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
-from nvflare.fuel.sec.audit import AuditService
-from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.defs import EngineConstant
@@ -38,6 +36,8 @@ from nvflare.private.fed.utils.fed_utils import (
     create_stats_pool_files_for_job,
     fobs_initialize,
     register_ext_decomposers,
+    security_close,
+    security_init_for_job,
     set_stats_pool_config_for_job,
 )
 from nvflare.security.logging import secure_format_exception
@@ -72,12 +72,9 @@ def main(args):
         os.remove(restart_file)
 
     fobs_initialize(workspace=workspace, job_id=args.job_id)
-    # Initialize audit service since the job execution will need it!
-    audit_file_name = workspace.get_audit_file_path()
-    AuditService.initialize(audit_file_name)
 
-    # print("starting the client .....")
-    SecurityContentService.initialize(content_folder=workspace.get_startup_kit_dir())
+    # initialize security processing and ensure that content in the startup has not been tampered with.
+    security_init_for_job(secure_train, workspace, SiteType.CLIENT)
 
     thread = None
     stop_event = threading.Event()
@@ -139,7 +136,7 @@ def main(args):
         stop_event.set()
         if thread and thread.is_alive():
             thread.join()
-        AuditService.close()
+        security_close()
         err = create_stats_pool_files_for_job(workspace, args.job_id)
         if err:
             logger.warning(err)

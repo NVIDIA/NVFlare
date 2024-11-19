@@ -124,6 +124,8 @@ class ServerDeployer:
 
         with services.engine.new_context() as fl_ctx:
             fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
+            fl_ctx.set_prop(FLContextKey.ARGS, args, private=True, sticky=True)
+            fl_ctx.set_prop(FLContextKey.SITE_OBJ, services, private=True, sticky=True)
             services.engine.fire_event(EventType.SYSTEM_BOOTSTRAP, fl_ctx)
 
             component_security_check(fl_ctx)
