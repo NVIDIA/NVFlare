@@ -55,7 +55,7 @@ def ssl_required(params: dict) -> bool:
 
 def get_ssl_context(params: dict, ssl_server: bool) -> Optional[SSLContext]:
     if not ssl_required(params):
-        params["conn_sec"] = "clear"
+        params[DriverParams.IMPLEMENTED_CONN_SEC.value] = "clear"
         return None
 
     conn_security = params.get(DriverParams.CONNECTION_SECURITY.value, ConnectionSecurity.MTLS)
@@ -67,21 +67,21 @@ def get_ssl_context(params: dict, ssl_server: bool) -> Optional[SSLContext]:
         if conn_security == ConnectionSecurity.TLS:
             # do not require client auth
             ctx.verify_mode = ssl.CERT_NONE
-            params["conn_sec"] = "server TLS: client auth not required"
+            params[DriverParams.IMPLEMENTED_CONN_SEC] = "Server TLS: client auth not required"
         else:
             ctx.verify_mode = ssl.CERT_REQUIRED
-            params["conn_sec"] = "server mTLS: client auth required"
+            params[DriverParams.IMPLEMENTED_CONN_SEC] = "Server mTLS: client auth required"
     else:
         ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
         ctx.verify_mode = ssl.CERT_REQUIRED
         if conn_security == ConnectionSecurity.TLS:
             # one-way SSL: use custom CA cert if provided
-            params["conn_sec"] = "client TLS: Custom CA Cert used"
+            params[DriverParams.IMPLEMENTED_CONN_SEC] = "Client TLS: Custom CA Cert used"
             ca_path = params.get(DriverParams.CUSTOM_CA_CERT)
             if not ca_path:
                 # no custom CA cert: use provisioned CA cert
                 ca_path = params.get(DriverParams.CA_CERT.value)
-                params["conn_sec"] = "client TLS: Flare CA Cert used"
+                params[DriverParams.IMPLEMENTED_CONN_SEC] = "Client TLS: Flare CA Cert used"
             cert_path = None
             key_path = None
         else:
@@ -89,7 +89,7 @@ def get_ssl_context(params: dict, ssl_server: bool) -> Optional[SSLContext]:
             ca_path = params.get(DriverParams.CA_CERT.value)
             cert_path = params.get(DriverParams.CLIENT_CERT.value)
             key_path = params.get(DriverParams.CLIENT_KEY.value)
-            params["conn_sec"] = "client mTLS: Flare credentials used"
+            params[DriverParams.IMPLEMENTED_CONN_SEC] = "Client mTLS: Flare credentials used"
 
     if not ca_path:
         scheme = params.get(DriverParams.SCHEME.value, "Unknown")

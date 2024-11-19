@@ -30,10 +30,10 @@ def get_grpc_client_credentials(params: dict):
         # We try to use custom CA cert if it's provided. This is because the client may connect to ALB or proxy
         # that provides its CA cert to the client.
         # If the custom CA cert is not provided, we'll use Flare provisioned CA cert.
-        params["conn_sec"] = "client TLS: Custom CA Cert used"
+        params[DriverParams.IMPLEMENTED_CONN_SEC] = "Client TLS: Custom CA Cert used"
         root_cert_file = params.get(DriverParams.CUSTOM_CA_CERT)
         if not root_cert_file:
-            params["conn_sec"] = "client TLS: Flare CA Cert used"
+            params[DriverParams.IMPLEMENTED_CONN_SEC] = "Client TLS: Flare CA Cert used"
             root_cert_file = params.get(DriverParams.CA_CERT.value)
         if not root_cert_file:
             raise ValueError(f"cannot get CA cert for one-way SSL: {params}")
@@ -42,7 +42,7 @@ def get_grpc_client_credentials(params: dict):
     else:
         # For two-way SSL, we always use our own provisioned certs.
         # In the future, we may change to also support other ways to get cert and key.
-        params["conn_sec"] = "client mTLS: Flare credentials used"
+        params[DriverParams.IMPLEMENTED_CONN_SEC] = "Client mTLS: Flare credentials used"
         root_cert = _read_file(params.get(DriverParams.CA_CERT.value))
         cert_chain = _read_file(params.get(DriverParams.CLIENT_CERT))
         private_key = _read_file(params.get(DriverParams.CLIENT_KEY))
@@ -60,9 +60,9 @@ def get_grpc_server_credentials(params: dict):
     require_client_auth = False if conn_security == ConnectionSecurity.TLS else True
 
     if require_client_auth:
-        params["conn_sec"] = "server mTLS: client auth required"
+        params[DriverParams.IMPLEMENTED_CONN_SEC] = "Server mTLS: client auth required"
     else:
-        params["conn_sec"] = "server TLS: client auth not required"
+        params[DriverParams.IMPLEMENTED_CONN_SEC] = "Server TLS: client auth not required"
 
     return grpc.ssl_server_credentials(
         [(private_key, cert_chain)],
