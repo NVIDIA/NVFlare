@@ -20,7 +20,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, ServerCommandKey, ServerCommandNames, SiteType
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable
-from nvflare.apis.stream_shareable import StreamMeta, StreamShareableGenerator, StreamShareableProcessorFactory
+from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamContext
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
@@ -29,7 +29,7 @@ from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.fed_utils import create_job_processing_context_properties
-from nvflare.private.stream_runner import ShareableStreamer
+from nvflare.private.stream_runner import ObjectStreamer
 from nvflare.widgets.fed_event import ClientFedEventRunner
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
@@ -88,11 +88,10 @@ class ClientRunManager(ClientEngineExecutorSpec):
         self.handlers = handlers
         self.workspace = workspace
         self.components = components
-        # self.aux_runner = ClientAuxRunner()
         self.aux_runner = AuxRunner(self)
-        self.shareable_streamer = ShareableStreamer(self.aux_runner)
+        self.object_streamer = ObjectStreamer(self.aux_runner)
         self.add_handler(self.aux_runner)
-        self.add_handler(self.shareable_streamer)
+        self.add_handler(self.object_streamer)
         self.conf = conf
         self.cell = None
 
@@ -337,23 +336,23 @@ class ClientRunManager(ClientEngineExecutorSpec):
             targets=None, topic=topic, request=request, timeout=0.0, fl_ctx=fl_ctx, optional=optional, secure=secure
         )
 
-    def stream_shareables(
+    def stream_objects(
         self,
         channel: str,
         topic: str,
-        stream_meta: StreamMeta,
+        stream_ctx: StreamContext,
         targets: List[str],
-        generator: StreamShareableGenerator,
+        producer: ObjectProducer,
         fl_ctx: FLContext,
         optional=False,
         secure=False,
     ):
-        return self.shareable_streamer.stream(
+        return self.object_streamer.stream(
             channel=channel,
             topic=topic,
-            stream_meta=stream_meta,
+            stream_ctx=stream_ctx,
             targets=self._to_aux_msg_targets(targets),
-            generator=generator,
+            producer=producer,
             fl_ctx=fl_ctx,
             secure=secure,
             optional=optional,
@@ -363,11 +362,11 @@ class ClientRunManager(ClientEngineExecutorSpec):
         self,
         channel: str,
         topic: str,
-        factory: StreamShareableProcessorFactory,
+        factory: ConsumerFactory,
         stream_done_cb=None,
         **cb_kwargs,
     ):
-        self.shareable_streamer.register_stream_processing(channel, topic, factory, stream_done_cb, **cb_kwargs)
+        self.object_streamer.register_stream_processing(channel, topic, factory, stream_done_cb, **cb_kwargs)
 
     def abort_app(self, job_id: str, fl_ctx: FLContext):
         runner = fl_ctx.get_prop(key=FLContextKey.RUNNER, default=None)

@@ -44,7 +44,7 @@ from nvflare.apis.fl_snapshot import RunSnapshot
 from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
 from nvflare.apis.job_def import Job
 from nvflare.apis.shareable import Shareable, make_reply
-from nvflare.apis.stream_shareable import StreamMeta, StreamShareableGenerator, StreamShareableProcessorFactory
+from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamContext
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.core_cell import FQCN, CoreCell
@@ -608,23 +608,23 @@ class ServerEngine(ServerEngineInternalSpec):
         else:
             return {}
 
-    def stream_shareables(
+    def stream_objects(
         self,
         channel: str,
         topic: str,
-        stream_meta: StreamMeta,
+        stream_ctx: StreamContext,
         targets: List[str],
-        generator: StreamShareableGenerator,
+        producer: ObjectProducer,
         fl_ctx: FLContext,
         optional=False,
         secure=False,
     ):
-        return self.run_manager.shareable_streamer.stream(
+        return self.run_manager.object_streamer.stream(
             channel=channel,
             topic=topic,
-            stream_meta=stream_meta,
+            stream_ctx=stream_ctx,
             targets=self._to_aux_msg_targets(targets),
-            generator=generator,
+            producer=producer,
             fl_ctx=fl_ctx,
             secure=secure,
             optional=optional,
@@ -634,11 +634,11 @@ class ServerEngine(ServerEngineInternalSpec):
         self,
         channel: str,
         topic: str,
-        factory: StreamShareableProcessorFactory,
+        factory: ConsumerFactory,
         stream_done_cb=None,
         **cb_kwargs,
     ):
-        self.run_manager.shareable_streamer.register_stream_processing(
+        self.run_manager.object_streamer.register_stream_processing(
             channel=channel, topic=topic, factory=factory, stream_done_cb=stream_done_cb, **cb_kwargs
         )
 

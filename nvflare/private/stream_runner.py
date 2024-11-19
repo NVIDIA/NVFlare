@@ -20,13 +20,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
-from nvflare.apis.stream_shareable import (
-    StreamMeta,
-    StreamMetaKey,
-    StreamShareableGenerator,
-    StreamShareableProcessor,
-    StreamShareableProcessorFactory,
-)
+from nvflare.apis.streaming import ConsumerFactory, ObjectConsumer, ObjectProducer, StreamContext, StreamContextKey
 from nvflare.fuel.f3.cellnet.registry import Registry
 from nvflare.fuel.utils.obj_utils import get_logger
 from nvflare.fuel.utils.validation_utils import check_callable, check_object_type, check_str
@@ -34,7 +28,7 @@ from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
 from nvflare.security.logging import secure_format_exception
 
 # Topics for streaming messages
-PREFIX = "ShareableStreamer."
+PREFIX = "ObjectStreamer."
 TOPIC_STREAM_REQUEST = PREFIX + "Request"
 TOPIC_STREAM_ABORT = PREFIX + "Abort"
 
@@ -44,23 +38,23 @@ class HeaderKey:
     SEQ = PREFIX + "SEQ"
     TOPIC = PREFIX + "TOPIC"
     CHANNEL = PREFIX + "CHANNEL"
-    META = PREFIX + "META"
+    CTX = PREFIX + "CTX"
 
 
-class _ProcessorInfo:
+class _ConsumerInfo:
     def __init__(
         self,
         logger,
-        stream_meta: StreamMeta,
-        factory: StreamShareableProcessorFactory,
-        processor: StreamShareableProcessor,
+        stream_ctx: StreamContext,
+        factory: ConsumerFactory,
+        consumer: ObjectConsumer,
         stream_done_cb,
         cb_kwargs,
     ):
         self.logger = logger
         self.factory = factory
-        self.stream_meta = stream_meta
-        self.processor = processor
+        self.stream_ctx = stream_ctx
+        self.consumer = consumer
         self.stream_done_cb = stream_done_cb
         self.stream_done_cb_kwargs = cb_kwargs
         self.stream_start_time = time.time()
@@ -73,30 +67,30 @@ class _ProcessorInfo:
         fl_ctx: FLContext,
     ):
         self.last_msg_start_time = time.time()
-        reply = self.processor.process(msg, self.stream_meta, fl_ctx)
+        reply = self.consumer.consume(msg, self.stream_ctx, fl_ctx)
         self.last_msg_end_time = time.time()
         return reply
 
     def stream_done(self, rc: str, fl_ctx: FLContext):
-        self.stream_meta[StreamMetaKey.RC] = rc
+        self.stream_ctx[StreamContextKey.RC] = rc
         if self.stream_done_cb:
             try:
-                self.stream_done_cb(self.stream_meta, fl_ctx, **self.stream_done_cb_kwargs)
+                self.stream_done_cb(self.stream_ctx, fl_ctx, **self.stream_done_cb_kwargs)
             except Exception as ex:
                 self.logger.error(
                     f"exception from stream_done_cb {self.stream_done_cb.__name__}: {secure_format_exception(ex)}"
                 )
         try:
-            self.processor.finalize(self.stream_meta, fl_ctx)
+            self.consumer.finalize(self.stream_ctx, fl_ctx)
         except Exception as ex:
             self.logger.error(
-                f"exception finalizing processor {self.processor.__class__.__name__}: {secure_format_exception(ex)}"
+                f"exception finalizing processor {self.consumer.__class__.__name__}: {secure_format_exception(ex)}"
             )
 
         try:
-            self.factory.return_processor(
-                processor=self.processor,
-                stream_meta=self.stream_meta,
+            self.factory.return_consumer(
+                consumer=self.consumer,
+                stream_ctx=self.stream_ctx,
                 fl_ctx=fl_ctx,
             )
         except Exception as ex:
@@ -106,7 +100,7 @@ class _ProcessorInfo:
             )
 
 
-class ShareableStreamer(FLComponent):
+class ObjectStreamer(FLComponent):
     def __init__(self, aux_runner: AuxRunner):
         FLComponent.__init__(self)
         self.aux_runner = aux_runner
@@ -128,17 +122,17 @@ class ShareableStreamer(FLComponent):
         self,
         channel: str,
         topic: str,
-        factory: StreamShareableProcessorFactory,
+        factory: ConsumerFactory,
         stream_done_cb=None,
         **cb_kwargs,
     ):
-        """Register a StreamShareableProcessorFactory for specified app channel and topic
+        """Register a ConsumerFactory for specified app channel and topic.
         Once a new streaming request is received for the channel/topic, the registered factory will be used
-        to create a StreamShareableProcessor object to handle the msg stream.
+        to create a new ObjectConsumer object to handle the stream.
 
-        Note: the factory should generate a new processor every time get_processor() is called. This is because
+        Note: the factory should generate a new ObjectConsumer every time get_consumer() is called. This is because
         multiple streaming sessions could be going on at the same time. Each streaming session should have its
-        own processor.
+        own ObjectConsumer.
 
         Args:
             channel: app channel
@@ -151,7 +145,7 @@ class ShareableStreamer(FLComponent):
         """
         check_str("channel", channel)
         check_str("topic", topic)
-        check_object_type("factory", factory, StreamShareableProcessorFactory)
+        check_object_type("factory", factory, ConsumerFactory)
         if stream_done_cb is not None:
             check_callable("stream_done_cb", stream_done_cb)
         self.registry.set(channel, topic, (factory, stream_done_cb, cb_kwargs))
@@ -243,36 +237,36 @@ class ShareableStreamer(FLComponent):
                     return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
                 try:
-                    stream_meta = request.get_header(HeaderKey.META)
-                    if not stream_meta:
-                        self.error(request, f"missing stream meta in seq 0: {request.get('__headers__')}")
+                    stream_ctx = request.get_header(HeaderKey.CTX)
+                    if not stream_ctx:
+                        self.error(request, "missing stream ctx in seq 0")
                         return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
-                    processor = factory.get_processor(stream_meta, fl_ctx)
-                    if not processor:
-                        self.error(request, f"no processor from factory {type(factory)}")
+                    consumer = factory.get_consumer(stream_ctx, fl_ctx)
+                    if not consumer:
+                        self.error(request, f"no consumer from factory {type(factory)}")
                         return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-                    if not isinstance(processor, StreamShareableProcessor):
+                    if not isinstance(consumer, ObjectConsumer):
                         self.error(
                             request,
-                            f"bad processor from factory {type(factory)}: "
-                            f"expect StreamShareableProcessor but got {type(processor)}",
+                            f"bad consumer from factory {type(factory)}: "
+                            f"expect ObjectConsumer but got {type(consumer)}",
                         )
                         return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-                    info = _ProcessorInfo(
+                    info = _ConsumerInfo(
                         logger=self.logger,
                         factory=factory,
-                        processor=processor,
-                        stream_meta=stream_meta,
+                        consumer=consumer,
+                        stream_ctx=stream_ctx,
                         stream_done_cb=stream_done_db,
                         cb_kwargs=cb_kwargs,
                     )
                     self.tx_table[tx_id] = info
                 except Exception as ex:
                     self.error(
-                        request, f"factory {type(factory)} failed to produce processor: {secure_format_exception(ex)}"
+                        request, f"factory {type(factory)} failed to produce consumer: {secure_format_exception(ex)}"
                     )
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
@@ -283,9 +277,7 @@ class ShareableStreamer(FLComponent):
                 # ack
                 reply = make_reply(ReturnCode.OK)
         except Exception as ex:
-            self.error(
-                request, f"processor {type(info.processor)} failed to process msg: {secure_format_exception(ex)}"
-            )
+            self.error(request, f"consumer {type(info.consumer)} failed to process msg: {secure_format_exception(ex)}")
             continue_streaming = False
             reply = make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
@@ -334,28 +326,28 @@ class ShareableStreamer(FLComponent):
         self,
         channel: str,
         topic: str,
-        stream_meta: StreamMeta,
+        stream_ctx: StreamContext,
         targets: List[AuxMsgTarget],
-        generator: StreamShareableGenerator,
+        producer: ObjectProducer,
         fl_ctx: FLContext,
         secure=False,
         optional=False,
     ) -> Tuple[str, Any]:
-        if not stream_meta:
-            stream_meta = StreamMeta()
+        if not stream_ctx:
+            stream_ctx = StreamContext()
 
         check_str("channel", channel)
         check_str("topic", topic)
-        check_object_type("stream_meta", stream_meta, StreamMeta)
-        check_object_type("generator", generator, StreamShareableGenerator)
+        check_object_type("stream_ctx", stream_ctx, StreamContext)
+        check_object_type("producer", producer, ObjectProducer)
         check_object_type("fl_ctx", fl_ctx, FLContext)
 
         tx_id = str(uuid.uuid4())
         seq = 0
         abort_signal = fl_ctx.get_run_abort_signal()
 
-        stream_meta[StreamMetaKey.TOPIC] = topic
-        stream_meta[StreamMetaKey.CHANNEL] = channel
+        stream_ctx[StreamContextKey.TOPIC] = topic
+        stream_ctx[StreamContextKey.CHANNEL] = channel
 
         while True:
             if abort_signal and abort_signal.triggered:
@@ -364,14 +356,14 @@ class ShareableStreamer(FLComponent):
                 return ReturnCode.TASK_ABORTED, None
 
             try:
-                request, timeout = generator.get_next(stream_meta, fl_ctx)
-                self.logger.debug(f"got next from {generator.__class__.__name__}: {seq=} {timeout=} {tx_id=}")
+                request, timeout = producer.produce(stream_ctx, fl_ctx)
+                self.logger.debug(f"produce from {producer.__class__.__name__}: {seq=} {timeout=} {tx_id=}")
             except Exception as ex:
                 if seq > 0:
                     self._notify_abort_streaming(targets, tx_id, secure, fl_ctx)
 
                 self.logger.error(
-                    f"Generator {generator.__class__.__name__} failed to produce next Shareable: "
+                    f"Producer {producer.__class__.__name__} failed to produce next object: "
                     f"{secure_format_exception(ex)}"
                 )
                 raise ex
@@ -386,21 +378,21 @@ class ShareableStreamer(FLComponent):
                 if seq > 0:
                     self._notify_abort_streaming(targets, tx_id, secure, fl_ctx)
                 raise ValueError(
-                    f"Generator {generator.__class__.__name__} must return Shareable but got {type(request)}"
+                    f"Producer {producer.__class__.__name__} must produce Shareable but got {type(request)}"
                 )
 
             if not isinstance(timeout, float):
                 if seq > 0:
                     self._notify_abort_streaming(targets, tx_id, secure, fl_ctx)
                 raise ValueError(
-                    f"Generator {generator.__class__.__name__} must return a float timeout but got {type(timeout)}"
+                    f"Producer {producer.__class__.__name__} must return a float timeout but got {type(timeout)}"
                 )
 
             if timeout <= 0:
                 if seq > 0:
                     self._notify_abort_streaming(targets, tx_id, secure, fl_ctx)
                 raise ValueError(
-                    f"Generator {generator.__class__.__name__} must return a positive float timeout but got {timeout}"
+                    f"Producer {producer.__class__.__name__} must return a positive float timeout but got {timeout}"
                 )
 
             request.set_header(HeaderKey.CHANNEL, channel)
@@ -410,7 +402,7 @@ class ShareableStreamer(FLComponent):
 
             if seq == 0:
                 # only send meta in 1st request
-                request.set_header(HeaderKey.META, stream_meta)
+                request.set_header(HeaderKey.CTX, stream_ctx)
 
             seq += 1
 
@@ -426,8 +418,8 @@ class ShareableStreamer(FLComponent):
             )
 
             self.logger.debug("got replies from receivers")
-            result = generator.process_replies(replies, stream_meta, fl_ctx)
-            self.logger.debug(f"got processed result from generator: {result}")
+            result = producer.process_replies(replies, stream_ctx, fl_ctx)
+            self.logger.debug(f"got processed result from producer: {result}")
             if result is not None:
                 # this is end of the streaming
                 if abort_signal and abort_signal.triggered:

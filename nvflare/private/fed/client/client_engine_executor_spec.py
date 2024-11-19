@@ -20,7 +20,7 @@ from nvflare.apis.client_engine_spec import ClientEngineSpec
 from nvflare.apis.engine_spec import EngineSpec
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.apis.stream_shareable import StreamMeta, StreamShareableGenerator, StreamShareableProcessorFactory
+from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamContext
 from nvflare.apis.workspace import Workspace
 from nvflare.widgets.widget import Widget
 
@@ -162,13 +162,13 @@ class ClientEngineExecutorSpec(ClientEngineSpec, EngineSpec, ABC):
         pass
 
     @abstractmethod
-    def stream_shareables(
+    def stream_objects(
         self,
         channel: str,
         topic: str,
-        stream_meta: StreamMeta,
+        stream_ctx: StreamContext,
         targets: List[str],
-        generator: StreamShareableGenerator,
+        producer: ObjectProducer,
         fl_ctx: FLContext,
         optional=False,
         secure=False,
@@ -178,14 +178,14 @@ class ClientEngineExecutorSpec(ClientEngineSpec, EngineSpec, ABC):
         Args:
             channel: the channel for this stream
             topic: topic of the stream
-            stream_meta: metadata of the steam
+            stream_ctx: context of the steam
             targets: receiving sites
-            generator: the generator that can generates the stream of Shareable objects
+            producer: the ObjectProducer that can produce the stream of Shareable objects
             fl_ctx: the FLContext object
             optional: whether the stream is optional
             secure: whether to use P2P security
 
-        Returns: result from the generator's reply processing
+        Returns: result from the producer's reply processing
 
         """
         pass
@@ -195,17 +195,17 @@ class ClientEngineExecutorSpec(ClientEngineSpec, EngineSpec, ABC):
         self,
         channel: str,
         topic: str,
-        factory: StreamShareableProcessorFactory,
+        factory: ConsumerFactory,
         stream_done_cb=None,
         **cb_kwargs,
     ):
-        """Register a StreamShareableProcessorFactory for specified app channel and topic
+        """Register a ConsumerFactory for specified app channel and topic
         Once a new streaming request is received for the channel/topic, the registered factory will be used
-        to create a StreamShareableProcessor object to handle the msg stream.
+        to create an ObjectConsumer object to consume objects of the stream.
 
-        Note: the factory should generate a new processor every time get_processor() is called. This is because
+        Note: the factory should generate a new ObjectConsumer every time get_consumer() is called. This is because
         multiple streaming sessions could be going on at the same time. Each streaming session should have its
-        own processor.
+        own ObjectConsumer.
 
         Args:
             channel: app channel

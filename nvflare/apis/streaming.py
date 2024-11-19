@@ -12,33 +12,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from abc import ABC, abstractmethod
-from builtins import dict as StreamMeta
+from builtins import dict as StreamContext
 from typing import Any, Dict, Tuple
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 
 
-class StreamMetaKey:
+class StreamContextKey:
     CHANNEL = "__channel__"
     TOPIC = "__topic__"
     RC = "__RC__"
 
 
-class StreamShareableGenerator(ABC):
+class ObjectProducer(ABC):
     @abstractmethod
-    def get_next(
+    def produce(
         self,
-        stream_meta: StreamMeta,
+        stream_ctx: StreamContext,
         fl_ctx: FLContext,
     ) -> Tuple[Shareable, float]:
-        """Called to generate next Shareable object to be sent.
+        """Called to produce the next Shareable object to be sent.
         If this method needs to take long time, it should check the abort_signal in the fl_ctx frequently.
         If aborted it should return immediately.
         You can get the abort_signal by calling fl_ctx.get_run_abort_signal().
 
         Args:
-            stream_meta: stream metadata
+            stream_ctx: stream context data
             fl_ctx: The FLContext object
 
         Returns: a tuple of (Shareable object to be sent, timeout for sending this object)
@@ -50,14 +50,14 @@ class StreamShareableGenerator(ABC):
     def process_replies(
         self,
         replies: Dict[str, Shareable],
-        stream_meta: StreamMeta,
+        stream_ctx: StreamContext,
         fl_ctx: FLContext,
     ) -> Any:
         """Called to process replies from receivers of the last Shareable object sent to them.
 
         Args:
             replies: replies from receivers. It's dict of site_name => reply
-            stream_meta: stream metadata
+            stream_ctx: stream context data
             fl_ctx: the FLContext object
 
         Returns: Any object or None
@@ -69,18 +69,18 @@ class StreamShareableGenerator(ABC):
         pass
 
 
-class StreamShareableProcessor(ABC):
+class ObjectConsumer(ABC):
     @abstractmethod
-    def process(
+    def consume(
         self,
         shareable: Shareable,
-        stream_meta: StreamMeta,
+        stream_ctx: StreamContext,
         fl_ctx: FLContext,
     ) -> Tuple[bool, Shareable]:
-        """Process received Shareable object in the stream.
+        """Consume the received Shareable object in the stream.
 
         Args:
-            stream_meta: the stream metadata.
+            stream_ctx: the stream context data.
             shareable: the Shareable object to be processed
             fl_ctx: the FLContext object
 
@@ -94,13 +94,13 @@ class StreamShareableProcessor(ABC):
 
     def finalize(
         self,
-        stream_meta: StreamMeta,
+        stream_ctx: StreamContext,
         fl_ctx: FLContext,
     ):
         """Called to finalize the generator.
 
         Args:
-            stream_meta: stream metadata
+            stream_ctx: stream context
             fl_ctx: the FLContext object
 
         Returns: None
@@ -111,36 +111,36 @@ class StreamShareableProcessor(ABC):
         pass
 
 
-class StreamShareableProcessorFactory(ABC):
+class ConsumerFactory(ABC):
     @abstractmethod
-    def get_processor(
+    def get_consumer(
         self,
-        stream_meta: StreamMeta,
+        stream_ctx: StreamContext,
         fl_ctx: FLContext,
-    ) -> StreamShareableProcessor:
-        """Called to get a processor to process a new shareable stream on the receiving side.
+    ) -> ObjectConsumer:
+        """Called to get an ObjectConsumer to process a new stream on the receiving side.
         This is called only when the 1st streaming object is received for each stream.
 
         Args:
-            stream_meta: the metadata of the stream
+            stream_ctx: the context of the stream
             fl_ctx: FLContext object
 
-        Returns: a StreamShareableProcessor
+        Returns: an ObjectConsumer
 
         """
         pass
 
-    def return_processor(
+    def return_consumer(
         self,
-        processor: StreamShareableProcessor,
-        stream_meta: StreamMeta,
+        consumer: ObjectConsumer,
+        stream_ctx: StreamContext,
         fl_ctx: FLContext,
     ):
-        """Return the processor back to the factory after a stream is finished on the receiving side.
+        """Return the consumer back to the factory after a stream is finished on the receiving side.
 
         Args:
-            processor: the processor to return
-            stream_meta: metadata of the stream
+            consumer: the consumer to be returned
+            stream_ctx: context of the stream
             fl_ctx: FLContext object
 
         Returns: None
@@ -149,11 +149,11 @@ class StreamShareableProcessorFactory(ABC):
         pass
 
 
-def stream_done_cb_signature(stream_meta: StreamMeta, fl_ctx: FLContext, **kwargs):
+def stream_done_cb_signature(stream_ctx: StreamContext, fl_ctx: FLContext, **kwargs):
     """This is the signature of stream_done_cb.
 
     Args:
-        stream_meta: metadata of the stream
+        stream_ctx: context of the stream
         fl_ctx: FLContext object
         **kwargs: the kwargs specified when registering the stream_done_cb.
 
