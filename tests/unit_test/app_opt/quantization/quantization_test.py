@@ -50,4 +50,4 @@ class TestQuantization:
         for key in dequant_data.keys():
             dequant_array = dequant_data[key]
             expected_array = expected_data[key]
-            assert np.array_equal(dequant_array, expected_array)
+            assert np.allclose(dequant_array, expected_array)

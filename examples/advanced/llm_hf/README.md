@@ -114,20 +114,16 @@ The SFT curves are shown below, magenta for centralized results, others for FL t
 
 These results show that model precision conversion / quantization does not significantly impact the training while reducing the message size to 1/2, 1/4, and even 1/8, which can significantly reduce the message size, making it crucial for transmitting LLM updates.
 
-For message reduce, from float32 to 16-/8-/8-bit, the message size is reduced from 6 GB to 3 GB / 1.5 GB / 800 MB for Llama-3.2-1B model according to the log. Note that quantization will generate additional meta data, which can be significant for 4-bit cases.
+For message reduce, from float32 to 16-/8-/4-bit, the message size (in MB) of Llama-3.2-1B model are reduced to: 
 
-16-bit:
-```shell
-Quantized 147/147 params. Before quantization: 5716.26 MB. After quantization: 2858.13 MB with meta: 0.00 MB.
-```
-8-bit:
-```shell
-Quantized 147/147 params. Before quantization: 5716.26 MB. After quantization: 1429.06 MB with meta: 1.54 MB.
-```
-4-bit:
-```shell
-Quantized 147/147 params. Before quantization: 5716.26 MB. After quantization: 714.53 MB with meta: 89.33 MB.
-```
+| Quantization      | Raw Model Size | Quantized Model Size | Quantization Meta Size |
+|-------------------|----------------|----------------------|------------------------|
+| float16           | 5716.26        | 2858.13              | 0.00                   |
+| blockwise8        | 5716.26        | 1429.06              | 1.54                   |
+| float4            | 5716.26        | 714.53               | 89.33                  |
+| normalized float4 | 5716.26        | 714.53               | 89.33                  |
+
+Note that quantization will generate additional meta data, which can be significant for 4-bit cases.
 
 ## Federated Training with Multiple Clients
 With the above example, we can easily extend the federated training to multiple clients. We can use the following command to run the federated training with multiple clients:
