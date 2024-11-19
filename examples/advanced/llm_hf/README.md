@@ -118,15 +118,15 @@ For message reduce, from float32 to 16-/8-/8-bit, the message size is reduced fr
 
 16-bit:
 ```shell
-Quantized all 147 params. Before quantization: 5716.26 MB. After quantization: 2858.13 MB with meta: 0.00 MB.
+Quantized 147/147 params. Before quantization: 5716.26 MB. After quantization: 2858.13 MB with meta: 0.00 MB.
 ```
 8-bit:
 ```shell
-Quantized all 147 params. Before quantization: 5716.26 MB. After quantization: 1429.06 MB with meta: 1.54 MB.
+Quantized 147/147 params. Before quantization: 5716.26 MB. After quantization: 1429.06 MB with meta: 1.54 MB.
 ```
 4-bit:
 ```shell
-Quantized all 147 params. Before quantization: 5716.26 MB. After quantization: 714.53 MB with meta: 89.33 MB.
+Quantized 147/147 params. Before quantization: 5716.26 MB. After quantization: 714.53 MB with meta: 89.33 MB.
 ```
 
 ## Federated Training with Multiple Clients

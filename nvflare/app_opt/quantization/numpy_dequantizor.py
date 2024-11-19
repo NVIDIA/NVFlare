@@ -25,7 +25,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.app_opt.quantization.constant import DATA_TYPE, QUANTIZATION_TYPE
 
 
-class ModelDequantizor(DXOFilter):
+class NumpyModelDequantizor(DXOFilter):
     def __init__(self, source_data_type="float32"):
         """Filter to dequantize Shareable object to recover from quantization
 
@@ -51,6 +51,7 @@ class ModelDequantizor(DXOFilter):
         n_bytes_before = 0
         n_bytes_after = 0
         n_bytes_meta = 0
+        n_quant_params = 0
         for i, param_name in enumerate(params.keys()):
             if self.source_data_type == "float32":
                 values = params[param_name]
@@ -58,43 +59,46 @@ class ModelDequantizor(DXOFilter):
                 for item in quant_state[param_name].values():
                     if isinstance(item, np.ndarray):
                         n_bytes_meta += item.nbytes
-                if quant_type == "float16":
-                    # direct convert
-                    values = values.astype(np.float32)
-                    params[param_name] = values
-                elif quant_type in ["blockwise8", "float4", "normfloat4"]:
-                    # use bitsandbytes to dequantize the values
-                    # extract quantization state
-                    if quant_type == "blockwise8":
-                        quantized = torch.as_tensor(values)
-                        absmax = torch.as_tensor(quant_state[param_name]["absmax"])
-                        code = torch.as_tensor(quant_state[param_name]["code"])
-                        # de-quanitze
-                        dequantized = dequantize_blockwise(quantized, absmax=absmax, code=code)
-                        params[param_name] = dequantized.numpy()
-                    else:
-                        # first convert numpy array to tensor, need to use GPU
-                        quantized = torch.as_tensor(values).cuda()
-                        # create QuantState object
-                        quantize_state = QuantState(
-                            quant_type=quant_state[param_name]["quant_type"],
-                            absmax=torch.as_tensor(quant_state[param_name]["absmax"]).cuda(),
-                            blocksize=quant_state[param_name]["blocksize"],
-                            code=torch.as_tensor(quant_state[param_name]["quant_map"]).cuda(),
-                            dtype=getattr(torch, quant_state[param_name]["dtype"]),
-                            shape=torch.Size(quant_state[param_name]["shape"]),
-                        )
-                        # de-quanitze
-                        if quant_type == "float4":
-                            dequantized = dequantize_4bit(quantized, quantize_state, quant_type="fp4")
+                if self.source_data_type != quant_type:
+                    # if the source data type is not the same as the quantization type, convert it
+                    n_quant_params += 1
+                    if quant_type == "float16":
+                        # direct convert
+                        values = values.astype(np.float32)
+                        params[param_name] = values
+                    elif quant_type in ["blockwise8", "float4", "normfloat4"]:
+                        # use bitsandbytes to dequantize the values
+                        # extract quantization state
+                        if quant_type == "blockwise8":
+                            quantized = torch.as_tensor(values)
+                            absmax = torch.as_tensor(quant_state[param_name]["absmax"])
+                            code = torch.as_tensor(quant_state[param_name]["code"])
+                            # de-quanitze
+                            dequantized = dequantize_blockwise(quantized, absmax=absmax, code=code)
+                            params[param_name] = dequantized.numpy()
                         else:
-                            dequantized = dequantize_4bit(quantized, quantize_state, quant_type="nf4")
-                        params[param_name] = dequantized.cpu().numpy()
+                            # first convert numpy array to tensor, need to use GPU
+                            quantized = torch.as_tensor(values).cuda()
+                            # create QuantState object
+                            quantize_state = QuantState(
+                                quant_type=quant_state[param_name]["quant_type"],
+                                absmax=torch.as_tensor(quant_state[param_name]["absmax"]).cuda(),
+                                blocksize=quant_state[param_name]["blocksize"],
+                                code=torch.as_tensor(quant_state[param_name]["quant_map"]).cuda(),
+                                dtype=getattr(torch, quant_state[param_name]["dtype"]),
+                                shape=torch.Size(quant_state[param_name]["shape"]),
+                            )
+                            # de-quanitze
+                            if quant_type == "float4":
+                                dequantized = dequantize_4bit(quantized, quantize_state, quant_type="fp4")
+                            else:
+                                dequantized = dequantize_4bit(quantized, quantize_state, quant_type="nf4")
+                            params[param_name] = dequantized.cpu().numpy()
                 n_bytes_after += params[param_name].nbytes
 
         self.log_info(
             fl_ctx,
-            f"Dequantized in total {n_params} params."
+            f"Dequantized {n_quant_params}/{n_params} params."
             f" Before dequantization: {n_bytes_before / (1024 ** 2):.2f} MB with meta: {n_bytes_meta / (1024 ** 2):.2f} MB."
             f" After dequantization: {n_bytes_after / (1024 ** 2):.2f} MB.",
         )

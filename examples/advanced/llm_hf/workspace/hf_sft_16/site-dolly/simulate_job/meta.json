@@ -1,0 +1,15 @@
+{
+    "name": "llm_hf_sft",
+    "resource_spec": {},
+    "min_clients": 1,
+    "deploy_map": {
+        "app_server": [
+            "server"
+        ],
+        "app_site-dolly": [
+            "site-dolly"
+        ]
+    },
+    "job_folder_name": "llm_hf_sft",
+    "byoc": true
+}

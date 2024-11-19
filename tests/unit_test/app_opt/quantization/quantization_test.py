@@ -17,8 +17,8 @@ import pytest
 
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_opt.quantization.model_dequantizor import ModelDequantizor
-from nvflare.app_opt.quantization.model_quantizor import ModelQuantizor
+from nvflare.app_opt.quantization.numpy_dequantizor import NumpyModelDequantizor
+from nvflare.app_opt.quantization.numpy_quantizor import NumpyModelQuantizor
 
 TEST_CASES = [
     (
@@ -42,9 +42,9 @@ class TestQuantization:
             data=input_data,
         )
         fl_ctx = FLContext()
-        f_quant = ModelQuantizor(quantization_type=quantization_type)
+        f_quant = NumpyModelQuantizor(quantization_type=quantization_type)
         quant_dxo = f_quant.process_dxo(dxo, dxo.to_shareable(), fl_ctx)
-        f_dequant = ModelDequantizor(source_data_type="float32")
+        f_dequant = NumpyModelDequantizor(source_data_type="float32")
         dequant_dxo = f_dequant.process_dxo(quant_dxo, dxo.to_shareable(), fl_ctx)
         dequant_data = dequant_dxo.data
         for key in dequant_data.keys():
