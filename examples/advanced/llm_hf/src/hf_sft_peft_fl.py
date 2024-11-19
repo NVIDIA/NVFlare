@@ -142,6 +142,7 @@ def main():
         lr_scheduler_type="constant",
         disable_tqdm=True,
         max_seq_length=1024,
+        save_total_limit=2,
         # safetensors has some issues in saving lm_head.weight, disable it for now
         save_safetensors=False,
     )
