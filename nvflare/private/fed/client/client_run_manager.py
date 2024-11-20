@@ -105,7 +105,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
 
         # get job meta!
         job_ctx_props = self.create_job_processing_context_properties(workspace, job_id)
-        job_ctx_props.update({FLContextKey.PROCESS_TYPE, ProcessType.CLIENT_JOB})
+        job_ctx_props.update({FLContextKey.PROCESS_TYPE: ProcessType.CLIENT_JOB})
         self.fl_ctx_mgr = FLContextManager(
             engine=self, identity_name=client_name, job_id=job_id, public_stickers={}, private_stickers=job_ctx_props
         )

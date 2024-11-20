@@ -460,7 +460,7 @@ class ServerEngine(ServerEngineInternalSpec):
                     identity_name=self.server.project_name,
                     job_id="",
                     public_stickers={},
-                    private_stickers={FLContextKey.PROCESS_TYPE, ProcessType.SERVER_PARENT},
+                    private_stickers={FLContextKey.PROCESS_TYPE: ProcessType.SERVER_PARENT},
                 )
             return self.fl_ctx_mgr.new_context()
 

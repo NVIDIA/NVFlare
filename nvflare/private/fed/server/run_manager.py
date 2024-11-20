@@ -64,9 +64,9 @@ class RunManager(EngineSpec):
 
         if job_id:
             job_ctx_props = self.create_job_processing_context_properties(workspace, job_id)
-            job_ctx_props.update({FLContextKey.PROCESS_TYPE, ProcessType.SERVER_JOB})
+            job_ctx_props.update({FLContextKey.PROCESS_TYPE: ProcessType.SERVER_JOB})
         else:
-            job_ctx_props = {FLContextKey.PROCESS_TYPE, ProcessType.SERVER_PARENT}
+            job_ctx_props = {FLContextKey.PROCESS_TYPE: ProcessType.SERVER_PARENT}
 
         self.fl_ctx_mgr = FLContextManager(
             engine=engine, identity_name=server_name, job_id=job_id, public_stickers={}, private_stickers=job_ctx_props
