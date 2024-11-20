@@ -16,7 +16,6 @@ import copy
 import logging
 import os
 import re
-import shlex
 import shutil
 import sys
 import threading
@@ -32,7 +31,6 @@ from nvflare.apis.fl_constant import (
     FLContextKey,
     MachineStatus,
     ProcessType,
-    ReturnCode,
     RunProcessKey,
     ServerCommandKey,
     ServerCommandNames,
@@ -59,9 +57,7 @@ from nvflare.private.admin_defs import Message, MsgHeader
 from nvflare.private.aux_runner import AuxMsgTarget
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, RequestHeader, TrainingTopic, new_cell_message
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
-from nvflare.private.fed.server.server_state import ServerState
 from nvflare.private.fed.utils.fed_utils import (
-    add_custom_dir_to_path,
     get_job_launcher,
     get_return_code,
     security_close,
