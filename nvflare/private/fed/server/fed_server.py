@@ -159,6 +159,10 @@ class BaseServer(ABC):
                 DriverParams.SERVER_CERT.value: ssl_cert,
                 DriverParams.SERVER_KEY.value: private_key,
             }
+
+            conn_security = grpc_args.get(SecureTrainConst.CONNECTION_SECURITY)
+            if conn_security:
+                credentials[DriverParams.CONNECTION_SECURITY.value] = conn_security
         else:
             credentials = {}
         parent_url = None
@@ -410,6 +414,10 @@ class FederatedServer(BaseServer):
                 DriverParams.SERVER_CERT.value: ssl_cert,
                 DriverParams.SERVER_KEY.value: private_key,
             }
+
+            conn_security = server_config.get(SecureTrainConst.CONNECTION_SECURITY)
+            if conn_security:
+                credentials[DriverParams.CONNECTION_SECURITY.value] = conn_security
         else:
             credentials = {}
         cell = Cell(

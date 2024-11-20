@@ -133,12 +133,14 @@ class ClientManager:
 
         if not client:
             fqcn = request.get_prop(MessagePropKey.ENDPOINT).conn_props.get(DriverParams.PEER_CN.value)
-            if fqcn and fqcn != client_name:
+            if fqcn and fqcn not in [client_name, "N/A"]:
                 context.set_prop(
                     FLContextKey.UNAUTHENTICATED,
                     f"Requested fqcn:{fqcn} does not match the client_name: {client_name}",
                     sticky=False,
                 )
+
+                self.logger.error(f"Registration rejected: CN {fqcn} does not match the client_name: {client_name}")
                 return None
 
             with self.lock:

@@ -15,11 +15,14 @@
 import copy
 import json
 import os
+import shutil
 
 import yaml
 
 from nvflare.lighter import utils
-from nvflare.lighter.spec import Builder
+from nvflare.lighter.spec import Builder, ConnSecurity, Participant, Project
+
+CUSTOM_CA_CERT_FILE_NAME = "customRootCA.pem"
 
 
 class StaticFileBuilder(Builder):
@@ -119,6 +122,19 @@ class StaticFileBuilder(Builder):
         else:
             ctx["overseer_end_point"] = f"{protocol}://{self.get_overseer_name(overseer)}{api_root}"
 
+    def _build_conn_properties(self, site: Participant, ctx: dict, site_config: dict):
+        project = ctx.get("project")
+        assert isinstance(project, Project)
+        conn_security = site.conn_security if site.conn_security else project.conn_security
+        if conn_security:
+            if conn_security in [ConnSecurity.CLEAR, ConnSecurity.INSECURE]:
+                conn_security = ConnSecurity.INSECURE
+            site_config["connection_security"] = conn_security
+
+        custom_ca_cert = site.custom_ca_cert if site.custom_ca_cert else project.custom_ca_cert
+        if custom_ca_cert:
+            shutil.copyfile(custom_ca_cert, os.path.join(self.get_kit_dir(site, ctx), CUSTOM_CA_CERT_FILE_NAME))
+
     def _build_server(self, server, ctx):
         config = json.loads(self.template["fed_server"])
         dest_dir = self.get_kit_dir(server, ctx)
@@ -146,6 +162,10 @@ class StaticFileBuilder(Builder):
                 }
             overseer_agent.pop("overseer_exists", None)
             config["overseer_agent"] = overseer_agent
+
+        # set up connection props
+        self._build_conn_properties(server, ctx, server_0)
+
         utils._write(os.path.join(dest_dir, "fed_server.json"), json.dumps(config, indent=2), "t")
         replacement_dict = {
             "admin_port": admin_port,
@@ -211,15 +231,12 @@ class StaticFileBuilder(Builder):
             "t",
         )
 
-    def _build_client(self, client, ctx):
+    def _build_client(self, client: Participant, ctx):
         config = json.loads(self.template["fed_client"])
         dest_dir = self.get_kit_dir(client, ctx)
-        fed_learn_port = ctx.get("fed_learn_port")
-        server_name = ctx.get("server_name")
-        # config["servers"][0]["service"]["target"] = f"{server_name}:{fed_learn_port}"
         config["servers"][0]["service"]["scheme"] = self.scheme
         config["servers"][0]["name"] = self.project_name
-        # config["enable_byoc"] = client.enable_byoc
+
         replacement_dict = {
             "client_name": f"{client.subject}",
             "config_folder": self.config_folder,
@@ -239,12 +256,10 @@ class StaticFileBuilder(Builder):
                 }
             overseer_agent.pop("overseer_exists", None)
             config["overseer_agent"] = overseer_agent
-        # components = client.props.get("components", [])
-        # config["components"] = list()
-        # for comp in components:
-        #     temp_dict = {"id": comp}
-        #     temp_dict.update(components[comp])
-        #     config["components"].append(temp_dict)
+
+        # set connection properties
+        client_conf = config["client"]
+        self._build_conn_properties(client, ctx, client_conf)
 
         utils._write(os.path.join(dest_dir, "fed_client.json"), json.dumps(config, indent=2), "t")
         if self.docker_image:

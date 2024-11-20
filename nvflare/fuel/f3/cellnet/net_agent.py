@@ -406,7 +406,12 @@ class NetAgent:
 
     @staticmethod
     def _connector_info(info: ConnectorData) -> dict:
-        return {"url": info.connect_url, "handle": info.handle, "type": "connector" if info.active else "listener"}
+        return {
+            "url": info.connect_url,
+            "handle": info.handle,
+            "type": "connector" if info.active else "listener",
+            "params": info.params,
+        }
 
     def _get_connectors(self) -> dict:
         cell = self.cell
