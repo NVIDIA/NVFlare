@@ -16,9 +16,7 @@ import copy
 import logging
 import os
 import re
-import shlex
 import shutil
-import subprocess
 import sys
 import threading
 import time
@@ -32,7 +30,7 @@ from nvflare.apis.fl_constant import (
     AdminCommandNames,
     FLContextKey,
     MachineStatus,
-    ProcessType,
+    ReturnCode,
     RunProcessKey,
     ServerCommandKey,
     ServerCommandNames,
@@ -43,23 +41,22 @@ from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.fl_snapshot import RunSnapshot
 from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
 from nvflare.apis.job_def import Job
-from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
-from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx, get_serializable_data
+from nvflare.apis.job_launcher_spec import JobLauncherSpec
+from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamContext
+from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
-from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellMsgReturnCode
-from nvflare.fuel.f3.cellnet.fqcn import FQCN
-from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message, MsgHeader
 from nvflare.private.aux_runner import AuxMsgTarget
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, RequestHeader, TrainingTopic, new_cell_message
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
-from nvflare.private.fed.server.server_state import ServerState
 from nvflare.private.fed.utils.fed_utils import (
-    add_custom_dir_to_path,
+    get_job_launcher,
     get_return_code,
     security_close,
     set_message_security_data,
@@ -117,7 +114,6 @@ class ServerEngine(ServerEngineInternalSpec):
         self.snapshot_persistor = snapshot_persistor
         self.job_runner = None
         self.job_def_manager = None
-        self.cell = None
 
         self.kv_list = parse_vars(args.set)
 
@@ -167,32 +163,21 @@ class ServerEngine(ServerEngineInternalSpec):
     def validate_targets(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
         return self.client_manager.get_all_clients_from_inputs(client_names)
 
-    def start_app_on_server(self, run_number: str, job: Job = None, job_clients=None, snapshot=None) -> str:
-        if run_number in self.run_processes.keys():
-            return f"Server run: {run_number} already started."
+    def start_app_on_server(self, fl_ctx: FLContext, job: Job = None, job_clients=None, snapshot=None) -> str:
+        if not isinstance(job, Job):
+            return "Must provide a job object to start the server app."
+
+        if job.job_id in self.run_processes.keys():
+            return f"Server run: {job.job_id} already started."
         else:
             workspace = Workspace(root_dir=self.args.workspace, site_name="server")
-            app_root = workspace.get_app_dir(run_number)
+            app_root = workspace.get_app_dir(job.job_id)
             if not os.path.exists(app_root):
                 return "Server app does not exist. Please deploy the server app before starting."
 
             self.engine_info.status = MachineStatus.STARTING
-            app_custom_folder = workspace.get_app_custom_dir(run_number)
 
-            if not isinstance(job, Job):
-                return "Must provide a job object to start the server app."
-
-            self._start_runner_process(
-                self.args,
-                app_root,
-                run_number,
-                app_custom_folder,
-                job.job_id,
-                job_clients,
-                snapshot,
-                self.server.cell,
-                self.server.server_state,
-            )
+            self._start_runner_process(job, job_clients, snapshot, fl_ctx)
 
             self.engine_info.status = MachineStatus.STARTED
             return ""
@@ -228,73 +213,30 @@ class ServerEngine(ServerEngineInternalSpec):
                 self.run_processes.pop(job_id, None)
         self.engine_info.status = MachineStatus.STOPPED
 
-    def _start_runner_process(
-        self,
-        args,
-        app_root,
-        run_number,
-        app_custom_folder,
-        job_id,
-        job_clients,
-        snapshot,
-        cell: Cell,
-        server_state: ServerState,
-    ):
-        new_env = os.environ.copy()
-        if app_custom_folder != "":
-            add_custom_dir_to_path(app_custom_folder, new_env)
-
+    def _start_runner_process(self, job, job_clients, snapshot, fl_ctx: FLContext):
+        job_launcher: JobLauncherSpec = get_job_launcher(job.meta, fl_ctx)
         if snapshot:
             restore_snapshot = True
         else:
             restore_snapshot = False
-        command_options = ""
-        for t in args.set:
-            command_options += " " + t
+        fl_ctx.set_prop(FLContextKey.SNAPSHOT, restore_snapshot, private=True, sticky=False)
+        job_handle = job_launcher.launch_job(job.meta, fl_ctx)
+        self.logger.info(f"Launch job_id: {job.job_id}  with job launcher: {type(job_launcher)} ")
 
-        command = (
-            sys.executable
-            + " -m nvflare.private.fed.app.server.runner_process -m "
-            + args.workspace
-            + " -s fed_server.json -r "
-            + app_root
-            + " -n "
-            + str(run_number)
-            + " -p "
-            + str(cell.get_internal_listener_url())
-            + " -u "
-            + str(cell.get_root_url_for_child())
-            + " --host "
-            + str(server_state.host)
-            + " --port "
-            + str(server_state.service_port)
-            + " --ssid "
-            + str(server_state.ssid)
-            + " --ha_mode "
-            + str(self.server.ha_mode)
-            + " --set"
-            + command_options
-            + " print_conf=True restore_snapshot="
-            + str(restore_snapshot)
-        )
-        # use os.setsid to create new process group ID
+        args = fl_ctx.get_prop(FLContextKey.ARGS)
 
-        process = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
-
-        if not job_id:
-            job_id = ""
         if not job_clients:
             job_clients = self.client_manager.clients
 
         with self.lock:
-            self.run_processes[run_number] = {
-                RunProcessKey.JOB_HANDLE: process,
-                RunProcessKey.JOB_ID: job_id,
+            self.run_processes[job.job_id] = {
+                RunProcessKey.JOB_HANDLE: job_handle,
+                RunProcessKey.JOB_ID: job.job_id,
                 RunProcessKey.PARTICIPANTS: job_clients,
             }
 
-        threading.Thread(target=self.wait_for_complete, args=[args.workspace, run_number, process]).start()
-        return process
+        threading.Thread(target=self.wait_for_complete, args=[args.workspace, job.job_id, job_handle]).start()
+        return job_handle
 
     def get_job_clients(self, client_sites):
         job_clients = {}
@@ -440,58 +382,8 @@ class ServerEngine(ServerEngineInternalSpec):
 
     def set_run_manager(self, run_manager: RunManager):
         self.run_manager = run_manager
-
-        # we set the run_manager's cell if we have the cell.
-        if self.cell:
-            self.run_manager.cell = self.cell
         for _, widget in self.widgets.items():
             self.run_manager.add_handler(widget)
-
-    def get_cell(self):
-        return self.cell
-
-    def initialize_comm(self, cell: Cell):
-        """This is called when the communication cell has been created.
-        We will set up aux message handler here.
-
-        Args:
-            cell:
-
-        Returns:
-
-        """
-        self.logger.info("initialize_comm called!")
-
-        self.cell = cell
-        if self.run_manager:
-            # Note that the aux_runner is created with the self.run_manager as the "engine".
-            # We must set the cell in it; otherwise it won't be able to send messages.
-            # The timing of the creation of the run_manager and the cell is not deterministic, we set the cell here
-            # only if the run_manager has been created.
-            self.run_manager.cell = cell
-
-        cell.register_request_cb(
-            channel=CellChannel.AUX_COMMUNICATION,
-            topic="*",
-            cb=self._handle_aux_message,
-        )
-
-    def _handle_aux_message(self, request: CellMessage) -> CellMessage:
-        assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
-        data = request.payload
-
-        topic = request.get_header(MessageHeaderKey.TOPIC)
-        with self.new_context() as fl_ctx:
-            reply = self.run_manager.aux_runner.dispatch(topic=topic, request=data, fl_ctx=fl_ctx)
-            shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
-            reply.set_header(key=FLContextKey.PEER_CONTEXT, value=shared_fl_ctx)
-
-            if reply is not None:
-                return_message = new_cell_message({}, reply)
-                return_message.set_header(MessageHeaderKey.RETURN_CODE, CellMsgReturnCode.OK)
-            else:
-                return_message = new_cell_message({}, None)
-            return return_message
 
     def set_job_runner(self, job_runner: JobRunner, job_manager: JobDefManagerSpec):
         self.job_runner = job_runner
@@ -511,11 +403,7 @@ class ServerEngine(ServerEngineInternalSpec):
         else:
             # return FLContext()
             return FLContextManager(
-                engine=self,
-                identity_name=self.server.project_name,
-                job_id="",
-                public_stickers={},
-                private_stickers={FLContextKey.PROCESS_TYPE, ProcessType.SERVER_PARENT},
+                engine=self, identity_name=self.server.project_name, job_id="", public_stickers={}, private_stickers={}
             ).new_context()
 
     def add_component(self, component_id: str, component):
@@ -584,7 +472,6 @@ class ServerEngine(ServerEngineInternalSpec):
             return self.send_aux_to_targets(targets, topic, request, timeout, fl_ctx, optional, secure)
         except Exception as e:
             self.logger.error(f"Failed to send the aux_message: {topic} with exception: {secure_format_exception(e)}.")
-            return {}
 
     def multicast_aux_requests(
         self,
@@ -628,17 +515,17 @@ class ServerEngine(ServerEngineInternalSpec):
         else:
             return None
 
-    def send_aux_to_targets(self, targets, topic, request, timeout, fl_ctx, optional, secure):
+    def _to_aux_msg_targets(self, target_names: List[str]):
         msg_targets = []
-        if not targets:
+        if not target_names:
             # all clients
             for c in self.get_clients():
                 msg_targets.append(AuxMsgTarget.client_target(c))
-        elif not isinstance(targets, list):
-            raise TypeError(f"invalid targets type {type(targets)}")
+        elif not isinstance(target_names, list):
+            raise TypeError(f"invalid target_names {type(target_names)}")
         else:
             # this is a list of targets: check targets
-            for t in targets:
+            for t in target_names:
                 if not isinstance(t, str):
                     raise TypeError(f"target name must be str but got {type(t)}")
 
@@ -648,7 +535,10 @@ class ServerEngine(ServerEngineInternalSpec):
                     return {}
                 else:
                     msg_targets.append(amt)
+        return msg_targets
 
+    def send_aux_to_targets(self, targets, topic, request, timeout, fl_ctx, optional, secure):
+        msg_targets = self._to_aux_msg_targets(targets)
         if msg_targets:
             return self.run_manager.aux_runner.send_aux_request(
                 targets=msg_targets,
@@ -661,6 +551,40 @@ class ServerEngine(ServerEngineInternalSpec):
             )
         else:
             return {}
+
+    def stream_objects(
+        self,
+        channel: str,
+        topic: str,
+        stream_ctx: StreamContext,
+        targets: List[str],
+        producer: ObjectProducer,
+        fl_ctx: FLContext,
+        optional=False,
+        secure=False,
+    ):
+        return self.run_manager.object_streamer.stream(
+            channel=channel,
+            topic=topic,
+            stream_ctx=stream_ctx,
+            targets=self._to_aux_msg_targets(targets),
+            producer=producer,
+            fl_ctx=fl_ctx,
+            secure=secure,
+            optional=optional,
+        )
+
+    def register_stream_processing(
+        self,
+        channel: str,
+        topic: str,
+        factory: ConsumerFactory,
+        stream_done_cb=None,
+        **cb_kwargs,
+    ):
+        self.run_manager.object_streamer.register_stream_processing(
+            channel=channel, topic=topic, factory=factory, stream_done_cb=stream_done_cb, **cb_kwargs
+        )
 
     def sync_clients_from_main_process(self):
         # repeatedly ask the parent process to get participating clients until we receive the result
@@ -677,7 +601,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
             if time.time() - start >= max_wait:
                 self.logger.critical(f"Cannot get participating clients for job {job_id} after {max_wait} seconds")
-                raise RuntimeError("Exiting job process: Cannot get participating clients for job {job_id}")
+                raise RuntimeError(f"Exiting job process: Cannot get participating clients for job {job_id}")
 
             self.logger.debug("didn't receive clients info - retry in 1 second")
             time.sleep(1.0)
