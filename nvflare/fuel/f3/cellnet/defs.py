@@ -170,7 +170,6 @@ class CellChannelTopic:
     EXECUTE_RESULT = "execute_result"
     FIRE_EVENT = "fire_event"
     REPORT_JOB_FAILURE = "report_job_failure"
-    TRANSMIT_ERROR_LOG = "transmit_error_log"
 
     SIMULATOR_WORKER_INIT = "simulator_worker_init"
 
