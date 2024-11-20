@@ -33,13 +33,12 @@ class StreamCell:
         self.file_streamer = FileStreamer(self.byte_streamer, self.byte_receiver)
         self.object_streamer = ObjectStreamer(self.blob_streamer)
 
-    @staticmethod
-    def get_chunk_size():
+    def get_chunk_size(self):
         """Gets the default chunk size used by StreamCell.
 
         Byte stream are broken into chunks of this size before sending over Cellnet
         """
-        return ByteStreamer.get_chunk_size()
+        return self.byte_streamer.get_chunk_size()
 
     def send_stream(
         self, channel: str, topic: str, target: str, message: Message, secure=False, optional=False

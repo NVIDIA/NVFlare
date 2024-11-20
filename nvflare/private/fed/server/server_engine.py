@@ -43,6 +43,7 @@ from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
 from nvflare.apis.job_def import Job
 from nvflare.apis.job_launcher_spec import JobLauncherSpec
 from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamContext
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
@@ -514,17 +515,17 @@ class ServerEngine(ServerEngineInternalSpec):
         else:
             return None
 
-    def send_aux_to_targets(self, targets, topic, request, timeout, fl_ctx, optional, secure):
+    def _to_aux_msg_targets(self, target_names: List[str]):
         msg_targets = []
-        if not targets:
+        if not target_names:
             # all clients
             for c in self.get_clients():
                 msg_targets.append(AuxMsgTarget.client_target(c))
-        elif not isinstance(targets, list):
-            raise TypeError(f"invalid targets type {type(targets)}")
+        elif not isinstance(target_names, list):
+            raise TypeError(f"invalid target_names {type(target_names)}")
         else:
             # this is a list of targets: check targets
-            for t in targets:
+            for t in target_names:
                 if not isinstance(t, str):
                     raise TypeError(f"target name must be str but got {type(t)}")
 
@@ -534,7 +535,10 @@ class ServerEngine(ServerEngineInternalSpec):
                     return {}
                 else:
                     msg_targets.append(amt)
+        return msg_targets
 
+    def send_aux_to_targets(self, targets, topic, request, timeout, fl_ctx, optional, secure):
+        msg_targets = self._to_aux_msg_targets(targets)
         if msg_targets:
             return self.run_manager.aux_runner.send_aux_request(
                 targets=msg_targets,
@@ -547,6 +551,40 @@ class ServerEngine(ServerEngineInternalSpec):
             )
         else:
             return {}
+
+    def stream_objects(
+        self,
+        channel: str,
+        topic: str,
+        stream_ctx: StreamContext,
+        targets: List[str],
+        producer: ObjectProducer,
+        fl_ctx: FLContext,
+        optional=False,
+        secure=False,
+    ):
+        return self.run_manager.object_streamer.stream(
+            channel=channel,
+            topic=topic,
+            stream_ctx=stream_ctx,
+            targets=self._to_aux_msg_targets(targets),
+            producer=producer,
+            fl_ctx=fl_ctx,
+            secure=secure,
+            optional=optional,
+        )
+
+    def register_stream_processing(
+        self,
+        channel: str,
+        topic: str,
+        factory: ConsumerFactory,
+        stream_done_cb=None,
+        **cb_kwargs,
+    ):
+        self.run_manager.object_streamer.register_stream_processing(
+            channel=channel, topic=topic, factory=factory, stream_done_cb=stream_done_cb, **cb_kwargs
+        )
 
     def sync_clients_from_main_process(self):
         # repeatedly ask the parent process to get participating clients until we receive the result
