@@ -149,6 +149,9 @@ class MockServerEngine(ServerEngineSpec):
     ):
         pass
 
+    def shutdown_streamer(self):
+        pass
+
     def get_widget(self, widget_id: str):
         pass
 

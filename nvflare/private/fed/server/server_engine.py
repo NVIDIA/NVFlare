@@ -30,14 +30,13 @@ from nvflare.apis.fl_constant import (
     AdminCommandNames,
     FLContextKey,
     MachineStatus,
-    ProcessType,
     RunProcessKey,
     ServerCommandKey,
     ServerCommandNames,
     SnapshotKey,
     WorkspaceConstants,
 )
-from nvflare.apis.fl_context import FLContext, FLContextManager
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_snapshot import RunSnapshot
 from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
 from nvflare.apis.job_def import Job
@@ -384,6 +383,7 @@ class ServerEngine(ServerEngineInternalSpec):
         return result
 
     def set_run_manager(self, run_manager: RunManager):
+        self.logger.debug("set_run_manager is called")
         self.run_manager = run_manager
 
         # we set the run_manager's cell if we have the cell.
@@ -454,15 +454,16 @@ class ServerEngine(ServerEngineInternalSpec):
         if self.run_manager:
             return self.run_manager.new_context()
         else:
-            if not self.fl_ctx_mgr:
-                self.fl_ctx_mgr = FLContextManager(
-                    engine=self,
-                    identity_name=self.server.project_name,
-                    job_id="",
-                    public_stickers={},
-                    private_stickers={FLContextKey.PROCESS_TYPE: ProcessType.SERVER_PARENT},
-                )
-            return self.fl_ctx_mgr.new_context()
+            raise RuntimeError("no run_manager in Server Engine.")
+            # if not self.fl_ctx_mgr:
+            #     self.fl_ctx_mgr = FLContextManager(
+            #         engine=self,
+            #         identity_name=self.server.project_name,
+            #         job_id="",
+            #         public_stickers={},
+            #         private_stickers={FLContextKey.PROCESS_TYPE: ProcessType.SERVER_PARENT},
+            #     )
+            # return self.fl_ctx_mgr.new_context()
 
     def add_component(self, component_id: str, component):
         self.server.runner_config.add_component(component_id, component)
@@ -643,6 +644,9 @@ class ServerEngine(ServerEngineInternalSpec):
         self.run_manager.object_streamer.register_stream_processing(
             channel=channel, topic=topic, factory=factory, stream_done_cb=stream_done_cb, **cb_kwargs
         )
+
+    def shutdown_streamer(self):
+        self.run_manager.object_streamer.shutdown()
 
     def sync_clients_from_main_process(self):
         # repeatedly ask the parent process to get participating clients until we receive the result
@@ -946,6 +950,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
     def close(self):
         self.executor.shutdown()
+        self.shutdown_streamer()
 
 
 def server_shutdown(server, touch_file):

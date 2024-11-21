@@ -195,6 +195,10 @@ class ServerEngineSpec(EngineSpec, ABC):
         pass
 
     @abstractmethod
+    def shutdown_streamer(self):
+        pass
+
+    @abstractmethod
     def register_stream_processing(
         self,
         channel: str,

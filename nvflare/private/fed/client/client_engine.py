@@ -18,12 +18,14 @@ import re
 import shutil
 import sys
 import threading
+from typing import List
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, MachineStatus, ProcessType, SystemComponents, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable
+from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamContext
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.cell import Cell
@@ -35,6 +37,7 @@ from nvflare.private.event import fire_event
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.utils.app_deployer import AppDeployer
 from nvflare.private.fed.utils.fed_utils import security_close
+from nvflare.private.stream_runner import ObjectStreamer
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .client_engine_internal_spec import ClientEngineInternalSpec
@@ -71,6 +74,7 @@ class ClientEngine(ClientEngineInternalSpec):
         self.client_executor = JobExecutor(client, os.path.join(args.workspace, "startup"))
         self.admin_agent = None
         self.aux_runner = AuxRunner(self)
+        self.object_streamer = ObjectStreamer(self.aux_runner)
         self.cell = None
 
         self.fl_ctx_mgr = FLContextManager(
@@ -199,6 +203,80 @@ class ClientEngine(ClientEngineInternalSpec):
             return next(iter(reply.values()))
         else:
             return Shareable()
+
+    def stream_objects(
+        self,
+        channel: str,
+        topic: str,
+        stream_ctx: StreamContext,
+        targets: List[str],
+        producer: ObjectProducer,
+        fl_ctx: FLContext,
+        optional=False,
+        secure=False,
+    ):
+        """Send a stream of Shareable objects to receivers.
+
+        Args:
+            channel: the channel for this stream
+            topic: topic of the stream
+            stream_ctx: context of the stream
+            targets: receiving sites
+            producer: the ObjectProducer that can produces the stream of Shareable objects
+            fl_ctx: the FLContext object
+            optional: whether the stream is optional
+            secure: whether to use P2P security
+
+        Returns: result from the generator's reply processing
+
+        """
+        # We are CP: can only stream to SP
+        if targets:
+            for t in targets:
+                self.logger.debug(f"ignored target: {t}")
+
+        return self.object_streamer.stream(
+            channel=channel,
+            topic=topic,
+            stream_ctx=stream_ctx,
+            targets=[AuxMsgTarget.server_target()],
+            producer=producer,
+            fl_ctx=fl_ctx,
+            secure=secure,
+            optional=optional,
+        )
+
+    def register_stream_processing(
+        self,
+        channel: str,
+        topic: str,
+        factory: ConsumerFactory,
+        stream_done_cb=None,
+        **cb_kwargs,
+    ):
+        """Register a ConsumerFactory for specified app channel and topic.
+        Once a new streaming request is received for the channel/topic, the registered factory will be used
+        to create an ObjectConsumer object to handle the new stream.
+
+        Note: the factory should generate a new ObjectConsumer every time get_consumer() is called. This is because
+        multiple streaming sessions could be going on at the same time. Each streaming session should have its
+        own ObjectConsumer.
+
+        Args:
+            channel: app channel
+            topic: app topic
+            factory: the factory to be registered
+            stream_done_cb: the callback to be called when streaming is done on receiving side
+
+        Returns: None
+
+        """
+        self.object_streamer.register_stream_processing(
+            topic=topic, channel=channel, factory=factory, stream_done_cb=stream_done_cb, **cb_kwargs
+        )
+
+    def shutdown_streamer(self):
+        self.object_streamer.shutdown()
 
     def set_agent(self, admin_agent):
         self.admin_agent = admin_agent
@@ -344,6 +422,7 @@ class ClientEngine(ClientEngineInternalSpec):
         thread = threading.Thread(target=shutdown_client, args=(self.client, touch_file))
         thread.start()
 
+        self.shutdown_streamer()
         return "Shutdown the client..."
 
     def restart(self) -> str:

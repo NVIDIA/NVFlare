@@ -18,7 +18,7 @@ from typing import List, Tuple
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import ConfigVarName, ReturnCode, SystemConfigs
+from nvflare.apis.fl_constant import ConfigVarName, ProcessType, ReturnCode, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.fuel.f3.cellnet.core_cell import Message, MessageHeaderKey
@@ -258,7 +258,6 @@ class AuxRunner(FLComponent):
         if not cell:
             return {}
 
-        job_id = fl_ctx.get_job_id()
         public_props = fl_ctx.get_all_public_props()
         target_messages = {}
         fqcn_to_name = {}
@@ -266,17 +265,16 @@ class AuxRunner(FLComponent):
             msg_target, req = t
             assert isinstance(msg_target, AuxMsgTarget)
             target_name = msg_target.name
-            target_fqcn = msg_target.fqcn
             if not isinstance(req, Shareable):
                 raise ValueError(f"request of {target_name} should be Shareable but got {type(req)}")
 
             req.set_header(ReservedHeaderKey.TOPIC, topic)
             req.set_peer_props(public_props)
-            job_cell_fqcn = FQCN.join([target_fqcn, job_id])
-            self.log_info(fl_ctx, f"sending multicast aux: {job_cell_fqcn=}")
-            fqcn_to_name[job_cell_fqcn] = target_name
-            target_messages[job_cell_fqcn] = TargetMessage(
-                topic=topic, channel=channel, target=job_cell_fqcn, message=Message(payload=req)
+            cell_fqcn = self._get_target_fqcn(msg_target, fl_ctx)
+            self.log_debug(fl_ctx, f"sending multicast aux: {cell_fqcn=}")
+            fqcn_to_name[cell_fqcn] = target_name
+            target_messages[cell_fqcn] = TargetMessage(
+                topic=topic, channel=channel, target=cell_fqcn, message=Message(payload=req)
             )
 
         if timeout > 0:
@@ -374,7 +372,6 @@ class AuxRunner(FLComponent):
         request.set_header(ReservedHeaderKey.TOPIC, topic)
         request.set_peer_props(fl_ctx.get_all_public_props())
 
-        job_id = fl_ctx.get_job_id()
         cell = self._wait_for_cell()
         if not cell:
             return {}
@@ -383,10 +380,7 @@ class AuxRunner(FLComponent):
         fqcn_to_name = {}
         for t in targets:
             # targeting job cells!
-            if job_id:
-                cell_fqcn = FQCN.join([t.fqcn, job_id])
-            else:
-                cell_fqcn = t.fqcn
+            cell_fqcn = self._get_target_fqcn(t, fl_ctx)
             target_fqcns.append(cell_fqcn)
             fqcn_to_name[cell_fqcn] = t.name
 
@@ -411,6 +405,21 @@ class AuxRunner(FLComponent):
                     channel=channel, topic=topic, message=cell_msg, targets=target_fqcns, optional=optional
                 )
             return {}
+
+    @staticmethod
+    def _get_target_fqcn(target: AuxMsgTarget, fl_ctx: FLContext):
+        process_type = fl_ctx.get_process_type()
+        if process_type in [ProcessType.CLIENT_PARENT, ProcessType.SERVER_PARENT]:
+            # parent process
+            return target.fqcn
+        elif process_type in [ProcessType.CLIENT_JOB, ProcessType.SERVER_JOB]:
+            # job process
+            job_id = fl_ctx.get_job_id()
+            if not job_id:
+                raise RuntimeError("no job ID in fl_ctx in Job Process!")
+            return FQCN.join([target.fqcn, job_id])
+        else:
+            raise RuntimeError(f"invalid process_type {process_type}")
 
     @staticmethod
     def _convert_return_code(rc):

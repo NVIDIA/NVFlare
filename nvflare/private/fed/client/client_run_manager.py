@@ -369,6 +369,9 @@ class ClientRunManager(ClientEngineExecutorSpec):
     ):
         self.object_streamer.register_stream_processing(channel, topic, factory, stream_done_cb, **cb_kwargs)
 
+    def shutdown_streamer(self):
+        self.object_streamer.shutdown()
+
     def abort_app(self, job_id: str, fl_ctx: FLContext):
         runner = fl_ctx.get_prop(key=FLContextKey.RUNNER, default=None)
         if isinstance(runner, ClientRunner):
