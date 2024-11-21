@@ -95,7 +95,6 @@ class ServerEngine(ServerEngineInternalSpec):
         self.run_manager = None
         self.conf = None
         self.cell = None
-        self.fl_ctx_mgr = None
         self.client_manager = client_manager
 
         self.widgets = {
@@ -454,16 +453,8 @@ class ServerEngine(ServerEngineInternalSpec):
         if self.run_manager:
             return self.run_manager.new_context()
         else:
+            # this call should never be made before the run_manager is created!
             raise RuntimeError("no run_manager in Server Engine.")
-            # if not self.fl_ctx_mgr:
-            #     self.fl_ctx_mgr = FLContextManager(
-            #         engine=self,
-            #         identity_name=self.server.project_name,
-            #         job_id="",
-            #         public_stickers={},
-            #         private_stickers={FLContextKey.PROCESS_TYPE: ProcessType.SERVER_PARENT},
-            #     )
-            # return self.fl_ctx_mgr.new_context()
 
     def add_component(self, component_id: str, component):
         self.server.runner_config.add_component(component_id, component)
