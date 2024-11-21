@@ -65,7 +65,7 @@ def add_logfile_handler(log_file: str):
     The purpose for this is to handle dynamic log file locations.
 
     If a handler named errorFileHandler is found, it will be used as a template to
-    create a new handler for writing to the error.log file at the same directory as log_file.
+    create a new handler for writing to the error log file at the same directory as log_file.
     The original errorFileHandler will be removed and replaced by the new handler.
 
     Each log file will be rotated when it reaches 20MB.
@@ -90,7 +90,7 @@ def add_logfile_handler(log_file: str):
     if not configured_error_handler:
         return
 
-    error_log_file = os.path.join(os.path.dirname(log_file), "error.log")
+    error_log_file = os.path.join(os.path.dirname(log_file), WorkspaceConstants.ERROR_LOG_FILE_NAME)
     error_file_handler = RotatingFileHandler(error_log_file, maxBytes=20 * 1024 * 1024, backupCount=10)
     error_file_handler.setLevel(configured_error_handler.level)
     error_file_handler.setFormatter(configured_error_handler.formatter)
