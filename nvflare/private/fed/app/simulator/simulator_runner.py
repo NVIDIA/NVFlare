@@ -36,6 +36,7 @@ from nvflare.apis.fl_constant import (
     MachineStatus,
     RunnerTask,
     RunProcessKey,
+    SiteType,
     SystemConfigs,
     WorkspaceConstants,
 )
@@ -175,8 +176,8 @@ class SimulatorRunner(FLComponent):
         self._cleanup_workspace()
         init_security_content_service(self.args.workspace)
 
-        os.makedirs(os.path.join(self.simulator_root, "server"))
-        log_file = os.path.join(self.simulator_root, "server", WorkspaceConstants.LOG_FILE_NAME)
+        os.makedirs(os.path.join(self.simulator_root, SiteType.SERVER))
+        log_file = os.path.join(self.simulator_root, SiteType.SERVER, WorkspaceConstants.LOG_FILE_NAME)
         add_logfile_handler(log_file)
 
         try:
@@ -255,8 +256,8 @@ class SimulatorRunner(FLComponent):
             self.logger.info("Deploy the Apps.")
             self._deploy_apps(job_name, data_bytes, meta, log_config_file_path)
 
-            server_workspace = os.path.join(self.args.workspace, "server")
-            workspace = Workspace(root_dir=server_workspace, site_name="server")
+            server_workspace = os.path.join(self.args.workspace, SiteType.SERVER)
+            workspace = Workspace(root_dir=server_workspace, site_name=SiteType.SERVER)
             custom_fobs_initialize(workspace)
 
             decomposer_module = ConfigService.get_str_var(
@@ -316,7 +317,7 @@ class SimulatorRunner(FLComponent):
         client_names = []
         for _, participants in meta.get(JobMetaKey.DEPLOY_MAP, {}).items():
             for p in participants:
-                if p.upper() != ALL_SITES and p != "server":
+                if p.upper() != ALL_SITES and p != SiteType.SERVER:
                     client_names.append(p)
         return client_names
 
@@ -346,11 +347,11 @@ class SimulatorRunner(FLComponent):
 
             for app_name, participants in meta.get(JobMetaKey.DEPLOY_MAP).items():
                 if len(participants) == 1 and participants[0].upper() == ALL_SITES:
-                    participants = ["server"]
+                    participants = [SiteType.SERVER]
                     participants.extend([client for client in self.client_names])
 
                 for p in participants:
-                    if p == "server" or p in self.client_names:
+                    if p == SiteType.SERVER or p in self.client_names:
                         app_root = get_simulator_app_root(self.simulator_root, p)
                         self._setup_local_startup(log_config_file_path, os.path.join(self.simulator_root, p))
                         app = os.path.join(temp_job_folder, app_name)
@@ -515,7 +516,7 @@ class SimulatorRunner(FLComponent):
         os.makedirs(startup, exist_ok=True)
         local = os.path.join(args.workspace, WorkspaceConstants.SITE_FOLDER_NAME)
         os.makedirs(local, exist_ok=True)
-        workspace = Workspace(root_dir=args.workspace, site_name="server")
+        workspace = Workspace(root_dir=args.workspace, site_name=SiteType.SERVER)
 
         self.server.job_cell = self.server.create_job_cell(
             SimulatorConstants.JOB_NAME,

@@ -256,7 +256,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
             return {}
 
     def _get_aux_msg_target(self, name: str):
-        if name.lower() == "server":
+        if name.lower() == SiteType.SERVER:
             return AuxMsgTarget.server_target()
 
         c = self.get_client_from_name(name)

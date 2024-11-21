@@ -34,6 +34,7 @@ from nvflare.apis.fl_constant import (
     RunProcessKey,
     ServerCommandKey,
     ServerCommandNames,
+    SiteType,
     SnapshotKey,
     WorkspaceConstants,
 )
@@ -117,7 +118,7 @@ class ServerEngine(ServerEngineInternalSpec):
         self.kv_list = parse_vars(args.set)
 
     def _get_server_app_folder(self):
-        return WorkspaceConstants.APP_PREFIX + "server"
+        return WorkspaceConstants.APP_PREFIX + SiteType.SERVER
 
     def _get_client_app_folder(self, client_name):
         return WorkspaceConstants.APP_PREFIX + client_name
@@ -169,7 +170,7 @@ class ServerEngine(ServerEngineInternalSpec):
         if job.job_id in self.run_processes.keys():
             return f"Server run: {job.job_id} already started."
         else:
-            workspace = Workspace(root_dir=self.args.workspace, site_name="server")
+            workspace = Workspace(root_dir=self.args.workspace, site_name=SiteType.SERVER)
             app_root = workspace.get_app_dir(job.job_id)
             if not os.path.exists(app_root):
                 return "Server app does not exist. Please deploy the server app before starting."
@@ -418,7 +419,7 @@ class ServerEngine(ServerEngineInternalSpec):
         return os.path.join(self.server.admin_server.file_upload_dir, app_name)
 
     def deploy_app_to_server(self, run_destination: str, app_name: str, app_staging_path: str) -> str:
-        return self.deploy_app(run_destination, app_name, WorkspaceConstants.APP_PREFIX + "server")
+        return self.deploy_app(run_destination, app_name, WorkspaceConstants.APP_PREFIX + SiteType.SERVER)
 
     def get_workspace(self) -> Workspace:
         return self.run_manager.get_workspace()
@@ -505,7 +506,7 @@ class ServerEngine(ServerEngineInternalSpec):
         )
 
     def _get_aux_msg_target(self, name: str):
-        if name.lower() == "server":
+        if name.lower() == SiteType.SERVER:
             return AuxMsgTarget.server_target()
 
         c = self.get_client_from_name(name)
@@ -763,7 +764,7 @@ class ServerEngine(ServerEngineInternalSpec):
         requests = {}
         for site_name, resource_requirements in resource_reqs.items():
             # assume server resource is unlimited
-            if site_name == "server":
+            if site_name == SiteType.SERVER:
                 continue
             request = self._make_message_for_check_resource(job, resource_requirements, fl_ctx)
 

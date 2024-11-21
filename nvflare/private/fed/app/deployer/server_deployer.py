@@ -16,7 +16,7 @@
 import threading
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, SystemComponents
+from nvflare.apis.fl_constant import FLContextKey, SiteType, SystemComponents
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.obj_utils import get_logger
 from nvflare.private.fed.app.utils import component_security_check
@@ -106,9 +106,9 @@ class ServerDeployer:
         services.deploy(args, grpc_args=first_server, secure_train=self.secure_train)
 
         job_runner = JobRunner(workspace_root=args.workspace)
-        workspace = Workspace(args.workspace, "server", args.config_folder)
+        workspace = Workspace(args.workspace, SiteType.SERVER, args.config_folder)
         run_manager = RunManager(
-            server_name=services.project_name,
+            server_name=SiteType.SERVER,
             engine=services.engine,
             job_id="",
             workspace=workspace,

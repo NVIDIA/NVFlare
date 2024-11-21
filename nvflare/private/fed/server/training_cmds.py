@@ -18,7 +18,7 @@ import time
 from typing import List
 
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import AdminCommandNames
+from nvflare.apis.fl_constant import AdminCommandNames, SiteType
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
@@ -381,7 +381,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         if dst in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
             # get the server's scope info
             scope_names, default_scope_name = get_scope_info()
-            self._add_scope_info(table, "server", scope_names, default_scope_name)
+            self._add_scope_info(table, SiteType.SERVER, scope_names, default_scope_name)
 
         if dst in [self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_ALL]:
             message = new_message(conn, topic=TrainingTopic.GET_SCOPES, body="", require_authz=True)
