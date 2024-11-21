@@ -199,7 +199,6 @@ class FileStreamer(StreamerBase):
         chunk_timeout=None,
         optional=False,
         secure=False,
-        blocking=True,
     ) -> bool:
         """Stream a file to one or more targets.
 
@@ -214,7 +213,6 @@ class FileStreamer(StreamerBase):
             chunk_timeout: timeout for each chunk of data sent to targets.
             optional: whether the file is optional
             secure: whether P2P security is required
-            blocking: whether to block and wait until the streaming is completed
 
         Returns: whether the streaming completed successfully
 
