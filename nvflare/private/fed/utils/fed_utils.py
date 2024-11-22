@@ -474,7 +474,7 @@ def get_simulator_app_root(simulator_root, site_name):
 
 
 def add_custom_dir_to_path(app_custom_folder, new_env):
-    """ Util method to add app_custom_folder into the sys.path and carry into the child process."""
+    """Util method to add app_custom_folder into the sys.path and carry into the child process."""
     sys_path = sys.path
     sys_path.append(app_custom_folder)
     new_env[SystemVarName.PYTHONPATH] = os.pathsep.join(sys_path)
