@@ -118,6 +118,7 @@ class FedOpt(FedAvg):
         specific set of Variables.
 
         """
+        # Get the Keras model stored in memory in persistor.
         global_model_tf = self.persistor.model
         global_params = global_model_tf.trainable_weights
         num_trainable_weights = len(global_params)
