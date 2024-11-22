@@ -123,6 +123,8 @@ class FedOpt(FedAvg):
         global_params = global_model_tf.trainable_weights
         num_trainable_weights = len(global_params)
 
+        # Compute model diff: need to use model diffs as
+        # gradients to be applied by the optimizer.
         model_diff_params = {}
 
         w_idx = 0
@@ -140,11 +142,15 @@ class FedOpt(FedAvg):
                 w_idx += 1
 
         model_diff = self._to_tf_params_list(model_diff_params, negate=True)
+        
+        # Apply model diffs as gradients, using the optimizer.
         start = time.time()
 
         self.optimizer.apply_gradients(zip(model_diff, global_params))
         secs = time.time() - start
-
+        
+        # Convert updated global model weights to
+        # numpy format for FLModel.
         start = time.time()
         weights = global_model_tf.get_weights()
 
