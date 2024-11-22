@@ -25,7 +25,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, MachineStatus, ProcessType, SystemComponents, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable
-from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamContext
+from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamableEngine, StreamContext
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.cell import Cell
@@ -54,7 +54,7 @@ def _remove_custom_path():
         sys.path.remove(path)
 
 
-class ClientEngine(ClientEngineInternalSpec):
+class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
     """ClientEngine runs in the client parent process (CP)."""
 
     def __init__(self, client: FederatedClient, args, rank, workers=5):
@@ -230,6 +230,9 @@ class ClientEngine(ClientEngineInternalSpec):
         Returns: result from the generator's reply processing
 
         """
+        if not self.object_streamer:
+            raise RuntimeError("object streamer has not been created")
+
         # We are CP: can only stream to SP
         if targets:
             for t in targets:
@@ -271,12 +274,16 @@ class ClientEngine(ClientEngineInternalSpec):
         Returns: None
 
         """
+        if not self.object_streamer:
+            raise RuntimeError("object streamer has not been created")
+
         self.object_streamer.register_stream_processing(
             topic=topic, channel=channel, factory=factory, stream_done_cb=stream_done_cb, **cb_kwargs
         )
 
     def shutdown_streamer(self):
-        self.object_streamer.shutdown()
+        if self.object_streamer:
+            self.object_streamer.shutdown()
 
     def set_agent(self, admin_agent):
         self.admin_agent = admin_agent

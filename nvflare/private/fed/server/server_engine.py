@@ -42,7 +42,7 @@ from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
 from nvflare.apis.job_def import Job
 from nvflare.apis.job_launcher_spec import JobLauncherSpec
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
-from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamContext
+from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamableEngine, StreamContext
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx, get_serializable_data
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.cell import Cell
@@ -77,7 +77,7 @@ from .server_engine_internal_spec import EngineInfo, ServerEngineInternalSpec
 from .server_status import ServerStatus
 
 
-class ServerEngine(ServerEngineInternalSpec):
+class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
     def __init__(self, server, args, client_manager: ClientManager, snapshot_persistor, workers=3):
         """Server engine.
 
@@ -613,6 +613,12 @@ class ServerEngine(ServerEngineInternalSpec):
         optional=False,
         secure=False,
     ):
+        if not self.run_manager:
+            raise RuntimeError("run_manager has not been created")
+
+        if not self.run_manager.object_streamer:
+            raise RuntimeError("object_streamer has not been created")
+
         return self.run_manager.object_streamer.stream(
             channel=channel,
             topic=topic,
@@ -632,12 +638,19 @@ class ServerEngine(ServerEngineInternalSpec):
         stream_done_cb=None,
         **cb_kwargs,
     ):
+        if not self.run_manager:
+            raise RuntimeError("run_manager has not been created")
+
+        if not self.run_manager.object_streamer:
+            raise RuntimeError("object_streamer has not been created")
+
         self.run_manager.object_streamer.register_stream_processing(
             channel=channel, topic=topic, factory=factory, stream_done_cb=stream_done_cb, **cb_kwargs
         )
 
     def shutdown_streamer(self):
-        self.run_manager.object_streamer.shutdown()
+        if self.run_manager and self.run_manager.object_streamer:
+            self.run_manager.object_streamer.shutdown()
 
     def sync_clients_from_main_process(self):
         # repeatedly ask the parent process to get participating clients until we receive the result

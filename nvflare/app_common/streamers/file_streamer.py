@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Tuple
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
-from nvflare.apis.streaming import ConsumerFactory, ObjectConsumer, ObjectProducer, StreamContext
+from nvflare.apis.streaming import ConsumerFactory, ObjectConsumer, ObjectProducer, StreamableEngine, StreamContext
 from nvflare.fuel.utils.obj_utils import get_logger
 from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number
 
@@ -179,6 +179,9 @@ class FileStreamer(StreamerBase):
             raise ValueError(f"dest_dir '{dest_dir}' is not a valid dir")
 
         engine = fl_ctx.get_engine()
+        if not isinstance(engine, StreamableEngine):
+            raise RuntimeError(f"engine must be StreamableEngine but got {type(engine)}")
+
         engine.register_stream_processing(
             channel=channel,
             topic=topic,
@@ -238,7 +241,12 @@ class FileStreamer(StreamerBase):
         with open(file_name, "rb") as file:
             producer = _ChunkProducer(file, chunk_size, chunk_timeout)
             engine = fl_ctx.get_engine()
+
+            if not isinstance(engine, StreamableEngine):
+                raise RuntimeError(f"engine must be StreamableEngine but got {type(engine)}")
+
             stream_ctx[_KEY_FILE_NAME] = os.path.basename(file_name)
+
             return engine.stream_objects(
                 channel=channel,
                 topic=topic,
