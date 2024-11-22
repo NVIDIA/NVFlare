@@ -164,7 +164,6 @@ def stream_done_cb_signature(stream_ctx: StreamContext, fl_ctx: FLContext, **kwa
 
 
 class StreamableEngine(ABC):
-
     """This class defines requirements for streaming capable engines."""
 
     @abstractmethod
