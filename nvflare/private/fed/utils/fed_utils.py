@@ -65,7 +65,7 @@ def add_logfile_handler(log_file: str):
     The purpose for this is to handle dynamic log file locations.
 
     If a handler named errorFileHandler is found, it will be used as a template to
-    create a new handler for writing to the error.log file at the same directory as log_file.
+    create a new handler for writing to the error log file at the same directory as log_file.
     The original errorFileHandler will be removed and replaced by the new handler.
 
     Each log file will be rotated when it reaches 20MB.
@@ -90,7 +90,7 @@ def add_logfile_handler(log_file: str):
     if not configured_error_handler:
         return
 
-    error_log_file = os.path.join(os.path.dirname(log_file), "error.log")
+    error_log_file = os.path.join(os.path.dirname(log_file), WorkspaceConstants.ERROR_LOG_FILE_NAME)
     error_file_handler = RotatingFileHandler(error_log_file, maxBytes=20 * 1024 * 1024, backupCount=10)
     error_file_handler.setLevel(configured_error_handler.level)
     error_file_handler.setFormatter(configured_error_handler.formatter)
@@ -540,3 +540,19 @@ def get_scope_prop(scope_name: str, key: str) -> Any:
     check_str("key", key)
     data_bus = DataBus()
     return data_bus.get_data(_scope_prop_key(scope_name, key))
+
+
+def get_job_launcher(job_meta: dict, fl_ctx: FLContext) -> dict:
+    engine = fl_ctx.get_engine()
+
+    with engine.new_context() as job_launcher_ctx:
+        # Remove the potential not cleaned up JOB_LAUNCHER
+        job_launcher_ctx.remove_prop(FLContextKey.JOB_LAUNCHER)
+        job_launcher_ctx.set_prop(FLContextKey.JOB_META, job_meta, private=True, sticky=False)
+        engine.fire_event(EventType.GET_JOB_LAUNCHER, job_launcher_ctx)
+
+        job_launcher = job_launcher_ctx.get_prop(FLContextKey.JOB_LAUNCHER)
+        if not (job_launcher and isinstance(job_launcher, list)):
+            raise RuntimeError(f"There's no job launcher can handle this job: {job_meta}.")
+
+    return job_launcher[0]

@@ -162,6 +162,7 @@ class FLContextKey(object):
     RECONNECTED_CLIENT_NAME = "_reconnected_client_name"
     SITE_OBJ = "_site_obj_"
     JOB_LAUNCHER = "_job_launcher"
+    SNAPSHOT = "job_snapshot"
 
     CLIENT_REGISTER_DATA = "_client_register_data"
     SECURITY_ITEMS = "_security_items"
@@ -375,6 +376,7 @@ class WorkspaceConstants:
     DEFAULT_LOGGING_CONFIG = LOGGING_CONFIG + ".default"
     AUDIT_LOG = "audit.log"
     LOG_FILE_NAME = "log.txt"
+    ERROR_LOG_FILE_NAME = "error_log.txt"
     STATS_POOL_SUMMARY_FILE_NAME = "stats_pool_summary.json"
     STATS_POOL_RECORDS_FILE_NAME = "stats_pool_records.csv"
 

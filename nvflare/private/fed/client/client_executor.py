@@ -27,7 +27,7 @@ from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey, new_cell_message
-from nvflare.private.fed.utils.fed_utils import get_return_code
+from nvflare.private.fed.utils.fed_utils import get_job_launcher, get_return_code
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .client_status import ClientStatus, get_status_message
@@ -165,7 +165,7 @@ class JobExecutor(ClientExecutor):
             fl_ctx: FLContext
         """
 
-        job_launcher: JobLauncherSpec = self._get_job_launcher(job_meta, fl_ctx)
+        job_launcher: JobLauncherSpec = get_job_launcher(job_meta, fl_ctx)
         job_handle = job_launcher.launch_job(job_meta, fl_ctx)
         self.logger.info(f"Launch job_id: {job_id}  with job launcher: {type(job_launcher)} ")
 
@@ -179,7 +179,7 @@ class JobExecutor(ClientExecutor):
 
         thread = threading.Thread(
             target=self._wait_child_process_finish,
-            args=(client, job_id, allocated_resource, token, resource_manager, args.workspace),
+            args=(client, job_id, allocated_resource, token, resource_manager, args.workspace, fl_ctx),
         )
         thread.start()
 
@@ -384,7 +384,9 @@ class JobExecutor(ClientExecutor):
             )
             self.logger.debug("abort_task sent")
 
-    def _wait_child_process_finish(self, client, job_id, allocated_resource, token, resource_manager, workspace):
+    def _wait_child_process_finish(
+        self, client, job_id, allocated_resource, token, resource_manager, workspace, fl_ctx
+    ):
         self.logger.info(f"run ({job_id}): waiting for child worker process to finish.")
         job_handle = self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_HANDLE)
         if job_handle:
@@ -393,6 +395,7 @@ class JobExecutor(ClientExecutor):
             return_code = get_return_code(job_handle, job_id, workspace, self.logger)
 
             self.logger.info(f"run ({job_id}): child worker process finished with RC {return_code}")
+
             if return_code in [ProcessExitCode.UNSAFE_COMPONENT, ProcessExitCode.CONFIG_ERROR]:
                 request = new_cell_message(
                     headers={},
@@ -418,6 +421,11 @@ class JobExecutor(ClientExecutor):
         with self.lock:
             self.run_processes.pop(job_id, None)
         self.logger.debug(f"run ({job_id}): child worker resources freed.")
+
+        engine = fl_ctx.get_engine()
+        fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job_id, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.CLIENT_NAME, client.client_name, private=True, sticky=False)
+        engine.fire_event(EventType.JOB_COMPLETED, fl_ctx)
 
     def get_status(self, job_id):
         process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.STOPPED)

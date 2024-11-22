@@ -15,15 +15,13 @@ import logging
 import os
 import shlex
 import subprocess
-import sys
+from abc import abstractmethod
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobReturnCode, add_launcher
-from nvflare.apis.workspace import Workspace
-from nvflare.private.fed.utils.fed_utils import add_custom_dir_to_path, extract_job_image
+from nvflare.private.fed.utils.fed_utils import extract_job_image
 
 JOB_RETURN_CODE_MAPPING = {0: JobReturnCode.SUCCESS, 1: JobReturnCode.EXECUTION_ERROR, 9: JobReturnCode.ABORTED}
 
@@ -64,51 +62,11 @@ class ProcessJobLauncher(JobLauncherSpec):
 
     def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
 
-        new_env = os.environ.copy()
-        workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-        args = fl_ctx.get_prop(FLContextKey.ARGS)
-        client = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
-        job_id = job_meta.get(JobMetaKey.JOB_ID)
-        server_config = fl_ctx.get_prop(FLContextKey.SERVER_CONFIG)
-        if not server_config:
-            raise RuntimeError(f"missing {FLContextKey.SERVER_CONFIG} in FL context")
-        service = server_config[0].get("service", {})
-        if not isinstance(service, dict):
-            raise RuntimeError(f"expect server config data to be dict but got {type(service)}")
-
-        app_custom_folder = workspace_obj.get_app_custom_dir(job_id)
-        if app_custom_folder != "":
-            add_custom_dir_to_path(app_custom_folder, new_env)
-
-        command_options = ""
-        for t in args.set:
-            command_options += " " + t
-        command = (
-            f"{sys.executable} -m nvflare.private.fed.app.client.worker_process -m "
-            + args.workspace
-            + " -w "
-            + (workspace_obj.get_startup_kit_dir())
-            + " -t "
-            + client.token
-            + " -d "
-            + client.ssid
-            + " -n "
-            + job_id
-            + " -c "
-            + client.client_name
-            + " -p "
-            + str(client.cell.get_internal_listener_url())
-            + " -g "
-            + service.get("target")
-            + " -scheme "
-            + service.get("scheme", "grpc")
-            + " -s fed_client.json "
-            " --set" + command_options + " print_conf=True"
-        )
+        command, new_env = self.get_command(job_meta, fl_ctx)
         # use os.setsid to create new process group ID
         process = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
 
-        self.logger.info("Worker child process ID: {}".format(process.pid))
+        self.logger.info("Launch the job in process ID: {}".format(process.pid))
 
         return ProcessHandle(process)
 
@@ -118,3 +76,17 @@ class ProcessJobLauncher(JobLauncherSpec):
             job_image = extract_job_image(job_meta, fl_ctx.get_identity_name())
             if not job_image:
                 add_launcher(self, fl_ctx)
+
+    @abstractmethod
+    def get_command(self, launch_data, fl_ctx) -> (str, dict):
+        """To generate the command to launcher the job in sub-process
+
+        Args:
+            fl_ctx: FLContext
+            launch_data: job launcher data
+
+        Returns:
+            launch command, environment dict
+
+        """
+        pass
