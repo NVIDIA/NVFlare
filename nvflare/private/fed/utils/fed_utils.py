@@ -474,11 +474,9 @@ def get_simulator_app_root(simulator_root, site_name):
 
 
 def add_custom_dir_to_path(app_custom_folder, new_env):
-    path = new_env.get(SystemVarName.PYTHONPATH, "")
-    if path:
-        new_env[SystemVarName.PYTHONPATH] = path + os.pathsep + app_custom_folder
-    else:
-        new_env[SystemVarName.PYTHONPATH] = app_custom_folder
+    sys_path = sys.path
+    sys_path.append(app_custom_folder)
+    new_env[SystemVarName.PYTHONPATH] = os.pathsep.join(sys_path)
 
 
 def extract_participants(participants_list):
