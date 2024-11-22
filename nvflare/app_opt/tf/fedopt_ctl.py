@@ -138,17 +138,17 @@ class FedOpt(FedAvg):
                     aggr_result.params[key] - param
                     if aggr_result.params_type == ParamsType.FULL
                     else aggr_result.params[key]
-                    )
+                )
                 w_idx += 1
 
         model_diff = self._to_tf_params_list(model_diff_params, negate=True)
-        
+
         # Apply model diffs as gradients, using the optimizer.
         start = time.time()
 
         self.optimizer.apply_gradients(zip(model_diff, global_params))
         secs = time.time() - start
-        
+
         # Convert updated global model weights to
         # numpy format for FLModel.
         start = time.time()
