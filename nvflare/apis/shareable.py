@@ -41,9 +41,11 @@ class Shareable(dict):
     It is recommended that keys are strings. Values must be serializable.
     """
 
-    def __init__(self):
+    def __init__(self, data: dict = None):
         """Init the Shareable."""
         super().__init__()
+        if data:
+            self.update(data)
         self[ReservedHeaderKey.HEADERS] = {}
 
     def set_header(self, key: str, value):

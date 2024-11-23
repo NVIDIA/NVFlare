@@ -30,25 +30,26 @@ from nvflare.apis.fl_constant import (
     AdminCommandNames,
     FLContextKey,
     MachineStatus,
-    ReturnCode,
     RunProcessKey,
     ServerCommandKey,
     ServerCommandNames,
     SnapshotKey,
     WorkspaceConstants,
 )
-from nvflare.apis.fl_context import FLContext, FLContextManager
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_snapshot import RunSnapshot
 from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
 from nvflare.apis.job_def import Job
 from nvflare.apis.job_launcher_spec import JobLauncherSpec
-from nvflare.apis.shareable import Shareable, make_reply
-from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamContext
-from nvflare.apis.utils.fl_context_utils import get_serializable_data
+from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
+from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamableEngine, StreamContext
+from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx, get_serializable_data
 from nvflare.apis.workspace import Workspace
-from nvflare.fuel.f3.cellnet.core_cell import FQCN
+from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellMsgReturnCode
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message, MsgHeader
@@ -76,7 +77,7 @@ from .server_engine_internal_spec import EngineInfo, ServerEngineInternalSpec
 from .server_status import ServerStatus
 
 
-class ServerEngine(ServerEngineInternalSpec):
+class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
     def __init__(self, server, args, client_manager: ClientManager, snapshot_persistor, workers=3):
         """Server engine.
 
@@ -93,7 +94,7 @@ class ServerEngine(ServerEngineInternalSpec):
         self.exception_run_processes = {}
         self.run_manager = None
         self.conf = None
-        # TODO:: does this class need client manager?
+        self.cell = None
         self.client_manager = client_manager
 
         self.widgets = {
@@ -381,9 +382,60 @@ class ServerEngine(ServerEngineInternalSpec):
         return result
 
     def set_run_manager(self, run_manager: RunManager):
+        self.logger.debug("set_run_manager is called")
         self.run_manager = run_manager
+
+        # we set the run_manager's cell if we have the cell.
+        if self.cell:
+            self.run_manager.cell = self.cell
+
         for _, widget in self.widgets.items():
             self.run_manager.add_handler(widget)
+
+    def get_cell(self):
+        return self.cell
+
+    def initialize_comm(self, cell: Cell):
+        """This is called when the communication cell has been created.
+        We will set up aux message handler here.
+
+        Args:
+            cell:
+
+        Returns:
+
+        """
+        self.logger.info("initialize_comm called!")
+        self.cell = cell
+        if self.run_manager:
+            # Note that the aux_runner is created with the self.run_manager as the "engine".
+            # We must set the cell in it; otherwise it won't be able to send messages.
+            # The timing of the creation of the run_manager and the cell is not deterministic, we set the cell here
+            # only if the run_manager has been created.
+            self.run_manager.cell = cell
+
+        cell.register_request_cb(
+            channel=CellChannel.AUX_COMMUNICATION,
+            topic="*",
+            cb=self._handle_aux_message,
+        )
+
+    def _handle_aux_message(self, request: CellMessage) -> CellMessage:
+        assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
+        data = request.payload
+
+        topic = request.get_header(MessageHeaderKey.TOPIC)
+        with self.new_context() as fl_ctx:
+            reply = self.run_manager.aux_runner.dispatch(topic=topic, request=data, fl_ctx=fl_ctx)
+            shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
+            reply.set_header(key=FLContextKey.PEER_CONTEXT, value=shared_fl_ctx)
+
+            if reply is not None:
+                return_message = new_cell_message({}, reply)
+                return_message.set_header(MessageHeaderKey.RETURN_CODE, CellMsgReturnCode.OK)
+            else:
+                return_message = new_cell_message({}, None)
+            return return_message
 
     def set_job_runner(self, job_runner: JobRunner, job_manager: JobDefManagerSpec):
         self.job_runner = job_runner
@@ -401,10 +453,8 @@ class ServerEngine(ServerEngineInternalSpec):
         if self.run_manager:
             return self.run_manager.new_context()
         else:
-            # return FLContext()
-            return FLContextManager(
-                engine=self, identity_name=self.server.project_name, job_id="", public_stickers={}, private_stickers={}
-            ).new_context()
+            # this call should never be made before the run_manager is created!
+            raise RuntimeError("no run_manager in Server Engine.")
 
     def add_component(self, component_id: str, component):
         self.server.runner_config.add_component(component_id, component)
@@ -563,6 +613,12 @@ class ServerEngine(ServerEngineInternalSpec):
         optional=False,
         secure=False,
     ):
+        if not self.run_manager:
+            raise RuntimeError("run_manager has not been created")
+
+        if not self.run_manager.object_streamer:
+            raise RuntimeError("object_streamer has not been created")
+
         return self.run_manager.object_streamer.stream(
             channel=channel,
             topic=topic,
@@ -582,9 +638,19 @@ class ServerEngine(ServerEngineInternalSpec):
         stream_done_cb=None,
         **cb_kwargs,
     ):
+        if not self.run_manager:
+            raise RuntimeError("run_manager has not been created")
+
+        if not self.run_manager.object_streamer:
+            raise RuntimeError("object_streamer has not been created")
+
         self.run_manager.object_streamer.register_stream_processing(
             channel=channel, topic=topic, factory=factory, stream_done_cb=stream_done_cb, **cb_kwargs
         )
+
+    def shutdown_streamer(self):
+        if self.run_manager and self.run_manager.object_streamer:
+            self.run_manager.object_streamer.shutdown()
 
     def sync_clients_from_main_process(self):
         # repeatedly ask the parent process to get participating clients until we receive the result
@@ -888,6 +954,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
     def close(self):
         self.executor.shutdown()
+        self.shutdown_streamer()
 
 
 def server_shutdown(server, touch_file):
