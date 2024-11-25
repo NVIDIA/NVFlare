@@ -216,6 +216,9 @@ class FLContext(object):
     def get_engine(self, default=None):
         return self._simple_get(ReservedKey.ENGINE, default)
 
+    def get_process_type(self, default=None):
+        return self._simple_get(ReservedKey.PROCESS_TYPE, default)
+
     def get_job_id(self, default=None):
         return self._simple_get(ReservedKey.RUN_NUM, default)
 

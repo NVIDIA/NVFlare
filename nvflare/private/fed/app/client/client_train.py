@@ -108,6 +108,8 @@ def main(args):
             print("Waiting client cell to be created ....")
             time.sleep(1.0)
 
+        client_engine.initialize_comm(federated_client.cell)
+
         with client_engine.new_context() as fl_ctx:
             client_engine.fire_event(EventType.SYSTEM_BOOTSTRAP, fl_ctx)
 
