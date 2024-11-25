@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import datetime
 import os
 import pathlib
@@ -28,7 +27,7 @@ from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.storage import WORKSPACE, StorageException, StorageSpec
 from nvflare.fuel.utils import fobs
-from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes
+from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes, zip_directory_to_file
 
 _OBJ_TAG_SCHEDULED = "scheduled"
 
@@ -236,6 +235,34 @@ class SimpleJobDefManager(JobDefManagerSpec):
                 return fobs.loads(stored_data).get(JobDataKey.JOB_DATA.value)
         except StorageException:
             return None
+
+    def _save_log(self, jid: str, log: str, client_name: str, log_type: str, fl_ctx: FLContext):
+        """Save the provided log content for the specified job, client name and log type."""
+        store = self._get_job_store(fl_ctx)
+        log_object_type = f"{log_type}_{client_name}"
+        store.update_object(self.job_uri(jid), log.encode(), log_object_type)
+
+    def _get_log(self, jid: str, client_name: str, log_type: str, fl_ctx: FLContext) -> Optional[str]:
+        """Get log content for the specified job, client name and log type."""
+        store = self._get_job_store(fl_ctx)
+        log_object_type = f"{log_type}_{client_name}"
+        try:
+            log_data = store.get_data(self.job_uri(jid), log_object_type)
+            return log_data.decode()
+        except StorageException:
+            return None
+
+    def set_error_log(self, jid: str, log: str, client_name: str, fl_ctx: FLContext):
+        self._save_log(jid, log, client_name, "ERRORLOG", fl_ctx)
+
+    def set_log(self, jid: str, log: str, client_name: str, fl_ctx: FLContext):
+        self._save_log(jid, log, client_name, "LOG", fl_ctx)
+
+    def get_error_log(self, jid: str, client_name: str, fl_ctx: FLContext) -> Optional[str]:
+        return self._get_log(jid, client_name, "ERRORLOG", fl_ctx)
+
+    def get_client_log(self, jid: str, client_name: str, fl_ctx: FLContext) -> Optional[str]:
+        return self._get_log(jid, client_name, "LOG", fl_ctx)
 
     def set_status(self, jid: str, status: RunStatus, fl_ctx: FLContext):
         meta = {JobMetaKey.STATUS.value: status.value}

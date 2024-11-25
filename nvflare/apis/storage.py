@@ -217,4 +217,9 @@ class StorageSpec(ABC):
 
     @staticmethod
     def is_valid_component(component_name):
-        return component_name in [DATA, META, WORKSPACE]
+        valid_components = {DATA, META, WORKSPACE, "ERRORLOG", "LOG"}
+        if component_name in valid_components:
+            return True
+        if any(component_name.startswith(prefix + "_") for prefix in ["ERRORLOG", "LOG"]):
+            return True
+        return False

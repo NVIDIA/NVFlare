@@ -30,6 +30,7 @@ class DataKind(object):
     STATISTICS = "STATISTICS"
     PSI = "PSI"
     APP_DEFINED = "APP_DEFINED"  # data format is app defined
+    LOG = "LOG"
 
 
 class MetaKey(FLMetaKey):
