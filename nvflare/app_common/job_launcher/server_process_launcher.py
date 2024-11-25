@@ -21,27 +21,29 @@ from nvflare.private.fed.utils.fed_utils import add_custom_dir_to_path
 
 
 class ServerProcessJobLauncher(ProcessJobLauncher):
-    def get_command(self, launch_data, fl_ctx) -> (str, dict):
+    def get_command(self, job_meta, fl_ctx) -> (str, dict):
         new_env = os.environ.copy()
-
         workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-        args = fl_ctx.get_prop(FLContextKey.ARGS)
-        server = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
-        job_id = launch_data.get(JobConstants.JOB_ID)
-        restore_snapshot = fl_ctx.get_prop(FLContextKey.SNAPSHOT, False)
-
-        app_root = workspace_obj.get_app_dir(job_id)
-        cell = server.cell
-        server_state = server.server_state
-
+        job_id = job_meta.get(JobConstants.JOB_ID)
         app_custom_folder = workspace_obj.get_app_custom_dir(job_id)
         if app_custom_folder != "":
             add_custom_dir_to_path(app_custom_folder, new_env)
 
+        command = self.generate_run_command(job_meta, fl_ctx)
+        return command, new_env
+
+    def generate_run_command(self, job_meta, fl_ctx):
+        workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        args = fl_ctx.get_prop(FLContextKey.ARGS)
+        server = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
+        job_id = job_meta.get(JobConstants.JOB_ID)
+        restore_snapshot = fl_ctx.get_prop(FLContextKey.SNAPSHOT, False)
+        app_root = workspace_obj.get_app_dir(job_id)
+        cell = server.cell
+        server_state = server.server_state
         command_options = ""
         for t in args.set:
             command_options += " " + t
-
         command = (
             sys.executable
             + " -m nvflare.private.fed.app.server.runner_process -m "
@@ -67,5 +69,4 @@ class ServerProcessJobLauncher(ProcessJobLauncher):
             + " print_conf=True restore_snapshot="
             + str(restore_snapshot)
         )
-
-        return command, new_env
+        return command

@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
-import sys
 import time
 from abc import abstractmethod
 
@@ -22,6 +21,8 @@ from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
+from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
+from nvflare.app_common.job_launcher.server_process_launcher import ServerProcessJobLauncher
 from nvflare.private.fed.utils.fed_utils import extract_job_image
 
 
@@ -178,87 +179,17 @@ class DockerJobLauncher(JobLauncherSpec):
         pass
 
 
-class ClientDockerJobLauncher(DockerJobLauncher):
+class ClientDockerJobLauncher(DockerJobLauncher, ClientProcessJobLauncher):
     def get_command(self, job_meta, fl_ctx) -> (str, str):
-        workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-        args = fl_ctx.get_prop(FLContextKey.ARGS)
-        client = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
         job_id = job_meta.get(JobConstants.JOB_ID)
-        server_config = fl_ctx.get_prop(FLContextKey.SERVER_CONFIG)
-        if not server_config:
-            raise RuntimeError(f"missing {FLContextKey.SERVER_CONFIG} in FL context")
-        service = server_config[0].get("service", {})
-        if not isinstance(service, dict):
-            raise RuntimeError(f"expect server config data to be dict but got {type(service)}")
-        command_options = ""
-        for t in args.set:
-            command_options += " " + t
-        command = (
-            f"{sys.executable} -m nvflare.private.fed.app.client.worker_process -m "
-            + args.workspace
-            + " -w "
-            + (workspace_obj.get_startup_kit_dir())
-            + " -t "
-            + client.token
-            + " -d "
-            + client.ssid
-            + " -n "
-            + job_id
-            + " -c "
-            + client.client_name
-            + " -p "
-            + str(client.cell.get_internal_listener_url())
-            + " -g "
-            + service.get("target")
-            + " -scheme "
-            + service.get("scheme", "grpc")
-            + " -s fed_client.json "
-            " --set" + command_options + " print_conf=True"
-        )
+        command = self.generate_run_command(job_meta, fl_ctx)
 
         return f"client-{job_id}", command
 
 
-class ServerDockerJobLauncher(DockerJobLauncher):
+class ServerDockerJobLauncher(DockerJobLauncher, ServerProcessJobLauncher):
     def get_command(self, job_meta, fl_ctx) -> (str, str):
-        workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-        args = fl_ctx.get_prop(FLContextKey.ARGS)
-        server = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
         job_id = job_meta.get(JobConstants.JOB_ID)
-        restore_snapshot = fl_ctx.get_prop(FLContextKey.SNAPSHOT, False)
-
-        app_root = workspace_obj.get_app_dir(job_id)
-        cell = server.cell
-        server_state = server.server_state
-
-        command_options = ""
-        for t in args.set:
-            command_options += " " + t
-
-        command = (
-            sys.executable
-            + " -m nvflare.private.fed.app.server.runner_process -m "
-            + args.workspace
-            + " -s fed_server.json -r "
-            + app_root
-            + " -n "
-            + str(job_id)
-            + " -p "
-            + str(cell.get_internal_listener_url())
-            + " -u "
-            + str(cell.get_root_url_for_child())
-            + " --host "
-            + str(server_state.host)
-            + " --port "
-            + str(server_state.service_port)
-            + " --ssid "
-            + str(server_state.ssid)
-            + " --ha_mode "
-            + str(server.ha_mode)
-            + " --set"
-            + command_options
-            + " print_conf=True restore_snapshot="
-            + str(restore_snapshot)
-        )
+        command = self.generate_run_command(job_meta, fl_ctx)
 
         return f"server-{job_id}", command

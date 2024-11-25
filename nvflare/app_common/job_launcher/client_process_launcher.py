@@ -21,23 +21,28 @@ from nvflare.private.fed.utils.fed_utils import add_custom_dir_to_path
 
 
 class ClientProcessJobLauncher(ProcessJobLauncher):
-    def get_command(self, launch_data, fl_ctx) -> (str, dict):
+    def get_command(self, job_meta, fl_ctx) -> (str, dict):
         new_env = os.environ.copy()
+        workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        job_id = job_meta.get(JobConstants.JOB_ID)
+        app_custom_folder = workspace_obj.get_app_custom_dir(job_id)
+        if app_custom_folder != "":
+            add_custom_dir_to_path(app_custom_folder, new_env)
+
+        command = self.generate_run_command(job_meta, fl_ctx)
+        return command, new_env
+
+    def generate_run_command(self, job_meta, fl_ctx):
         workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         args = fl_ctx.get_prop(FLContextKey.ARGS)
         client = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
-        job_id = launch_data.get(JobConstants.JOB_ID)
+        job_id = job_meta.get(JobConstants.JOB_ID)
         server_config = fl_ctx.get_prop(FLContextKey.SERVER_CONFIG)
         if not server_config:
             raise RuntimeError(f"missing {FLContextKey.SERVER_CONFIG} in FL context")
         service = server_config[0].get("service", {})
         if not isinstance(service, dict):
             raise RuntimeError(f"expect server config data to be dict but got {type(service)}")
-
-        app_custom_folder = workspace_obj.get_app_custom_dir(job_id)
-        if app_custom_folder != "":
-            add_custom_dir_to_path(app_custom_folder, new_env)
-
         command_options = ""
         for t in args.set:
             command_options += " " + t
@@ -63,4 +68,4 @@ class ClientProcessJobLauncher(ProcessJobLauncher):
             + " -s fed_client.json "
             " --set" + command_options + " print_conf=True"
         )
-        return command, new_env
+        return command

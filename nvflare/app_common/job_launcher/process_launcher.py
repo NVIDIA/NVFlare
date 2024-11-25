@@ -78,12 +78,12 @@ class ProcessJobLauncher(JobLauncherSpec):
                 add_launcher(self, fl_ctx)
 
     @abstractmethod
-    def get_command(self, launch_data, fl_ctx) -> (str, dict):
+    def get_command(self, job_meta, fl_ctx) -> (str, dict):
         """To generate the command to launcher the job in sub-process
 
         Args:
             fl_ctx: FLContext
-            launch_data: job launcher data
+            job_meta: job meta data
 
         Returns:
             launch command, environment dict
