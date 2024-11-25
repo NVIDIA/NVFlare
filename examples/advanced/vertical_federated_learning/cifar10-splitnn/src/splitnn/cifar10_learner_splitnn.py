@@ -244,7 +244,8 @@ class CIFAR10LearnerSplitNN(Learner):
         inputs = self.valid_dataset.get_batch(batch_indices)
         inputs = inputs.to(self.device)
 
-        _val_activations = self.model.forward(inputs)  # keep on site-1
+        with torch.no_grad():
+            _val_activations = self.model.forward(inputs)  # keep on site-1
 
         self.compute_stats_pool.record_value(category="_val_step_data_side", value=timer() - t_start)
 
@@ -304,7 +305,9 @@ class CIFAR10LearnerSplitNN(Learner):
 
         activations = activations.to(self.device)
 
-        pred = self.model.forward(activations)
+        with torch.no_grad():
+            pred = self.model.forward(activations)
+
         loss = self.criterion(pred, labels)
         self.val_loss.append(loss.unsqueeze(0))  # unsqueeze needed for later concatenation
 
