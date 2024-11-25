@@ -29,10 +29,10 @@ class ServerProcessJobLauncher(ProcessJobLauncher):
         if app_custom_folder != "":
             add_custom_dir_to_path(app_custom_folder, new_env)
 
-        command = self.generate_run_command(job_meta, fl_ctx)
+        command = self.generate_server_command(job_meta, fl_ctx)
         return command, new_env
 
-    def generate_run_command(self, job_meta, fl_ctx):
+    def generate_server_command(self, job_meta, fl_ctx):
         workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         args = fl_ctx.get_prop(FLContextKey.ARGS)
         server = fl_ctx.get_prop(FLContextKey.SITE_OBJ)

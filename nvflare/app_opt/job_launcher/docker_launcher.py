@@ -182,7 +182,7 @@ class DockerJobLauncher(JobLauncherSpec):
 class ClientDockerJobLauncher(DockerJobLauncher, ClientProcessJobLauncher):
     def get_command(self, job_meta, fl_ctx) -> (str, str):
         job_id = job_meta.get(JobConstants.JOB_ID)
-        command = self.generate_run_command(job_meta, fl_ctx)
+        command = self.generate_client_command(job_meta, fl_ctx)
 
         return f"client-{job_id}", command
 
@@ -190,6 +190,6 @@ class ClientDockerJobLauncher(DockerJobLauncher, ClientProcessJobLauncher):
 class ServerDockerJobLauncher(DockerJobLauncher, ServerProcessJobLauncher):
     def get_command(self, job_meta, fl_ctx) -> (str, str):
         job_id = job_meta.get(JobConstants.JOB_ID)
-        command = self.generate_run_command(job_meta, fl_ctx)
+        command = self.generate_server_command(job_meta, fl_ctx)
 
         return f"server-{job_id}", command
