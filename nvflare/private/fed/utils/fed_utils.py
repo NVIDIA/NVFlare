@@ -38,6 +38,7 @@ from nvflare.apis.fl_constant import (
 )
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.job_launcher_spec import JobLauncherSpec
 from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.decomposers import common_decomposers
@@ -542,7 +543,7 @@ def get_scope_prop(scope_name: str, key: str) -> Any:
     return data_bus.get_data(_scope_prop_key(scope_name, key))
 
 
-def get_job_launcher(job_meta: dict, fl_ctx: FLContext) -> dict:
+def get_job_launcher(job_meta: dict, fl_ctx: FLContext) -> JobLauncherSpec:
     engine = fl_ctx.get_engine()
 
     with engine.new_context() as job_launcher_ctx:
@@ -554,5 +555,9 @@ def get_job_launcher(job_meta: dict, fl_ctx: FLContext) -> dict:
         job_launcher = job_launcher_ctx.get_prop(FLContextKey.JOB_LAUNCHER)
         if not (job_launcher and isinstance(job_launcher, list)):
             raise RuntimeError(f"There's no job launcher can handle this job: {job_meta}.")
+
+    launcher = job_launcher[0]
+    if not isinstance(launcher, JobLauncherSpec):
+        raise RuntimeError(f"The job launcher must be JobLauncherSpec but got {type(launcher)}")
 
     return job_launcher[0]

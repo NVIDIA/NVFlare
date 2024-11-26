@@ -13,6 +13,7 @@
 # limitations under the License.
 import time
 import uuid
+from concurrent.futures import Future, ThreadPoolExecutor
 from threading import Lock
 from typing import Any, List, Tuple
 
@@ -22,6 +23,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.streaming import ConsumerFactory, ObjectConsumer, ObjectProducer, StreamContext, StreamContextKey
 from nvflare.fuel.f3.cellnet.registry import Registry
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.obj_utils import get_logger
 from nvflare.fuel.utils.validation_utils import check_callable, check_object_type, check_str
 from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
@@ -109,6 +111,10 @@ class ObjectStreamer(FLComponent):
         self.tx_table = {}  # tx_id => _ProcessorInfo
         self.logger = get_logger(self)
 
+        # Note: the ConfigService has been initialized
+        max_concurrent_streaming_sessions = ConfigService.get_int_var("max_concurrent_streaming_sessions", default=20)
+        self.streaming_executor = ThreadPoolExecutor(max_workers=max_concurrent_streaming_sessions)
+
         aux_runner.register_aux_message_handler(
             topic=TOPIC_STREAM_REQUEST,
             message_handle_func=self._handle_request,
@@ -117,6 +123,13 @@ class ObjectStreamer(FLComponent):
             topic=TOPIC_STREAM_ABORT,
             message_handle_func=self._handle_abort,
         )
+
+    def shutdown(self):
+        e = self.streaming_executor
+        self.streaming_executor = None
+        if e:
+            e.shutdown(wait=False, cancel_futures=True)
+            self.logger.info("Stream Runer is Shut Down")
 
     def register_stream_processing(
         self,
@@ -429,3 +442,29 @@ class ObjectStreamer(FLComponent):
                 self._notify_abort_streaming(targets, tx_id, secure, fl_ctx)
                 self.logger.debug(f"Done streaming: {rc}")
                 return rc, result
+
+    def stream_no_wait(
+        self,
+        channel: str,
+        topic: str,
+        stream_ctx: StreamContext,
+        targets: List[AuxMsgTarget],
+        producer: ObjectProducer,
+        fl_ctx: FLContext,
+        secure=False,
+        optional=False,
+    ) -> Future:
+        if not self.streaming_executor:
+            raise RuntimeError("streaming_executor is not available: the streamer has been shut down!")
+
+        return self.streaming_executor.submit(
+            self.stream,
+            channel=channel,
+            topic=topic,
+            stream_ctx=stream_ctx,
+            targets=targets,
+            producer=producer,
+            fl_ctx=fl_ctx,
+            secure=secure,
+            optional=optional,
+        )
