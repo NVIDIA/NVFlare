@@ -29,8 +29,7 @@ class DataKind(object):
     COLLECTION = "COLLECTION"  # Dict or List of DXO objects
     STATISTICS = "STATISTICS"
     PSI = "PSI"
-    APP_DEFINED = "APP_DEFINED"  # data format is app defined
-    LOG = "LOG"
+    APP_DEFINED = "APP_DEFINED"  # data format is app defined=
 
 
 class MetaKey(FLMetaKey):

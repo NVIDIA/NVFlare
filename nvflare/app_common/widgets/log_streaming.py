@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from http import client
 import os
 from threading import Lock
+import time
 from typing import List, Optional
 from builtins import dict as StreamContext
 
@@ -21,7 +23,7 @@ from flask.cli import F
 
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode, SystemComponents
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.streamers.file_streamer import FileStreamer
@@ -33,6 +35,7 @@ LOG_STREAM_EVENT_TYPE = "stream_log"
 
 class LogConst(object):
     CLIENT_NAME = "client_name"
+    JOB_ID = "job_id"
     LOG_DATA = "log_data"
 
 class LogSender(Widget):
@@ -72,25 +75,11 @@ class LogSender(Widget):
                     FileStreamer.stream_file(
                         channel="error_logs",
                         topic=LOG_STREAM_EVENT_TYPE,
-                        stream_ctx={LogConst.CLIENT_NAME: client_name},
+                        stream_ctx={LogConst.CLIENT_NAME: client_name, LogConst.JOB_ID: job_id},
                         targets=["server"],
                         file_name=error_log_path,
                         fl_ctx=fl_ctx,
                     )
-                    self.send_log(client_name=client_name, log_data=error_log_contents, fl_ctx=fl_ctx)
-                    print("&" * 30)
-                    print("Reported contents of error log to server!")
-                    print("&" * 30)          
-
-    def send_log(self, client_name: str, log_data, fl_ctx: FLContext):
-        """Create and send a DXO by firing an event."""
-        data = {LogConst.CLIENT_NAME: client_name, LogConst.LOG_DATA: log_data}
-        dxo = DXO(data_kind=DataKind.LOG, data=data)
-        shareable = dxo.to_shareable()
-        fl_ctx.set_prop(key=FLContextKey.EVENT_DATA, value=shareable, private=False, sticky=False)
-        self.log_info(fl_ctx, fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID))
-        self.fire_fed_event(event_type=LOG_STREAM_EVENT_TYPE, event_data=shareable, fl_ctx=fl_ctx)
-        
 
     def close(self):
         """Close resources."""
@@ -122,14 +111,24 @@ class LogReceiver(Widget):
         rc = FileStreamer.get_rc(stream_ctx)
         self.log_info(fl_ctx, f"Received log file from {peer_name} on channel {channel} and topic {topic} with rc {rc}")
         self.log_info(fl_ctx, f"Stream context {stream_ctx}")
+        if rc != ReturnCode.OK:
+            self.log_error(fl_ctx, f"Error in streaming log file from {peer_name} on channel {channel} and topic {topic} with rc {rc}")
+            return
         file_location = FileStreamer.get_file_location(stream_ctx)
         self.log_info(fl_ctx, f"File location: {file_location}")
+        # Check file size before reading
+        file_size = os.path.getsize(file_location)
+        self.log_info(fl_ctx, f"File size: {file_size} bytes")
         with open(file_location, "r") as f:
             log_contents = f.read()
-        self.log_info(fl_ctx, "GOT log contents:")
+        self.log_info(fl_ctx, "GOT log contents!!!")
         self.log_info(fl_ctx, log_contents)
+        client = stream_ctx.get(LogConst.CLIENT_NAME)
+        job_id = stream_ctx.get(LogConst.JOB_ID)
+        job_manager = fl_ctx.get_engine().get_component(SystemComponents.JOB_MANAGER)
+        self.log_info(fl_ctx, f"TRYING TO SAVE ERROR LOG from {client} for {job_id}")
+        job_manager.set_error_log(job_id, log_contents, client, fl_ctx)
 
-        self.log_info(fl_ctx, f"GOT log contents: {log_contents}")
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type != EventType.CLIENT_HEARTBEAT_RECEIVED and event_type != EventType.CLIENT_HEARTBEAT_PROCESSED:
