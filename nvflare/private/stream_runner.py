@@ -90,7 +90,7 @@ class _ConsumerInfo:
                 self.logger.error(
                     f"exception from stream_done_cb {self.stream_done_cb.__name__}: {secure_format_exception(ex)}"
                 )
-        
+
         try:
             self.factory.return_consumer(
                 consumer=self.consumer,
