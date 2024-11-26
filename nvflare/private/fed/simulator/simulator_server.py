@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import os
 from typing import Dict, List, Optional
 
 from nvflare.apis.fl_component import FLComponent
@@ -145,6 +145,8 @@ class SimulatorServer(FederatedServer):
 
     def deploy(self, args, grpc_args=None, secure_train=False):
         super(FederatedServer, self).deploy(args, grpc_args, secure_train)
+        os.makedirs(os.path.join(args.workspace, "local"), exist_ok=True)
+        os.makedirs(os.path.join(args.workspace, "startup"), exist_ok=True)
         workspace = Workspace(args.workspace, "server", args.config_folder)
         run_manager = RunManager(
             server_name="server",
