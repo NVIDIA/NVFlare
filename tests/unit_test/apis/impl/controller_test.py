@@ -1317,16 +1317,27 @@ def _process_task_request_test_cases():
     clients = [create_client(f"__test_client{i}") for i in range(3)]
     client_names = [c.name for c in clients]
 
+    # For each task_assignment_timeout pass by, the "window" grow by one
+    #   all the targets within the window can receive a task
     dynamic_targets_cases = [
+        # For dynamic window, the new target will be appended to the end of the list.
         (clients[1:], clients[0], True, 2, 0, False, [clients[1].name, clients[2].name, clients[0].name]),
+        # test_client1 is the first, is in target and is in window so it gets task
         (clients[1:], clients[1], True, 2, 0, True, client_names[1:]),
+        # test_client2 is the second, is in target BUT not in window so it does not get task
         (clients[1:], clients[2], True, 2, 0, False, client_names[1:]),
+        # test_client1 is not in target AND not in window so it does not get task
         ([clients[0]], clients[1], True, 2, 0, False, [clients[0].name, clients[1].name]),
-        ([clients[0]], clients[1], True, 1, 2, False, [clients[0].name]),
+        # the "time_before_first_request" takes too long the SequentialRelayTaskManager times out
+        ([clients[0]], clients[1], True, 1, 5, False, [clients[0].name]),
+        # the "time_before_first_request" > task_assignment_timeout (1 second), so the window will move to second
+        ([clients[0]], clients[1], True, 1, 1.5, True, [clients[0].name, clients[1].name]),
         ([clients[0], clients[0]], clients[0], True, 1, 0, True, [clients[0].name, clients[0].name]),
         (None, clients[0], True, 1, 0, True, [clients[0].name]),
     ]
 
+    # For static target, if the requesting site is not in the targets list,
+    #  it will not get any tasks
     static_targets_cases = [
         (clients[1:], clients[0], False, 2, 0, False, client_names[1:]),
         (clients[1:], clients[1], False, 2, 0, True, client_names[1:]),
