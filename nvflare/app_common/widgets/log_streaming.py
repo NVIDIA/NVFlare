@@ -23,7 +23,6 @@ from nvflare.apis.workspace import Workspace
 from nvflare.app_common.streamers.file_streamer import FileStreamer
 from nvflare.widgets.widget import Widget
 
-
 LOG_STREAM_EVENT_TYPE = "stream_log"
 
 
@@ -31,6 +30,7 @@ class LogConst(object):
     CLIENT_NAME = "client_name"
     JOB_ID = "job_id"
     LOG_DATA = "log_data"
+
 
 class LogSender(Widget):
     def __init__(self, event_type=EventType.JOB_COMPLETED, should_report_error_log: bool = True):
@@ -68,6 +68,7 @@ class LogSender(Widget):
                 job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
                 self.log_info(fl_ctx, f"Started streaming error log file for {client_name} for job {job_id}")
 
+
 class LogReceiver(Widget):
     def __init__(self):
         """Receives log data."""
@@ -82,7 +83,10 @@ class LogReceiver(Widget):
         topic = FileStreamer.get_topic(stream_ctx)
         rc = FileStreamer.get_rc(stream_ctx)
         if rc != ReturnCode.OK:
-            self.log_error(fl_ctx, f"Error in streaming log file from {peer_name} on channel {channel} and topic {topic} with rc {rc}")
+            self.log_error(
+                fl_ctx,
+                f"Error in streaming log file from {peer_name} on channel {channel} and topic {topic} with rc {rc}",
+            )
             return
         file_location = FileStreamer.get_file_location(stream_ctx)
         self.log_info(fl_ctx, f"File location: {file_location}")
@@ -94,7 +98,8 @@ class LogReceiver(Widget):
         self.log_info(fl_ctx, f"Saving ERRORLOG from {client} for {job_id}")
         job_manager.set_error_log(job_id, log_contents, client, fl_ctx)
 
-
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.SYSTEM_START:
-            FileStreamer.register_stream_processing(fl_ctx, channel="error_logs", topic=LOG_STREAM_EVENT_TYPE, stream_done_cb=self.process_log)
+            FileStreamer.register_stream_processing(
+                fl_ctx, channel="error_logs", topic=LOG_STREAM_EVENT_TYPE, stream_done_cb=self.process_log
+            )
