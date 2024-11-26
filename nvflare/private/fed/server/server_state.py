@@ -40,7 +40,7 @@ class ServerState(ABC):
     ABORT_CURRENT_RUN = {ACTION: ABORT_RUN, MESSAGE: "Abort current run"}
     IN_SERVICE = {ACTION: SERVICE, MESSAGE: "Server in service"}
 
-    logger = logging.getLogger("ServerState")
+    logger = logging.getLogger(f"{__module__}.{__qualname__}")
 
     def __init__(self, host: str = "", port: str = "", ssid: str = "") -> None:
         self.host = host

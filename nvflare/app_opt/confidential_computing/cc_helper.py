@@ -13,11 +13,12 @@
 # limitations under the License.
 # import os.path
 
-import logging
 import os
 from typing import Dict
 
 from nv_attestation_sdk.attestation import Attestation, Devices, Environment
+
+from nvflare.fuel.utils.obj_utils import get_logger
 
 
 class VerifierProp:
@@ -64,7 +65,7 @@ class CCHelper(object):
         attestation.set_name(site_name)
         self.attestation = attestation
         self.token = None
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_logger(self)
         for v in verifiers:
             assert isinstance(v, dict)
             url = None

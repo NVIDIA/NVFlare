@@ -26,7 +26,7 @@ print_fn = builtins.print
 
 
 class TaskScriptRunner:
-    logger = logging.getLogger(__name__)
+    logger = logging.getLogger(f"{__module__}.{__qualname__}")
 
     def __init__(self, custom_dir: str, script_path: str, script_args: str = None, redirect_print_to_log=True):
         """Wrapper for function given function path and args
@@ -41,7 +41,6 @@ class TaskScriptRunner:
         self.event_manager = EventManager(DataBus())
         self.script_args = script_args
         self.custom_dir = custom_dir
-        self.logger = logging.getLogger(self.__class__.__name__)
         self.script_path = script_path
         self.script_full_path = self.get_script_full_path(self.custom_dir, self.script_path)
 

@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import threading
 import time
 from typing import List, Optional
@@ -31,6 +30,7 @@ from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.obj_utils import get_logger
 from nvflare.private.defs import EngineConstant
 from nvflare.private.fed.utils.fed_utils import set_scope_prop
 from nvflare.security.logging import secure_format_exception
@@ -73,7 +73,7 @@ class FederatedClientBase:
             compression: communication compression algorithm
             cell: CellNet communicator
         """
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_logger(self)
 
         self.client_name = client_name
         self.token = None

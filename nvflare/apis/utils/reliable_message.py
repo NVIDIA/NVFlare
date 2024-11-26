@@ -236,7 +236,7 @@ class ReliableMessage:
     _reply_receivers = {}  # tx id => receiver
     _tx_lock = threading.Lock()
     _shutdown_asked = False
-    _logger = logging.getLogger("ReliableMessage")
+    _logger = logging.getLogger(f"{__module__}.{__qualname__}")
 
     @classmethod
     def register_request_handler(cls, topic: str, handler_f, fl_ctx: FLContext):

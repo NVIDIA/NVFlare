@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import queue
 import threading
 import time
@@ -28,6 +27,7 @@ from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.utils.attributes_exportable import ExportMode
 from nvflare.fuel.utils.config_service import search_file
 from nvflare.fuel.utils.constants import Mode
+from nvflare.fuel.utils.obj_utils import get_logger
 from nvflare.fuel.utils.validation_utils import check_object_type, check_str
 
 from .pipe import Message, Pipe, Topic
@@ -176,7 +176,7 @@ class CellPipe(Pipe):
             workspace_dir (str): the directory that contains startup for joining the cellnet. Required only in secure_mode
         """
         super().__init__(mode)
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_logger(self)
 
         self.site_name = site_name
         self.token = token

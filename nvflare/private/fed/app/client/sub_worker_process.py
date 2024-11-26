@@ -44,6 +44,7 @@ from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
+from nvflare.fuel.utils.obj_utils import get_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, new_cell_message
 from nvflare.private.fed.app.fl_conf import create_privacy_manager
 from nvflare.private.fed.app.utils import monitor_parent_process
@@ -180,7 +181,7 @@ class SubWorkerExecutor(Runner):
             MultiProcessCommandNames.CLOSE: self._close,
         }
 
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_logger(self)
 
     def execute_command(self, request: CellMessage) -> CellMessage:
         command_name = request.get_header(MessageHeaderKey.TOPIC)
@@ -341,7 +342,9 @@ def main(args):
     job_id = args.job_id
     log_file = workspace.get_app_log_file_path(job_id)
     add_logfile_handler(log_file)
-    logger = logging.getLogger("sub_worker_process")
+    logger = logging.getLogger(
+        f"{__package__ + '.' if __package__ else ''}{os.path.splitext(os.path.basename(__file__))[0]}"
+    )
 
     sub_executor.run()
 

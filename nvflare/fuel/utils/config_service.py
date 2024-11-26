@@ -69,7 +69,7 @@ class ConfigService:
     Only JSON file loading is supported.
     """
 
-    logger = logging.getLogger(__name__)
+    logger = logging.getLogger(f"{__module__}.{__qualname__}")
     _sections = {}
     _config_path = []
     _cmd_args = None

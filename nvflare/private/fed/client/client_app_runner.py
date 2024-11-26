@@ -34,7 +34,7 @@ from nvflare.private.privacy_manager import PrivacyService
 
 class ClientAppRunner(Runner):
 
-    logger = logging.getLogger("ClientAppRunner")
+    logger = logging.getLogger(f"{__module__}.{__qualname__}")
 
     def __init__(self, time_out=60.0) -> None:
         super().__init__()

@@ -23,7 +23,7 @@ from nvflare.fuel.utils.json_config_loader import JsonConfigLoader
 
 
 class ConfigFactory:
-    logger = logging.getLogger(__qualname__)
+    logger = logging.getLogger(f"{__module__}.{__qualname__}")
     OmegaConfLoader, omega_import_ok = optional_import(
         module="nvflare.fuel_opt.utils.omegaconf_loader", name="OmegaConfLoader"
     )

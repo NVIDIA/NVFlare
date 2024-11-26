@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import logging
 import os
 import time
 from typing import Union
@@ -21,6 +20,7 @@ from nvflare.fuel.f3.cellnet.defs import ConnectorRequirementKey
 from nvflare.fuel.f3.cellnet.fqcn import FqcnInfo
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.communicator import CommError, Communicator, Mode
+from nvflare.fuel.utils.obj_utils import get_logger
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 _KEY_RESOURCES = "resources"
@@ -55,7 +55,7 @@ class ConnectorManager:
 
     def __init__(self, communicator: Communicator, secure: bool, comm_configurator: CommConfigurator):
         self._name = self.__class__.__name__
-        self.logger = logging.getLogger(self._name)
+        self.logger = get_logger(self)
 
         self.communicator = communicator
         self.secure = secure

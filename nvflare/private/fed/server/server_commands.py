@@ -14,7 +14,6 @@
 
 """FL Admin commands."""
 
-import logging
 import time
 from abc import ABC, abstractmethod
 from typing import List
@@ -30,6 +29,7 @@ from nvflare.apis.fl_constant import (
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
+from nvflare.fuel.utils.obj_utils import get_logger
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 from nvflare.widgets.widget import WidgetID
@@ -41,7 +41,7 @@ class CommandProcessor(ABC):
     """The CommandProcessor is responsible for processing a command from parent process."""
 
     def __init__(self) -> None:
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_logger(self)
 
     @abstractmethod
     def get_command_name(self) -> str:

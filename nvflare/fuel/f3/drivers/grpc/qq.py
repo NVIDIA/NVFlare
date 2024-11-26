@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import queue
+
+from nvflare.fuel.utils.obj_utils import get_logger
 
 
 class QueueClosed(Exception):
@@ -24,7 +25,7 @@ class QQ:
     def __init__(self):
         self.q = queue.Queue()
         self.closed = False
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_logger(self)
 
     def close(self):
         self.closed = True

@@ -54,7 +54,7 @@ class MainProcessMonitor:
     @classmethod
     def logger(cls):
         if not cls._logger:
-            cls._logger = logging.getLogger(cls.name)
+            cls._logger = logging.getLogger(f"{cls.__module__}.{cls.name}")
         return cls._logger
 
     @classmethod

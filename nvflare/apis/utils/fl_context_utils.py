@@ -22,7 +22,7 @@ from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.utils import fobs
 from nvflare.security.logging import secure_format_exception
 
-logger = logging.getLogger("fl_context_utils")
+logger = logging.getLogger(__name__)
 
 
 def get_serializable_data(fl_ctx: FLContext):

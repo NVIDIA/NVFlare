@@ -49,6 +49,7 @@ from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.mpm import MainProcessMonitor
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
+from nvflare.fuel.utils.obj_utils import get_logger
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 _CHANNEL = "cellnet.channel"
@@ -155,7 +156,7 @@ class _BulkSender:
         self.messages = []
         self.last_send_time = 0
         self.lock = threading.Lock()
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_logger(self)
 
     def queue_message(self, channel: str, topic: str, message: Message):
         if self.secure:
@@ -318,7 +319,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
         comm_configurator = CommConfigurator()
         self._name = self.__class__.__name__
-        self.logger = logging.getLogger(self._name)
+        self.logger = get_logger(self)
         self.max_msg_size = comm_configurator.get_max_message_size()
         self.comm_configurator = comm_configurator
 

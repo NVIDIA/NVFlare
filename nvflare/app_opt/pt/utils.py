@@ -30,7 +30,7 @@ def feed_vars(model: nn.Module, model_params):
     Returns:
         a list of params and a dictionary of vars to params
     """
-    _logger = logging.getLogger("AssignVariables")
+    _logger = logging.getLogger(f"{__name__}.AssignVariables")
     _logger.debug("AssignVariables...")
 
     to_assign = []
