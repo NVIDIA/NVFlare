@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import argparse
+import os
 import shutil
 import tempfile
 import unittest
@@ -26,6 +27,7 @@ from nvflare.fuel.sec.audit import AuditService
 from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeployer
 from nvflare.private.fed.app.simulator.simulator import define_simulator_parser
 from nvflare.private.fed.client.fed_client import FederatedClient
+from nvflare.private.fed.server.run_manager import RunManager
 
 # from nvflare.private.fed.simulator.simulator_server import SimulatorServer
 from nvflare.security.security import EmptyAuthorizer
@@ -70,4 +72,21 @@ class TestSimulatorDeploy(unittest.TestCase):
         client, _, _, _ = self.deployer.create_fl_client("client0", args)
         assert isinstance(client, FederatedClient)
         client.cell.stop()
+        shutil.rmtree(workspace)
+
+    @patch("nvflare.private.fed.server.admin.FedAdminServer.start")
+    @patch("nvflare.private.fed.simulator.simulator_server.SimulatorServer._register_cellnet_cbs")
+    def test_run_manager_creation(self, mock_admin, mock_simulator_server):
+        workspace = tempfile.mkdtemp()
+        os.mkdir(os.path.join(workspace, "local"))
+        os.mkdir(os.path.join(workspace, "startup"))
+        parser = self._create_parser()
+        args = parser.parse_args(["job_folder", "-w" + workspace, "-n 2", "-t 1"])
+        args.config_folder = "config"
+        simulator_server, self.server = self.deployer.create_fl_server(args)
+
+        assert isinstance(self.server.engine.run_manager, RunManager)
+
+        self.server.cell.stop()
+        self.server.close()
         shutil.rmtree(workspace)
