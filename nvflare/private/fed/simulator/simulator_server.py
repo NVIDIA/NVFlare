@@ -15,7 +15,7 @@ import os
 from typing import Dict, List, Optional
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic, ServerCommandKey
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic, ServerCommandKey, SiteType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.workspace import Workspace
@@ -149,7 +149,7 @@ class SimulatorServer(FederatedServer):
         os.makedirs(os.path.join(args.workspace, "startup"), exist_ok=True)
         workspace = Workspace(args.workspace, "server", args.config_folder)
         run_manager = RunManager(
-            server_name="server",
+            server_name=SiteType.SERVER,
             engine=self.engine,
             job_id="",
             workspace=workspace,
