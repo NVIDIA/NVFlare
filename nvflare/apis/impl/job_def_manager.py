@@ -27,7 +27,7 @@ from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.storage import WORKSPACE, StorageException, StorageSpec
 from nvflare.fuel.utils import fobs
-from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes, zip_directory_to_file
+from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes
 
 _OBJ_TAG_SCHEDULED = "scheduled"
 
