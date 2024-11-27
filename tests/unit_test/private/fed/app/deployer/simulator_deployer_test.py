@@ -29,11 +29,11 @@ from nvflare.private.fed.app.simulator.simulator import define_simulator_parser
 from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.server.run_manager import RunManager
 
-# from nvflare.private.fed.simulator.simulator_server import SimulatorServer
+from nvflare.private.fed.simulator.simulator_server import SimulatorServer
 from nvflare.security.security import EmptyAuthorizer
 
 
-@pytest.mark.xdist_group(name="simulator_deploy")
+@pytest.mark.xdist_group(name="one_server_cell")
 class TestSimulatorDeploy(unittest.TestCase):
     def setUp(self) -> None:
         self.deployer = SimulatorDeployer()
@@ -52,15 +52,15 @@ class TestSimulatorDeploy(unittest.TestCase):
         return parser
 
     # Disable this test temporarily since it conflicts with other tests.
-    # def test_create_server(self):
-    #     with patch("nvflare.private.fed.app.utils.FedAdminServer") as mock_admin:
-    #         workspace = tempfile.mkdtemp()
-    #         parser = self._create_parser()
-    #         args = parser.parse_args(["job_folder", "-w" + workspace, "-n 2", "-t 1"])
-    #         _, server = self.deployer.create_fl_server(args)
-    #         assert isinstance(server, SimulatorServer)
-    #         server.cell.stop()
-    #         shutil.rmtree(workspace)
+    def test_create_server(self):
+        with patch("nvflare.private.fed.app.utils.FedAdminServer") as mock_admin:
+            workspace = tempfile.mkdtemp()
+            parser = self._create_parser()
+            args = parser.parse_args(["job_folder", "-w" + workspace, "-n 2", "-t 1"])
+            _, server = self.deployer.create_fl_server(args)
+            assert isinstance(server, SimulatorServer)
+            server.cell.stop()
+            shutil.rmtree(workspace)
 
     @patch("nvflare.private.fed.client.fed_client.FederatedClient.register")
     # @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.start_heartbeat")

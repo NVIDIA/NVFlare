@@ -31,6 +31,7 @@ class State:
         self.result = None
 
 
+@pytest.mark.xdist_group(name="one_server_cell")
 class TestStreamCell:
     @pytest.fixture(scope="session")
     def port(self):
