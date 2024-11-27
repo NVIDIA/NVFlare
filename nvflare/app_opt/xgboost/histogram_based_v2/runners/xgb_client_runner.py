@@ -224,15 +224,16 @@ class XGBClientRunner(AppRunner, FLComponent):
             bst.save_model(os.path.join(self._model_dir, self.model_file_name))
             xgb.collective.communicator_print("Finished training\n")
 
-            # Save explanability outputs based on val_data
-            explainer = shap.TreeExplainer(bst)
-            explanation = explainer(val_data)
+            if self._data_split_mode == 0:
+                # Save explainability outputs based on val_data
+                explainer = shap.TreeExplainer(bst)
+                explanation = explainer(val_data)
 
-            # save the beeswarm plot to png file
-            shap.plots.beeswarm(explanation, show=False)
-            img = plt.gcf()
-            img.subplots_adjust(left=0.3, right=0.9, bottom=0.3, top=0.9)
-            img.savefig(os.path.join(self._model_dir, "shap_beeswarm.png"), bbox_inches="tight")
+                # save the beeswarm plot to png file
+                shap.plots.beeswarm(explanation, show=False)
+                img = plt.gcf()
+                img.subplots_adjust(left=0.3, right=0.9, bottom=0.3, top=0.9)
+                img.savefig(os.path.join(self._model_dir, "shap_beeswarm.png"), bbox_inches="tight")
 
         self._stopped = True
 

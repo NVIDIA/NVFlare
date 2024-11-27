@@ -11,13 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import os
 from typing import Dict, List, Optional
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic, ServerCommandKey
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic, ServerCommandKey, SiteType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
+from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.message import Message
 from nvflare.private.fed.server.run_manager import RunManager
 from nvflare.private.fed.server.server_state import HotState
@@ -144,6 +145,20 @@ class SimulatorServer(FederatedServer):
 
     def deploy(self, args, grpc_args=None, secure_train=False):
         super(FederatedServer, self).deploy(args, grpc_args, secure_train)
+        os.makedirs(os.path.join(args.workspace, "local"), exist_ok=True)
+        os.makedirs(os.path.join(args.workspace, "startup"), exist_ok=True)
+        workspace = Workspace(args.workspace, "server", args.config_folder)
+        run_manager = RunManager(
+            server_name=SiteType.SERVER,
+            engine=self.engine,
+            job_id="",
+            workspace=workspace,
+            components={},
+            handlers=[],
+        )
+        self.engine.set_run_manager(run_manager)
+        self.engine.initialize_comm(self.cell)
+
         self._register_cellnet_cbs()
 
     def stop_training(self):
