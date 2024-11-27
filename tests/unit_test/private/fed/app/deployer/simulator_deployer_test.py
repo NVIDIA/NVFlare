@@ -28,7 +28,6 @@ from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeploye
 from nvflare.private.fed.app.simulator.simulator import define_simulator_parser
 from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.server.run_manager import RunManager
-
 from nvflare.private.fed.simulator.simulator_server import SimulatorServer
 from nvflare.security.security import EmptyAuthorizer
 
