@@ -43,7 +43,7 @@ from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
-from nvflare.fuel.utils.log_utils import get_obj_logger, get_script_logger
+from nvflare.fuel.utils.log_utils import configure_logging, get_obj_logger, get_script_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, new_cell_message
 from nvflare.private.fed.app.fl_conf import create_privacy_manager
 from nvflare.private.fed.app.utils import monitor_parent_process
@@ -51,8 +51,6 @@ from nvflare.private.fed.client.client_run_manager import ClientRunManager
 from nvflare.private.fed.runner import Runner
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorClientRunManager
 from nvflare.private.fed.utils.fed_utils import (
-    add_logfile_handler,
-    configure_logging,
     create_stats_pool_files_for_job,
     fobs_initialize,
     register_ext_decomposers,
@@ -309,7 +307,7 @@ class SubWorkerExecutor(Runner):
 
 def main(args):
     workspace = Workspace(args.workspace, args.client_name)
-    configure_logging(workspace)
+    configure_logging(workspace, workspace.get_run_dir(args.job_id))
 
     fobs_initialize(workspace=workspace, job_id=args.job_id)
     register_ext_decomposers(args.decomposer_module)
@@ -339,8 +337,6 @@ def main(args):
     thread.start()
 
     job_id = args.job_id
-    log_file = workspace.get_app_log_file_path(job_id)
-    add_logfile_handler(log_file)
     logger = get_script_logger()
 
     sub_executor.run()
