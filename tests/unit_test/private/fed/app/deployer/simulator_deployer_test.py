@@ -78,15 +78,13 @@ class TestSimulatorDeploy(unittest.TestCase):
     @patch("nvflare.private.fed.simulator.simulator_server.SimulatorServer._register_cellnet_cbs")
     @patch("nvflare.private.fed.server.fed_server.Cell")
     def test_run_manager_creation(self, mock_admin, mock_simulator_server, mock_cell):
-        deployer = SimulatorDeployer()
-
         workspace = tempfile.mkdtemp()
         os.mkdir(os.path.join(workspace, "local"))
         os.mkdir(os.path.join(workspace, "startup"))
         parser = self._create_parser()
         args = parser.parse_args(["job_folder", "-w" + workspace, "-n 2", "-t 1"])
         args.config_folder = "config"
-        _, server = deployer.create_fl_server(args)
+        _, server = self.deployer.create_fl_server(args)
 
         assert isinstance(server.engine.run_manager, RunManager)
 
