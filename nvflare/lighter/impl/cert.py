@@ -208,6 +208,8 @@ class CertBuilder(Builder):
                     if h != default_host:
                         sans.append(x509.DNSName(h))
             builder = builder.add_extension(x509.SubjectAlternativeName(sans), critical=False)
+        else:
+            builder = builder.add_extension(x509.SubjectAlternativeName([x509.DNSName(subject)]), critical=False)
         return builder.sign(signing_pri_key, hashes.SHA256(), default_backend())
 
     def _x509_name(self, cn_name, org_name=None, role=None):
