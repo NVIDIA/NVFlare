@@ -83,10 +83,10 @@ class TestSimulatorDeploy(unittest.TestCase):
         parser = self._create_parser()
         args = parser.parse_args(["job_folder", "-w" + workspace, "-n 2", "-t 1"])
         args.config_folder = "config"
-        simulator_server, self.server = self.deployer.create_fl_server(args)
+        _, server = self.deployer.create_fl_server(args)
 
-        assert isinstance(self.server.engine.run_manager, RunManager)
+        assert isinstance(server.engine.run_manager, RunManager)
 
-        self.server.cell.stop()
-        self.server.close()
+        server.cell.stop()
+        server.close()
         shutil.rmtree(workspace)
