@@ -260,14 +260,8 @@ def prepare_builders(project_dict: OrderedDict) -> List:
         path = b.get("path")
         args = b.get("args")
 
-        # No longer need the following since we can simply set the default_host to localhost!
-        # if b.get("path") == "nvflare.lighter.impl.static_file.StaticFileBuilder":
-        #     path = "nvflare.lighter.impl.local_static_file.LocalStaticFileBuilder"
-        #     sp_end_point = args["overseer_agent"]["args"]["sp_end_point"]
-        #     args["overseer_agent"]["args"]["sp_end_point"] = replace_server_with_localhost(sp_end_point)
-        #
-        # elif b.get("path") == "nvflare.lighter.impl.cert.CertBuilder":
-        #     path = "nvflare.lighter.impl.local_cert.LocalCertBuilder"
+        if b.get("path") == "nvflare.lighter.impl.static_file.StaticFileBuilder":
+            path = "nvflare.lighter.impl.local_static_file.LocalStaticFileBuilder"
 
         builders.append(instantiate_class(path, args))
     return builders
