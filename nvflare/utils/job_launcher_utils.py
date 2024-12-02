@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
 import os
 import sys
 
@@ -110,8 +111,7 @@ def extract_job_image(job_meta, site_name):
 
 
 def add_custom_dir_to_path(app_custom_folder, new_env):
-    path = new_env.get(SystemVarName.PYTHONPATH, "")
-    if path:
-        new_env[SystemVarName.PYTHONPATH] = path + os.pathsep + app_custom_folder
-    else:
-        new_env[SystemVarName.PYTHONPATH] = app_custom_folder
+    """Util method to add app_custom_folder into the sys.path and carry into the child process."""
+    sys_path = copy.copy(sys.path)
+    sys_path.append(app_custom_folder)
+    new_env[SystemVarName.PYTHONPATH] = os.pathsep.join(sys_path)
