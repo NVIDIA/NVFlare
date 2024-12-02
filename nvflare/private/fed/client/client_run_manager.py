@@ -24,7 +24,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
 from nvflare.private.event import fire_event
@@ -116,7 +116,7 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
         for _, widget in self.widgets.items():
             self.handlers.append(widget)
 
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
 
     def get_task_assignment(self, fl_ctx: FLContext, timeout=None) -> TaskAssignment:
         pull_success, task_name, return_shareable = self.client.fetch_task(fl_ctx, timeout)

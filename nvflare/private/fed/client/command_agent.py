@@ -18,7 +18,7 @@ from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.fuel.f3.cellnet.core_cell import Message as CellMessage
 from nvflare.fuel.f3.cellnet.core_cell import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.core_cell import make_reply as make_cellnet_reply
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, new_cell_message
 
 from .admin_commands import AdminCommands
@@ -36,7 +36,7 @@ class CommandAgent(object):
         self.asked_to_stop = False
 
         self.commands = AdminCommands.commands
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
 
     def start(self, fl_ctx: FLContext):
         self.engine = fl_ctx.get_engine()

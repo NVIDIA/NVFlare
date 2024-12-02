@@ -17,7 +17,7 @@ from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import MessageHeaderKey, ReturnCode, make_reply
 from nvflare.fuel.f3.message import Message as CellMessage
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
 
 from .server_commands import ServerCommands
@@ -30,7 +30,7 @@ class ServerCommandAgent(object):
         Args:
             listen_port: port to listen the command
         """
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
         self.asked_to_stop = False
         self.engine = engine
         self.cell = cell

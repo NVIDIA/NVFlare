@@ -40,7 +40,7 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.class_utils import ModuleScanner
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.fuel.utils.config_service import ConfigService
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, new_cell_message
 from nvflare.security.logging import secure_format_exception
 
@@ -85,7 +85,7 @@ class MultiProcessExecutor(Executor):
         self.execute_complete = None
         self.engine = None
 
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
         self.conn_clients = []
         self.exe_process = None
 

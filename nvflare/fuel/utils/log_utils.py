@@ -10,7 +10,8 @@
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
-# limitations under the License.import logging
+# limitations under the License.
+import inspect
 import logging
 import logging.config
 import os
@@ -38,11 +39,6 @@ DEFAULT_LEVEL_COLORS = {
 }
 
 
-def ansi_sgr(code):
-    # ANSI Select Graphics Rendition
-    return "\x1b[" + code + "m"
-
-
 class BaseFormatter(logging.Formatter):
     def __init__(self, fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt=None, style="%"):
         """BaseFormatter is the default formatter for log records.
@@ -58,10 +54,38 @@ class BaseFormatter(logging.Formatter):
         super().__init__(fmt=fmt, datefmt=datefmt, style=style)
 
     def format(self, record):
-        record.fullName = record.name
-        record.name = record.name.split(".")[-1]
+        if not hasattr(record, "fullName"):
+            record.fullName = record.name
+            record.name = record.name.split(".")[-1]
 
         return super().format(record)
+
+
+def ansi_sgr(code):
+    # ANSI Select Graphics Rendition
+    return "\x1b[" + code + "m"
+
+
+def get_module_logger(module=None, name=None):
+    if module is None:
+        caller_globals = inspect.stack()[1].frame.f_globals
+        module = caller_globals.get("__name__", "")
+
+    return logging.getLogger(f"{module}.{name}" if name else module)
+
+
+def get_obj_logger(obj):
+    return logging.getLogger(f"{obj.__module__}.{obj.__class__.__qualname__}")
+
+
+def get_script_logger():
+    caller_frame = inspect.stack()[1]
+    package = caller_frame.frame.f_globals.get("__package__", "")
+    file = caller_frame.frame.f_globals.get("__file__", "")
+
+    return logging.getLogger(
+        f"{package + '.' if package else ''}{os.path.splitext(os.path.basename(file))[0] if file else ''}"
+    )
 
 
 def configure_logging(workspace: Workspace):

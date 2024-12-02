@@ -18,7 +18,7 @@ from typing import Dict
 
 from nv_attestation_sdk.attestation import Attestation, Devices, Environment
 
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
 class VerifierProp:
@@ -65,7 +65,7 @@ class CCHelper(object):
         attestation.set_name(site_name)
         self.attestation = attestation
         self.token = None
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
         for v in verifiers:
             assert isinstance(v, dict)
             url = None

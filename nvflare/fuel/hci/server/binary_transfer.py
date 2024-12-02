@@ -18,12 +18,12 @@ from nvflare.fuel.hci.binary_proto import send_binary_file
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.server.constants import ConnProps
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
 class BinaryTransfer:
     def __init__(self):
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
 
     def download_file(self, conn: Connection, tx_id: str, folder_name: str, file_name: str):
         conn.binary_mode = True

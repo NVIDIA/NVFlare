@@ -24,7 +24,7 @@ from tempfile import TemporaryDirectory
 from typing import Dict
 
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.job_config.base_app_config import BaseAppConfig
 from nvflare.job_config.fed_app_config import FedAppConfig
 from nvflare.private.fed.app.fl_conf import FL_PACKAGES
@@ -61,7 +61,7 @@ class FedJobConfig:
         self.resource_specs: Dict[str, Dict] = {}
 
         self.custom_modules = []
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
 
     def add_fed_app(self, app_name: str, fed_app: FedAppConfig):
         if not isinstance(fed_app, FedAppConfig):

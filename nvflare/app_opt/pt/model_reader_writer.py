@@ -15,7 +15,7 @@
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model_processor import ModelProcessor
 from nvflare.app_opt.pt.utils import feed_vars
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception
 
 
@@ -23,7 +23,7 @@ class PTModelReaderWriter(ModelProcessor):
     def __init__(self):
         """Perform the actual read/write operation for PyTorch-based models."""
         self._name = self.__class__.__name__
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
 
     def extract_model(self, network, multi_processes: bool, model_vars: dict, fl_ctx: FLContext) -> dict:
         net = network

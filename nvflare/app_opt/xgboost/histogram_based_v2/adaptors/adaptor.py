@@ -27,8 +27,7 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.runners.xgb_runner import AppRunner
-from nvflare.fuel.utils.log_utils import add_log_file_handler, configure_logging
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import add_log_file_handler, configure_logging, get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
@@ -49,7 +48,7 @@ class _RunnerStarter:
         self.started = True
         self.stopped = False
         self.exit_code = 0
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
 
     def start(self, ctx: dict):
         """Start the runner and wait for it to finish.

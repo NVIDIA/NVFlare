@@ -20,7 +20,7 @@ from requests import Request, RequestException, Response, Session, codes
 from requests.adapters import HTTPAdapter
 
 from nvflare.apis.overseer_spec import SP, OverseerAgent
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception
 
 
@@ -51,7 +51,7 @@ class HttpOverseerAgent(OverseerAgent):
         self._prv_key_path = None
         self._last_service_session_id = ""
         self._asked_to_exit = False
-        self._logger = get_logger(self)
+        self._logger = get_obj_logger(self)
         self._retry_delay = 4
         self._asked_to_stop_retrying = False
         self._update_callback = None

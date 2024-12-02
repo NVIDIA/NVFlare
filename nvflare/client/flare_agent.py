@@ -25,7 +25,7 @@ from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.decomposers import common_decomposers
 from nvflare.fuel.utils.constants import PipeChannelName
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 from nvflare.fuel.utils.pipe.pipe import Message, Mode, Pipe
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler
@@ -112,7 +112,7 @@ class FlareAgent:
         if decomposer_module:
             register_ext_decomposers(decomposer_module)
 
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
         self.pipe = pipe
         self.pipe_handler = None
         if self.pipe:

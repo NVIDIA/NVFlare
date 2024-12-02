@@ -25,7 +25,7 @@ from nvflare.fuel.common.exit_codes import PROCESS_EXIT_REASON, ProcessExitCode
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.utils.config_service import ConfigService
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey, new_cell_message
 from nvflare.private.fed.utils.fed_utils import get_job_launcher, get_return_code
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
@@ -130,7 +130,7 @@ class JobExecutor(ClientExecutor):
             startup: startup folder
         """
         self.client = client
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
         self.startup = startup
         self.run_processes = {}
         self.lock = threading.Lock()

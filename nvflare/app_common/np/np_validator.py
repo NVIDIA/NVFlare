@@ -23,7 +23,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception
 
 from .constants import NPConstants
@@ -41,7 +41,7 @@ class NPValidator(Executor):
         # for long time.
         super().__init__()
 
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
         self._random_epsilon = epsilon
         self._sleep_time = sleep_time
         self._validate_task_name = validate_task_name

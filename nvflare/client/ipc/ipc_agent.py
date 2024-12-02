@@ -25,7 +25,7 @@ from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.utils.config_service import ConfigService
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.fed.utils.fed_utils import register_ext_decomposers
 
 _SSL_ROOT_CERT = "rootCA.pem"
@@ -61,7 +61,7 @@ class IPCAgent:
         """
         ConfigService.initialize(section_files={}, config_path=[workspace_dir])
 
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
         self.cell_name = defs.agent_site_fqcn(flare_site_name, agent_id)
         self.workspace_dir = workspace_dir
         self.secure_mode = secure_mode

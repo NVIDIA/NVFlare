@@ -18,13 +18,13 @@ from typing import Any, List
 from nvflare.apis.dxo import from_shareable
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
 class ParamsConverter(ABC):
     def __init__(self, supported_tasks: List[str] = None):
         self.supported_tasks = supported_tasks
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
 
     def process(self, task_name: str, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
         if not self.supported_tasks or task_name in self.supported_tasks:

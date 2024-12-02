@@ -21,7 +21,7 @@ from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.admin_defs import MsgHeader, ReturnCode
 from nvflare.private.defs import ClientStatusKey, ScopeInfoKey, TrainingTopic
 from nvflare.private.fed.server.admin import new_message
@@ -37,7 +37,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
     def __init__(self):
         """A class for training commands."""
         super().__init__()
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
 
     def get_spec(self):
         return CommandModuleSpec(

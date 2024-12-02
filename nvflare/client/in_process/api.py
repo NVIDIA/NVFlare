@@ -27,7 +27,7 @@ from nvflare.client.constants import SYS_ATTRS
 from nvflare.client.utils import DIFF_FUNCS
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.data_event.event_manager import EventManager
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 
 TOPIC_LOG_DATA = "LOG_DATA"
 TOPIC_STOP = "STOP"
@@ -54,7 +54,7 @@ class InProcessClientAPI(APISpec):
         self.fl_model = None
         self.sys_info = {}
         self.client_config: Optional[ClientConfig] = None
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
         self.event_manager = EventManager(self.data_bus)
         self.abort_reason = ""
         self.stop_reason = ""

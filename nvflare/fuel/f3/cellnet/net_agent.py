@@ -30,7 +30,7 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
 from nvflare.fuel.utils.config_service import ConfigService
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 
 _CHANNEL = "_net_manager"
 _TOPIC_PEERS = "peers"
@@ -119,7 +119,7 @@ class NetAgent:
         self.cell = cell
         self.change_root_cb = change_root_cb
         self.agent_closed_cb = agent_closed_cb
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
 
         cell.register_request_cb(
             channel=_CHANNEL,

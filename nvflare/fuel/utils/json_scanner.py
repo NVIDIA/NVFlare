@@ -17,7 +17,7 @@ from abc import ABC, abstractmethod
 
 from nvflare.fuel.common.excepts import ComponentNotAuthorized, ConfigError
 from nvflare.fuel.utils.config_factory import ConfigFactory
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 
@@ -92,7 +92,7 @@ class JsonScanner(object):
             raise ValueError("json_data must be dict")
         self.location = location
         self.data = json_data
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
 
     def _do_scan(self, node: Node):
         try:

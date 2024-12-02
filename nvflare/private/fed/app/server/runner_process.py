@@ -26,6 +26,7 @@ from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.utils.log_utils import get_script_logger
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
 from nvflare.private.fed.app.utils import monitor_parent_process
@@ -79,9 +80,7 @@ def main(args):
         )
         log_file = workspace.get_app_log_file_path(args.job_id)
         add_logfile_handler(log_file)
-        logger = logging.getLogger(
-            f"{__package__ + '.' if __package__ else ''}{os.path.splitext(os.path.basename(__file__))[0]}"
-        )
+        logger = get_script_logger()
         logger.info("Runner_process started.")
 
         log_level = os.environ.get("FL_LOG_LEVEL", "")
@@ -135,9 +134,7 @@ def main(args):
                 logger.warning(err)
 
     except ConfigError as e:
-        logger = logging.getLogger(
-            f"{__package__ + '.' if __package__ else ''}{os.path.splitext(os.path.basename(__file__))[0]}"
-        )
+        logger = get_script_logger()
         logger.exception(f"ConfigError: {secure_format_exception(e)}")
         secure_log_traceback(logger)
         raise e

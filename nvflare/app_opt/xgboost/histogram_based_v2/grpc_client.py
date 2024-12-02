@@ -17,7 +17,7 @@ import grpc
 import nvflare.app_opt.xgboost.histogram_based_v2.proto.federated_pb2 as pb2
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import GRPC_DEFAULT_OPTIONS
 from nvflare.app_opt.xgboost.histogram_based_v2.proto.federated_pb2_grpc import FederatedStub
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
 class GrpcClient:
@@ -39,7 +39,7 @@ class GrpcClient:
         self.server_addr = server_addr
         self.grpc_options = grpc_options
         self.started = False
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
 
     def start(self, ready_timeout=10):
         """Start the gRPC client and wait for the server to be ready.

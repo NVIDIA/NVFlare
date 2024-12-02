@@ -31,7 +31,7 @@ from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import format_size
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, SpecialTaskName, new_cell_message
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
 from nvflare.private.fed.utils.fed_utils import get_scope_prop
@@ -94,7 +94,7 @@ class Communicator:
         self.timeout = timeout
         self.maint_msg_timeout = maint_msg_timeout
 
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
 
     def _challenge_server(self, client_name, expected_host, root_cert_file):
         # ask server for its info and make sure that it matches expected host

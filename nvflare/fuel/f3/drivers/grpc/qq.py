@@ -14,7 +14,7 @@
 
 import queue
 
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
 class QueueClosed(Exception):
@@ -25,7 +25,7 @@ class QQ:
     def __init__(self):
         self.q = queue.Queue()
         self.closed = False
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
 
     def close(self):
         self.closed = True
