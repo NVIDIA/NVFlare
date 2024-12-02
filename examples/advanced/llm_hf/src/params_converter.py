@@ -20,19 +20,23 @@ import torch
 from nvflare.app_common.abstract.params_converter import ParamsConverter
 
 
-class NumpyToPTParamsConverter(ParamsConverter):
+class PTReceiveParamsConverter(ParamsConverter):
     def convert(self, params: Dict, fl_ctx) -> Dict:
         tensor_shapes = fl_ctx.get_prop("tensor_shapes")
         exclude_vars = fl_ctx.get_prop("exclude_vars")
 
         return_params = {}
-        if tensor_shapes:
-            return_params = {
-                k: torch.as_tensor(np.reshape(v, tensor_shapes[k])) if k in tensor_shapes else torch.as_tensor(v)
-                for k, v in params.items()
-            }
-        else:
-            return_params = {k: torch.as_tensor(v) for k, v in params.items()}
+        for k, v in params.items():
+            if isinstance(v, torch.Tensor):
+                return_params[k] = v
+            else:
+                if tensor_shapes:
+                    if k in tensor_shapes:
+                        return_params[k] = torch.as_tensor(np.reshape(v, tensor_shapes[k]))
+                    else:
+                        return_params[k] = torch.as_tensor(v)
+                else:
+                    return_params[k] = torch.as_tensor(v)
 
         if exclude_vars:
             for k, v in exclude_vars.items():
@@ -41,22 +45,16 @@ class NumpyToPTParamsConverter(ParamsConverter):
         return return_params
 
 
-class PTToNumpyParamsConverter(ParamsConverter):
+class PTSendParamsConverter(ParamsConverter):
     def convert(self, params: Dict, fl_ctx) -> Dict:
         return_tensors = {}
-        tensor_shapes = {}
         exclude_vars = {}
         for k, v in params.items():
             if isinstance(v, torch.Tensor):
-                # print the data type of the tensor
-                print(v.dtype)
-                return_tensors[k] = v.cpu().numpy()
-                tensor_shapes[k] = v.shape
+                return_tensors[k] = v.cpu()
             else:
                 exclude_vars[k] = v
 
-        if tensor_shapes:
-            fl_ctx.set_prop("tensor_shapes", tensor_shapes)
         if exclude_vars:
             fl_ctx.set_prop("exclude_vars", exclude_vars)
             self.logger.warning(

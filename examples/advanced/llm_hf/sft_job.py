@@ -21,8 +21,9 @@ from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.app_opt.quantization.numpy_dequantizor import NumpyModelDequantizor
 from nvflare.app_opt.quantization.numpy_quantizor import NumpyModelQuantizor
-from nvflare.job_config.script_runner import ScriptRunner
+from nvflare.job_config.script_runner import BaseScriptRunner
 
+from src.params_converter import PTSendParamsConverter, PTReceiveParamsConverter
 
 def main():
     args = define_parser()
@@ -85,11 +86,16 @@ def main():
     for i in range(num_clients):
         client_id = client_ids[i]
         site_name = f"site-{client_id}"
-        data_path_train = os.path.join(args.data_path, client_id, "training.jsonl")
+        data_path_train = os.path.join(args.data_path, client_id, "validation.jsonl")
         data_path_valid = os.path.join(args.data_path, client_id, "validation.jsonl")
-        runner = ScriptRunner(
+        # Add params converters and send to client
+        job.to(PTSendParamsConverter(), site_name, id="pt_send")
+        job.to(PTReceiveParamsConverter(), site_name, id="pt_receive")
+        runner = BaseScriptRunner(
             script=train_script,
             script_args=f"--model_name_or_path {model_name_or_path} --data_path_train {data_path_train} --data_path_valid {data_path_valid} --output_path {output_path} --train_mode {train_mode} --clean_up {clean_up}",
+            from_nvflare_converter_id="pt_receive",
+            to_nvflare_converter_id="pt_send",
         )
         job.to(runner, site_name, tasks=["train"])
         if args.quantize_mode:

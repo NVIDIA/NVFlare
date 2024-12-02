@@ -54,8 +54,8 @@ class InProcessClientAPIExecutor(Executor):
         log_pull_interval: Optional[float] = None,
         params_exchange_format: str = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
-        from_nvflare_converter_id: Optional[str] = None,
-        to_nvflare_converter_id: Optional[str] = None,
+        from_nvflare_converter_id: str = None,
+        to_nvflare_converter_id: str = None,
         train_with_evaluation: bool = True,
         train_task_name: str = AppConstants.TASK_TRAIN,
         evaluate_task_name: str = AppConstants.TASK_VALIDATION,
@@ -138,6 +138,14 @@ class InProcessClientAPIExecutor(Executor):
 
             shareable.set_header(FLMetaKey.JOB_ID, fl_ctx.get_job_id())
             shareable.set_header(FLMetaKey.SITE_NAME, fl_ctx.get_identity_name())
+
+            # print the from and to nvflare converter
+            print("----------------------------------------------------------------")
+            print(f"from_nvflare_converter: {self._from_nvflare_converter}")
+            print(f"to_nvflare_converter: {self._to_nvflare_converter}")
+            print("----------------------------------------------------------------")
+
+
             if self._from_nvflare_converter is not None:
                 shareable = self._from_nvflare_converter.process(task_name, shareable, fl_ctx)
 
@@ -200,12 +208,29 @@ class InProcessClientAPIExecutor(Executor):
 
     def _init_converter(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
-        from_nvflare_converter: ParamsConverter = engine.get_component(self._from_nvflare_converter_id)
+
+        print("********************************")
+        print(self._from_nvflare_converter_id)
+        print(self._params_exchange_format)
+        print("********************************")
+
+        from_nvflare_converter: ParamsConverter = engine.get_component(self._from_nvflare_converter_id[0])
+
+        print("********************************")
+        print(engine.get_component(self._from_nvflare_converter_id[0]))
+        print(from_nvflare_converter)
+        print("********************************")
+
         if from_nvflare_converter is not None:
             check_object_type(self._from_nvflare_converter_id, from_nvflare_converter, ParamsConverter)
             self._from_nvflare_converter = from_nvflare_converter
 
-        to_nvflare_converter: ParamsConverter = engine.get_component(self._to_nvflare_converter_id)
+
+        print("********************************")
+        print(self._from_nvflare_converter)
+        print("********************************")
+
+        to_nvflare_converter: ParamsConverter = engine.get_component(self._to_nvflare_converter_id[0])
         if to_nvflare_converter is not None:
             check_object_type(self._to_nvflare_converter_id, to_nvflare_converter, ParamsConverter)
             self._to_nvflare_converter = to_nvflare_converter
