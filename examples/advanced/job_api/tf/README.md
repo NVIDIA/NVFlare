@@ -7,9 +7,8 @@ All examples in this folder are based on using [TensorFlow](https://tensorflow.o
 
 ## Simulated Federated Learning with CIFAR10 Using Tensorflow
 
-This example shows `Tensorflow`-based classic Federated Learning
-algorithms, namely FedAvg and FedOpt on CIFAR10
-dataset. This example is analogous to [the example using `Pytorch`
+This example demonstrates TensorFlow-based federated learning algorithms on the CIFAR-10 dataset.
+This example is analogous to [the example using `Pytorch`
 backend](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/cifar10-sim)
 on the same dataset, where same experiments
 were conducted and analyzed. You should expect the same
@@ -21,7 +20,7 @@ client-side training logics (details in file
 and the new
 [`FedJob`](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/job_config/api.py)
 APIs were used to programmatically set up an
-`nvflare` job to be exported or ran by simulator (details in file
+NVFlare job to be exported or ran by simulator (details in file
 [`tf_fl_script_runner_cifar10.py`](tf_fl_script_runner_cifar10.py)),
 alleviating the need of writing job config files, simplifying
 development process.
@@ -65,12 +64,8 @@ script.
 > `export TF_FORCE_GPU_ALLOW_GROWTH=true && export
 > TF_GPU_ALLOCATOR=cuda_malloc_asyncp`
 
-The set-up of all experiments in this example are kept the same as
-[the example using `Pytorch`
-backend](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/cifar10-sim). Refer
-to the `Pytorch` example for more details. Similar to the Pytorch
-example, we here also use Dirichelet sampling on CIFAR10 data labels
-to simulate data heterogeneity among data splits for different client
+We use Dirichelet sampling (implementation from FedMA (https://github.com/IBM/FedMA)) on
+CIFAR10 data labels to simulate data heterogeneity among data splits for different client
 sites, controlled by an alpha value, ranging from 0 (not including 0)
 to 1. A high alpha value indicates less data heterogeneity, i.e., an
 alpha value equal to 1.0 would result in homogeneous data distribution
