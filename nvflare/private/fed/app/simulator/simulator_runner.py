@@ -38,6 +38,7 @@ from nvflare.apis.fl_constant import (
     RunProcessKey,
     SiteType,
     SystemConfigs,
+    SystemVarName,
     WorkspaceConstants,
 )
 from nvflare.apis.job_def import ALL_SITES, JobMetaKey
@@ -112,6 +113,7 @@ class SimulatorRunner(FLComponent):
         self.client_config = None
         self.deploy_args = None
         self.build_ctx = None
+        self.server_custom_folder = None
 
         self.clients_created = 0
 
@@ -481,7 +483,7 @@ class SimulatorRunner(FLComponent):
                 executor = ThreadPoolExecutor(max_workers=len(gpus))
                 for index in range(len(gpus)):
                     clients = split_clients[index]
-                    executor.submit(lambda p: self.client_run(*p), [clients, gpus[index]])
+                    executor.submit(lambda p: self.client_run(*p), [self.server_custom_folder, clients, gpus[index]])
 
                 executor.shutdown()
                 # Abort the server after all clients finished run
@@ -498,8 +500,10 @@ class SimulatorRunner(FLComponent):
             run_status = 1
         return run_status
 
-    def client_run(self, clients, gpu):
-        client_runner = SimulatorClientRunner(self.args, clients, self.client_config, self.deploy_args, self.build_ctx)
+    def client_run(self, server_custom_folder, clients, gpu):
+        client_runner = SimulatorClientRunner(
+            server_custom_folder, self.args, clients, self.client_config, self.deploy_args, self.build_ctx
+        )
         client_runner.run(gpu)
 
     def start_server_app(self, args):
@@ -508,9 +512,9 @@ class SimulatorRunner(FLComponent):
         os.chdir(args.workspace)
 
         args.server_config = os.path.join("config", JobConstants.SERVER_JOB_CONFIG)
-        app_custom_folder = os.path.join(app_server_root, "custom")
-        if os.path.isdir(app_custom_folder) and app_custom_folder not in sys.path:
-            sys.path.append(app_custom_folder)
+        self.server_custom_folder = os.path.join(app_server_root, "custom")
+        if os.path.isdir(self.server_custom_folder) and self.server_custom_folder not in sys.path:
+            sys.path.append(self.server_custom_folder)
 
         startup = os.path.join(args.workspace, WorkspaceConstants.STARTUP_FOLDER_NAME)
         os.makedirs(startup, exist_ok=True)
@@ -554,8 +558,9 @@ class SimulatorRunner(FLComponent):
 
 
 class SimulatorClientRunner(FLComponent):
-    def __init__(self, args, clients: [], client_config, deploy_args, build_ctx):
+    def __init__(self, server_custom_folder, args, clients: [], client_config, deploy_args, build_ctx):
         super().__init__()
+        self.server_custom_folder = server_custom_folder
         self.args = args
         self.federated_clients = clients
         self.run_client_index = -1
@@ -703,6 +708,10 @@ class SimulatorClientRunner(FLComponent):
             command += " --gpu " + str(gpu)
         new_env = os.environ.copy()
         add_custom_dir_to_path(app_custom_folder, new_env)
+        if self.server_custom_folder:
+            python_paths = new_env[SystemVarName.PYTHONPATH].split(os.pathsep)
+            python_paths.remove(self.server_custom_folder)
+            new_env[SystemVarName.PYTHONPATH] = os.pathsep.join(python_paths)
 
         _ = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
 

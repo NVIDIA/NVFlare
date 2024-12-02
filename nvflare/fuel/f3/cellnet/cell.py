@@ -167,7 +167,7 @@ class Cell(StreamCell):
         Returns: a dict of: cell_id => reply message
 
         """
-        self.logger.info(f"broadcast: {channel=}, {topic=}, {targets=}, {timeout=}")
+        self.logger.debug(f"broadcast: {channel=}, {topic=}, {targets=}, {timeout=}")
 
         if isinstance(targets, str):
             targets = [targets]
@@ -376,7 +376,7 @@ class Cell(StreamCell):
         try:
             waiter = self.requests_dict[req_id]
         except KeyError as e:
-            self.logger.warning(f"Receiving unknown {req_id=}, discarded: {e}")
+            self.logger.warning(f"Receiving unknown {req_id=}, discarded: {e} headers: {headers}")
             return
         waiter.receiving_future = future
         waiter.in_receiving.set()

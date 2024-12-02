@@ -18,7 +18,7 @@ from typing import Dict
 
 import tensorflow as tf
 
-from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.security.logging import secure_format_exception
 
@@ -121,14 +121,31 @@ class FedOpt(FedAvg):
         # Get the Keras model stored in memory in persistor.
         global_model_tf = self.persistor.model
         global_params = global_model_tf.trainable_weights
+        num_trainable_weights = len(global_params)
 
         # Compute model diff: need to use model diffs as
         # gradients to be applied by the optimizer.
-        model_diff_params = {k: aggr_result.params[k] - global_model.params[k] for k in global_model.params}
+        model_diff_params = {}
+
+        w_idx = 0
+
+        for key, param in global_model.params.items():
+            if w_idx >= num_trainable_weights:
+                break
+
+            if param.shape == global_params[w_idx].shape:
+                model_diff_params[key] = (
+                    aggr_result.params[key] - param
+                    if aggr_result.params_type == ParamsType.FULL
+                    else aggr_result.params[key]
+                )
+                w_idx += 1
+
         model_diff = self._to_tf_params_list(model_diff_params, negate=True)
 
         # Apply model diffs as gradients, using the optimizer.
         start = time.time()
+
         self.optimizer.apply_gradients(zip(model_diff, global_params))
         secs = time.time() - start
 
@@ -136,21 +153,25 @@ class FedOpt(FedAvg):
         # numpy format for FLModel.
         start = time.time()
         weights = global_model_tf.get_weights()
-        w_idx = 0
-        new_weights = {}
-        for key in global_model.params:
-            w = weights[w_idx]
-            while global_model.params[key].shape != w.shape:
-                w_idx += 1
-                w = weights[w_idx]
-            new_weights[key] = w
-        secs_detach = time.time() - start
 
+        new_weights = {}
+        for w_idx, key in enumerate(global_model.params):
+            if key in model_diff_params:
+                new_weights[key] = weights[w_idx]
+
+            else:
+
+                new_weights[key] = (
+                    aggr_result.params[key]
+                    if aggr_result.params_type == ParamsType.FULL
+                    else global_model.params[key] + aggr_result.params[key]
+                )
+        secs_detach = time.time() - start
         self.info(
             f"FedOpt ({type(self.optimizer)}) server model update "
             f"round {self.current_round}, "
             f"{type(self.lr_scheduler)} "
-            f"lr: {self.optimizer.learning_rate}, "
+            f"lr: {self.optimizer.learning_rate(self.optimizer.iterations).numpy()}, "
             f"update: {secs} secs., detach: {secs_detach} secs.",
         )
 

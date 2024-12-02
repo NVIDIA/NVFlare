@@ -388,7 +388,7 @@ class FederatedServer(BaseServer):
                 expired_regs = []
                 now = time.time()
                 for client_name, reg in self.name_to_reg.items():
-                    if now - reg.start_time > self.max_reg_duration:
+                    if now - reg.reg_start_time > self.max_reg_duration:
                         self.logger.warning(f"dropped expired reg session: not done in {self.max_reg_duration} secs")
                         expired_regs.append(client_name)
                 for c in expired_regs:
@@ -894,7 +894,7 @@ class FederatedServer(BaseServer):
                     prv_key_path=grpc_args["ssl_private_key"],
                 )
 
-        self.engine.cell = self.cell
+        self.engine.initialize_comm(self.cell)
         self._register_cellnet_cbs()
 
         self.overseer_agent.start(self.overseer_callback)

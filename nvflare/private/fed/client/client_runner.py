@@ -591,6 +591,7 @@ class ClientRunner(TBI):
         finally:
             self.end_run_events_sequence()
             ReliableMessage.shutdown()
+            self.engine.shutdown_streamer()
             with self.task_lock:
                 self.running_tasks = {}
 
