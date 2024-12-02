@@ -22,9 +22,11 @@ META_JSON = "meta.json"
 WORKSPACE = "workspace"
 WORKSPACE_ZIP = "workspace.zip"
 
+
 class ComponentPrefixes(Enum):
     ERRORLOG = "ERRORLOG"
     LOG = "LOG"
+
 
 VALID_COMPONENT_PREFIXES = [prefix.value for prefix in ComponentPrefixes]
 
