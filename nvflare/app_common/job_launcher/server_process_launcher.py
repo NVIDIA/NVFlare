@@ -20,13 +20,5 @@ from nvflare.utils.job_launcher_utils import add_custom_dir_to_path, generate_se
 
 
 class ServerProcessJobLauncher(ProcessJobLauncher):
-    def get_command(self, job_meta, fl_ctx) -> (str, dict):
-        new_env = os.environ.copy()
-        workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-        job_id = job_meta.get(JobConstants.JOB_ID)
-        app_custom_folder = workspace_obj.get_app_custom_dir(job_id)
-        if app_custom_folder != "":
-            add_custom_dir_to_path(app_custom_folder, new_env)
-
-        command = generate_server_command(job_meta, fl_ctx)
-        return command, new_env
+    def get_command(self, job_meta, fl_ctx) -> str:
+        return generate_server_command(job_meta, fl_ctx)
