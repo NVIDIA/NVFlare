@@ -75,7 +75,7 @@ class LogReceiver(Widget):
 
         By default, it receives error logs with the channel error_logs to save logs of type ERRORLOG. If adding
         additional log types, make sure nvflare.apis.storage.ComponentPrefixes has the corresponding log type.
-        
+
         Args:
             log_channels: dict of channel to log type mapping
         """
