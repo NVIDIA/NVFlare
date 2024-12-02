@@ -96,7 +96,7 @@ class LogReceiver(Widget):
         job_id = stream_ctx.get(LogConst.JOB_ID)
         job_manager = fl_ctx.get_engine().get_component(SystemComponents.JOB_MANAGER)
         self.log_info(fl_ctx, f"Saving ERRORLOG from {client} for {job_id}")
-        job_manager.set_error_log(job_id, log_contents, client, fl_ctx)
+        job_manager.set_log(job_id, log_contents, client, "ERRORLOG", fl_ctx)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.SYSTEM_START:

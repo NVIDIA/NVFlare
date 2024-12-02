@@ -252,17 +252,11 @@ class SimpleJobDefManager(JobDefManagerSpec):
         except StorageException:
             return None
 
-    def set_error_log(self, jid: str, log: str, client_name: str, fl_ctx: FLContext):
-        self._save_log(jid, log, client_name, "ERRORLOG", fl_ctx)
+    def set_log(self, jid: str, log: str, client_name: str, log_type: str, fl_ctx: FLContext):
+        self._save_log(jid, log, client_name, log_type, fl_ctx)
 
-    def set_log(self, jid: str, log: str, client_name: str, fl_ctx: FLContext):
-        self._save_log(jid, log, client_name, "LOG", fl_ctx)
-
-    def get_error_log(self, jid: str, client_name: str, fl_ctx: FLContext) -> Optional[str]:
-        return self._get_log(jid, client_name, "ERRORLOG", fl_ctx)
-
-    def get_client_log(self, jid: str, client_name: str, fl_ctx: FLContext) -> Optional[str]:
-        return self._get_log(jid, client_name, "LOG", fl_ctx)
+    def get_client_log(self, jid: str, client_name: str, log_type: str, fl_ctx: FLContext) -> Optional[str]:
+        return self._get_log(jid, client_name, log_type, fl_ctx)
 
     def set_status(self, jid: str, status: RunStatus, fl_ctx: FLContext):
         meta = {JobMetaKey.STATUS.value: status.value}

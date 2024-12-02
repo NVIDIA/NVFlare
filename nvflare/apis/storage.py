@@ -11,9 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 from abc import ABC, abstractmethod
 from typing import List, Tuple
+from enum import Enum
 
 DATA = "data"
 JOB_ZIP = "job.zip"
@@ -21,6 +21,12 @@ META = "meta"
 META_JSON = "meta.json"
 WORKSPACE = "workspace"
 WORKSPACE_ZIP = "workspace.zip"
+
+class ComponentPrefixes(Enum):
+    ERRORLOG = "ERRORLOG"
+    LOG = "LOG"
+
+VALID_COMPONENT_PREFIXES = [prefix.value for prefix in ComponentPrefixes]
 
 
 class StorageException(Exception):
@@ -217,9 +223,17 @@ class StorageSpec(ABC):
 
     @staticmethod
     def is_valid_component(component_name):
-        valid_components = {DATA, META, WORKSPACE, "ERRORLOG", "LOG"}
+        """Check if the component name is valid.
+
+        The valid components are: data, meta, workspace, and anything starting with a valid
+        ComponentPrefixes and then an underscore (for example ERRORLOG_site-1).
+
+        Args:
+            component_name: component name
+        """
+        valid_components = {DATA, META, WORKSPACE, *VALID_COMPONENT_PREFIXES}
         if component_name in valid_components:
             return True
-        if any(component_name.startswith(prefix + "_") for prefix in ["ERRORLOG", "LOG"]):
+        if any(component_name.startswith(prefix + "_") for prefix in VALID_COMPONENT_PREFIXES):
             return True
         return False
