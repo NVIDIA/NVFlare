@@ -70,9 +70,19 @@ class LogSender(Widget):
 
 
 class LogReceiver(Widget):
-    def __init__(self):
-        """Receives log data."""
+    def __init__(self, log_channels=None):
+        """Receives log data.
+
+        By default, it receives error logs with the channel error_logs to save logs of type ERRORLOG. If adding
+        additional log types, make sure nvflare.apis.storage.ComponentPrefixes has the corresponding log type.
+        
+        Args:
+            log_channels: dict of channel to log type mapping
+        """
         super().__init__()
+        if log_channels is None:
+            log_channels = {"error_logs": "ERRORLOG"}
+        self.log_channels = log_channels
 
     def process_log(self, stream_ctx: StreamContext, fl_ctx: FLContext):
         """Process the streamed log file."""
@@ -95,11 +105,13 @@ class LogReceiver(Widget):
         client = stream_ctx.get(LogConst.CLIENT_NAME)
         job_id = stream_ctx.get(LogConst.JOB_ID)
         job_manager = fl_ctx.get_engine().get_component(SystemComponents.JOB_MANAGER)
-        self.log_info(fl_ctx, f"Saving ERRORLOG from {client} for {job_id}")
-        job_manager.set_log(job_id, log_contents, client, "ERRORLOG", fl_ctx)
+        log_type = self.log_channels.get(channel, "UNKNOWN")
+        self.log_info(fl_ctx, f"Saving {log_type} from {client} for {job_id}")
+        job_manager.set_log(job_id, log_contents, client, log_type, fl_ctx)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.SYSTEM_START:
-            FileStreamer.register_stream_processing(
-                fl_ctx, channel="error_logs", topic=LOG_STREAM_EVENT_TYPE, stream_done_cb=self.process_log
-            )
+            for channel in self.log_channels.items():
+                FileStreamer.register_stream_processing(
+                    fl_ctx, channel=channel, topic=LOG_STREAM_EVENT_TYPE, stream_done_cb=self.process_log
+                )
