@@ -63,7 +63,6 @@ from nvflare.private.fed.simulator.simulator_app_runner import SimulatorServerAp
 from nvflare.private.fed.simulator.simulator_audit import SimulatorAuditor
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 from nvflare.private.fed.utils.fed_utils import (
-    add_custom_dir_to_path,
     add_logfile_handler,
     custom_fobs_initialize,
     get_simulator_app_root,
@@ -73,6 +72,7 @@ from nvflare.private.fed.utils.fed_utils import (
 )
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 from nvflare.security.security import EmptyAuthorizer
+from nvflare.utils.job_launcher_utils import add_custom_dir_to_path
 
 CLIENT_CREATE_POOL_SIZE = 200
 POOL_STATS_DIR = "pool_stats"

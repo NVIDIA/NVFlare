@@ -21,9 +21,7 @@ from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
-from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
-from nvflare.app_common.job_launcher.server_process_launcher import ServerProcessJobLauncher
-from nvflare.private.fed.utils.fed_utils import extract_job_image
+from nvflare.utils.job_launcher_utils import extract_job_image, generate_client_command, generate_server_command
 
 
 class DOCKER_STATE:
@@ -72,9 +70,9 @@ class DockerJobHandle(JobHandleSpec):
 
     def _get_container(self):
         try:
-            client = docker.from_env()
+            docker_client = docker.from_env()
             # Get the container object
-            container = client.containers.get(self.container.id)
+            container = docker_client.containers.get(self.container.id)
             # Get the container state
             # state = container.attrs['State']
             return container
@@ -120,9 +118,9 @@ class DockerJobLauncher(JobLauncherSpec):
         command = f' /bin/bash -c "export PYTHONPATH={python_path};{cmd}"'
         self.logger.info(f"Launch image:{job_image}, run command: {command}")
 
-        client = docker.from_env()
+        docker_client = docker.from_env()
         try:
-            container = client.containers.run(
+            container = docker_client.containers.run(
                 job_image,
                 command=command,
                 name=job_name,
@@ -179,17 +177,17 @@ class DockerJobLauncher(JobLauncherSpec):
         pass
 
 
-class ClientDockerJobLauncher(DockerJobLauncher, ClientProcessJobLauncher):
+class ClientDockerJobLauncher(DockerJobLauncher):
     def get_command(self, job_meta, fl_ctx) -> (str, str):
         job_id = job_meta.get(JobConstants.JOB_ID)
-        command = self.generate_client_command(job_meta, fl_ctx)
+        command = generate_client_command(job_meta, fl_ctx)
 
         return f"client-{job_id}", command
 
 
-class ServerDockerJobLauncher(DockerJobLauncher, ServerProcessJobLauncher):
+class ServerDockerJobLauncher(DockerJobLauncher):
     def get_command(self, job_meta, fl_ctx) -> (str, str):
         job_id = job_meta.get(JobConstants.JOB_ID)
-        command = self.generate_server_command(job_meta, fl_ctx)
+        command = generate_server_command(job_meta, fl_ctx)
 
         return f"server-{job_id}", command

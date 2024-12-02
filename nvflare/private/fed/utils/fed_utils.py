@@ -26,15 +26,7 @@ from nvflare.apis.app_validation import AppValidator
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLContext
-from nvflare.apis.fl_constant import (
-    ConfigVarName,
-    FLContextKey,
-    FLMetaKey,
-    JobConstants,
-    SiteType,
-    SystemVarName,
-    WorkspaceConstants,
-)
+from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, FLMetaKey, JobConstants, SiteType, WorkspaceConstants
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.utils.decomposers import flare_decomposers
@@ -473,14 +465,6 @@ def get_simulator_app_root(simulator_root, site_name):
     return os.path.join(simulator_root, site_name, SimulatorConstants.JOB_NAME, "app_" + site_name)
 
 
-def add_custom_dir_to_path(app_custom_folder, new_env):
-    path = new_env.get(SystemVarName.PYTHONPATH, "")
-    if path:
-        new_env[SystemVarName.PYTHONPATH] = path + os.pathsep + app_custom_folder
-    else:
-        new_env[SystemVarName.PYTHONPATH] = app_custom_folder
-
-
 def extract_participants(participants_list):
     participants = []
     for item in participants_list:
@@ -492,17 +476,6 @@ def extract_participants(participants_list):
         else:
             raise ValueError(f"Must be tye of str or dict, but got {type(item)}")
     return participants
-
-
-def extract_job_image(job_meta, site_name):
-    deploy_map = job_meta.get(JobMetaKey.DEPLOY_MAP, {})
-    for _, participants in deploy_map.items():
-        for item in participants:
-            if isinstance(item, dict):
-                sites = item.get(JobConstants.SITES)
-                if site_name in sites:
-                    return item.get(JobConstants.JOB_IMAGE)
-    return None
 
 
 def _scope_prop_key(scope_name: str, key: str):

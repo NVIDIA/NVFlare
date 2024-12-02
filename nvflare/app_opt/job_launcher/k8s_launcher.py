@@ -26,7 +26,7 @@ from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
-from nvflare.private.fed.utils.fed_utils import extract_job_image
+from nvflare.utils.job_launcher_utils import extract_job_image
 
 
 class JobState(Enum):

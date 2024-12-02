@@ -12,12 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
-import sys
 
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.job_launcher.process_launcher import ProcessJobLauncher
-from nvflare.private.fed.utils.fed_utils import add_custom_dir_to_path
+from nvflare.utils.job_launcher_utils import add_custom_dir_to_path, generate_server_command
 
 
 class ServerProcessJobLauncher(ProcessJobLauncher):
@@ -29,44 +28,5 @@ class ServerProcessJobLauncher(ProcessJobLauncher):
         if app_custom_folder != "":
             add_custom_dir_to_path(app_custom_folder, new_env)
 
-        command = self.generate_server_command(job_meta, fl_ctx)
+        command = generate_server_command(job_meta, fl_ctx)
         return command, new_env
-
-    def generate_server_command(self, job_meta, fl_ctx):
-        workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-        args = fl_ctx.get_prop(FLContextKey.ARGS)
-        server = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
-        job_id = job_meta.get(JobConstants.JOB_ID)
-        restore_snapshot = fl_ctx.get_prop(FLContextKey.SNAPSHOT, False)
-        app_root = workspace_obj.get_app_dir(job_id)
-        cell = server.cell
-        server_state = server.server_state
-        command_options = ""
-        for t in args.set:
-            command_options += " " + t
-        command = (
-            sys.executable
-            + " -m nvflare.private.fed.app.server.runner_process -m "
-            + args.workspace
-            + " -s fed_server.json -r "
-            + app_root
-            + " -n "
-            + str(job_id)
-            + " -p "
-            + str(cell.get_internal_listener_url())
-            + " -u "
-            + str(cell.get_root_url_for_child())
-            + " --host "
-            + str(server_state.host)
-            + " --port "
-            + str(server_state.service_port)
-            + " --ssid "
-            + str(server_state.ssid)
-            + " --ha_mode "
-            + str(server.ha_mode)
-            + " --set"
-            + command_options
-            + " print_conf=True restore_snapshot="
-            + str(restore_snapshot)
-        )
-        return command
