@@ -17,10 +17,10 @@ import time
 from typing import Dict, List, Optional, Union
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ServerCommandKey, ServerCommandNames, SiteType
+from nvflare.apis.fl_constant import FLContextKey, ProcessType, ServerCommandKey, ServerCommandNames, SiteType
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable
-from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamContext
+from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamableEngine, StreamContext
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
@@ -58,8 +58,8 @@ class ClientRunInfo(object):
 GET_CLIENTS_RETRY = 300
 
 
-class ClientRunManager(ClientEngineExecutorSpec):
-    """ClientRunManager provides the ClientEngine APIs implementation running in the child process."""
+class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
+    """ClientRunManager provides the ClientEngine APIs implementation running in the child process (CJ)."""
 
     def __init__(
         self,
@@ -105,6 +105,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
 
         # get job meta!
         job_ctx_props = self.create_job_processing_context_properties(workspace, job_id)
+        job_ctx_props.update({FLContextKey.PROCESS_TYPE: ProcessType.CLIENT_JOB})
         self.fl_ctx_mgr = FLContextManager(
             engine=self, identity_name=client_name, job_id=job_id, public_stickers={}, private_stickers=job_ctx_props
         )
@@ -347,6 +348,9 @@ class ClientRunManager(ClientEngineExecutorSpec):
         optional=False,
         secure=False,
     ):
+        if not self.object_streamer:
+            raise RuntimeError("object streamer has not been created")
+
         return self.object_streamer.stream(
             channel=channel,
             topic=topic,
@@ -366,7 +370,14 @@ class ClientRunManager(ClientEngineExecutorSpec):
         stream_done_cb=None,
         **cb_kwargs,
     ):
+        if not self.object_streamer:
+            raise RuntimeError("object streamer has not been created")
+
         self.object_streamer.register_stream_processing(channel, topic, factory, stream_done_cb, **cb_kwargs)
+
+    def shutdown_streamer(self):
+        if self.object_streamer:
+            self.object_streamer.shutdown()
 
     def abort_app(self, job_id: str, fl_ctx: FLContext):
         runner = fl_ctx.get_prop(key=FLContextKey.RUNNER, default=None)

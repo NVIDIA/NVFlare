@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023-2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,7 +27,6 @@ class SerializationModule(torch.nn.Module):
         super().__init__()
         self.register_buffer("saved_tensor", tensor)
 
-
 class TensorDecomposer(fobs.Decomposer):
     def supported_type(self):
         return torch.Tensor
@@ -53,6 +52,7 @@ class TensorDecomposer(fobs.Decomposer):
     @staticmethod
     def _numpy_serialize(tensor: torch.Tensor) -> dict:
         stream = BytesIO()
+
         # torch.save uses Pickle so converting Tensor to ndarray first
         array = tensor.detach().cpu().numpy()
         np.save(stream, array, allow_pickle=False)

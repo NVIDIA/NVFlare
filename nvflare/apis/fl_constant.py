@@ -23,6 +23,7 @@ class ReturnCode(object):
     BAD_REQUEST_DATA = "BAD_REQUEST_DATA"
     BAD_TASK_DATA = "BAD_TASK_DATA"
     COMMUNICATION_ERROR = "COMMUNICATION_ERROR"
+    TIMEOUT = "TIMEOUT"
     ERROR = "ERROR"
     EXECUTION_EXCEPTION = "EXECUTION_EXCEPTION"
     EXECUTION_RESULT_ERROR = "EXECUTION_RESULT_ERROR"
@@ -104,6 +105,7 @@ class ReservedKey(object):
     JOB_IS_UNSAFE = "__job_is_unsafe__"
     CUSTOM_PROPS = "__custom_props__"
     EXCEPTIONS = "__exceptions__"
+    PROCESS_TYPE = "__process_type__"  # type of the current process (SP, CP, SJ, CJ)
 
 
 class FLContextKey(object):
@@ -184,6 +186,14 @@ class FLContextKey(object):
     CLIENT_CONFIG = "__client_config__"
     SERVER_CONFIG = "__server_config__"
     SERVER_HOST_NAME = "__server_host_name__"
+    PROCESS_TYPE = ReservedKey.PROCESS_TYPE
+
+
+class ProcessType:
+    SERVER_PARENT = "SP"
+    SERVER_JOB = "SJ"
+    CLIENT_PARENT = "CP"
+    CLIENT_JOB = "CJ"
 
 
 class ReservedTopic(object):
@@ -376,6 +386,7 @@ class WorkspaceConstants:
     DEFAULT_LOGGING_CONFIG = LOGGING_CONFIG + ".default"
     AUDIT_LOG = "audit.log"
     LOG_FILE_NAME = "log.txt"
+    ERROR_LOG_FILE_NAME = "error_log.txt"
     STATS_POOL_SUMMARY_FILE_NAME = "stats_pool_summary.json"
     STATS_POOL_RECORDS_FILE_NAME = "stats_pool_records.csv"
 

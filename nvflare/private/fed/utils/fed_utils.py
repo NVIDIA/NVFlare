@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
 import importlib
 import json
 import logging
@@ -37,6 +38,7 @@ from nvflare.apis.fl_constant import (
 )
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.job_launcher_spec import JobLauncherSpec
 from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.decomposers import common_decomposers
@@ -65,7 +67,7 @@ def add_logfile_handler(log_file: str):
     The purpose for this is to handle dynamic log file locations.
 
     If a handler named errorFileHandler is found, it will be used as a template to
-    create a new handler for writing to the error.log file at the same directory as log_file.
+    create a new handler for writing to the error log file at the same directory as log_file.
     The original errorFileHandler will be removed and replaced by the new handler.
 
     Each log file will be rotated when it reaches 20MB.
@@ -90,7 +92,7 @@ def add_logfile_handler(log_file: str):
     if not configured_error_handler:
         return
 
-    error_log_file = os.path.join(os.path.dirname(log_file), "error.log")
+    error_log_file = os.path.join(os.path.dirname(log_file), WorkspaceConstants.ERROR_LOG_FILE_NAME)
     error_file_handler = RotatingFileHandler(error_log_file, maxBytes=20 * 1024 * 1024, backupCount=10)
     error_file_handler.setLevel(configured_error_handler.level)
     error_file_handler.setFormatter(configured_error_handler.formatter)
@@ -474,11 +476,10 @@ def get_simulator_app_root(simulator_root, site_name):
 
 
 def add_custom_dir_to_path(app_custom_folder, new_env):
-    path = new_env.get(SystemVarName.PYTHONPATH, "")
-    if path:
-        new_env[SystemVarName.PYTHONPATH] = path + os.pathsep + app_custom_folder
-    else:
-        new_env[SystemVarName.PYTHONPATH] = app_custom_folder
+    """Util method to add app_custom_folder into the sys.path and carry into the child process."""
+    sys_path = copy.copy(sys.path)
+    sys_path.append(app_custom_folder)
+    new_env[SystemVarName.PYTHONPATH] = os.pathsep.join(sys_path)
 
 
 def extract_participants(participants_list):
@@ -542,7 +543,7 @@ def get_scope_prop(scope_name: str, key: str) -> Any:
     return data_bus.get_data(_scope_prop_key(scope_name, key))
 
 
-def get_job_launcher(job_meta: dict, fl_ctx: FLContext) -> dict:
+def get_job_launcher(job_meta: dict, fl_ctx: FLContext) -> JobLauncherSpec:
     engine = fl_ctx.get_engine()
 
     with engine.new_context() as job_launcher_ctx:
@@ -554,5 +555,9 @@ def get_job_launcher(job_meta: dict, fl_ctx: FLContext) -> dict:
         job_launcher = job_launcher_ctx.get_prop(FLContextKey.JOB_LAUNCHER)
         if not (job_launcher and isinstance(job_launcher, list)):
             raise RuntimeError(f"There's no job launcher can handle this job: {job_meta}.")
+
+    launcher = job_launcher[0]
+    if not isinstance(launcher, JobLauncherSpec):
+        raise RuntimeError(f"The job launcher must be JobLauncherSpec but got {type(launcher)}")
 
     return job_launcher[0]

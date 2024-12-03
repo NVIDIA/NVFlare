@@ -218,6 +218,7 @@ class ServerRunner(TBI):
                     self.log_info(fl_ctx, "END_RUN fired")
 
             ReliableMessage.shutdown()
+            self.engine.shutdown_streamer()
             self.log_info(fl_ctx, "Server runner finished.")
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):

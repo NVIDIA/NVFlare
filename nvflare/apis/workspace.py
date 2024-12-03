@@ -153,6 +153,9 @@ class Workspace:
     def get_app_log_file_path(self, job_id: str) -> str:
         return os.path.join(self.get_run_dir(job_id), WorkspaceConstants.LOG_FILE_NAME)
 
+    def get_app_error_log_file_path(self, job_id: str) -> str:
+        return os.path.join(self.get_run_dir(job_id), WorkspaceConstants.ERROR_LOG_FILE_NAME)
+
     def get_app_config_dir(self, job_id: str) -> str:
         return os.path.join(self.get_app_dir(job_id), self.config_folder)
 
