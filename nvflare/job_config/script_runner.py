@@ -98,8 +98,8 @@ class BaseScriptRunner:
         self._launch_external_process = launch_external_process
         self._framework = framework
         self._params_transfer_type = params_transfer_type
-        self._from_nvflare_converter_id = from_nvflare_converter_id,
-        self._to_nvflare_converter_id = to_nvflare_converter_id,
+        self._from_nvflare_converter_id = (from_nvflare_converter_id,)
+        self._to_nvflare_converter_id = (to_nvflare_converter_id,)
         self._params_exchange_format = None
 
         if self._framework == FrameworkType.PYTORCH:

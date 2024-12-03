@@ -19,10 +19,11 @@ from nvflare import FedJob, FilterType
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+from nvflare.app_opt.pt.tensor_params_converter import PTReceiveParamsConverter, PTSendParamsConverter
 from nvflare.app_opt.quantization.numpy_dequantizor import NumpyModelDequantizor
 from nvflare.app_opt.quantization.numpy_quantizor import NumpyModelQuantizor
 from nvflare.job_config.script_runner import BaseScriptRunner
-from nvflare.app_opt.pt.tensor_params_converter import PTSendParamsConverter, PTReceiveParamsConverter
+
 
 def main():
     args = define_parser()
@@ -99,7 +100,6 @@ def main():
                 from_nvflare_converter_id="pt_receive",
                 to_nvflare_converter_id="pt_send",
             )
-            job.to(runner, site_name, tasks=["train"])
         elif message_mode == "numpy":
             runner = BaseScriptRunner(
                 script=train_script,

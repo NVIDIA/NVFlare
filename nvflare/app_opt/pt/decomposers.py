@@ -21,6 +21,7 @@ import torch
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.datum import DatumManager
 
+
 # Create a module
 class TensorModule(torch.nn.Module):
     def __init__(self, tensor):
@@ -29,6 +30,7 @@ class TensorModule(torch.nn.Module):
 
     def forward(self):
         return self.tensor
+
 
 class TensorJitDecomposer(fobs.Decomposer):
     def supported_type(self):
@@ -50,7 +52,7 @@ class TensorJitDecomposer(fobs.Decomposer):
         return loaded_module()
 
 
-class TensorNumpyDecomposer(fobs.Decomposer):
+class TensorDecomposer(fobs.Decomposer):
     def supported_type(self):
         return torch.Tensor
 
