@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
+import os
 import time
 from abc import abstractmethod
 
@@ -97,10 +98,9 @@ class DockerJobHandle(JobHandleSpec):
 
 
 class DockerJobLauncher(JobLauncherSpec):
-    def __init__(self, workspace: str, mount_path: str, network: str, timeout=None):
+    def __init__(self, mount_path: str = "/workspace", network: str = "nvflare-network", timeout=None):
         super().__init__()
 
-        self.workspace = workspace
         self.mount_path = mount_path
         self.network = network
         self.timeout = timeout
@@ -118,6 +118,8 @@ class DockerJobLauncher(JobLauncherSpec):
         command = f' /bin/bash -c "export PYTHONPATH={python_path};{cmd}"'
         self.logger.info(f"Launch image:{job_image}, run command: {command}")
 
+        docker_workspace = os.environ.get("NVFL_DOCKER_WORKSPACE")
+        self.logger.info(f"launch_job {job_id} in docker_workspace: {docker_workspace}")
         docker_client = docker.from_env()
         try:
             container = docker_client.containers.run(
@@ -128,7 +130,7 @@ class DockerJobLauncher(JobLauncherSpec):
                 detach=True,
                 # remove=True,
                 volumes={
-                    self.workspace: {
+                    docker_workspace: {
                         "bind": self.mount_path,
                         "mode": "rw",
                     },
