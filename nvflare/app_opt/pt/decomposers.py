@@ -30,26 +30,39 @@ class TensorModule(torch.nn.Module):
     def forward(self):
         return self.tensor
 
-class TensorDecomposer(fobs.Decomposer):
+class TensorJitDecomposer(fobs.Decomposer):
     def supported_type(self):
         return torch.Tensor
 
     def decompose(self, target: torch.Tensor, manager: DatumManager = None) -> Any:
         stream = BytesIO()
 
+        # Use JIT serialization to avoid Pickle
         scripted_module = torch.jit.script(TensorModule(target))
         torch.jit.save(scripted_module, stream)
         stream.seek(0)
 
-        # torch.save uses Pickle so converting Tensor to ndarray first
-        #array = target.detach().cpu().numpy()
-        #np.save(stream, array, allow_pickle=False)
         return stream.getvalue()
 
     def recompose(self, data: Any, manager: DatumManager = None) -> torch.Tensor:
-
         stream = BytesIO(data)
-        #array = np.load(stream, allow_pickle=False)
-        #return torch.from_numpy(array)
         loaded_module = torch.jit.load(stream)
         return loaded_module()
+
+
+class TensorNumpyDecomposer(fobs.Decomposer):
+    def supported_type(self):
+        return torch.Tensor
+
+    def decompose(self, target: torch.Tensor, manager: DatumManager = None) -> Any:
+        stream = BytesIO()
+
+        # torch.save uses Pickle so converting Tensor to ndarray first
+        array = target.detach().cpu().numpy()
+        np.save(stream, array, allow_pickle=False)
+        return stream.getvalue()
+
+    def recompose(self, data: Any, manager: DatumManager = None) -> torch.Tensor:
+        stream = BytesIO(data)
+        array = np.load(stream, allow_pickle=False)
+        return torch.from_numpy(array)
