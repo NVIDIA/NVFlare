@@ -87,7 +87,7 @@ def main():
     for i in range(num_clients):
         client_id = client_ids[i]
         site_name = f"site-{client_id}"
-        data_path_train = os.path.join(args.data_path, client_id, "validation.jsonl")
+        data_path_train = os.path.join(args.data_path, client_id, "training.jsonl")
         data_path_valid = os.path.join(args.data_path, client_id, "validation.jsonl")
 
         if message_mode == "tensor":
@@ -109,7 +109,7 @@ def main():
         else:
             raise ValueError(f"Invalid message_mode: {message_mode}, only numpy and tensor are supported.")
         job.to(runner, site_name, tasks=["train"])
-        
+
         if args.quantize_mode:
             job.to(quantizor, site_name, tasks=["train"], filter_type=FilterType.TASK_RESULT)
             job.to(dequantizor, site_name, tasks=["train"], filter_type=FilterType.TASK_DATA)
