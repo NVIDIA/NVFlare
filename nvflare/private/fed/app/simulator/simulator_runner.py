@@ -707,9 +707,10 @@ class SimulatorClientRunner(FLComponent):
             command += " --gpu " + str(gpu)
         new_env = os.environ.copy()
         add_custom_dir_to_path(app_custom_folder, new_env)
-        if self.server_custom_folder:
+        if os.path.isdir(self.server_custom_folder):
             python_paths = new_env[SystemVarName.PYTHONPATH].split(os.pathsep)
-            python_paths.remove(self.server_custom_folder)
+            if self.server_custom_folder in python_paths:
+                python_paths.remove(self.server_custom_folder)
             new_env[SystemVarName.PYTHONPATH] = os.pathsep.join(python_paths)
 
         _ = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
