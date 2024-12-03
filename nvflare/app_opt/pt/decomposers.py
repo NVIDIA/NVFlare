@@ -1,4 +1,4 @@
-# Copyright (c) 2023-2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@ class SerializationModule(torch.nn.Module):
         super().__init__()
         self.register_buffer("saved_tensor", tensor)
 
+
 class TensorDecomposer(fobs.Decomposer):
     def supported_type(self):
         return torch.Tensor
@@ -38,7 +39,6 @@ class TensorDecomposer(fobs.Decomposer):
             return self._numpy_serialize(target)
 
     def recompose(self, data: Any, manager: DatumManager = None) -> torch.Tensor:
-
         if isinstance(data, dict):
             if data["dtype"] == "torch.bfloat16":
                 return self._jit_deserialize(data)
@@ -52,8 +52,7 @@ class TensorDecomposer(fobs.Decomposer):
     @staticmethod
     def _numpy_serialize(tensor: torch.Tensor) -> dict:
         stream = BytesIO()
-
-        # torch.save uses Pickle so converting Tensor to ndarray first
+        # supported ScalarType, use numpy to avoid Pickle
         array = tensor.detach().cpu().numpy()
         np.save(stream, array, allow_pickle=False)
         return {
@@ -69,8 +68,9 @@ class TensorDecomposer(fobs.Decomposer):
 
     @staticmethod
     def _jit_serialize(tensor: torch.Tensor) -> dict:
-        module = SerializationModule(tensor)
         stream = BytesIO()
+        # unsupported ScalarType by numpy, use torch.jit to avoid Pickle
+        module = SerializationModule(tensor)
         torch.jit.save(torch.jit.script(module), stream)
         return {
             "buffer": stream.getvalue(),
