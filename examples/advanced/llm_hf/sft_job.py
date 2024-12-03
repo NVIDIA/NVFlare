@@ -47,6 +47,7 @@ def main():
     job_dir = args.job_dir
     model_name_or_path = args.model_name_or_path
     train_mode = args.train_mode
+    message_mode = args.message_mode
 
     # Create the FedJob
     if train_mode.lower() == "sft":
@@ -88,16 +89,27 @@ def main():
         site_name = f"site-{client_id}"
         data_path_train = os.path.join(args.data_path, client_id, "validation.jsonl")
         data_path_valid = os.path.join(args.data_path, client_id, "validation.jsonl")
-        # Add params converters and send to client
-        job.to(PTSendParamsConverter(), site_name, id="pt_send")
-        job.to(PTReceiveParamsConverter(), site_name, id="pt_receive")
-        runner = BaseScriptRunner(
-            script=train_script,
-            script_args=f"--model_name_or_path {model_name_or_path} --data_path_train {data_path_train} --data_path_valid {data_path_valid} --output_path {output_path} --train_mode {train_mode} --clean_up {clean_up}",
-            from_nvflare_converter_id="pt_receive",
-            to_nvflare_converter_id="pt_send",
-        )
+
+        if message_mode == "tensor":
+            # Add params converters and send to client
+            job.to(PTSendParamsConverter(), site_name, id="pt_send")
+            job.to(PTReceiveParamsConverter(), site_name, id="pt_receive")
+            runner = BaseScriptRunner(
+                script=train_script,
+                script_args=f"--model_name_or_path {model_name_or_path} --data_path_train {data_path_train} --data_path_valid {data_path_valid} --output_path {output_path} --train_mode {train_mode} --clean_up {clean_up}",
+                from_nvflare_converter_id="pt_receive",
+                to_nvflare_converter_id="pt_send",
+            )
+            job.to(runner, site_name, tasks=["train"])
+        elif message_mode == "numpy":
+            runner = BaseScriptRunner(
+                script=train_script,
+                script_args=f"--model_name_or_path {model_name_or_path} --data_path_train {data_path_train} --data_path_valid {data_path_valid} --output_path {output_path} --train_mode {train_mode} --clean_up {clean_up}",
+            )
+        else:
+            raise ValueError(f"Invalid message_mode: {message_mode}, only numpy and tensor are supported.")
         job.to(runner, site_name, tasks=["train"])
+        
         if args.quantize_mode:
             job.to(quantizor, site_name, tasks=["train"], filter_type=FilterType.TASK_RESULT)
             job.to(dequantizor, site_name, tasks=["train"], filter_type=FilterType.TASK_DATA)
@@ -162,6 +174,12 @@ def define_parser():
         type=str,
         default=None,
         help="quantization mode, float16 or blockwise8, default to None (no quantization)",
+    )
+    parser.add_argument(
+        "--message_mode",
+        type=str,
+        default="numpy",
+        help="message mode, numpy or tensor, default to numpy",
     )
     parser.add_argument(
         "--threads",
