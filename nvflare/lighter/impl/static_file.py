@@ -386,6 +386,13 @@ class StaticFileBuilder(Builder):
         agent_config = dict()
         self._prepare_overseer_agent(admin, agent_config, "admin", ctx)
         config["admin"].update(agent_config)
+
+        provision_mode = ctx.get("provision_mode")
+        if provision_mode == "poc":
+            # in poc mode, we change to use "local_cert" as the cred_type so that the user won't be
+            # prompted for username when starting the admin console
+            config["admin"]["username"] = admin.name
+            config["admin"]["cred_type"] = "local_cert"
         return config
 
     def build(self, project, ctx):
