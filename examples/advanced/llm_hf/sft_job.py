@@ -22,8 +22,7 @@ from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.app_opt.quantization.numpy_dequantizor import NumpyModelDequantizor
 from nvflare.app_opt.quantization.numpy_quantizor import NumpyModelQuantizor
 from nvflare.job_config.script_runner import BaseScriptRunner
-
-from src.params_converter import PTSendParamsConverter, PTReceiveParamsConverter
+from nvflare.app_opt.pt.tensor_params_converter import PTSendParamsConverter, PTReceiveParamsConverter
 
 def main():
     args = define_parser()

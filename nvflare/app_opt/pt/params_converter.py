@@ -48,8 +48,6 @@ class PTToNumpyParamsConverter(ParamsConverter):
         exclude_vars = {}
         for k, v in params.items():
             if isinstance(v, torch.Tensor):
-                # print the data type of the tensor
-                print(v.dtype)
                 return_tensors[k] = v.cpu().numpy()
                 tensor_shapes[k] = v.shape
             else:

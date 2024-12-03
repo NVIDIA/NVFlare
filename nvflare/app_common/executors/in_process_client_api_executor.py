@@ -138,14 +138,6 @@ class InProcessClientAPIExecutor(Executor):
 
             shareable.set_header(FLMetaKey.JOB_ID, fl_ctx.get_job_id())
             shareable.set_header(FLMetaKey.SITE_NAME, fl_ctx.get_identity_name())
-
-            # print the from and to nvflare converter
-            print("----------------------------------------------------------------")
-            print(f"from_nvflare_converter: {self._from_nvflare_converter}")
-            print(f"to_nvflare_converter: {self._to_nvflare_converter}")
-            print("----------------------------------------------------------------")
-
-
             if self._from_nvflare_converter is not None:
                 shareable = self._from_nvflare_converter.process(task_name, shareable, fl_ctx)
 
