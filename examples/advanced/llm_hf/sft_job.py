@@ -96,7 +96,7 @@ def main():
             job.to(PTReceiveParamsConverter(), site_name, id="pt_receive")
             runner = BaseScriptRunner(
                 script=train_script,
-                script_args=f"--model_name_or_path {model_name_or_path} --data_path_train {data_path_train} --data_path_valid {data_path_valid} --output_path {output_path} --train_mode {train_mode} --clean_up {clean_up}",
+                script_args=f"--model_name_or_path {model_name_or_path} --data_path_train {data_path_train} --data_path_valid {data_path_valid} --output_path {output_path} --train_mode {train_mode} --message_mode {message_mode} --clean_up {clean_up}",
                 from_nvflare_converter_id="pt_receive",
                 to_nvflare_converter_id="pt_send",
             )
@@ -104,7 +104,7 @@ def main():
         elif message_mode == "numpy":
             runner = BaseScriptRunner(
                 script=train_script,
-                script_args=f"--model_name_or_path {model_name_or_path} --data_path_train {data_path_train} --data_path_valid {data_path_valid} --output_path {output_path} --train_mode {train_mode} --clean_up {clean_up}",
+                script_args=f"--model_name_or_path {model_name_or_path} --data_path_train {data_path_train} --data_path_valid {data_path_valid} --output_path {output_path} --train_mode {train_mode} --message_mode {message_mode} --clean_up {clean_up}",
             )
         else:
             raise ValueError(f"Invalid message_mode: {message_mode}, only numpy and tensor are supported.")

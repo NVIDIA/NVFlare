@@ -208,28 +208,10 @@ class InProcessClientAPIExecutor(Executor):
 
     def _init_converter(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
-
-        print("********************************")
-        print(self._from_nvflare_converter_id)
-        print(self._params_exchange_format)
-        print("********************************")
-
         from_nvflare_converter: ParamsConverter = engine.get_component(self._from_nvflare_converter_id[0])
-
-        print("********************************")
-        print(engine.get_component(self._from_nvflare_converter_id[0]))
-        print(from_nvflare_converter)
-        print("********************************")
-
         if from_nvflare_converter is not None:
             check_object_type(self._from_nvflare_converter_id, from_nvflare_converter, ParamsConverter)
             self._from_nvflare_converter = from_nvflare_converter
-
-
-        print("********************************")
-        print(self._from_nvflare_converter)
-        print("********************************")
-
         to_nvflare_converter: ParamsConverter = engine.get_component(self._to_nvflare_converter_id[0])
         if to_nvflare_converter is not None:
             check_object_type(self._to_nvflare_converter_id, to_nvflare_converter, ParamsConverter)
