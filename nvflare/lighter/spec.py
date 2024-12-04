@@ -246,12 +246,16 @@ class Provisioner(object):
         dirs = [workspace, resources_dir, wip_dir, state_dir]
         self._make_dir(dirs)
 
-    def provision(self, project: Project):
+    def provision(self, project: Project, mode=None):
         # ctx = {"workspace": os.path.join(self.root_dir, project.name), "project": project}
         workspace = os.path.join(self.root_dir, project.name)
         ctx = {"workspace": workspace}  # project is more static information while ctx is dynamic
         self._prepare_workspace(ctx)
         ctx["project"] = project
+
+        if mode:
+            ctx["provision_mode"] = mode
+
         try:
             for b in self.builders:
                 b.initialize(ctx)
