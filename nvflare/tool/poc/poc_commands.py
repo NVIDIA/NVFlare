@@ -306,8 +306,9 @@ def local_provision(
     service_config = get_service_config(project_config)
     project = prepare_project(project_config)
     builders = prepare_builders(project_config)
+
     provisioner = Provisioner(workspace, builders)
-    provisioner.provision(project)
+    provisioner.provision(project, mode="poc")
 
     return project_config, service_config
 
