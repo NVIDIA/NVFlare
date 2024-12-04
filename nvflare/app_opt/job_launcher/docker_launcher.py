@@ -158,7 +158,7 @@ class DockerJobLauncher(JobLauncherSpec):
             return None
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
-        if event_type == EventType.GET_JOB_LAUNCHER:
+        if event_type == EventType.BEFORE_JOB_LAUNCH:
             job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
             job_image = extract_job_image(job_meta, fl_ctx.get_identity_name())
             if job_image:
