@@ -116,7 +116,7 @@ class LogReceiver(Widget):
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.SYSTEM_START:
-            for channel in self.log_channels.items():
+            for channel, log_type in self.log_channels.items():
                 FileStreamer.register_stream_processing(
                     fl_ctx, channel=channel, topic=LOG_STREAM_EVENT_TYPE, stream_done_cb=self.process_log
                 )
