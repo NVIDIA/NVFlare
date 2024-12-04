@@ -28,7 +28,7 @@ from nvflare.client.flare_agent_with_fl_model import FlareAgentWithFLModel
 from nvflare.client.model_registry import ModelRegistry
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.import_utils import optional_import
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.pipe.pipe import Pipe
 
 
@@ -63,7 +63,7 @@ def _register_tensor_decomposer():
 class ExProcessClientAPI(APISpec):
     def __init__(self):
         self.process_model_registry = None
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
         self.receive_called = False
 
     def get_model_registry(self) -> ModelRegistry:

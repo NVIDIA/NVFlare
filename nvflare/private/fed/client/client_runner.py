@@ -18,7 +18,15 @@ import time
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import ConfigVarName, FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode
+from nvflare.apis.fl_constant import (
+    ConfigVarName,
+    FilterKey,
+    FLContextKey,
+    ReservedKey,
+    ReservedTopic,
+    ReturnCode,
+    SiteType,
+)
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
@@ -596,7 +604,7 @@ class ClientRunner(TBI):
             var_name=ConfigVarName.MAX_RUNNER_SYNC_TIMEOUT,
             default=60.0,
         )
-        target = "server"
+        target = SiteType.SERVER
         synced = False
         sync_start = time.time()
         with self.engine.new_context() as fl_ctx:

@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import copy
 import importlib
 import json
 import logging
@@ -27,15 +26,7 @@ from nvflare.apis.app_validation import AppValidator
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLContext
-from nvflare.apis.fl_constant import (
-    ConfigVarName,
-    FLContextKey,
-    FLMetaKey,
-    JobConstants,
-    SiteType,
-    SystemVarName,
-    WorkspaceConstants,
-)
+from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, FLMetaKey, JobConstants, SiteType, WorkspaceConstants
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobLauncherSpec
@@ -475,13 +466,6 @@ def get_simulator_app_root(simulator_root, site_name):
     return os.path.join(simulator_root, site_name, SimulatorConstants.JOB_NAME, "app_" + site_name)
 
 
-def add_custom_dir_to_path(app_custom_folder, new_env):
-    """Util method to add app_custom_folder into the sys.path and carry into the child process."""
-    sys_path = copy.copy(sys.path)
-    sys_path.append(app_custom_folder)
-    new_env[SystemVarName.PYTHONPATH] = os.pathsep.join(sys_path)
-
-
 def extract_participants(participants_list):
     participants = []
     for item in participants_list:
@@ -493,17 +477,6 @@ def extract_participants(participants_list):
         else:
             raise ValueError(f"Must be tye of str or dict, but got {type(item)}")
     return participants
-
-
-def extract_job_image(job_meta, site_name):
-    deploy_map = job_meta.get(JobMetaKey.DEPLOY_MAP, {})
-    for _, participants in deploy_map.items():
-        for item in participants:
-            if isinstance(item, dict):
-                sites = item.get(JobConstants.SITES)
-                if site_name in sites:
-                    return item.get(JobConstants.JOB_IMAGE)
-    return None
 
 
 def _scope_prop_key(scope_name: str, key: str):
@@ -550,7 +523,7 @@ def get_job_launcher(job_meta: dict, fl_ctx: FLContext) -> JobLauncherSpec:
         # Remove the potential not cleaned up JOB_LAUNCHER
         job_launcher_ctx.remove_prop(FLContextKey.JOB_LAUNCHER)
         job_launcher_ctx.set_prop(FLContextKey.JOB_META, job_meta, private=True, sticky=False)
-        engine.fire_event(EventType.GET_JOB_LAUNCHER, job_launcher_ctx)
+        engine.fire_event(EventType.BEFORE_JOB_LAUNCH, job_launcher_ctx)
 
         job_launcher = job_launcher_ctx.get_prop(FLContextKey.JOB_LAUNCHER)
         if not (job_launcher and isinstance(job_launcher, list)):
