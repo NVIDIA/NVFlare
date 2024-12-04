@@ -12,11 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
-
 import torch
 import torch.nn as nn
 
+from nvflare.fuel.utils.log_utils import get_module_logger
 from nvflare.security.logging import secure_format_exception
 
 
@@ -30,7 +29,7 @@ def feed_vars(model: nn.Module, model_params):
     Returns:
         a list of params and a dictionary of vars to params
     """
-    _logger = logging.getLogger("AssignVariables")
+    _logger = get_module_logger(__name__, "AssignVariables")
     _logger.debug("AssignVariables...")
 
     to_assign = []

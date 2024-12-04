@@ -14,7 +14,6 @@
 
 import concurrent.futures
 import copy
-import logging
 import threading
 import uuid
 from typing import Dict, List, Union
@@ -26,6 +25,7 @@ from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stream_cell import StreamCell
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import StreamFuture
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception
 
 CHANNELS_TO_EXCLUDE = (
@@ -63,7 +63,7 @@ class Adapter:
         self.cb = cb
         self.my_info = my_info
         self.cell = cell
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
 
     def call(self, future):  # this will be called by StreamCell upon receiving the first byte of blob
         headers = future.headers
@@ -114,7 +114,7 @@ class Cell(StreamCell):
         self.core_cell = CoreCell(*args, **kwargs)
         super().__init__(self.core_cell)
         self.requests_dict = dict()
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
         self.register_blob_cb(CellChannel.RETURN_ONLY, "*", self._process_reply)  # this should be one-time registration
 
     def __getattr__(self, func):

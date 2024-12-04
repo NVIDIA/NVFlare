@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import copy
-import logging
 import os
 import re
 import shlex
@@ -50,6 +49,7 @@ from nvflare.fuel.f3.cellnet.core_cell import FQCN, CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellMsgReturnCode
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message, MsgHeader
@@ -116,7 +116,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
         self.executor = ThreadPoolExecutor(max_workers=workers)
         self.lock = Lock()
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
 
         self.asked_to_stop = False
         self.snapshot_persistor = snapshot_persistor

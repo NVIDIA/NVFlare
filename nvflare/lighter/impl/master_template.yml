@@ -300,7 +300,7 @@ log_config: |
   keys=consoleHandler
 
   [formatters]
-  keys=fullFormatter
+  keys=baseFormatter
 
   [logger_root]
   level=INFO
@@ -309,10 +309,17 @@ log_config: |
   [handler_consoleHandler]
   class=StreamHandler
   level=DEBUG
-  formatter=fullFormatter
+  formatter=baseFormatter
   args=(sys.stdout,)
 
-  [formatter_fullFormatter]
+  [handler_errorFileHandler]
+  class=FileHandler
+  level=ERROR
+  formatter=baseFormatter
+  args=('error_log.txt', 'a')
+
+  [formatter_baseFormatter]
+  class=nvflare.fuel.utils.log_utils.BaseFormatter
   format=%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 start_ovsr_sh: |

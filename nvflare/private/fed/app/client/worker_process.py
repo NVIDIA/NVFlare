@@ -15,7 +15,6 @@
 """Provides a command line interface for a federated client trainer."""
 
 import argparse
-import logging
 import os
 import sys
 import threading
@@ -28,6 +27,7 @@ from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.utils.log_utils import get_script_logger
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
 from nvflare.private.fed.app.utils import monitor_parent_process
 from nvflare.private.fed.client.client_app_runner import ClientAppRunner
@@ -102,7 +102,7 @@ def main(args):
 
         log_file = workspace.get_app_log_file_path(args.job_id)
         add_logfile_handler(log_file)
-        logger = logging.getLogger("worker_process")
+        logger = get_script_logger()
         logger.info("Worker_process started.")
 
         deployer = conf.base_deployer

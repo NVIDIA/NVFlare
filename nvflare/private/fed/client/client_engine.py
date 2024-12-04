@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import os
 import re
 import shutil
@@ -25,6 +24,7 @@ from nvflare.apis.fl_constant import FLContextKey, MachineStatus, SystemComponen
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.network_utils import get_open_ports
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import ERROR_MSG_PREFIX, ClientStatusKey
 from nvflare.private.event import fire_event
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
@@ -84,7 +84,7 @@ class ClientEngine(ClientEngineInternalSpec):
 
         if workers < 1:
             raise ValueError("workers must >= 1")
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
         self.fl_components = [x for x in self.client.components.values() if isinstance(x, FLComponent)]
 
     def fire_event(self, event_type: str, fl_ctx: FLContext):

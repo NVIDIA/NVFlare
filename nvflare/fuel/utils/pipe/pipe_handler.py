@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import threading
 import time
 from collections import deque
 from typing import Optional
 
 from nvflare.apis.signal import Signal
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.pipe.pipe import Message, Pipe, Topic
 from nvflare.fuel.utils.validation_utils import (
     check_callable,
@@ -91,7 +91,7 @@ class PipeHandler(object):
         if 0 < heartbeat_timeout <= heartbeat_interval:
             raise ValueError(f"heartbeat_interval {heartbeat_interval} must < heartbeat_timeout {heartbeat_timeout}")
 
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
         self.pipe = pipe
         self.read_interval = read_interval
         self.heartbeat_interval = heartbeat_interval

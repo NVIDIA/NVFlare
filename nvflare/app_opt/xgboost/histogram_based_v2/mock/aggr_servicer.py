@@ -16,7 +16,7 @@ import threading
 
 import nvflare.app_opt.xgboost.histogram_based_v2.proto.federated_pb2 as pb2
 from nvflare.app_opt.xgboost.histogram_based_v2.proto.federated_pb2_grpc import FederatedServicer
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
 class ReqWaiter:
@@ -60,7 +60,7 @@ class ReqWaiter:
 
 class AggrServicer(FederatedServicer):
     def __init__(self, num_clients, aggr_timeout=10.0):
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
         self.num_clients = num_clients
         self.aggr_timeout = aggr_timeout
         self.req_lock = threading.Lock()
