@@ -186,7 +186,7 @@ class JobExecutor(ClientExecutor):
     def _get_job_launcher(self, job_meta: dict, fl_ctx: FLContext) -> JobLauncherSpec:
         engine = fl_ctx.get_engine()
         fl_ctx.set_prop(FLContextKey.JOB_META, job_meta, private=True, sticky=False)
-        engine.fire_event(EventType.GET_JOB_LAUNCHER, fl_ctx)
+        engine.fire_event(EventType.BEFORE_JOB_LAUNCH, fl_ctx)
 
         job_launcher = fl_ctx.get_prop(FLContextKey.JOB_LAUNCHER)
         if not (job_launcher and isinstance(job_launcher, list)):

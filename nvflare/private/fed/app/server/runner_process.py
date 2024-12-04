@@ -62,7 +62,7 @@ def main(args):
     # get parent process id
     parent_pid = os.getppid()
     stop_event = threading.Event()
-    workspace = Workspace(root_dir=args.workspace, site_name="server")
+    workspace = Workspace(root_dir=args.workspace, site_name=SiteType.SERVER)
     set_stats_pool_config_for_job(workspace, args.job_id)
     secure_train = kv_list.get("secure_train", False)
 

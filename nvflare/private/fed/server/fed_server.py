@@ -31,6 +31,7 @@ from nvflare.apis.fl_constant import (
     SecureTrainConst,
     ServerCommandKey,
     ServerCommandNames,
+    SiteType,
     SnapshotKey,
     SystemComponents,
     SystemConfigs,
@@ -774,7 +775,7 @@ class FederatedServer(BaseServer):
 
     def start_run(self, job_id, run_root, conf, args, snapshot):
         # Create the FL Engine
-        workspace = Workspace(args.workspace, "server", args.config_folder)
+        workspace = Workspace(args.workspace, SiteType.SERVER, args.config_folder)
         self.run_manager = self.create_run_manager(workspace, job_id)
         self.engine.set_run_manager(self.run_manager)
         self.engine.set_configurator(conf)
