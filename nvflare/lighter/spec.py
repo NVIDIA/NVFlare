@@ -11,18 +11,96 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import json
 import os
 import shutil
 import traceback
 from abc import ABC
 from typing import List
 
+import yaml
+
 from nvflare.apis.utils.format_check import name_check
+from nvflare.lighter import utils
+
+from .constants import AdminRole, CtxKey, ParticipantType, PropKey, ProvisionMode, WorkDir
 
 
-class Participant(object):
-    def __init__(self, type: str, name: str, org: str, enable_byoc: bool = False, *args, **kwargs):
+def _check_host_name(scope: str, prop_key: str, value):
+    err, reason = name_check(value, "host_name")
+    if err:
+        raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: {reason}")
+
+
+def _check_host_names(scope: str, prop_key: str, value):
+    if isinstance(value, str):
+        _check_host_name(scope, prop_key, value)
+    elif isinstance(value, list):
+        for v in value:
+            _check_host_name(scope, prop_key, v)
+
+
+def _check_admin_role(scope: str, prop_key: str, value):
+    valid_roles = [AdminRole.PROJECT_ADMIN, AdminRole.ORG_ADMIN, AdminRole.LEAD, AdminRole.MEMBER]
+    if value not in valid_roles:
+        raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: must be one of {valid_roles}")
+
+
+# validator functions for common properties
+# Validator function must follow this signature:
+# func(scope: str, prop_key: str, value)
+_PROP_VALIDATORS = {
+    PropKey.HOST_NAMES: _check_host_names,
+    PropKey.CONNECT_TO: _check_host_name,
+    PropKey.LISTENING_HOST: _check_host_name,
+    PropKey.DEFAULT_HOST: _check_host_name,
+    PropKey.ROLE: _check_admin_role,
+}
+
+
+class Entity:
+    def __init__(self, scope: str, name: str, props: dict, parent=None):
+        if not props:
+            props = {}
+
+        for k, v in props.items():
+            validator = _PROP_VALIDATORS.get(k)
+            if validator is not None:
+                validator(scope, k, v)
+        self.name = name
+        self.props = props
+        self.parent = parent
+
+    def get_prop(self, key: str, default=None):
+        return self.props.get(key, default)
+
+    def get_prop_fb(self, key: str, fb_key=None, default=None):
+        """Get property value with fallback.
+        If I have the property, then return it.
+        If not, I return the fallback property of my parent. If I don't have parent, return default.
+
+        Args:
+            key: key of the property
+            fb_key: key of the fallback property.
+            default: value to return if no one has the property
+
+        Returns: property value
+
+        """
+        value = self.get_prop(key)
+        if value:
+            return value
+        elif not self.parent:
+            return default
+        else:
+            # get the value from the parent
+            if not fb_key:
+                fb_key = key
+            return self.parent.get_prop(fb_key, default)
+
+
+class Participant(Entity):
+    def __init__(self, type: str, name: str, org: str, props: dict = None, project: Entity = None):
         """Class to represent a participant.
 
         Each participant communicates to other participant.  Therefore, each participant has its
@@ -32,84 +110,25 @@ class Participant(object):
             type (str): server, client, admin or other string that builders can handle
             name (str): system-wide unique name
             org (str): system-wide unique organization
-            enable_byoc (bool, optional): whether this participant allows byoc codes to be loaded. Defaults to False.
+            props (dict): properties
+            project: the project that the participant belongs to
 
         Raises:
             ValueError: if name or org is not compliant with characters or format specification.
         """
+        Entity.__init__(self, f"{type}::{name}", name, props, parent=project)
+
         err, reason = name_check(name, type)
         if err:
             raise ValueError(reason)
+
         err, reason = name_check(org, "org")
         if err:
             raise ValueError(reason)
+
         self.type = type
-        self.name = name
         self.org = org
         self.subject = name
-        self.enable_byoc = enable_byoc
-        self.props = kwargs
-
-        # check validity of properties
-        host_names = self.get_host_names()
-        if host_names:
-            for n in host_names:
-                err, reason = name_check(n, "host_name")
-                if err:
-                    raise ValueError(f"bad host name '{n}' in {self.name}: {reason}")
-
-        self._check_host_name("connect_to")
-        self._check_host_name("listening_host")
-        self._check_host_name("default_host")
-
-    def _check_host_name(self, prop_name: str):
-        host_name = self.get_prop(prop_name)
-        if host_name:
-            err, reason = name_check(host_name, "host_name")
-            if err:
-                raise ValueError(f"bad {prop_name} '{host_name}' in {self.name}: {reason}")
-
-    def get_host_names(self):
-        """Get the "host_names" attribute of this participant (server).
-        This attribute specifies additional host names for clients to access the FL Server.
-        Each name could be a domain name or IP address.
-
-        Returns: a list of host names or None if not specified.
-
-        """
-        host_names = self.get_prop("host_names")
-        if not host_names:
-            return None
-
-        if isinstance(host_names, str):
-            return [host_names]
-
-        if not isinstance(host_names, list):
-            raise ValueError(
-                f"bad host_names in {self.subject}: must be a str or list of str, but got {type(host_names)}"
-            )
-
-        return host_names
-
-    def get_connect_to(self):
-        """Get the "connect_to" attribute of this participant (client).
-        This value is for the client to connect to the FL server.
-        If not specified, then the client will connect to the FL server via its default host.
-
-        Returns: the value of "connect_to" attribute or None if not specified.
-
-        """
-        return self.get_prop("connect_to")
-
-    def get_listening_host(self):
-        """Get the "listening_host" attribute of this participant (client).
-        When specified, the client will be listening and other parties will use the specified value to connect to
-        this client. This client will receive a "server" cert in its startup kit.
-
-        Returns: the value of "listening_host" attribute or None if not specified.
-
-        """
-        return self.get_prop("listening_host")
 
     def get_default_host(self) -> str:
         """Get the default host name for accessing this participant (server).
@@ -119,18 +138,23 @@ class Participant(object):
         Returns: a host name
 
         """
-        h = self.get_prop("default_host")
+        h = self.get_prop(PropKey.DEFAULT_HOST)
         if h:
             return h
         else:
             return self.name
 
-    def get_prop(self, key: str, default=None):
-        return self.props.get(key, default)
 
-
-class Project(object):
-    def __init__(self, name: str, description: str, participants: List[Participant]):
+class Project(Entity):
+    def __init__(
+        self,
+        name: str,
+        description: str,
+        participants=None,
+        props: dict = None,
+        serialized_root_cert=None,
+        serialized_root_private_key=None,
+    ):
         """A container class to hold information about this FL project.
 
         This class only holds information.  It does not drive the workflow.
@@ -138,30 +162,58 @@ class Project(object):
         Args:
             name (str): the project name
             description (str): brief description on this name
-            participants (List[Participant]): All the participants that will join this project
+            participants: if provided, list of participants of the project
+            props: properties of the project
+            serialized_root_cert: if provided, the root cert to be used for the project
+            serialized_root_private_key: if provided, the root private key for signing certs of sites and admins
 
         Raises:
-            ValueError: when duplicate name found in participants list
+            ValueError: when participant criteria is violated
         """
-        self.name = name
-        all_names = list()
-        for p in participants:
-            if p.name in all_names:
-                raise ValueError(f"Unable to add a duplicate name {p.name} into this project.")
-            else:
-                all_names.append(p.name)
-        self.description = description
-        self.participants = participants
+        Entity.__init__(self, "project", name, props)
 
-    def get_participants_by_type(self, type, first_only=True):
-        found = list()
-        for p in self.participants:
-            if p.type == type:
-                if first_only:
-                    return p
+        if serialized_root_cert:
+            if not serialized_root_private_key:
+                raise ValueError("missing serialized_root_private_key while serialized_root_cert is provided")
+
+        self.description = description
+        self.serialized_root_cert = serialized_root_cert
+        self.serialized_root_private_key = serialized_root_private_key
+        self.server = None
+        self.overseer = None
+        self.clients = []
+        self.admins = []
+        self.all_names = {}
+
+        if participants:
+            if not isinstance(participants, list):
+                raise ValueError(f"participants must be a list of Participant but got {type(participants)}")
+
+            for p in participants:
+                if not isinstance(p, Participant):
+                    raise ValueError(f"bad item in participants: must be Participant but got {type(p)}")
+
+                if p.type == ParticipantType.SERVER:
+                    self.set_server(p.name, p.org, p.props)
+                elif p.type == ParticipantType.ADMIN:
+                    self.add_admin(p.name, p.org, p.props)
+                elif p.type == ParticipantType.CLIENT:
+                    self.add_client(p.name, p.org, p.props)
+                elif p.type == ParticipantType.OVERSEER:
+                    self.set_overseer(p.name, p.org, p.props)
                 else:
-                    found.append(p)
-        return found
+                    raise ValueError(f"invalid value for ParticipantType: {p.type}")
+
+    def _check_unique_name(self, name: str):
+        if name in self.all_names:
+            raise ValueError(f"the project {self.name} already has a participant with the name '{name}'")
+
+    def set_server(self, name: str, org: str, props: dict):
+        if self.server:
+            raise ValueError(f"project {self.name} already has server defined")
+        self._check_unique_name(name)
+        self.server = Participant(ParticipantType.SERVER, name, org, props, self)
+        self.all_names[name] = True
 
     def get_server(self):
         """Get the server definition. Only one server is supported!
@@ -169,39 +221,156 @@ class Project(object):
         Returns: server participant
 
         """
-        return self.get_participants_by_type("server", first_only=True)
+        return self.server
+
+    def set_overseer(self, name: str, org: str, props: dict):
+        if self.overseer:
+            raise ValueError(f"project {self.name} already has overseer defined")
+        self._check_unique_name(name)
+        self.overseer = Participant(ParticipantType.OVERSEER, name, org, props, self)
+        self.all_names[name] = True
+
+    def get_overseer(self):
+        """Get the overseer definition. Only one overseer is supported!
+
+        Returns: overseer participant
+
+        """
+        return self.overseer
+
+    def add_client(self, name: str, org: str, props: dict):
+        self._check_unique_name(name)
+        self.clients.append(Participant(ParticipantType.CLIENT, name, org, props, self))
+        self.all_names[name] = True
+
+    def get_clients(self):
+        return self.clients
+
+    def add_admin(self, name: str, org: str, props: dict):
+        self._check_unique_name(name)
+        admin = Participant(ParticipantType.ADMIN, name, org, props, self)
+        role = admin.get_prop(PropKey.ROLE)
+        if not role:
+            raise ValueError(f"missing role in admin '{name}'")
+        self.admins.append(admin)
+        self.all_names[name] = True
+
+    def get_admins(self):
+        return self.admins
+
+    def get_all_participants(self):
+        result = []
+        if self.server:
+            result.append(self.server)
+
+        if self.overseer:
+            result.append(self.overseer)
+
+        result.extend(self.clients)
+        result.extend(self.admins)
+        return result
+
+
+class ProvisionContext(dict):
+    def __init__(self, workspace_root_dir: str, project: Project):
+        super().__init__()
+        self[CtxKey.WORKSPACE] = workspace_root_dir
+
+        wip_dir = os.path.join(workspace_root_dir, "wip")
+        state_dir = os.path.join(workspace_root_dir, "state")
+        resources_dir = os.path.join(workspace_root_dir, "resources")
+        self.update({CtxKey.WIP: wip_dir, CtxKey.STATE: state_dir, CtxKey.RESOURCES: resources_dir})
+        dirs = [workspace_root_dir, resources_dir, wip_dir, state_dir]
+        utils.make_dirs(dirs)
+
+        # set commonly used data into ctx
+        self[CtxKey.PROJECT] = project
+
+        server = project.get_server()
+        admin_port = server.get_prop(PropKey.ADMIN_PORT, 8003)
+        self[CtxKey.ADMIN_PORT] = admin_port
+        fed_learn_port = server.get_prop(PropKey.FED_LEARN_PORT, 8002)
+        self[CtxKey.FED_LEARN_PORT] = fed_learn_port
+        self[CtxKey.SERVER_NAME] = server.name
+
+    def get_project(self):
+        return self.get(CtxKey.PROJECT)
+
+    def set_template(self, template: dict):
+        self[CtxKey.TEMPLATE] = template
+
+    def get_template(self):
+        return self.get(CtxKey.TEMPLATE)
+
+    def get_template_section(self, section_key: str):
+        template = self.get_template()
+        if not template:
+            raise RuntimeError("template is not available")
+
+        section = template.get(section_key)
+        if not section:
+            raise RuntimeError(f"missing section {section} in template")
+
+        return section
+
+    def set_provision_mode(self, mode: str):
+        valid_modes = [ProvisionMode.POC, ProvisionMode.NORMAL]
+        if mode not in valid_modes:
+            raise ValueError(f"invalid provision mode {mode}: must be one of {valid_modes}")
+        self[CtxKey.PROVISION_MODE] = mode
+
+    def get_provision_mode(self):
+        return self.get(CtxKey.PROVISION_MODE)
+
+    def get_wip_dir(self):
+        return self.get(CtxKey.WIP)
+
+    def get_ws_dir(self, entity: Entity):
+        return os.path.join(self.get_wip_dir(), entity.name)
+
+    def get_kit_dir(self, entity: Entity):
+        return os.path.join(self.get_ws_dir(entity), "startup")
+
+    def get_transfer_dir(self, entity: Entity):
+        return os.path.join(self.get_ws_dir(entity), "transfer")
+
+    def get_local_dir(self, entity: Entity):
+        return os.path.join(self.get_ws_dir(entity), "local")
+
+    def get_state_dir(self):
+        return self.get(CtxKey.STATE)
+
+    def get_resources_dir(self):
+        return self.get(CtxKey.RESOURCES)
+
+    def get_workspace(self):
+        return self.get(CtxKey.WORKSPACE)
+
+    def yaml_load_template_section(self, section_key: str):
+        return yaml.safe_load(self.get_template_section(section_key))
+
+    def json_load_template_section(self, section_key: str):
+        return json.loads(self.get_template_section(section_key))
 
 
 class Builder(ABC):
-    def initialize(self, ctx: dict):
+    def initialize(self, project: Project, ctx: ProvisionContext):
         pass
 
-    def build(self, project: Project, ctx: dict):
+    def build(self, project: Project, ctx: ProvisionContext):
         pass
 
-    def finalize(self, ctx: dict):
+    def finalize(self, project: Project, ctx: ProvisionContext):
         pass
 
-    def get_wip_dir(self, ctx: dict):
-        return ctx.get("wip_dir")
-
-    def get_ws_dir(self, participate: Participant, ctx: dict):
-        return os.path.join(self.get_wip_dir(ctx), participate.name)
-
-    def get_kit_dir(self, participant: Participant, ctx: dict):
-        return os.path.join(self.get_ws_dir(participant, ctx), "startup")
-
-    def get_transfer_dir(self, participant: Participant, ctx: dict):
-        return os.path.join(self.get_ws_dir(participant, ctx), "transfer")
-
-    def get_local_dir(self, participant: Participant, ctx: dict):
-        return os.path.join(self.get_ws_dir(participant, ctx), "local")
-
-    def get_state_dir(self, ctx: dict):
-        return ctx.get("state_dir")
-
-    def get_resources_dir(self, ctx: dict):
-        return ctx.get("resources_dir")
+    @staticmethod
+    def build_from_template(
+        ctx: ProvisionContext, dest_dir: str, temp_section: str, file_name, replacement=None, mode="t", exe=False
+    ):
+        section = ctx.get_template_section(temp_section)
+        if replacement:
+            section = utils.sh_replace(section, replacement)
+        utils.write(os.path.join(dest_dir, file_name), section, mode, exe=exe)
 
 
 class Provisioner(object):
@@ -230,51 +399,46 @@ class Provisioner(object):
         """
         self.root_dir = root_dir
         self.builders = builders
-        self.ctx = None
+        self.template = {}
 
-    def _make_dir(self, dirs):
-        for dir in dirs:
-            if not os.path.exists(dir):
-                os.makedirs(dir)
-
-    def _prepare_workspace(self, ctx):
-        workspace = ctx.get("workspace")
-        wip_dir = os.path.join(workspace, "wip")
-        state_dir = os.path.join(workspace, "state")
-        resources_dir = os.path.join(workspace, "resources")
-        ctx.update(dict(wip_dir=wip_dir, state_dir=state_dir, resources_dir=resources_dir))
-        dirs = [workspace, resources_dir, wip_dir, state_dir]
-        self._make_dir(dirs)
+    def add_template(self, template: dict):
+        if not isinstance(template, dict):
+            raise ValueError(f"template must be a dict but got {type(template)}")
+        self.template.update(template)
 
     def provision(self, project: Project, mode=None):
-        # ctx = {"workspace": os.path.join(self.root_dir, project.name), "project": project}
-        workspace = os.path.join(self.root_dir, project.name)
-        ctx = {"workspace": workspace}  # project is more static information while ctx is dynamic
-        self._prepare_workspace(ctx)
-        ctx["project"] = project
+        server = project.get_server()
+        if not server:
+            raise RuntimeError("missing server from the project")
 
-        if mode:
-            ctx["provision_mode"] = mode
+        workspace_root_dir = os.path.join(self.root_dir, project.name)
+        ctx = ProvisionContext(workspace_root_dir, project)
+        if self.template:
+            ctx.set_template(self.template)
+
+        if not mode:
+            mode = ProvisionMode.NORMAL
+        ctx.set_provision_mode(mode)
 
         try:
             for b in self.builders:
-                b.initialize(ctx)
+                b.initialize(project, ctx)
 
             # call builders!
             for b in self.builders:
                 b.build(project, ctx)
 
             for b in self.builders[::-1]:
-                b.finalize(ctx)
+                b.finalize(project, ctx)
 
-        except Exception as ex:
-            prod_dir = ctx.get("current_prod_dir")
+        except Exception:
+            prod_dir = ctx.get(WorkDir.CURRENT_PROD_DIR)
             if prod_dir:
                 shutil.rmtree(prod_dir)
             print("Exception raised during provision.  Incomplete prod_n folder removed.")
             traceback.print_exc()
         finally:
-            wip_dir = ctx.get("wip_dir")
+            wip_dir = ctx.get(WorkDir.WIP)
             if wip_dir:
                 shutil.rmtree(wip_dir)
         return ctx

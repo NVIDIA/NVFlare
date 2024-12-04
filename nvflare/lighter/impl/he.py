@@ -16,7 +16,8 @@ import os
 
 import tenseal as ts
 
-from nvflare.lighter.spec import Builder
+from nvflare.lighter.constants import ProvFileName
+from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
 
 class HEBuilder(Builder):
@@ -51,7 +52,7 @@ class HEBuilder(Builder):
         self.scheme_type = self.scheme_type_mapping[_scheme]
         self.serialized = None
 
-    def initialize(self, ctx):
+    def initialize(self, project: Project, ctx: ProvisionContext):
         self._context = ts.context(
             self.scheme_type,
             poly_modulus_degree=self.poly_modulus_degree,
@@ -63,15 +64,15 @@ class HEBuilder(Builder):
         self._context.generate_relin_keys()
         self._context.global_scale = 2**self.scale_bits
 
-    def build(self, project, ctx):
-        servers = project.get_participants_by_type("server", first_only=False)
-        for server in servers:
-            dest_dir = self.get_kit_dir(server, ctx)
-            with open(os.path.join(dest_dir, "server_context.tenseal"), "wb") as f:
+    def build(self, project: Project, ctx: ProvisionContext):
+        server = project.get_server()
+        if server:
+            dest_dir = ctx.get_kit_dir(server)
+            with open(os.path.join(dest_dir, ProvFileName.SERVER_CONTEXT_TENSEAL), "wb") as f:
                 f.write(self.get_serialized_context())
-        for client in project.get_participants_by_type("client", first_only=False):
-            dest_dir = self.get_kit_dir(client, ctx)
-            with open(os.path.join(dest_dir, "client_context.tenseal"), "wb") as f:
+        for client in project.get_clients():
+            dest_dir = ctx.get_kit_dir(client)
+            with open(os.path.join(dest_dir, ProvFileName.CLIENT_CONTEXT_TENSEAL), "wb") as f:
                 f.write(self.get_serialized_context(is_client=True))
 
     def get_serialized_context(self, is_client=False):

@@ -19,20 +19,19 @@ import os
 import yaml
 
 from nvflare.lighter import utils
-from nvflare.lighter.spec import Builder, Participant
+from nvflare.lighter.constants import CtxKey, OverseerRole, PropKey, ProvFileName, ProvisionMode, TemplateSectionKey
+from nvflare.lighter.spec import Builder, Participant, Project, ProvisionContext
 
 
 class StaticFileBuilder(Builder):
     def __init__(
         self,
-        enable_byoc=False,
         config_folder="",
         scheme="grpc",
         app_validator="",
         download_job_url="",
         docker_image="",
-        snapshot_persistor="",
-        overseer_agent="",
+        overseer_agent: dict = None,
         components="",
     ):
         """Build all static files from template.
@@ -46,97 +45,81 @@ class StaticFileBuilder(Builder):
         file and string replacement to generate those static files for each participant.
 
         Args:
-            enable_byoc: for each participant, true to enable loading of code in the custom folder of applications
             config_folder: usually "config"
             app_validator: optional path to an app validator to verify that uploaded app has the expected structure
-            docker_image: when docker_image is set to a docker image name, docker.sh will be generated on server/client/admin
+            docker_image: when docker_image is set to a docker image name, docker.sh will be generated on
+            server/client/admin
         """
-        self.enable_byoc = enable_byoc
         self.config_folder = config_folder
         self.scheme = scheme
         self.docker_image = docker_image
         self.download_job_url = download_job_url
         self.app_validator = app_validator
         self.overseer_agent = overseer_agent
-        self.snapshot_persistor = snapshot_persistor
         self.components = components
 
-    def get_server_name(self, server):
-        return server.name
-
-    def get_overseer_name(self, overseer):
-        return overseer.name
-
-    def _build_overseer(self, overseer, ctx):
-        dest_dir = self.get_kit_dir(overseer, ctx)
-        utils._write(
-            os.path.join(dest_dir, "start.sh"),
-            self.template["start_svr_sh"],
-            "t",
-            exe=True,
-        )
-        protocol = overseer.props.get("protocol", "http")
-        api_root = overseer.props.get("api_root", "/api/v1/")
+    def _build_overseer(self, overseer: Participant, ctx: ProvisionContext):
+        dest_dir = ctx.get_kit_dir(overseer)
+        protocol = overseer.get_prop(PropKey.PROTOCOL, "http")
+        api_root = overseer.get_prop(PropKey.API_ROOT, "/api/v1/")
         default_port = "443" if protocol == "https" else "80"
-        port = overseer.props.get("port", default_port)
-        replacement_dict = {"port": port, "hostname": self.get_overseer_name(overseer)}
-        admins = self.project.get_participants_by_type("admin", first_only=False)
+        port = overseer.get_prop(PropKey.PORT, default_port)
+        replacement_dict = {"port": port, "hostname": overseer.name}
+
+        project = ctx.get_project()
+        admins = project.get_admins()
         privilege_dict = dict()
         for admin in admins:
-            role = admin.props.get("role")
+            role = admin.get_prop(PropKey.ROLE)
             if role in privilege_dict:
                 privilege_dict[role].append(admin.subject)
             else:
                 privilege_dict[role] = [admin.subject]
-        utils._write(
-            os.path.join(dest_dir, "privilege.yml"),
+
+        utils.write(
+            os.path.join(dest_dir, ProvFileName.PRIVILEGE_YML),
             yaml.dump(privilege_dict, Dumper=yaml.Dumper),
             "t",
             exe=False,
         )
 
         if self.docker_image:
-            utils._write(
-                os.path.join(dest_dir, "docker.sh"),
-                utils.sh_replace(self.template["docker_svr_sh"], replacement_dict),
-                "t",
-                exe=True,
+            self.build_from_template(
+                ctx, dest_dir, TemplateSectionKey.DOCKER_SERVER_SH, ProvFileName.DOCKER_SH, replacement_dict, exe=True
             )
-        utils._write(
-            os.path.join(dest_dir, "gunicorn.conf.py"),
-            utils.sh_replace(self.template["gunicorn_conf_py"], replacement_dict),
-            "t",
+
+        self.build_from_template(
+            ctx,
+            dest_dir,
+            TemplateSectionKey.GUNICORN_CONF_PY,
+            ProvFileName.GUNICORN_CONF_PY,
+            replacement_dict,
             exe=False,
         )
-        utils._write(
-            os.path.join(dest_dir, "start.sh"),
-            self.template["start_ovsr_sh"],
-            "t",
-            exe=True,
-        )
-        if port:
-            ctx["overseer_end_point"] = f"{protocol}://{self.get_overseer_name(overseer)}:{port}{api_root}"
-        else:
-            ctx["overseer_end_point"] = f"{protocol}://{self.get_overseer_name(overseer)}{api_root}"
 
-    def _build_server(self, server, ctx):
-        config = json.loads(self.template["fed_server"])
-        dest_dir = self.get_kit_dir(server, ctx)
+        self.build_from_template(ctx, dest_dir, TemplateSectionKey.START_OVERSEER_SH, ProvFileName.START_SH, exe=True)
+
+        if port:
+            ctx[PropKey.OVERSEER_END_POINT] = f"{protocol}://{overseer.name}:{port}{api_root}"
+        else:
+            ctx[PropKey.OVERSEER_END_POINT] = f"{protocol}://{overseer.name}{api_root}"
+
+    def _build_server(self, server: Participant, ctx: ProvisionContext):
+        project = ctx.get_project()
+        config = ctx.json_load_template_section(TemplateSectionKey.FED_SERVER)
+        dest_dir = ctx.get_kit_dir(server)
         server_0 = config["servers"][0]
-        server_0["name"] = self.project_name
-        admin_port = server.get_prop("admin_port", 8003)
-        ctx["admin_port"] = admin_port
-        fed_learn_port = server.get_prop("fed_learn_port", 8002)
-        ctx["fed_learn_port"] = fed_learn_port
-        ctx["server_name"] = self.get_server_name(server)
-        server_0["service"]["target"] = f"{self.get_server_name(server)}:{fed_learn_port}"
+        server_0["name"] = project.name
+        admin_port = ctx.get(CtxKey.ADMIN_PORT)
+        fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
+        server_0["service"]["target"] = f"{server.name}:{fed_learn_port}"
         server_0["service"]["scheme"] = self.scheme
-        server_0["admin_host"] = self.get_server_name(server)
+        server_0["admin_host"] = server.name
         server_0["admin_port"] = admin_port
 
-        self._prepare_overseer_agent(server, config, "server", ctx)
+        self._prepare_overseer_agent(server, config, OverseerRole.SERVER, ctx)
+        utils.write(os.path.join(dest_dir, ProvFileName.FED_SERVER_JSON), json.dumps(config, indent=2), "t")
 
-        utils._write(os.path.join(dest_dir, "fed_server.json"), json.dumps(config, indent=2), "t")
         replacement_dict = {
             "admin_port": admin_port,
             "fed_learn_port": fed_learn_port,
@@ -146,70 +129,62 @@ class StaticFileBuilder(Builder):
             "type": "server",
             "cln_uid": "",
         }
+
         if self.docker_image:
-            utils._write(
-                os.path.join(dest_dir, "docker.sh"),
-                utils.sh_replace(self.template["docker_svr_sh"], replacement_dict),
-                "t",
+            self.build_from_template(
+                ctx,
+                dest_dir,
+                TemplateSectionKey.DOCKER_SERVER_SH,
+                ProvFileName.DOCKER_SH,
+                replacement=replacement_dict,
                 exe=True,
             )
-        utils._write(
-            os.path.join(dest_dir, "start.sh"),
-            self.template["start_svr_sh"],
-            "t",
+
+        self.build_from_template(ctx, dest_dir, TemplateSectionKey.START_SERVER_SH, ProvFileName.START_SH, exe=True)
+
+        self.build_from_template(
+            ctx,
+            dest_dir,
+            TemplateSectionKey.SUB_START_SH,
+            ProvFileName.SUB_START_SH,
+            replacement=replacement_dict,
             exe=True,
         )
-        utils._write(
-            os.path.join(dest_dir, "sub_start.sh"),
-            utils.sh_replace(self.template["sub_start_sh"], replacement_dict),
-            "t",
-            exe=True,
-        )
-        utils._write(
-            os.path.join(dest_dir, "stop_fl.sh"),
-            self.template["stop_fl_sh"],
-            "t",
-            exe=True,
-        )
+
+        self.build_from_template(ctx, dest_dir, TemplateSectionKey.STOP_FL_SH, ProvFileName.STOP_FL_SH, exe=True)
+
         # local folder creation
-        dest_dir = self.get_local_dir(server, ctx)
-        utils._write(
-            os.path.join(dest_dir, "log.config.default"),
-            self.template["log_config"],
-            "t",
+        dest_dir = ctx.get_local_dir(server)
+
+        self.build_from_template(
+            ctx, dest_dir, TemplateSectionKey.LOG_CONFIG, ProvFileName.LOG_CONFIG_DEFAULT, exe=False
         )
-        utils._write(
-            os.path.join(dest_dir, "resources.json.default"),
-            self.template["local_server_resources"],
-            "t",
+
+        self.build_from_template(
+            ctx, dest_dir, TemplateSectionKey.LOCAL_SERVER_RESOURCES, ProvFileName.RESOURCES_JSON_DEFAULT, exe=False
         )
-        utils._write(
-            os.path.join(dest_dir, "privacy.json.sample"),
-            self.template["sample_privacy"],
-            "t",
+
+        self.build_from_template(
+            ctx, dest_dir, TemplateSectionKey.SAMPLE_PRIVACY, ProvFileName.PRIVACY_JSON_SAMPLE, exe=False
         )
-        utils._write(
-            os.path.join(dest_dir, "authorization.json.default"),
-            self.template["default_authz"],
-            "t",
+
+        self.build_from_template(
+            ctx, dest_dir, TemplateSectionKey.DEFAULT_AUTHZ, ProvFileName.AUTHORIZATION_JSON_DEFAULT, exe=False
         )
 
         # workspace folder file
-        utils._write(
-            os.path.join(self.get_ws_dir(server, ctx), "readme.txt"),
-            self.template["readme_fs"],
-            "t",
-        )
+        dest_dir = ctx.get_ws_dir(server)
+        self.build_from_template(ctx, dest_dir, TemplateSectionKey.SERVER_README, ProvFileName.README_TXT, exe=False)
 
     def _build_client(self, client, ctx):
-        project = ctx["project"]
+        project = ctx.get_project()
         server = project.get_server()
         if not server:
             raise ValueError("missing server definition in project")
-        config = json.loads(self.template["fed_client"])
-        dest_dir = self.get_kit_dir(client, ctx)
+        config = ctx.json_load_template_section(TemplateSectionKey.FED_CLIENT)
+        dest_dir = ctx.get_kit_dir(client)
         config["servers"][0]["service"]["scheme"] = self.scheme
-        config["servers"][0]["name"] = self.project_name
+        config["servers"][0]["name"] = project.name
         config["servers"][0]["identity"] = server.name  # the official identity of the server
         replacement_dict = {
             "client_name": f"{client.subject}",
@@ -220,93 +195,82 @@ class StaticFileBuilder(Builder):
             "cln_uid": f"uid={client.subject}",
         }
 
-        self._prepare_overseer_agent(client, config, "client", ctx)
+        self._prepare_overseer_agent(client, config, OverseerRole.CLIENT, ctx)
 
-        utils._write(os.path.join(dest_dir, "fed_client.json"), json.dumps(config, indent=2), "t")
+        utils.write(os.path.join(dest_dir, ProvFileName.FED_CLIENT_JSON), json.dumps(config, indent=2), "t")
+
         if self.docker_image:
-            utils._write(
-                os.path.join(dest_dir, "docker.sh"),
-                utils.sh_replace(self.template["docker_cln_sh"], replacement_dict),
-                "t",
+            self.build_from_template(
+                ctx,
+                dest_dir,
+                TemplateSectionKey.DOCKER_CLIENT_SH,
+                ProvFileName.DOCKER_SH,
+                replacement_dict,
                 exe=True,
             )
-        utils._write(
-            os.path.join(dest_dir, "start.sh"),
-            self.template["start_cln_sh"],
-            "t",
-            exe=True,
+
+        self.build_from_template(ctx, dest_dir, TemplateSectionKey.START_CLIENT_SH, ProvFileName.START_SH, exe=True)
+
+        self.build_from_template(
+            ctx, dest_dir, TemplateSectionKey.SUB_START_SH, ProvFileName.SUB_START_SH, replacement_dict, exe=True
         )
-        utils._write(
-            os.path.join(dest_dir, "sub_start.sh"),
-            utils.sh_replace(self.template["sub_start_sh"], replacement_dict),
-            "t",
-            exe=True,
-        )
-        utils._write(
-            os.path.join(dest_dir, "stop_fl.sh"),
-            self.template["stop_fl_sh"],
-            "t",
-            exe=True,
-        )
+
+        self.build_from_template(ctx, dest_dir, TemplateSectionKey.STOP_FL_SH, ProvFileName.STOP_FL_SH, exe=True)
+
         # local folder creation
-        dest_dir = self.get_local_dir(client, ctx)
-        utils._write(
-            os.path.join(dest_dir, "log.config.default"),
-            self.template["log_config"],
-            "t",
+        dest_dir = ctx.get_local_dir(client)
+
+        self.build_from_template(ctx, dest_dir, TemplateSectionKey.LOG_CONFIG, ProvFileName.LOG_CONFIG_DEFAULT)
+
+        self.build_from_template(
+            ctx, dest_dir, TemplateSectionKey.LOCAL_CLIENT_RESOURCES, ProvFileName.RESOURCES_JSON_DEFAULT
         )
-        utils._write(
-            os.path.join(dest_dir, "resources.json.default"),
-            self.template["local_client_resources"],
-            "t",
+
+        self.build_from_template(
+            ctx,
+            dest_dir,
+            TemplateSectionKey.SAMPLE_PRIVACY,
+            ProvFileName.PRIVACY_JSON_SAMPLE,
         )
-        utils._write(
-            os.path.join(dest_dir, "privacy.json.sample"),
-            self.template["sample_privacy"],
-            "t",
-        )
-        utils._write(
-            os.path.join(dest_dir, "authorization.json.default"),
-            self.template["default_authz"],
-            "t",
+
+        self.build_from_template(
+            ctx, dest_dir, TemplateSectionKey.DEFAULT_AUTHZ, ProvFileName.AUTHORIZATION_JSON_DEFAULT
         )
 
         # workspace folder file
-        utils._write(
-            os.path.join(self.get_ws_dir(client, ctx), "readme.txt"),
-            self.template["readme_fc"],
-            "t",
-        )
+        dest_dir = ctx.get_ws_dir(client)
+        self.build_from_template(ctx, dest_dir, TemplateSectionKey.CLIENT_README, ProvFileName.README_TXT)
 
-    def _check_host_name(self, host_name: str, server: Participant) -> str:
+    @staticmethod
+    def _check_host_name(host_name: str, server: Participant) -> str:
         if host_name == server.get_default_host():
             # Use the default host - OK
             return ""
 
-        available_host_names = server.get_host_names()
+        available_host_names = server.get_prop(PropKey.HOST_NAMES)
         if available_host_names and host_name in available_host_names:
             # use alternative host name - OK
             return ""
 
         return f"unknown host name '{host_name}'"
 
-    def _prepare_overseer_agent(self, participant, config, role, ctx):
-        project = ctx["project"]
+    def _prepare_overseer_agent(self, participant, config, role, ctx: ProvisionContext):
+        project = ctx.get_project()
         server = project.get_server()
         if not server:
             raise ValueError(f"Missing server definition in project {project.name}")
 
-        fl_port = server.get_prop("fed_learn_port", 8002)
-        admin_port = server.get_prop("admin_port", 8003)
+        fl_port = server.get_prop(PropKey.FED_LEARN_PORT, 8002)
+        admin_port = server.get_prop(PropKey.ADMIN_PORT, 8003)
 
         if self.overseer_agent:
             overseer_agent = copy.deepcopy(self.overseer_agent)
             if overseer_agent.get("overseer_exists", True):
-                if role == "server":
+                if role == OverseerRole.SERVER:
                     overseer_agent["args"] = {
                         "role": role,
                         "overseer_end_point": ctx.get("overseer_end_point", ""),
-                        "project": self.project_name,
+                        "project": project.name,
                         "name": server.name,
                         "fl_port": str(fl_port),
                         "admin_port": str(admin_port),
@@ -315,18 +279,18 @@ class StaticFileBuilder(Builder):
                     overseer_agent["args"] = {
                         "role": role,
                         "overseer_end_point": ctx.get("overseer_end_point", ""),
-                        "project": self.project_name,
+                        "project": project.name,
                         "name": participant.subject,
                     }
             else:
                 # do not use overseer system
                 # Dummy overseer agent is used here
-                if role == "server":
+                if role == OverseerRole.SERVER:
                     # the server expects the "connect_to" to be the same as its name
                     # otherwise the host name generated by the dummy agent won't be accepted!
                     connect_to = server.name
                 else:
-                    connect_to = participant.get_connect_to()
+                    connect_to = participant.get_prop(PropKey.CONNECT_TO)
                     if connect_to:
                         err = self._check_host_name(connect_to, server)
                         if err:
@@ -348,10 +312,10 @@ class StaticFileBuilder(Builder):
             overseer_agent.pop("overseer_exists", None)
             config["overseer_agent"] = overseer_agent
 
-    def _build_admin(self, admin, ctx):
-        dest_dir = self.get_kit_dir(admin, ctx)
-        admin_port = ctx.get("admin_port")
-        server_name = ctx.get("server_name")
+    def _build_admin(self, admin: Participant, ctx: ProvisionContext):
+        dest_dir = ctx.get_kit_dir(admin)
+        admin_port = ctx.get(CtxKey.ADMIN_PORT)
+        server_name = ctx.get(CtxKey.SERVER_NAME)
 
         replacement_dict = {
             "cn": f"{server_name}",
@@ -361,53 +325,49 @@ class StaticFileBuilder(Builder):
 
         config = self.prepare_admin_config(admin, ctx)
 
-        utils._write(os.path.join(dest_dir, "fed_admin.json"), json.dumps(config, indent=2), "t")
+        utils.write(os.path.join(dest_dir, ProvFileName.FED_ADMIN_JSON), json.dumps(config, indent=2), "t")
+
         if self.docker_image:
-            utils._write(
-                os.path.join(dest_dir, "docker.sh"),
-                utils.sh_replace(self.template["docker_adm_sh"], replacement_dict),
-                "t",
-                exe=True,
+            self.build_from_template(
+                ctx, dest_dir, TemplateSectionKey.DOCKER_ADMIN_SH, ProvFileName.DOCKER_SH, replacement_dict, exe=True
             )
-        utils._write(
-            os.path.join(dest_dir, "fl_admin.sh"),
-            utils.sh_replace(self.template["fl_admin_sh"], replacement_dict),
-            "t",
+
+        self.build_from_template(
+            ctx,
+            dest_dir,
+            TemplateSectionKey.FL_ADMIN_SH,
+            ProvFileName.FL_ADMIN_SH,
+            replacement=replacement_dict,
             exe=True,
         )
-        utils._write(
-            os.path.join(dest_dir, "readme.txt"),
-            self.template["readme_am"],
-            "t",
-        )
 
-    def prepare_admin_config(self, admin, ctx):
-        config = json.loads(self.template["fed_admin"])
+        self.build_from_template(ctx, dest_dir, TemplateSectionKey.ADMIN_README, ProvFileName.README_TXT)
+
+    def prepare_admin_config(self, admin, ctx: ProvisionContext):
+        config = ctx.json_load_template_section(TemplateSectionKey.FED_ADMIN)
         agent_config = dict()
-        self._prepare_overseer_agent(admin, agent_config, "admin", ctx)
+        self._prepare_overseer_agent(admin, agent_config, OverseerRole.ADMIN, ctx)
         config["admin"].update(agent_config)
 
-        provision_mode = ctx.get("provision_mode")
-        if provision_mode == "poc":
+        provision_mode = ctx.get_provision_mode()
+        if provision_mode == ProvisionMode.POC:
             # in poc mode, we change to use "local_cert" as the cred_type so that the user won't be
             # prompted for username when starting the admin console
             config["admin"]["username"] = admin.name
             config["admin"]["cred_type"] = "local_cert"
         return config
 
-    def build(self, project, ctx):
-        self.template = ctx.get("template")
-        self.project_name = project.name
-        self.project = project
-        overseer = project.get_participants_by_type("overseer")
+    def build(self, project: Project, ctx: ProvisionContext):
+        overseer = project.get_overseer()
         if overseer:
             self._build_overseer(overseer, ctx)
-        servers = project.get_participants_by_type("server", first_only=False)
-        for server in servers:
+
+        server = project.get_server()
+        if server:
             self._build_server(server, ctx)
 
-        for client in project.get_participants_by_type("client", first_only=False):
+        for client in project.get_clients():
             self._build_client(client, ctx)
 
-        for admin in project.get_participants_by_type("admin", first_only=False):
+        for admin in project.get_admins():
             self._build_admin(admin, ctx)

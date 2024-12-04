@@ -18,7 +18,8 @@ import shutil
 
 import yaml
 
-from nvflare.lighter.spec import Builder
+from nvflare.lighter.constants import CtxKey, ProvFileName, TemplateSectionKey
+from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
 
 class DockerBuilder(Builder):
@@ -26,6 +27,7 @@ class DockerBuilder(Builder):
         """Build docker compose file."""
         self.base_image = base_image
         self.requirements_file = requirements_file
+        self.services = {}
 
     def _build_overseer(self, overseer, ctx):
         protocol = overseer.props.get("protocol", "http")
@@ -38,9 +40,9 @@ class DockerBuilder(Builder):
         info_dict["container_name"] = overseer.name
         self.services[overseer.name] = info_dict
 
-    def _build_server(self, server, ctx):
-        fed_learn_port = server.props.get("fed_learn_port", 8002)
-        admin_port = server.props.get("admin_port", 8003)
+    def _build_server(self, server, ctx: ProvisionContext):
+        fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
+        admin_port = ctx.get(CtxKey.ADMIN_PORT)
 
         info_dict = copy.deepcopy(self.services["__flserver__"])
         info_dict["volumes"][0] = f"./{server.name}:" + "${WORKSPACE}"
@@ -68,37 +70,39 @@ class DockerBuilder(Builder):
         info_dict["container_name"] = client.name
         self.services[client.name] = info_dict
 
-    def build(self, project, ctx):
-        self.template = ctx.get("template")
-        self.compose = yaml.safe_load(self.template.get("compose_yaml"))
-        self.services = self.compose.get("services")
-        self.compose_file_path = os.path.join(self.get_wip_dir(ctx), "compose.yaml")
-        overseer = project.get_participants_by_type("overseer")
+    def build(self, project: Project, ctx: ProvisionContext):
+        section = ctx.get_template_section(TemplateSectionKey.COMPOSE_YAML)
+        compose = yaml.safe_load(section)
+        self.services = compose.get("services")
+        self.compose_file_path = os.path.join(ctx.get_wip_dir(), ProvFileName.COMPOSE_YAML)
+        overseer = project.get_overseer()
         if overseer:
             self._build_overseer(overseer, ctx)
-        servers = project.get_participants_by_type("server", first_only=False)
-        for server in servers:
+        server = project.get_server()
+        if server:
             self._build_server(server, ctx)
-        for client in project.get_participants_by_type("client", first_only=False):
+
+        for client in project.get_clients():
             self._build_client(client, ctx)
+
         self.services.pop("__overseer__", None)
         self.services.pop("__flserver__", None)
         self.services.pop("__flclient__", None)
-        self.compose["services"] = self.services
+        compose["services"] = self.services
         with open(self.compose_file_path, "wt") as f:
-            yaml.dump(self.compose, f)
-        env_file_path = os.path.join(self.get_wip_dir(ctx), ".env")
+            yaml.dump(compose, f)
+        env_file_path = os.path.join(ctx.get_wip_dir(), ProvFileName.ENV)
         with open(env_file_path, "wt") as f:
             f.write("WORKSPACE=/workspace\n")
             f.write("PYTHON_EXECUTABLE=/usr/local/bin/python3\n")
             f.write("IMAGE_NAME=nvflare-service\n")
-        compose_build_dir = os.path.join(self.get_wip_dir(ctx), "nvflare_compose")
+        compose_build_dir = os.path.join(ctx.get_wip_dir(), ProvFileName.COMPOSE_BUILD_DIR)
         os.mkdir(compose_build_dir)
-        with open(os.path.join(compose_build_dir, "Dockerfile"), "wt") as f:
+        with open(os.path.join(compose_build_dir, ProvFileName.DOCKERFILE), "wt") as f:
             f.write(f"FROM {self.base_image}\n")
-            f.write(self.template.get("dockerfile"))
+            f.write(ctx.get_template_section(TemplateSectionKey.DOCKERFILE))
         try:
-            shutil.copyfile(self.requirements_file, os.path.join(compose_build_dir, "requirements.txt"))
+            shutil.copyfile(self.requirements_file, os.path.join(compose_build_dir, ProvFileName.REQUIREMENTS_TXT))
         except Exception:
-            f = open(os.path.join(compose_build_dir, "requirements.txt"), "wt")
+            f = open(os.path.join(compose_build_dir, ProvFileName.REQUIREMENTS_TXT), "wt")
             f.close()
