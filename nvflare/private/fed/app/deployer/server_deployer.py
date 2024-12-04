@@ -18,7 +18,7 @@ import threading
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, SiteType, SystemComponents
 from nvflare.apis.workspace import Workspace
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.fed.app.utils import component_security_check
 from nvflare.private.fed.server.fed_server import FederatedServer
 from nvflare.private.fed.server.job_runner import JobRunner
@@ -33,7 +33,7 @@ class ServerDeployer:
     def __init__(self):
         """Init the ServerDeployer."""
         self.cmd_modules = ServerCommandModules.cmd_modules
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
         self.server_config = None
         self.secure_train = None
         self.app_validator = None

@@ -29,7 +29,7 @@ from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.runners.xgb_runner import AppRunner
 from nvflare.app_opt.xgboost.metrics_cb import MetricsCallback
 from nvflare.fuel.utils.config_service import ConfigService
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.utils.cli_utils import get_package_root
 
 PLUGIN_PARAM_KEY = "federated_plugin"
@@ -63,7 +63,7 @@ class XGBClientRunner(AppRunner, FLComponent):
         FLComponent.__init__(self)
         self.model_file_name = model_file_name
         self.data_loader_id = data_loader_id
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
         self.fl_ctx = None
 
         self._client_name = None
