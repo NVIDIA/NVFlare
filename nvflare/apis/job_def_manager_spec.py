@@ -123,6 +123,36 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
+    def set_client_log(self, jid: str, log: str, client_name: str, log_type: str, fl_ctx: FLContext):
+        """Save the provided log content for the specified job, client name and log type.
+
+        Args:
+            jid (str): Job ID
+            log (str): log content
+            client_name (str): client name
+            log_type (str): log type
+            fl_ctx (FLContext): FLContext information
+
+        """
+        pass
+
+    @abstractmethod
+    def get_client_log(self, jid: str, client_name: str, log_type: str, fl_ctx: FLContext) -> Optional[str]:
+        """Get log content for the specified job, client name and log type.
+
+        Args:
+            jid (str): Job ID
+            client_name (str): client name
+            log_type (str): log type
+            fl_ctx (FLContext): FLContext information
+
+        Returns:
+            log content
+
+        """
+        pass
+
+    @abstractmethod
     def set_status(self, jid: str, status: RunStatus, fl_ctx: FLContext):
         """Set status of an existing Job.
 

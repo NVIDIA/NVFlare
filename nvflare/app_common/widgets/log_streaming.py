@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -82,6 +82,8 @@ class LogReceiver(Widget):
         super().__init__()
         if log_channels is None:
             log_channels = {"error_logs": "ERRORLOG"}
+        if not isinstance(log_channels, dict):
+            raise ValueError("log_channels should be a dict of channel name to log type mapping")
         self.log_channels = log_channels
 
     def process_log(self, stream_ctx: StreamContext, fl_ctx: FLContext):
@@ -106,8 +108,11 @@ class LogReceiver(Widget):
         job_id = stream_ctx.get(LogConst.JOB_ID)
         job_manager = fl_ctx.get_engine().get_component(SystemComponents.JOB_MANAGER)
         log_type = self.log_channels.get(channel, "UNKNOWN")
-        self.log_info(fl_ctx, f"Saving {log_type} from {client} for {job_id}")
-        job_manager.set_log(job_id, log_contents, client, log_type, fl_ctx)
+        if log_type == "UNKNOWN":
+            self.log_error(fl_ctx, f"Unknown log type for channel {channel}")
+        else:
+            self.log_info(fl_ctx, f"Saving {log_type} from {client} for {job_id}")
+            job_manager.set_client_log(job_id, log_contents, client, log_type, fl_ctx)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.SYSTEM_START:

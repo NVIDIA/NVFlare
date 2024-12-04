@@ -236,14 +236,12 @@ class SimpleJobDefManager(JobDefManagerSpec):
         except StorageException:
             return None
 
-    def _save_log(self, jid: str, log: str, client_name: str, log_type: str, fl_ctx: FLContext):
-        """Save the provided log content for the specified job, client name and log type."""
+    def set_client_log(self, jid: str, log: str, client_name: str, log_type: str, fl_ctx: FLContext):
         store = self._get_job_store(fl_ctx)
         log_object_type = f"{log_type}_{client_name}"
         store.update_object(self.job_uri(jid), log.encode(), log_object_type)
 
-    def _get_log(self, jid: str, client_name: str, log_type: str, fl_ctx: FLContext) -> Optional[str]:
-        """Get log content for the specified job, client name and log type."""
+    def get_client_log(self, jid: str, client_name: str, log_type: str, fl_ctx: FLContext) -> Optional[str]:
         store = self._get_job_store(fl_ctx)
         log_object_type = f"{log_type}_{client_name}"
         try:
@@ -251,12 +249,6 @@ class SimpleJobDefManager(JobDefManagerSpec):
             return log_data.decode()
         except StorageException:
             return None
-
-    def set_log(self, jid: str, log: str, client_name: str, log_type: str, fl_ctx: FLContext):
-        self._save_log(jid, log, client_name, log_type, fl_ctx)
-
-    def get_client_log(self, jid: str, client_name: str, log_type: str, fl_ctx: FLContext) -> Optional[str]:
-        return self._get_log(jid, client_name, log_type, fl_ctx)
 
     def set_status(self, jid: str, status: RunStatus, fl_ctx: FLContext):
         meta = {JobMetaKey.STATUS.value: status.value}
