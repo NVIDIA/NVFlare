@@ -71,8 +71,7 @@ class DockerBuilder(Builder):
         self.services[client.name] = info_dict
 
     def build(self, project: Project, ctx: ProvisionContext):
-        section = ctx.get_template_section(TemplateSectionKey.COMPOSE_YAML)
-        compose = yaml.safe_load(section)
+        compose = ctx.yaml_load_template_section(TemplateSectionKey.COMPOSE_YAML)
         self.services = compose.get("services")
         self.compose_file_path = os.path.join(ctx.get_wip_dir(), ProvFileName.COMPOSE_YAML)
         overseer = project.get_overseer()
