@@ -15,7 +15,8 @@
 import json
 import os
 
-from nvflare.lighter.spec import Builder, Project
+from nvflare.lighter.constants import CtxKey, ProvFileName
+from nvflare.lighter.spec import Builder, Project, ProvisionContext
 from nvflare.lighter.utils import sign_all
 
 
@@ -26,23 +27,31 @@ class SignatureBuilder(Builder):
     can be cryptographically verified to ensure any tampering is detected. This builder writes the signature.json file.
     """
 
-    def _do_sign(self, root_pri_key, dest_dir):
+    @staticmethod
+    def _do_sign(root_pri_key, dest_dir):
         signatures = sign_all(dest_dir, root_pri_key)
-        json.dump(signatures, open(os.path.join(dest_dir, "signature.json"), "wt"))
+        with open(os.path.join(dest_dir, ProvFileName.SIGNATURE_JSON), "wt") as f:
+            json.dump(signatures, f)
 
-    def build(self, project: Project, ctx: dict):
-        root_pri_key = ctx.get("root_pri_key")
+    def build(self, project: Project, ctx: ProvisionContext):
+        root_pri_key = ctx.get(CtxKey.ROOT_PRI_KEY)
+        if not root_pri_key:
+            raise RuntimeError(f"missing {CtxKey.ROOT_PRI_KEY} in ProvisionContext")
 
-        overseer = project.get_participants_by_type("overseer")
+        overseer = project.get_overseer()
         if overseer:
-            dest_dir = self.get_kit_dir(overseer, ctx)
+            dest_dir = ctx.get_kit_dir(overseer)
             self._do_sign(root_pri_key, dest_dir)
 
-        servers = project.get_participants_by_type("server", first_only=False)
-        for server in servers:
-            dest_dir = self.get_kit_dir(server, ctx)
+        server = project.get_server()
+        if server:
+            dest_dir = ctx.get_kit_dir(server)
             self._do_sign(root_pri_key, dest_dir)
 
-        for p in project.get_participants_by_type("client", first_only=False):
-            dest_dir = self.get_kit_dir(p, ctx)
+        for p in project.get_clients():
+            dest_dir = ctx.get_kit_dir(p)
+            self._do_sign(root_pri_key, dest_dir)
+
+        for admin in project.get_admins():
+            dest_dir = ctx.get_kit_dir(admin)
             self._do_sign(root_pri_key, dest_dir)
