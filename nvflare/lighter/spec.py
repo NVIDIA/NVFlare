@@ -210,7 +210,7 @@ class Project(Entity):
 
     def set_server(self, name: str, org: str, props: dict):
         if self.server:
-            raise ValueError(f"project {self.name} already has server defined")
+            raise ValueError(f"project {self.name} already has a server defined")
         self._check_unique_name(name)
         self.server = Participant(ParticipantType.SERVER, name, org, props, self)
         self.all_names[name] = True
@@ -225,7 +225,7 @@ class Project(Entity):
 
     def set_overseer(self, name: str, org: str, props: dict):
         if self.overseer:
-            raise ValueError(f"project {self.name} already has overseer defined")
+            raise ValueError(f"project {self.name} already has an overseer defined")
         self._check_unique_name(name)
         self.overseer = Participant(ParticipantType.OVERSEER, name, org, props, self)
         self.all_names[name] = True

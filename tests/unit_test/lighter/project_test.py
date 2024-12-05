@@ -29,13 +29,13 @@ class TestProject:
     def test_single_server(self):
         p1 = Participant(name="server1", org="org", type="server")
         p2 = Participant(name="server2", org="org", type="server")
-        with pytest.raises(ValueError, match=r".* already has server defined"):
+        with pytest.raises(ValueError, match=r".* already has a server defined"):
             _ = Project("name", "description", [p1, p2])
 
     def test_single_overseer(self):
         p1 = Participant(name="name1", org="org", type="overseer")
         p2 = Participant(name="name2", org="org", type="overseer")
-        with pytest.raises(ValueError, match=r".* already has overseer defined"):
+        with pytest.raises(ValueError, match=r".* already has an overseer defined"):
             _ = Project("name", "description", [p1, p2])
 
     def test_get_clients(self):
@@ -61,7 +61,7 @@ class TestProject:
 
     def test_bad_admin_role(self):
         with pytest.raises(ValueError, match=r"bad value for role *."):
-            p = create_participants(
+            _ = create_participants(
                 type="admin", number=3, org="org", name="admin@nvidia.com", props={"role": "invalid"}
             )
 

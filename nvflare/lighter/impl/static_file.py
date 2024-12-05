@@ -260,8 +260,9 @@ class StaticFileBuilder(Builder):
         if not server:
             raise ValueError(f"Missing server definition in project {project.name}")
 
-        fl_port = server.get_prop(PropKey.FED_LEARN_PORT, 8002)
-        admin_port = server.get_prop(PropKey.ADMIN_PORT, 8003)
+        # The properties CtxKey.FED_LEARN_PORT and CtxKey.ADMIN_PORT are guaranteed to exist
+        fl_port = ctx.get(CtxKey.FED_LEARN_PORT)
+        admin_port = ctx.get(CtxKey.ADMIN_PORT)
 
         if self.overseer_agent:
             overseer_agent = copy.deepcopy(self.overseer_agent)
