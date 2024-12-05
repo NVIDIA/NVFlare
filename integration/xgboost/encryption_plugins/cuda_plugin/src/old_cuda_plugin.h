@@ -32,7 +32,7 @@
 namespace nvflare {
 
 // Define a structured header for the buffer
-struct BufferHeader {
+struct OldBufferHeader {
   bool has_key;
   size_t key_size;
   size_t rand_seed_size;
@@ -41,7 +41,7 @@ struct BufferHeader {
 class OldCUDAPlugin: public LocalPlugin {
   private:
     PaillierCipher<bits>* paillier_cipher_ptr_ = nullptr;
-    CgbnPair* encrypted_gh_pairs_ = nullptr;
+    GHPair* encrypted_gh_pairs_ = nullptr;
     Endec* endec_ptr_ = nullptr;
 
   public:
@@ -64,9 +64,9 @@ class OldCUDAPlugin: public LocalPlugin {
       const std::uint8_t* pointer = encrypted_gh_.data();
 
       // Retrieve header
-      BufferHeader header;
-      std::memcpy(&header, pointer, sizeof(BufferHeader));
-      pointer += sizeof(BufferHeader);
+      OldBufferHeader header;
+      std::memcpy(&header, pointer, sizeof(OldBufferHeader));
+      pointer += sizeof(OldBufferHeader);
 
       // Get key and n (if present)
       cgbn_mem_t<bits>* key_ptr;
@@ -126,7 +126,7 @@ class OldCUDAPlugin: public LocalPlugin {
     ) {
         if (debug_) std::cout << "createBuffer is called" << std::endl;
         // Calculate header size and total buffer size
-        size_t header_size = sizeof(BufferHeader);
+        size_t header_size = sizeof(OldBufferHeader);
         size_t mem_size = header_size + key_size + rand_seed_size + payload_size;
 
         // Allocate buffer
@@ -137,7 +137,7 @@ class OldCUDAPlugin: public LocalPlugin {
         }
 
         // Construct header
-        BufferHeader header;
+        OldBufferHeader header;
         header.has_key = has_key_flag;
         header.key_size = key_size;
         header.rand_seed_size = rand_seed_size;
@@ -285,8 +285,8 @@ class OldCUDAPlugin: public LocalPlugin {
       std::vector<std::vector<int>> binIndexVec;
       prepareBinIndexVec(binIndexVec, ridx, size);
 
-      CgbnPair* d_res_ptr;
-      size_t mem_size = sizeof(CgbnPair);
+      GHPair* d_res_ptr;
+      size_t mem_size = sizeof(GHPair);
       if (mem_size != 2 * sizeof(cgbn_mem_t<bits>)) {
         std::cout << "Fatal Error" << std::endl;
       }

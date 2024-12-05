@@ -80,7 +80,7 @@ class Context {
 };
 
 // Define a structured header for the buffer
-struct BufferHeader2 {
+struct BufferHeader {
   bool has_key;
   size_t key_size;
   size_t rand_seed_size;
@@ -89,26 +89,31 @@ struct BufferHeader2 {
 class CUDAPlugin: public LocalPlugin {
   private:
     PaillierCipher<bits>* paillier_cipher_ptr_ = nullptr;
-    CgbnPair* encrypted_gh_pairs_ = nullptr;
+    GHPair* encrypted_gh_pairs_ = nullptr;
     Endec* endec_ptr_ = nullptr;
-    CgbnPair* bin_array_ = nullptr;
+    GHPair* bin_array_ = nullptr;
     size_t* bin_length_ = nullptr;
     size_t* bin_start_idx_ = nullptr;
-    CgbnPair* d_cell_table = nullptr;
-    CgbnPair* cell_table = nullptr;
+    GHPair* d_gh_pair_array = nullptr;
+    GHPair* gh_pair_array = nullptr;
 
     Timer overall_timer_;
     double total_agg_time_ = 0;
     double total_prepare_bin_time_ = 0;
-    size_t cell_table_size = 0;
+    size_t gh_pair_array_size = 0;
+    size_t max_num_of_gh_pair_per_launch_ = 1 << 23;
 
   public:
     explicit CUDAPlugin(std::vector<std::pair<std::string_view, std::string_view> > const &args): LocalPlugin(args) {
-      bool fix_seed = get_bool(args, "fix_seed");
+      bool fix_seed = get_bool(args, "fix_seed", false);
+      // the maximum number of instances (big number) is limited by
+      // (1) CPU memory, as the gh_pair_array need to be hold in CPU memory
+      // (2) GPU memory, when the active gh_pair_array is copied into GPU for calculation
+      max_num_of_gh_pair_per_launch_ = get_int(args, "max_num_of_gh_pair_per_launch", 1 << 23);
       paillier_cipher_ptr_ = new PaillierCipher<bits>(bits/2, fix_seed, debug_);
       encrypted_gh_pairs_ = nullptr;
-      cell_table = nullptr;
-      d_cell_table = nullptr;
+      gh_pair_array = nullptr;
+      d_gh_pair_array = nullptr;
       bin_array_ = nullptr;
       bin_length_ = nullptr;
       bin_start_idx_ = nullptr;
@@ -120,13 +125,13 @@ class CUDAPlugin: public LocalPlugin {
         delete endec_ptr_;
         endec_ptr_ = nullptr;
       }
-      if (cell_table) {
-        free(cell_table);
-        cell_table = nullptr;
+      if (gh_pair_array) {
+        free(gh_pair_array);
+        gh_pair_array = nullptr;
       }
-      if (d_cell_table) {
-        cudaFree(d_cell_table);
-        d_cell_table = nullptr;
+      if (d_gh_pair_array) {
+        cudaFree(d_gh_pair_array);
+        d_gh_pair_array = nullptr;
       }
       if (print_timing_) {
         std::cout << overall_timer_.now() << ": total prepare bin_xxx Time "<< total_prepare_bin_time_ <<" US"<<std::endl;
@@ -139,9 +144,9 @@ class CUDAPlugin: public LocalPlugin {
       const std::uint8_t* pointer = encrypted_gh_.data();
 
       // Retrieve header
-      BufferHeader2 header;
-      std::memcpy(&header, pointer, sizeof(BufferHeader2));
-      pointer += sizeof(BufferHeader2);
+      BufferHeader header;
+      std::memcpy(&header, pointer, sizeof(BufferHeader));
+      pointer += sizeof(BufferHeader);
 
       // Get key and n (if present)
       cgbn_mem_t<bits>* key_ptr;
@@ -176,12 +181,12 @@ class CUDAPlugin: public LocalPlugin {
 
       // Access payload
       size_t remaining_size = encrypted_gh_.size() - (pointer - encrypted_gh_.data());
-      if (remaining_size % sizeof(CgbnPair) != 0) {
-        // the data isn't a perfect multiple of CgbnPair size
-        throw std::runtime_error("The remaining data is not a multiple of sizeof(CgbnPair).");
+      if (remaining_size % sizeof(GHPair) != 0) {
+        // the data isn't a perfect multiple of GHPair size
+        throw std::runtime_error("The remaining data is not a multiple of sizeof(GHPair).");
       }
-      if (debug_) std::cout << "num of gh pair is " << remaining_size / sizeof(CgbnPair) << std::endl;
-      encrypted_gh_pairs_ = (CgbnPair*)malloc(remaining_size);
+      if (debug_) std::cout << "num of gh pair is " << remaining_size / sizeof(GHPair) << std::endl;
+      encrypted_gh_pairs_ = (GHPair*)malloc(remaining_size);
       memcpy(encrypted_gh_pairs_, pointer, remaining_size);
       if (debug_) std::cout << "setGHPairs is done " << std::endl;
     }
@@ -219,7 +224,7 @@ class CUDAPlugin: public LocalPlugin {
     ) {
         if (debug_) std::cout << "createBuffer is called" << std::endl;
         // Calculate header size and total buffer size
-        size_t header_size = sizeof(BufferHeader2);
+        size_t header_size = sizeof(BufferHeader);
         size_t mem_size = header_size + key_size + rand_seed_size + payload_size;
 
         // Allocate buffer
@@ -230,7 +235,7 @@ class CUDAPlugin: public LocalPlugin {
         }
 
         // Construct header
-        BufferHeader2 header;
+        BufferHeader header;
         header.has_key = has_key_flag;
         header.key_size = key_size;
         header.rand_seed_size = rand_seed_size;
@@ -370,41 +375,41 @@ class CUDAPlugin: public LocalPlugin {
       return result;
     }
 
-    void reserveCellTable(size_t table_size) {
-      if (table_size > cell_table_size) {
-        if (cell_table) {
-          free(cell_table);
+    void reserveGHPairArray(size_t array_size) {
+      if (array_size > gh_pair_array_size) {
+        if (gh_pair_array) {
+          free(gh_pair_array);
         }
-        if (d_cell_table) {
-          cudaFree(d_cell_table);
+        if (d_gh_pair_array) {
+          cudaFree(d_gh_pair_array);
         }
-        if (debug_) std::cout << overall_timer_.now() << ": malloc cell_table" << std::endl;
-        cell_table = (CgbnPair*)malloc(table_size);
-        ck(cudaMalloc((void **)&d_cell_table, table_size));
-        if (debug_) std::cout << overall_timer_.now() << ": after malloc cell_table" << std::endl;
-        cell_table_size = table_size;
+        if (debug_) std::cout << overall_timer_.now() << ": malloc gh_pair_array" << std::endl;
+        gh_pair_array = (GHPair*)malloc(array_size);
+        ck(cudaMalloc((void **)&d_gh_pair_array, array_size));
+        if (debug_) std::cout << overall_timer_.now() << ": after malloc gh_pair_array" << std::endl;
+        gh_pair_array_size = array_size;
       }
     }
 
-    void fillArray(
-      CgbnPair* cell_table,
+    void fillGHPairArray(
+      GHPair* gh_pair_array,
       std::size_t total_bin_size,
       int* rbt,
-      int num_cols,
-      int &last_col_used,
+      int num_gh_pairs,
+      int &last_idx_used,
       int &num_tuples_filled,
       int tuple_length = 2
     ) {
-      last_col_used = -1;
-      int num_tuples_per_row = num_cols / tuple_length;
+      last_idx_used = -1;
+      int num_tuples_per_array = num_gh_pairs / tuple_length;
 
-      for (auto j = 0; j < num_tuples_per_row; ++j) {
+      for (auto j = 0; j < num_tuples_per_array; ++j) {
         rbt[j] = -1;
       } 
 
       Context ctx = Context(total_bin_size, bin_length_);
 
-      int remaining_slots = num_tuples_per_row;
+      int remaining_slots = num_tuples_per_array;
       while (remaining_slots > 0) {
         int bid = 0;
         int start_idx = -1;
@@ -417,35 +422,35 @@ class CUDAPlugin: public LocalPlugin {
         }
         int count = end_idx - start_idx + 1;
         int tuple_count = count / tuple_length;
-        int cell_table_idx = (num_tuples_per_row - remaining_slots) * tuple_length;
+        int gh_pair_array_idx = (num_tuples_per_array - remaining_slots) * tuple_length;
 
-        memcpy(cell_table + cell_table_idx, bin_array_ + bin_start_idx_[bid] + start_idx, count * sizeof(CgbnPair));
+        memcpy(gh_pair_array + gh_pair_array_idx, bin_array_ + bin_start_idx_[bid] + start_idx, count * sizeof(GHPair));
         for (auto i = 0; i < tuple_count; ++i) {
-          rbt[num_tuples_per_row - remaining_slots + i] = bid;
+          rbt[num_tuples_per_array - remaining_slots + i] = bid;
         }
         num_tuples_filled += tuple_count;
         remaining_slots -= tuple_count;
 
-        last_col_used = end_idx / tuple_length;
+        last_idx_used = end_idx / tuple_length;
       }
 
     }
 
     void processResult(
-      CgbnPair* cell_table,
+      GHPair* gh_pair_array,
       int* rbt,
-      int num_cols,
+      int num_gh_pairs,
       int tuple_length = 2
       ) {
 
-      int num_tuples_per_row = num_cols / tuple_length;
+      int num_tuples_per_array = num_gh_pairs / tuple_length;
 
-      for (auto j = 0; j < num_tuples_per_row; ++j) {
+      for (auto j = 0; j < num_tuples_per_array; ++j) {
         int bid = rbt[j];
         if (bid < 0) {
           return;
         }
-        bin_array_[bin_start_idx_[bid] + bin_length_[bid]] = cell_table[j * tuple_length];
+        bin_array_[bin_start_idx_[bid] + bin_length_[bid]] = gh_pair_array[j * tuple_length];
         bin_length_[bid] += 1;
       }
 
@@ -491,7 +496,7 @@ class CUDAPlugin: public LocalPlugin {
         free(bin_array_);
         bin_array_ = nullptr;
       }
-      bin_array_ = (CgbnPair*)malloc(result * sizeof(CgbnPair));
+      bin_array_ = (GHPair*)malloc(result * sizeof(GHPair));
 
       std::size_t* bin_insert_index = (std::size_t*)calloc(total_bin_size, sizeof(size_t));
 
@@ -510,7 +515,7 @@ class CUDAPlugin: public LocalPlugin {
             continue;
           }
 
-          memcpy(&bin_array_[bin_start_idx_[bin_idx] + bin_insert_index[bin_idx]], &encrypted_gh_pairs_[row_id], sizeof(CgbnPair));
+          memcpy(&bin_array_[bin_start_idx_[bin_idx] + bin_insert_index[bin_idx]], &encrypted_gh_pairs_[row_id], sizeof(GHPair));
           bin_insert_index[bin_idx]++;
         }
       }
@@ -534,15 +539,15 @@ class CUDAPlugin: public LocalPlugin {
 
     void fillResult(std::vector<Buffer>& result, size_t total_bin_size) {
       for (auto bid = 0; bid < total_bin_size; ++bid) {
-        CgbnPair hist;
-        CgbnPair* data = (CgbnPair*)malloc(sizeof(CgbnPair));
+        GHPair hist;
+        GHPair* data = (GHPair*)malloc(sizeof(GHPair));
         if (bin_length_[bid] == 0) {
           hist = paillier_cipher_ptr_->get_encrypted_zero();
         } else {
           hist = bin_array_[bin_start_idx_[bid]];
         }
         *data = hist;
-        Buffer buffer((void*)(data), sizeof(CgbnPair), true);
+        Buffer buffer((void*)(data), sizeof(GHPair), true);
         result[bid] = buffer; // Add the Buffer object to the result map
 
       }
@@ -565,10 +570,8 @@ class CUDAPlugin: public LocalPlugin {
 
       int tuple_length = 2;
       size_t IPB = TPB / TPI;
-      //unsigned int max_blocks = 1 << 20; // limitation of hardware memory (GPU)
-      size_t max_num_of_kernel_launch_permitted = 1 << 22;
-      size_t max_num_of_instances_per_launch = max_num_of_kernel_launch_permitted * tuple_length; // maximum numbers that can fit into GPU memory
-      unsigned int max_blocks = max_num_of_instances_per_launch / IPB;
+
+      unsigned int max_blocks = max_num_of_gh_pair_per_launch_ / IPB;
 
       if (debug_) std::cout << overall_timer_.now() << ": Preparing bin_xxx" << std::endl;
 
@@ -585,7 +588,7 @@ class CUDAPlugin: public LocalPlugin {
       
       if (debug_) std::cout << overall_timer_.now() << ": before prepareBinArray" << std::endl;
       size_t total_sample_ids = prepareBinArray(ridx, size);
-      if (debug_) std::cout << overall_timer_.now() << ": after prepareBinArray, max_num_of_instances_per_launch: " << max_num_of_instances_per_launch << " , total_sample_ids: " << total_sample_ids << std::endl;
+      if (debug_) std::cout << overall_timer_.now() << ": after prepareBinArray, max_num_of_gh_pair_per_launch_: " << max_num_of_gh_pair_per_launch_ << " , total_sample_ids: " << total_sample_ids << std::endl;
 
       // weird situation where all things are empty
       if (total_sample_ids == 0) {
@@ -593,13 +596,13 @@ class CUDAPlugin: public LocalPlugin {
         return;
       }
 
-      int num_tuples_per_row = std::min(total_sample_ids, max_num_of_instances_per_launch) / tuple_length; 
-      int num_cols = num_tuples_per_row * tuple_length; // needs to be a multiple of tuple
-      size_t table_size = sizeof(CgbnPair) * num_cols;
-      if (debug_) std::cout << "table mem size is " << table_size << std::endl;
+      int num_tuples_per_array = std::min(total_sample_ids, max_num_of_gh_pair_per_launch_) / tuple_length;
+      int num_gh_pairs = num_tuples_per_array * tuple_length; // needs to be a multiple of tuple
+      size_t array_size = sizeof(GHPair) * num_gh_pairs;
+      if (debug_) std::cout << "gh pair array size is " << array_size << std::endl;
 
-      if (!cell_table) {
-        reserveCellTable(table_size);
+      if (!gh_pair_array) {
+        reserveGHPairArray(array_size);
       }
 
       if (debug_) std::cout << overall_timer_.now() << ": Finished preparing bin_xxx, total_sample_ids is " << total_sample_ids << " total_bin_size is " << total_bin_size << std::endl;
@@ -612,45 +615,45 @@ class CUDAPlugin: public LocalPlugin {
       total_prepare_bin_time_ += elapsed;
 #endif
 
-      if (debug_) std::cout << overall_timer_.now() << ": max_num_of_instances_per_launch: " << max_num_of_instances_per_launch << " num_cols: " << num_cols << std::endl;
+      if (debug_) std::cout << overall_timer_.now() << ": max_num_of_gh_pair_per_launch_: " << max_num_of_gh_pair_per_launch_ << " num_gh_pairs: " << num_gh_pairs << std::endl;
 
-      int* rbt = (int*)malloc(sizeof(int) * num_tuples_per_row);
+      int* rbt = (int*)malloc(sizeof(int) * num_tuples_per_array);
 
-      int last_col = 0;
-      int num_tuples_in_table = 0;
-      int reduce_round = 0;
+      int last_idx = 0;
+      int current_num_tuples = 0;
+      int current_reduce_round = 0;
 
       while (true) {
-        num_tuples_in_table = 0;
+        current_num_tuples = 0;
 
 #ifdef TIME
         timer.start();
 #endif
-        if (debug_) std::cout << overall_timer_.now() << ": Start fillArray for reduce_round " << reduce_round << std::endl;
-        fillArray(cell_table, total_bin_size, rbt, num_cols, last_col, num_tuples_in_table, tuple_length);
-        if (debug_) std::cout << overall_timer_.now() << ": End fillArray for reduce_round " << reduce_round << std::endl;
-        if (debug_) std::cout << overall_timer_.now() << " last col " << last_col << " num_tuples_in_table " << num_tuples_in_table << std::endl;
+        if (debug_) std::cout << overall_timer_.now() << ": Start fillGHPairArray for current_reduce_round " << current_reduce_round << std::endl;
+        fillGHPairArray(gh_pair_array, total_bin_size, rbt, num_gh_pairs, last_idx, current_num_tuples, tuple_length);
+        if (debug_) std::cout << overall_timer_.now() << ": End fillGHPairArray for current_reduce_round " << current_reduce_round << std::endl;
+        if (debug_) std::cout << overall_timer_.now() << " last_idx " << last_idx << " current_num_tuples " << current_num_tuples << std::endl;
 
 #ifdef TIME
         timer.stop();
-        std::cout << overall_timer_.now() << ": fillArray Time "<< timer.duration() <<" US"<<std::endl;
+        std::cout << overall_timer_.now() << ": fillGHPairArray Time "<< timer.duration() <<" US"<<std::endl;
 #endif
 
-        if (last_col < 0) {
+        if (last_idx < 0) {
           break;
         }
 
 #ifdef TIME
         timer.start();
 #endif
-        table_size = sizeof(CgbnPair) * num_tuples_in_table * tuple_length;
-        cudaMemcpy(d_cell_table, cell_table, table_size, cudaMemcpyHostToDevice);
+        array_size = sizeof(GHPair) * current_num_tuples * tuple_length;
+        cudaMemcpy(d_gh_pair_array, gh_pair_array, array_size, cudaMemcpyHostToDevice);
 #ifdef TIME
         timer.stop();
-        std::cout<< overall_timer_.now() << ":cudaMemcpy cell_table cudaMemcpyHostToDevice Time "<< timer.duration() <<" US"<<std::endl;
+        std::cout<< overall_timer_.now() << ":cudaMemcpy gh_pair_array cudaMemcpyHostToDevice Time "<< timer.duration() <<" US"<<std::endl;
         timer.start();
 #endif
-        paillier_cipher_ptr_->agg_tuple<TPI, TPB>(d_cell_table, num_tuples_in_table * tuple_length, max_blocks);
+        paillier_cipher_ptr_->agg_tuple<TPI, TPB>(d_gh_pair_array, current_num_tuples * tuple_length, max_blocks);
 #ifdef TIME
         timer.stop();
         elapsed = timer.duration();
@@ -658,22 +661,22 @@ class CUDAPlugin: public LocalPlugin {
         total_agg_time_ += elapsed;
         timer.start();
 #endif
-        cudaMemcpy(cell_table, d_cell_table, table_size, cudaMemcpyDeviceToHost);
+        cudaMemcpy(gh_pair_array, d_gh_pair_array, array_size, cudaMemcpyDeviceToHost);
 #ifdef TIME
         timer.stop();
-        std::cout<< overall_timer_.now() << ":cudaMemcpy cell_table cudaMemcpyDeviceToHost Time "<< timer.duration() <<" US"<<std::endl;
+        std::cout<< overall_timer_.now() << ":cudaMemcpy gh_pair_array cudaMemcpyDeviceToHost Time "<< timer.duration() <<" US"<<std::endl;
 #endif
 
 #ifdef TIME
         timer.start();
 #endif
-        processResult(cell_table, rbt, num_cols, tuple_length);
+        processResult(gh_pair_array, rbt, num_gh_pairs, tuple_length);
 #ifdef TIME
         timer.stop();
         std::cout<< overall_timer_.now() << ":processResult Time "<< timer.duration() <<" US"<<std::endl;
 #endif
 
-        reduce_round += 1;
+        current_reduce_round += 1;
         
       }
 
