@@ -24,7 +24,7 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.streaming import ConsumerFactory, ObjectConsumer, ObjectProducer, StreamContext, StreamContextKey
 from nvflare.fuel.f3.cellnet.registry import Registry
 from nvflare.fuel.utils.config_service import ConfigService
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_callable, check_object_type, check_str
 from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
 from nvflare.security.logging import secure_format_exception
@@ -111,7 +111,7 @@ class ObjectStreamer(FLComponent):
         self.registry = Registry()
         self.tx_lock = Lock()
         self.tx_table = {}  # tx_id => _ProcessorInfo
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
 
         # Note: the ConfigService has been initialized
         max_concurrent_streaming_sessions = ConfigService.get_int_var("max_concurrent_streaming_sessions", default=20)

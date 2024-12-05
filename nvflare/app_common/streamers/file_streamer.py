@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Tuple
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.streaming import ConsumerFactory, ObjectConsumer, ObjectProducer, StreamableEngine, StreamContext
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number
 
 from .streamer_base import StreamerBase
@@ -36,7 +36,7 @@ _KEY_EOF = _PREFIX + "eof"
 class _ChunkConsumer(ObjectConsumer):
     def __init__(self, stream_ctx: StreamContext, dest_dir):
         file_name = stream_ctx.get(_KEY_FILE_NAME)
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
         self.file_name = file_name
         self.dest_dir = dest_dir
         self.file_size = stream_ctx.get(_KEY_FILE_SIZE)
@@ -101,7 +101,7 @@ class _ChunkProducer(ObjectProducer):
         self.chunk_size = chunk_size
         self.timeout = timeout
         self.eof = False
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
 
     def produce(
         self,
