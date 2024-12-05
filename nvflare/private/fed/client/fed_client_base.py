@@ -32,6 +32,7 @@ from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import EngineConstant
+from nvflare.private.fed.utils.fed_utils import set_scope_prop
 from nvflare.security.logging import secure_format_exception
 
 from .client_status import ClientStatus
@@ -151,6 +152,10 @@ class FederatedClientBase:
             server = self.servers[project_name].get("target")
             location = sp.name + ":" + sp.fl_port
             if server != location:
+                # The SP name is the server host name that we will connect to.
+                # Save this name for this client so that it can be checked by others
+                set_scope_prop(scope_name=self.client_name, value=sp.name, key=FLContextKey.SERVER_HOST_NAME)
+
                 self.servers[project_name]["target"] = location
                 self.sp_established = True
 

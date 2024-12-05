@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import time
+import uuid
 
 # this import is to let existing scripts import from nvflare.private.defs
 from nvflare.fuel.f3.cellnet.defs import CellChannel, CellChannelTopic, SSLConstants  # noqa: F401
@@ -152,6 +154,18 @@ class JobFailureMsgKey:
     JOB_ID = "job_id"
     CODE = "code"
     REASON = "reason"
+
+
+class InternalFLContextKey:
+
+    CLIENT_REG_SESSION = "client_reg_session"
+
+
+class ClientRegSession:
+    def __init__(self, client_name: str):
+        self.client_name = client_name
+        self.nonce = str(uuid.uuid4())
+        self.reg_start_time = time.time()
 
 
 def new_cell_message(headers: dict, payload=None):
