@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import concurrent.futures
+from functools import partial
 
 
 class Encryptor:
@@ -28,18 +29,16 @@ class Encryptor:
             numbers: clear text numbers to be encrypted
         Returns: list of encrypted numbers
         """
-        items = [(self.pubkey, numbers[i]) for i in range(len(numbers))]
-        chunk_size = int(len(items) / self.max_workers)
+        chunk_size = int(len(numbers) / self.max_workers)
         if chunk_size == 0:
             chunk_size = 1
 
-        results = self.exe.map(_do_enc, items, chunksize=chunk_size)
+        results = self.exe.map(partial(_do_enc, self.pubkey), numbers, chunksize=chunk_size)
         rl = []
         for r in results:
             rl.append(r)
         return rl
 
 
-def _do_enc(item):
-    pubkey, num = item
-    return pubkey.encrypt(num)
+def _do_enc(pubkey, item):
+    return pubkey.encrypt(item)
