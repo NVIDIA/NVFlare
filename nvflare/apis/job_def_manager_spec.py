@@ -123,31 +123,31 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def set_client_log(self, jid: str, log: str, client_name: str, log_type: str, fl_ctx: FLContext):
-        """Save the provided log content for the specified job, client name and log type.
+    def set_client_data(self, jid: str, data: Union[bytes, str], client_name: str, data_type: str, fl_ctx: FLContext):
+        """Save the provided data content for the specified job, client name and data type.
 
         Args:
             jid (str): Job ID
-            log (str): log content
+            data: data content, either as bytes or a string representing the file name that contains the data
             client_name (str): client name
-            log_type (str): log type
+            data_type (str): data type
             fl_ctx (FLContext): FLContext information
 
         """
         pass
 
     @abstractmethod
-    def get_client_log(self, jid: str, client_name: str, log_type: str, fl_ctx: FLContext) -> Optional[str]:
-        """Get log content for the specified job, client name and log type.
+    def get_client_data(self, jid: str, client_name: str, data_type: str, fl_ctx: FLContext) -> Optional[bytes]:
+        """Get data content for the specified job, client name and data type.
 
         Args:
             jid (str): Job ID
             client_name (str): client name
-            log_type (str): log type
+            data_type (str): data type
             fl_ctx (FLContext): FLContext information
 
         Returns:
-            log content
+            data content
 
         """
         pass

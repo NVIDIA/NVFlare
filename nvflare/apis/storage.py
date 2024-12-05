@@ -24,6 +24,14 @@ WORKSPACE_ZIP = "workspace.zip"
 
 
 class ComponentPrefixes(Enum):
+    """Component prefixes for storage components.
+
+    The valid components are: data, meta, workspace, and anything starting with a valid
+    ComponentPrefixes and then an underscore (for example ERRORLOG_site-1). Additional
+    components can be added by extending this enum.
+
+    """
+
     ERRORLOG = "ERRORLOG"
     LOG = "LOG"
 

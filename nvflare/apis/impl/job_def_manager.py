@@ -236,17 +236,17 @@ class SimpleJobDefManager(JobDefManagerSpec):
         except StorageException:
             return None
 
-    def set_client_log(self, jid: str, log: str, client_name: str, log_type: str, fl_ctx: FLContext):
+    def set_client_data(self, jid: str, data: Union[bytes, str], client_name: str, data_type: str, fl_ctx: FLContext):
         store = self._get_job_store(fl_ctx)
-        log_object_type = f"{log_type}_{client_name}"
-        store.update_object(self.job_uri(jid), log.encode(), log_object_type)
+        data_object_type = f"{data_type}_{client_name}"
+        store.update_object(self.job_uri(jid), data, data_object_type)
 
-    def get_client_log(self, jid: str, client_name: str, log_type: str, fl_ctx: FLContext) -> Optional[str]:
+    def get_client_data(self, jid: str, client_name: str, data_type: str, fl_ctx: FLContext) -> Optional[bytes]:
         store = self._get_job_store(fl_ctx)
-        log_object_type = f"{log_type}_{client_name}"
+        data_object_type = f"{data_type}_{client_name}"
         try:
-            log_data = store.get_data(self.job_uri(jid), log_object_type)
-            return log_data.decode()
+            data_data = store.get_data(self.job_uri(jid), data_object_type)
+            return data_data
         except StorageException:
             return None
 
