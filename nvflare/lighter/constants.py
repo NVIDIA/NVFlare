@@ -136,3 +136,9 @@ class ProvFileName:
     CHART_YAML = "Chart.yaml"
     VALUES_YAML = "values.yaml"
     HELM_CHART_TEMPLATES_DIR = "templates"
+
+
+class CertFileBasename:
+    CLIENT = "client"
+    SERVER = "server"
+    OVERSEER = "overseer"
