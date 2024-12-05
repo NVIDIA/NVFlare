@@ -13,14 +13,16 @@
 # limitations under the License.
 
 import os
-import pathlib
 import shutil
 
-from nvflare.lighter.spec import Builder, Project
+import nvflare.lighter as prov
+from nvflare.lighter.constants import CtxKey
+from nvflare.lighter.spec import Builder, Project, ProvisionContext
+from nvflare.lighter.utils import load_yaml, make_dirs
 
 
 class WorkspaceBuilder(Builder):
-    def __init__(self, template_file):
+    def __init__(self, template_file=None):
         """Manages the folder structure for provisioned projects.
 
         Sets the template_file containing scripts and configs to put into startup folders, creates directories for the
@@ -43,50 +45,56 @@ class WorkspaceBuilder(Builder):
               wip/  <--- this is only used during runtime, and will be removed when the provision command exits
 
         Args:
-            template_file: name(s) of template file(s) containing scripts and configs to put into startup folders
+            template_file: one or more template file names
         """
         self.template_files = template_file
 
-    def _make_dir(self, dirs):
-        for dir in dirs:
-            if not os.path.exists(dir):
-                os.makedirs(dir)
+    def _build_template(self, ctx: ProvisionContext):
+        prov_folder = os.path.dirname(prov.__file__)
+        temp_folder = os.path.join(prov_folder, "templates")
 
-    def initialize(self, ctx):
-        workspace_dir = ctx["workspace"]
+        temp_files_to_load = self.template_files
+        if not temp_files_to_load:
+            # load everything
+            temp_files_to_load = [f for f in os.listdir(temp_folder) if os.path.isfile(f)]
+        elif isinstance(temp_files_to_load, str):
+            temp_files_to_load = [temp_files_to_load]
+
+        template = dict()
+        for f in temp_files_to_load:
+            template.update(load_yaml(os.path.join(temp_folder, f)))
+        ctx.set_template(template)
+
+    def initialize(self, project: Project, ctx: ProvisionContext):
+        workspace_dir = ctx.get_workspace()
         prod_dirs = [_ for _ in os.listdir(workspace_dir) if _.startswith("prod_")]
         last = -1
-        for dir in prod_dirs:
-            stage = int(dir.split("_")[-1])
+        for d in prod_dirs:
+            stage = int(d.split("_")[-1])
             if stage > last:
                 last = stage
-        ctx["last_prod_stage"] = last
-        if not isinstance(self.template_files, list):
-            self.template_files = [self.template_files]
-        tplt_file_list = []
-        for tplt_file in self.template_files:
-            tplt_file_full_path = os.path.join(self.get_resources_dir(ctx), tplt_file)
-            file_path = pathlib.Path(__file__).parent.absolute()
-            shutil.copyfile(os.path.join(file_path, tplt_file), tplt_file_full_path)
-            tplt_file_list.append(tplt_file)
-        ctx["template_files"] = tplt_file_list
+        ctx[CtxKey.LAST_PROD_STAGE] = last
+        self._build_template(ctx)
 
-    def build(self, project: Project, ctx: dict):
-        dirs = [self.get_kit_dir(p, ctx) for p in project.participants]
-        self._make_dir(dirs)
-        dirs = [self.get_transfer_dir(p, ctx) for p in project.participants]
-        self._make_dir(dirs)
-        dirs = [self.get_local_dir(p, ctx) for p in project.participants]
-        self._make_dir(dirs)
+    def build(self, project: Project, ctx: ProvisionContext):
+        participants = project.get_all_participants()
+        dirs = [ctx.get_kit_dir(p) for p in participants]
+        make_dirs(dirs)
 
-    def finalize(self, ctx: dict):
-        if ctx["last_prod_stage"] >= 99:
+        dirs = [ctx.get_transfer_dir(p) for p in participants]
+        make_dirs(dirs)
+
+        dirs = [ctx.get_local_dir(p) for p in participants]
+        make_dirs(dirs)
+
+    def finalize(self, project: Project, ctx: ProvisionContext):
+        if ctx[CtxKey.LAST_PROD_STAGE] >= 99:
             print(f"Please clean up {ctx['workspace']} by removing prod_N folders")
             print("After clean-up, rerun the provision command.")
         else:
-            current_prod_stage = str(ctx["last_prod_stage"] + 1).zfill(2)
-            current_prod_dir = os.path.join(ctx["workspace"], f"prod_{current_prod_stage}")
-            shutil.move(self.get_wip_dir(ctx), current_prod_dir)
-            ctx.pop("wip_dir", None)
+            current_prod_stage = str(ctx[CtxKey.LAST_PROD_STAGE] + 1).zfill(2)
+            current_prod_dir = os.path.join(ctx.get_workspace(), f"prod_{current_prod_stage}")
+            shutil.move(ctx.get_wip_dir(), current_prod_dir)
+            ctx.pop(CtxKey.WIP, None)
             print(f"Generated results can be found under {current_prod_dir}. ")
-            ctx["current_prod_dir"] = current_prod_dir
+            ctx[CtxKey.CURRENT_PROD_DIR] = current_prod_dir
