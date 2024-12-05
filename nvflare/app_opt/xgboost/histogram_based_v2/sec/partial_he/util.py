@@ -14,7 +14,6 @@
 
 import json
 from base64 import urlsafe_b64decode, urlsafe_b64encode
-from binascii import hexlify, unhexlify
 
 # ipcl_python is not a required dependency. The import error causes unit test failure so make it optional
 try:
@@ -74,14 +73,20 @@ def base64url_decode(payload):
     return urlsafe_b64decode(payload.encode("utf-8"))
 
 
+def int_to_bytes(num: int) -> bytes:
+    return num.to_bytes((max(num.bit_length(), 1) + 7) // 8, "big")
+
+
+def bytes_to_int(buf: bytes) -> int:
+    return int.from_bytes(buf, "big")
+
+
 def base64_to_int(source):
-    return int(hexlify(base64url_decode(source)), 16)
+    return bytes_to_int(base64url_decode(source))
 
 
 def int_to_base64(source):
-    assert source != 0
-    I = hex(source).rstrip("L").lstrip("0x")
-    return base64url_encode(unhexlify((len(I) % 2) * "0" + I))
+    return base64url_encode(int_to_bytes(source))
 
 
 def combine(g, h):

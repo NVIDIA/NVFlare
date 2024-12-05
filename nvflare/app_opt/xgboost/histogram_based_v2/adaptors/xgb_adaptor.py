@@ -240,6 +240,14 @@ class XGBClientAdaptor(AppAdaptor, ABC):
                 "seq": req[Constant.PARAM_KEY_SEQ],
             }
             fl_ctx.set_prop(key=PROP_KEY_DEBUG_INFO, value=debug_info, private=True, sticky=False)
+
+            send_buf = req[Constant.PARAM_KEY_SEND_BUF]
+            try:
+                length = len(send_buf)
+            except:
+                length = -1
+
+            self.log_info(fl_ctx, f"Sending GRPC payload size: {length} Info: {debug_info}")
             reply = ReliableMessage.send_request(
                 target=FQCN.ROOT_SERVER,
                 topic=Constant.TOPIC_XGB_REQUEST,
