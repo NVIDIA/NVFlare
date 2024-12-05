@@ -20,7 +20,8 @@ import yaml
 
 from nvflare.lighter import utils
 from nvflare.lighter.constants import CtxKey, OverseerRole, PropKey, ProvFileName, ProvisionMode, TemplateSectionKey
-from nvflare.lighter.spec import Builder, Participant, Project, ProvisionContext
+from nvflare.lighter.entity import Participant
+from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
 
 class StaticFileBuilder(Builder):
@@ -84,12 +85,11 @@ class StaticFileBuilder(Builder):
         )
 
         if self.docker_image:
-            self.build_from_template(
-                ctx, dest_dir, TemplateSectionKey.DOCKER_SERVER_SH, ProvFileName.DOCKER_SH, replacement_dict, exe=True
+            ctx.build_from_template(
+                dest_dir, TemplateSectionKey.DOCKER_SERVER_SH, ProvFileName.DOCKER_SH, replacement_dict, exe=True
             )
 
-        self.build_from_template(
-            ctx,
+        ctx.build_from_template(
             dest_dir,
             TemplateSectionKey.GUNICORN_CONF_PY,
             ProvFileName.GUNICORN_CONF_PY,
@@ -97,7 +97,7 @@ class StaticFileBuilder(Builder):
             exe=False,
         )
 
-        self.build_from_template(ctx, dest_dir, TemplateSectionKey.START_OVERSEER_SH, ProvFileName.START_SH, exe=True)
+        ctx.build_from_template(dest_dir, TemplateSectionKey.START_OVERSEER_SH, ProvFileName.START_SH, exe=True)
 
         if port:
             ctx[PropKey.OVERSEER_END_POINT] = f"{protocol}://{overseer.name}:{port}{api_root}"
@@ -131,8 +131,7 @@ class StaticFileBuilder(Builder):
         }
 
         if self.docker_image:
-            self.build_from_template(
-                ctx,
+            ctx.build_from_template(
                 dest_dir,
                 TemplateSectionKey.DOCKER_SERVER_SH,
                 ProvFileName.DOCKER_SH,
@@ -140,10 +139,9 @@ class StaticFileBuilder(Builder):
                 exe=True,
             )
 
-        self.build_from_template(ctx, dest_dir, TemplateSectionKey.START_SERVER_SH, ProvFileName.START_SH, exe=True)
+        ctx.build_from_template(dest_dir, TemplateSectionKey.START_SERVER_SH, ProvFileName.START_SH, exe=True)
 
-        self.build_from_template(
-            ctx,
+        ctx.build_from_template(
             dest_dir,
             TemplateSectionKey.SUB_START_SH,
             ProvFileName.SUB_START_SH,
@@ -151,30 +149,28 @@ class StaticFileBuilder(Builder):
             exe=True,
         )
 
-        self.build_from_template(ctx, dest_dir, TemplateSectionKey.STOP_FL_SH, ProvFileName.STOP_FL_SH, exe=True)
+        ctx.build_from_template(dest_dir, TemplateSectionKey.STOP_FL_SH, ProvFileName.STOP_FL_SH, exe=True)
 
         # local folder creation
         dest_dir = ctx.get_local_dir(server)
 
-        self.build_from_template(
-            ctx, dest_dir, TemplateSectionKey.LOG_CONFIG, ProvFileName.LOG_CONFIG_DEFAULT, exe=False
+        ctx.build_from_template(dest_dir, TemplateSectionKey.LOG_CONFIG, ProvFileName.LOG_CONFIG_DEFAULT, exe=False)
+
+        ctx.build_from_template(
+            dest_dir, TemplateSectionKey.LOCAL_SERVER_RESOURCES, ProvFileName.RESOURCES_JSON_DEFAULT, exe=False
         )
 
-        self.build_from_template(
-            ctx, dest_dir, TemplateSectionKey.LOCAL_SERVER_RESOURCES, ProvFileName.RESOURCES_JSON_DEFAULT, exe=False
+        ctx.build_from_template(
+            dest_dir, TemplateSectionKey.SAMPLE_PRIVACY, ProvFileName.PRIVACY_JSON_SAMPLE, exe=False
         )
 
-        self.build_from_template(
-            ctx, dest_dir, TemplateSectionKey.SAMPLE_PRIVACY, ProvFileName.PRIVACY_JSON_SAMPLE, exe=False
-        )
-
-        self.build_from_template(
-            ctx, dest_dir, TemplateSectionKey.DEFAULT_AUTHZ, ProvFileName.AUTHORIZATION_JSON_DEFAULT, exe=False
+        ctx.build_from_template(
+            dest_dir, TemplateSectionKey.DEFAULT_AUTHZ, ProvFileName.AUTHORIZATION_JSON_DEFAULT, exe=False
         )
 
         # workspace folder file
         dest_dir = ctx.get_ws_dir(server)
-        self.build_from_template(ctx, dest_dir, TemplateSectionKey.SERVER_README, ProvFileName.README_TXT, exe=False)
+        ctx.build_from_template(dest_dir, TemplateSectionKey.SERVER_README, ProvFileName.README_TXT, exe=False)
 
     def _build_client(self, client, ctx):
         project = ctx.get_project()
@@ -200,8 +196,7 @@ class StaticFileBuilder(Builder):
         utils.write(os.path.join(dest_dir, ProvFileName.FED_CLIENT_JSON), json.dumps(config, indent=2), "t")
 
         if self.docker_image:
-            self.build_from_template(
-                ctx,
+            ctx.build_from_template(
                 dest_dir,
                 TemplateSectionKey.DOCKER_CLIENT_SH,
                 ProvFileName.DOCKER_SH,
@@ -209,37 +204,34 @@ class StaticFileBuilder(Builder):
                 exe=True,
             )
 
-        self.build_from_template(ctx, dest_dir, TemplateSectionKey.START_CLIENT_SH, ProvFileName.START_SH, exe=True)
+        ctx.build_from_template(dest_dir, TemplateSectionKey.START_CLIENT_SH, ProvFileName.START_SH, exe=True)
 
-        self.build_from_template(
-            ctx, dest_dir, TemplateSectionKey.SUB_START_SH, ProvFileName.SUB_START_SH, replacement_dict, exe=True
+        ctx.build_from_template(
+            dest_dir, TemplateSectionKey.SUB_START_SH, ProvFileName.SUB_START_SH, replacement_dict, exe=True
         )
 
-        self.build_from_template(ctx, dest_dir, TemplateSectionKey.STOP_FL_SH, ProvFileName.STOP_FL_SH, exe=True)
+        ctx.build_from_template(dest_dir, TemplateSectionKey.STOP_FL_SH, ProvFileName.STOP_FL_SH, exe=True)
 
         # local folder creation
         dest_dir = ctx.get_local_dir(client)
 
-        self.build_from_template(ctx, dest_dir, TemplateSectionKey.LOG_CONFIG, ProvFileName.LOG_CONFIG_DEFAULT)
+        ctx.build_from_template(dest_dir, TemplateSectionKey.LOG_CONFIG, ProvFileName.LOG_CONFIG_DEFAULT)
 
-        self.build_from_template(
-            ctx, dest_dir, TemplateSectionKey.LOCAL_CLIENT_RESOURCES, ProvFileName.RESOURCES_JSON_DEFAULT
+        ctx.build_from_template(
+            dest_dir, TemplateSectionKey.LOCAL_CLIENT_RESOURCES, ProvFileName.RESOURCES_JSON_DEFAULT
         )
 
-        self.build_from_template(
-            ctx,
+        ctx.build_from_template(
             dest_dir,
             TemplateSectionKey.SAMPLE_PRIVACY,
             ProvFileName.PRIVACY_JSON_SAMPLE,
         )
 
-        self.build_from_template(
-            ctx, dest_dir, TemplateSectionKey.DEFAULT_AUTHZ, ProvFileName.AUTHORIZATION_JSON_DEFAULT
-        )
+        ctx.build_from_template(dest_dir, TemplateSectionKey.DEFAULT_AUTHZ, ProvFileName.AUTHORIZATION_JSON_DEFAULT)
 
         # workspace folder file
         dest_dir = ctx.get_ws_dir(client)
-        self.build_from_template(ctx, dest_dir, TemplateSectionKey.CLIENT_README, ProvFileName.README_TXT)
+        ctx.build_from_template(dest_dir, TemplateSectionKey.CLIENT_README, ProvFileName.README_TXT)
 
     @staticmethod
     def _check_host_name(host_name: str, server: Participant) -> str:
@@ -329,12 +321,11 @@ class StaticFileBuilder(Builder):
         utils.write(os.path.join(dest_dir, ProvFileName.FED_ADMIN_JSON), json.dumps(config, indent=2), "t")
 
         if self.docker_image:
-            self.build_from_template(
-                ctx, dest_dir, TemplateSectionKey.DOCKER_ADMIN_SH, ProvFileName.DOCKER_SH, replacement_dict, exe=True
+            ctx.build_from_template(
+                dest_dir, TemplateSectionKey.DOCKER_ADMIN_SH, ProvFileName.DOCKER_SH, replacement_dict, exe=True
             )
 
-        self.build_from_template(
-            ctx,
+        ctx.build_from_template(
             dest_dir,
             TemplateSectionKey.FL_ADMIN_SH,
             ProvFileName.FL_ADMIN_SH,
@@ -342,7 +333,7 @@ class StaticFileBuilder(Builder):
             exe=True,
         )
 
-        self.build_from_template(ctx, dest_dir, TemplateSectionKey.ADMIN_README, ProvFileName.README_TXT)
+        ctx.build_from_template(dest_dir, TemplateSectionKey.ADMIN_README, ProvFileName.README_TXT)
 
     def prepare_admin_config(self, admin, ctx: ProvisionContext):
         config = ctx.json_load_template_section(TemplateSectionKey.FED_ADMIN)

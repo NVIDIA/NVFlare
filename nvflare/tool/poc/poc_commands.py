@@ -32,7 +32,7 @@ from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
 from nvflare.lighter.constants import ProvisionMode
 from nvflare.lighter.provision import gen_default_project_config, prepare_project
-from nvflare.lighter.spec import Provisioner
+from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.utils import (
     load_yaml,
     update_project_server_name_config,

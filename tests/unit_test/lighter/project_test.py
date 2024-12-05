@@ -14,7 +14,7 @@
 
 import pytest
 
-from nvflare.lighter.spec import Participant, Project
+from nvflare.lighter.entity import Participant, Project
 
 
 def create_participants(type, number, org, name, props=None):

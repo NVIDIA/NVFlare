@@ -24,7 +24,7 @@ class HEBuilder(Builder):
     def __init__(
         self,
         poly_modulus_degree=8192,
-        coeff_mod_bit_sizes=[60, 40, 40],
+        coeff_mod_bit_sizes=None,
         scale_bits=40,
         scheme="CKKS",
     ):
@@ -39,6 +39,9 @@ class HEBuilder(Builder):
             scale_bits: defaults to 40.
             scheme: defaults to "CKKS".
         """
+        if not coeff_mod_bit_sizes:
+            coeff_mod_bit_sizes = [60, 40, 40]
+
         self._context = None
         self.scheme_type_mapping = {
             "CKKS": ts.SCHEME_TYPE.CKKS,

@@ -17,7 +17,8 @@ import os
 import yaml
 
 from nvflare.lighter.constants import CtxKey, PropKey, ProvFileName, TemplateSectionKey
-from nvflare.lighter.spec import Builder, Participant, Project, ProvisionContext
+from nvflare.lighter.entity import Participant
+from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
 
 class HelmChartBuilder(Builder):
@@ -25,12 +26,17 @@ class HelmChartBuilder(Builder):
         """Build Helm Chart."""
         self.docker_image = docker_image
         self.helm_chart_directory = None
+        self.service_overseer = None
+        self.service_server = None
+        self.deployment_server = None
+        self.deployment_overseer = None
+        self.helm_chart_templates_directory = None
 
     def initialize(self, project: Project, ctx: ProvisionContext):
         self.helm_chart_directory = os.path.join(ctx.get_wip_dir(), ProvFileName.HELM_CHART_DIR)
         os.mkdir(self.helm_chart_directory)
 
-    def _build_overseer(self, overseer: Participant, ctx):
+    def _build_overseer(self, overseer: Participant):
         protocol = overseer.get_prop(PropKey.PROTOCOL, "http")
         default_port = "443" if protocol == "https" else "80"
         port = overseer.get_prop(PropKey.PORT, default_port)
@@ -110,7 +116,7 @@ class HelmChartBuilder(Builder):
         os.mkdir(self.helm_chart_templates_directory)
         overseer = project.get_overseer()
         if overseer:
-            self._build_overseer(overseer, ctx)
+            self._build_overseer(overseer)
 
         server = project.get_server()
         if server:

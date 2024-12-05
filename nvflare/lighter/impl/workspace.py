@@ -16,7 +16,8 @@ import os
 import shutil
 
 import nvflare.lighter as prov
-from nvflare.lighter.spec import Builder, CtxKey, Project, ProvisionContext
+from nvflare.lighter.constants import CtxKey
+from nvflare.lighter.spec import Builder, Project, ProvisionContext
 from nvflare.lighter.utils import load_yaml, make_dirs
 
 
@@ -68,8 +69,8 @@ class WorkspaceBuilder(Builder):
         workspace_dir = ctx.get_workspace()
         prod_dirs = [_ for _ in os.listdir(workspace_dir) if _.startswith("prod_")]
         last = -1
-        for dir in prod_dirs:
-            stage = int(dir.split("_")[-1])
+        for d in prod_dirs:
+            stage = int(d.split("_")[-1])
             if stage > last:
                 last = stage
         ctx[CtxKey.LAST_PROD_STAGE] = last

@@ -22,8 +22,10 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
-from nvflare.lighter.constants import CtxKey
-from nvflare.lighter.spec import Builder, Participant, ParticipantType, Project, PropKey, ProvisionContext
+from nvflare.lighter.constants import CtxKey, ParticipantType, PropKey
+from nvflare.lighter.ctx import ProvisionContext
+from nvflare.lighter.entity import Participant, Project
+from nvflare.lighter.spec import Builder
 from nvflare.lighter.utils import serialize_cert, serialize_pri_key
 
 _CERT_BASE_NAME_CLIENT = "client"

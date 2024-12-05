@@ -23,7 +23,8 @@ from typing import Optional
 
 from nvflare.fuel.utils.class_utils import instantiate_class
 from nvflare.lighter.constants import ParticipantType, PropKey
-from nvflare.lighter.spec import Project, Provisioner
+from nvflare.lighter.provisioner import Provisioner
+from nvflare.lighter.spec import Project
 from nvflare.lighter.utils import load_yaml
 
 adding_client_error_msg = """
