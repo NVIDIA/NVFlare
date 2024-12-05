@@ -43,34 +43,39 @@ class LogSender(Widget):
         self.event_type = event_type
         self.should_report_error_log = should_report_error_log
 
-    def _stream_error_log_file(self, fl_ctx: FLContext):
-        error_log_contents = None
-        workspace_root = fl_ctx.get_prop(FLContextKey.WORKSPACE_ROOT)
-        client_name = fl_ctx.get_prop(FLContextKey.CLIENT_NAME)
-        job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
-        workspace_object = Workspace(root_dir=workspace_root, site_name=client_name)
-        error_log_path = workspace_object.get_app_error_log_file_path(job_id=job_id)
-        if os.path.exists(error_log_path):
-            with open(error_log_path, "r") as f:
-                error_log_contents = f.read()
-        if error_log_contents:
+    def _stream_log_file(self, fl_ctx: FLContext, log_path: str, channel: str):
+        if os.path.exists(log_path):
             FileStreamer.stream_file(
-                channel=LogChannels.ERROR_LOGS_CHANNEL,
+                channel=channel,
                 topic=LOG_STREAM_EVENT_TYPE,
-                stream_ctx={LogConst.CLIENT_NAME: client_name, LogConst.JOB_ID: job_id},
+                stream_ctx={
+                    LogConst.CLIENT_NAME: fl_ctx.get_prop(FLContextKey.CLIENT_NAME),
+                    LogConst.JOB_ID: fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID),
+                },
                 targets=["server"],
-                file_name=error_log_path,
+                file_name=log_path,
                 fl_ctx=fl_ctx,
             )
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == self.event_type:
             if self.should_report_error_log:
-                t = threading.Thread(target=self._stream_error_log_file, args=(fl_ctx,), daemon=True)
-                t.start()
+                workspace_root = fl_ctx.get_prop(FLContextKey.WORKSPACE_ROOT)
                 client_name = fl_ctx.get_prop(FLContextKey.CLIENT_NAME)
                 job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
-                self.log_info(fl_ctx, f"Started streaming error log file for {client_name} for job {job_id}")
+                workspace_object = Workspace(root_dir=workspace_root, site_name=client_name)
+                error_log_path = workspace_object.get_app_error_log_file_path(job_id=job_id)
+
+                if os.path.exists(error_log_path):
+                    t = threading.Thread(
+                        target=self._stream_log_file,
+                        args=(fl_ctx, error_log_path, LogChannels.ERROR_LOGS_CHANNEL),
+                        daemon=True,
+                    )
+                    t.start()
+                    self.log_info(fl_ctx, f"Started streaming error log file for {client_name} for job {job_id}")
+                else:
+                    self.log_info(fl_ctx, f"No error log file found for {client_name} for job {job_id}")
 
 
 class LogReceiver(Widget):
