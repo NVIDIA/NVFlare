@@ -17,8 +17,9 @@ import threading
 from builtins import dict as StreamContext
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, ProcessType, ReturnCode, SystemComponents
+from nvflare.apis.fl_constant import FLContextKey, ProcessType, ReturnCode, StreamCtxKey, SystemComponents
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.storage import DataTypes
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.streamers.file_streamer import FileStreamer
 from nvflare.widgets.widget import Widget
@@ -26,13 +27,8 @@ from nvflare.widgets.widget import Widget
 LOG_STREAM_EVENT_TYPE = "stream_log"
 
 
-class LogConst(object):
-    CLIENT_NAME = "client_name"
-    JOB_ID = "job_id"
-
-
-class LogChannels(object):
-    ERROR_LOGS_CHANNEL = "log_streaming.error_logs"
+class Channels(object):
+    LOG_STREAMING_CHANNEL = "log_streaming"
     ERROR_LOG_LOG_TYPE = "ERRORLOG"
 
 
@@ -43,14 +39,15 @@ class LogSender(Widget):
         self.event_type = event_type
         self.should_report_error_log = should_report_error_log
 
-    def _stream_log_file(self, fl_ctx: FLContext, log_path: str, channel: str):
+    def _stream_log_file(self, fl_ctx: FLContext, log_path: str, log_type: str):
         if os.path.exists(log_path):
             FileStreamer.stream_file(
-                channel=channel,
+                channel=Channels.LOG_STREAMING_CHANNEL,
                 topic=LOG_STREAM_EVENT_TYPE,
                 stream_ctx={
-                    LogConst.CLIENT_NAME: fl_ctx.get_prop(FLContextKey.CLIENT_NAME),
-                    LogConst.JOB_ID: fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID),
+                    StreamCtxKey.CLIENT_NAME: fl_ctx.get_prop(FLContextKey.CLIENT_NAME),
+                    StreamCtxKey.JOB_ID: fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID),
+                    StreamCtxKey.LOG_TYPE: log_type,
                 },
                 targets=["server"],
                 file_name=log_path,
@@ -70,7 +67,7 @@ class LogSender(Widget):
                     if os.path.exists(error_log_path):
                         t = threading.Thread(
                             target=self._stream_log_file,
-                            args=(fl_ctx, error_log_path, LogChannels.ERROR_LOGS_CHANNEL),
+                            args=(fl_ctx, error_log_path, DataTypes.ERROR_LOG),
                             daemon=True,
                         )
                         t.start()
@@ -80,21 +77,13 @@ class LogSender(Widget):
 
 
 class LogReceiver(Widget):
-    def __init__(self, log_channels=None):
+    def __init__(self):
         """Receives log data.
 
-        By default, it receives error logs with the channel log_streaming.error_logs to save logs of type ERRORLOG. If adding
-        additional log types, make sure nvflare.apis.storage.ComponentPrefixes has the corresponding log type.
-
-        Args:
-            log_channels: dict of channel to log type mapping
+        If adding additional log types, make sure nvflare.apis.storage.ComponentPrefixes has
+        the corresponding log type.
         """
         super().__init__()
-        if log_channels is None:
-            log_channels = {LogChannels.ERROR_LOGS_CHANNEL: LogChannels.ERROR_LOG_LOG_TYPE}
-        if not isinstance(log_channels, dict):
-            raise ValueError("log_channels should be a dict of channel name to log type mapping")
-        self.log_channels = log_channels
 
     def process_log(self, stream_ctx: StreamContext, fl_ctx: FLContext):
         """Process the streamed log file."""
@@ -107,23 +96,19 @@ class LogReceiver(Widget):
         if rc != ReturnCode.OK:
             self.log_error(
                 fl_ctx,
-                f"Error in streaming log file from {peer_name} on channel {channel} and topic {topic} with rc {rc}",
+                f"Error in streaming log file from {peer_name} and topic {topic} with rc {rc}",
             )
             return
         file_location = FileStreamer.get_file_location(stream_ctx)
-        client = stream_ctx.get(LogConst.CLIENT_NAME)
-        job_id = stream_ctx.get(LogConst.JOB_ID)
+        client = stream_ctx.get(StreamCtxKey.CLIENT_NAME)
+        job_id = stream_ctx.get(StreamCtxKey.JOB_ID)
         job_manager = fl_ctx.get_engine().get_component(SystemComponents.JOB_MANAGER)
-        log_type = self.log_channels.get(channel, "UNKNOWN")
-        if log_type == "UNKNOWN":
-            self.log_error(fl_ctx, f"Unknown log type for channel {channel}")
-        else:
-            self.log_info(fl_ctx, f"Saving {log_type} from {client} for {job_id}")
-            job_manager.set_client_data(job_id, file_location, client, log_type, fl_ctx)
+        log_type = stream_ctx.get(StreamCtxKey.LOG_TYPE)
+        self.log_info(fl_ctx, f"Saving {log_type} from {client} for {job_id}")
+        job_manager.set_client_data(job_id, file_location, client, log_type, fl_ctx)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.SYSTEM_START:
-            for channel, log_type in self.log_channels.items():
-                FileStreamer.register_stream_processing(
-                    fl_ctx, channel=channel, topic="*", stream_done_cb=self.process_log
-                )
+            FileStreamer.register_stream_processing(
+                fl_ctx, channel=Channels.LOG_STREAMING_CHANNEL, topic="*", stream_done_cb=self.process_log
+            )
