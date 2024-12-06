@@ -75,6 +75,14 @@ class _ConsumerInfo:
 
     def stream_done(self, rc: str, fl_ctx: FLContext):
         self.stream_ctx[StreamContextKey.RC] = rc
+        try:
+            self.consumer.finalize(self.stream_ctx, fl_ctx)
+        except Exception as ex:
+            self.logger.error(
+                f"exception finalizing processor {self.consumer.__class__.__name__}: {secure_format_exception(ex)}"
+            )
+            self.stream_ctx[StreamContextKey.RC] = ReturnCode.EXECUTION_EXCEPTION
+
         if self.stream_done_cb:
             try:
                 self.stream_done_cb(self.stream_ctx, fl_ctx, **self.stream_done_cb_kwargs)
@@ -82,12 +90,6 @@ class _ConsumerInfo:
                 self.logger.error(
                     f"exception from stream_done_cb {self.stream_done_cb.__name__}: {secure_format_exception(ex)}"
                 )
-        try:
-            self.consumer.finalize(self.stream_ctx, fl_ctx)
-        except Exception as ex:
-            self.logger.error(
-                f"exception finalizing processor {self.consumer.__class__.__name__}: {secure_format_exception(ex)}"
-            )
 
         try:
             self.factory.return_consumer(
