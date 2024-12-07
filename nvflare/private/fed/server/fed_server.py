@@ -17,6 +17,7 @@ import os
 import shutil
 import threading
 import time
+import uuid
 from abc import ABC, abstractmethod
 from threading import Lock
 from typing import Dict, List, Optional
@@ -337,6 +338,11 @@ class FederatedServer(BaseServer):
         self.name_to_reg = {}
         self.id_asserter = None
 
+        # these are used when the server sends a message to itself.
+        self.my_own_auth_client_name = "server"
+        self.my_own_token = "server"
+        self.my_own_token_signature = None
+
     def _register_cellnet_cbs(self):
         self.cell.register_request_cb(
             channel=CellChannel.SERVER_MAIN,
@@ -383,6 +389,57 @@ class FederatedServer(BaseServer):
         # set up a thread to regularly check expired reg sessions
         reg_checker = threading.Thread(target=self._check_regs, daemon=True)
         reg_checker.start()
+
+    def _add_auth_headers(self, message: Message):
+        origin = message.get_header(MessageHeaderKey.ORIGIN)
+        dest = message.get_header(MessageHeaderKey.DESTINATION)
+        if origin == FQCN.ROOT_SERVER and dest == origin:
+            message.set_header(CellMessageHeaderKeys.CLIENT_NAME, self.my_own_auth_client_name)
+            message.set_header(CellMessageHeaderKeys.TOKEN, self.my_own_token)
+
+            if not self.my_own_token_signature:
+                self.my_own_token_signature = self.sign_auth_token(self.my_own_auth_client_name, self.my_own_token)
+            message.set_header(CellMessageHeaderKeys.TOKEN_SIGNATURE, self.my_own_token_signature)
+
+    def _validate_auth_headers(self, message: Message):
+        headers = message.headers
+        self.logger.info(f"**** _validate_auth_headers: {headers=}")
+        topic = message.get_header(MessageHeaderKey.TOPIC)
+        channel = message.get_header(MessageHeaderKey.CHANNEL)
+
+        origin = message.get_header(MessageHeaderKey.ORIGIN)
+
+        if topic in [CellChannelTopic.Register, CellChannelTopic.Challenge] and channel == CellChannel.SERVER_MAIN:
+            # skip: client not registered yet
+            self.logger.info(f"skip special message {topic=} {channel=}")
+            return None
+
+        client_name = message.get_header(CellMessageHeaderKeys.CLIENT_NAME)
+        if not client_name:
+            err = "missing client name"
+            self.logger.error(f"unauthenticated msg received from {origin}: {err}")
+            return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED)
+
+        token = message.get_header(CellMessageHeaderKeys.TOKEN)
+        if not token:
+            err = "missing auth token"
+            self.logger.error(f"unauthenticated msg received from {origin}: {err}")
+            return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED)
+
+        signature = message.get_header(CellMessageHeaderKeys.TOKEN_SIGNATURE)
+        if not signature:
+            err = "missing auth token signature"
+            self.logger.error(f"unauthenticated msg received from {origin}: {err}")
+            return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED)
+
+        if not self.verify_auth_token(client_name, token, signature):
+            err = "invalid auth token signature"
+            self.logger.error(f"unauthenticated msg received from {origin}: {err}")
+            return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED)
+
+        # all good
+        self.logger.info(f"auth valid from {origin}: {topic=} {channel=}")
+        return None
 
     def _check_regs(self):
         while True:
@@ -554,6 +611,14 @@ class FederatedServer(BaseServer):
                 self.id_asserter = IdentityAsserter(private_key_file=private_key_file, cert_file=cert_file)
         return self.id_asserter
 
+    def sign_auth_token(self, client_name: str, token: str):
+        id_asserter = self._get_id_asserter()
+        return id_asserter.sign(client_name + token, return_str=True)
+
+    def verify_auth_token(self, client_name: str, token: str, signature):
+        id_asserter = self._get_id_asserter()
+        return id_asserter.verify_signature(client_name + token, signature)
+
     def _ready_for_registration(self, fl_ctx: FLContext):
         self._before_service(fl_ctx)
         state_check = self.server_state.register(fl_ctx)
@@ -634,8 +699,10 @@ class FederatedServer(BaseServer):
                     if self.admin_server:
                         self.admin_server.client_heartbeat(client.token, client.name)
 
+                    token_signature = self.sign_auth_token(client.name, client.token)
                     headers = {
                         CellMessageHeaderKeys.TOKEN: client.token,
+                        CellMessageHeaderKeys.TOKEN_SIGNATURE: token_signature,
                         CellMessageHeaderKeys.SSID: self.server_state.ssid,
                     }
                 else:
@@ -905,6 +972,18 @@ class FederatedServer(BaseServer):
 
         self.engine.cell = self.cell
         self._register_cellnet_cbs()
+
+        if secure_train:
+            core_cell = self.cell.core_cell
+            core_cell.add_incoming_filter(
+                channel="*",
+                topic="*",
+                cb=self._validate_auth_headers,
+            )
+
+            # set filter to add additional auth headers
+            core_cell.add_outgoing_reply_filter(channel="*", topic="*", cb=self._add_auth_headers)
+            core_cell.add_outgoing_request_filter(channel="*", topic="*", cb=self._add_auth_headers)
 
         self.overseer_agent.start(self.overseer_callback)
 

@@ -185,23 +185,6 @@ class ClientEngine(ClientEngineInternalSpec):
     def get_client_name(self):
         return self.client.client_name
 
-    def _write_token_file(self, job_id, open_port):
-        token_file = os.path.join(self.args.workspace, EngineConstant.CLIENT_TOKEN_FILE)
-        if os.path.exists(token_file):
-            os.remove(token_file)
-        with open(token_file, "wt") as f:
-            f.write(
-                "%s\n%s\n%s\n%s\n%s\n%s\n"
-                % (
-                    self.client.token,
-                    self.client.ssid,
-                    job_id,
-                    self.client.client_name,
-                    open_port,
-                    list(self.client.servers.values())[0]["target"],
-                )
-            )
-
     def abort_app(self, job_id: str) -> str:
         status = self.client_executor.get_status(job_id)
         if status == ClientStatus.STOPPED:

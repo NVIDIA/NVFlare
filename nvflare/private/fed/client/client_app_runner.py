@@ -70,7 +70,6 @@ class ClientAppRunner(Runner):
     @staticmethod
     def _set_fl_context(fl_ctx: FLContext, app_root, args, workspace, secure_train):
         fl_ctx.set_prop(FLContextKey.CLIENT_NAME, args.client_name, private=False)
-        fl_ctx.set_prop(EngineConstant.FL_TOKEN, args.token, private=False)
         fl_ctx.set_prop(FLContextKey.WORKSPACE_ROOT, args.workspace, private=True)
         fl_ctx.set_prop(FLContextKey.ARGS, args, sticky=True)
         fl_ctx.set_prop(FLContextKey.APP_ROOT, app_root, private=True, sticky=True)

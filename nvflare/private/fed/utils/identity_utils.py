@@ -67,8 +67,19 @@ class IdentityAsserter:
         self.cert = load_cert_bytes(self.cert_data)
         self.cn = get_cn_from_cert(self.cert)
 
-    def sign_common_name(self, nonce: str) -> str:
+    def sign_common_name(self, nonce: str):
         return sign_content(self.cn + nonce, self.pri_key, return_str=False)
+
+    def sign(self, content, return_str: bool) -> str:
+        return sign_content(content, self.pri_key, return_str=return_str)
+
+    def verify_signature(self, content, signature) -> bool:
+        pub_key = self.cert.public_key()
+        try:
+            verify_content(content=content, signature=signature, public_key=pub_key)
+            return True
+        except Exception:
+            return False
 
 
 class IdentityVerifier:

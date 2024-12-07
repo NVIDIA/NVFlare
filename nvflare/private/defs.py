@@ -33,8 +33,8 @@ class TaskConstant(object):
 class EngineConstant(object):
 
     FEDERATE_CLIENT = "federate_client"
-    FL_TOKEN = "fl_token"
-    CLIENT_TOKEN_FILE = "client_token.txt"
+    AUTH_TOKEN = "auth_token"
+    AUTH_TOKEN_SIGNATURE = "auth_token_signature"
     ENGINE_TASK_NAME = "engine_task_name"
 
 
@@ -140,13 +140,17 @@ class CellMessageHeaderKeys:
     CLIENT_NAME = "client_name"
     CLIENT_IP = "client_ip"
     PROJECT_NAME = "project_name"
-    TOKEN = "token"
+    TOKEN = "__token__"
+    TOKEN_SIGNATURE = "__token_signature__"
     SSID = "ssid"
     UNAUTHENTICATED = "unauthenticated"
     JOB_ID = "job_id"
     JOB_IDS = "job_ids"
     MESSAGE = "message"
     ABORT_JOBS = "abort_jobs"
+
+
+AUTH_CLIENT_NAME_FOR_SJ = "server_job"
 
 
 class JobFailureMsgKey:

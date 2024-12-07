@@ -31,7 +31,6 @@ from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.argument_utils import parse_vars
-from nvflare.private.defs import EngineConstant
 from nvflare.private.fed.utils.fed_utils import set_scope_prop
 from nvflare.security.logging import secure_format_exception
 
@@ -77,6 +76,7 @@ class FederatedClientBase:
 
         self.client_name = client_name
         self.token = None
+        self.token_signature = None
         self.ssid = None
         self.client_args = client_args
         self.servers = server_args
@@ -207,7 +207,7 @@ class FederatedClientBase:
             parent_url=parent_url,
         )
         self.cell.start()
-        self.communicator.cell = self.cell
+        self.communicator.set_cell(self.cell)
         self.net_agent = NetAgent(self.cell)
         mpm.add_cleanup_cb(self.net_agent.close)
         mpm.add_cleanup_cb(self.cell.stop)
@@ -250,10 +250,11 @@ class FederatedClientBase:
         """
         if not self.token:
             try:
-                self.token, self.ssid = self.communicator.client_registration(self.client_name, project_name, fl_ctx)
+                self.token, self.token_signature, self.ssid = self.communicator.client_registration(
+                    self.client_name, project_name, fl_ctx
+                )
                 if self.token is not None:
                     self.fl_ctx.set_prop(FLContextKey.CLIENT_NAME, self.client_name, private=False)
-                    self.fl_ctx.set_prop(EngineConstant.FL_TOKEN, self.token, private=False)
                     self.logger.info(
                         "Successfully registered client:{} for project {}. Token:{} SSID:{}".format(
                             self.client_name, project_name, self.token, self.ssid
