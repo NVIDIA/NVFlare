@@ -406,6 +406,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         self.communicator.register_message_receiver(app_id=self.APP_ID, receiver=self)
         self.communicator.register_monitor(monitor=self)
         self.req_reg = Registry()
+        self.in_filter_reg = Registry()  # for any incoming messages
         self.in_req_filter_reg = Registry()  # for request received
         self.out_reply_filter_reg = Registry()  # for reply going out
         self.out_req_filter_reg = Registry()  # for request sent
@@ -990,6 +991,11 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         message.payload = self.credential_manager.decrypt(origin_cert, message.payload)
         if len(message.payload) != payload_len:
             raise RuntimeError(f"Payload size changed after decryption {len(message.payload)} <> {payload_len}")
+
+    def add_incoming_filter(self, channel: str, topic: str, cb, *args, **kwargs):
+        if not callable(cb):
+            raise ValueError(f"specified incoming_filter {type(cb)} is not callable")
+        self.in_filter_reg.append(channel, topic, Callback(cb, args, kwargs))
 
     def add_incoming_request_filter(self, channel: str, topic: str, cb, *args, **kwargs):
         if not callable(cb):
@@ -1855,6 +1861,19 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         self.received_msg_counter_pool.increment(
             category=self._stats_category(message), counter_name=_CounterName.RECEIVED
         )
+
+        # invoke incoming filters
+        channel = message.get_header(MessageHeaderKey.CHANNEL, "")
+        topic = message.get_header(MessageHeaderKey.TOPIC, "")
+        in_filters = self.in_filter_reg.find(channel, topic)
+        if in_filters:
+            self.logger.debug(f"{self.my_info.fqcn}: invoking incoming filters")
+            assert isinstance(in_filters, list)
+            for f in in_filters:
+                assert isinstance(f, Callback)
+                reply = self._try_cb(message, f.cb, *f.args, **f.kwargs)
+                if reply:
+                    return reply
 
         if msg_type == MessageType.REQ and self.message_interceptor is not None:
             reply = self._try_cb(

@@ -53,7 +53,14 @@ from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message, MsgHeader
-from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, RequestHeader, TrainingTopic, new_cell_message
+from nvflare.private.defs import (
+    AUTH_CLIENT_NAME_FOR_SJ,
+    CellChannel,
+    CellMessageHeaderKeys,
+    RequestHeader,
+    TrainingTopic,
+    new_cell_message,
+)
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.private.fed.server.server_state import ServerState
 from nvflare.private.fed.utils.fed_utils import (
@@ -253,6 +260,11 @@ class ServerEngine(ServerEngineInternalSpec):
         for t in args.set:
             command_options += " " + t
 
+        # create token and signature for SJ
+        token = run_number  # use the run_number as the auth token
+        client_name = AUTH_CLIENT_NAME_FOR_SJ
+        signature = self.server.sign_auth_token(client_name, token)
+
         command = (
             sys.executable
             + " -m nvflare.private.fed.app.server.runner_process -m "
@@ -261,6 +273,8 @@ class ServerEngine(ServerEngineInternalSpec):
             + app_root
             + " -n "
             + str(run_number)
+            + " -ts "
+            + signature
             + " -p "
             + str(cell.get_internal_listener_url())
             + " -u "

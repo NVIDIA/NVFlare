@@ -20,7 +20,7 @@ import os
 import sys
 import time
 
-from nvflare.apis.fl_constant import JobConstants, SiteType, WorkspaceConstants
+from nvflare.apis.fl_constant import FLContextKey, JobConstants, SiteType, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
@@ -120,6 +120,20 @@ def main(args):
             services.set_admin_server(admin_server)
 
             # mpm.add_cleanup_cb(admin_server.stop)
+            with services.engine.new_context() as fl_ctx:
+                fl_ctx.set_prop(
+                    key=FLContextKey.SERVER_CONFIG,
+                    value=deployer.server_config,
+                    private=True,
+                    sticky=True,
+                )
+
+                fl_ctx.set_prop(
+                    key=FLContextKey.SECURE_MODE,
+                    value=deployer.secure_train,
+                    private=True,
+                    sticky=True,
+                )
 
         finally:
             deployer.close()
