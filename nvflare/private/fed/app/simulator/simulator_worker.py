@@ -215,6 +215,12 @@ class ClientTaskWorker(FLComponent):
         mpm.add_cleanup_cb(cell.stop)
         federated_client.cell = cell
         federated_client.communicator.set_cell(cell)
+        federated_client.communicator.set_auth(
+            client_name=federated_client.client_name,
+            token=federated_client.token,
+            token_signature="NA",
+            ssid="NA",
+        )
 
         start = time.time()
         while not cell.is_cell_connected(FQCN.ROOT_SERVER):
