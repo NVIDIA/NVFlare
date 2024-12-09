@@ -390,6 +390,15 @@ class FederatedServer(BaseServer):
         reg_checker.start()
 
     def _add_auth_headers(self, message: Message):
+        """Add auth headers to the messages sent by the server to itself.
+        This is such that no one can fake a message to pretend it's from the server to the server.
+
+        Args:
+            message: the message for which to add the headers
+
+        Returns: None
+
+        """
         origin = message.get_header(MessageHeaderKey.ORIGIN)
         dest = message.get_header(MessageHeaderKey.DESTINATION)
         if origin == FQCN.ROOT_SERVER and dest == origin:
@@ -401,8 +410,16 @@ class FederatedServer(BaseServer):
             message.set_header(CellMessageHeaderKeys.TOKEN_SIGNATURE, self.my_own_token_signature)
 
     def _validate_auth_headers(self, message: Message):
+        """Validate auth headers from messages that go through the server.
+
+        Args:
+            message: the message to validate
+
+        Returns:
+
+        """
         headers = message.headers
-        self.logger.info(f"**** _validate_auth_headers: {headers=}")
+        self.logger.debug(f"**** _validate_auth_headers: {headers=}")
         topic = message.get_header(MessageHeaderKey.TOPIC)
         channel = message.get_header(MessageHeaderKey.CHANNEL)
 
@@ -410,7 +427,7 @@ class FederatedServer(BaseServer):
 
         if topic in [CellChannelTopic.Register, CellChannelTopic.Challenge] and channel == CellChannel.SERVER_MAIN:
             # skip: client not registered yet
-            self.logger.info(f"skip special message {topic=} {channel=}")
+            self.logger.debug(f"skip special message {topic=} {channel=}")
             return None
 
         client_name = message.get_header(CellMessageHeaderKeys.CLIENT_NAME)
@@ -437,7 +454,7 @@ class FederatedServer(BaseServer):
             return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED)
 
         # all good
-        self.logger.info(f"auth valid from {origin}: {topic=} {channel=}")
+        self.logger.debug(f"auth valid from {origin}: {topic=} {channel=}")
         return None
 
     def _check_regs(self):
