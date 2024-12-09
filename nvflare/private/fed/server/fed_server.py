@@ -601,6 +601,9 @@ class FederatedServer(BaseServer):
             return return_message
 
     def _get_id_asserter(self):
+        if not self.secure_train:
+            return None
+
         if not self.id_asserter:
             with self.engine.new_context() as fl_ctx:
                 server_config = fl_ctx.get_prop(FLContextKey.SERVER_CONFIG)
@@ -629,10 +632,14 @@ class FederatedServer(BaseServer):
 
     def sign_auth_token(self, client_name: str, token: str):
         id_asserter = self._get_id_asserter()
+        if not id_asserter:
+            return "NA"
         return id_asserter.sign(client_name + token, return_str=True)
 
     def verify_auth_token(self, client_name: str, token: str, signature):
         id_asserter = self._get_id_asserter()
+        if not id_asserter:
+            return True
         return id_asserter.verify_signature(client_name + token, signature)
 
     def _ready_for_registration(self, fl_ctx: FLContext):
