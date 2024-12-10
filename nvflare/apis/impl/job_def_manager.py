@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import datetime
 import os
 import pathlib
@@ -234,6 +233,20 @@ class SimpleJobDefManager(JobDefManagerSpec):
             else:
                 # old format
                 return fobs.loads(stored_data).get(JobDataKey.JOB_DATA.value)
+        except StorageException:
+            return None
+
+    def set_client_data(self, jid: str, data: Union[bytes, str], client_name: str, data_type: str, fl_ctx: FLContext):
+        store = self._get_job_store(fl_ctx)
+        data_object_type = f"{data_type}_{client_name}"
+        store.update_object(self.job_uri(jid), data, data_object_type)
+
+    def get_client_data(self, jid: str, client_name: str, data_type: str, fl_ctx: FLContext) -> Optional[bytes]:
+        store = self._get_job_store(fl_ctx)
+        data_object_type = f"{data_type}_{client_name}"
+        try:
+            data_data = store.get_data(self.job_uri(jid), data_object_type)
+            return data_data
         except StorageException:
             return None
 

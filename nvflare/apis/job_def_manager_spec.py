@@ -123,6 +123,36 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
+    def set_client_data(self, jid: str, data: Union[bytes, str], client_name: str, data_type: str, fl_ctx: FLContext):
+        """Save the provided data content for the specified job, client name and data type.
+
+        Args:
+            jid (str): Job ID
+            data: data content, either as bytes or a string representing the file name that contains the data
+            client_name (str): client name
+            data_type (str): data type
+            fl_ctx (FLContext): FLContext information
+
+        """
+        pass
+
+    @abstractmethod
+    def get_client_data(self, jid: str, client_name: str, data_type: str, fl_ctx: FLContext) -> Optional[bytes]:
+        """Get data content for the specified job, client name and data type.
+
+        Args:
+            jid (str): Job ID
+            client_name (str): client name
+            data_type (str): data type
+            fl_ctx (FLContext): FLContext information
+
+        Returns:
+            data content
+
+        """
+        pass
+
+    @abstractmethod
     def set_status(self, jid: str, status: RunStatus, fl_ctx: FLContext):
         """Set status of an existing Job.
 
