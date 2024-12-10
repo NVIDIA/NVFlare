@@ -18,17 +18,17 @@ from torch import nn as nn
 
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
-from nvflare.app_common.tracking.tracker_types import ANALYTIC_EVENT_TYPE
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 from nvflare.app_opt.pt.job_config.model import PTModel
 from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
-from nvflare.job_config.api import FedJob, validate_object_for_job
+from nvflare.job_config.api import validate_object_for_job
+from nvflare.job_config.base_fed_job import BaseFedJob
 
 
-class BaseFedJob(FedJob):
+class PTBaseFedJob(BaseFedJob):
     def __init__(
         self,
         initial_model: nn.Module = None,
@@ -72,28 +72,14 @@ class BaseFedJob(FedJob):
             name=name,
             min_clients=min_clients,
             mandatory_clients=mandatory_clients,
+            key_metric=key_metric,
+            validation_json_generator=validation_json_generator,
+            intime_model_selector=intime_model_selector,
+            convert_to_fed_event=convert_to_fed_event,
         )
 
         self.initial_model = initial_model
         self.comp_ids = {}
-
-        if validation_json_generator:
-            validate_object_for_job("validation_json_generator", validation_json_generator, ValidationJsonGenerator)
-        else:
-            validation_json_generator = ValidationJsonGenerator()
-        self.to_server(id="json_generator", obj=validation_json_generator)
-
-        if intime_model_selector:
-            validate_object_for_job("intime_model_selector", intime_model_selector, IntimeModelSelector)
-            self.to_server(id="model_selector", obj=intime_model_selector)
-        elif key_metric:
-            self.to_server(id="model_selector", obj=IntimeModelSelector(key_metric=key_metric))
-
-        if convert_to_fed_event:
-            validate_object_for_job("convert_to_fed_event", convert_to_fed_event, ConvertToFedEvent)
-        else:
-            convert_to_fed_event = ConvertToFedEvent(events_to_convert=[ANALYTIC_EVENT_TYPE])
-        self.convert_to_fed_event = convert_to_fed_event
 
         if analytics_receiver:
             validate_object_for_job("analytics_receiver", analytics_receiver, AnalyticsReceiver)
@@ -109,6 +95,3 @@ class BaseFedJob(FedJob):
             self.comp_ids.update(
                 self.to_server(PTModel(model=initial_model, persistor=model_persistor, locator=model_locator))
             )
-
-    def set_up_client(self, target: str):
-        self.to(id="event_to_fed", obj=self.convert_to_fed_event, target=target)
