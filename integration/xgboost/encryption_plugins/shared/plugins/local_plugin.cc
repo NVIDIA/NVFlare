@@ -85,7 +85,7 @@ void LocalPlugin::ResetHistContext(const std::uint32_t *cutptrs, std::size_t cut
   }
 
   cuts_ = std::vector<uint32_t>(cutptrs, cutptrs + cutptr_len);
-  slots_ = std::vector<int32_t>(bin_idx, bin_idx + n_idx);
+  bin_idx_vec_ = std::vector<int32_t>(bin_idx, bin_idx + n_idx);
 }
 
 void LocalPlugin::BuildEncryptedHistHori(const double *in_histogram, std::size_t len, std::uint8_t **out_hist,
@@ -172,14 +172,14 @@ void LocalPlugin::BuildEncryptedHistVert(const std::uint64_t **ridx, const std::
   }
 }
 
-void LocalPlugin::BuildEncryptedHistVertActive(const std::uint64_t **ridx, const std::size_t *sizes, const std::int32_t *,
+void LocalPlugin::BuildEncryptedHistVertActive(const std::uint64_t **ridx, const std::size_t *sizes, const std::int32_t *nidx,
                                                std::size_t len, std::uint8_t **out_hist, std::size_t *out_len) {
 
+  auto total_bin_size = cuts_.back();
   if (debug_) {
-    std::cout << Ident() << " LocalPlugin::BuildEncryptedHistVertActive called with " << len << " nodes" << std::endl;
+    std::cout << Ident() << " LocalPlugin::BuildEncryptedHistVertActive called with " << len << " nodes, total_bin_size " << total_bin_size << std::endl;
   }
 
-  auto total_bin_size = cuts_.back();
   auto histo_size = total_bin_size * 2;
   auto total_size = histo_size * len;
 
@@ -189,16 +189,17 @@ void LocalPlugin::BuildEncryptedHistVertActive(const std::uint64_t **ridx, const
   for (std::size_t i = 0; i < len; i++) {
     for (std::size_t j = 0; j < sizes[i]; j++) {
       auto row_id = ridx[i][j];
-      auto num = cuts_.size() - 1;
-      for (std::size_t f = 0; f < num; f++) {
-        int slot = slots_[f + num * row_id];
-        if ((slot < 0) || (slot >= total_bin_size)) {
+      auto num_feature = cuts_.size() - 1;
+
+      for (std::size_t f = 0; f < num_feature; f++) {
+        int bin_idx = bin_idx_vec_[f + num_feature * row_id];
+        if ((bin_idx < 0) || (bin_idx >= total_bin_size)) {
           continue;
         }
         auto g = gh_pairs_[row_id * 2];
         auto h = gh_pairs_[row_id * 2 + 1];
-        (histo_)[start + slot * 2] += g;
-        (histo_)[start + slot * 2 + 1] += h;
+        (histo_)[start + bin_idx * 2] += g;
+        (histo_)[start + bin_idx * 2 + 1] += h;
       }
     }
     start += histo_size;
@@ -216,48 +217,21 @@ void LocalPlugin::BuildEncryptedHistVertActive(const std::uint64_t **ridx, const
   *out_len = size;
 }
 
-void LocalPlugin::BuildEncryptedHistVertPassive(const std::uint64_t **ridx, const std::size_t *sizes, const std::int32_t *,
+void LocalPlugin::BuildEncryptedHistVertPassive(const std::uint64_t **ridx, const std::size_t *sizes, const std::int32_t *nidx,
                                                 std::size_t len, std::uint8_t **out_hist, std::size_t *out_len) {
+  auto total_bin_size = cuts_.back();
+  auto total_size = total_bin_size * len;
   if (debug_) {
-    std::cout << Ident() << " LocalPlugin::BuildEncryptedHistVertPassive called with " << len << " nodes" << std::endl;
+    std::cout << Ident() << " LocalPlugin::BuildEncryptedHistVertPassive called with " << len << " nodes, total_bin_size " << total_bin_size << std::endl;
   }
-
-  auto num_slot = cuts_.back();
-  auto total_size = num_slot * len;
 
   auto encrypted_histo = std::vector<Buffer>(total_size);
   size_t offset = 0;
-  for (std::size_t i = 0; i < len; i++) {
-    auto num = cuts_.size() - 1;
-    auto row_id_map = std::map<int, std::vector<int>>();
-
-    // Empty slot leaks data so fill everything with empty vectors
-    for (int slot = 0; slot < num_slot; slot++) {
-      row_id_map.insert({slot, std::vector<int>()});
-    }
-
-    for (std::size_t f = 0; f < num; f++) {
-      for (std::size_t j = 0; j < sizes[i]; j++) {
-        auto row_id = ridx[i][j];
-        int slot = slots_[f + num * row_id];
-        if ((slot < 0) || (slot >= num_slot)) {
-          continue;
-        }
-        auto &row_ids = row_id_map[slot];
-        row_ids.push_back(static_cast<int>(row_id));
-      }
-    }
-
-    if (print_timing_) {
-      std::size_t add_ops = 0;
-      for (auto &item: row_id_map) {
-        add_ops += item.second.size();
-      }
-      std::cout << "Aggregating with " << add_ops << " additions" << std::endl;
-    }
+  for (std::size_t node_id = 0; node_id < len; node_id++) {
     auto start = std::chrono::system_clock::now();
+    auto encrypted_sum = std::vector<Buffer>(total_bin_size);
 
-    auto encrypted_sum = AddGHPairs(row_id_map);
+    AddGHPairs(encrypted_sum, ridx[node_id], sizes[node_id]);
 
     if (print_timing_) {
       auto end = std::chrono::system_clock::now();
@@ -266,14 +240,11 @@ void LocalPlugin::BuildEncryptedHistVertPassive(const std::uint64_t **ridx, cons
     }
 
     // Convert map back to array
-    for (int slot = 0; slot < num_slot; slot++) {
-      auto it = encrypted_sum.find(slot);
-      if (it != encrypted_sum.end()) {
-        encrypted_histo[offset + slot] = it->second;
-      }
+    for (int bin_idx = 0; bin_idx < total_bin_size; bin_idx++) {
+      encrypted_histo[offset + bin_idx] = encrypted_sum[bin_idx];
     }
 
-    offset += num_slot;
+    offset += total_bin_size;
   }
 
   auto encoder = DamEncoder(kDataSetAggregationResult, true, dam_debug_);
@@ -361,6 +332,47 @@ void LocalPlugin::SyncEncryptedHistVert(std::uint8_t *hist_buffer, std::size_t l
 
   *out = histo_.data();
   *out_len = histo_.size();
+}
+
+void LocalPlugin::prepareBinIndexVec(std::vector<std::vector<int>>& binIndexVec, const std::uint64_t *ridx, const std::size_t size) {
+  auto total_bin_size = cuts_.back();
+  auto num_feature = cuts_.size() - 1;
+  std::vector<size_t> bin_counts(total_bin_size, 0);  // Store the count of row_ids per bin
+
+  for (std::size_t f = 0; f < num_feature; f++) {
+    for (std::size_t j = 0; j < size; j++) {
+      auto row_id = ridx[j];
+      int bin_idx = bin_idx_vec_[f + num_feature * row_id];
+      if ((bin_idx < 0) || (bin_idx >= total_bin_size)) {
+        continue;
+      }
+      bin_counts[bin_idx]++;
+    }
+  }
+
+  binIndexVec.resize(total_bin_size);
+  for (auto i = 0; i < total_bin_size; i++) {
+    binIndexVec[i].resize(bin_counts[i]);
+  }
+
+  std::vector<size_t> bin_insert_index(total_bin_size, 0);  // Track the current insertion index for each bin
+
+  // second pass
+  for (std::size_t f = 0; f < num_feature; f++) {
+    for (std::size_t j = 0; j < size; j++) {
+        auto row_id = ridx[j];
+        int bin_idx = bin_idx_vec_[f + num_feature * row_id];
+
+        if ((bin_idx < 0) || (bin_idx >= total_bin_size)) {
+            continue;  // Skip invalid bin indices
+        }
+
+        size_t insert_pos = bin_insert_index[bin_idx];
+        binIndexVec[bin_idx][insert_pos] = static_cast<int>(row_id);
+        bin_insert_index[bin_idx]++;
+    }
+  }
+
 }
 
 } // namespace nvflare
