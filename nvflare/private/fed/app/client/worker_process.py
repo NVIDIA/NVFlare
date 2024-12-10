@@ -28,7 +28,6 @@ from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
-from nvflare.private.defs import EngineConstant
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
 from nvflare.private.fed.app.utils import monitor_parent_process
 from nvflare.private.fed.client.client_app_runner import ClientAppRunner
@@ -111,11 +110,12 @@ def main(args):
         federated_client = deployer.create_fed_client(args)
         federated_client.status = ClientStatus.STARTING
 
+        federated_client.communicator.set_auth(args.client_name, args.token, args.token_signature, args.ssid)
         federated_client.token = args.token
+        federated_client.token_signature = args.token_signature
         federated_client.ssid = args.ssid
         federated_client.client_name = args.client_name
         federated_client.fl_ctx.set_prop(FLContextKey.CLIENT_NAME, args.client_name, private=False)
-        federated_client.fl_ctx.set_prop(EngineConstant.FL_TOKEN, args.token, private=False)
         federated_client.fl_ctx.set_prop(FLContextKey.WORKSPACE_ROOT, args.workspace, private=True)
 
         client_app_runner = ClientAppRunner(time_out=kv_list.get("app_runner_timeout", 60.0))
@@ -150,7 +150,8 @@ def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
     parser.add_argument("--startup", "-w", type=str, help="startup folder", required=True)
-    parser.add_argument("--token", "-t", type=str, help="token", required=True)
+    parser.add_argument("--token", "-t", type=str, help="auth token", required=True)
+    parser.add_argument("--token_signature", "-ts", type=str, help="auth token signature", required=True)
     parser.add_argument("--ssid", "-d", type=str, help="ssid", required=True)
     parser.add_argument("--job_id", "-n", type=str, help="job_id", required=True)
     parser.add_argument("--client_name", "-c", type=str, help="client name", required=True)

@@ -184,6 +184,8 @@ class ProcessExecutor(ClientExecutor):
             + self.startup
             + " -t "
             + client.token
+            + " -ts "
+            + client.token_signature
             + " -d "
             + client.ssid
             + " -n "

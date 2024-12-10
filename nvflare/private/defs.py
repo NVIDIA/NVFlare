@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import time
+import uuid
 
 # this import is to let existing scripts import from nvflare.private.defs
 from nvflare.fuel.f3.cellnet.defs import CellChannel, CellChannelTopic, SSLConstants  # noqa: F401
@@ -31,8 +33,8 @@ class TaskConstant(object):
 class EngineConstant(object):
 
     FEDERATE_CLIENT = "federate_client"
-    FL_TOKEN = "fl_token"
-    CLIENT_TOKEN_FILE = "client_token.txt"
+    AUTH_TOKEN = "auth_token"
+    AUTH_TOKEN_SIGNATURE = "auth_token_signature"
     ENGINE_TASK_NAME = "engine_task_name"
 
 
@@ -138,7 +140,8 @@ class CellMessageHeaderKeys:
     CLIENT_NAME = "client_name"
     CLIENT_IP = "client_ip"
     PROJECT_NAME = "project_name"
-    TOKEN = "token"
+    TOKEN = "__token__"
+    TOKEN_SIGNATURE = "__token_signature__"
     SSID = "ssid"
     UNAUTHENTICATED = "unauthenticated"
     JOB_ID = "job_id"
@@ -147,11 +150,26 @@ class CellMessageHeaderKeys:
     ABORT_JOBS = "abort_jobs"
 
 
+AUTH_CLIENT_NAME_FOR_SJ = "server_job"
+
+
 class JobFailureMsgKey:
 
     JOB_ID = "job_id"
     CODE = "code"
     REASON = "reason"
+
+
+class InternalFLContextKey:
+
+    CLIENT_REG_SESSION = "client_reg_session"
+
+
+class ClientRegSession:
+    def __init__(self, client_name: str):
+        self.client_name = client_name
+        self.nonce = str(uuid.uuid4())
+        self.reg_start_time = time.time()
 
 
 def new_cell_message(headers: dict, payload=None):
