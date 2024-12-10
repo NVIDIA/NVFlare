@@ -206,7 +206,7 @@ const jobCode_pt = `
 from cifar10_pt_fl import Net
 
 from nvflare.app_common.workflows.fedavg import FedAvg
-from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
+from nvflare.app_opt.pt.job_config.base_fed_job import PTBaseFedJob
 from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
@@ -214,8 +214,8 @@ if __name__ == "__main__":
     num_rounds = 2
     train_script = "cifar10_pt_fl.py"
 
-    # Create BaseFedJob with initial model
-    job = BaseFedJob(
+    # Create PTBaseFedJob with initial model
+    job = PTBaseFedJob(
       name="cifar10_pt_fedavg",
       initial_model=Net(),
     )
@@ -425,7 +425,7 @@ const jobCode_lt = `
 from cifar10_lightning_fl import LitNet
 
 from nvflare.app_common.workflows.fedavg import FedAvg
-from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
+from nvflare.app_opt.pt.job_config.base_fed_job import PTBaseFedJob
 from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
@@ -433,8 +433,8 @@ if __name__ == "__main__":
     num_rounds = 2
     train_script = "cifar10_lightning_fl.py"
 
-    # Create BaseFedJob with initial model
-    job = BaseFedJob(
+    # Create PTBaseFedJob with initial model
+    job = PTBaseFedJob(
       name="cifar10_lightning_fedavg",
       initial_model=LitNet(),
     )
@@ -587,7 +587,7 @@ const jobCode_tf = `
 from cifar10_tf_fl import TFNet
 
 from nvflare.app_common.workflows.fedavg import FedAvg
-from nvflare.app_opt.tf.job_config.base_fed_job import BaseFedJob
+from nvflare.app_opt.tf.job_config.base_fed_job import TFBaseFedJob
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 
 if __name__ == "__main__":
@@ -595,8 +595,8 @@ if __name__ == "__main__":
     num_rounds = 2
     train_script = "cifar10_tf_fl.py"
 
-    # Create BaseFedJob with initial model
-    job = BaseFedJob(
+    # Create TFBaseFedJob with initial model
+    job = TFBaseFedJob(
       name="cifar10_tf_fedavg",
       initial_model=TFNet(input_shape=(None, 32, 32, 3)),
     )
@@ -665,7 +665,7 @@ const frameworks = [
         framework: "pytorch",
         title: "Job Code (fedavg_cifar10_pt_job.py)",
         description:
-          "Lastly we construct the job with our 'cifar10_pt_fl.py' client script and 'FedAvg' server controller. The BaseFedJob automatically configures components for model persistence, model selection, and TensorBoard streaming. We then run the job with the FL simulator.",
+          "Lastly we construct the job with our 'cifar10_pt_fl.py' client script and 'FedAvg' server controller. The PTBaseFedJob automatically configures components for model persistence, model selection, and TensorBoard streaming. We then run the job with the FL simulator.",
         code: jobCode_pt,
       },
       {
@@ -719,7 +719,7 @@ const frameworks = [
         framework: "lightning",
         title: "Job Code (fedavg_cifar10_lightning_job.py)",
         description:
-          "Lastly we construct the job with our 'cifar10_lightning_fl.py' client script and 'FedAvg' server controller. The BaseFedJob automatically configures components for model persistence, model selection, and TensorBoard streaming. We then run the job with the FL simulator.",
+          "Lastly we construct the job with our 'cifar10_lightning_fl.py' client script and 'FedAvg' server controller. The PTBaseFedJob automatically configures components for model persistence, model selection, and TensorBoard streaming. We then run the job with the FL simulator.",
         code: jobCode_lt,
       },
       {
@@ -773,7 +773,7 @@ const frameworks = [
         framework: "tensorflow",
         title: "Job Code (fedavg_cifar10_tf_job.py)",
         description:
-          "Lastly we construct the job with our 'cifar10_tf_fl.py' client script and 'FedAvg' server controller. The BaseFedJob automatically configures components for model persistence, model selection, and TensorBoard streaming. We then run the job with the FL simulator.",
+          "Lastly we construct the job with our 'cifar10_tf_fl.py' client script and 'FedAvg' server controller. The TFBaseFedJob automatically configures components for model persistence, model selection, and TensorBoard streaming. We then run the job with the FL simulator.",
         code: jobCode_tf,
       },
       {

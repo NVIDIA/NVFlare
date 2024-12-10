@@ -19,12 +19,12 @@ from nvflare.apis.dxo import DataKind
 from nvflare.app_common.aggregators import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
-from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
+from nvflare.app_opt.pt.job_config.base_fed_job import PTBaseFedJob
 from nvflare.app_opt.tracking.mlflow.mlflow_receiver import MLflowReceiver
 from nvflare.app_opt.tracking.mlflow.mlflow_writer import MLflowWriter
 
 
-class SAGMLFlowJob(BaseFedJob):
+class SAGMLFlowJob(PTBaseFedJob):
     def __init__(
         self,
         initial_model: nn.Module,
