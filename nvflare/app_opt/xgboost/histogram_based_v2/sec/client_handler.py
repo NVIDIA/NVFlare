@@ -109,6 +109,7 @@ class ClientSecurityHandler(SecurityHandler):
         # encrypt clear-text gh pairs and send to server
         self.clear_ghs = [combine(clear_ghs[i][0], clear_ghs[i][1]) for i in range(len(clear_ghs))]
         t = time.time()
+        self.info(fl_ctx, f"encrypting {len(self.clear_ghs)} gh pairs")
         encrypted_values = self.encryptor.encrypt(self.clear_ghs)
         self.info(fl_ctx, f"encrypted gh pairs: {len(encrypted_values)}, took {time.time() - t} secs")
 
@@ -216,9 +217,12 @@ class ClientSecurityHandler(SecurityHandler):
         self.info(
             fl_ctx, f"_process_before_all_gather_v: non-label client - do encrypted aggr for {len(groups)} groups"
         )
+
+        samples_to_add = sum([len(id_list) for _, id_list in groups])
+        self.info(fl_ctx, f"Adding encrypted values for {samples_to_add} samples")
         start = time.time()
         aggr_result = self.adder.add(self.encrypted_ghs, self.feature_masks, groups, encode_sum=True)
-        self.info(fl_ctx, f"got aggr result for {len(aggr_result)} features in {time.time() - start} secs")
+        self.info(fl_ctx, f"got aggr result for {len(aggr_result)} features, took {time.time() - start} secs")
         start = time.time()
         encoded_str = encode_feature_aggregations(aggr_result)
         self.info(fl_ctx, f"encoded aggr result len {len(encoded_str)} in {time.time() - start} secs")
@@ -284,8 +288,9 @@ class ClientSecurityHandler(SecurityHandler):
 
         t = time.time()
         aggrs_to_decrypt = [decoded_aggrs[i][2] for i in range(len(decoded_aggrs))]
+        self.info(fl_ctx, f"decrypting {len(aggrs_to_decrypt)} numbers")
         decrypted_aggrs = self.decrypter.decrypt(aggrs_to_decrypt)  # this is a list of clear-text GH numbers
-        self.info(fl_ctx, f"decrypted {len(aggrs_to_decrypt)} numbers in {time.time() - t} secs")
+        self.info(fl_ctx, f"decrypted {len(aggrs_to_decrypt)} numbers, took {time.time() - t} secs")
 
         aggr_result = []
         for i in range(len(decoded_aggrs)):

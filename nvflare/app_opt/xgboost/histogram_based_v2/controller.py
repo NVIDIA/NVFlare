@@ -413,8 +413,12 @@ class XGBController(Controller):
             self.log_exception(fl_ctx, f"exception processing {op}: {secure_format_exception(ex)}")
             self._trigger_stop(fl_ctx, process_error)
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-
-        self.log_info(fl_ctx, f"received reply for '{op}'")
+        rcv_buf = reply[Constant.PARAM_KEY_RCV_BUF]
+        try:
+            length = len(rcv_buf)
+        except:
+            length = -1
+        self.log_info(fl_ctx, f"received reply for '{op}' GRPC payload size: {length}")
         reply.set_header(Constant.MSG_KEY_XGB_OP, op)
         return reply
 

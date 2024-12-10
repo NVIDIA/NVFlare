@@ -13,10 +13,23 @@
 # limitations under the License.
 
 import concurrent.futures
+from functools import partial
+from multiprocessing import shared_memory
 
 from nvflare.app_opt.xgboost.histogram_based_v2.aggr import Aggregator
 
-from .util import encode_encrypted_numbers_to_str
+from .util import (
+    bytes_to_int,
+    ciphertext_to_int,
+    encode_encrypted_numbers_to_str,
+    encrypt_number,
+    get_exponent,
+    int_to_bytes,
+    int_to_ciphertext,
+)
+
+SUFFIX = b"\xff"
+SHARED_MEM_NAME = "encrypted_gh"
 
 
 class Adder:
@@ -40,40 +53,76 @@ class Adder:
             samples in the group for the feature.
 
         """
+
+        shared_gh = shared_memory.ShareableList(self._shared_list(encrypted_numbers), name=SHARED_MEM_NAME)
         items = []
 
         for f in features:
             fid, mask, num_bins = f
             if not sample_groups:
-                items.append((encode_sum, fid, encrypted_numbers, mask, num_bins, 0, None))
+                items.append((encode_sum, fid, mask, num_bins, 0, None))
             else:
                 for g in sample_groups:
                     gid, sample_id_list = g
-                    items.append((encode_sum, fid, encrypted_numbers, mask, num_bins, gid, sample_id_list))
+                    items.append((encode_sum, fid, mask, num_bins, gid, sample_id_list))
 
+        pubkey = encrypted_numbers[0].public_key
         chunk_size = int((len(items) - 1) / self.num_workers) + 1
 
-        results = self.exe.map(_do_add, items, chunksize=chunk_size)
+        results = self.exe.map(partial(_do_add, shared_gh.shm.name, pubkey), items, chunksize=chunk_size)
         rl = []
         for r in results:
             rl.append(r)
+
+        shared_gh.shm.close()
+        shared_gh.shm.unlink()
+
         return rl
 
+    def _shared_list(self, encrypted_numbers: list) -> list:
+        result = []
+        for ciphertext in encrypted_numbers:
+            # Due to a Python bug, a non-zero suffix is needed
+            # See https://github.com/python/cpython/issues/10693
+            result.append(int_to_bytes(ciphertext_to_int(ciphertext)) + SUFFIX)
+            result.append(int_to_bytes(get_exponent(ciphertext)) + SUFFIX)
 
-def _do_add(item):
-    encode_sum, fid, encrypted_numbers, mask, num_bins, gid, sample_id_list = item
+        return result
+
+
+def shared_list_accessor(pubkey, shared_gh, index):
+    """
+    shared_gh contains ciphertext and exponent in bytes so each
+    encrypted number takes 2 slots
+
+    Due to the ShareableList bug, a non-zero byte is appended to the bytes
+    """
+    n = bytes_to_int(shared_gh[index * 2][:-1])
+    exp = bytes_to_int(shared_gh[index * 2 + 1][:-1])
+    ciphertext = int_to_ciphertext(n, pubkey=pubkey)
+    return encrypt_number(pubkey, ciphertext, exp)
+
+
+def _do_add(shared_mem_name, pubkey, item):
+
+    shared_gh = shared_memory.ShareableList(name=shared_mem_name)
+    encode_sum, fid, mask, num_bins, gid, sample_id_list = item
     # bins = [0 for _ in range(num_bins)]
     aggr = Aggregator()
 
     bins = aggr.aggregate(
-        gh_values=encrypted_numbers,
+        gh_values=shared_gh,
         sample_bin_assignment=mask,
         num_bins=num_bins,
         sample_ids=sample_id_list,
+        accessor=partial(shared_list_accessor, pubkey),
     )
 
     if encode_sum:
         sums = encode_encrypted_numbers_to_str(bins)
     else:
         sums = bins
+
+    shared_gh.shm.close()
+
     return fid, gid, sums
