@@ -32,11 +32,15 @@ template<unsigned int TPI, unsigned int BITS>
 __global__ void gpu_decrypt(cgbn_error_report_t *report, cgbn_mem_t<BITS> * plains, cgbn_mem_t<BITS> *ciphers, int count);
 
 template<unsigned int TPI, unsigned int BITS>
-__global__ void reduce_sum(cgbn_error_report_t *report, CgbnPair* result, CgbnPair* arr, int count, CgbnPair* one);
+__global__ void reduce_sum(cgbn_error_report_t *report, GHPair* result, GHPair* arr, int count, GHPair* zero);
 
 template<unsigned int TPI, unsigned int BITS>
-__global__ void reduce_sum_with_index(cgbn_error_report_t *report, CgbnPair* result, CgbnPair* arr,
-int* sample_bin, int count, CgbnPair* one);
+__global__ void reduce_sum_with_index(cgbn_error_report_t *report, GHPair* result, GHPair* arr,
+int* sample_bin, int count, GHPair* zero);
+
+template<unsigned int TPI, unsigned int BITS>
+__global__ void add_two(cgbn_error_report_t *report, GHPair* result, GHPair* arr,
+int* sample_bin, int count, GHPair* zero);
 
 
 /***********************Class**********************/
@@ -75,7 +79,7 @@ class PaillierCipher{
         bool has_prv_key = false;
         PaillierPubKey<BITS> pub_key;
         PaillierPrvKey<BITS> prv_key;
-        CgbnPair _one;            
+        GHPair _zero;
 
     public:
         PaillierCipher(int key_len, bool fix_seed = false, bool debug = false){
@@ -120,12 +124,11 @@ class PaillierCipher{
 
         void init_pub(mpz_t &n, uint64_t rand){
             if (debug_) std::cout<<"PaillierCipher::init_pub" << std::endl;
-            mpz_t n_1, n_square, limit_int, rand_seed, one;
+            mpz_t n_1, n_square, limit_int, rand_seed;
             mpz_init(n_1);
             mpz_init(n_square);
             mpz_init(limit_int);
             mpz_init(rand_seed);
-            mpz_init(one);
 
             mpz_add_ui(n_1, n, 1);
             mpz_mul(n_square, n, n);
@@ -135,16 +138,14 @@ class PaillierCipher{
 
             mpz_set_ui(rand_seed, rand);
             mpz_powm(rand_seed, rand_seed, n, n_square);
-            mpz_mul(one, n_1, rand_seed);
-            mpz_mod(one, one, n_square);
 
             store2Cgbn(&pub_key.n, n);
             store2Cgbn(&pub_key.n_1, n_1);
             store2Cgbn(&pub_key.n_square, n_square);
             store2Cgbn(&pub_key.limit_int, limit_int);
             store2Cgbn(&pub_key.rand_seed, rand_seed);
-            store2Cgbn(&_one.g, rand_seed);
-            store2Cgbn(&_one.h, rand_seed);
+            store2Cgbn(&_zero.g, rand_seed);
+            store2Cgbn(&_zero.h, rand_seed);
             ck(cudaMemcpyToSymbol(c_PubKey, &pub_key, sizeof(pub_key)));
 
             if (debug_) {
@@ -154,13 +155,13 @@ class PaillierCipher{
                 gmp_printf("n_square:%Zd\n", n_square);
                 gmp_printf("limit_int:%Zd\n", limit_int);
                 gmp_printf("rand_seed:%Zd \n", rand_seed);
-                gmp_printf("one:%Zd \n", one);
+
             }
             mpz_clear(n_1);
             mpz_clear(n_square);
             mpz_clear(limit_int);
             mpz_clear(rand_seed);
-            mpz_clear(one);
+
             if (debug_) std::cout<<"end PaillierCipher::init_pub" << std::endl;
         }
 
@@ -278,8 +279,8 @@ class PaillierCipher{
 
 
             store2Cgbn(&pub_key.rand_seed, rand_seed); 
-            store2Cgbn(&_one.g, rand_seed); 
-            store2Cgbn(&_one.h, rand_seed); 
+            store2Cgbn(&_zero.g, rand_seed); 
+            store2Cgbn(&_zero.h, rand_seed); 
             if (debug_) gmp_printf("Updated rand_seed:%Zd \n", rand_seed);
             ck(cudaMemcpyToSymbol(c_PubKey, &pub_key, sizeof(pub_key)));
 #ifdef DEBUG
@@ -347,13 +348,13 @@ class PaillierCipher{
             }
 
         template<unsigned int TPI, unsigned int TPB>
-            int sum(CgbnPair* d_res_ptr, CgbnPair* d_arr_ptr, int* sample_bin, int count) {
-                int IPB=TPB/TPI;
+            int sum(GHPair* d_res_ptr, GHPair* d_arr_ptr, int* sample_bin, int count) {
+                int IPB = TPB / TPI;
                 int maxBlocks = 2560;
                 int numBlocks = min((count - 1) / IPB + 1, maxBlocks);
-                int mem_size = numBlocks * sizeof(CgbnPair);
+                int mem_size = numBlocks * sizeof(GHPair);
                 if (count == 0) {
-                    cudaMemcpy(d_res_ptr, &_one, sizeof(CgbnPair), cudaMemcpyHostToDevice);
+                    cudaMemcpy(d_res_ptr, &_zero, sizeof(GHPair), cudaMemcpyHostToDevice);
                     return 0;
                 }
 
@@ -364,25 +365,24 @@ class PaillierCipher{
                 cuda_timer.start();
 #endif
 
-                CgbnPair* d_res_ptr_2;
+                GHPair* d_res_ptr_2;
                 ck(cudaMalloc((void **)&d_res_ptr_2, mem_size));
-                CgbnPair* d_one;
-                ck(cudaMalloc((void **)&d_one, sizeof(CgbnPair)));
-                cudaMemcpy(d_one, &_one, sizeof(CgbnPair), cudaMemcpyHostToDevice);
+                GHPair* d_zero;
+                ck(cudaMalloc((void **)&d_zero, sizeof(GHPair)));
+                cudaMemcpy(d_zero, &_zero, sizeof(GHPair), cudaMemcpyHostToDevice);
                 
                 typedef cgbn_context_t<TPI>         context_t;
                 typedef cgbn_env_t<context_t, BITS> env_t;
                 typedef typename env_t::cgbn_t bn_t;
-                int shmem_size = IPB * sizeof(CgbnPair);
+                int shmem_size = IPB * sizeof(GHPair);
 
 #ifdef DEBUG
-                std::cout << "before calling reduce_sum with CgbnPair and sample_bin" << std::endl;
+                std::cout << "before calling reduce_sum with GHPair and sample_bin" << std::endl;
                 std::cout << "before calling reduce_sum count: " << count << " shm_size: " << shmem_size << " numBlocks: " << numBlocks << std::endl;
                 std::cout << "before calling reduce_sum TPI: " << TPI << " TPB: " << TPB << " IPB: " << IPB << std::endl;
 #endif
 
-                reduce_sum_with_index<TPI, BITS><<<numBlocks, TPB, shmem_size>>>(report, d_res_ptr_2, d_arr_ptr, sample_bin, count, d_one);
-                ck(cudaDeviceSynchronize());
+                reduce_sum_with_index<TPI, BITS><<<numBlocks, TPB, shmem_size>>>(report, d_res_ptr_2, d_arr_ptr, sample_bin, count, d_zero);
 
 #ifdef DEBUG
                 std::cout << "after calling reduce_sum" << std::endl;
@@ -390,26 +390,54 @@ class PaillierCipher{
 
                 // final reduction
                 if (numBlocks != 1) {
-                    reduce_sum<TPI, BITS><<<1, TPB, shmem_size>>>(report, d_res_ptr, d_res_ptr_2, numBlocks, d_one);
+                    reduce_sum<TPI, BITS><<<1, TPB, shmem_size>>>(report, d_res_ptr, d_res_ptr_2, numBlocks, d_zero);
                 } else {
                     cudaMemcpy(d_res_ptr, d_res_ptr_2, mem_size, cudaMemcpyDeviceToDevice);
                 }
-                ck(cudaDeviceSynchronize());
 
 #ifdef DEBUG
                 ck(cudaGetLastError());
                 CGBN_CHECK(report);
-                ck(cgbn_error_report_free(report));
 #endif
+                ck(cgbn_error_report_free(report));
 
 #ifdef TIME
                 float add_time=cuda_timer.stop();
                 std::cout<<"Add Time (TPI="<<TPI<<" , TBP="<<TPB<<" ): "<<add_time<<" MS"<<std::endl;
 #endif
                 cudaFree(d_res_ptr_2);
-                cudaFree(d_one);
+                cudaFree(d_zero);
                 return 0;
 	    }
+
+        template<unsigned int TPI, unsigned int TPB>
+            int agg_tuple(GHPair* d_gh_pairs, int num_gh_pairs, unsigned int num_blocks) {
+                cgbn_error_report_t *report;
+                ck(cgbn_error_report_alloc(&report));
+
+#ifdef TIME
+                CudaTimer cuda_timer(0);
+                cuda_timer.start();
+#endif
+
+                add_two<TPI, BITS><<<num_blocks, TPB>>>(report, d_gh_pairs, num_gh_pairs);
+
+#ifdef TIME
+                float add_time=cuda_timer.stop();
+                std::cout<<"Add Time (TPI="<<TPI<<" , TBP="<<TPB<<" ): "<<add_time<<" MS"<<std::endl;
+#endif
+
+#ifdef DEBUG
+                ck(cudaGetLastError());
+                CGBN_CHECK(report);
+#endif
+                ck(cgbn_error_report_free(report));
+                return 0;
+	    }
+
+        GHPair get_encrypted_zero(){
+            return _zero;
+        }
 
 };
 
@@ -631,7 +659,7 @@ __global__ void gpu_decrypt(cgbn_error_report_t *report, cgbn_mem_t<BITS> * plai
 
 
 template <unsigned int TPI, unsigned int BITS>
-__global__ void reduce_sum(cgbn_error_report_t* report, CgbnPair* result, CgbnPair* arr, int count, CgbnPair* one) {
+__global__ void reduce_sum(cgbn_error_report_t* report, GHPair* result, GHPair* arr, int count, GHPair* zero) {
     typedef cgbn_context_t<TPI> context_t;
     typedef cgbn_env_t<context_t, BITS> env_t;
     typedef typename env_t::cgbn_t bn_t;
@@ -644,7 +672,7 @@ __global__ void reduce_sum(cgbn_error_report_t* report, CgbnPair* result, CgbnPa
     context_t bn_context(cgbn_report_monitor, report, id);
     env_t bn_env(bn_context);
 
-    extern __shared__ CgbnPair sdata3[];
+    extern __shared__ GHPair sdata3[];
     bn_t a, b, c, tmp_g, tmp_h;
     bn_t n_square;
     bn_w_t r;
@@ -655,7 +683,7 @@ __global__ void reduce_sum(cgbn_error_report_t* report, CgbnPair* result, CgbnPa
         int global_position = id + window * IPB * gridDim.x;
         if (global_position >= count) {
             // Load rand_seed into sdata3 directly for positions exceeding count
-            sdata3[shm_id] = one[0];
+            sdata3[shm_id] = zero[0];
         } else {
             // Load pairs of elements from arr into sdata3
             sdata3[shm_id] = arr[global_position];
@@ -712,7 +740,7 @@ __global__ void reduce_sum(cgbn_error_report_t* report, CgbnPair* result, CgbnPa
 
 
 template <unsigned int TPI, unsigned int BITS>
-__global__ void reduce_sum_with_index(cgbn_error_report_t* report, CgbnPair* result, CgbnPair* arr, int* sample_bin, int count, CgbnPair* one) {
+__global__ void reduce_sum_with_index(cgbn_error_report_t* report, GHPair* result, GHPair* arr, int* sample_bin, int count, GHPair* zero) {
                             
     typedef cgbn_context_t<TPI> context_t;
     typedef cgbn_env_t<context_t, BITS> env_t;
@@ -726,7 +754,7 @@ __global__ void reduce_sum_with_index(cgbn_error_report_t* report, CgbnPair* res
     context_t bn_context(cgbn_report_monitor, report, id);
     env_t bn_env(bn_context);
 
-    extern __shared__ CgbnPair sdata4[];
+    extern __shared__ GHPair sdata4[];
     bn_t a, b, c, tmp_g, tmp_h;
     bn_t n_square;
     bn_w_t r;
@@ -742,7 +770,7 @@ __global__ void reduce_sum_with_index(cgbn_error_report_t* report, CgbnPair* res
       
         if (global_position >= count) {
             // Load rand_seed into sdata4 directly for positions exceeding count
-            sdata4[shm_id] = one[0];
+            sdata4[shm_id] = zero[0];
         } else {
             int sample_id = sample_bin[global_position];
             //printf("loading global position %d sample id %d", global_position, sample_id);
@@ -797,6 +825,45 @@ __global__ void reduce_sum_with_index(cgbn_error_report_t* report, CgbnPair* res
         cgbn_store(bn_env, &(result[blockIdx.x].h), tmp_h);
     }
     __syncthreads();
+}
+
+
+template <unsigned int TPI, unsigned int BITS>
+__global__ void add_two(cgbn_error_report_t *report, GHPair* arr, int count) {
+
+    int id = (blockIdx.x * blockDim.x + threadIdx.x) / TPI;
+    int item_id = id * 2; // each tuple contains 2 GHPairs (G0, H0) and (G1, H1)
+
+    if (item_id < count) {
+        typedef cgbn_context_t<TPI> context_t;
+        typedef cgbn_env_t<context_t, BITS> env_t;
+        typedef typename env_t::cgbn_t bn_t;
+        typedef typename env_t::cgbn_wide_t bn_w_t;
+
+        context_t bn_context(cgbn_report_monitor, report, item_id);
+        env_t bn_env(bn_context);
+
+        bn_t a, b, c;
+        bn_t n_square;
+        bn_w_t r;
+
+        cgbn_load(bn_env, n_square, &c_PubKey.n_square);
+
+        // Add 2 GHPairs up
+        // Load pairs of elements and perform reduction
+        cgbn_load(bn_env, a, &(arr[item_id].g));
+        cgbn_load(bn_env, b, &(arr[item_id + 1].g));
+        cgbn_mul_wide(bn_env, r, a, b);
+        cgbn_rem_wide(bn_env, c, r, n_square);
+        cgbn_store(bn_env, &(arr[item_id].g), c);
+
+        cgbn_load(bn_env, a, &(arr[item_id].h));
+        cgbn_load(bn_env, b, &(arr[item_id + 1].h));
+        cgbn_mul_wide(bn_env, r, a, b);
+        cgbn_rem_wide(bn_env, c, r, n_square);
+        cgbn_store(bn_env, &(arr[item_id].h), c);
+
+    }
 }
 
 #endif // PAILLIER_H
