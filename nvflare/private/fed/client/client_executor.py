@@ -41,7 +41,6 @@ class ClientExecutor(ABC):
         job_id,
         job_meta,
         args,
-        app_custom_folder,
         allocated_resource,
         token,
         resource_manager,
@@ -53,7 +52,6 @@ class ClientExecutor(ABC):
             client: the FL client object
             job_id: the job_id
             args: admin command arguments for starting the FL client training
-            app_custom_folder: FL application custom folder
             allocated_resource: allocated resources
             token: token from resource manager
             resource_manager: resource manager
@@ -145,7 +143,6 @@ class JobExecutor(ClientExecutor):
         job_id,
         job_meta,
         args,
-        app_custom_folder,
         allocated_resource,
         token,
         resource_manager: ResourceManagerSpec,
@@ -158,7 +155,6 @@ class JobExecutor(ClientExecutor):
             job_id: the job_id
             job_meta: job meta data
             args: admin command arguments for starting the worker process
-            app_custom_folder: FL application custom folder
             allocated_resource: allocated resources
             token: token from resource manager
             resource_manager: resource manager
