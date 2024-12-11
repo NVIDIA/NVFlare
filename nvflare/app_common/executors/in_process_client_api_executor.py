@@ -41,7 +41,6 @@ from nvflare.client.in_process.api import (
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.data_event.event_manager import EventManager
 from nvflare.fuel.utils.validation_utils import check_object_type
-from nvflare.private.fed.utils.fed_utils import get_scope_prop
 from nvflare.security.logging import secure_format_traceback
 
 
