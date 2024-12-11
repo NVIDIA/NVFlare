@@ -180,13 +180,9 @@ class InProcessClientAPIExecutor(Executor):
     def _prepare_task_meta(self, fl_ctx, task_name):
         job_id = fl_ctx.get_job_id()
         site_name = fl_ctx.get_identity_name()
-        auth_token = get_scope_prop(scope_name=site_name, key=FLMetaKey.AUTH_TOKEN, default="NA")
-        auth_token_signature = get_scope_prop(scope_name=site_name, key=FLMetaKey.AUTH_TOKEN_SIGNATURE, default="NA")
 
         meta = {
             FLMetaKey.SITE_NAME: site_name,
-            FLMetaKey.AUTH_TOKEN: auth_token,
-            FLMetaKey.AUTH_TOKEN_SIGNATURE: auth_token_signature,
             FLMetaKey.JOB_ID: job_id,
             ConfigKey.TASK_NAME: task_name,
             ConfigKey.TASK_EXCHANGE: {

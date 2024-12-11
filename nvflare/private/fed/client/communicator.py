@@ -100,9 +100,7 @@ class Communicator:
         self.token_signature = None
         self.ssid = None
         self.client_name = None
-
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.logger.info(f"==== Communicator GOT CELL: {type(cell)}")
 
     def set_auth(self, client_name, token, token_signature, ssid):
         self.ssid = ssid
