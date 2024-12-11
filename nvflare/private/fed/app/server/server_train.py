@@ -51,7 +51,7 @@ def main(args):
     args.log_config = None
     args.job_id = None
 
-    workspace = Workspace(root_dir=args.workspace, site_name="server")
+    workspace = Workspace(root_dir=args.workspace, site_name=SiteType.SERVER)
     for name in [WorkspaceConstants.RESTART_FILE, WorkspaceConstants.SHUTDOWN_FILE]:
         try:
             f = workspace.get_file_path_in_root(name)

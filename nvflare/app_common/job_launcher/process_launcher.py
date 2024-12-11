@@ -18,10 +18,11 @@ import subprocess
 from abc import abstractmethod
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobReturnCode, add_launcher
-from nvflare.private.fed.utils.fed_utils import extract_job_image
+from nvflare.apis.workspace import Workspace
+from nvflare.utils.job_launcher_utils import add_custom_dir_to_path, extract_job_image
 
 JOB_RETURN_CODE_MAPPING = {0: JobReturnCode.SUCCESS, 1: JobReturnCode.EXECUTION_ERROR, 9: JobReturnCode.ABORTED}
 
@@ -62,7 +63,14 @@ class ProcessJobLauncher(JobLauncherSpec):
 
     def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
 
-        command, new_env = self.get_command(job_meta, fl_ctx)
+        new_env = os.environ.copy()
+        workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        job_id = job_meta.get(JobConstants.JOB_ID)
+        app_custom_folder = workspace_obj.get_app_custom_dir(job_id)
+        if app_custom_folder != "":
+            add_custom_dir_to_path(app_custom_folder, new_env)
+
+        command = self.get_command(job_meta, fl_ctx)
         # use os.setsid to create new process group ID
         process = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
 
@@ -71,22 +79,22 @@ class ProcessJobLauncher(JobLauncherSpec):
         return ProcessHandle(process)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
-        if event_type == EventType.GET_JOB_LAUNCHER:
+        if event_type == EventType.BEFORE_JOB_LAUNCH:
             job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
             job_image = extract_job_image(job_meta, fl_ctx.get_identity_name())
             if not job_image:
                 add_launcher(self, fl_ctx)
 
     @abstractmethod
-    def get_command(self, launch_data, fl_ctx) -> (str, dict):
+    def get_command(self, job_meta, fl_ctx) -> str:
         """To generate the command to launcher the job in sub-process
 
         Args:
             fl_ctx: FLContext
-            launch_data: job launcher data
+            job_meta: job meta data
 
         Returns:
-            launch command, environment dict
+            launch command
 
         """
         pass

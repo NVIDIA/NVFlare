@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import os
 import re
 import shutil
@@ -31,6 +30,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message as CellMessage
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
 from nvflare.private.defs import ERROR_MSG_PREFIX, ClientStatusKey, EngineConstant, new_cell_message
 from nvflare.private.event import fire_event
@@ -96,7 +96,7 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
 
         if workers < 1:
             raise ValueError("workers must >= 1")
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
         self.fl_components = [x for x in self.client.components.values() if isinstance(x, FLComponent)]
 
     def fire_event(self, event_type: str, fl_ctx: FLContext):

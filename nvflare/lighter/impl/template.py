@@ -12,10 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-
-from nvflare.lighter.spec import Builder
-from nvflare.lighter.utils import load_yaml
+from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
 
 class TemplateBuilder(Builder):
@@ -24,10 +21,5 @@ class TemplateBuilder(Builder):
     Loads the content of the template_file into the key-value pair (template) in the build context.
     """
 
-    def initialize(self, ctx):
-        resource_dir = self.get_resources_dir(ctx)
-        template_files = ctx.get("template_files")
-        template = dict()
-        for tplt_file in template_files:
-            template.update(load_yaml(os.path.join(resource_dir, tplt_file)))
-        ctx["template"] = template
+    def initialize(self, project: Project, ctx: ProvisionContext):
+        print("TemplateBuilder is obsolete!")

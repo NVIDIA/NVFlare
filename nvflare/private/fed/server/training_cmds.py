@@ -13,15 +13,15 @@
 # limitations under the License.
 
 import json
-import logging
 import time
 from typing import List
 
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import AdminCommandNames
+from nvflare.apis.fl_constant import AdminCommandNames, SiteType
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.admin_defs import MsgHeader, ReturnCode
 from nvflare.private.defs import ClientStatusKey, ScopeInfoKey, TrainingTopic
 from nvflare.private.fed.server.admin import new_message
@@ -37,7 +37,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
     def __init__(self):
         """A class for training commands."""
         super().__init__()
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
 
     def get_spec(self):
         return CommandModuleSpec(
@@ -381,7 +381,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         if dst in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
             # get the server's scope info
             scope_names, default_scope_name = get_scope_info()
-            self._add_scope_info(table, "server", scope_names, default_scope_name)
+            self._add_scope_info(table, SiteType.SERVER, scope_names, default_scope_name)
 
         if dst in [self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_ALL]:
             message = new_message(conn, topic=TrainingTopic.GET_SCOPES, body="", require_authz=True)
