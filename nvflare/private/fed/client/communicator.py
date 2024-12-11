@@ -21,7 +21,7 @@ from typing import List, Optional
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.filter import Filter
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, FLMetaKey
 from nvflare.apis.fl_constant import ReturnCode as ShareableRC
 from nvflare.apis.fl_constant import SecureTrainConst, ServerCommandKey, ServerCommandNames
 from nvflare.apis.fl_context import FLContext
@@ -34,7 +34,7 @@ from nvflare.fuel.f3.cellnet.utils import format_size
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, SpecialTaskName, new_cell_message
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
-from nvflare.private.fed.utils.fed_utils import get_scope_prop
+from nvflare.private.fed.utils.fed_utils import get_scope_prop, set_scope_prop
 from nvflare.private.fed.utils.identity_utils import IdentityAsserter, IdentityVerifier, load_crt_bytes
 from nvflare.security.logging import secure_format_exception
 
@@ -109,6 +109,10 @@ class Communicator:
         self.token_signature = token_signature
         self.token = token
         self.client_name = client_name
+
+        # put auth properties in database so that they can be used elsewhere
+        set_scope_prop(scope_name=client_name, key=FLMetaKey.AUTH_TOKEN, value=token)
+        set_scope_prop(scope_name=client_name, key=FLMetaKey.AUTH_TOKEN_SIGNATURE, value=token_signature)
 
     def set_cell(self, cell):
         self.cell = cell

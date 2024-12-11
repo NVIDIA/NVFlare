@@ -15,6 +15,7 @@ import time
 import uuid
 
 # this import is to let existing scripts import from nvflare.private.defs
+from nvflare.apis.fl_constant import CellMessageAuthHeaderKey
 from nvflare.fuel.f3.cellnet.defs import CellChannel, CellChannelTopic, SSLConstants  # noqa: F401
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.hci.server.constants import ConnProps
@@ -137,11 +138,11 @@ ERROR_MSG_PREFIX = "NVFLARE_ERROR"
 
 class CellMessageHeaderKeys:
 
-    CLIENT_NAME = "client_name"
+    CLIENT_NAME = CellMessageAuthHeaderKey.CLIENT_NAME
+    TOKEN = CellMessageAuthHeaderKey.TOKEN
+    TOKEN_SIGNATURE = CellMessageAuthHeaderKey.TOKEN_SIGNATURE
     CLIENT_IP = "client_ip"
     PROJECT_NAME = "project_name"
-    TOKEN = "__token__"
-    TOKEN_SIGNATURE = "__token_signature__"
     SSID = "ssid"
     UNAUTHENTICATED = "unauthenticated"
     JOB_ID = "job_id"

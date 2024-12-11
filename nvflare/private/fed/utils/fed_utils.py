@@ -33,14 +33,13 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.decomposers import common_decomposers
-from nvflare.fuel.data_event.data_bus import DataBus
+from nvflare.fuel.data_event.utils import get_scope_property, set_scope_property
 from nvflare.fuel.f3.stats_pool import CsvRecordHandler, StatsPoolManager
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.authz import AuthorizationService
 from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.fobs import register_custom_folder
-from nvflare.fuel.utils.validation_utils import check_str
 from nvflare.private.defs import RequestHeader, SSLConstants
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.decomposers import private_decomposers
@@ -415,20 +414,15 @@ def set_scope_prop(scope_name: str, key: str, value: Any):
         value: value of property
     Returns: None
     """
-    check_str("scope_name", scope_name)
-    check_str("key", key)
-    data_bus = DataBus()
-    data_bus.put_data(_scope_prop_key(scope_name, key), value)
+    set_scope_property(scope_name, key, value)
 
 
-def get_scope_prop(scope_name: str, key: str) -> Any:
+def get_scope_prop(scope_name: str, key: str, default=None) -> Any:
     """Get the value of a specified property from the specified scope.
     Args:
         scope_name: name of the scope
         key: key of the scope
+        default: value to return if the prop is not found
     Returns:
     """
-    check_str("scope_name", scope_name)
-    check_str("key", key)
-    data_bus = DataBus()
-    return data_bus.get_data(_scope_prop_key(scope_name, key))
+    return get_scope_property(scope_name, key, default)
