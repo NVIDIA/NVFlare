@@ -179,6 +179,7 @@ class InProcessClientAPIExecutor(Executor):
     def _prepare_task_meta(self, fl_ctx, task_name):
         job_id = fl_ctx.get_job_id()
         site_name = fl_ctx.get_identity_name()
+
         meta = {
             FLMetaKey.SITE_NAME: site_name,
             FLMetaKey.JOB_ID: job_id,
