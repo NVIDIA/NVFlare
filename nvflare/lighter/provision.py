@@ -145,6 +145,7 @@ def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=
     if len(project_name) > 63:
         print(f"Project name {project_name} is longer than 63.  Will truncate it to {project_name[:63]}.")
         project_name = project_name[:63]
+        project_dict[PropKey.NAME] = project_name
     project_description = project_dict.get(PropKey.DESCRIPTION, "")
     project = Project(name=project_name, description=project_description, props=project_dict)
     participant_defs = project_dict.get("participants")
