@@ -17,7 +17,7 @@ import os
 from typing import Any, Dict, Optional, Tuple
 
 from nvflare.apis.analytix import AnalyticsDataType
-from nvflare.apis.fl_constant import FLMetaKey
+from nvflare.apis.fl_constant import FLMetaKey, SecureTrainConst
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.client.api_spec import APISpec
@@ -45,6 +45,11 @@ def _create_client_config(config: str) -> ClientConfig:
     site_name = client_config.get_site_name()
     set_scope_property(scope_name=site_name, key=FLMetaKey.AUTH_TOKEN, value=auth_token)
     set_scope_property(scope_name=site_name, key=FLMetaKey.AUTH_TOKEN_SIGNATURE, value=signature)
+
+    conn_sec = client_config.get_connection_security()
+    if conn_sec:
+        set_scope_property(site_name, SecureTrainConst.CONNECTION_SECURITY, conn_sec)
+
     return client_config
 
 

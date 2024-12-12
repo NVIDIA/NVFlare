@@ -16,7 +16,7 @@ import json
 import os
 from typing import Dict, Optional
 
-from nvflare.apis.fl_constant import FLMetaKey
+from nvflare.apis.fl_constant import FLMetaKey, SecureTrainConst
 from nvflare.fuel.utils.config_factory import ConfigFactory
 
 
@@ -164,6 +164,9 @@ class ClientConfig:
 
     def get_auth_token_signature(self):
         return self.config.get(FLMetaKey.AUTH_TOKEN_SIGNATURE)
+
+    def get_connection_security(self):
+        return self.config.get(SecureTrainConst.CONNECTION_SECURITY)
 
     def to_json(self, config_file: str):
         with open(config_file, "w") as f:
