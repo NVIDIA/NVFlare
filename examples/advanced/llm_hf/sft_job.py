@@ -20,8 +20,8 @@ from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.app_opt.pt.tensor_params_converter import PTReceiveParamsConverter, PTSendParamsConverter
-from nvflare.app_opt.quantization.numpy_dequantizor import NumpyModelDequantizor
-from nvflare.app_opt.quantization.numpy_quantizor import NumpyModelQuantizor
+from nvflare.app_opt.quantization.dequantizor import ModelDequantizor
+from nvflare.app_opt.quantization.quantizor import ModelQuantizor
 from nvflare.job_config.script_runner import BaseScriptRunner
 
 
@@ -68,8 +68,8 @@ def main():
 
     if args.quantize_mode:
         # If using quantization, add quantize filters.
-        quantizor = NumpyModelQuantizor(quantization_type=args.quantize_mode)
-        dequantizor = NumpyModelDequantizor(source_data_type="float32")
+        quantizor = ModelQuantizor(quantization_type=args.quantize_mode)
+        dequantizor = ModelDequantizor()
         job.to(quantizor, "server", tasks=["train"], filter_type=FilterType.TASK_DATA)
         job.to(dequantizor, "server", tasks=["train"], filter_type=FilterType.TASK_RESULT)
 

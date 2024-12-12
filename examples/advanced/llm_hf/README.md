@@ -131,6 +131,10 @@ We can use the following command to run the federated training with direct tenso
 ```
 python3 sft_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_tensor --job_dir ${PWD}/workspace/jobs/hf_sft_tensor --train_mode SFT --message_mode tensor
 ```
+Similarly, quantization can be applied to tensor communication as well.
+```
+python3 sft_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_tensor_fp4 --job_dir ${PWD}/workspace/jobs/hf_sft_tensor_fp4 --train_mode SFT --message_mode tensor --quantize_mode float4
+```
 
 ## Federated Training with Multiple Clients
 With the above example, we can easily extend the federated training to multiple clients. We can use the following command to run the federated training with multiple clients:

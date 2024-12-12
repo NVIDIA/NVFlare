@@ -17,8 +17,8 @@ import pytest
 
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_opt.quantization.numpy_dequantizor import NumpyModelDequantizor
-from nvflare.app_opt.quantization.numpy_quantizor import NumpyModelQuantizor
+from nvflare.app_opt.quantization.dequantizor import NumpyModelDequantizor
+from nvflare.app_opt.quantization.quantizor import NumpyModelQuantizor
 
 TEST_CASES = [
     (
