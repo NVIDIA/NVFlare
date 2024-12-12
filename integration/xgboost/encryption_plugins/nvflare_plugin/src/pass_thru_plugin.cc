@@ -100,17 +100,22 @@ std::vector<double> PassThruPlugin::DecryptVector(const std::vector<Buffer>& cip
   return result;
 }
 
-std::map<int, Buffer> PassThruPlugin::AddGHPairs(const std::map<int, std::vector<int>>& sample_ids) {
+void PassThruPlugin::AddGHPairs(std::vector<Buffer>& result, const std::uint64_t *ridx, const std::size_t size) {
+  size_t total_bin_size = cuts_.back();
   if (debug_) {
-    std::cout << "PassThruPlugin::AddGHPairs called with " << sample_ids.size() << " slots" << std::endl;
+    std::cout << "PassThruPlugin::AddGHPairs called with " << total_bin_size << " bins" << std::endl;
   }
 
   // Can't do this in real plugin. It needs to be broken into encrypted parts
   auto gh_pairs = DecryptVector(std::vector<Buffer>{Buffer(encrypted_gh_.data(), encrypted_gh_.size())});
 
-  auto result = std::map<int, Buffer>();
-  for (auto const &entry : sample_ids) {
-    auto rows = entry.second;
+  std::vector<std::vector<int>> binIndexVec;
+  prepareBinIndexVec(binIndexVec, ridx, size);
+
+  size_t total_sample_ids = 0;
+  for (auto i = 0; i < binIndexVec.size(); ++i) {
+    auto rows = binIndexVec[i];
+    total_sample_ids += rows.size();
     double g = 0.0;
     double h = 0.0;
 
@@ -118,13 +123,17 @@ std::map<int, Buffer> PassThruPlugin::AddGHPairs(const std::map<int, std::vector
       g += gh_pairs[2 * row];
       h += gh_pairs[2 * row + 1];
     }
+
     // In real plugin, the sum should be still in encrypted state. No need to do this step
     auto encrypted_sum = EncryptVector(std::vector<double>{g, h});
     // print_buffer(reinterpret_cast<uint8_t *>(encrypted_sum.buffer), encrypted_sum.buf_size);
-    result.insert({entry.first, encrypted_sum});
+    result[i] = encrypted_sum;
   }
 
-  return result;
+  if (debug_) {
+    std::cout << "PassThruPlugin::AddGHPairs finished with " << total_bin_size << " bins and " << total_sample_ids << " ids " << std::endl;
+  }
+
 }
 
 } // namespace nvflare

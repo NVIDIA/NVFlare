@@ -36,6 +36,7 @@ namespace nvflare {
 
     std::vector<double> DecryptVector(const std::vector<Buffer> &ciphertext) override;
 
-    std::map<int, Buffer> AddGHPairs(const std::map<int, std::vector<int>> &sample_ids) override;
+    void AddGHPairs(std::vector<Buffer>& result, const std::uint64_t *ridx, const std::size_t size) override;
+
   };
 } // namespace nvflare
