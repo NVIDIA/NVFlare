@@ -347,14 +347,6 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
         if not os.path.exists(app_root):
             return f"{ERROR_MSG_PREFIX}: Client app does not exist. Please deploy it before starting client."
 
-        app_custom_folder = os.path.join(app_root, "custom")
-        if os.path.isdir(app_custom_folder):
-            try:
-                sys.path.index(app_custom_folder)
-            except ValueError:
-                _remove_custom_path()
-                sys.path.append(app_custom_folder)
-
         self.logger.info("Starting client app. rank: {}".format(self.rank))
 
         self.client_executor.start_app(
@@ -362,7 +354,6 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
             job_id,
             job_meta,
             self.args,
-            app_custom_folder,
             allocated_resource,
             token,
             resource_manager,
