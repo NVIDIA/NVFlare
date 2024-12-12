@@ -15,6 +15,7 @@
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import ReturnCode, StreamCtxKey, SystemComponents
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.streaming import StreamContext
 from nvflare.app_common.logging.constants import Channels
 from nvflare.app_common.streamers.file_streamer import FileStreamer
 from nvflare.widgets.widget import Widget
@@ -29,7 +30,7 @@ class LogReceiver(Widget):
         """
         super().__init__()
 
-    def process_log(self, stream_ctx: dict, fl_ctx: FLContext):
+    def process_log(self, stream_ctx: StreamContext, fl_ctx: FLContext):
         """Process the streamed log file."""
         peer_ctx = fl_ctx.get_peer_context()
         assert isinstance(peer_ctx, FLContext)

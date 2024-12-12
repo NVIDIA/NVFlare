@@ -25,7 +25,7 @@ from nvflare.app_common.streamers.file_streamer import FileStreamer
 from nvflare.widgets.widget import Widget
 
 
-class LogSender(Widget):
+class ErrorLogSender(Widget):
     def __init__(self, event_type=EventType.JOB_COMPLETED, should_report_error_log: bool = True):
         super().__init__()
         self.event_type = event_type
@@ -59,7 +59,7 @@ class LogSender(Widget):
                     if os.path.exists(error_log_path):
                         t = threading.Thread(
                             target=self._stream_log_file,
-                            args=(fl_ctx, error_log_path, DataTypes.ERROR_LOG),
+                            args=(fl_ctx, error_log_path, DataTypes.ERRORLOG.value),
                             daemon=True,
                         )
                         t.start()
