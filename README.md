@@ -1,4 +1,4 @@
-<img src="docs/resources/nvidia_eye.wwPt122j.png" alt="Expandable Hierarchical stats" width="200">
+<img src="docs/resources/nvidia_eye.wwPt122j.png" alt="NVIDIA Logo" width="200">
 
 # NVIDIA FLARE
 
