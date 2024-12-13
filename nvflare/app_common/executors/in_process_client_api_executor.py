@@ -204,7 +204,6 @@ class InProcessClientAPIExecutor(Executor):
         if from_nvflare_converter is not None:
             check_object_type(self._from_nvflare_converter_id, from_nvflare_converter, ParamsConverter)
             self._from_nvflare_converter = from_nvflare_converter
-
         to_nvflare_converter: ParamsConverter = engine.get_component(self._to_nvflare_converter_id)
         if to_nvflare_converter is not None:
             check_object_type(self._to_nvflare_converter_id, to_nvflare_converter, ParamsConverter)
