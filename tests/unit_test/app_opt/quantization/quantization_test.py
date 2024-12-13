@@ -38,9 +38,9 @@ TEST_CASES = [
         {"a": torch.tensor([1.0, 2.0, 3.0, 4000.0], dtype=torch.bfloat16)},
     ),
     (
-        {"a": torch.tensor([1.0, 2.0, 3.0, 4.0], dtype=torch.bfloat16)},
-        "float4",
-        {"a": torch.tensor([1.0, 2.0, 2.6719, 4.0], dtype=torch.bfloat16)},
+        {"a": torch.tensor([1.0, 2.0, 3.0, 4.0], dtype=torch.float32)},
+        "blockwise8",
+        {"a": torch.tensor([0.99062496, 2.003125, 3.015625, 4.0], dtype=torch.float32)},
     ),
 ]
 
@@ -61,6 +61,9 @@ class TestQuantization:
         for key in dequant_data.keys():
             dequant_array = dequant_data[key]
             expected_array = expected_data[key]
+            # print the values
+            print(f"dequant_array: {dequant_array}")
+            print(f"expected_array: {expected_array}")
             if isinstance(dequant_array, torch.Tensor):
                 assert torch.allclose(dequant_array, expected_array)
             else:
