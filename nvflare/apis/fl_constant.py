@@ -455,6 +455,12 @@ class FLMetaKey:
     SUBMIT_MODEL_NAME = "submit_model_name"
 
 
+class StreamCtxKey:
+    JOB_ID = "job_id"
+    CLIENT_NAME = "client_name"
+    LOG_TYPE = "log_type"
+
+
 class FilterKey:
     IN = "in"
     OUT = "out"
