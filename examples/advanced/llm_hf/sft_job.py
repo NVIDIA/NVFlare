@@ -19,9 +19,9 @@ from nvflare import FedJob, FilterType
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
-from nvflare.app_opt.pt.tensor_params_converter import PTReceiveParamsConverter, PTSendParamsConverter
 from nvflare.app_opt.pt.quantization.dequantizor import ModelDequantizor
 from nvflare.app_opt.pt.quantization.quantizor import ModelQuantizor
+from nvflare.app_opt.pt.tensor_params_converter import PTReceiveParamsConverter, PTSendParamsConverter
 from nvflare.job_config.script_runner import BaseScriptRunner
 
 
