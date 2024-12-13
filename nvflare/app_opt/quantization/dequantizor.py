@@ -80,17 +80,7 @@ class ModelDequantizor(DXOFilter):
 
                 n_quant_params += 1
                 if quantization_type == "float16":
-                    # direct convert back to higher precision
-                    if source_data_format == "numpy":
-                        if source_data_type == "float32":
-                            values = values.astype(np.float32)
-                        elif source_data_type == "float64":
-                            values = values.astype(np.float64)
-                    elif source_data_format == "torch":
-                        if source_data_type == "float32":
-                            values = values.float()
-                        elif source_data_type == "float64":
-                            values = values.double()
+                    # direct assign and convert back to higher precision
                     params[param_name] = values
                 elif quantization_type in ["blockwise8", "float4", "normfloat4"]:
                     # use bitsandbytes to dequantize the values
@@ -101,13 +91,12 @@ class ModelDequantizor(DXOFilter):
                             quantized = torch.as_tensor(values)
                             absmax = torch.as_tensor(quant_state[param_name]["absmax"])
                             code = torch.as_tensor(quant_state[param_name]["code"])
+                        elif source_data_format == "torch":
+                            quantized = values
+                            absmax = quant_state[param_name]["absmax"]
+                            code = quant_state[param_name]["code"]
                         # de-quanitze
                         dequantized = dequantize_blockwise(quantized, absmax=absmax, code=code)
-                        # assign back
-                        if source_data_format == "numpy":
-                            params[param_name] = dequantized.numpy()
-                        elif source_data_format == "torch":
-                            params[param_name] = dequantized
                     else:
                         if source_data_format == "numpy":
                             # first convert numpy array to tensor, need to use GPU
@@ -136,20 +125,30 @@ class ModelDequantizor(DXOFilter):
                             dequantized = dequantize_4bit(quantized, quantize_state, quant_type="fp4")
                         else:
                             dequantized = dequantize_4bit(quantized, quantize_state, quant_type="nf4")
-                        # assign back
-                        if source_data_format == "numpy":
-                            params[param_name] = dequantized.cpu().numpy()
-                        elif source_data_format == "torch":
-                            params[param_name] = dequantized.cpu()
-                            # convert back to original data type
-                            if source_data_type == "float32":
-                                params[param_name] = params[param_name].float()
-                            elif source_data_type == "float64":
-                                params[param_name] = params[param_name].double()
-                            elif source_data_type == "float16":
-                                params[param_name] = params[param_name].half()
-                            elif source_data_type == "bfloat16":
-                                params[param_name] = params[param_name].bfloat16()
+                    if source_data_format == "numpy":
+                        params[param_name] = dequantized.cpu().numpy()
+                    elif source_data_format == "torch":
+                        params[param_name] = dequantized.cpu()
+
+                # assign back
+                if source_data_format == "numpy":
+                    # convert back to original data type
+                    if source_data_type == "float32":
+                        params[param_name] = params[param_name].astype(np.float32)
+                    elif source_data_type == "float64":
+                        params[param_name] = params[param_name].astype(np.float64)
+                    elif source_data_type == "float16":
+                        params[param_name] = params[param_name].astype(np.float16)
+                elif source_data_format == "torch":
+                    # convert back to original data type
+                    if source_data_type == "float32":
+                        params[param_name] = params[param_name].float()
+                    elif source_data_type == "float64":
+                        params[param_name] = params[param_name].double()
+                    elif source_data_type == "float16":
+                        params[param_name] = params[param_name].half()
+                    elif source_data_type == "bfloat16":
+                        params[param_name] = params[param_name].bfloat16()
 
             n_bytes_after += params[param_name].nbytes
 
