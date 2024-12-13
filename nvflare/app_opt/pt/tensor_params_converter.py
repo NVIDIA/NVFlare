@@ -30,6 +30,7 @@ class PTReceiveParamsConverter(ParamsConverter):
             if isinstance(v, torch.Tensor):
                 return_params[k] = v
             else:
+                # "PT receive, so potentially also need to handle numpy to tensor"
                 if tensor_shapes:
                     if k in tensor_shapes:
                         return_params[k] = torch.as_tensor(np.reshape(v, tensor_shapes[k]))

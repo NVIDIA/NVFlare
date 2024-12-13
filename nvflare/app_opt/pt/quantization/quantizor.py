@@ -23,7 +23,7 @@ from nvflare.apis.dxo import DXO, DataKind, MetaKey
 from nvflare.apis.dxo_filter import DXOFilter
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.app_opt.quantization.constant import DATA_TYPE, QUANTIZATION_TYPE
+from nvflare.app_opt.pt.quantization.constant import DATA_TYPE, QUANTIZATION_TYPE
 
 
 class ModelQuantizor(DXOFilter):

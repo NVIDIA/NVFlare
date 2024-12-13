@@ -18,8 +18,8 @@ import torch
 
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_opt.quantization.dequantizor import ModelDequantizor
-from nvflare.app_opt.quantization.quantizor import ModelQuantizor
+from nvflare.app_opt.pt.quantization.dequantizor import ModelDequantizor
+from nvflare.app_opt.pt.quantization.quantizor import ModelQuantizor
 
 TEST_CASES = [
     (
