@@ -432,6 +432,14 @@ class FLMetaKey:
     SITE_NAME = "site_name"
     PROCESS_RC_FILE = "_process_rc.txt"
     SUBMIT_MODEL_NAME = "submit_model_name"
+    AUTH_TOKEN = "auth_token"
+    AUTH_TOKEN_SIGNATURE = "auth_token_signature"
+
+
+class CellMessageAuthHeaderKey:
+    CLIENT_NAME = "client_name"
+    TOKEN = "__token__"
+    TOKEN_SIGNATURE = "__token_signature__"
 
 
 class FilterKey:

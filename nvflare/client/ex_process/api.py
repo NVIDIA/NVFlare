@@ -17,7 +17,7 @@ import os
 from typing import Any, Dict, Optional, Tuple
 
 from nvflare.apis.analytix import AnalyticsDataType
-from nvflare.apis.fl_constant import FLMetaKey
+from nvflare.apis.fl_constant import FLMetaKey, SecureTrainConst
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.client.api_spec import APISpec
@@ -26,6 +26,7 @@ from nvflare.client.constants import CLIENT_API_CONFIG
 from nvflare.client.flare_agent import FlareAgentException
 from nvflare.client.flare_agent_with_fl_model import FlareAgentWithFLModel
 from nvflare.client.model_registry import ModelRegistry
+from nvflare.fuel.data_event.utils import set_scope_property
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.obj_utils import get_logger
@@ -37,6 +38,18 @@ def _create_client_config(config: str) -> ClientConfig:
         client_config = from_file(config_file=config)
     else:
         raise ValueError(f"config should be a string but got: {type(config)}")
+
+    # get message auth info and put them into Databus for CellPipe to use
+    auth_token = client_config.get_auth_token()
+    signature = client_config.get_auth_token_signature()
+    site_name = client_config.get_site_name()
+    set_scope_property(scope_name=site_name, key=FLMetaKey.AUTH_TOKEN, value=auth_token)
+    set_scope_property(scope_name=site_name, key=FLMetaKey.AUTH_TOKEN_SIGNATURE, value=signature)
+
+    conn_sec = client_config.get_connection_security()
+    if conn_sec:
+        set_scope_property(site_name, SecureTrainConst.CONNECTION_SECURITY, conn_sec)
+
     return client_config
 
 

@@ -196,6 +196,7 @@ class FederatedClientBase:
             conn_security = self.client_args.get(SecureTrainConst.CONNECTION_SECURITY)
             if conn_security:
                 credentials[DriverParams.CONNECTION_SECURITY.value] = conn_security
+                set_scope_prop(self.client_name, SecureTrainConst.CONNECTION_SECURITY, conn_security)
         else:
             credentials = {}
         self.cell = Cell(
