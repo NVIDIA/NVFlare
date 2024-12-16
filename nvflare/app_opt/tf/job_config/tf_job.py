@@ -24,10 +24,10 @@ from nvflare.app_common.widgets.validation_json_generator import ValidationJsonG
 from nvflare.app_opt.tf.job_config.model import TFModel
 from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.job_config.api import validate_object_for_job
-from nvflare.job_config.base_fed_job import BaseFedJob
+from nvflare.job_config.common_job import CommonJob
 
 
-class TFBaseFedJob(BaseFedJob):
+class TFJob(CommonJob):
     def __init__(
         self,
         initial_model: tf.keras.Model = None,
@@ -41,7 +41,7 @@ class TFBaseFedJob(BaseFedJob):
         analytics_receiver: Optional[AnalyticsReceiver] = None,
         model_persistor: Optional[ModelPersistor] = None,
     ):
-        """TensorFlow BaseFedJob.
+        """TensorFlow CommonJob.
 
         Configures ValidationJsonGenerator, IntimeModelSelector, TBAnalyticsReceiver, ConvertToFedEvent.
 

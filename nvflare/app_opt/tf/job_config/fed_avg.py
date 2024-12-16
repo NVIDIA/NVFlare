@@ -16,10 +16,10 @@ from typing import List, Optional
 import tensorflow as tf
 
 from nvflare.app_common.workflows.fedavg import FedAvg
-from nvflare.app_opt.tf.job_config.base_fed_job import TFBaseFedJob
+from nvflare.app_opt.tf.job_config.tf_job import TFJob
 
 
-class FedAvgJob(TFBaseFedJob):
+class FedAvgJob(TFJob):
     def __init__(
         self,
         initial_model: tf.keras.Model,

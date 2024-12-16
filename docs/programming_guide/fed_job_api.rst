@@ -366,7 +366,7 @@ The FedAvgJob automatically adds the FedAvg controller, PTFileModelPersistor and
 
 For more examples of job patterns, see:
 
-* :class:`BaseFedJob<nvflare.job_config.base_fed_job.BaseFedJob>`
+* :class:`CommonJob<nvflare.job_config.common_job.CommonJob>`
 * :class:`FedAvgJob<nvflare.app_opt.pt.job_config.fed_avg.FedAvgJob>` (pytorch)
 * :class:`FedAvgJob<nvflare.app_opt.tf.job_config.fed_avg.FedAvgJob>` (tensorflow)
 * :class:`CCWFJob<nvflare.app_common.ccwf.ccwf_job.CCWFJob>`

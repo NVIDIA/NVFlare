@@ -16,10 +16,10 @@ from typing import List, Optional
 import torch.nn as nn
 
 from nvflare.app_common.workflows.fedavg import FedAvg
-from nvflare.app_opt.pt.job_config.base_fed_job import PTBaseFedJob
+from nvflare.app_opt.pt.job_config.pt_job import PTJob
 
 
-class FedAvgJob(PTBaseFedJob):
+class FedAvgJob(PTJob):
     def __init__(
         self,
         initial_model: nn.Module,
