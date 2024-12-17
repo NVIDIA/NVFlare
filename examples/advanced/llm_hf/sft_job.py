@@ -101,7 +101,7 @@ def main():
             script=train_script,
             script_args=script_args,
             params_exchange_format=params_exchange_format,
-            launch_external_process=True,
+            launch_external_process=False,
         )
         job.to(runner, site_name, tasks=["train"])
 

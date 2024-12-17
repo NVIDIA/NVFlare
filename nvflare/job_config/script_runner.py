@@ -116,10 +116,9 @@ class BaseScriptRunner:
         if self._framework == FrameworkType.PYTORCH:
             _, torch_ok = optional_import(module="torch")
             if torch_ok:
-                # If exchange format is not set, default to pytorch
-                # torch can also use numpy exchange format
+                # If exchange format is not set, default to numpy
                 if self._params_exchange_format is None:
-                    self._params_exchange_format = ExchangeFormat.PYTORCH
+                    self._params_exchange_format = ExchangeFormat.NUMPY
             else:
                 raise ValueError("Using FrameworkType.PYTORCH, but unable to import torch")
         elif self._framework == FrameworkType.TENSORFLOW:
