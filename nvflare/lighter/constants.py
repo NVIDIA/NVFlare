@@ -78,6 +78,7 @@ class OverseerRole:
 class TemplateSectionKey:
     START_SERVER_SH = "start_svr_sh"
     START_CLIENT_SH = "start_cln_sh"
+    DOCKER_BUILD_SH = "docker_build_sh"
     DOCKER_SERVER_SH = "docker_svr_sh"
     DOCKER_CLIENT_SH = "docker_cln_sh"
     DOCKER_ADMIN_SH = "docker_adm_sh"
@@ -112,6 +113,7 @@ class ProvFileName:
     START_SH = "start.sh"
     SUB_START_SH = "sub_start.sh"
     PRIVILEGE_YML = "privilege.yml"
+    DOCKER_BUILD_SH = "docker_build.sh"
     DOCKER_SH = "start_docker.sh"
     GUNICORN_CONF_PY = "gunicorn.conf.py"
     FED_SERVER_JSON = "fed_server.json"

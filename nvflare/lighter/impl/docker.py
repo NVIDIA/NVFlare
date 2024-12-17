@@ -158,8 +158,8 @@ class DockerBuilder(Builder):
         replacement_dict = {"image": self.docker_image}
         ctx.build_from_template(
             compose_build_dir,
-            "docker_build_sh",
-            "docker_build.sh",
+            TemplateSectionKey.DOCKER_BUILD_SH,
+            ProvFileName.DOCKER_BUILD_SH,
             replacement=replacement_dict,
             exe=True,
         )
