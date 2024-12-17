@@ -135,6 +135,11 @@ Similarly, quantization can be applied to tensor communication as well.
 ```
 python3 sft_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_tensor_fp4 --job_dir ${PWD}/workspace/jobs/hf_sft_tensor_fp4 --train_mode SFT --message_mode tensor --quantize_mode float4
 ```
+In this case, since the tensor is in bf16, and the quantization reduces it to float4, the message size change is thus:
+```
+Before quantization: 2858.13 MB. After quantization: 714.53 MB with meta: 89.33 MB.
+```
+
 
 ## Federated Training with Multiple Clients
 With the above example, we can easily extend the federated training to multiple clients. We can use the following command to run the federated training with multiple clients:

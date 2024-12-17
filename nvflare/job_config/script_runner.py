@@ -45,8 +45,7 @@ class BaseScriptRunner:
         framework: FrameworkType = FrameworkType.PYTORCH,
         params_transfer_type: str = TransferType.FULL,
         executor: Union[ClientAPILauncherExecutor, InProcessClientAPIExecutor, None] = None,
-        from_nvflare_converter_id: Optional[str] = None,
-        to_nvflare_converter_id: Optional[str] = None,
+        params_exchange_format: Optional[str] = None,
         task_pipe: Optional[Pipe] = None,
         launcher: Optional[Launcher] = None,
         metric_relay: Optional[MetricRelay] = None,
@@ -75,7 +74,11 @@ class BaseScriptRunner:
                 The executor to use in client process. Can be an instance of
                 `ClientAPILauncherExecutor`, `InProcessClientAPIExecutor`, or `None`. Defaults to `None`.
                 If specified, the script and script_args and command will be ignored.
-
+            params_exchange_format (Optional[str], optional):
+                The format to exchange the parameters. Defaults to `None`.
+                This specifies the format in which the parameters are exchanged between the client and the server.
+                For example, if the framework is pytorch, the exchange format can be pytorch or numpy;
+                if the framework is numpy, the exchange format can only be numpy.
             task_pipe (Optional[Pipe], optional):
                 An optional Pipe instance for passing task between ClientAPILauncherExecutor
                 and client api, this is only used if `launch_external_process` is True.
@@ -98,25 +101,29 @@ class BaseScriptRunner:
         self._launch_external_process = launch_external_process
         self._framework = framework
         self._params_transfer_type = params_transfer_type
-        self._from_nvflare_converter_id = from_nvflare_converter_id
-        self._to_nvflare_converter_id = to_nvflare_converter_id
-        self._params_exchange_format = None
+        self._params_exchange_format = params_exchange_format
 
         if self._framework == FrameworkType.PYTORCH:
             _, torch_ok = optional_import(module="torch")
             if torch_ok:
-                self._params_exchange_format = ExchangeFormat.PYTORCH
+                # If exchange format is not set, default to pytorch
+                # torch can also use numpy exchange format
+                if self._params_exchange_format is None:
+                    self._params_exchange_format = ExchangeFormat.PYTORCH
             else:
                 raise ValueError("Using FrameworkType.PYTORCH, but unable to import torch")
         elif self._framework == FrameworkType.TENSORFLOW:
             _, tf_ok = optional_import(module="tensorflow")
             if tf_ok:
+                # tf can only use numpy exchange format
                 self._params_exchange_format = ExchangeFormat.NUMPY
             else:
                 raise ValueError("Using FrameworkType.TENSORFLOW, but unable to import tensorflow")
         elif self._framework == FrameworkType.NUMPY:
+            # numpy can only use numpy exchange format
             self._params_exchange_format = ExchangeFormat.NUMPY
         elif self._framework == FrameworkType.RAW:
+            # raw can only use raw exchange format
             self._params_exchange_format = ExchangeFormat.RAW
         else:
             raise ValueError(f"Framework {self._framework} unsupported")
@@ -189,8 +196,6 @@ class BaseScriptRunner:
                     launcher_id=launcher_id,
                     params_exchange_format=self._params_exchange_format,
                     params_transfer_type=self._params_transfer_type,
-                    from_nvflare_converter_id=self._from_nvflare_converter_id,
-                    to_nvflare_converter_id=self._to_nvflare_converter_id,
                     heartbeat_timeout=0,
                 )
             )
@@ -236,8 +241,6 @@ class BaseScriptRunner:
                     task_script_args=self._script_args,
                     params_exchange_format=self._params_exchange_format,
                     params_transfer_type=self._params_transfer_type,
-                    from_nvflare_converter_id=self._from_nvflare_converter_id,
-                    to_nvflare_converter_id=self._to_nvflare_converter_id,
                 )
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
