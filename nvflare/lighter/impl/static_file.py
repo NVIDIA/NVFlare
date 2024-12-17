@@ -112,10 +112,12 @@ class StaticFileBuilder(Builder):
         server_0["name"] = project.name
         admin_port = ctx.get(CtxKey.ADMIN_PORT)
         fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
+        communication_port = ctx.get(CtxKey.COMMUNICATION_PORT)
         server_0["service"]["target"] = f"{server.name}:{fed_learn_port}"
         server_0["service"]["scheme"] = self.scheme
         server_0["admin_host"] = server.name
         server_0["admin_port"] = admin_port
+        server_0["communication_port"] = communication_port
 
         self._prepare_overseer_agent(server, config, OverseerRole.SERVER, ctx)
         utils.write(os.path.join(dest_dir, ProvFileName.FED_SERVER_JSON), json.dumps(config, indent=2), "t")
@@ -123,6 +125,7 @@ class StaticFileBuilder(Builder):
         replacement_dict = {
             "admin_port": admin_port,
             "fed_learn_port": fed_learn_port,
+            "communication_port": communication_port,
             "config_folder": self.config_folder,
             "docker_image": self.docker_image,
             "org_name": server.org,
@@ -182,7 +185,14 @@ class StaticFileBuilder(Builder):
         config["servers"][0]["service"]["scheme"] = self.scheme
         config["servers"][0]["name"] = project.name
         config["servers"][0]["identity"] = server.name  # the official identity of the server
+        admin_port = ctx.get(CtxKey.ADMIN_PORT)
+        fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
+        communication_port = client.get_prop(PropKey.COMMUNICATION_PORT)
         replacement_dict = {
+            "admin_port": admin_port,
+            "fed_learn_port": fed_learn_port,
+            "communication_port": communication_port,
+            "comm_host_name": client.name + "-parent",
             "client_name": f"{client.subject}",
             "config_folder": self.config_folder,
             "docker_image": self.docker_image,

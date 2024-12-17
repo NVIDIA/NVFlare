@@ -43,6 +43,7 @@ class ProvisionContext(dict):
         fed_learn_port = server.get_prop(PropKey.FED_LEARN_PORT, 8002)
         self[CtxKey.FED_LEARN_PORT] = fed_learn_port
         self[CtxKey.SERVER_NAME] = server.name
+        self[CtxKey.COMMUNICATION_PORT] = server.get_prop(PropKey.COMMUNICATION_PORT, 8005)
 
     def get_project(self):
         return self.get(CtxKey.PROJECT)

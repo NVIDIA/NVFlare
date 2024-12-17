@@ -43,6 +43,7 @@ class PropKey:
     OVERSEER_END_POINT = "overseer_end_point"
     ADMIN_PORT = "admin_port"
     FED_LEARN_PORT = "fed_learn_port"
+    COMMUNICATION_PORT = "communication_port"
 
 
 class CtxKey(WorkDir, PropKey):
@@ -87,6 +88,7 @@ class TemplateSectionKey:
     SUB_START_SH = "sub_start_sh"
     STOP_FL_SH = "stop_fl_sh"
     LOG_CONFIG = "log_config"
+    COMM_CONFIG = "comm_config"
     LOCAL_SERVER_RESOURCES = "local_server_resources"
     LOCAL_CLIENT_RESOURCES = "local_client_resources"
     SAMPLE_PRIVACY = "sample_privacy"
@@ -110,11 +112,12 @@ class ProvFileName:
     START_SH = "start.sh"
     SUB_START_SH = "sub_start.sh"
     PRIVILEGE_YML = "privilege.yml"
-    DOCKER_SH = "docker.sh"
+    DOCKER_SH = "start_docker.sh"
     GUNICORN_CONF_PY = "gunicorn.conf.py"
     FED_SERVER_JSON = "fed_server.json"
     FED_CLIENT_JSON = "fed_client.json"
     STOP_FL_SH = "stop_fl.sh"
+    COMM_CONFIG = "comm_config.json"
     LOG_CONFIG_DEFAULT = "log.config.default"
     RESOURCES_JSON_DEFAULT = "resources.json.default"
     PRIVACY_JSON_SAMPLE = "privacy.json.sample"
