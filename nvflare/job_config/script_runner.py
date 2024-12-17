@@ -45,6 +45,7 @@ class BaseScriptRunner:
         framework: FrameworkType = FrameworkType.PYTORCH,
         params_transfer_type: str = TransferType.FULL,
         executor: Union[ClientAPILauncherExecutor, InProcessClientAPIExecutor, None] = None,
+        params_exchange_format: Optional[str] = None,
         from_nvflare_converter_id: Optional[str] = None,
         to_nvflare_converter_id: Optional[str] = None,
         task_pipe: Optional[Pipe] = None,
@@ -75,7 +76,17 @@ class BaseScriptRunner:
                 The executor to use in client process. Can be an instance of
                 `ClientAPILauncherExecutor`, `InProcessClientAPIExecutor`, or `None`. Defaults to `None`.
                 If specified, the script and script_args and command will be ignored.
-
+            params_exchange_format (Optional[str], optional):
+                The format to exchange the parameters. Defaults to `None`.
+                This specifies the format in which the parameters are exchanged between the client and the server.
+                For example, if the framework is pytorch, the exchange format can be pytorch or numpy;
+                if the framework is numpy, the exchange format can only be numpy.
+            from_nvflare_converter_id (Optional[str], optional):
+                The id of the converter to use to convert parameters from exchange format to the client format.
+                Defaults to `None`.
+            to_nvflare_converter_id (Optional[str], optional):
+                The id of the converter to use to convert parameters from the client format to exchange format.
+                Defaults to `None`.
             task_pipe (Optional[Pipe], optional):
                 An optional Pipe instance for passing task between ClientAPILauncherExecutor
                 and client api, this is only used if `launch_external_process` is True.
@@ -98,25 +109,30 @@ class BaseScriptRunner:
         self._launch_external_process = launch_external_process
         self._framework = framework
         self._params_transfer_type = params_transfer_type
+        self._params_exchange_format = params_exchange_format
         self._from_nvflare_converter_id = from_nvflare_converter_id
         self._to_nvflare_converter_id = to_nvflare_converter_id
-        self._params_exchange_format = None
 
         if self._framework == FrameworkType.PYTORCH:
             _, torch_ok = optional_import(module="torch")
             if torch_ok:
-                self._params_exchange_format = ExchangeFormat.PYTORCH
+                # If exchange format is not set, default to numpy
+                if self._params_exchange_format is None:
+                    self._params_exchange_format = ExchangeFormat.NUMPY
             else:
                 raise ValueError("Using FrameworkType.PYTORCH, but unable to import torch")
         elif self._framework == FrameworkType.TENSORFLOW:
             _, tf_ok = optional_import(module="tensorflow")
             if tf_ok:
+                # tf can only use numpy exchange format
                 self._params_exchange_format = ExchangeFormat.NUMPY
             else:
                 raise ValueError("Using FrameworkType.TENSORFLOW, but unable to import tensorflow")
         elif self._framework == FrameworkType.NUMPY:
+            # numpy can only use numpy exchange format
             self._params_exchange_format = ExchangeFormat.NUMPY
         elif self._framework == FrameworkType.RAW:
+            # raw can only use raw exchange format
             self._params_exchange_format = ExchangeFormat.RAW
         else:
             raise ValueError(f"Framework {self._framework} unsupported")
@@ -278,6 +294,7 @@ class ScriptRunner(BaseScriptRunner):
         launch_external_process: bool = False,
         command: str = "python3 -u",
         framework: FrameworkType = FrameworkType.PYTORCH,
+        params_exchange_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: str = TransferType.FULL,
     ):
         """ScriptRunner is used with FedJob API to run or launch a script.
@@ -291,6 +308,7 @@ class ScriptRunner(BaseScriptRunner):
             launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
             command (str): If launch_external_process=True, command to run script (preprended to script). Defaults to "python3".
             framework (str): Framework type to connfigure converter and params exchange formats. Defaults to FrameworkType.PYTORCH.
+            params_exchange_format (str): The format to exchange the parameters. Defaults to ExchangeFormat.NUMPY.
             params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
                 DIFF means that only the difference is sent. Defaults to TransferType.FULL.
         """
@@ -300,5 +318,6 @@ class ScriptRunner(BaseScriptRunner):
             launch_external_process=launch_external_process,
             command=command,
             framework=framework,
+            params_exchange_format=params_exchange_format,
             params_transfer_type=params_transfer_type,
         )
