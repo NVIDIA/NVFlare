@@ -140,7 +140,6 @@ In this case, since the tensor is in bf16, and the quantization reduces it to fl
 Before quantization: 2858.13 MB. After quantization: 714.53 MB with meta: 89.33 MB.
 ```
 
-
 ## Federated Training with Multiple Clients
 With the above example, we can easily extend the federated training to multiple clients. We can use the following command to run the federated training with multiple clients:
 ```

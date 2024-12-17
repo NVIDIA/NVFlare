@@ -196,6 +196,8 @@ class BaseScriptRunner:
                     launcher_id=launcher_id,
                     params_exchange_format=self._params_exchange_format,
                     params_transfer_type=self._params_transfer_type,
+                    from_nvflare_converter_id=self._from_nvflare_converter_id,
+                    to_nvflare_converter_id=self._to_nvflare_converter_id,
                     heartbeat_timeout=0,
                 )
             )
@@ -241,6 +243,8 @@ class BaseScriptRunner:
                     task_script_args=self._script_args,
                     params_exchange_format=self._params_exchange_format,
                     params_transfer_type=self._params_transfer_type,
+                    from_nvflare_converter_id=self._from_nvflare_converter_id,
+                    to_nvflare_converter_id=self._to_nvflare_converter_id,
                 )
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)

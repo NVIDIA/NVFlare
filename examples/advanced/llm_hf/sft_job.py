@@ -102,7 +102,6 @@ def main():
             script_args=script_args,
             params_exchange_format=params_exchange_format,
         )
-
         job.to(runner, site_name, tasks=["train"])
 
         if args.quantize_mode:
