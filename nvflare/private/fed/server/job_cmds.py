@@ -171,11 +171,10 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     client_cmd=ftd.PULL_BINARY_FQN,
                 ),
                 CommandSpec(
-                    name=AdminCommandNames.DOWNLOAD_JOB_COMPONENT,
-                    description="download a specified component for a specified job",
-                    usage=f"{AdminCommandNames.DOWNLOAD_JOB_COMPONENT} job_id component_name",
-                    handler_func=self.download_job_component,
-                    authz_func=self.authorize_job_component,
+                    name=AdminCommandNames.DOWNLOAD_JOB_COMPONENTS,
+                    description="download additional components for a specified job",
+                    usage=f"{AdminCommandNames.DOWNLOAD_JOB_COMPONENTS} job_id",
+                    handler_func=self.download_job_components,
                     client_cmd=ftd.PULL_FOLDER_FQN,
                 ),
                 CommandSpec(
@@ -232,20 +231,6 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         return PreAuthzReturnCode.REQUIRE_AUTHZ
 
     def authorize_job(self, conn: Connection, args: List[str]):
-        rc = self.authorize_job_id(conn, args)
-        if rc == PreAuthzReturnCode.ERROR:
-            return rc
-
-        if len(args) > 2:
-            err = self.validate_command_targets(conn, args[2:])
-            if err:
-                conn.append_error(err, meta=make_meta(MetaStatusValue.INVALID_TARGET, err))
-                return PreAuthzReturnCode.ERROR
-
-        return PreAuthzReturnCode.REQUIRE_AUTHZ
-
-    def authorize_job_component(self, conn: Connection, args: List[str]):
-        self.logger.error(f"authorize_job_component called for {args}")
         rc = self.authorize_job_id(conn, args)
         if rc == PreAuthzReturnCode.ERROR:
             return rc
