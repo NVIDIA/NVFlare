@@ -281,6 +281,7 @@ class ScriptRunner(BaseScriptRunner):
         launch_external_process: bool = False,
         command: str = "python3 -u",
         framework: FrameworkType = FrameworkType.PYTORCH,
+        params_exchange_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: str = TransferType.FULL,
     ):
         """ScriptRunner is used with FedJob API to run or launch a script.
@@ -294,6 +295,7 @@ class ScriptRunner(BaseScriptRunner):
             launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
             command (str): If launch_external_process=True, command to run script (preprended to script). Defaults to "python3".
             framework (str): Framework type to connfigure converter and params exchange formats. Defaults to FrameworkType.PYTORCH.
+            params_exchange_format (str): The format to exchange the parameters. Defaults to ExchangeFormat.NUMPY.
             params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
                 DIFF means that only the difference is sent. Defaults to TransferType.FULL.
         """
@@ -303,5 +305,6 @@ class ScriptRunner(BaseScriptRunner):
             launch_external_process=launch_external_process,
             command=command,
             framework=framework,
+            params_exchange_format=params_exchange_format,
             params_transfer_type=params_transfer_type,
         )
