@@ -29,6 +29,7 @@ class PTClientAPILauncherExecutor(ClientAPILauncherExecutor):
         super().initialize(fl_ctx)
         self.logger = get_obj_logger(self)
         if self._from_nvflare_converter is None:
+            # if not specified, assign defaults
             if self._params_exchange_format == ExchangeFormat.NUMPY:
                 self.logger.info("Numpy from_nvflare_converter initialized")
                 self._from_nvflare_converter = NumpyToPTParamsConverter(
@@ -43,6 +44,7 @@ class PTClientAPILauncherExecutor(ClientAPILauncherExecutor):
                 self._from_nvflare_converter = None
 
         if self._to_nvflare_converter is None:
+            # if not specified, assign defaults
             if self._params_exchange_format == ExchangeFormat.NUMPY:
                 self.logger.info("Numpy to_nvflare_converter initialized")
                 self._to_nvflare_converter = PTToNumpyParamsConverter(

@@ -46,6 +46,8 @@ class BaseScriptRunner:
         params_transfer_type: str = TransferType.FULL,
         executor: Union[ClientAPILauncherExecutor, InProcessClientAPIExecutor, None] = None,
         params_exchange_format: Optional[str] = None,
+        from_nvflare_converter_id: Optional[str] = None,
+        to_nvflare_converter_id: Optional[str] = None,
         task_pipe: Optional[Pipe] = None,
         launcher: Optional[Launcher] = None,
         metric_relay: Optional[MetricRelay] = None,
@@ -79,6 +81,12 @@ class BaseScriptRunner:
                 This specifies the format in which the parameters are exchanged between the client and the server.
                 For example, if the framework is pytorch, the exchange format can be pytorch or numpy;
                 if the framework is numpy, the exchange format can only be numpy.
+            from_nvflare_converter_id (Optional[str], optional):
+                The id of the converter to use to convert parameters from exchange format to the client format.
+                Defaults to `None`.
+            to_nvflare_converter_id (Optional[str], optional):
+                The id of the converter to use to convert parameters from the client format to exchange format.
+                Defaults to `None`.
             task_pipe (Optional[Pipe], optional):
                 An optional Pipe instance for passing task between ClientAPILauncherExecutor
                 and client api, this is only used if `launch_external_process` is True.
@@ -102,6 +110,8 @@ class BaseScriptRunner:
         self._framework = framework
         self._params_transfer_type = params_transfer_type
         self._params_exchange_format = params_exchange_format
+        self._from_nvflare_converter_id = from_nvflare_converter_id
+        self._to_nvflare_converter_id = to_nvflare_converter_id
 
         if self._framework == FrameworkType.PYTORCH:
             _, torch_ok = optional_import(module="torch")
@@ -196,6 +206,8 @@ class BaseScriptRunner:
                     launcher_id=launcher_id,
                     params_exchange_format=self._params_exchange_format,
                     params_transfer_type=self._params_transfer_type,
+                    from_nvflare_converter_id=self._from_nvflare_converter_id,
+                    to_nvflare_converter_id=self._to_nvflare_converter_id,
                     heartbeat_timeout=0,
                 )
             )
@@ -241,6 +253,8 @@ class BaseScriptRunner:
                     task_script_args=self._script_args,
                     params_exchange_format=self._params_exchange_format,
                     params_transfer_type=self._params_transfer_type,
+                    from_nvflare_converter_id=self._from_nvflare_converter_id,
+                    to_nvflare_converter_id=self._to_nvflare_converter_id,
                 )
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)

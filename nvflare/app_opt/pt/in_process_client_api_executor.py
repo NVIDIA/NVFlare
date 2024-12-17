@@ -58,6 +58,7 @@ class PTInProcessClientAPIExecutor(InProcessClientAPIExecutor):
         fobs.register(TensorDecomposer)
         self.logger = get_obj_logger(self)
         if self._from_nvflare_converter is None:
+            # if not specified, assign defaults
             if params_exchange_format == ExchangeFormat.NUMPY:
                 self.logger.info("Numpy from_nvflare_converter initialized")
                 self._from_nvflare_converter = NumpyToPTParamsConverter(
@@ -72,6 +73,7 @@ class PTInProcessClientAPIExecutor(InProcessClientAPIExecutor):
                 self._from_nvflare_converter = None
 
         if self._to_nvflare_converter is None:
+            # if not specified, assign defaults
             if params_exchange_format == ExchangeFormat.NUMPY:
                 self.logger.info("Numpy to_nvflare_converter initialized")
                 self._to_nvflare_converter = PTToNumpyParamsConverter(

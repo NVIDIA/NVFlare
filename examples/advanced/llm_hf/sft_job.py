@@ -86,7 +86,7 @@ def main():
     for i in range(num_clients):
         client_id = client_ids[i]
         site_name = f"site-{client_id}"
-        data_path_train = os.path.join(args.data_path, client_id, "validation.jsonl")
+        data_path_train = os.path.join(args.data_path, client_id, "training.jsonl")
         data_path_valid = os.path.join(args.data_path, client_id, "validation.jsonl")
 
         script_args = f"--model_name_or_path {model_name_or_path} --data_path_train {data_path_train} --data_path_valid {data_path_valid} --output_path {output_path} --train_mode {train_mode} --message_mode {message_mode} --clean_up {clean_up}"
