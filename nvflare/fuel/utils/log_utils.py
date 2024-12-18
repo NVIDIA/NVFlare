@@ -20,6 +20,7 @@ import re
 from logging import Logger
 from logging.handlers import RotatingFileHandler
 
+from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 
 
@@ -71,8 +72,7 @@ class ColorFormatter(BaseFormatter):
         datefmt=None,
         style="%",
         level_colors=DEFAULT_LEVEL_COLORS,
-        logger_names=None,
-        logger_color=ANSIColor.CYAN,
+        logger_colors={},
     ):
         """ColorFormatter to format colors based on log levels. Optionally can color logger_names.
 
@@ -88,28 +88,24 @@ class ColorFormatter(BaseFormatter):
                     "ERROR": ANSIColor.RED,
                     "CRITICAL": ANSIColor.BOLD_RED,
                 }
-            logger_names (List[str]): list of logger names to apply logger_color.
-            logger_color (int): ANSI custom color for logger_names.
+            logger_colors (Dict[str, str]): dict of logger_name: ANSI colors. Defaults to {}.
 
         """
         super().__init__(fmt=fmt, datefmt=datefmt, style=style)
-        self.logger_names = logger_names or []
-        self.logger_color = logger_color
         self.level_colors = level_colors
+        self.logger_colors = logger_colors
 
     def format(self, record):
         super().format(record)
 
-        if record.levelno <= logging.INFO and any(
-            record.name.startswith(logger_name) for logger_name in self.logger_names
-        ):
-            # Apply logger_color to logger_names
-            log_fmt = ansi_sgr(self.logger_color) + self.fmt + ansi_sgr(ANSIColor.RESET)
-        else:
-            # Apply level_colors based on record levelname
-            log_fmt = (
-                ansi_sgr(self.level_colors.get(record.levelname, ANSIColor.GREY)) + self.fmt + ansi_sgr(ANSIColor.RESET)
-            )
+        # Apply level_colors based on record levelname
+        log_color = ansi_sgr(self.level_colors.get(record.levelname, ANSIColor.GREY))
+    
+        # Apply logger_color to logger_names if INFO or below
+        if record.levelno <= logging.INFO:
+            log_color = ansi_sgr(self.logger_colors.get(record.name), log_color)
+
+        log_fmt = log_color + self.fmt + ansi_sgr(ANSIColor.RESET)
 
         formatter = logging.Formatter(log_fmt)
         return formatter.format(record)
@@ -222,42 +218,66 @@ def get_script_logger():
     )
 
 
-def update_filenames(obj, dir_path: str = "", file_prefix: str = ""):
-    """Update 'filename' keys in JSON objects with dir_path and file_prefix."""
-    if "filename" in obj and isinstance(obj["filename"], str):
-        filename = obj["filename"]
-        if file_prefix:
-            filename = os.path.join(os.path.dirname(filename), file_prefix + "_" + os.path.basename(filename))
-        obj["filename"] = os.path.join(dir_path, filename)
-    return obj
-
-
-def read_log_config(file, dir_path: str = "", file_prefix: str = "") -> dict:
-    """
-    Reads JSON logging configuration file and returns config dictionary.
-    Updates 'filename' keys with dir_path for dynamic locations.
-
-    Args:
-        file (str): Path to the configuration file.
-        dir_path (str): Update filename keys with dir_path.
-
-    Returns:
-        config (dict)
-    """
-    try:
-        with open(file, "r") as f:
-            config = json.load(f, object_hook=lambda obj: update_filenames(obj, dir_path, file_prefix))
-        return config
-    except Exception as e:
-        raise ValueError(f"Unrecognized logging configuration format. Failed to parse JSON: {e}.")
-
-
 def configure_logging(workspace: Workspace, dir_path: str = "", file_prefix: str = ""):
     log_config_file_path = workspace.get_log_config_file_path()
     assert os.path.isfile(log_config_file_path), f"missing log config file {log_config_file_path}"
 
-    dict_config = read_log_config(log_config_file_path, dir_path, file_prefix)
+    with open(log_config_file_path, "r") as f:
+        dict_config = json.load(f)
+
+    apply_log_config(dict_config, dir_path, file_prefix)
+
+
+def apply_log_config(dict_config, dir_path: str = "", file_prefix: str = ""):
+    stack = [dict_config]
+    while stack:
+        current_dict = stack.pop()
+        for key, value in current_dict.items():
+            if isinstance(value, dict):
+                stack.append(value)
+            elif key == "filename":
+                if file_prefix:
+                    value = os.path.join(os.path.dirname(value), file_prefix + "_" + os.path.basename(value))
+                current_dict[key] = os.path.join(dir_path, value)
+
     logging.config.dictConfig(dict_config)
+
+
+def handle_log_config_command(config: str, workspace: Workspace, job_id: str = None):
+    if config is None:
+        config = workspace.get_log_config_file_path()
+
+    if not isinstance(config, str):
+        raise ValueError(
+            f"Unsupported config type. Expect config to be filepath or string level but got {type(config)}"
+        )
+
+    if os.path.isfile(config):
+
+        with open(config, "r") as f:
+            dict_config = json.load(f)
+
+        if job_id:
+            dir_path = workspace.get_run_dir(job_id)
+        else:
+            dir_path = workspace.get_root_dir()
+
+            with open(os.path.join(workspace.get_site_config_dir(), WorkspaceConstants.LOGGING_CONFIG), "w") as f:
+                f.write(json.dumps(dict_config))     
+
+        apply_log_config(dict_config, dir_path)
+
+    else:
+        if config.isdigit():
+            level = int(config)
+            if not (0 <= level <= 50):
+                raise ValueError(f"Invalid logging level: {level}")
+        else:
+            level = getattr(logging, config.upper(), None)
+            if level is None:
+                raise ValueError(f"Invalid logging level: {config}")
+
+        logging.getLogger().setLevel(level)
 
 
 def add_log_file_handler(log_file_name):
