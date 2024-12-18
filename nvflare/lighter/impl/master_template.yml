@@ -281,7 +281,7 @@ default_authz: |
         "byoc": "none"
       },
       "lead": {
-        "submit_job": "any",
+        "submit_job": "o:site",
         "clone_job": "n:submitter",
         "manage_job": "n:submitter",
         "download_job": "n:submitter",
@@ -322,7 +322,7 @@ log_config: |
       },
       "filters": {
           "FLFilter": {
-              "()": "nvflare.fuel.utils.log_utils.FLFilter",
+              "()": "nvflare.fuel.utils.log_utils.LoggerNameFilter",
               "logger_names": ["nvflare.app_common", "nvflare.app_opt"]
           }
       },

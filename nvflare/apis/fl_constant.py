@@ -245,6 +245,8 @@ class AdminCommandNames(object):
     SHELL_TAIL = "tail"
     SHELL_GREP = "grep"
     APP_COMMAND = "app_command"
+    CONFIGURE_JOB_LOG = "configure_job_log"
+    CONFIGURE_SITE_LOG = "configure_site_log"
 
 
 class ServerCommandNames(object):
@@ -263,6 +265,7 @@ class ServerCommandNames(object):
     HANDLE_DEAD_JOB = "handle_dead_job"
     SERVER_STATE = "server_state"
     APP_COMMAND = "app_command"
+    CONFIGURE_JOB_LOG = "configure_job_log"
 
 
 class ServerCommandKey(object):
