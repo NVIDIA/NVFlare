@@ -246,6 +246,32 @@ class ByeCommand(CommandProcessor):
         return None
 
 
+class ConfigureJobLogCommand(CommandProcessor):
+    """To implement the configure_job_log command."""
+
+    def get_command_name(self) -> str:
+        """To get the command name.
+
+        Returns: AdminCommandNames.CONFIGURE_JOB_LOG
+
+        """
+        return AdminCommandNames.CONFIGURE_JOB_LOG
+
+    def process(self, data: Shareable, fl_ctx: FLContext):
+        """Called to process the configure_job_log command.
+
+        Args:
+            data: process data
+            fl_ctx: FLContext
+
+        Returns: configure_job_log command message
+
+        """
+        client_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
+        if client_runner:
+            client_runner.configure_job_log(data, fl_ctx)
+
+
 class AdminCommands(object):
     """AdminCommands contains all the commands for processing the commands from the parent process."""
 
@@ -257,6 +283,7 @@ class AdminCommands(object):
         ShowStatsCommand(),
         ShowErrorsCommand(),
         ResetErrorsCommand(),
+        ConfigureJobLogCommand(),
     ]
 
     @staticmethod
