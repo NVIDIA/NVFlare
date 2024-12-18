@@ -20,10 +20,12 @@ import psutil
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import MetaKey
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
+from nvflare.fuel.utils.log_utils import handle_log_config_command
 from nvflare.private.admin_defs import MsgHeader, ReturnCode
 from nvflare.private.defs import SysCommandTopic
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.cmd_utils import CommandUtil
+from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.security.logging import secure_format_exception
 
 
@@ -57,6 +59,14 @@ class SystemCommandModule(CommandModule, CommandUtil):
                     description="get the system info",
                     usage="sys_info server|client <client-name> ...",
                     handler_func=self.sys_info,
+                    authz_func=self.authorize_server_operation,
+                    visible=True,
+                ),
+                CommandSpec(
+                    name="configure_site_log",
+                    description="configure logging of a site",
+                    usage="configure_site_log config server|client <client-name> ...",
+                    handler_func=self.configure_site_log,
                     authz_func=self.authorize_server_operation,
                     visible=True,
                 ),
@@ -115,6 +125,39 @@ class SystemCommandModule(CommandModule, CommandUtil):
             return
 
         conn.append_string("invalid target type {}. Usage: sys_info server|client <client-name>".format(target_type))
+
+    def configure_site_log(self, conn: Connection, args: [str]):
+        if len(args) < 2:
+            conn.append_error("syntax error: missing site names")
+            return
+
+        target_type = args[1]
+
+        config = None
+        if len(args) > 2:
+            config = args[2]
+
+        if target_type == self.TARGET_TYPE_SERVER:
+            engine = conn.app_ctx
+            if not isinstance(engine, ServerEngine):
+                raise TypeError("engine must be ServerEngine but got {}".format(type(engine)))
+
+            workspace = engine.get_workspace()
+            handle_log_config_command(config, workspace)
+
+        elif target_type == self.TARGET_TYPE_CLIENT:
+            message = new_message(conn, topic=SysCommandTopic.CONFIGURE_SITE_LOG, body=config, require_authz=True)
+            replies = self.send_request_to_clients(conn, message)
+            self.process_replies_to_table(conn, replies)
+
+        else:
+            conn.append_string(
+                "invalid target type {}. Usage: configure_site_log config server|client <client-name>".format(
+                    target_type
+                )
+            )
+
+        conn.append_string(f"successfully configured site log of {target_type}")
 
     def _process_replies(self, conn, replies):
         if not replies:

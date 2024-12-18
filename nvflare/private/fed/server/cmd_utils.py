@@ -78,7 +78,8 @@ class CommandUtil(object):
             return ""
 
         if target_type == self.TARGET_TYPE_CLIENT:
-            client_names = args[1:]
+            # client_names = args[1:]
+            client_names = []  # TODO fix
         elif target_type == self.TARGET_TYPE_ALL:
             client_names = []
         else:

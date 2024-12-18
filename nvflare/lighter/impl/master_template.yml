@@ -271,6 +271,8 @@ default_authz: |
     "permissions": {
       "project_admin": "any",
       "org_admin": {
+        "configure_site_log": "o:site",
+        "configure_job_log": "n:submitter",
         "submit_job": "none",
         "clone_job": "none",
         "manage_job": "o:submitter",
@@ -281,7 +283,8 @@ default_authz: |
         "byoc": "none"
       },
       "lead": {
-        "submit_job": "any",
+        "configure_job_log": "n:submitter",
+        "submit_job": "o:site",
         "clone_job": "n:submitter",
         "manage_job": "n:submitter",
         "download_job": "n:submitter",

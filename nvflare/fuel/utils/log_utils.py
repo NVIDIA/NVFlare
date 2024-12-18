@@ -221,43 +221,73 @@ def get_script_logger():
         f"{package + '.' if package else ''}{os.path.splitext(os.path.basename(file))[0] if file else ''}"
     )
 
-
-def update_filenames(obj, dir_path: str = "", file_prefix: str = ""):
-    """Update 'filename' keys in JSON objects with dir_path and file_prefix."""
-    if "filename" in obj and isinstance(obj["filename"], str):
-        filename = obj["filename"]
-        if file_prefix:
-            filename = os.path.join(os.path.dirname(filename), file_prefix + "_" + os.path.basename(filename))
-        obj["filename"] = os.path.join(dir_path, filename)
-    return obj
-
-
-def read_log_config(file, dir_path: str = "", file_prefix: str = "") -> dict:
-    """
-    Reads JSON logging configuration file and returns config dictionary.
-    Updates 'filename' keys with dir_path for dynamic locations.
-
-    Args:
-        file (str): Path to the configuration file.
-        dir_path (str): Update filename keys with dir_path.
-
-    Returns:
-        config (dict)
-    """
-    try:
-        with open(file, "r") as f:
-            config = json.load(f, object_hook=lambda obj: update_filenames(obj, dir_path, file_prefix))
-        return config
-    except Exception as e:
-        raise ValueError(f"Unrecognized logging configuration format. Failed to parse JSON: {e}.")
-
+# def update_filenames(obj, dir_path: str = "", file_prefix: str = ""):
+#     """Update 'filename' keys in JSON objects with dir_path and file_prefix."""
+#     if "filename" in obj and isinstance(obj["filename"], str):
+#         filename = obj["filename"]
+#         if file_prefix:
+#             filename = os.path.join(os.path.dirname(filename), file_prefix + "_" + os.path.basename(filename))
+#         obj["filename"] = os.path.join(dir_path, filename)
+#     return obj
 
 def configure_logging(workspace: Workspace, dir_path: str = "", file_prefix: str = ""):
     log_config_file_path = workspace.get_log_config_file_path()
     assert os.path.isfile(log_config_file_path), f"missing log config file {log_config_file_path}"
 
-    dict_config = read_log_config(log_config_file_path, dir_path, file_prefix)
+    with open(log_config_file_path, "r") as f:
+        dict_config = json.load(f)
+
+    apply_log_config(dict_config, dir_path, file_prefix)
+
+
+def apply_log_config(dict_config, dir_path: str = "", file_prefix: str = ""):
+    stack = [dict_config]
+    while stack:
+        current_dict = stack.pop()
+        for key, value in current_dict.items():
+            if isinstance(value, dict):
+                stack.append(value)
+            elif key == "filename":
+                if file_prefix:
+                    value = os.path.join(os.path.dirname(value), file_prefix + "_" + os.path.basename(value))
+                current_dict[key] = os.path.join(dir_path, value)
+
     logging.config.dictConfig(dict_config)
+
+
+def handle_log_config_command(config: str, workspace: Workspace, job_id: str = None):
+    if config is None:
+        config = workspace.get_log_config_file_path()
+
+    if os.path.isfile(config):
+
+        with open(config, "r") as f:
+            dict_config = json.load(f)
+
+        if job_id:
+            dir_path = workspace.get_run_dir(job_id)
+        else:
+            dir_path = workspace.get_root_dir()
+            with open(workspace.get_log_config_file_path(), "w") as f:
+                f.write(json.dumps(dict_config))
+
+        apply_log_config(dict_config, dir_path)
+
+    elif isinstance(config, str):
+        if config.isdigit():
+            level = int(config)
+            if not (0 <= level <= 50):
+                raise ValueError(f"Invalid logging level: {level}")
+        else:
+            level = getattr(logging, config.upper(), None)
+            if level is None:
+                raise ValueError(f"Invalid logging level: {config}")
+
+        logging.getLogger().setLevel(level)
+    else:
+        raise ValueError(
+            f"Unsupported config type. Expect config to be filepath or string level but got {type(config)}"
+        )
 
 
 def add_log_file_handler(log_file_name):
