@@ -287,6 +287,27 @@ class FilesystemStorage(StorageSpec):
 
         return _decode_meta(_read(os.path.join(full_uri, META)))
 
+    def list_components_of_object(self, uri: str) -> List[str]:
+        """Gets all components of the specified object.
+
+        Args:
+            uri: URI of the object
+
+        Returns:
+            list of component names
+
+        Raises:
+            TypeError: if invalid argument types
+            StorageException: if object does not exist
+
+        """
+        full_uri = self._object_path(uri)
+
+        if not _object_exists(full_uri):
+            raise StorageException("object {} does not exist".format(uri))
+
+        return os.listdir(full_uri)
+
     def get_data(self, uri: str, component_name: str = DATA) -> bytes:
         """Gets data of the specified object.
 
