@@ -93,7 +93,8 @@ class ExProcessClientAPI(APISpec):
         flare_agent = None
         try:
             if rank == "0":
-                if client_config.get_exchange_format() == ExchangeFormat.PYTORCH:
+                if client_config.get_exchange_format() in [ExchangeFormat.PYTORCH, ExchangeFormat.NUMPY]:
+                    # both numpy and pytorch exchange format can need tensor decomposer
                     _register_tensor_decomposer()
 
                 pipe, task_channel_name = None, ""
