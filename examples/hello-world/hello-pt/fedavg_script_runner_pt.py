@@ -23,13 +23,13 @@ if __name__ == "__main__":
     train_script = "src/hello-pt_cifar10_fl.py"
 
     job = FedAvgJob(
-        name="hello-pt_cifar10_fedavg", n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork()
+        name="hello-pt_cifar10_fedavg", n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork(),
     )
 
     # Add clients
     for i in range(n_clients):
         executor = ScriptRunner(
-            script=train_script, script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
+            script=train_script, script_args="", launch_external_process=True  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
         )
         job.to(executor, f"site-{i + 1}")
 
