@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import argparse
-import logging.config
+import json
 import os
 import sys
 import threading
@@ -38,12 +38,7 @@ from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorClientAppRunner
 from nvflare.private.fed.simulator.simulator_audit import SimulatorAuditor
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
-from nvflare.private.fed.utils.fed_utils import (
-    add_logfile_handler,
-    fobs_initialize,
-    get_simulator_app_root,
-    register_ext_decomposers,
-)
+from nvflare.private.fed.utils.fed_utils import fobs_initialize, get_simulator_app_root, register_ext_decomposers
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 from nvflare.security.security import EmptyAuthorizer
 
@@ -238,9 +233,11 @@ def main(args):
     thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
     thread.start()
 
-    logging.config.fileConfig(fname=args.logging_config, disable_existing_loggers=False)
-    log_file = os.path.join(args.workspace, WorkspaceConstants.LOG_FILE_NAME)
-    add_logfile_handler(log_file)
+    with open(args.logging_config, "r") as f:
+        dict_config = json.load(f)
+    from nvflare.fuel.utils.log_utils import apply_log_config
+
+    apply_log_config(dict_config, args.workspace)
 
     os.chdir(args.workspace)
     startup = os.path.join(args.workspace, WorkspaceConstants.STARTUP_FOLDER_NAME)

@@ -93,6 +93,13 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     confirm=ConfirmMethod.AUTH,
                 ),
                 CommandSpec(
+                    name=AdminCommandNames.CONFIGURE_JOB_LOG,
+                    description="configure logging of a job",
+                    usage=f"{AdminCommandNames.CONFIGURE_JOB_LOG} job_id config server|client|all",
+                    handler_func=self.configure_job_log,
+                    authz_func=self.authorize_job,
+                ),
+                CommandSpec(
                     name=AdminCommandNames.START_APP,
                     description="start the FL app",
                     usage=f"{AdminCommandNames.START_APP} job_id server|client|all",
@@ -230,6 +237,19 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
         return PreAuthzReturnCode.REQUIRE_AUTHZ
 
+    def authorize_configure_job_log(self, conn: Connection, args: List[str]):
+        rc = self.authorize_job_id(conn, args)
+        if rc == PreAuthzReturnCode.ERROR:
+            return rc
+
+        if len(args) > 2:
+            err = self.validate_command_targets(conn, args[3:])
+            if err:
+                conn.append_error(err, meta=make_meta(MetaStatusValue.INVALID_TARGET, err))
+                return PreAuthzReturnCode.ERROR
+
+        return PreAuthzReturnCode.REQUIRE_AUTHZ
+
     def _start_app_on_clients(self, conn: Connection, job_id: str) -> bool:
         engine = conn.app_ctx
         client_names = conn.get_prop(self.TARGET_CLIENT_NAMES, None)
@@ -320,6 +340,37 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             self.process_replies_to_table(conn, replies)
 
         conn.append_success("")
+
+    def configure_job_log(self, conn: Connection, args: List[str]):
+        job_id = args[1]
+        target_type = args[2]
+
+        config = None
+        if len(args) > 3:
+            config = args[3]
+
+        engine = conn.app_ctx
+        if not isinstance(engine, ServerEngine):
+            raise TypeError("engine must be ServerEngine but got {}".format(type(engine)))
+
+        if target_type == self.TARGET_TYPE_SERVER:
+            engine.configure_job_log(str(job_id), config)
+
+        elif target_type == self.TARGET_TYPE_CLIENT:
+            message = new_message(
+                conn, topic=TrainingTopic.CONFIGURE_JOB_LOG, body=config, require_authz=False
+            )  # TODO require_authz?
+            message.set_header(RequestHeader.JOB_ID, str(job_id))
+            replies = self.send_request_to_clients(conn, message)
+            self.process_replies_to_table(conn, replies)
+        else:
+            conn.append_string(
+                "invalid target type {}. Usage: configure_site_log config server|client <client-name>".format(
+                    target_type
+                )
+            )
+
+        conn.append_string(f"successfully configured job log of {target_type} job {job_id}")
 
     def list_jobs(self, conn: Connection, args: List[str]):
         try:
