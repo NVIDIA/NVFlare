@@ -21,8 +21,7 @@ from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.app_opt.pt.quantization.dequantizor import ModelDequantizor
 from nvflare.app_opt.pt.quantization.quantizor import ModelQuantizor
-from nvflare.app_opt.pt.tensor_params_converter import PTReceiveParamsConverter, PTSendParamsConverter
-from nvflare.job_config.script_runner import BaseScriptRunner
+from nvflare.job_config.script_runner import ScriptRunner
 
 
 def main():
@@ -92,22 +91,18 @@ def main():
 
         script_args = f"--model_name_or_path {model_name_or_path} --data_path_train {data_path_train} --data_path_valid {data_path_valid} --output_path {output_path} --train_mode {train_mode} --message_mode {message_mode} --clean_up {clean_up}"
         if message_mode == "tensor":
-            # Add params converters and send to client
-            job.to(PTSendParamsConverter(), site_name, id="pt_send")
-            job.to(PTReceiveParamsConverter(), site_name, id="pt_receive")
-            runner = BaseScriptRunner(
-                script=train_script,
-                script_args=script_args,
-                from_nvflare_converter_id="pt_receive",
-                to_nvflare_converter_id="pt_send",
-            )
+            params_exchange_format = "pytorch"
         elif message_mode == "numpy":
-            runner = BaseScriptRunner(
-                script=train_script,
-                script_args=script_args,
-            )
+            params_exchange_format = "numpy"
         else:
             raise ValueError(f"Invalid message_mode: {message_mode}, only numpy and tensor are supported.")
+
+        runner = ScriptRunner(
+            script=train_script,
+            script_args=script_args,
+            params_exchange_format=params_exchange_format,
+            launch_external_process=False,
+        )
         job.to(runner, site_name, tasks=["train"])
 
         if args.quantize_mode:
